@@ -591,6 +591,12 @@ final class HermesWorkflowRPC {
         try acknowledged(
             try await request(.pluginsManage, ["action": "install", "catalog_name": catalogName, "enable": true]))
     }
+    /// A Git `identifier` such as Herm's staged `file://` plugins; `force` replaces an installed copy.
+    func installPlugin(identifier: String, enable: Bool) async throws {
+        try acknowledged(
+            try await request(
+                .pluginsManage, ["action": "install", "identifier": identifier, "force": true, "enable": enable]))
+    }
     /// Returns true when Hermes says the change needs a gateway restart to take effect.
     func togglePlugin(_ key: String, enabled: Bool) async throws -> Bool {
         let result = try await request(.pluginsManage, ["action": "toggle", "key": key, "enable": enabled])

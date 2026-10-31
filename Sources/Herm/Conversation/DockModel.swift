@@ -518,6 +518,7 @@ final class DockModel: ObservableObject {
                 DeveloperWorkflowModel.shared.turnBaselines.removeAll()
             }
         }
+                if let gateway = self?.gateway, gateway.isLocal { HermesBundledPlugins.ensure(client: gateway) }
     }
 
     var sendQueuedPromptAfterInterrupt = false

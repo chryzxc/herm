@@ -15,11 +15,15 @@ Serves what Herm publishes in `~/Library/Application Support/Herm/agent-surfaces
 Herm also handles Hermes' built-in `focus_pane` (files, terminal, review) and
 `desktop_preview` events without this plugin.
 
+Herm installs this plugin automatically when it connects to Hermes Agent on the
+same Mac, replacing it whenever the bundled `version` changes. Manual
+installation for development:
+
 ```sh
 mkdir -p ~/.hermes/plugins/herm
-cp integrations/herm/plugin.yaml integrations/herm/__init__.py ~/.hermes/plugins/herm/
+cp Sources/Herm/Resources/HermesPlugins/herm/plugin.yaml Sources/Herm/Resources/HermesPlugins/herm/__init__.py ~/.hermes/plugins/herm/
 hermes plugins enable herm
-python3 -B integrations/herm/test_plugin.py
+python3 -B Sources/Herm/Resources/HermesPlugins/herm/test_plugin.py
 ```
 
 Hooks apply immediately; tools load in new sessions.

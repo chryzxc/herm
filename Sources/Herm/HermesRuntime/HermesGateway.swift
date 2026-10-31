@@ -123,6 +123,9 @@ final class HermesGateway: NSObject {
         }
     }
 
+    /// Hermes runs on this Mac, so it can use Herm's bundled plugins and local devices.
+    var isLocal: Bool { connectionSettings.mode == .local }
+
     /// Where Herm reaches Hermes Agent, without URLs or credentials.
     var endpointDescription: String {
         switch connectionSettings.mode {

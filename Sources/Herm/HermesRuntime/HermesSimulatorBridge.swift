@@ -38,6 +38,39 @@ final class HermesSimulatorBridge {
             .appendingPathComponent("Library/Application Support/Herm/simulator-bridge/bin/python3")
     }
 
+    /// What Scripts/setup-simulator-bridge.sh does (keep the pins in sync): a private venv with gRPC, plus
+    /// the bundled scripts the `herm-simulator` plugin runs. Only Macs with simulators or emulators get it.
+    static func prepare() async {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        guard ProcessInfo.processInfo.environment["HERM_SIMULATOR_PYTHON"] == nil,
+            ["Library/Developer/CoreSimulator/Devices", "Library/Android/sdk"].contains(where: {
+                fm.fileExists(atPath: home.appendingPathComponent($0).path)
+            }),
+            let bundled = Bundle.module.url(forResource: "SimulatorBridge", withExtension: nil)
+        else { return }
+        let root = python.deletingLastPathComponent().deletingLastPathComponent()
+        let run = HermesBundledPlugins.run
+        if !fm.isExecutableFile(atPath: python.path) {
+            guard await run("/usr/bin/python3", ["-m", "venv", root.path], 120) else {
+                return DebugLog.write("simulator: bridge environment could not be created")
+            }
+        }
+        if !(await run(python.path, ["-c", "import grpc, google.protobuf"], 30)) {
+            DebugLog.write("simulator: installing bridge packages")
+            let pins = ["grpcio==1.78.0", "protobuf==6.33.5"]
+            guard await run(python.path, ["-m", "pip", "install", "-q", "--disable-pip-version-check"] + pins, 600)
+            else { return DebugLog.write("simulator: bridge package install failed") }
+        }
+        let resources = root.appendingPathComponent("resources", isDirectory: true)
+        try? fm.createDirectory(at: resources, withIntermediateDirectories: true)
+        for file in (try? fm.contentsOfDirectory(atPath: bundled.path)) ?? [] where file.hasSuffix(".py") {
+            let target = resources.appendingPathComponent(file)
+            try? fm.removeItem(at: target)
+            try? fm.copyItem(at: bundled.appendingPathComponent(file), to: target)
+        }
+    }
+
     func start(
         platform: String, device: String, boot: Bool = false,
         receive: @escaping @MainActor @Sendable (UInt8, Data) -> Void,
@@ -51,7 +84,7 @@ final class HermesSimulatorBridge {
                 domain: "HermSimulator", code: 1,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "Install the direct simulator bridge using Scripts/setup-simulator-bridge.sh, then retry."
+                        "Herm is still setting up simulator controls. Wait a minute, then retry."
                 ])
         }
         let child = Process()

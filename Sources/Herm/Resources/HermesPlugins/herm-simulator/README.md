@@ -9,19 +9,22 @@ JSON result; Herm admits only a successful, live completion of this named tool
 in the current session, from the local host.
 
 The agent can infer the platform from the conversation or supply a project
-folder for automatic detection. A sole running device is reused. Otherwise a
-sole installed device is selected, or a structured device list is returned so
-the agent can resolve the choice from context or ask. Explicit device IDs/names
-must match exactly. Cross-platform projects require conversational context.
+folder for automatic detection. A sole running device is reused. With none
+running, the preferred installed device boots without asking: the newest-runtime
+iPhone, or the first Android AVD. Several running devices return a structured
+list so the agent can resolve the choice from context or ask. Explicit device
+IDs/names must match exactly. Cross-platform projects require conversational context.
 `list` never starts a device. `launch` waits for confirmed boot and returns the
 device ID for subsequent build/install/run commands through existing tools.
 
-Installation (after reviewing the plugin and direct bridge sources):
+Herm installs this plugin automatically when it connects to Hermes Agent on the
+same Mac (and replaces it whenever the bundled `version` changes), then sets up
+the direct bridge. Manual installation for development:
 
 ```sh
 Scripts/setup-simulator-bridge.sh
 mkdir -p ~/.hermes/plugins/herm-simulator
-cp integrations/herm-simulator/plugin.yaml integrations/herm-simulator/__init__.py ~/.hermes/plugins/herm-simulator/
+cp Sources/Herm/Resources/HermesPlugins/herm-simulator/plugin.yaml Sources/Herm/Resources/HermesPlugins/herm-simulator/__init__.py ~/.hermes/plugins/herm-simulator/
 hermes plugins enable herm-simulator
 ```
 
@@ -42,7 +45,7 @@ with `-no-window -grpc-use-token`. Existing devices are reused without restartin
 them, so an already-open external window is not forcibly closed. There is no
 window capture fallback. Device processes survive tab closure and startup timeout.
 
-Validation: `python3 -B -m unittest discover -s integrations/herm-simulator`.
+Validation: `python3 -B -m unittest discover -s Sources/Herm/Resources/HermesPlugins/herm-simulator`.
 Tests substitute the device commands; they never start a real emulator.
 
 ## Navigate the device

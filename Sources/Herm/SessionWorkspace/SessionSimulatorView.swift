@@ -238,7 +238,7 @@ struct SessionSimulatorView: View {
                 .accessibilityValue(showSetup ? "Expanded" : "Collapsed")
                 if showSetup {
                     Text(
-                        "Run Scripts/setup-simulator-bridge.sh from the Herm project. "
+                        "Herm sets up simulator controls when it connects to Hermes Agent on this Mac. "
                             + (platform == .ios
                                 ? "Install the local iOS companion with brew install facebook/fb/idb-companion and select a compatible full Xcode installation."
                                 : "Install Android SDK Emulator and Platform-Tools in SDK Manager. Create a virtual device in Device Manager, then refresh the device list.")

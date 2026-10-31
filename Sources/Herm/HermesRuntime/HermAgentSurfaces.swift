@@ -2,7 +2,7 @@ import Foundation
 import os
 
 /// A Herm capability the agent must route through instead of an external app or plain text.
-/// Herm owns the list; the `herm` Hermes plugin (integrations/herm) serves it as session rules,
+/// Herm owns the list; the `herm` Hermes plugin (Sources/Herm/Resources/HermesPlugins/herm) serves it as session rules,
 /// the `herm_reference` tool, and tool-call guards. Add or remove a surface in
 /// `HermAgentSurfaces.current`; neither the plugin nor any prompt text elsewhere changes.
 struct HermAgentSurface: Codable, Equatable, Sendable {
