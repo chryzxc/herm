@@ -870,9 +870,9 @@ struct WorkflowIntegrationView: View {
                 if let item = selectedServer {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Credential for \(item.id)").dockFont(.body, weight: .semibold)
-                        Picker("Required key", selection: $credentialKey) {
-                            ForEach(item.requiredKeys, id: \.self) { Text($0).tag($0) }
-                        }
+                        DockOptionPicker(
+                            label: "Required key", selection: $credentialKey,
+                            options: item.requiredKeys.map { ($0, $0) })
                         SecureField("Credential", text: $credential).textFieldStyle(.dockGlass)
                         Button("Save credential…") { request = ("Save credential", item) }
                             .buttonStyle(.dockSecondary).disabled(credential.isEmpty)
@@ -1515,9 +1515,9 @@ struct WorkflowIntegrationView: View {
                     ])
                     if let item = selectedServer, item.id == server.id {
                         panel("CREDENTIAL") {
-                            Picker("Required key", selection: $credentialKey) {
-                                ForEach(item.requiredKeys, id: \.self) { Text($0).tag($0) }
-                            }
+                            DockOptionPicker(
+                                label: "Required key", selection: $credentialKey,
+                                options: item.requiredKeys.map { ($0, $0) })
                             SecureField("Credential", text: $credential).textFieldStyle(.dockGlass)
                             Button("Save credential…") { request = ("Save credential", item) }
                                 .buttonStyle(.dockSecondary).disabled(credential.isEmpty)
@@ -1734,8 +1734,7 @@ struct WorkflowIntegrationView: View {
         .help(on ? disable : enable)
     }
     private func moreMenu<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        Menu(content: content) { DockIcon(.dotsThree, size: 14, color: .dockSecondaryText) }
-            .menuStyle(.button).buttonStyle(DockPressButtonStyle()).menuIndicator(.hidden)
+        DockMenu(content: content) { DockIcon(.dotsThree, size: 14, color: .dockSecondaryText) }
             .frame(width: 26, height: 26).contentShape(Rectangle())
             .disabled(model.busy).help("More actions")
     }
@@ -1757,9 +1756,8 @@ struct WorkflowIntegrationView: View {
                                 get: { draft.wrappedValue == "true" },
                                 set: { draft.wrappedValue = $0 ? "true" : "false" }))
                     case "enum":
-                        Picker(setting.label, selection: draft) {
-                            ForEach(setting.choices, id: \.self) { Text($0).tag($0) }
-                        }
+                        DockOptionPicker(
+                            label: setting.label, selection: draft, options: setting.choices.map { ($0, $0) })
                     case "secret":
                         Text(setting.label).dockFont(.body)
                         SecureField(setting.hasValue ? "Saved — leave blank to keep" : "Not set", text: draft)

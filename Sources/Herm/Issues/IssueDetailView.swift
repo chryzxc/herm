@@ -140,8 +140,14 @@ struct IssueDetailView: View {
             }
             .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
             .frame(height: 52)
-            .background(titleRow != nil ? Color.dockSidebar : .clear)
-            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+            .dockShellChrome(titleRow != nil)
+            .overlay(alignment: .bottom) {
+                if titleRow != nil {
+                    DockWindowChrome.titleRowSeparator
+                } else {
+                    Color.dockBorderLight.frame(height: 0.5)
+                }
+            }
             .background(Color.dockCanvas)
             .zIndex(1)
 

@@ -110,7 +110,7 @@ struct RichNativeBlockView: View {
                 .accessibilityLabel("Selected items")
             ForEach(list.items) { item in
                 VStack(alignment: .leading, spacing: 4) {
-                    Toggle(item.title, isOn: state.checked(blockID + ":" + item.id)).toggleStyle(.checkbox)
+                    Toggle(item.title, isOn: state.checked(blockID + ":" + item.id)).toggleStyle(.dockCheckbox)
                     if let detail = item.detail {
                         Text(detail).foregroundStyle(Color.dockSecondaryText).dockPadding(.leading, 20)
                             .textSelection(.enabled)
@@ -346,8 +346,9 @@ private struct RichImageComparisonView: View {
             }.frame(height: 340)
                 .dockPadding(.bottom, 4)
             Text("\(images.before.title) / \(images.after.title)").foregroundStyle(Color.dockSecondaryText)
-            Slider(value: state.number(blockID + ":fraction", default: 0.5), in: 0...1) { Text("Comparison position") }
-            Slider(value: state.number(blockID + ":zoom", default: 1), in: 1...4) { Text("Zoom") }
+            DockSlider(value: state.number(blockID + ":fraction", default: 0.5), range: 0...1)
+                .accessibilityLabel("Comparison position")
+            DockSlider(value: state.number(blockID + ":zoom", default: 1), range: 1...4).accessibilityLabel("Zoom")
         }
     }
     @ViewBuilder private func image(_ item: RichItem) -> some View {

@@ -446,10 +446,10 @@ private struct RichFormView: View {
                 .textFieldStyle(.dockGlass)
                 .accessibilityLabel(field.label)
         case .choice:
-            Picker(field.label, selection: string(field)) {
-                Text("Choose…").tag("")
-                ForEach(field.options ?? [], id: \.self) { option in Text(option).tag(option) }
-            }.labelsHidden().pickerStyle(.menu)
+            DockOptionPicker(
+                selection: string(field),
+                options: [("", "Choose…")] + (field.options ?? []).map { ($0, $0) }
+            ).accessibilityLabel(field.label)
         case .multipleChoice:
             ForEach(field.options ?? [], id: \.self) { option in
                 Toggle(
@@ -462,7 +462,7 @@ private struct RichFormView: View {
                             if selected { values.append(option) }
                             draft.values[field.id] = values
                         })
-                ).toggleStyle(.checkbox)
+                ).toggleStyle(.dockCheckbox)
             }
         case .boolean:
             Toggle(

@@ -128,9 +128,17 @@ struct GitHubMetadataView: View {
                                     Button {
                                         openItem(ref)
                                     } label: {
-                                        DockMetadataPill(
-                                            text: "\(ref.title) · \(link.title)", navigationIcon: .caretRight
-                                        ).multilineTextAlignment(.leading)
+                                        HStack(alignment: .top, spacing: 6) {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(ref.title).underline().fontWeight(.medium)
+                                                Text(link.title).foregroundStyle(Color.dockSecondaryText)
+                                            }
+                                            .multilineTextAlignment(.leading)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            DockIcon(.caretRight, size: 12, color: .dockAccent).dockPadding(.top, 3)
+                                        }
+                                        .foregroundStyle(Color.dockAccent)
+                                        .contentShape(Rectangle())
                                     }.buttonStyle(.dockHover)
                                 } else if let url = link.url {
                                     Link(destination: url) {
@@ -298,12 +306,12 @@ struct GitHubMetadataEditor: View {
                 Toggle(name, isOn: selection(name)).toggleStyle(.dockSwitch)
             }
         case .milestone:
-            Picker("Milestone", selection: $milestone) {
-                Text("None").tag(0)
-                ForEach(milestones.filter { matches($0.title) }) { value in
-                    Text(value.title + (value.state == "closed" ? " (closed)" : "")).tag(value.number)
-                }
-            }.pickerStyle(.menu)
+            DockOptionPicker(
+                label: "Milestone", selection: $milestone,
+                options: [(0, "None")]
+                    + milestones.filter { matches($0.title) }.map {
+                        ($0.number, $0.title + ($0.state == "closed" ? " (closed)" : ""))
+                    })
         case .development:
             ForEach(links.filter { matches($0.title) }) { link in
                 HStack(alignment: .top) {

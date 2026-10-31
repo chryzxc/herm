@@ -148,17 +148,14 @@ struct CalendarWorkspaceView: View {
             .fixedSize()
             .help("Jump to a date")
             .dockPopover(isPresented: $showingDatePicker) {
-                DatePicker(
-                    "Jump to date",
+                DockDateGrid(
                     selection: Binding(
                         get: { selected },
                         set: {
                             selected = calendar.startOfDay(for: $0)
                             showingDatePicker = false
-                        }),
-                    displayedComponents: .date
+                        })
                 )
-                .datePickerStyle(.graphical)
                 .dockPadding(16)
             }
             DockIconButton(icon: .caretLeft, label: "Previous \(scope == .month ? "month" : "week")", style: style) {

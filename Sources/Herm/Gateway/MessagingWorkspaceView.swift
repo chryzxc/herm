@@ -237,11 +237,9 @@ struct MessagingWorkspaceView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
                         if !telegram {
-                            Picker("", selection: $whatsappMode) {
-                                Text("Dedicated bot number").tag("bot")
-                                Text("My own number (self-chat)").tag("self-chat")
-                            }
-                            .labelsHidden()
+                            DockOptionPicker(
+                                selection: $whatsappMode,
+                                options: [("bot", "Dedicated bot number"), ("self-chat", "My own number (self-chat)")])
                         }
                         Button {
                             Task {

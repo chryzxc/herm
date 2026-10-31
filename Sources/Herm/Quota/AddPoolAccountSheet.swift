@@ -156,7 +156,7 @@ struct AddPoolAccountSheet: View {
                 ModalNote(text: "\(providerID) signs in with an API key.", icon: .key)
             } else if !providerID.isEmpty {
                 Toggle("Use an API key instead of browser sign-in", isOn: $useAPIKey)
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.dockCheckbox)
                     .dockFont(.body)
             }
             if usesKey {

@@ -4,7 +4,7 @@ struct EdgeQuietMenu: View {
     @ObservedObject var coordinator: HermInterruptionCoordinator
     let showDigest: () -> Void
     var body: some View {
-        Menu {
+        DockMenu {
             if coordinator.quiet {
                 Button("End quiet period") { coordinator.end() }
             } else {
@@ -19,7 +19,7 @@ struct EdgeQuietMenu: View {
         } label: {
             Text(coordinator.quiet ? "Quiet on" : "Quiet").dockFont(.metadata, weight: .medium)
         }
-        .menuStyle(.borderlessButton).fixedSize()
+        .fixedSize()
         .accessibilityLabel(
             coordinator.quiet ? "Quiet period active. Manage interruptions" : "Start a quiet period")
     }

@@ -222,7 +222,7 @@ struct GitHubItemEditor: View {
                 HStack {
                     TextField("owner/repo", text: $repositoryName).textFieldStyle(.dockGlass)
                     if !repositories.isEmpty {
-                        Menu("Repositories") {
+                        DockMenu("Repositories") {
                             ForEach(repositories) { repo in Button(repo.id) { repositoryName = repo.id } }
                         }
                     }
@@ -230,14 +230,12 @@ struct GitHubItemEditor: View {
                 if kind == .pullRequest {
                     HStack {
                         if loadingBranches { ProgressView().controlSize(.mini).accessibilityLabel("Loading branches") }
-                        Picker("Head branch", selection: $head) {
-                            Text("Choose branch").tag("")
-                            ForEach(branches, id: \.self) { Text($0).tag($0) }
-                        }.pickerStyle(.menu)
-                        Picker("Base branch", selection: $base) {
-                            Text("Choose branch").tag("")
-                            ForEach(branches, id: \.self) { Text($0).tag($0) }
-                        }.pickerStyle(.menu)
+                        DockOptionPicker(
+                            label: "Head branch", placeholder: "Choose branch", selection: $head,
+                            options: branches.map { ($0, $0) })
+                        DockOptionPicker(
+                            label: "Base branch", placeholder: "Choose branch", selection: $base,
+                            options: branches.map { ($0, $0) })
                     }.disabled(loadingBranches || busy)
                     Text("Only published branches are listed. Creating a PR never pushes local changes.").dockFont(
                         .body

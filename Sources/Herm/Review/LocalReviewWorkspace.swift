@@ -65,14 +65,14 @@ struct LocalReviewWorkspace: View {
             isRefreshing: review.loading, close: { if let closeAction { closeAction() } else { dismiss() } }
         ) {
             HStack {
-                Picker("Comparison", selection: $scope) {
-                    ForEach(RepositoryComparison.Scope.allCases) { Text($0.rawValue).tag($0) }
-                }.pickerStyle(.menu)
+                DockOptionPicker(
+                    label: "Comparison", selection: $scope,
+                    options: RepositoryComparison.Scope.allCases.map { ($0, $0.rawValue) })
                 if scope == .branch || scope == .commit {
                     TextField("Local Git reference", text: $reference).textFieldStyle(.dockGlass).onSubmit {
                         requestID += 1
                     }
-                    Menu("Choose reference") {
+                    DockMenu(outlined: true) {
                         ForEach(references, id: \.self) { value in
                             Button(value) {
                                 reference = value
@@ -80,7 +80,9 @@ struct LocalReviewWorkspace: View {
                             }
                         }
                         if references.isEmpty { Text("No local references available") }
-                    }.buttonStyle(.dockCompact)
+                    } label: {
+                        Text("Choose reference")
+                    }
                 }
                 Toggle("Ignore whitespace", isOn: $ignoreWhitespace).toggleStyle(.dockSwitch)
                 TextField("Filter files or loaded changes", text: $query).textFieldStyle(.dockGlass)

@@ -80,13 +80,18 @@ struct GitHubBrowseControls: View {
                     filters = true
                 }
             } label: {
-                Text(options.repository.isEmpty ? "My work" : options.repository).lineLimit(1)
-            }
-            HStack(spacing: 4) {
-                Picker("State", selection: $options.state) {
-                    ForEach(GitHubBrowseState.allCases) { Text($0.rawValue).tag($0) }
+                HStack(spacing: 4) {
+                    DockIcon(.caretUpDown, size: 11, color: .dockSecondaryText)
+                    if !options.repository.isEmpty { Text(options.repository).lineLimit(1) }
                 }
-                .pickerStyle(.menu).labelsHidden()
+            }
+            .help("Repository")
+            .accessibilityLabel(options.repository.isEmpty ? "Repository: all" : "Repository: \(options.repository)")
+            HStack(spacing: 4) {
+                DockOptionPicker(
+                    selection: $options.state, options: GitHubBrowseState.allCases.map { ($0, $0.rawValue) }
+                )
+                .accessibilityLabel("State")
                 .disabled(isLoading)
                 .onChange(of: options.state) { _, _ in refresh() }
                 ProgressView().controlSize(.mini)

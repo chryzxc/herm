@@ -115,7 +115,7 @@ struct GitHubRepositoriesView: View {
                 .foregroundStyle(model.error == nil ? Color.dockMetadataText : Color.dockWarning)
                 .lineLimit(2)
                 Spacer(minLength: 8)
-                Toggle("Show archived", isOn: $model.includesArchived).toggleStyle(.checkbox).fixedSize()
+                Toggle("Show archived", isOn: $model.includesArchived).toggleStyle(.dockCheckbox).fixedSize()
             }
             .dockFont(.metadata).frame(minHeight: 22)
         }

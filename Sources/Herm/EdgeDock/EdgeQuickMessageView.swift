@@ -262,14 +262,14 @@ struct EdgeQuickMessageView: View {
                 Button("Paste", icon: .clipboard, action: paste).disabled(state.quickNeedsReview)
                 Divider()
                 if !state.recoverableDrafts.isEmpty || !state.savedPrompts.isEmpty {
-                    Menu("Drafts") {
+                    DockMenu("Drafts") {
                         ForEach(state.recoverableDrafts) { record in
                             Button(
                                 "\(record.destination.title) · \(record.text.isEmpty ? "Attachments" : String(record.text.prefix(32)))"
                             ) { state.restoreQuickDraft(record) }
                         }
                         if !state.savedPrompts.isEmpty {
-                            Menu("Saved prompts") {
+                            DockMenu("Saved prompts") {
                                 ForEach(state.savedPrompts) { record in
                                     Button(record.savedName ?? "Prompt") { state.restoreQuickDraft(record) }
                                 }

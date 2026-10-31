@@ -610,14 +610,12 @@ struct ArtifactsInspectorView: View {
             VStack(alignment: .leading, spacing: 12) {
                 let versions = recordIndex.versions(of: records.first { $0.id == selectedArtifactID } ?? record)
                 if versions.count > 1 {
-                    Picker(
-                        "Version",
+                    DockOptionPicker(
+                        label: "Version",
                         selection: Binding(
                             get: { selectedVersionID ?? selectedArtifactID ?? record.id },
-                            set: { selectedVersionID = $0 })
-                    ) {
-                        ForEach(versions) { item in Text(item.timestamp.formatted()).tag(item.id) }
-                    }.pickerStyle(.menu)
+                            set: { selectedVersionID = $0 }),
+                        options: versions.map { ($0.id, $0.timestamp.formatted()) })
                     Button("Compare with previous version") { comparingVersions = true }.buttonStyle(.dockCompact)
                         .disabled(record.id == versions.last?.id)
                 }

@@ -41,7 +41,7 @@ struct ConversationContextPicker: View {
                                     set: { if $0 { selected.insert(index) } else { selected.remove(index) } })
                             ) {
                                 Text(excerpts.messages[index]).dockFont(.body).lineLimit(8)
-                            }.toggleStyle(.checkbox).dockPadding(.vertical, 6)
+                            }.toggleStyle(.dockCheckbox).dockPadding(.vertical, 6)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(minWidth: 280)

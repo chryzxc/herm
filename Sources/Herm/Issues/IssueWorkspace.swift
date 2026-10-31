@@ -136,14 +136,14 @@ struct IssueWorkspace: View {
                 refresh: refresh, onCreated: { openItem($0) }, isLoading: center.isRefreshing)
             HStack(spacing: 8) {
                 DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
-                TextField("Search issues", text: $center.query)
+                DockTextField("Search issues", text: $center.query)
                     .textFieldStyle(.plain)
             }
             .dockPadding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                    Color.dockControlSurface)
+                    Color.dockControlSurface, stroke: Color.dockBorder)
             )
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 

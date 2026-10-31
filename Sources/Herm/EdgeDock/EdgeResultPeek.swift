@@ -97,7 +97,7 @@ struct EdgeResultPeek: View {
                 }
                 Spacer(minLength: 4)
                 if isLoading { ProgressView().controlSize(.mini) }
-                Menu(hasNewerResult ? "Update" : "More") {
+                DockMenu(hasNewerResult ? "Update" : "More") {
                     Button(hasNewerResult ? "Update saved reply" : "Refresh saved reply") {
                         refresh()
                         showingComparison = false
@@ -109,7 +109,7 @@ struct EdgeResultPeek: View {
                         Button("Translate reply") { translating = true }.disabled(content?.text.isEmpty ?? true)
                     }
                 }.modifier(ReplyTranslation(isPresented: $translating, text: content?.text ?? ""))
-                    .dockFont(.metadata).menuStyle(.borderlessButton).fixedSize().disabled(isLoading)
+                    .dockFont(.metadata).fixedSize().disabled(isLoading)
                     .accessibilityLabel("Result actions")
                 if let content, !content.text.isEmpty {
                     DockCopyButton(

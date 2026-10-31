@@ -81,7 +81,7 @@ struct PullRequestReviewerPicker: View {
                                 isOn: Binding(
                                     get: { selected.contains(login) },
                                     set: { if $0 { selected.insert(login) } else { selected.remove(login) } })
-                            ).toggleStyle(.checkbox)
+                            ).toggleStyle(.dockCheckbox)
                                 .dockFont(.body)
                                 .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
                         }

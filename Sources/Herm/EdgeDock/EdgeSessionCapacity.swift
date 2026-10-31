@@ -76,11 +76,13 @@ struct EdgeSessionCapacity: View {
                             Button("Stop this turn") { Task { await act(stop: true) } }.buttonStyle(.dockCompact)
                                 .disabled(pending)
                         } else {
-                            Menu("Choose configured session model…") {
+                            DockMenu(outlined: true) {
                                 ForEach(snapshot.options) { option in
                                     Button(option.displayName) { confirmedModel = option }
                                 }
-                            }.menuStyle(.borderlessButton).buttonStyle(.dockCompact).disabled(pending)
+                            } label: {
+                                Text("Choose configured session model…")
+                            }.disabled(pending)
                         }
                         if let id = snapshot.modelID {
                             Text("Current: \(id.replacingOccurrences(of: "|", with: " / "))").dockFont(.metadata)

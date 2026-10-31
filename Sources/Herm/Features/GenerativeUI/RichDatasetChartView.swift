@@ -23,12 +23,10 @@ struct RichDatasetChartView: View {
                 }
             }.frame(height: 248)
             legend
-            Picker("Inspect", selection: state.selection(RichSelectionIdentity.dataset(dataset.id))) {
-                Text("Choose a data row").tag("")
-                ForEach(dataset.rows) { row in
-                    Text(row.values[labelIndex]).tag(row.id)
-                }
-            }.pickerStyle(.menu).disabled(dataset.rows.isEmpty)
+            DockOptionPicker(
+                label: "Inspect", selection: state.selection(RichSelectionIdentity.dataset(dataset.id)),
+                options: [("", "Choose a data row")] + dataset.rows.map { ($0.id, $0.values[labelIndex]) }
+            ).disabled(dataset.rows.isEmpty)
             if let row = selectedRow {
                 Text(
                     zip(dataset.columns, row.values).map { "\($0.title): \($1)\($0.unit.map { " " + $0 } ?? "")" }

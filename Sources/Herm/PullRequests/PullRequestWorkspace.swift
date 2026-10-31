@@ -94,7 +94,7 @@ struct PullRequestWorkspace: View {
                 .frame(maxWidth: .infinity, minHeight: 34)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                        Color.dockControlSurface)
+                        Color.dockControlSurface, stroke: Color.dockBorder)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 

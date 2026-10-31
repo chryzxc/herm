@@ -55,12 +55,8 @@ struct PullRequestCommitDiffView: View {
 
     private func filePicker(_ files: [PullRequestFile]) -> some View {
         HStack(spacing: 12) {
-            Picker("File", selection: $selectedPath) {
-                ForEach(files) { file in
-                    Text(file.path).tag(Optional(file.path))
-                }
-            }
-            .labelsHidden().accessibilityLabel("Changed file")
+            DockOptionPicker(selection: $selectedPath, options: files.map { (Optional($0.path), $0.path) })
+                .accessibilityLabel("Changed file")
             if let file = files.first(where: { $0.path == selectedPath }) {
                 Text("+\(file.additions)").foregroundStyle(Color.dockSuccess)
                 Text("−\(file.deletions)").foregroundStyle(Color.dockDestructive)

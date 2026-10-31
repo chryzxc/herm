@@ -228,13 +228,13 @@ struct HermesPetSettingsView: View {
             }
             HStack {
                 Text("Pet size").dockFont(.body)
-                Slider(
+                DockSlider(
                     value: Binding(
                         get: { scale },
                         set: {
                             scale = $0
                             dirty = true
-                        }), in: 0.1...3, step: 0.05)
+                        }), range: 0.1...3, step: 0.05)
                 Text("\(Int(scale * 100))%").dockFont(.body).monospacedDigit().frame(width: 44)
             }
             Text(
