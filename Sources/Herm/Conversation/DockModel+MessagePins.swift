@@ -28,103 +28,41 @@ extension DockModel {
         submittedMessageIDForPin = nil
     }
 
-    func refreshMessagePins() async {
-        guard let owner = navigationSessionID, !isLoadingMessagePins else { return }
-        let generation = sessionResumeGeneration
-        let profile = sessionProfileID
-        isLoadingMessagePins = true
-        defer { if generation == sessionResumeGeneration { isLoadingMessagePins = false } }
-        do {
-            var pins: [PinnedMessage] = []
-            var hasMore = true
-            for _ in 0..<20 {
-                guard
-                    let path = TranscriptHistoryPaging.sessionPath(
-                        sessionID: owner, endpoint: "message-pins", profileID: profile,
-                        query: [URLQueryItem(name: "offset", value: String(pins.count))])
-                else {
-                    throw HermesGateway.GatewayError.malformedResponse
-                }
-                let result = try await sessionRPCClient.fetchHTTP(path)
-                let page = try PinnedMessage.parse(result, sessionID: owner)
-                pins += page
-                hasMore = (result["pagination"] as? [String: Any])?["has_more"] as? Bool == true
-                if !hasMore { break }
-                if page.isEmpty { throw HermesGateway.GatewayError.malformedResponse }
-            }
-            guard !hasMore, Set(pins.map(\.id)).count == pins.count else {
-                throw HermesGateway.GatewayError.malformedResponse
-            }
-            guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile
-            else { return }
-            pinnedMessages = pins
-            messagePinsSupported = true
-            messagePinError = messagePinMutationFeedback?.error
-        } catch {
-            guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile
-            else { return }
-            messagePinsSupported = false
-            switch error {
-            case HermesGateway.GatewayError.httpError(404), HermesGateway.GatewayError.httpRefused(404, _):
-                messagePinError =
-                    "This Hermes runtime does not support message pins. Install the backend patch and restart Hermes."
-            default:
-                messagePinError = "Pinned messages unavailable. \(Self.safeUserDiagnostic(error.localizedDescription))"
-            }
-            if let mutationError = messagePinMutationFeedback?.error { messagePinError = mutationError }
+    /// Pins live in Herm's own store as references; Hermes has no pin feature to ask.
+    func refreshMessagePins() async { reloadMessagePins() }
+
+    func reloadMessagePins() {
+        guard let owner = navigationSessionID else { return }
+        pinnedMessages = messagePinStore.pins(profile: sessionProfileID, sessionID: owner).map { record in
+            let reference = storedMessageReferences.first { pin(record, matches: $0.value) }
+            let text = reference.flatMap { entry in messages.first { $0.id == entry.key }?.text } ?? ""
+            return PinnedMessage(
+                record: record, preview: String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160)))
         }
+        messagePinsSupported = true
+        messagePinError = messagePinMutationFeedback?.error
+    }
+
+    private func pin(_ record: MessagePinRecord, matches reference: StoredMessageReference) -> Bool {
+        PinnedMessage(record: record, preview: "").matches(reference)
     }
 
     func toggleMessagePinned(_ message: ChatMessage) async {
         guard canPinMessage(message), let reference = storedMessageReferences[message.id] else { return }
-        await setMessagePinned(rowID: reference.rowID, pinned: !isMessagePinned(message))
+        setMessagePinned(
+            MessagePinRecord(
+                rowID: reference.rowID, uid: reference.uid, role: message.role == .user ? "user" : "assistant"),
+            pinned: !isMessagePinned(message))
     }
 
-    func setMessagePinned(rowID: Int, pinned: Bool) async {
-        guard messagePinsSupported, !isUpdatingMessagePin, let owner = navigationSessionID,
-            let path = TranscriptHistoryPaging.sessionPath(
-                sessionID: owner, endpoint: "message-pins/\(rowID)", profileID: sessionProfileID, query: [])
-        else { return }
-        let generation = sessionResumeGeneration
-        let profile = sessionProfileID
-        messagePinMutationFeedback = nil
-        messagePinError = nil
-        updatingMessagePinRowID = rowID
-        defer { if generation == sessionResumeGeneration { updatingMessagePinRowID = nil } }
-        do {
-            let result = try await sessionRPCClient.sendHTTP("PUT", path: path, body: ["pinned": pinned])
-            guard result["requested_session_id"] as? String == owner, result["row_id"] as? Int == rowID,
-                result["pinned"] as? Bool == pinned,
-                let uid = result["message_uid"] as? String, !uid.isEmpty
-            else { throw HermesGateway.GatewayError.malformedResponse }
-            guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile
-            else { return }
-            for (id, reference) in storedMessageReferences where reference.rowID == rowID {
-                storedMessageReferences[id] = StoredMessageReference(rowID: rowID, uid: uid)
-            }
-            while isLoadingMessagePins {
-                try await Task.sleep(for: .milliseconds(20))
-                guard generation == sessionResumeGeneration else { return }
-            }
-            await refreshMessagePins()
-            guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile
-            else { return }
-            if !messagePinsSupported {
-                recordMessagePinFeedback(error: messagePinError ?? "Pinned messages unavailable.")
-            } else if pinnedMessageUIDs.contains(uid) != pinned {
-                recordMessagePinFeedback(
-                    error: "Hermes accepted the update, but the saved pin state could not be verified. "
-                        + "Refresh pinned messages to check.")
-            } else {
-                recordMessagePinFeedback(error: nil)
-            }
-        } catch {
-            guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile
-            else { return }
-            recordMessagePinFeedback(
-                error: "Could not \(pinned ? "pin" : "unpin") message. "
-                    + Self.safeUserDiagnostic(error.localizedDescription))
-        }
+    func setMessagePinned(_ record: MessagePinRecord, pinned: Bool) {
+        guard messagePinsSupported, let owner = navigationSessionID else { return }
+        var records = messagePinStore.pins(profile: sessionProfileID, sessionID: owner)
+        records.removeAll { $0.rowID == record.rowID }
+        if pinned { records.append(record) }
+        messagePinStore.save(records, profile: sessionProfileID, sessionID: owner)
+        recordMessagePinFeedback(error: nil)
+        reloadMessagePins()
     }
 
     private func recordMessagePinFeedback(error: String?) {
@@ -141,6 +79,7 @@ extension DockModel {
         }
         _ = await loadTranscriptHistory(through: pin.rowID)
         guard generation == sessionResumeGeneration else { return nil }
+        reloadMessagePins()
         guard let id = storedMessageReferences.first(where: { pin.matches($0.value) })?.key,
             messages.contains(where: { $0.id == id })
         else {

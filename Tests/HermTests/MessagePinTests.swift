@@ -8,17 +8,6 @@ import Testing
 @MainActor
 final class MessagePinRPCClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
-    var pins: [[String: Any]] = []
-    var writes: [(String, [String: Any])] = []
-    var failWrite = false
-    var ignoreWrite = false
-    var failReadAfterWrite = false
-    var suspendWrite = false
-    var suspendVerification = false
-    var failSuspendedResponse = false
-    var suspendedResponse: CheckedContinuation<Void, Never>?
-    var supported = true
-    var readDelay: Duration = .zero
     var deferHistory = false
     var rows: [[String: Any]] = [
         ["role": "user", "text": "question", "row_id": 1, "message_uid": "ask"],
@@ -39,7 +28,6 @@ final class MessagePinRPCClient: HermesRPCClientProtocol {
         return [:]
     }
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
-        guard supported else { throw HermesGateway.GatewayError.httpError(404) }
         let owner = path.components(separatedBy: "/")[3]
         if path.contains("/messages?") {
             let query = URLComponents(string: path)?.queryItems ?? []
@@ -56,42 +44,11 @@ final class MessagePinRPCClient: HermesRPCClientProtocol {
             return ["messages": page, "pagination": ["returned": page.count]]
         }
         if path.contains("/timeline") { return ["entries": [], "pagination": ["has_more": false]] }
-        if readDelay != .zero { try await Task.sleep(for: readDelay) }
-        let response: [String: Any] = [
-            "supported": true, "requested_session_id": owner, "pins": pins, "pagination": ["has_more": false],
-        ]
-        if suspendVerification && !writes.isEmpty {
-            suspendVerification = false
-            await withCheckedContinuation { suspendedResponse = $0 }
-            if failSuspendedResponse { throw URLError(.cannotConnectToHost) }
-        }
-        return response
+        throw HermesGateway.GatewayError.httpError(404)
     }
     func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {
-        writes.append((path, body))
-        if suspendWrite {
-            suspendWrite = false
-            await withCheckedContinuation { suspendedResponse = $0 }
-            if failSuspendedResponse { throw URLError(.cannotConnectToHost) }
-        }
-        if failWrite { throw URLError(.cannotConnectToHost) }
-        let parts = path.components(separatedBy: "/")
-        let rowID = Int(parts.last!.components(separatedBy: "?")[0])!
-        if failReadAfterWrite { supported = false }
-        if !ignoreWrite && body["pinned"] as? Bool == true {
-            pins = [
-                [
-                    "row_id": rowID, "message_uid": rowID == 1 ? "ask" : "reply",
-                    "role": rowID == 1 ? "user" : "assistant", "preview": "saved",
-                ]
-            ]
-        } else if !ignoreWrite {
-            pins = []
-        }
-        return [
-            "requested_session_id": parts[3], "row_id": rowID, "message_uid": rowID == 1 ? "ask" : "reply",
-            "pinned": body["pinned"]!,
-        ]
+        Issue.record("pins must not reach Hermes")
+        return [:]
     }
 }
 
@@ -132,66 +89,32 @@ struct MessagePinTests {
         return model
     }
 
-    @Test func pinsUseSavedIdentityAndOnlyChangeAfterHermesConfirms() async throws {
-        let rpc = MessagePinRPCClient()
-        let model = try await loaded(rpc)
+    @Test func pinsAreLocalAndKeyedBySavedIdentity() async throws {
+        let model = try await loaded(MessagePinRPCClient())
         let answer = try #require(model.messages.last)
         #expect(model.canPinMessage(answer))
         #expect(!model.canPinMessage(ChatMessage(role: .hermes, text: "unsaved")))
         await model.toggleMessagePinned(answer)
-        #expect(rpc.writes.last?.0.contains("message-pins/2") == true)
         #expect(model.isMessagePinned(answer))
+        #expect(model.messagePinError == nil)
+        #expect(model.messagePinStore.pins(profile: model.sessionProfileID, sessionID: "chat").map(\.uid) == ["reply"])
         #expect(await model.messageID(forPin: try #require(model.pinnedMessages.first)) == answer.id)
-        rpc.failWrite = true
-        await model.toggleMessagePinned(answer)
-        #expect(model.isMessagePinned(answer))
-        #expect(model.messagePinError != nil)
-        rpc.failWrite = false
         await model.toggleMessagePinned(answer)
         #expect(!model.isMessagePinned(answer))
-        #expect(model.messagePinError == nil)
+        #expect(model.messagePinStore.pins(profile: model.sessionProfileID, sessionID: "chat").isEmpty)
     }
 
-    @Test func failedBubblePinKeepsErrorAfterPopoverRefresh() async throws {
-        let rpc = MessagePinRPCClient()
-        let model = try await loaded(rpc)
-        defer { model.shutdown() }
-        let actions = ConversationMessageActionState()
-        let source = ConversationTranscriptSource(
-            model: model, bots: BotModeModel(), actions: actions, voice: VoiceOutput(),
-            coordinator: ConversationTranscriptCoordinator())
-        let message = try #require(model.messages.last)
-        rpc.failWrite = true
-        source.perform(.pin, target: .init(sessionID: "chat", messageID: message.id))
-        try await waitUntil { rpc.writes.count == 1 && actions.pendingActions.isEmpty }
-        let failure = try #require(model.messagePinError)
-        #expect(failure.contains("Could not pin message"))
-        // Opening the error popover runs the same refresh from its .task.
-        await model.refreshMessagePins()
-        #expect(model.pinnedMessages.isEmpty)
-        #expect(model.messagePinError == failure)
-    }
-
-    @Test(arguments: [false, true]) func acknowledgedUpdateMustMatchRead(pinned: Bool) async throws {
-        let rpc = MessagePinRPCClient()
-        let model = try await loaded(rpc)
-        defer { model.shutdown() }
-        let message = try #require(model.messages.last)
-        if !pinned { await model.toggleMessagePinned(message) }
-        rpc.ignoreWrite = true
-        await model.toggleMessagePinned(message)
-        #expect(model.messagePinError?.contains("could not be verified") == true)
-        #expect(model.isMessagePinned(message) != pinned)
-    }
-
-    @Test func unsupportedRuntimeDoesNotExposeMutations() async throws {
-        let rpc = MessagePinRPCClient()
-        rpc.supported = false
-        let model = try await loaded(rpc)
-        #expect(!model.messagePinsSupported)
-        #expect(model.messagePinError?.contains("does not support") == true)
-        await model.toggleMessagePinned(try #require(model.messages.last))
-        #expect(rpc.writes.isEmpty)
+    @Test func storeKeepsPinsPerConversation() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pins-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = MessagePinStore(fileURL: url)
+        let pin = MessagePinRecord(rowID: 4, uid: nil, role: "user")
+        store.save([pin], profile: nil, sessionID: "a")
+        #expect(MessagePinStore(fileURL: url).pins(profile: nil, sessionID: "a") == [pin])
+        #expect(PinnedMessage(record: pin, preview: "").uid == "row:4")
+        #expect(!String(decoding: try Data(contentsOf: url), as: UTF8.self).contains("preview"))
+        #expect(store.pins(profile: nil, sessionID: "b").isEmpty)
+        #expect(store.pins(profile: "work", sessionID: "a").isEmpty)
     }
 
     @Test(arguments: [false, true]) func bubblePinClickWritesAndChangesToUnpin(mouseClick: Bool) async throws {
@@ -246,9 +169,7 @@ struct MessagePinTests {
         } else {
             #expect(pin.accessibilityPerformPress?() == true)
         }
-        try await waitUntil { !rpc.writes.isEmpty }
-        try await waitUntil { !model.isUpdatingMessagePin && actions.pendingActions.isEmpty }
-        #expect(model.isMessagePinned(try #require(model.messages.last)))
+        try await waitUntil { !model.pinnedMessages.isEmpty && actions.pendingActions.isEmpty }
         for _ in 0..<4 {
             host.layoutSubtreeIfNeeded()
             try await Task.sleep(for: .milliseconds(30))
@@ -268,7 +189,6 @@ struct MessagePinTests {
         source?.perform(.pin, target: .init(sessionID: "chat", messageID: message.id))
         source = nil
         try await waitUntil { actions.pendingActions.isEmpty }
-        #expect(rpc.writes.count == 1)
         #expect(model.isMessagePinned(message))
     }
 
@@ -284,11 +204,10 @@ struct MessagePinTests {
         source.perform(.pin, target: .init(sessionID: "chat", messageID: message.id))
         model.newChat()
         try await waitUntil { actions.pendingActions.isEmpty }
-        #expect(rpc.writes.isEmpty)
         #expect(model.pinnedMessages.isEmpty)
     }
 
-    @Test func referencesKeepStableUIDAcrossCompactionAndRejectForeignResponses() throws {
+    @Test func referencesKeepStableUIDAcrossCompaction() throws {
         let id = UUID()
         let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [
             ["id": 12, "role": "assistant", "content": "answer", "message_uid": "logical"]
@@ -297,23 +216,6 @@ struct MessagePinTests {
         let pin = PinnedMessage(rowID: 99, uid: "logical", role: "assistant", preview: "answer")
         #expect(pin.matches(reference))
         #expect(!pin.matches(StoredMessageReference(rowID: 99, uid: "foreign")))
-        #expect(throws: (any Error).self) {
-            try PinnedMessage.parse(
-                ["supported": true, "requested_session_id": "other", "pins": []], sessionID: "chat")
-        }
-    }
-
-    @Test func latePinReadCannotEnterAnotherConversation() async throws {
-        let rpc = MessagePinRPCClient()
-        let model = try await loaded(rpc)
-        rpc.pins = [["row_id": 2, "message_uid": "reply", "role": "assistant", "preview": "saved"]]
-        rpc.readDelay = .milliseconds(60)
-        let pending = Task { await model.refreshMessagePins() }
-        try await waitUntil { model.isLoadingMessagePins }
-        model.newChat()
-        await pending.value
-        #expect(model.pinnedMessages.isEmpty)
-        #expect(!model.messagePinsSupported)
     }
 
     @Test func pinJumpLoadsOlderAssistantMessageAndNeverChoosesANeighbor() async throws {
@@ -325,8 +227,11 @@ struct MessagePinTests {
                 "message_uid": "uid-\(id)",
             ]
         }
-        rpc.pins = [["row_id": 2, "message_uid": "uid-2", "role": "assistant", "preview": "message 2"]]
         let model = try await loaded(rpc)
+        model.messagePinStore.save(
+            [MessagePinRecord(rowID: 2, uid: "uid-2", role: "assistant")],
+            profile: model.sessionProfileID, sessionID: "chat")
+        await model.refreshMessagePins()
         #expect(!model.messages.contains { $0.text == "message 2" })
         let target = await model.messageID(forPin: try #require(model.pinnedMessages.first))
         #expect(model.messages.first(where: { $0.id == target })?.text == "message 2")
@@ -339,18 +244,13 @@ struct MessagePinTests {
         let rpc = MessagePinRPCClient()
         let model = try await loaded(rpc)
         for populated in [false, true] {
-            rpc.pins =
+            model.messagePinStore.save(
                 populated
-                ? [
-                    [
-                        "row_id": 1, "message_uid": "ask", "role": "user",
-                        "preview": "Keep the release checklist here so we can return to it later.",
-                    ],
-                    [
-                        "row_id": 2, "message_uid": "reply", "role": "assistant",
-                        "preview": "The changes passed verification. Finish the active turn before restarting Hermes.",
-                    ],
-                ] : []
+                    ? [
+                        MessagePinRecord(rowID: 1, uid: "ask", role: "user"),
+                        MessagePinRecord(rowID: 2, uid: "reply", role: "assistant"),
+                    ] : [],
+                profile: model.sessionProfileID, sessionID: "chat")
             await model.refreshMessagePins()
             let host = NSHostingView(rootView: MessagePinsView(model: model, onSelect: { _ in }).dockThemedRoot())
             host.frame = NSRect(x: 0, y: 0, width: 320, height: 340)

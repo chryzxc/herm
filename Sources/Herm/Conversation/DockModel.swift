@@ -64,6 +64,7 @@ final class DockModel: ObservableObject {
     var pinnedMessageUIDs: Set<String> = []
     var pinnedMessageRowIDs: Set<Int> = []
     @Published var messagePinsSupported = false
+    let messagePinStore: MessagePinStore
     @Published var isLoadingMessagePins = false
     @Published var updatingMessagePinRowID: Int?
     var isUpdatingMessagePin: Bool { updatingMessagePinRowID != nil }
@@ -478,6 +479,9 @@ final class DockModel: ObservableObject {
         voicePlayback: HermesVoicePlaybackProtocol? = nil
     ) {
         let agentStateStore = SessionAgentStateStore(fileURL: sessionAgentStateFileURL)
+        self.messagePinStore = MessagePinStore(
+            fileURL: sessionAgentStateFileURL?.deletingLastPathComponent()
+                .appendingPathComponent("message-pins-v1.json"))
         self.agentStateStore = agentStateStore
         self.agentStateWriter = SessionAgentStateWriter(store: agentStateStore)
         self.agentStateBySessionID = agentStateStore.load()
@@ -514,11 +518,11 @@ final class DockModel: ObservableObject {
             DebugLog.write("model: Hermes connection \(connected ? "online" : "offline")")
             if connected {
                 self?.replayTrackedGatewayEvents()
+                if let gateway = self?.gateway, gateway.isLocal { HermesBundledPlugins.ensure(client: gateway) }
             } else {
                 DeveloperWorkflowModel.shared.turnBaselines.removeAll()
             }
         }
-                if let gateway = self?.gateway, gateway.isLocal { HermesBundledPlugins.ensure(client: gateway) }
     }
 
     var sendQueuedPromptAfterInterrupt = false
