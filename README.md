@@ -326,6 +326,7 @@ Active navigation, icon rails, inspector tabs, and open sidebar toggles keep
 visible selection treatments at rest, with filled icons and stronger ink. Liquid Glass
 uses a tonal fill without a leading line. Selected
 content rows retain a fine contour across translucent and solid skins.
+Glass controls have clearer outlines in light and dark appearances.
 
 All skins retain their own visual identity with balanced surface steps, clearer
 supporting text, and quieter depth. Paper skins keep warm stock and ink; dark
@@ -397,6 +398,7 @@ when the conversation column is narrower than 800pt, including when opening or r
 the third panel leaves too little space. Widening the column restores the chosen visibility.
 The card is titled **Session overview** when no repository is selected.
 Its sections summarize pending questions and approvals, the session task plan,
+delegated subagents, workspace checkpoints (with diff and a confirmed restore),
 outputs, pinned messages, and the current workspace alongside Changes and PRs.
 Tasks share the composer's status indicators and ordering: in-progress tasks first,
 pending next, and completed or cancelled tasks last. The active task remains visible
@@ -486,9 +488,11 @@ the normal sections. Search does not scan unloaded transcript history.
 Chats has two layouts: **List** (one conversation beside your sessions) and **Tiles**
 (every session at once). Switch with the **Tiles** layout menu in the header or
 **Chat tiles** under **New chat** in the sidebar. **Settings → Chat → Layout → Default chat
-view** chooses which layout the Chats rail button opens. Tiles cover the selected bot
-profile's loaded recent, pinned, project, and active sessions; it is not a complete
-historical archive.
+view** chooses which layout the Chats rail button opens. Tiles cover every bot's
+loaded recent, pinned, project, and active sessions in one board, with no bot picker;
+with several bots each tile shows its bot avatar and name. It is not a complete historical archive.
+Opening a tile from another bot switches to that bot.
+The **Ready to review** header has a **Mark all as read** button at its trailing edge that clears every tile listed there (respecting the search and project filters).
 
 Tiles are grouped into **Needs you** (approval, question, failure), **In progress**,
 **Ready to review**, and **Recent** (collapsed by default), using the same runtime and
@@ -512,7 +516,7 @@ and New chat at the trailing edge. From a tile you can:
   are disabled until its turn finishes.
 - **Stop** a working turn that Herm's gateway owns. Runs started in another process,
   such as `hermes chat` in a terminal, show progress but cannot be stopped from Herm.
-- **New chat** opens the regular composer in a modal above the tiles, using the
+- **New chat** opens the regular composer in a focused modal above the tiles, using the
   selected bot. **Open workspace** moves it into the full conversation workspace.
 - **Open** the full conversation by clicking the title. It opens in a sheet with the
   regular composer, attachments, and steering; **Open workspace** opens its full tools.
@@ -580,7 +584,7 @@ Hermes Agent Desktop [also documents voice mode](https://hermes-agent.nousresear
 
 ### Pull requests
 
-Wide pull request summaries separate the description/activity column from the details sidebar with a themed vertical hairline.
+Selected pull request and issue cards use a themed fill and outline. Wide pull request summaries separate the description/activity column from the details sidebar with a themed vertical hairline.
 
 - The pull request detail uses a ChatGPT-inspired open reading layout: Summary, Changes with line totals, and Reviews tabs; description and activity in the main column; and changes, reviewers, checks, readiness, and metadata on the right. Narrow panes stack the columns. The header separates the tabs from a labeled pull request actions row, which wraps in narrow panes. Compact tabs omit line totals, which remain in the summary. Expand Changes for file categories and partial-coverage notices. The Merge dropdown opens protected landing controls from the toolbar.
 - On the standalone Pull Requests page, a floating bottom-right **Chat** panel uses the session chat’s composer, message bubbles, activity, and reply actions. Minimized and expanded chat float over the page without reserving a bottom strip. PR content remains visible around the panel in Summary, Changes, and Reviews. Each PR links to its own Hermes session under the default bot profile; reopening the PR, including after restarting Herm, resumes that conversation. PR context accompanies messages, and the selected workspace conversation and attachments stay separate. Minimize the panel or open its linked conversation in the workspace.
@@ -935,6 +939,7 @@ also finishes.
 - A 3D office where each bot has its own character. Bots using Herm Faces appear as matching 3D Herm characters with their seeded shape, eyes, and skin-aware color; bots with custom artwork keep the robot. Avatar changes update the character in place. Bots with running work sit at computers, bots in review go to Mission Control, and bots that are planning use the Kanban room. Idle bots take coffee breaks and walk around the garden.
 - Idle bots start at randomly chosen, unoccupied activities around the office. Positions are saved locally every ten seconds and when leaving Office, and restored after app relaunch. Active work still determines working bots’ destinations.
 - Task ownership and status come live from Hermes. The movement and gestures are only visual.
+- Compact status counts above the scene focus the next bot in each state.
 - Includes camera presets, keyboard camera navigation, and Reduce Motion support.
 - Office's warm lighting finish uses reusable GPU buffers to reduce the rendering cost during longer visits.
 - Hover the lounge record player to see what's playing in the Spotify app, play or pause, and skip tracks. macOS asks once for permission to control Spotify; no Spotify login is needed.
@@ -1111,7 +1116,7 @@ Herm uses Apple's on-device language model (the Foundation Models framework) for
 
 Confirmed automation runs show Starting immediately, then Running only when Hermes reports an active execution. The selected automation refreshes its status and history automatically; uncertain submissions require review before another run.
 
-- **Automations**: view, create, edit, pause, resume, run, and remove Hermes cron jobs. A searchable schedule sidebar, compact summary band, and outcome-labelled history keep recurring work easy to scan. Violet schedule accents complement green successes, amber warnings, and red failures, with theme-aware neutral colors in Monochrome and E-Ink. Creation and editing include delivery, working directory, and model/provider overrides. Run history uses Hermes-recorded session identities; agent reports and script-only output previews stay attached to their owning job and profile. Failed reads and rejected changes remain visible.
+- **Automations**: view, create, edit, pause, resume, run, and remove Hermes cron jobs. A searchable schedule list, compact summary band, and outcome-labelled history keep recurring work easy to scan. Violet schedule accents complement green successes, amber warnings, and red failures, with theme-aware neutral colors in Monochrome and E-Ink. Creation and editing include delivery, working directory, and model/provider overrides. Run history uses Hermes-recorded session identities; agent reports and script-only output previews stay attached to their owning job and profile. Failed reads and rejected changes remain visible.
 - The Quota page, chat composer, and notch Quota tab share one quota inventory, including provider names, readings, reset times, and the tightest remaining window. Session model responses do not supply a separate quota reading.
 - **Quota**: remaining allowance for Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity. Its toolbar highlights Add account, groups automatic refresh and peak-hour sync, and keeps the last update time above the controls. Controls stack in narrow windows. The Add account dialog keeps provider names readable, shows readable sign-in instructions in a stable layout, and offers Done after Hermes confirms success.
 - **Herm updates**: the installed app checks [GitHub Releases](https://github.com/chryzxc/herm/releases) every few hours, downloads and verifies the new DMG, and installs it once no turn is running, rolling back if the swap or relaunch fails. **Settings → Updates** shows the status with **Check for updates** and **Restart now**. Automatic installation requires a Developer ID signed build and an update signed by the same team, plus a valid SHA-256 checksum. Ad-hoc/development builds and copies Herm cannot write to require manual updates.
@@ -1256,8 +1261,9 @@ The debug launcher and packaging script accept `HERM_CODESIGN_IDENTITY`, passed
 as one quoted argument to `codesign`. Set it to the name or SHA-1 fingerprint of
 a valid code-signing certificate listed by `security find-identity -v -p codesigning`.
 Use the same certificate for successive builds. When the variable is unset, the
-debug launcher uses a certificate named `Herm Development` if one exists. You can
-create it in Keychain Access → Certificate Assistant → Create a Certificate
+debug launcher uses a certificate named `Herm Development` if one exists, otherwise
+the free `Apple Development` certificate Xcode creates under Settings → Accounts →
+Manage Certificates. You can create `Herm Development` in Keychain Access → Certificate Assistant → Create a Certificate
 (Identity Type: Self Signed Root, Certificate Type: Code Signing). This also stops
 repeated Keychain prompts for saved credentials. Signing failures stop the script;
 it never silently falls back from a configured certificate to ad-hoc signing.
@@ -1390,3 +1396,5 @@ User-message bubbles follow the selected text size, including when it changes wh
 Generated HTML previews inherit the selected text size and update without resetting interactive inputs; authored styles may override the default.
 
 The model chip shows the provider mark and current thinking effort. Its picker groups models by provider, marks the active model with a check inside a matching circle, offers catalog search, and includes thinking effort and fast controls alongside model selection, with the selected effort marked by a check. The picker stays open while changing models or refreshing the catalog.
+
+Automation opens with a searchable schedule overview; select a schedule to inspect its history, configuration, and run output.

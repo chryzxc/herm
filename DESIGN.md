@@ -100,7 +100,8 @@ and neon skins retain their own selection vocabulary. Selected icons use primary
 ink (canvas ink on inverted fills). Compact text navigation and inspector tabs use
 this shared treatment. Icon-only rails and sidebar toggles use filled active glyphs
 and outline inactive glyphs without persistent boxes or selection bars. Selected content rows use a 1pt contour
-so translucent material cannot erase their state. Hover alone never signals selection.
+so translucent material cannot erase their state; pull request and issue cards rely on that contour and their
+themed fill without an additional leading bar. Hover alone never signals selection.
 
 ### Skin refinement
 
@@ -299,7 +300,7 @@ use `shape.dockSurfaceFill(fallback)` (glass on Glass, `fallback` elsewhere),
 pills keep plain tints. Only floating panels use elevated (native,
 shadow-casting) glass. Buttons use shadowless glass in both modes, with opaque
 graphite tint on primary actions and a frosted secondary body. Inline rims adapt
-to the appearance: a dark contour on Light and a subdued highlight on Dark. Light
+to the appearance: a visible dark contour on Light and a light contour on Dark. Light
 controls place white frost above the blur material, with darker supporting ink
 and a neutral tint on selected tabs. Inline glass is shadowless, and no `.shadow` is stacked on
 glass. E-Ink inverts selected tabs and disables all animation. Swiss drops
@@ -449,8 +450,12 @@ shared fill or marker treatment without an additional underline.
 **Session rail.** Chat has a stacked-cards Show/Hide session rail icon immediately before
 Conversation actions. The summary card includes Needs attention (current approvals,
 questions, and value prompts), Tasks (the selected session's Hermes todo plan),
-Outputs (the existing session artifact index), Pinned items (canonical message pins),
-and Workspace (path and a matching fresh Git snapshot). Omit sections without data.
+Subagents (this session's delegated workers, live state overriding history, with
+View in timeline), Checkpoints (`rollback.list` for the session workspace; Show diff
+inline and a confirmed Restore that is disabled mid-turn and reloads the transcript
+Hermes rewinds), Outputs (the existing session artifact index), Pinned items
+(canonical message pins), and Workspace (path and a matching fresh Git snapshot).
+Omit sections without data.
 Tasks and the composer reuse `TodoPlanTaskList`: in-progress tasks first, pending
 tasks next, and completed/cancelled tasks last, preserving original order within each
 group and original slots for identity. The active task has a progress indicator,
@@ -734,6 +739,22 @@ that bakes colors into attributed text must re-render when the theme revision
 changes, even if its text is unchanged. Unknown local or hub skins remain visible as
 read-only inventory and are disabled until an explicit Herm palette mapping
 exists.
+
+### Workspace shell
+
+Every desktop destination renders inside `DockWorkspaceShell`
+(`DesignSystem/DockWorkspaceShell.swift`): a tinted chrome frame (icon rail and
+title row, `Color.dockSidebar`) around one rounded content card painted with
+`Color.dockCanvas`. Pages never paint their own frame, corner or card edge.
+
+- Left-hand panes inside the card (session lists, navigation) use
+  `Color.dockCanvas` so the curve stays visible. Only the rail and title rows
+  use `dockSidebar`.
+- The title-row divider comes from `DockWindowChrome.titleRowSeparator`, which
+  draws only on flat skins; the card edge divides the row elsewhere.
+- Shell metrics (margin, radius, flat) live in `DockShell`. Change them there.
+- Use `.dockShellPane()` for panes inside the card and `.dockShellChrome()` for rail and title rows.
+  `make shell-contract` (part of `make guard`) rejects raw `dockSidebar` and `sidebarBackground` in pages.
 
 ## Layout and interaction rules
 
@@ -1378,7 +1399,7 @@ Reduce Motion.
 The office container is a game-style HUD over the scene. All panels share one
 floating treatment: canvas at 92% opacity, a hairline border, a 12pt radius and
 a shadow. It has four parts:
-- **Status bar (top left):** a chip for each status with its live count. The
+- **Status bar (top left):** compact controls for each status with its live count. The
   Not current chip appears only when data is stale. A chip cycles the camera and
   selection through the bots in that status, and it is disabled at zero.
 - **Crew roster (left, toggleable):** bots sorted by status priority. Rows show
@@ -1693,11 +1714,10 @@ is never rendered as a fabricated meter or percentage.
 
 Confirmed runs use the existing status slot for Starting, Running, and unavailable or uncertain feedback. Refresh inventory and history while the selected automation is visible without treating a pending request as a confirmed execution.
 
-The Automation destination uses a full-height schedule list, a selected schedule
-workspace, and a resizable run inspector at wide widths. The list collapses to a
-picker when the workspace beside the inspector is narrow or through the sidebar toggle. Inset rows show the name,
-humanized cadence, labelled last outcome, and next run. Selection uses the theme's
-accent fill and leading marker; two-line titles remain readable and rows are keyboard-accessible buttons. Search filters by
+The Automation destination opens with a full-height schedule list, then a selected schedule
+workspace and a resizable run inspector at wide widths. A compact list header keeps search
+beside the work it filters. Rows show the name, humanized cadence, labelled last outcome,
+and next run; two-line titles remain readable and rows are keyboard-accessible buttons. Search filters by
 name or job ID and shows an explicit no-matches state.
 
 The selected schedule header carries Active, Overdue, or Paused, cadence and
@@ -3451,7 +3471,7 @@ Chats offers List and Tiles layouts. Settings → Chat → Layout stores the def
 to Chats or reopening Herm restores it. There is one Chats rail destination, selected
 for either layout. Explicit session links and sidebar New chat open the conversation workspace
 without overwriting the preferred layout. The grid's page title is Chats, with New chat
-and Bot controls and no modal Close action. Use `DockExpandedPage`
+control and no modal Close action. There is no bot picker: tiles show every bot's chats at once. Use `DockExpandedPage`
 for the title row and a full-width adaptive grid (320pt minimum card width, no maximum so
 columns always fill the row; 16pt gaps) under collapsible `DockSectionHeader` groups with counts;
 Recent starts collapsed. A quiet two-row toolbar puts a skin-shaped search field
@@ -3459,7 +3479,9 @@ and project `DockMenuPicker` above the `DockSegmentedPicker` status filters and
 counts. Status filters scroll horizontally when the full set cannot fit. Header
 controls use a single outlined layout menu with a grid icon and Tiles label,
 with List and Tiles choices and a checkmark for the current layout. There is no
-tab strip or selection bar. The bot picker follows, then New chat with a plus icon.
+tab strip or selection bar. New chat with a plus icon follows. When several bots exist, each tile
+shows its bot avatar (16pt) and name beside its project in the reserved metadata line. The Ready to review section header carries a trailing 24pt
+checks `DockIconButton` (Mark all as read), matching the sidebar Recents header.
 Refresh, layout, bot, and New chat share the compact 28pt toolbar size and 8pt gaps;
 the selected avatar is 18pt so it fits within that height. Narrow panels split
 controls into navigation and conversation-action rows when needed.
@@ -3485,7 +3507,8 @@ outline. Errors pass through `safeSummary` and appear in the footer.
 Visible cards read a bounded tail of saved messages without resuming sessions.
 Respond opens a separate conversation sheet; no empty chat pane occupies the grid.
 New chat starts a fresh conversation with the selected bot in that same sheet,
-keeping the tiles visible behind it. It renders the regular composer and transcript;
+keeping the tiles visible behind it. The focused sheet uses a single expanded-page header
+with Open workspace and Close actions, and renders the regular composer and transcript;
 Open workspace switches to the full conversation workspace. Closing the sheet does
 not send a message or discard its unsent draft. Profile changes dismiss the sheet.
 Cards use shared surface and border tokens, skin-owned pane geometry, and 16pt insets. Hover
@@ -3640,8 +3663,10 @@ Create bot share the picker header. Face generation sits beside its own heading
 below the grid. Connection feedback stays in a fixed subtitle slot above the grid.
 Skin selection uses an adaptive preview grid (240pt minimum width, 12pt gaps).
 Each whole tile is selectable, with the existing skin specimen above a consistent
-name/signature row and reserved selection checkmark. Top island retains its
-Island skin and disables the gallery with guidance to switch to Side.
+name/signature row and reserved selection checkmark. The top island is always
+pure black to match the camera housing, whatever skin Herm wears.
+Changing skin plays a circular reveal that grows from the pointer across every
+window (skipped with Reduce Motion).
 Plugin enablement and missing-face generation require confirmation of their
 Hermes scope. Existing avatars are preserved. Unavailable, malformed, disabled,
 and restart-required runtime states disable bot actions and retain a fixed
@@ -3918,3 +3943,7 @@ the page name changes. Empty, untitled, and URL-only titles retain the generic
 Browser label (with the existing number for additional tabs).
 
 The model chip shows the current thinking effort beside the model name. The picker stays open for model selection and catalog refresh, with vertical insets around its contents. The model picker keeps provider marks beside a search field and compact model list. Matching leading circles mark model choices, with a check identifying the active model; available thinking effort choices wrap into a compact grid below the choices, with a check and contour identifying the selected effort, with fast and catalog actions separated by a divider.
+
+### Automation overview
+
+Automation starts with a full-width searchable schedule list. Selecting a schedule opens its details and history; All automations returns to the list. Run output opens on request, keeping the overview and details focused.
