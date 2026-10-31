@@ -585,7 +585,7 @@ extension DockPopover {
         VStack(spacing: 0) {
             if fullscreenSurface == .bots, let room = openGroupRoom {
                 GroupChatView(
-                    store: botMode.groupChats, botMode: botMode, roomID: room.id,
+                    store: botMode.groupChats, botMode: botMode, roomID: room.id, metrics: conversationMetrics,
                     toolbar: { identity, actions in
                         AnyView(conversationToolbar(identity: identity, groupActions: actions))
                     }

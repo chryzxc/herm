@@ -148,6 +148,42 @@ struct GroupChatSidebarRow: View {
     }
 }
 
+/// A thread tab: titles are clipped until hovered, then ease open to their full text.
+private struct GroupThreadChip: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let title: String
+    let isSelected: Bool
+    let onClose: (() -> Void)?
+    let onSelect: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Button(action: onSelect) {
+                Text(title)
+                    .dockFont(.body, weight: isSelected ? .semibold : .regular)
+                    .lineLimit(1)
+                    .frame(maxWidth: isHovered ? 480 : 110, alignment: .leading)
+            }
+            .buttonStyle(.dockHover)
+            if let onClose {
+                Button(action: onClose) {
+                    DockIcon(.x, size: 10, color: Color.dockSecondaryText).frame(width: 16, height: 16)
+                }
+                .buttonStyle(.dockHover)
+                .help("Close thread")
+                .accessibilityLabel("Close \(title)")
+            }
+        }
+        .dockPadding(.horizontal, 10)
+        .frame(height: 24)
+        .background(Capsule().fill(isSelected ? Color.dockAccentMuted : Color.dockSurface2))
+        .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+        .onHover { isHovered = $0 }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: isHovered)
+    }
+}
+
 struct NewGroupChatSheet: View {
     @ObservedObject var store: GroupChatStore
     let bots: [BotSummary]
@@ -347,6 +383,8 @@ struct GroupChatView: View {
     @ObservedObject var botMode: BotModeModel
     let roomID: String
     /// Wraps the room's name and actions in the app's conversation toolbar.
+    /// The same reading and composer widths as the normal conversation.
+    var metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: true)
     let toolbar: (AnyView, AnyView) -> AnyView
     let onDisbanded: () -> Void
     @Environment(\.dockWorkspaceScale) private var workspaceScale
@@ -373,9 +411,6 @@ struct GroupChatView: View {
     /// Threads hidden from the bar; their messages stay in the room. Cleared when the room changes.
     @State private var closedThreads: Set<String> = []
     @State private var showingInsertPopover = false
-    @State private var modelOptions: [HermesModelOption] = []
-    @State private var modelMemberID: String?
-    @State private var pendingModel: (detail: BotProfileDetail, message: String)?
 
     private var room: GroupRoom? { store.rooms.first { $0.id == roomID } }
     private var allEvents: [GroupRoomEvent] { store.events[roomID] ?? [] }
@@ -395,7 +430,7 @@ struct GroupChatView: View {
         return ids.map { id in
             guard id != GroupChatStore.mainThreadID else { return (id, "Main") }
             let first = allEvents.first { $0.threadID == id && $0.kind == .user }?.text ?? "New thread"
-            return (id, String(first.prefix(28)))
+            return (id, String(first.prefix(120)))
         }
     }
     /// Threads newest-activity first, each labelled with its title and last activity (✓ marks the open one).
@@ -457,21 +492,6 @@ struct GroupChatView: View {
             closedThreads = []
         }
         .onChange(of: room == nil) { _, gone in if gone, store.isAvailable { onDisbanded() } }
-        .task {
-            modelOptions = await botMode.modelOptions().flatMap { group in
-                group.models.map { HermesModelOption(provider: group.provider, model: $0) }
-            }
-        }
-        .alert(
-            "Confirm model", isPresented: Binding(get: { pendingModel != nil }, set: { if !$0 { pendingModel = nil } })
-        ) {
-            Button("Cancel", role: .cancel) {}
-            Button("Use model") {
-                if let detail = pendingModel?.detail { Task { await applyModel(detail, confirmed: true) } }
-            }
-        } message: {
-            Text(pendingModel?.message ?? "")
-        }
         .task(id: roomID) {
             while !Task.isCancelled {
                 await store.poll(roomID)
@@ -523,9 +543,6 @@ struct GroupChatView: View {
 
     private var headerActions: some View {
         HStack(spacing: 4) {
-            if isWorking {
-                DockAsyncButton(action: { await store.stop(roomID) }) { DockIconLabel("Stop", icon: .stop) }
-            }
             DockMenu {
                 Button("New thread") { startThread() }
                 if threads.count > 1 {
@@ -596,30 +613,10 @@ struct GroupChatView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(threads, id: \.id) { item in
-                    HStack(spacing: 2) {
-                        Button {
-                            thread = item.id
-                        } label: {
-                            Text(item.title)
-                                .dockFont(.body, weight: item.id == thread ? .semibold : .regular)
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(.dockHover)
-                        if item.id != GroupChatStore.mainThreadID {
-                            Button {
-                                closeThread(item.id)
-                            } label: {
-                                DockIcon(.x, size: 10, color: Color.dockSecondaryText).frame(width: 16, height: 16)
-                            }
-                            .buttonStyle(.dockHover)
-                            .help("Close thread")
-                            .accessibilityLabel("Close \(item.title)")
-                        }
-                    }
-                    .dockPadding(.horizontal, 10)
-                    .frame(height: 24)
-                    .background(Capsule().fill(item.id == thread ? Color.dockAccentMuted : Color.dockSurface2))
-                    .foregroundStyle(item.id == thread ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    GroupThreadChip(
+                        title: item.title, isSelected: item.id == thread,
+                        onClose: item.id == GroupChatStore.mainThreadID ? nil : { closeThread(item.id) }
+                    ) { thread = item.id }
                 }
                 Button {
                     startThread()
@@ -689,8 +686,9 @@ struct GroupChatView: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .frame(maxWidth: 820)
-                .dockPadding(20)
+                .dockPadding(.horizontal, metrics.contentInset)
+                .dockPadding(.vertical, 12)
+                .frame(maxWidth: metrics.readingWidth)
                 .frame(maxWidth: .infinity)
             }
             .onChange(of: events.count) { proxy.scrollTo("bottom", anchor: .bottom) }
@@ -987,7 +985,6 @@ struct GroupChatView: View {
                     }
                     .buttonStyle(.dockHover)
                     .help("Mention a member")
-                    memberModelPicker
                     Spacer()
                     Button(action: isWorking ? { Task { await store.stop(roomID) } } : send) {
                         ZStack {
@@ -1028,72 +1025,11 @@ struct GroupChatView: View {
                     }
             }
         }
-        .frame(maxWidth: 820)
-        .dockPadding(20)
+        .dockPadding(.horizontal, metrics.composerInset)
+        .dockPadding(.top, metrics.composerTopInset)
+        .dockPadding(.bottom, metrics.composerBottomInset)
+        .frame(maxWidth: metrics.composerMaxWidth)
         .frame(maxWidth: .infinity)
-    }
-
-    /// Members run on their own bot profiles, so the room has no single model:
-    /// pick a local member, then its model. Remote members keep their Mac's settings.
-    @ViewBuilder
-    private var memberModelPicker: some View {
-        let locals = (room?.members ?? []).filter { !$0.isRemote && botMode.botsByID[$0.profile] != nil }
-        if let member = locals.first(where: { $0.memberID == modelMemberID }) ?? locals.first,
-            let bot = botMode.botsByID[member.profile]
-        {
-            HStack(spacing: 2) {
-                DockMenu {
-                    ForEach(locals, id: \.memberID) { item in
-                        Button(item.displayName) { modelMemberID = item.memberID }
-                    }
-                } label: {
-                    BotAvatarView(
-                        bot: bot, imageData: botMode.avatarImages[bot.id], size: 18,
-                        orbits: thinkingMembers.contains { $0.memberID == member.memberID })
-                }
-                .buttonStyle(.dockHover)
-                .fixedSize()
-                .help("Choose whose model to change")
-                ModelPickerView(
-                    options: modelOptions,
-                    selectedID: bot.provider.flatMap { provider in bot.model.map { "\(provider)|\($0)" } },
-                    isRefreshing: false,
-                    refreshError: nil,
-                    onRefresh: {
-                        Task {
-                            modelOptions = await botMode.modelOptions().flatMap { group in
-                                group.models.map { HermesModelOption(provider: group.provider, model: $0) }
-                            }
-                        }
-                    },
-                    onSelect: { option in
-                        Task {
-                            guard var detail = await botMode.profileDetail(for: bot) else { return }
-                            detail.provider = option.provider
-                            detail.model = option.model
-                            await applyModel(detail, confirmed: false)
-                        }
-                    }
-                )
-            }
-            .dockFont(.control)
-            .foregroundStyle(Color.dockSecondaryText)
-            .dockPadding(.horizontal, 8)
-            .frame(height: 28)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .fill(DockSkinPresentation.current.composerControlFill)
-            )
-            .help("\(member.displayName)'s model — changes the bot everywhere")
-        }
-    }
-
-    private func applyModel(_ detail: BotProfileDetail, confirmed: Bool) async {
-        switch await botMode.applyProfileEdit(detail, confirmExpensiveModel: confirmed) {
-        case .applied: store.errorMessage = nil
-        case .needsConfirmation(let message): pendingModel = (detail, message)
-        case .failed(let message): store.errorMessage = message
-        }
     }
 
     private func send() {
