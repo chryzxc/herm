@@ -49,7 +49,7 @@ class SimulatorTests(unittest.TestCase):
     @patch.object(p.Path, 'is_file', return_value=False)
     def test_missing_bridge_reports_setup(self, is_file):
         result = json.loads(p.interact(dict(action='capture', platform='ios', device_id='exact')))
-        self.assertIn('setup-simulator-bridge.sh', result['error'])
+        self.assertIn('setting up simulator controls', result['error'])
 
     def test_project_detection_and_ambiguity(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -67,7 +67,8 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(p.choose([a, b], None), b)
         self.assertEqual(p.choose([a, b], 'a'), a)
         self.assertIsNone(p.choose([a, b], 'unknown'))
-        self.assertIsNone(p.choose([a, dict(b, running=False)], None))
+        self.assertEqual(p.choose([a, dict(b, running=False)], None), a)
+        self.assertIsNone(p.choose([], None))
         self.assertIsNone(p.choose([a, dict(a, id='duplicate')], 'Phone'))
 
     @patch.object(p, 'ios_inventory')
@@ -86,11 +87,27 @@ class SimulatorTests(unittest.TestCase):
 
     @patch.object(p, 'ios_inventory')
     @patch.object(p, 'launch_ios')
-    def test_ambiguous_device_and_list_never_launch(self, launch, inventory):
+    def test_unknown_device_and_list_never_launch(self, launch, inventory):
         inventory.return_value = [dict(id=str(i), name=str(i), running=False) for i in range(2)]
-        self.assertEqual(json.loads(p.handle(dict(action='launch', platform='ios')))['status'], 'selection_required')
+        self.assertEqual(json.loads(p.handle(dict(action='launch', platform='ios', device='x')))['status'], 'selection_required')
         self.assertEqual(json.loads(p.handle(dict(action='list', platform='ios')))['status'], 'devices')
         launch.assert_not_called()
+
+    @patch.object(p, 'ios_inventory')
+    @patch.object(p, 'launch_ios', return_value='0')
+    def test_nothing_booted_boots_preferred_device(self, launch, inventory):
+        inventory.return_value = [dict(id=str(i), name=str(i), running=False) for i in range(2)]
+        self.assertEqual(json.loads(p.handle(dict(action='launch', platform='ios')))['device_id'], '0')
+        launch.assert_called_once_with(inventory.return_value[0])
+
+    @patch.object(p, 'run')
+    @patch.object(p, 'executable', return_value='/usr/bin/xcrun')
+    def test_inventory_prefers_newest_iphone(self, executable, run):
+        run.return_value = json.dumps({'devices': {
+            'com.apple.CoreSimulator.SimRuntime.iOS-26-5': [dict(udid='pad', name='iPad Air', state='Shutdown', isAvailable=True)],
+            'com.apple.CoreSimulator.SimRuntime.iOS-18-0': [dict(udid='old', name='iPhone 15', state='Shutdown', isAvailable=True)],
+            'com.apple.CoreSimulator.SimRuntime.iOS-26-4': [dict(udid='new', name='iPhone 17', state='Shutdown', isAvailable=True)]}})
+        self.assertEqual([d['id'] for d in p.ios_inventory()], ['new', 'old', 'pad'])
 
     @patch.object(p, 'run')
     @patch.object(p, 'executable', return_value='/usr/bin/xcrun')

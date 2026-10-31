@@ -1,5 +1,5 @@
 name: herm-simulator
-version: 1.1.0
+version: 1.2.0
 description: Launch, inspect, and navigate local iOS and Android devices presented in Herm.
 author: Herm
 kind: standalone

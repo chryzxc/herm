@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Matches browser annotation: select, describe the change, Cancel or Send to the draft.
+/// Matches browser annotation: select, describe the change, Cancel or Send to the chat.
 struct SessionSimulatorAnnotation: View {
     let label: String
     let cancel: () -> Void
