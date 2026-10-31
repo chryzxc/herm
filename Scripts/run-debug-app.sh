@@ -21,6 +21,20 @@ if [ -z "${HERM_CODESIGN_IDENTITY:-}" ]; then
         # Pin by fingerprint: several "Apple Development" certificates can coexist.
         HERM_CODESIGN_IDENTITY=$(printf '%s\n' "$identities" | awk '/"Apple Development:/ { print $2; exit }')
     fi
+    if [ -z "$HERM_CODESIGN_IDENTITY" ]; then
+        # Neither exists: make a local self-signed one once, so ad-hoc rebuilds stop re-prompting.
+        cert_dir=$(mktemp -d)
+        if /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=Herm Development" \
+            -addext "keyUsage=critical,digitalSignature" -addext "extendedKeyUsage=critical,codeSigning" \
+            -keyout "$cert_dir/key.pem" -out "$cert_dir/cert.pem" >/dev/null 2>&1 &&
+            /usr/bin/openssl pkcs12 -export -inkey "$cert_dir/key.pem" -in "$cert_dir/cert.pem" \
+                -passout pass:herm -out "$cert_dir/herm.p12" >/dev/null 2>&1 &&
+            security import "$cert_dir/herm.p12" -k "$HOME/Library/Keychains/login.keychain-db" \
+                -P herm -T /usr/bin/codesign >/dev/null 2>&1; then
+            HERM_CODESIGN_IDENTITY="Herm Development"
+        fi
+        rm -rf "$cert_dir"
+    fi
 fi
 SIGNING_IDENTITY="${HERM_CODESIGN_IDENTITY:--}"
 
