@@ -39,7 +39,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .notebook: "Notebook"
         case .hud: "HUD"
         case .storm: "Storm"
-        case .island: "Island"
+        case .island: "Onyx"
         }
     }
     var signature: String {
@@ -64,7 +64,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .notebook: "Pencil & paper"
         case .hud: "Night instruments"
         case .storm: "Neon rain"
-        case .island: "Pure black"
+        case .island: "Black frame"
         }
     }
     var detail: String {
@@ -90,7 +90,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .notebook: "Ruled cream paper, blue accents, pencil outlines, and highlighter selection."
         case .hud: "Cyan instruments, crosshair grid, chamfered panels, and fine corner brackets."
         case .storm: "Storm-night indigo, matte blue controls, falling rain streaks, and crisp selection bars."
-        case .island: "Pure black surfaces and white type that blend with the camera notch. Used by the top island."
+        case .island: "Near-black frame around a dark gray rounded card, with white type."
         }
     }
     var appearance: DockThemeAppearance {
@@ -192,7 +192,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .island:
             DockThemeStyle(
                 controlRadius: 14, paneRadius: 22, outlineWidth: 0, motion: .float, pressScale: 0.97, cardFill: 1,
-                neutralUserBubble: true)
+                neutralUserBubble: true, tintedSidebar: true)
         }
     }
 }
@@ -345,6 +345,12 @@ struct DockThemePalette {
         metadata: String, accent: String, selected: String, divider: String, success: String, warning: String,
         destructive: String
     )
+    /// Pure black for the top notch, which must match the camera housing in every skin.
+    fileprivate static let notchRoles: Roles = (
+        "#000000", "#141414", "#0A0A0A", "#262626", "#D8D8DB", "#BEBEC4", "#9C9CA5", "#F5F5F7", "#2C2C2E",
+        "#2A2A2C", "#30D158", "#FF9F0A", "#FF453A"
+    )
+
     fileprivate static func roles(_ theme: DockThemeID, dark isDark: Bool) -> Roles {
         var roles = baseRoles(theme, dark: isDark)
         guard theme != .mono && theme != .eInk else { return roles }
@@ -456,7 +462,7 @@ struct DockThemePalette {
             )
         case .island:
             return (
-                "#000000", "#141414", "#0A0A0A", "#262626", "#D8D8DB", "#BEBEC4", "#9C9CA5", "#F5F5F7", "#2C2C2E",
+                "#171717", "#1F1F1F", "#1C1C1C", "#2A2A2A", "#D8D8DB", "#BEBEC4", "#9C9CA5", "#F5F5F7", "#2C2C2E",
                 "#2A2A2C", "#30D158", "#FF9F0A", "#FF453A"
             )
         case .dusk:
@@ -535,8 +541,12 @@ struct DockThemePalette {
     var success: Color { resolvedTokens.success }
     var warning: Color { resolvedTokens.warning }
     var destructive: Color { resolvedTokens.destructive }
-    /// Rail and session list; tinted skins set them apart from the chat page.
-    var sidebarBackground: Color { theme.style.tintedSidebar ? surface2 : background }
+    /// Rail and title rows; tinted skins set this chrome apart from the rounded content card.
+    var sidebarBackground: Color {
+        // Onyx keeps surface2 as a raised fill for controls, so its frame is a dedicated near-black.
+        if theme == .island { return Color(nsColor: NSColor(hex: "#050505")) }
+        return theme.style.tintedSidebar ? surface2 : background
+    }
     var swatches: [Color] {
         neonHues.isEmpty
             ? [background, selectedFill, primaryText, accent, success]
@@ -565,15 +575,19 @@ private struct Tokens {
             }
             let lightColor = resolved(light, alpha: nativeLightAlpha ?? nativeAlpha)
             let darkColor = resolved(dark, alpha: nativeAlpha)
-            switch theme.appearance {
-            case .light: return Color(nsColor: lightColor)
-            case .dark: return Color(nsColor: darkColor)
-            case .system:
-                return Color(
-                    nsColor: NSColor(name: nil) { appearance in
-                        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? darkColor : lightColor
-                    })
-            }
+            // The top notch window carries `DockThemeStore.notchAppearance`; it always resolves the black
+            // Island roles so it matches the camera housing whatever skin the rest of Herm wears.
+            let notchColor = NSColor(hex: pick(DockThemePalette.notchRoles))
+            return Color(
+                nsColor: NSColor(name: nil) { appearance in
+                    if appearance.name == DockThemeStore.notchAppearance.name { return notchColor }
+                    switch theme.appearance {
+                    case .light: return lightColor
+                    case .dark: return darkColor
+                    case .system:
+                        return appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? darkColor : lightColor
+                    }
+                })
         }
         accents = DockAccentColor.allCases.map { accent in
             color { roles in
@@ -618,7 +632,7 @@ extension Color {
     static let dockLightGlassEdge = Color(
         nsColor: NSColor(name: nil) {
             $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua
-                ? NSColor.black.withAlphaComponent(0.10) : NSColor.white.withAlphaComponent(0.08)
+                ? NSColor.black.withAlphaComponent(0.24) : NSColor.white.withAlphaComponent(0.22)
         })
     static let dockGlassHighlight = Color(
         nsColor: NSColor(name: nil) {
@@ -656,6 +670,7 @@ final class DockThemeStore: ObservableObject {
             // @Published announces from its setter. Publish the runtime first
             // so every observing subtree resolves canvas and text from the same
             // theme during that render pass.
+            if appliesToApplication { DockSkinRipple.play() }
             applyToApplication(themeID: newValue)
         }
         didSet {
@@ -666,6 +681,7 @@ final class DockThemeStore: ObservableObject {
     private let defaults: UserDefaults
     private let appliesToApplication: Bool
     private var systemAppearanceObservation: NSKeyValueObservation?
+    private var isApplyingTheme = false
     private var popoverObserver: NSObjectProtocol?
 
     init(defaults: UserDefaults = .standard, appliesToApplication: Bool = false) {
@@ -687,15 +703,26 @@ final class DockThemeStore: ObservableObject {
         DockThemeRuntime.current = themeID
         DockThemeRuntime.revision &+= 1
         guard let app = NSApp else { return }
+        // Clearing the app appearance flips effectiveAppearance; the revision is already bumped
+        // above, so the observer must not publish a second full re-render for the same switch.
+        isApplyingTheme = true
+        defer { isApplyingTheme = false }
         let appearance = Self.nsAppearance(for: themeID)
         if app.appearance?.name != appearance?.name { app.appearance = appearance }
         // A window keeps a forced appearance (e.g. .aqua from a light skin) after
         // the app-level one is cleared, which left System/Glass stuck on a plain
         // light material until relaunch. Re-assert it per window.
-        for window in app.windows where window.appearance?.name != appearance?.name { window.appearance = appearance }
+        // The top notch panel keeps its own black appearance.
+        for window in app.windows
+        where window.appearance?.name != appearance?.name && window.appearance?.name != Self.notchAppearance.name {
+            window.appearance = appearance
+        }
     }
 
-    private static func nsAppearance(for themeID: DockThemeID) -> NSAppearance? {
+    /// Marker appearance for the top notch; token colors resolve to pure black under it.
+    static let notchAppearance = NSAppearance(named: .vibrantDark)!
+
+    static func nsAppearance(for themeID: DockThemeID) -> NSAppearance? {
         switch themeID.appearance {
         case .system: nil
         case .light: NSAppearance(named: .aqua)
@@ -730,6 +757,7 @@ final class DockThemeStore: ObservableObject {
             MainActor.assumeIsolated {
                 guard let self, isDark != lastIsDark else { return }
                 lastIsDark = isDark
+                guard !self.isApplyingTheme else { return }
                 guard self.selectedThemeID.appearance == .system else { return }
                 DockThemeRuntime.revision &+= 1
                 self.objectWillChange.send()

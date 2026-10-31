@@ -887,24 +887,22 @@ extension WorkspaceActivitySidebar {
                         detail:
                             "Open a new message in the notch from any app. If nothing happens, another app is using the chord."
                     ) {
-                        Picker("Quick capture", selection: $captureChord) {
-                            ForEach(QuickCaptureChord.allCases) {
-                                Text($0.title).tag($0).disabled($0 != .off && $0 == windowCaptureChord)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 140)
+                        DockOptionPicker(
+                            selection: $captureChord,
+                            options: QuickCaptureChord.allCases.filter { $0 == .off || $0 != windowCaptureChord }
+                                .map { ($0, $0.title) }
+                        ).accessibilityLabel("Quick capture")
                     }
                     Divider().overlay(Color.dockBorderLight)
                     SettingsPreferenceRow(
                         title: "Capture window",
                         detail: "Capture the foreground window into a draft for review. Unassigned by default."
                     ) {
-                        Picker("Capture window", selection: $windowCaptureChord) {
-                            ForEach(QuickCaptureChord.allCases) {
-                                Text($0.title).tag($0).disabled($0 != .off && $0 == captureChord)
-                            }
-                        }.labelsHidden().frame(width: 140)
+                        DockOptionPicker(
+                            selection: $windowCaptureChord,
+                            options: QuickCaptureChord.allCases.filter { $0 == .off || $0 != captureChord }
+                                .map { ($0, $0.title) }
+                        ).accessibilityLabel("Capture window")
                     }
                 }
                 .dockPadding(.vertical, -8)
@@ -1073,13 +1071,6 @@ extension WorkspaceActivitySidebar {
 
     var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if notchSide == .top {
-                DockCallout(
-                    tone: .info, icon: .info,
-                    title:
-                        "The top island notch and floating panel use the Island skin. Switch the notch position to Side to choose another skin."
-                ) { EmptyView() }
-            }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 224), spacing: 8)], spacing: 8) {
                 let skins = control.appearanceProjection?.skins ?? []
                 let hermOptions = DockThemeID.hermOnly.map { DockAppearanceOption(themeID: $0, hermesSkin: nil) }

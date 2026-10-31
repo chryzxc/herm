@@ -20,9 +20,7 @@ struct DockOnboardingAppearance: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Choose a skin").dockFont(.body, weight: .semibold)
             Text(
-                side == .top
-                    ? "Top island uses the Island skin. Switch to Side above to choose another skin."
-                    : "Select a preview to apply it to Herm. You can change it later in Settings → Appearance."
+                "Select a preview to apply it to Herm. You can change it later in Settings → Appearance."
             )
             .foregroundStyle(Color.dockSecondaryText)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 12)], spacing: 12) {
@@ -30,12 +28,11 @@ struct DockOnboardingAppearance: View {
                     skinCard(skin)
                 }
             }
-            .disabled(side == .top)
         }
     }
 
     private func skinCard(_ skin: DockThemeID) -> some View {
-        let selected = skin == (side == .top ? .island : theme.selectedThemeID)
+        let selected = skin == theme.selectedThemeID
         return Button {
             theme.selectedThemeID = skin
         } label: {

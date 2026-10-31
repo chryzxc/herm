@@ -201,7 +201,9 @@ final class EdgeDockController: NSObject {
         state.$side.removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] side in
                 guard let self else { return }
-                EdgeIslandTheme.apply(side: side, store: .shared, defaults: self.defaults)
+                self.panel.appearance =
+                    side == .top
+                    ? DockThemeStore.notchAppearance : DockThemeStore.nsAppearance(for: DockThemeRuntime.current)
             }.store(in: &subscriptions)
         state.$composing.removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.position(animated: true) }.store(in: &subscriptions)
@@ -1916,17 +1918,22 @@ struct EdgeNotchView: View {
                 // One persistent shell: the rail bar itself stretches into the preview
                 // panel and back, so the two states read as a single growing notch.
                 .background {
-                    // Side previews retain a contour even when Glass blends into the desktop.
-                    shell(
-                        DockWindowBackground(shape: AnyShape(EdgeNotchShape(side: state.side)))
-                            .overlay {
-                                // Doubled stroke clipped to the shape leaves a uniform inner 1pt line;
-                                // a centered 1pt stroke loses its outer half to the clip on every edge.
-                                if state.side != .top {
-                                    EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: 2)
+                    // The top island is always black to match the camera housing.
+                    if state.side == .top {
+                        shell(EdgeNotchShape(side: .top).fill(.black))
+                    } else {
+                        // Side previews retain a contour even when Glass blends into the desktop.
+                        shell(
+                            DockWindowBackground(shape: AnyShape(EdgeNotchShape(side: state.side)))
+                                .overlay {
+                                    // Doubled stroke clipped to the shape leaves a uniform inner 1pt line;
+                                    // a centered 1pt stroke loses its outer half to the clip on every edge.
+                                    if state.side != .top {
+                                        EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: 2)
+                                    }
                                 }
-                            }
-                            .clipShape(EdgeNotchShape(side: state.side)))
+                                .clipShape(EdgeNotchShape(side: state.side)))
+                    }
                 }
                 // Attach drag gesture to parent so it works in both collapsed and expanded states
                 .simultaneousGesture(

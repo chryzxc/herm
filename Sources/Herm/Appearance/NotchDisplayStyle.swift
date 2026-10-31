@@ -39,13 +39,6 @@ struct NotchDisplaySettings: View {
                     selection: Binding(get: { side == .top }, set: { side = $0 ? .top : .right }),
                     options: [(false, "Side"), (true, "Top island")])
             }
-            if side == .top {
-                DockCallout(
-                    tone: .info, icon: .info, title: "Top island uses the Island skin",
-                    message:
-                        "The top island notch style and the floating panel default to the Island skin to match the notch color. Your skin returns when you switch back to Side."
-                ) { EmptyView() }
-            }
             SettingsPreferenceRow(
                 title: "Notch status display", detail: "Choose how activity appears on the screen edge."
             ) { EmptyView() }

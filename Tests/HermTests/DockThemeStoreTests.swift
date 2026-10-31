@@ -169,18 +169,14 @@ struct DockThemeStoreTests {
         #expect(DockThemeStore(defaults: defaults).selectedThemeID == .retro)
     }
 
-    @Test func topIslandSwapsToIslandSkinAndRestoresOnSide() {
-        let suiteName = "DockThemeStoreTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = DockThemeStore(defaults: defaults)
-        store.selectedThemeID = .retro
-        EdgeIslandTheme.apply(side: .top, store: store, defaults: defaults)
-        #expect(store.selectedThemeID == .island)
-        EdgeIslandTheme.apply(side: .top, store: store, defaults: defaults)
-        EdgeIslandTheme.apply(side: .right, store: store, defaults: defaults)
-        #expect(store.selectedThemeID == .retro)
-        #expect(defaults.string(forKey: EdgeIslandTheme.previousThemeKey) == nil)
+    @Test func notchAppearanceResolvesBlackWhateverTheSkin() {
+        for theme in [DockThemeID.clean, .glass, .island, .retro] {
+            var resolved: NSColor?
+            DockThemeStore.notchAppearance.performAsCurrentDrawingAppearance {
+                resolved = NSColor(DockThemePalette(theme: theme).background).usingColorSpace(.sRGB)
+            }
+            #expect((resolved?.redComponent ?? 1) < 0.01 && (resolved?.blueComponent ?? 1) < 0.01, "\(theme)")
+        }
     }
 
     @Test func invalidAndLegacyValuesFallBackSafely() {
@@ -249,9 +245,9 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.notebook.style.motion == .glide)
         #expect(
             DockThemeID.storm.appearance == .dark && DockThemeID.storm.style.backdrop == .rain
-                && DockThemeID.storm.style.glow > 0)
+                && DockThemeID.storm.style.glow == 0)
         #expect(
-            DockThemeID.storm.style.selection == .neon && DockThemePalette(theme: .storm).neonHues.count == 3
+            DockThemeID.storm.style.selection == .bar && DockThemePalette(theme: .storm).neonHues.isEmpty
                 && DockThemePalette(theme: .dusk).neonHues.isEmpty)
         #expect(
             DockThemeID.hermesClassic.appearance == .system && DockThemeID.hermesClassic.style.backdrop == .etching

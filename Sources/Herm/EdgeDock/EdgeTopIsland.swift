@@ -1,24 +1,5 @@
 import SwiftUI
 
-/// The top island always wears the black Island skin so it blends with the
-/// camera notch; leaving the top restores the skin the user had before.
-enum EdgeIslandTheme {
-    static let previousThemeKey = "hermes.notch.theme-before-island"
-
-    @MainActor static func apply(side: EdgeDockSide, store: DockThemeStore, defaults: UserDefaults) {
-        if side == .top {
-            guard store.selectedThemeID != .island else { return }
-            defaults.set(store.selectedThemeID.rawValue, forKey: previousThemeKey)
-            store.selectedThemeID = .island
-        } else if store.selectedThemeID == .island,
-            let previous = defaults.string(forKey: previousThemeKey).flatMap(DockThemeID.init(rawValue:))
-        {
-            defaults.removeObject(forKey: previousThemeKey)
-            store.selectedThemeID = previous
-        }
-    }
-}
-
 /// The collapsed top island: two ears flank the camera housing, which stays
 /// dark and empty. The shell fill lives in EdgeNotchView so it can grow into the preview.
 struct EdgeIslandRail: View {
