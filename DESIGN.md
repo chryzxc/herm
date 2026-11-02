@@ -148,8 +148,9 @@ stay identical in Light and Dark. Small text and symbols use `.color`, which
 adjusts only enough for 4.5:1 contrast. Never lighten the solid fills into pastels.
 Monochrome and E-Ink keep neutral ink. Source identity colors remain authoritative.
 
-Skin interaction is separate from semantic color. Clean and Glass use neutral gray
-actions and selection. Character skins keep their authored interaction hue, such
+Skin interaction is separate from semantic color. Glass uses neutral gray actions and
+selection. Clean keeps gray selection and hover but uses its soft violet accent for the
+primary action only. Character skins keep their authored interaction hue, such
 as Dusk lavender, Terminal green, Classic brass, and Warm Light brown. Cool Blue
 may use blue because it is that skin's identity. Never assign blue globally to
 primary or secondary controls. Theme surfaces and selection live in `DockTheme.swift`;
@@ -662,7 +663,7 @@ controls must remain usable without hiding content or changing their meaning.
 The native unified title row remains 52pt with title-bar clearance. Keep workspace
 identity, current context, and contextual actions in one header hierarchy. Use
 sentence-case labels and quiet counts, and omit decorative pills and icons. Avoid
-redundant dividers under title rows. Clean is the opaque porcelain alternative;
+redundant dividers under title rows. Clean is the opaque porcelain alternative (airy white cards with hairline borders, 12pt controls, 16pt panes, soft violet primary action);
 it is neither the default skin nor a separate layout specification. Open-layout
 skins retain their unboxed treatment rather than inheriting Glass panel chrome.
 

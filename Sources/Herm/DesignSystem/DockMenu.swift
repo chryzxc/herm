@@ -12,14 +12,20 @@ struct DockMenu<Label: View, Content: View>: View {
     private let content: Content
     private let label: Label
     private let outlined: Bool
+    private let anchor: PopoverAttachmentAnchor
     @State private var isOpen = false
     @State private var isHovered = false
     @Environment(\.dockMenuDepth) private var depth
     @Environment(\.dockMenuDismiss) private var dismissParent
     @Environment(\.isEnabled) private var isEnabled
 
-    init(outlined: Bool = false, @ViewBuilder content: () -> Content, @ViewBuilder label: () -> Label) {
+    /// `anchor` pins where the popover attaches; a label whose width changes should pass a fixed edge so the popover stays put.
+    init(
+        outlined: Bool = false, anchor: PopoverAttachmentAnchor = .rect(.bounds),
+        @ViewBuilder content: () -> Content, @ViewBuilder label: () -> Label
+    ) {
         self.outlined = outlined
+        self.anchor = anchor
         self.content = content()
         self.label = label()
     }
@@ -27,7 +33,7 @@ struct DockMenu<Label: View, Content: View>: View {
     var body: some View {
         trigger
             .opacity(isEnabled ? 1 : 0.4)
-            .dockPopover(isPresented: $isOpen, arrowEdge: depth > 0 ? .trailing : .bottom) {
+            .dockPopover(isPresented: $isOpen, attachmentAnchor: anchor, arrowEdge: depth > 0 ? .trailing : .bottom) {
                 DockMenuPanel(content: content)
                     .environment(\.dockMenuDepth, depth + 1)
                     .environment(
@@ -294,6 +300,12 @@ private struct DockMenuRowChrome<Content: View>: View {
     let tint: Color?
     @ViewBuilder let content: () -> Content
 
+    /// Clean hovers in neutral gray like its selection; its violet accent is reserved for the primary action.
+    private var hoverFill: Color {
+        DockThemeRuntime.current == .clean
+            ? DockThemePalette(theme: .clean).selectedFill : Color.dockAccent.opacity(0.18)
+    }
+
     var body: some View {
         content()
             .dockFont(.body)
@@ -304,7 +316,7 @@ private struct DockMenuRowChrome<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
-                    .fill(isHovered ? Color.dockAccent.opacity(0.18) : Color.clear)
+                    .fill(isHovered ? hoverFill : Color.clear)
             )
             .contentShape(Rectangle())
     }

@@ -318,7 +318,7 @@ frosted controls, and clearer selected tabs so content stays readable over deskt
 Popovers and sheets share the skin's opaque canvas, while light Glass cards,
 fields, menus, and floating panels use white surfaces without the native warm gray cast.
 Filled graphite actions stay distinct from frosted secondary controls. **Clean**
-uses quiet porcelain surfaces. System-following skins update
+uses airy porcelain surfaces, hairline cards, and a soft violet primary action. System-following skins update
 automatically when macOS switches between Light and Dark, including while the
 workspace is open. Skin changes also apply to the side notch and its open preview.
 
