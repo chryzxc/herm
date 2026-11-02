@@ -97,7 +97,7 @@ struct EdgeResultPeek: View {
                 }
                 Spacer(minLength: 4)
                 if isLoading { ProgressView().controlSize(.mini) }
-                DockMenu(hasNewerResult ? "Update" : "More") {
+                DockMenu {
                     Button(hasNewerResult ? "Update saved reply" : "Refresh saved reply") {
                         refresh()
                         showingComparison = false
@@ -108,8 +108,12 @@ struct EdgeResultPeek: View {
                     if #available(macOS 15.0, *) {
                         Button("Translate reply") { translating = true }.disabled(content?.text.isEmpty ?? true)
                     }
+                } label: {
+                    DockIcon(hasNewerResult ? .arrowClockwise : .dotsThree, size: 16, color: .dockSecondaryText)
+                        .frame(width: 28, height: 28)
                 }.modifier(ReplyTranslation(isPresented: $translating, text: content?.text ?? ""))
-                    .dockFont(.metadata).fixedSize().disabled(isLoading)
+                    .fixedSize().disabled(isLoading)
+                    .help(hasNewerResult ? "Update available" : "More actions")
                     .accessibilityLabel("Result actions")
                 if let content, !content.text.isEmpty {
                     DockCopyButton(
@@ -220,6 +224,11 @@ struct EdgeResultPeek: View {
         return HStack(spacing: 6) {
             if artifact.kind == .image, exists, absolute, let url, url.isFileURL {
                 AttachmentThumbnailView(url: url).frame(width: 24, height: 24)
+            }
+            if artifact.kind != .image, let icon = ArtifactFileIcon.image(for: artifact.label) {
+                Image(nsImage: icon).renderingMode(.original)
+                    .resizable().interpolation(.high).scaledToFit()
+                    .frame(width: 14, height: 14).accessibilityHidden(true)
             }
             Text(artifact.label).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 4)
