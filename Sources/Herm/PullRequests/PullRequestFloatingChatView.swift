@@ -85,9 +85,7 @@ private struct PullRequestSessionChatView: View {
             }
         }
         .background {
-            if expanded {
-                DockThemeShape(cornerRadius: DockLayout.paneRadius).dockSurfaceFill(Color.dockCanvas)
-            }
+            DockThemeShape(cornerRadius: DockLayout.paneRadius).dockSurfaceFill(Color.dockCanvas)
         }
         .clipShape(DockThemeShape(cornerRadius: DockLayout.paneRadius))
         .overlay {
