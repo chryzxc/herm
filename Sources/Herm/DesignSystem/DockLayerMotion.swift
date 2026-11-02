@@ -14,13 +14,15 @@ struct DockLayerMotion: NSViewRepresentable {
         /// A band crossing left to right, `fraction` of the width within `clamp`.
         /// Paused, it rests 30% in. `solid` draws a flat segment instead of a soft gradient.
         case sweep(period: Double, fraction: CGFloat, clamp: ClosedRange<CGFloat>, solid: Bool = false)
-        /// An edge line glowing inward, swelling and ebbing once per `period`. Paused, it holds full strength.
+        /// An edge line glowing inward; the glow swells and ebbs once per `period`. Paused, it holds full strength.
         case tide(period: Double, depth: CGFloat)
     }
 
     let kind: Kind
     let color: Color
     var glow: Color?
+    /// Tide only: a hairline inside the edge line, so it separates from whatever is underneath.
+    var rim: Color?
     var paused = false
 
     func makeNSView(context: Context) -> DockLayerMotionView { DockLayerMotionView() }
@@ -28,7 +30,8 @@ struct DockLayerMotion: NSViewRepresentable {
     func updateNSView(_ view: DockLayerMotionView, context: Context) {
         view.spec = .init(
             kind: kind, color: color.resolve(in: context.environment).cgColor,
-            glow: glow?.resolve(in: context.environment).cgColor, paused: paused)
+            glow: glow?.resolve(in: context.environment).cgColor,
+            rim: rim?.resolve(in: context.environment).cgColor, paused: paused)
     }
 }
 
@@ -37,6 +40,7 @@ final class DockLayerMotionView: NSView {
         var kind: DockLayerMotion.Kind
         var color: CGColor
         var glow: CGColor?
+        var rim: CGColor?
         var paused: Bool
     }
 
@@ -145,10 +149,18 @@ final class DockLayerMotionView: NSView {
                 side.endPoint = end
                 edge.addSublayer(side)
             }
-            let line = ring(CGPath(rect: bounds.insetBy(dx: 1, dy: 1), transform: nil), lineWidth: 2, color: color)
-            line.lineCap = .butt
-            edge.addSublayer(line)
             host.addSublayer(edge)
+            // The line holds steady over the breathing glow; only the glow depends on the page's colors.
+            if let rim = spec.rim {
+                let rimPath = CGPath(rect: bounds.insetBy(dx: 3, dy: 3), transform: nil)
+                let hairline = ring(rimPath, lineWidth: 1, color: rim)
+                hairline.lineCap = .butt
+                host.addSublayer(hairline)
+            }
+            let linePath = CGPath(rect: bounds.insetBy(dx: 1.25, dy: 1.25), transform: nil)
+            let line = ring(linePath, lineWidth: 2.5, color: color)
+            line.lineCap = .butt
+            host.addSublayer(line)
             if !spec.paused {
                 loop(
                     edge, "opacity", from: 1, to: 0.35, duration: period / 2, autoreverses: true,

@@ -3095,8 +3095,9 @@ Chrome paints them where the screencast can't see. When Hermes starts browsing o
 shows a page, the inspector expands to the Browser tab; Settings → Browser →
 Use Herm's browser (a switch, on by default) turns that off and sends shown
 pages to the default browser.
-While Hermes drives the page a tide runs at its edges: a 2pt accent line
-with a 22pt inward glow that swells and ebbs every 3.2s, so a page it is
+While Hermes drives the page a tide runs at its edges: a steady 2.5pt accent
+line, backed by a canvas-colored hairline so it reads on any page color, and
+a 22pt inward glow that swells and ebbs every 3.2s, so a page it is
 only reading still looks driven. The bottom pill reads "Herm is using your
 tab". Each Hermes click adds an action pulse: a ring grows from the click
 past the farthest corner and the page edge flares, then both fade (Core

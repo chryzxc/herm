@@ -1984,8 +1984,8 @@ struct AgentBrowserPane: View {
             // still looks driven; each of its clicks flares the edge further (the canvas pulse).
             if step != nil, !browser.userHasControl {
                 DockLayerMotion(
-                    kind: .tide(period: 3.2, depth: 22), color: Color.dockAccent.opacity(0.7),
-                    glow: Color.dockAccent.opacity(0.45), paused: reduceMotion
+                    kind: .tide(period: 3.2, depth: 22), color: Color.dockAccent,
+                    glow: Color.dockAccent.opacity(0.45), rim: Color.dockOpaqueCanvas, paused: reduceMotion
                 )
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
