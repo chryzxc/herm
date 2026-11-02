@@ -242,12 +242,7 @@ struct ModelPickerView: View {
                     }
                 }
                 .frame(maxHeight: 220)
-                if let effortModel {
-                    Color.dockBorderLight.frame(height: DockLayout.hairline)
-                    ComposerEffortControls(model: effortModel, modelID: selectedID, selection: effortSelection)
-                        .dockPadding(.horizontal, 8)
-                }
-                Color.dockBorderLight.frame(height: DockLayout.hairline)
+                Color.dockBorder.frame(height: DockLayout.hairline)
                 HStack(spacing: 4) {
                     Button {
                         onRefresh()
@@ -259,7 +254,16 @@ struct ModelPickerView: View {
                 }
             }
             .dockPadding(.leading, 6)
+            .dockPadding(.trailing, effortModel == nil ? 0 : 8)
             .frame(width: 270, alignment: .leading)
+            if let effortModel {
+                Color.dockBorder.frame(width: DockLayout.hairline)
+                ComposerEffortControls(
+                    model: effortModel, modelID: selectedID, selection: effortSelection, stacked: true
+                )
+                .dockPadding(.horizontal, 6)
+                .frame(width: 170, alignment: .topLeading)
+            }
         }
         .background(alignment: .leading) {
             if groups.count > 1 {

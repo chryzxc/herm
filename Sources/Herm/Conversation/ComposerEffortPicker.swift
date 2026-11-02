@@ -40,6 +40,8 @@ struct ComposerEffortControls: View {
     @ObservedObject var model: DockModel
     let modelID: String?
     @Binding var selection: HermesReasoningVariant?
+    /// Radio rows under a heading, matching the model list, for a side pane.
+    var stacked = false
 
     private var presentation: ComposerEffortPresentation {
         ComposerEffortPresentation(
@@ -47,6 +49,37 @@ struct ComposerEffortControls: View {
             wire: model.sessionID == nil ? nil : model.sessionReasoningWire,
             pending: model.isUpdatingSessionModel || model.isUpdatingSessionReasoning,
             loading: model.isEffortCatalogPending, stale: model.sessionReasoningStale)
+    }
+
+    private static func title(_ variant: HermesReasoningVariant) -> String {
+        variant == .none ? "Off" : (variant == .xhigh ? "Extra High" : variant.rawValue.capitalized)
+    }
+
+    private func radioRow(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Circle()
+                    .stroke(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText, lineWidth: 1)
+                    .frame(width: 15, height: 15)
+                    .overlay {
+                        if isSelected { DockIcon(.check, size: 10, color: Color.dockPrimaryText) }
+                    }
+                Text(title)
+                    .dockFont(.body, weight: isSelected ? .semibold : .regular)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+            }
+        }
+        .accessibilityLabel("\(title)\(isSelected ? ", selected" : "")")
+    }
+
+    private func effortRows(_ choices: [HermesReasoningVariant]) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(choices) { variant in
+                radioRow(Self.title(variant), isSelected: selection == variant) { selection = variant }
+            }
+        }
+        .disabled(presentation.disabled)
     }
 
     private var fastBinding: Binding<Bool> {
@@ -62,7 +95,13 @@ struct ComposerEffortControls: View {
                 }
             } else {
                 let choices = presentation.choices ?? []
-                if choices.count <= 3, !choices.isEmpty {
+                if stacked {
+                    Text("Effort")
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .dockPadding(.horizontal, 8)
+                    effortRows(choices)
+                } else if choices.count <= 3, !choices.isEmpty {
                     HStack(spacing: 8) {
                         Text("Effort")
                             .dockFont(.body)
@@ -84,9 +123,24 @@ struct ComposerEffortControls: View {
                     effortChoices(choices)
                 }
                 if model.sessionID != nil, model.sessionFastEnabled != nil {
-                    Toggle("Fast", isOn: fastBinding)
-                        .toggleStyle(.dockSwitch)
+                    if stacked {
+                        Color.dockBorder.frame(height: DockLayout.hairline)
+                        Text("Speed")
+                            .dockFont(.body, weight: .semibold)
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .dockPadding(.horizontal, 8)
+                        VStack(alignment: .leading, spacing: 1) {
+                            radioRow("Standard", isSelected: !fastBinding.wrappedValue) {
+                                fastBinding.wrappedValue = false
+                            }
+                            radioRow("Fast", isSelected: fastBinding.wrappedValue) { fastBinding.wrappedValue = true }
+                        }
                         .disabled(model.isUpdatingSessionFast)
+                    } else {
+                        Toggle("Fast", isOn: fastBinding)
+                            .toggleStyle(.dockSwitch)
+                            .disabled(model.isUpdatingSessionFast)
+                    }
                 }
             }
         }
@@ -97,8 +151,7 @@ struct ComposerEffortControls: View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
             ForEach(choices) { variant in
                 DockTabButton(
-                    title: variant == .none
-                        ? "Off" : (variant == .xhigh ? "Extra High" : variant.rawValue.capitalized),
+                    title: Self.title(variant),
                     isSelected: selection == variant, showsSelectionMark: true
                 ) { selection = variant }
                 .frame(maxWidth: .infinity)
