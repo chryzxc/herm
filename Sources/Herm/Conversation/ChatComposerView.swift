@@ -1307,31 +1307,13 @@ private struct RunningProcessesStrip: View {
                 }
                 .buttonStyle(.dockHover)
                 if isExpanded {
-                    ForEach(control.processes) { process in
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(process.name).lineLimit(1).truncationMode(.middle)
-                                    .dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(
-                                        Color.dockPrimaryText
-                                    )
-                                    .help(process.detail ?? process.name)
-                                if let latest = process.latestOutput {
-                                    Text(latest).lineLimit(1).truncationMode(.tail)
-                                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                                        .help(latest)
-                                }
-                            }
-                            Spacer(minLength: 0)
-                            if process.state == "running" {
-                                Button("Stop") { pending = control.processStopConfirmation(process) }
-                                    .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
-                            } else {
-                                Text(process.state.capitalized).dockFont(.metadata)
-                                    .foregroundStyle(Color.dockMetadataText)
-                            }
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            processRows
                         }
-                        .dockPadding(.leading, 18)
                     }
+                    .frame(maxHeight: 120)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .dockPadding(.horizontal, 12)
@@ -1349,6 +1331,34 @@ private struct RunningProcessesStrip: View {
                 }
                 Button("Cancel", role: .cancel) { pending = nil }
             }
+        }
+    }
+
+    @ViewBuilder private var processRows: some View {
+        ForEach(control.processes) { process in
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(process.name).lineLimit(1).truncationMode(.middle)
+                        .dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(
+                            Color.dockPrimaryText
+                        )
+                        .help(process.detail ?? process.name)
+                    if let latest = process.latestOutput {
+                        Text(latest).lineLimit(1).truncationMode(.tail)
+                            .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                            .help(latest)
+                    }
+                }
+                Spacer(minLength: 0)
+                if process.state == "running" {
+                    Button("Stop") { pending = control.processStopConfirmation(process) }
+                        .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
+                } else {
+                    Text(process.state.capitalized).dockFont(.metadata)
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+            }
+            .dockPadding(.leading, 18)
         }
     }
 }

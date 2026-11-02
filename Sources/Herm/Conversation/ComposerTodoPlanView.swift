@@ -63,7 +63,7 @@ struct ComposerTodoPlanView: View {
                     TodoPlanTaskList(plan: plan, isWorking: isWorking)
                 }
                 .defaultScrollAnchor(.top)
-                .frame(maxHeight: 220)
+                .frame(maxHeight: 140)
                 .fixedSize(horizontal: false, vertical: true)
                 .dockPadding(.horizontal, 4)
                 .dockPadding(.bottom, 8)
