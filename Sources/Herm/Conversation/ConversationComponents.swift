@@ -730,7 +730,9 @@ struct BotDispatchCard: View {
 
     @ViewBuilder
     private func row(_ record: BotActivityRecord) -> some View {
-        let bot = botsByID[record.botID]
+        let bot =
+            botsByID[record.botID]
+            ?? botsByID.values.first { $0.name.caseInsensitiveCompare(record.botName) == .orderedSame }
         let reply = record.result.flatMap { $0.isEmpty ? nil : $0 }
         let canOpen = reply != nil && !record.isLive
         let isOpen = canOpen && openIDs.contains(record.id)
@@ -747,23 +749,22 @@ struct BotDispatchCard: View {
                     }
                 } label: {
                     HStack(spacing: 8) {
-                        Group {
+                        HStack(spacing: 5) {
+                            Text(assignedIDs.contains(record.id) ? "Assigned" : "Messaged")
+                                .foregroundStyle(Color.dockSecondaryText)
                             if let bot {
                                 BotAvatarView(bot: bot, imageData: avatars[bot.id], size: 16)
-                            } else {
-                                DockIcon(.envelopeSimple, size: 13, color: Color.dockSecondaryText)
+                                    .frame(width: 16, height: 16)
                             }
+                            (Text(bot?.name ?? record.botName).underline(previewWorkspace != nil).fontWeight(
+                                .semibold
+                            )
+                            .foregroundStyle(Color.dockPrimaryText)
+                                + Text(record.summary.isEmpty ? "" : "  \(record.summary)").foregroundStyle(
+                                    Color.dockMetadataText))
+                                .lineLimit(1).truncationMode(.tail)
                         }
-                        .frame(width: 16, height: 16)
-                        (Text(assignedIDs.contains(record.id) ? "Assigned " : "Messaged ").foregroundStyle(
-                            Color.dockSecondaryText)
-                            + Text(bot?.name ?? record.botName).underline(previewWorkspace != nil).fontWeight(.semibold)
-                            .foregroundStyle(
-                                Color.dockPrimaryText)
-                            + Text(record.summary.isEmpty ? "" : "  \(record.summary)").foregroundStyle(
-                                Color.dockMetadataText))
-                            .dockFont(.body)
-                            .lineLimit(1).truncationMode(.tail)
+                        .dockFont(.body)
                         status(record)
                         if previewWorkspace == nil, canOpen {
                             DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
