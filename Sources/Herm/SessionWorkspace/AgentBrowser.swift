@@ -1951,6 +1951,7 @@ private struct AgentCanvasView: NSViewRepresentable {
 struct AgentBrowserPane: View {
     @ObservedObject var browser: AgentBrowser
     @ObservedObject var model: DockModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -1972,12 +1973,16 @@ struct AgentBrowserPane: View {
             if step != nil { DockShimmerTrack(tone: .working).transition(.opacity) }
         }
         .overlay {
-            // A quiet frame while the page belongs to Hermes; each of its clicks flares it (the canvas pulse).
+            // A slow tide at the edges while the page belongs to Hermes, so a page it's only reading
+            // still looks driven; each of its clicks flares the edge further (the canvas pulse).
             if step != nil, !browser.userHasControl {
-                Rectangle()
-                    .strokeBorder(Color.dockAccent.opacity(0.3), lineWidth: 1)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
+                DockLayerMotion(
+                    kind: .tide(period: 3.2, depth: 22), color: Color.dockAccent.opacity(0.7),
+                    glow: Color.dockAccent.opacity(0.45), paused: reduceMotion
+                )
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .transition(.opacity)
             }
         }
         .overlay(alignment: .bottom) {
@@ -2030,7 +2035,7 @@ struct AgentBrowserPane: View {
     private func activityPill(_ step: (icon: Ph, title: String, detail: String?)) -> some View {
         HStack(spacing: 8) {
             DockStatusDot(tone: .working, size: 7, pulses: true)
-            Text("Herm is browsing")
+            Text("Herm is using your tab")
                 .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .fixedSize()
@@ -2055,7 +2060,7 @@ struct AgentBrowserPane: View {
         .dockPadding(.vertical, 4)
         .dockHUDPanel()
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Herm is browsing: \(step.title)")
+        .accessibilityLabel("Herm is using your tab: \(step.title)")
     }
 }
 

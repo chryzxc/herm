@@ -14,6 +14,8 @@ struct DockLayerMotion: NSViewRepresentable {
         /// A band crossing left to right, `fraction` of the width within `clamp`.
         /// Paused, it rests 30% in. `solid` draws a flat segment instead of a soft gradient.
         case sweep(period: Double, fraction: CGFloat, clamp: ClosedRange<CGFloat>, solid: Bool = false)
+        /// An edge line glowing inward, swelling and ebbing once per `period`. Paused, it holds full strength.
+        case tide(period: Double, depth: CGFloat)
     }
 
     let kind: Kind
@@ -115,6 +117,42 @@ final class DockLayerMotionView: NSView {
             host.addSublayer(band)
             if !spec.paused {
                 loop(band, "position.x", from: -width / 2, to: bounds.width + width / 2, duration: period)
+            }
+
+        case .tide(let period, let depth):
+            // Gradients fading inward from each side; a blurred shadow of a thin line diffused to nothing.
+            let edge = CALayer()
+            edge.frame = bounds
+            let glow = spec.glow ?? color
+            let clear = glow.copy(alpha: 0) ?? glow
+            let sides: [(CGRect, CGPoint, CGPoint)] = [
+                (CGRect(x: 0, y: 0, width: bounds.width, height: depth), CGPoint(x: 0.5, y: 0), CGPoint(x: 0.5, y: 1)),
+                (
+                    CGRect(x: 0, y: bounds.height - depth, width: bounds.width, height: depth),
+                    CGPoint(x: 0.5, y: 1), CGPoint(x: 0.5, y: 0)
+                ),
+                (CGRect(x: 0, y: 0, width: depth, height: bounds.height), CGPoint(x: 0, y: 0.5), CGPoint(x: 1, y: 0.5)),
+                (
+                    CGRect(x: bounds.width - depth, y: 0, width: depth, height: bounds.height),
+                    CGPoint(x: 1, y: 0.5), CGPoint(x: 0, y: 0.5)
+                ),
+            ]
+            for (frame, start, end) in sides {
+                let side = CAGradientLayer()
+                side.frame = frame
+                side.colors = [glow, clear]
+                side.startPoint = start
+                side.endPoint = end
+                edge.addSublayer(side)
+            }
+            let line = ring(CGPath(rect: bounds.insetBy(dx: 1, dy: 1), transform: nil), lineWidth: 2, color: color)
+            line.lineCap = .butt
+            edge.addSublayer(line)
+            host.addSublayer(edge)
+            if !spec.paused {
+                loop(
+                    edge, "opacity", from: 1, to: 0.35, duration: period / 2, autoreverses: true,
+                    timing: .easeInEaseOut)
             }
         }
     }
