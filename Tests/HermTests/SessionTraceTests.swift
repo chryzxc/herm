@@ -195,11 +195,53 @@ struct SessionTraceTests {
             SessionTraceProjection.make(
                 turns: [.init(id: "t", title: "", start: origin)],
                 live: [call("child", 2, agent: "a")], agents: [worker], working: false,
-                connected: true,
-                observedAt: origin.addingTimeInterval(10))[0].rows.first { $0.kind == .tool })
+                connected: true)[0].rows.first { $0.kind == .tool })
         #expect(row.active)
         #expect(row.elapsed(at: origin.addingTimeInterval(12)) == 10)
         #expect(row.elapsed(at: origin.addingTimeInterval(13)) == 11)
+    }
+
+    @Test func idleUnfinishedToolsUseTheRecordedStopInsteadOfTheRefreshTime() throws {
+        let stoppedAt = origin.addingTimeInterval(10)
+        let turn = SessionTraceProjection.make(
+            turns: [
+                .init(
+                    id: "t", title: "Stopped", start: origin, calls: [call("unfinished", 2)],
+                    executionStart: origin, executionEnd: stoppedAt)
+            ],
+            live: [], agents: [], working: false, connected: true)[0]
+        let tool = try #require(turn.rows.first { $0.kind == .tool })
+        #expect(!tool.active)
+        #expect(tool.end == stoppedAt)
+        #expect(tool.elapsed(at: .distantFuture) == 8)
+        let bounds = SessionTraceTimeBounds(turn)
+        #expect(bounds.span(at: stoppedAt) == 10)
+        #expect(bounds.span(at: stoppedAt.addingTimeInterval(3_600)) == 10)
+    }
+
+    @Test func idleUnfinishedToolsWithoutAStopKeepTheirDurationUnavailable() throws {
+        let turn = SessionTraceProjection.make(
+            turns: [.init(id: "t", title: "Idle", start: origin, calls: [call("unfinished", 2)])],
+            live: [], agents: [], working: false, connected: true)[0]
+        let tool = try #require(turn.rows.first { $0.kind == .tool })
+        #expect(!tool.active)
+        #expect(tool.elapsed(at: .distantFuture) == nil)
+        #expect(tool.status == "Not current")
+    }
+
+    @Test func pendingDelegatesDoNotKeepIdleSessionsRunning() throws {
+        for status in ["queued", "pending"] {
+            let worker = HermesSubagent(id: "a", goal: "Wait", status: status, startedAt: origin)
+            let turn = SessionTraceProjection.make(
+                turns: [.init(id: "t", title: "Idle", start: origin)],
+                live: [call("child", 2, agent: "a")], agents: [worker], working: false,
+                connected: true)[0]
+            #expect(turn.rows.allSatisfy { !$0.active })
+            let agent = try #require(turn.rows.first { $0.kind == .agent })
+            #expect(agent.status == status.capitalized)
+            let bounds = SessionTraceTimeBounds(turn)
+            #expect(bounds.span(at: origin.addingTimeInterval(10)) == bounds.span(at: .distantFuture))
+        }
     }
 
     @Test func jsonNumbersAreNotConfusedWithBooleans() throws {

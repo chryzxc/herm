@@ -728,8 +728,10 @@ The session inspector’s **Timeline** tab replaces the former Activity Overview
 with a live execution waterfall. It opens on **All activity**, which stacks every loaded
 request with idle time between them collapsed; the menu narrows it to one request or
 follows the current turn. A metrics strip shows duration, model calls, tool calls,
-delegates, reported tokens, and errors. Steps use the chat’s activity icons and a
-color per tool type; the slowest step is badged. Activity and Steps sit in separate cards with 14pt headings and collapse independently, and the
+delegates, reported tokens, and errors. Duration stops when work is no longer running,
+including queued delegates or Bots waiting for input. Unfinished tools use a recorded
+stop boundary or keep their duration unavailable. Steps use the chat’s activity icons
+and a color per tool type; the slowest step is badged. Activity and Steps sit in separate cards with 14pt headings and collapse independently, and the
 Steps header holds the step controls. The time ruler uses readable durations such as
 `2 mins 43 secs`, with spacing for the full labels. Search (⌘F) preserves the step
 hierarchy; Fit and Live help navigate longer runs. Live is on by default and keeps

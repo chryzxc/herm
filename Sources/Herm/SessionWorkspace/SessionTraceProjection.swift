@@ -121,7 +121,7 @@ enum SessionTraceProjection {
 
     static func make(
         turns input: [SessionTraceTurn], live: [ActiveToolCall], agents: [HermesSubagent],
-        working: Bool, connected: Bool, activities: [AgentActivity] = [], observedAt: Date = Date()
+        working: Bool, connected: Bool, activities: [AgentActivity] = []
     ) -> [SessionTraceTurn] {
         var turns = input
         guard !turns.isEmpty else { return [] }
@@ -168,9 +168,12 @@ enum SessionTraceProjection {
             }
             let workerIDs = Set(workers.map(\.id))
             let activeWorkerIDs = Set(
-                workers.filter { AgentActivityPresentation.isActiveStatus($0.status) }.map(\.id))
+                workers.filter {
+                    AgentActivityPresentation.isActiveStatus($0.status)
+                        && !["queued", "pending"].contains($0.status.lowercased())
+                }.map(\.id))
             var rows = workers.map { agent in
-                let active = connected && AgentActivityPresentation.isActiveStatus(agent.status)
+                let active = connected && activeWorkerIDs.contains(agent.id)
                 let startEvent = activities.first {
                     $0.agentID == agent.id && $0.kind == "subagent.start"
                 }
@@ -202,7 +205,7 @@ enum SessionTraceProjection {
                     timing: timing, active: active,
                     outcome: active
                         ? nil
-                        : (AgentActivityPresentation.isActiveStatus(agent.status)
+                        : (!connected && AgentActivityPresentation.isActiveStatus(agent.status)
                             ? "Not current" : agent.status.capitalized),
                     input: agent.goal, result: agent.summary, relatedSessionID: agent.childSessionID,
                     inputTokens: agent.inputTokens, outputTokens: agent.outputTokens,
@@ -217,6 +220,11 @@ enum SessionTraceProjection {
                         ? .thinking
                         : call.name == ActiveToolCall.compactionName ? .compaction : .tool
                     let timing = call.traceTiming ?? .unavailable
+                    let active =
+                        connected
+                        && ((current && working) || call.agentID.map(activeWorkerIDs.contains) == true)
+                        && !call.isComplete && timing != .unavailable
+                    let stoppedAt = call.agentID.flatMap { agentByID[$0]?.completedAt } ?? turns[index].executionEnd
                     return SessionTraceRow(
                         id: "tool:" + callKey(call),
                         parentID: call.agentID.flatMap {
@@ -231,19 +239,9 @@ enum SessionTraceProjection {
                                 : AgentActivityPresentation.toolActivityTitle(
                                     name: call.name, context: call.context),
                         start: timing == .unavailable ? nil : call.startedAt,
-                        end: call.completedAt,
-                        duration: call.traceDuration
-                            ?? (!call.isComplete
-                                && (!connected
-                                    || (!working
-                                        && call.agentID.map(activeWorkerIDs.contains) != true))
-                                && timing != .unavailable
-                                ? max(0, observedAt.timeIntervalSince(call.startedAt)) : nil),
-                        timing: timing,
-                        active: connected
-                            && ((current && working)
-                                || call.agentID.map(activeWorkerIDs.contains) == true)
-                            && !call.isComplete && timing != .unavailable,
+                        end: call.completedAt ?? (!call.isComplete && !active ? stoppedAt : nil),
+                        duration: call.traceDuration,
+                        timing: timing, active: active,
                         outcome: !call.isComplete ? "Not current" : call.traceOutcome,
                         input: call.input, result: call.result, diff: call.diffPreview,
                         relatedSessionID: call.childSessionID, toolName: call.name,

@@ -153,15 +153,15 @@ struct SessionCrewProjection {
             let stale = now.timeIntervalSince(record.updatedAt) > staleBotActivity
             // Process- and card-backed records are still reconciled from Hermes; others never resolve.
             let tracked = record.processID != nil || record.linkedCardID != nil
-            let active = connected && !terminal && !stale
+            let active = connected && record.state == .working && !stale
             let status =
                 !terminal && (!connected || (stale && !tracked)) ? "Not current" : record.state.label
             let root = SessionTraceRow(
                 id: "turn:" + id, kind: .turn, title: record.summary, start: record.createdAt,
-                end: terminal ? record.updatedAt : nil, timing: .observed, active: active, outcome: status)
+                end: active ? nil : record.updatedAt, timing: .observed, active: active, outcome: status)
             let bot = SessionTraceRow(
                 id: id, parentID: root.id, kind: .agent, title: record.botName,
-                start: record.createdAt, end: terminal ? record.updatedAt : nil,
+                start: record.createdAt, end: active ? nil : record.updatedAt,
                 timing: .observed, active: active, outcome: status, input: record.summary,
                 result: record.result, relatedSessionID: record.botChatSessionID, crewProfileID: record.botID)
             return SessionTraceTurn(id: id, title: record.summary, start: record.createdAt, rows: [root, bot])

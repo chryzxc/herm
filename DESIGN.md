@@ -1909,6 +1909,10 @@ finished tools do not imply success. Live bars grow with measured elapsed time,
 disclosures and details use 200ms Herm easing, and Live scrolls with 350ms
 easing. Reduce Motion and motion-free skins disable interpolation and transitions;
 time readings still update. Timers stop when the trace is unmounted or settled.
+Queued delegates do not keep Duration ticking. Queued and waiting Bot requests end
+their displayed spans at the last recorded state update. An unfinished tool in an idle session uses
+its recorded execution or delegate stop boundary; without one, its duration remains
+unavailable instead of advancing on later projection refreshes.
 
 Execution projection coalesces at 250ms, ignores reply-text changes, and merges live
 and loaded calls by ID. Search waits 150ms and preserves matching ancestors. Timeline

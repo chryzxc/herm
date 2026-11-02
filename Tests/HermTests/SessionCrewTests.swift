@@ -131,20 +131,36 @@ struct SessionCrewTests {
         #expect(!trace.turns.contains { $0.id == "bot-dispatch:job" })
     }
 
-    @Test func pendingBotRequestsRemainLiveWithoutInventingWork() throws {
+    @Test func pendingBotRequestsStopTheClockWithoutInventingCompletion() throws {
         for state: BotActivityState in [.queued, .waiting] {
+            let waitingAt = origin.addingTimeInterval(20)
             let record = BotActivityRecord(
                 id: "pending", originSessionID: "origin", botID: "builder", botName: "Builder",
-                summary: "Task", state: state, createdAt: origin, updatedAt: origin)
-            let turns = SessionCrewProjection.botTurns([record], connected: true, now: origin)
+                summary: "Task", state: state, createdAt: origin, updatedAt: waitingAt)
+            let turns = SessionCrewProjection.botTurns([record], connected: true, now: waitingAt)
             let actor = try #require(SessionCrewProjection(rows: turns.flatMap(\.rows)).actors.last)
-            #expect(actor.row.active)
+            #expect(turns.flatMap(\.rows).allSatisfy { !$0.active })
             #expect(actor.row.status == state.label)
-            #expect(actor.row.finish(at: origin.addingTimeInterval(5)) == origin.addingTimeInterval(5))
+            #expect(actor.row.finish(at: waitingAt.addingTimeInterval(3_600)) == waitingAt)
+            let all = try #require(SessionTraceProjection.combined(turns, now: waitingAt))
+            let bounds = SessionTraceTimeBounds(all)
+            #expect(bounds.span(at: waitingAt) == 20)
+            #expect(bounds.span(at: waitingAt.addingTimeInterval(3_600)) == 20)
             let display = SessionCrewProjection.state(actor, at: nil, connected: true)
             #expect(display.label == state.label)
             #expect(!display.moving)
         }
+    }
+
+    @Test func workingBotRequestsKeepTheClockRunning() throws {
+        let record = BotActivityRecord(
+            id: "working", originSessionID: "origin", botID: "builder", botName: "Builder",
+            summary: "Task", state: .working, createdAt: origin, updatedAt: origin)
+        let turn = try #require(SessionCrewProjection.botTurns([record], connected: true, now: origin).first)
+        #expect(turn.rows.allSatisfy { $0.active })
+        let bounds = SessionTraceTimeBounds(turn)
+        #expect(bounds.span(at: origin.addingTimeInterval(5)) == 5)
+        #expect(bounds.span(at: origin.addingTimeInterval(10)) == 10)
     }
 
     @Test func staleBotRequestsStopTheClock() {
