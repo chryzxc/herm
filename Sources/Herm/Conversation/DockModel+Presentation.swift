@@ -246,6 +246,13 @@ extension DockModel {
     /// `delegation.status.active` owns liveness; cached agents are retained as
     /// completed history so a finished delegation remains inspectable without
     /// falsely animating as current work.
+    /// The open session's plan, unless a later prompt moved past it.
+    var currentTodoPlan: TodoPlan? {
+        guard let plan = todoPlan, currentSessionIDs.contains(plan.sessionID) else { return nil }
+        let latestPrompt = messages.last { $0.role == .user && !$0.isSteering }?.timestamp
+        return plan.isCurrent(latestPromptAt: latestPrompt) ? plan : nil
+    }
+
     var currentSessionBackgroundTasks: [HermesBackgroundTask] {
         guard let sessionID, !sessionID.isEmpty else { return [] }
         return backgroundTasks.filter { $0.parentSessionID == sessionID }

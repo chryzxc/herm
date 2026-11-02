@@ -107,10 +107,19 @@ struct TodoPlan: Equatable {
     }
     let sessionID: String
     let items: [Item]
+    /// Hermes' snapshot revision; a lower one is an older write.
+    var revision = 0
+    /// When Hermes wrote this snapshot.
+    var updatedAt = Date.distantPast
 
     var done: Int { items.filter { $0.status == "completed" || $0.status == "cancelled" }.count }
     var inProgress: Item? { items.first { $0.status == "in_progress" } }
     var current: Item? { inProgress ?? items.first { $0.status == "pending" } }
+
+    /// Hermes keeps an abandoned plan forever, so only one written since the latest prompt is live work.
+    func isCurrent(latestPromptAt: Date?) -> Bool {
+        latestPromptAt.map { updatedAt >= $0 } ?? true
+    }
 
     /// Presentation order only; original slots remain stable identities as statuses change.
     var orderedItemIndices: [Int] {

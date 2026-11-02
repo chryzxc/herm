@@ -628,7 +628,7 @@ struct VoiceStatusStrip: View {
                         tint: elapsed >= 120 ? .dockWarning : .dockAccent)
                 }
             }
-            if let plan = model.todoPlan, plan.sessionID == model.sessionID, plan.done < plan.items.count,
+            if let plan = model.currentTodoPlan, plan.done < plan.items.count,
                 model.status == .working
             {
                 HStack(spacing: 6) {

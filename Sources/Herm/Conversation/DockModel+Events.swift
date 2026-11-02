@@ -1188,11 +1188,11 @@ extension DockModel {
                 bindBotDispatch(toolCallID: activeToolCalls[last].id, result: result)
             }
             if let todos = payload["todos"] as? [[String: Any]], let sessionID {
-                applyTodos(todos, sessionID: sessionID)
+                applyTodos(todos, sessionID: sessionID, revision: payload["revision"] as? Int ?? 0)
             }
         case "todo.updated":
             if let todos = payload["todos"] as? [[String: Any]], let sessionID {
-                applyTodos(todos, sessionID: sessionID)
+                applyTodos(todos, sessionID: sessionID, revision: payload["revision"] as? Int ?? 0)
             }
 
         default:

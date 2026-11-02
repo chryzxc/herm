@@ -832,8 +832,13 @@ extension DockModel {
                 calls: restored.messages.flatMap(\.activity) + restored.trailingActivity,
                 rows: transcriptRows as? [[String: Any]] ?? [])
             // Hermes' authoritative plan; todo events missed while detached never replay.
-            if let todos = (result["todo_state"] as? [String: Any])?["todos"] as? [[String: Any]] {
-                applyTodos(todos, sessionID: resolvedSessionID)
+            if let state = result["todo_state"] as? [String: Any], let todos = state["todos"] as? [[String: Any]] {
+                // Dated by its last write in the loaded tail; one older than the tail predates every prompt in it.
+                let written = (restored.messages.flatMap(\.activity) + restored.trailingActivity)
+                    .filter { ["todo_list", "todo"].contains($0.name) }.map(\.startedAt).max()
+                applyTodos(
+                    todos, sessionID: resolvedSessionID, revision: state["revision"] as? Int ?? 0,
+                    updatedAt: written ?? .distantPast)
             }
             scrollToLatestMessageRequest &+= 1
             cacheCurrentAgentState()

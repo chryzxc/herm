@@ -162,13 +162,16 @@ extension DockModel {
         }
     }
 
-    func applyTodos(_ todos: [[String: Any]], sessionID: String) {
+    func applyTodos(_ todos: [[String: Any]], sessionID: String, revision: Int = 0, updatedAt: Date = .now) {
+        if let todoPlan, todoPlan.sessionID == sessionID, revision < todoPlan.revision { return }
         let items = todos.compactMap { todo in
             (todo["content"] as? String).map {
                 TodoPlan.Item(content: $0, status: todo["status"] as? String ?? "pending")
             }
         }
-        todoPlan = items.isEmpty ? nil : TodoPlan(sessionID: sessionID, items: items)
+        todoPlan =
+            items.isEmpty
+            ? nil : TodoPlan(sessionID: sessionID, items: items, revision: revision, updatedAt: updatedAt)
     }
 
     /// Tool arguments as short strings: text as-is, anything else as JSON.

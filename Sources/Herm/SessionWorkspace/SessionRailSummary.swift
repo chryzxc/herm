@@ -71,7 +71,7 @@ struct SessionRailSummary: Equatable {
         if let prompt = model.valuePrompt {
             summary.attention.append(.init(id: prompt.requestID, title: prompt.title, detail: prompt.message))
         }
-        if let plan = model.todoPlan, ids.contains(plan.sessionID), !plan.items.isEmpty { summary.plan = plan }
+        if let plan = model.currentTodoPlan, !plan.items.isEmpty { summary.plan = plan }
         summary.outputs = RichArtifactIndex.latest(outputs.filter { $0.scopedSessionID == owner })
             .sorted { $0.timestamp > $1.timestamp }
         summary.outputsError = outputsError

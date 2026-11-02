@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import Herm
@@ -52,5 +53,18 @@ struct TodoPlanTests {
         #expect(plan.current?.content == "Pending")
         let empty = TodoPlan(sessionID: "session", items: [])
         #expect(empty.orderedItemIndices.isEmpty && empty.inProgress == nil && empty.current == nil)
+    }
+
+    @Test func aPlanIsCurrentOnlyWhenWrittenSinceTheLatestPrompt() {
+        let written = Date(timeIntervalSince1970: 1_000)
+        let plan = TodoPlan(
+            sessionID: "session", items: [.init(content: "Step", status: "pending")], updatedAt: written)
+        #expect(plan.isCurrent(latestPromptAt: nil))
+        #expect(plan.isCurrent(latestPromptAt: written.addingTimeInterval(-60)))
+        // A later prompt the agent never planned for leaves the plan abandoned.
+        #expect(!plan.isCurrent(latestPromptAt: written.addingTimeInterval(60)))
+        // A plan missing from the loaded tail predates every prompt in it.
+        let undated = TodoPlan(sessionID: "session", items: plan.items)
+        #expect(!undated.isCurrent(latestPromptAt: written))
     }
 }

@@ -1229,7 +1229,7 @@ private struct PinnedWorkStrip: View {
     @ObservedObject var model: DockModel
 
     var body: some View {
-        let plan = model.todoPlan.flatMap { $0.sessionID == model.sessionID ? $0 : nil }
+        let plan = model.currentTodoPlan
             .flatMap { model.status == .working && $0.done < $0.items.count ? $0 : nil }
         let tasks = model.currentSessionBackgroundTasks.filter { $0.status == .running }
         if plan != nil || !tasks.isEmpty {
