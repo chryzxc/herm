@@ -264,7 +264,7 @@ struct ConversationMessageRow: View, Equatable {
                         }
                     }
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: 0) {
                         if message.isSteering {
                             Text(steeringLabel)
                                 .dockFont(.metadata, weight: .medium)
@@ -505,9 +505,13 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     private var messageActions: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             actionButton(.copy, action: onCopy)
-            actionButton(.refresh, action: onRefresh, isAvailable: areSessionActionsAvailable)
+            actionButton(.branch, action: onBranch, isAvailable: areSessionActionsAvailable)
+            actionButton(.reply, action: onReply)
+            if showsPinAction {
+                actionButton(.pin, action: onPin, isAvailable: isPinAvailable)
+            }
             moreMessageActions
             if isSpeaking {
                 actionButton(.readAloud, action: onReadAloud)
@@ -528,20 +532,8 @@ struct ConversationMessageRow: View, Equatable {
                 Label(isSpeaking ? "Stop reading aloud" : "Read aloud", icon: isSpeaking ? .stop : .speakerHigh)
             }
             .disabled(pendingAction == .readAloud || !areSessionActionsAvailable)
-            Button(action: onBranch) {
-                Label("Branch from this message", icon: .shuffleAngular)
-            }
-            .disabled(pendingAction != nil || !areSessionActionsAvailable)
-            Button(action: onReply) { Label("Reply to this message", icon: .arrowBendUpLeft) }
-            if showsPinAction {
-                Button(action: onPin) {
-                    HStack(spacing: 8) {
-                        DockIcon(.pushPin, size: 12, weight: isPinned ? .fill : .regular)
-                        Text(isPinned ? "Unpin message" : "Pin message")
-                    }
-                }
-                .disabled(pendingAction == .pin || !isPinAvailable)
-            }
+            Button(action: onRefresh) { Label("Refresh this response", icon: .arrowClockwise) }
+                .disabled(pendingAction != nil || !areSessionActionsAvailable)
             if let onOpenInTab {
                 Button(action: onOpenInTab) { Label("Open message in new tab", icon: .arrowSquareOut) }
                     .disabled(isStreamingMessage)
@@ -555,7 +547,7 @@ struct ConversationMessageRow: View, Equatable {
                     ProgressView().controlSize(.small)
                 }
             }
-            .frame(width: 28, height: 28)
+            .frame(width: 24, height: 28)
         }
         .help("More message actions")
         .accessibilityLabel("More message actions")
@@ -620,7 +612,7 @@ struct ConversationMessageRow: View, Equatable {
                 action: action
             )
             .buttonStyle(DockPressButtonStyle())
-            .frame(width: 28, height: 28)
+            .frame(width: 24, height: 28)
             .contentShape(Rectangle())
         } else {
             let icon =
@@ -646,7 +638,7 @@ struct ConversationMessageRow: View, Equatable {
                 }
             }
             .buttonStyle(DockPressButtonStyle())
-            .frame(width: 28, height: 28)
+            .frame(width: 24, height: 28)
             .accessibilityAddTraits(isActive ? .isSelected : [])
             .contentShape(Rectangle())
             .help(label)
