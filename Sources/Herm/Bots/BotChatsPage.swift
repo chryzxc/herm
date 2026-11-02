@@ -50,7 +50,7 @@ enum BotChatsOrdering {
 
 /// The Bots page's left panel: every bot's main chat and every group room in
 /// one list. The chat, toolbar and workspace beside it are the Sessions layout's.
-struct BotChatsPage: View {
+struct BotChatsPage: View, Equatable {
     @ObservedObject var bots: BotModeModel
     @ObservedObject var groups: GroupChatStore
     let activeBotID: String?
@@ -62,6 +62,16 @@ struct BotChatsPage: View {
     let onOpen: (BotSummary) -> Void
     @State private var query = ""
     @State private var isShowingNewGroupChat = false
+
+    /// The host re-renders on every DockModel publication; skip those. The
+    /// observed bot and group stores still drive this page's own updates.
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        MainActor.assumeIsolated {
+            lhs.activeBotID == rhs.activeBotID && lhs.style.theme == rhs.style.theme
+                && lhs.usesWindowChrome == rhs.usesWindowChrome && lhs.openRoomID == rhs.openRoomID
+                && lhs.isCollapsed == rhs.isCollapsed
+        }
+    }
 
     private var visibleBots: [BotSummary] { bots.bots.filter { !$0.isHidden } }
 
@@ -150,7 +160,14 @@ struct BotChatsPage: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        } else if listedItems.isEmpty {
+        } else {
+            itemList(listedItems, selectedRoomID: openRoom?.id)
+        }
+    }
+
+    @ViewBuilder
+    private func itemList(_ items: [BotChatsItem], selectedRoomID: String?) -> some View {
+        if items.isEmpty {
             Text("No matching chats")
                 .dockFont(.body)
                 .foregroundStyle(style.metadataText)
@@ -158,14 +175,14 @@ struct BotChatsPage: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: 2) {
-                    ForEach(listedItems) { item in
+                    ForEach(items) { item in
                         switch item {
                         case .bot(let bot):
-                            row(bot)
+                            row(bot, isSelected: selectedRoomID == nil && bot.id == activeBotID)
                         case .room(let room, let date):
                             GroupChatSidebarRow(
                                 room: room, store: groups, botMode: bots, style: style,
-                                isSelected: room.id == openRoom?.id, date: date
+                                isSelected: room.id == selectedRoomID, date: date
                             ) { openRoom(room.id) }
                         }
                     }
@@ -207,9 +224,8 @@ struct BotChatsPage: View {
 
     private func closeRoom() { openRoomID = "" }
 
-    private func row(_ bot: BotSummary) -> some View {
-        let isSelected = openRoom == nil && bot.id == activeBotID
-        return Button {
+    private func row(_ bot: BotSummary, isSelected: Bool) -> some View {
+        Button {
             open(bot)
         } label: {
             HStack(spacing: 10) {

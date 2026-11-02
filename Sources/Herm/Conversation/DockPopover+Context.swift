@@ -118,6 +118,7 @@ extension DockPopover {
             isDockedWindow: usesWindowChrome,
             isSidebarCollapsed: chatListCollapsed
         )
+        .equatable()
     }
 
     var currentNavigationDestination: NavigationDestination {
@@ -371,6 +372,7 @@ extension DockPopover {
             // Stays on Bots: the rail keeps Bots selected while the chat changes.
             onOpen: { bot in model.resumeBotChat(bot) }
         )
+        .equatable()
     }
 
     /// Left side of the conversation toolbar: the bot on the Bots page, else the session title.

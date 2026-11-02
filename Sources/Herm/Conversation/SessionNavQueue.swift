@@ -4,14 +4,7 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct SessionNavQueue: View {
-    private struct QueueTaskGroup: Identifiable {
-        let key: String
-        let task: WorkspaceTask
-        let count: Int
-        var id: String { key }
-    }
-
+struct SessionNavQueue: View, Equatable {
     /// Command-only references. Render state for the rail comes from the
     /// deduplicated sidebar snapshot so streaming publications cannot rebuild
     /// the navigation hierarchy.
@@ -129,12 +122,26 @@ struct SessionNavQueue: View {
         self._isSidebarCollapsed = isSidebarCollapsed
     }
 
-    private var readyTasks: [WorkspaceTask] {
-        workspaceStore.tasks.filter { $0.status == .readyForReview || $0.status == .todo }
-    }
-
-    private var blockedTasks: [WorkspaceTask] {
-        workspaceStore.tasks.filter { $0.status == .awaitingApproval }
+    /// The host re-renders on every DockModel publication, and closures are
+    /// never equal, so compare only rendered values. The rail's own observed
+    /// objects and sidebar snapshot still drive its updates.
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        MainActor.assumeIsolated {
+            lhs.activeSessionID == rhs.activeSessionID
+                && lhs.activeGlobalTab == rhs.activeGlobalTab
+                && lhs.isArtifactsActive == rhs.isArtifactsActive
+                && lhs.isBotsActive == rhs.isBotsActive
+                && lhs.isPullRequestsActive == rhs.isPullRequestsActive
+                && lhs.isIssuesActive == rhs.isIssuesActive
+                && lhs.showsFullscreenToggle == rhs.showsFullscreenToggle
+                && lhs.isFullscreen == rhs.isFullscreen
+                && lhs.isDockedWindow == rhs.isDockedWindow
+                && lhs.showsWindowTitleRow == rhs.showsWindowTitleRow
+                && lhs.isSidebarCollapsed == rhs.isSidebarCollapsed
+                && (lhs.onOpenTiles == nil) == (rhs.onOpenTiles == nil)
+                && (lhs.onShowBots == nil) == (rhs.onShowBots == nil)
+                && (lhs.onOpenWindow == nil) == (rhs.onOpenWindow == nil)
+        }
     }
 
     private var sidebarSnapshot: SessionNavSidebarSnapshot {
@@ -211,10 +218,6 @@ struct SessionNavQueue: View {
         case .loading, .stale, .unavailable, .failed:
             break
         }
-    }
-
-    private var readyTaskGroups: [QueueTaskGroup] {
-        groupedTasks(readyTasks)
     }
 
     var body: some View {
@@ -356,15 +359,6 @@ struct SessionNavQueue: View {
     private func projectDisplayName(_ rawName: String) -> String {
         let name = URL(fileURLWithPath: rawName).lastPathComponent
         return name.isEmpty ? rawName : name
-    }
-
-    private var statusColor: Color {
-        switch model.status {
-        case .idle: .dockSuccess
-        case .working: .dockAccent
-        case .needsApproval, .needsClarification: .dockWarning
-        case .offline: .dockDestructive
-        }
     }
 
     private var selectedBot: BotSummary? {
@@ -1103,25 +1097,5 @@ struct SessionNavQueue: View {
 
     private func compactCount(_ count: Int) -> String {
         count > 99 ? "99+" : "\(count)"
-    }
-
-    private func groupedTasks(_ tasks: [WorkspaceTask]) -> [QueueTaskGroup] {
-        var groups: [QueueTaskGroup] = []
-        var indexes: [String: Int] = [:]
-        for task in tasks {
-            let normalizedTitle = task.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            // Session-linked tasks represent distinct conversations. Unlinked
-            // tasks with the same title are grouped to prevent a stale or
-            // repeated projection from filling the entire navigation rail.
-            let key = task.sessionID.map { "session:\($0)" } ?? "title:\(normalizedTitle)"
-            if let index = indexes[key] {
-                let existing = groups[index]
-                groups[index] = QueueTaskGroup(key: existing.key, task: existing.task, count: existing.count + 1)
-            } else {
-                indexes[key] = groups.count
-                groups.append(QueueTaskGroup(key: key, task: task, count: 1))
-            }
-        }
-        return groups
     }
 }
