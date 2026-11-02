@@ -727,9 +727,11 @@ final class AgentBrowser: ObservableObject {
         switch method {
         case "Target.targetCreated", "Target.targetInfoChanged":
             guard let page = (params["targetInfo"] as? [String: Any]).flatMap(Page.init(info:)) else { return }
-            // Its targetDestroyed then drops it and moves the view back to a real page.
+            // A new tab reports about:blank before its chrome:// URL, so it may already be listed
+            // and on screen; drop it now rather than flicker until its targetDestroyed.
             if page.isUnsolicited {
                 cdp?.fire("Target.closeTarget", ["targetId": page.id])
+                dropPage(page.id)
                 return
             }
             if let index = pages.firstIndex(where: { $0.id == page.id }) {
@@ -741,18 +743,7 @@ final class AgentBrowser: ObservableObject {
             }
         case "Target.targetDestroyed":
             guard let id = params["targetId"] as? String else { return }
-            pages.removeAll { $0.id == id }
-            guard id == activeTargetID else { return }
-            pointerTracker?.stop()
-            pointerTracker = nil
-            updatePointer(nil)
-            sessionID = nil
-            activeTargetID = nil
-            if let next = pages.last {
-                Task { try? await attach(next.id) }
-            } else {
-                cdp?.fire("Target.createTarget", ["url": "about:blank"])
-            }
+            dropPage(id)
         default:
             break
         }
@@ -824,6 +815,22 @@ final class AgentBrowser: ObservableObject {
                     ?? details?["text"] as? String ?? "Uncaught exception")
         default:
             break
+        }
+    }
+
+    /// Unlists a tab; if it was on screen, the view moves to the newest remaining one.
+    private func dropPage(_ id: String) {
+        pages.removeAll { $0.id == id }
+        guard id == activeTargetID else { return }
+        pointerTracker?.stop()
+        pointerTracker = nil
+        updatePointer(nil)
+        sessionID = nil
+        activeTargetID = nil
+        if let next = pages.last {
+            Task { try? await attach(next.id) }
+        } else {
+            cdp?.fire("Target.createTarget", ["url": "about:blank"])
         }
     }
 
