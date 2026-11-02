@@ -260,7 +260,7 @@ extension DockModel {
             let warning = (payload["warning"] as? String).map { "warning: \($0)\n" } ?? ""
             appendSlashOutput(warning + output, generation: generation)
             if ["reasoning", "model"].contains(command.name), self.sessionID == sessionID {
-                refreshSessionModelOptions()
+                refreshSessionModelOptions(keepingCatalog: true)
                 refreshSessionReasoningVariant()
             }
         }

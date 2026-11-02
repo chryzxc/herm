@@ -184,6 +184,20 @@ struct HermesEffortPolicyTests {
         #expect(unsupported.accessibilityLabel.contains("High — unavailable"))
         #expect(unsupported.disabled)
     }
+    @Test func fastCapabilityComesFromTheCatalog() {
+        let catalog = HermesEffortCatalog(result: [
+            "providers": [
+                [
+                    "slug": "p", "models": ["on", "off", "silent"],
+                    "capabilities": ["on": ["fast": true], "off": ["fast": false], "silent": [:]],
+                ]
+            ]
+        ])
+        #expect(catalog.supportsFast(for: "p|on") == true)
+        #expect(catalog.supportsFast(for: "p|off") == false)
+        #expect(catalog.supportsFast(for: "p|silent") == nil)
+        #expect(catalog.supportsFast(for: nil) == nil)
+    }
     @Test func capabilityAvailabilityMatrix() {
         let catalog = HermesEffortCatalog(result: [
             "providers": [

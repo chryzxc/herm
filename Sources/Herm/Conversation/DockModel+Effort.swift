@@ -17,7 +17,7 @@ extension DockModel {
             sessionInfoSequencesBySessionID[owner] = sequence
         } else if params["herm_trace_replayed"] as? Bool == true {
             refreshSessionReasoningVariant()
-            refreshSessionModelOptions()
+            refreshSessionModelOptions(keepingCatalog: true)
             return
         }
         if let raw = payload["reasoning_effort"] as? String, !raw.isEmpty {
@@ -29,7 +29,7 @@ extension DockModel {
         }
         if let fast = payload["fast"] as? Bool { sessionFastEnabled = fast }
         if payload["model"] as? String != nil || payload["provider"] as? String != nil {
-            refreshSessionModelOptions()
+            refreshSessionModelOptions(keepingCatalog: true)
         }
     }
 

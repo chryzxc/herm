@@ -36,8 +36,15 @@ struct ComposerEffortPresentation {
     var accessibilityLabel: String { "Effort, \(status)" }
 }
 
+/// The last real effort levels, so the stacked bar survives the catalog reloading after a model switch
+/// instead of being torn down and rebuilt (which restarts its animation and shifts the popover).
+private final class EffortChoicesMemory: ObservableObject {
+    var last: [HermesReasoningVariant] = []
+}
+
 struct ComposerEffortControls: View {
     @ObservedObject var model: DockModel
+    @StateObject private var memory = EffortChoicesMemory()
     let modelID: String?
     @Binding var selection: HermesReasoningVariant?
     /// Radio rows under a heading, matching the model list, for a side pane.
@@ -51,35 +58,29 @@ struct ComposerEffortControls: View {
             loading: model.isEffortCatalogPending, stale: model.sessionReasoningStale)
     }
 
-    private static func title(_ variant: HermesReasoningVariant) -> String {
+    private func remember(_ choices: [HermesReasoningVariant]) {
+        if !choices.isEmpty { memory.last = choices }
+    }
+
+    static func title(_ variant: HermesReasoningVariant) -> String {
         variant == .none ? "Off" : (variant == .xhigh ? "Extra High" : variant.rawValue.capitalized)
     }
 
-    private func radioRow(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Circle()
-                    .stroke(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText, lineWidth: 1)
-                    .frame(width: 15, height: 15)
-                    .overlay {
-                        if isSelected { DockIcon(.check, size: 10, color: Color.dockPrimaryText) }
-                    }
-                Text(title)
-                    .dockFont(.body, weight: isSelected ? .semibold : .regular)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-            }
-        }
-        .accessibilityLabel("\(title)\(isSelected ? ", selected" : "")")
+    /// The catalog says whether this model has a Fast tier; fall back to the session's report when it is silent.
+    private var offersFast: Bool {
+        model.effortCatalog?.supportsFast(for: modelID) ?? (model.sessionFastEnabled != nil)
     }
 
-    private func effortRows(_ choices: [HermesReasoningVariant]) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            ForEach(choices) { variant in
-                radioRow(Self.title(variant), isSelected: selection == variant) { selection = variant }
-            }
-        }
-        .disabled(presentation.disabled)
+    /// Always present in the stacked layout so the row does not jump; disabled when Hermes offers no Fast tier.
+    private var speedSwitch: some View {
+        let available = model.sessionID != nil && offersFast
+        return ComposerSpeedSwitch(isFast: fastBinding)
+            .frame(width: 124)
+            .disabled(!available || model.isUpdatingSessionFast)
+            .help(
+                model.sessionID == nil
+                    ? "Start a chat to change speed."
+                    : offersFast ? "Fast uses priority processing." : "Fast is not available for this model.")
     }
 
     private var fastBinding: Binding<Bool> {
@@ -95,12 +96,18 @@ struct ComposerEffortControls: View {
                 }
             } else {
                 let choices = presentation.choices ?? []
+                // While a switch or reload is in flight the levels are briefly unknown; keep drawing the last ones.
+                let barChoices =
+                    choices.isEmpty && (presentation.loading || presentation.pending) ? memory.last : choices
+                let _ = remember(choices)
                 if stacked {
-                    Text("Effort")
-                        .dockFont(.body, weight: .semibold)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .dockPadding(.horizontal, 8)
-                    effortRows(choices)
+                    // Level name and speed share a row; the bar runs full width below.
+                    if barChoices.isEmpty {
+                        speedSwitch
+                    } else {
+                        ComposerEffortSlider(choices: barChoices, selection: $selection) { speedSwitch }
+                            .disabled(presentation.disabled)
+                    }
                 } else if choices.count <= 3, !choices.isEmpty {
                     HStack(spacing: 8) {
                         Text("Effort")
@@ -122,28 +129,14 @@ struct ComposerEffortControls: View {
                     }
                     effortChoices(choices)
                 }
-                if model.sessionID != nil, model.sessionFastEnabled != nil {
-                    if stacked {
-                        Color.dockBorder.frame(height: DockLayout.hairline)
-                        Text("Speed")
-                            .dockFont(.body, weight: .semibold)
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .dockPadding(.horizontal, 8)
-                        VStack(alignment: .leading, spacing: 1) {
-                            radioRow("Standard", isSelected: !fastBinding.wrappedValue) {
-                                fastBinding.wrappedValue = false
-                            }
-                            radioRow("Fast", isSelected: fastBinding.wrappedValue) { fastBinding.wrappedValue = true }
-                        }
+                if !stacked, model.sessionID != nil, offersFast {
+                    Toggle("Fast", isOn: fastBinding)
+                        .toggleStyle(.dockSwitch)
                         .disabled(model.isUpdatingSessionFast)
-                    } else {
-                        Toggle("Fast", isOn: fastBinding)
-                            .toggleStyle(.dockSwitch)
-                            .disabled(model.isUpdatingSessionFast)
-                    }
                 }
             }
         }
+        .frame(minHeight: stacked ? 54 : 0, alignment: .top)
         .help(presentation.explanation)
     }
 

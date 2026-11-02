@@ -676,7 +676,7 @@ struct ChatComposerView: View {
             selectedID: selectedModelOptionID,
             isRefreshing: model.isLoadingRuntimeModelOptions,
             refreshError: model.runtimeModelOptionsError,
-            onRefresh: { model.refreshRuntimeModelOptions(sessionID: model.sessionID) },
+            onRefresh: { model.refreshRuntimeModelOptions(sessionID: model.sessionID, keepingCatalog: true) },
             onSelect: { option in
                 model.updateSessionModel(option)
             },
@@ -692,7 +692,6 @@ struct ChatComposerView: View {
                 .fill(DockSkinPresentation.current.composerControlFill)
         )
         .frame(height: 32)
-        .disabled(model.isUpdatingSessionModel || model.isUpdatingSessionReasoning)
         .help("Select model")
     }
 

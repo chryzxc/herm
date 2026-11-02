@@ -3,6 +3,7 @@ import Foundation
 
 struct HermesEffortCatalog {
     private var choicesByID: [String: [HermesReasoningVariant]] = [:]
+    private var fastByID: [String: Bool] = [:]
 
     init(result: [String: Any]) {
         guard let providers = result["providers"] as? [[String: Any]] else { return }
@@ -34,9 +35,18 @@ struct HermesEffortCatalog {
                 } else if flag("can_disable_reasoning") == false {
                     choices.removeFirst()
                 }
-                for alias in aliases { choicesByID[HermesModelOption(provider: alias, model: model).id] = choices }
+                for alias in aliases {
+                    let id = HermesModelOption(provider: alias, model: model).id
+                    choicesByID[id] = choices
+                    if let fast = flag("fast") { fastByID[id] = fast }
+                }
             }
         }
+    }
+
+    /// Whether Hermes offers Fast (priority) processing for this model; nil when the catalog is silent.
+    func supportsFast(for id: String?) -> Bool? {
+        id.flatMap { fastByID[$0] }
     }
 
     func choices(for id: String?) -> [HermesReasoningVariant]? {

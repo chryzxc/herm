@@ -152,7 +152,9 @@ struct ModelPickerView: View {
     }
 
     var body: some View {
-        DockMenu {
+        // Anchored to the label's leading edge: its width changes with the model and effort text, and a
+        // popover attached to the whole label would slide sideways on every change.
+        DockMenu(anchor: .rect(.rect(CGRect(x: 0, y: 0, width: 24, height: 28)))) {
             pickerContent
                 .dockPadding(.vertical, 6)
                 .dockMenuKeepOpen()
@@ -242,7 +244,19 @@ struct ModelPickerView: View {
                     }
                 }
                 .frame(maxHeight: 220)
-                Color.dockBorder.frame(height: DockLayout.hairline)
+                if let effortModel {
+                    // One soft card groups effort and speed, so the model list above stays the main surface.
+                    ComposerEffortControls(
+                        model: effortModel, modelID: selectedID, selection: effortSelection, stacked: true
+                    )
+                    .dockPadding(10)
+                    .background(
+                        DockThemeShape(cornerRadius: DockLayout.controlRadius + 2)
+                            .dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight)
+                    )
+                } else {
+                    Color.dockBorder.frame(height: DockLayout.hairline)
+                }
                 HStack(spacing: 4) {
                     Button {
                         onRefresh()
@@ -250,20 +264,12 @@ struct ModelPickerView: View {
                         Label(isRefreshing ? "Refreshing…" : "Refresh", icon: .arrowClockwise)
                     }
                     .disabled(isRefreshing)
+                    Spacer(minLength: 8)
                     Button("Edit models…") { showingEditor = true }
                 }
             }
             .dockPadding(.leading, 6)
-            .dockPadding(.trailing, effortModel == nil ? 0 : 8)
-            .frame(width: 270, alignment: .leading)
-            if let effortModel {
-                Color.dockBorder.frame(width: DockLayout.hairline)
-                ComposerEffortControls(
-                    model: effortModel, modelID: selectedID, selection: effortSelection, stacked: true
-                )
-                .dockPadding(.horizontal, 6)
-                .frame(width: 170, alignment: .topLeading)
-            }
+            .frame(width: 290, alignment: .leading)
         }
         .background(alignment: .leading) {
             if groups.count > 1 {
@@ -310,6 +316,9 @@ struct ModelPickerView: View {
     @ViewBuilder
     private func modelPane(provider: String?) -> some View {
         switch refreshState {
+        case .pending where !options.isEmpty:
+            // Refreshing in place: keep the rows so the popover does not jump.
+            modelRows(provider: provider)
         case .pending:
             Label("Loading model catalog…", icon: .hourglass)
         case .unavailable:
