@@ -47,7 +47,7 @@ final class HermesSimulatorBridge {
             ["Library/Developer/CoreSimulator/Devices", "Library/Android/sdk"].contains(where: {
                 fm.fileExists(atPath: home.appendingPathComponent($0).path)
             }),
-            let bundled = Bundle.module.url(forResource: "SimulatorBridge", withExtension: nil)
+            let bundled = Bundle.herm.url(forResource: "SimulatorBridge", withExtension: nil)
         else { return }
         let root = python.deletingLastPathComponent().deletingLastPathComponent()
         let run = HermesBundledPlugins.run
@@ -78,7 +78,7 @@ final class HermesSimulatorBridge {
     ) throws {
         stop()
         guard FileManager.default.isExecutableFile(atPath: Self.python.path),
-            let folder = Bundle.module.url(forResource: "SimulatorBridge", withExtension: nil)
+            let folder = Bundle.herm.url(forResource: "SimulatorBridge", withExtension: nil)
         else {
             throw NSError(
                 domain: "HermSimulator", code: 1,

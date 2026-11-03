@@ -8,11 +8,7 @@ enum DockAppBrand {
     static let backdrop = image("HermesBackdrop", "jpg")
 
     private static func image(_ name: String, _ ext: String) -> NSImage? {
-        let resources =
-            Bundle.main.resourceURL.flatMap {
-                Bundle(url: $0.appendingPathComponent("Herm_Herm.bundle"))
-            } ?? Bundle.module
-        return resources.url(forResource: name, withExtension: ext).flatMap(NSImage.init(contentsOf:))
+        return Bundle.herm.url(forResource: name, withExtension: ext).flatMap(NSImage.init(contentsOf:))
     }
 }
 

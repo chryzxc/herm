@@ -36,7 +36,7 @@ enum HermesBundledPlugins {
     }
 
     private static func install(client: HermesRPCClientProtocol) async -> Bool {
-        guard let folder = Bundle.module.url(forResource: "HermesPlugins", withExtension: nil) else { return false }
+        guard let folder = Bundle.herm.url(forResource: "HermesPlugins", withExtension: nil) else { return false }
         let rpc = HermesWorkflowRPC(client: client, profileID: nil)
         do {
             let rows = try await rpc.plugins()

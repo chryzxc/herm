@@ -17,7 +17,7 @@ final class GatewaySSHBridge {
     func connect(_ settings: GatewayConnectionSettings) async throws -> (URL, String) {
         if process != nil { throw GatewayConnectionError.unavailable("SSH connection is already starting.") }
         let settings = try settings.validated()
-        guard let script = Bundle.module.url(forResource: "HermesSSHBridge", withExtension: "mjs") else {
+        guard let script = Bundle.herm.url(forResource: "HermesSSHBridge", withExtension: "mjs") else {
             throw GatewayConnectionError.unavailable("Herm's SSH helper is missing. Reinstall Herm.")
         }
         let home = FileManager.default.homeDirectoryForCurrentUser

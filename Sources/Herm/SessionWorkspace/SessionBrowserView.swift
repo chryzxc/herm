@@ -59,7 +59,7 @@ struct BrowserAnnotation: Decodable {
     /// finder's functions stay private to Herm's isolated world.
     static let script: String = {
         func load(_ name: String) -> String {
-            Bundle.module.url(forResource: name, withExtension: "js")
+            Bundle.herm.url(forResource: name, withExtension: "js")
                 .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
         }
         let finder = load("BrowserFinder").replacingOccurrences(of: "export function", with: "function")

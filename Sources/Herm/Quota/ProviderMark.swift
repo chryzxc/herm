@@ -75,10 +75,7 @@ extension ProviderMark {
         (["ai-gateway", "vercel"], "vercel"),
     ]
 
-    private static let bundle: Bundle =
-        Bundle.main.resourceURL.flatMap {
-            Bundle(url: $0.appendingPathComponent("Herm_Herm.bundle"))
-        } ?? Bundle.module
+    private static let bundle = Bundle.herm
 
     // NSCache is thread-safe; images are read-only once cached.
     nonisolated(unsafe) private static let cache = NSCache<NSString, NSImage>()
