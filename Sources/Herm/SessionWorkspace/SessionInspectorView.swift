@@ -661,7 +661,7 @@ struct SessionInspector: View {
         }
         .frame(height: headerHeight)
         // In the unified window title row, match the conversation header's toolbar color.
-        .background(headerHeight == DockWindowChrome.titleRowHeight ? Color.dockSidebar : .clear)
+        .dockShellChrome(headerHeight == DockWindowChrome.titleRowHeight)
         .dockPaneTint(headerHeight == DockWindowChrome.titleRowHeight ? .clear : Color.dockSurface2.opacity(0.58))
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }

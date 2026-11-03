@@ -33,8 +33,10 @@ struct HermKeychainPolicyTests {
         var helper: SecTrustedApplication?
         #expect(SecTrustedApplicationCreateFromPath("/usr/bin/security", &helper) == errSecSuccess)
         var legacy: SecAccess?
-        #expect(SecAccessCreate("Herm policy test" as CFString, [try #require(helper)] as CFArray, &legacy) == errSecSuccess)
+        let trusted = [try #require(helper)] as CFArray
+        #expect(SecAccessCreate("Herm policy test" as CFString, trusted, &legacy) == errSecSuccess)
         #expect(HermKeychain.trustedPaths(try #require(legacy)).contains { $0.contains("/usr/bin/security") })
-        #expect(!HermKeychain.trustedPaths(try HermKeychain.access("Herm policy test")).contains { $0.contains("/usr/bin/security") })
+        let current = try HermKeychain.access("Herm policy test")
+        #expect(!HermKeychain.trustedPaths(current).contains { $0.contains("/usr/bin/security") })
     }
 }
