@@ -46,6 +46,21 @@ The debug launcher is `Scripts/run-debug-app.sh`. Do not use `swift run` for
 manual menu-bar focus testing. `make package VERSION=1.2.3` creates the
 versioned release DMG.
 
+## CI and releases
+
+CI (`.github/workflows/ci.yml`) runs on every pull request and push to `main`:
+`make guard` first, then the test suite, launcher syntax, and a release build.
+A newer push to the same branch cancels the older run.
+
+`.github/workflows/release-dmg.yml` publishes two channels:
+
+- **Nightly**: each green CI run on `main` replaces `Herm.dmg` on the rolling
+  `nightly` pre-release. Use it to test the latest `main`. Herm's updater
+  ignores pre-releases, so nightlies never reach installed copies.
+- **Stable**: push a tag (`git tag v1.2.3 && git push origin v1.2.3`) or run the
+  workflow by hand with a version. It packages only a commit whose CI already
+  passed, and writes notes from the previous stable tag.
+
 ## Before opening a PR
 
 1. Add or update focused tests for behavior changes.

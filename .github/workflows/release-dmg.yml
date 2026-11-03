@@ -1,11 +1,12 @@
 name: Release macOS DMG
 
 on:
-  # Auto-release: every green CI run on main ships the next patch version.
+  # Nightly: every green CI run on main refreshes the rolling `nightly` pre-release.
   workflow_run:
     workflows: [CI]
     types: [completed]
     branches: [main]
+  # Stable: push a vX.Y.Z tag, or run this workflow by hand with a version.
   push:
     tags:
       - "v*"
@@ -23,10 +24,12 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.event_name == 'workflow_run' && 'auto' || github.ref_name }}
-  cancel-in-progress: false
+  group: release-${{ github.event_name == 'workflow_run' && 'nightly' || github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+  # A newer nightly supersedes an older one; stable releases always finish.
+  cancel-in-progress: ${{ github.event_name == 'workflow_run' }}
 
 jobs:
   package:
@@ -43,50 +46,54 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Resolve and validate version
+      - name: Resolve channel and version
         id: version
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          SHA=$(git rev-parse HEAD)
 
           if [[ "$EVENT_NAME" == "workflow_run" ]]; then
-            if git tag --points-at HEAD | grep -q '^v'; then
-              echo "HEAD is already released; skipping."
+            if [[ "$(git rev-parse origin/main)" != "$SHA" ]]; then
+              echo "main has moved past $SHA; its newer commit publishes the nightly."
               echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            LATEST=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+            # Nightlies carry the next patch version, so they never sort below the stable release.
+            LATEST=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
             LATEST="${LATEST:-v0.0.0}"
             IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
             VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
-          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            VERSION="$INPUT_VERSION"
+            TAG=nightly
           else
-            VERSION="${REF_NAME#v}"
-          fi
-
-          if ! ruby -e '
-            semver = /\A(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)
-              (?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?
-              (?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\z/x
-            abort unless semver.match?(ARGV.fetch(0))
-          ' "$VERSION"; then
-            echo "Invalid release version: $VERSION" >&2
-            echo "Expected strict semantic version format such as 1.2.3, 1.2.3-rc.1, or 1.2.3+build.1" >&2
-            exit 1
+            if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then VERSION="$INPUT_VERSION"; else VERSION="${REF_NAME#v}"; fi
+            if ! ruby -e '
+              semver = /\A(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)
+                (?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?
+                (?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\z/x
+              abort unless semver.match?(ARGV.fetch(0))
+            ' "$VERSION"; then
+              echo "Invalid release version: $VERSION (expected 1.2.3, 1.2.3-rc.1, or 1.2.3+build.1)" >&2
+              exit 1
+            fi
+            # Stable releases ship only commits CI already passed, instead of retesting here.
+            PASSED=$(gh run list -R "$REPO" --workflow CI --commit "$SHA" --status success --limit 1 --json databaseId -q '.[0].databaseId')
+            if [[ -z "$PASSED" ]]; then
+              echo "CI has not passed on $SHA. Push it to main or a pull request and wait for green CI first." >&2
+              exit 1
+            fi
+            TAG="v$VERSION"
           fi
 
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Run release test suite
-        if: github.event_name != 'workflow_run' && steps.version.outputs.skip != 'true'
-        run: swift test
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$SHA" >> "$GITHUB_OUTPUT"
 
       - name: Build versioned DMG
         if: steps.version.outputs.skip != 'true'
@@ -96,37 +103,53 @@ jobs:
 
       - name: Verify DMG
         if: steps.version.outputs.skip != 'true'
-        env:
-          VERSION: ${{ steps.version.outputs.value }}
         shell: bash
         run: |
           set -euo pipefail
           test -s dist/Herm.dmg
           hdiutil imageinfo dist/Herm.dmg >/dev/null
-          echo "Built Herm-${VERSION}.dmg ($(du -h dist/Herm.dmg | cut -f1))"
+          echo "Built Herm.dmg ($(du -h dist/Herm.dmg | cut -f1))"
 
-      - name: Upload DMG artifact
-        if: steps.version.outputs.skip != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: Herm-${{ steps.version.outputs.value }}-dmg
-          path: dist/Herm.dmg
-          if-no-files-found: error
-
-      - name: Create or update GitHub release
-        if: steps.version.outputs.skip != 'true'
+      # Herm's updater reads /releases/latest and rejects pre-releases, so nightlies never reach users.
+      - name: Publish nightly pre-release
+        if: steps.version.outputs.skip != 'true' && steps.version.outputs.tag == 'nightly'
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           VERSION: ${{ steps.version.outputs.value }}
-          TAG: ${{ steps.version.outputs.tag }}
-          TARGET_SHA: ${{ steps.version.outputs.source_sha }}
+          SHA: ${{ steps.version.outputs.source_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            if ! gh release create "$TAG" --target "$TARGET_SHA" --title "$TAG" --generate-notes; then
+          TITLE="Nightly $VERSION-dev (${SHA:0:8})"
+          NOTES="Automatic build of main at ${SHA:0:8}: $(git log -1 --format=%s "$SHA"). Not a stable release; Herm's updater ignores it."
+          if gh release view nightly -R "$REPO" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$REPO/git/refs/tags/nightly" -f sha="$SHA" -F force=true >/dev/null
+            gh release edit nightly -R "$REPO" --prerelease --latest=false --title "$TITLE" --notes "$NOTES"
+          else
+            gh release create nightly -R "$REPO" --target "$SHA" --prerelease --latest=false --title "$TITLE" --notes "$NOTES"
+          fi
+          gh release upload nightly -R "$REPO" dist/Herm.dmg --clobber
+
+      - name: Publish stable release
+        if: steps.version.outputs.skip != 'true' && steps.version.outputs.tag != 'nightly'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA: ${{ steps.version.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Notes start at the previous stable tag, never at the rolling nightly.
+          START=()
+          if PREVIOUS=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$SHA^" 2>/dev/null); then
+            START=(--notes-start-tag "$PREVIOUS")
+          fi
+          if ! gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+            if ! gh release create "$TAG" -R "$REPO" --target "$SHA" --title "$TAG" --generate-notes ${START[@]+"${START[@]}"}; then
               # Another tag/manual run may have created it concurrently.
-              gh release view "$TAG" >/dev/null
+              gh release view "$TAG" -R "$REPO" >/dev/null
             fi
           fi
-          gh release upload "$TAG" dist/Herm.dmg --clobber
+          gh release upload "$TAG" -R "$REPO" dist/Herm.dmg --clobber
