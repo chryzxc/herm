@@ -155,7 +155,8 @@ struct DockThemeContrastTests {
         for theme in [DockThemeID.clean, .glass, .mono, .eInk] {
             let palette = DockThemePalette(theme: theme)
             for dark in [false, true] {
-                for token in [palette.accent, palette.selectedFill] {
+                // Clean's soft violet is its primary action only (DESIGN.md); its selection stays gray.
+                for token in theme == .clean ? [palette.selectedFill] : [palette.accent, palette.selectedFill] {
                     let color = resolve(token, dark: dark)
                     #expect(abs(color.blueComponent - color.redComponent) < 0.025)
                     #expect(abs(color.greenComponent - color.redComponent) < 0.025)
