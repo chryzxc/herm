@@ -208,7 +208,8 @@ struct EdgeQuickMessageView: View {
         if let bot = destinationBot {
             BotAvatarView(bot: bot, imageData: state.avatarImages[bot.id], size: size, animated: false)
         } else {
-            DockIcon(.chatCenteredText, size: size * 0.6, color: Color.dockSecondaryText).frame(width: size, height: size)
+            DockIcon(.chatCenteredText, size: size * 0.6, color: Color.dockSecondaryText).frame(
+                width: size, height: size)
         }
     }
 
@@ -230,16 +231,20 @@ struct EdgeQuickMessageView: View {
                 Text(startsNewSession ? destinationName : record.destination.title)
                     .dockFont(.body, weight: .semibold).lineLimit(1).truncationMode(.middle)
                     .foregroundStyle(Color.dockPrimaryText)
-                Text(([startsNewSession ? "New session" : destinationName] + [project].compactMap { $0 })
-                    .joined(separator: " · "))
-                    .dockFont(.metadata).lineLimit(1).truncationMode(.middle)
-                    .foregroundStyle(Color.dockSecondaryText)
+                Text(
+                    ([startsNewSession ? "New session" : destinationName] + [project].compactMap { $0 })
+                        .joined(separator: " · ")
+                )
+                .dockFont(.metadata).lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(Color.dockSecondaryText)
             }
         }
     }
 
     private func destinationMenu() -> some View {
-        Button { choosingDestination.toggle() } label: {
+        Button {
+            choosingDestination.toggle()
+        } label: {
             HStack(spacing: DockSpacing.tight) {
                 destination
                 DockIcon(.caretDown, size: 10, color: Color.dockSecondaryText)
@@ -255,15 +260,21 @@ struct EdgeQuickMessageView: View {
 
     private var destinationPicker: some View {
         func pick(_ action: @escaping () -> Void) -> () -> Void {
-            { choosingDestination = false; action() }
+            {
+                choosingDestination = false
+                action()
+            }
         }
         return VStack(alignment: .leading, spacing: DockSpacing.control) {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(76), spacing: 4), count: 4), spacing: 4) {
                 ForEach(state.bots) { bot in
-                    destinationTile(bot.name, action: pick {
-                        state.switchQuickProfile(bot.id)
-                        state.composing = true
-                    }) { BotAvatarView(bot: bot, imageData: state.avatarImages[bot.id], size: 32, animated: false) }
+                    destinationTile(
+                        bot.name,
+                        action: pick {
+                            state.switchQuickProfile(bot.id)
+                            state.composing = true
+                        }
+                    ) { BotAvatarView(bot: bot, imageData: state.avatarImages[bot.id], size: 32, animated: false) }
                 }
             }
         }
