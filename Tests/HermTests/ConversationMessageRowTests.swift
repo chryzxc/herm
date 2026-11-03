@@ -182,16 +182,20 @@ struct ConversationMessageRowTests {
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.contentView = host
             defer { window.contentView = nil }
-            // Slow runners can evaluate the first frame late, so take the baseline once the count stops moving.
+            let size = host.fittingSize
+            let identities = nativeViewIdentities(host)
+            // Slow runners can evaluate the first frames late, so take the baseline once the count
+            // holds through several settles in a row.
             var parentCount = -1
-            for _ in 0..<20 where recorder.values[parent, default: []].count != parentCount {
-                parentCount = recorder.values[parent, default: []].count
+            var stableSettles = 0
+            for _ in 0..<40 where stableSettles < 3 {
                 try await settle(host)
+                let count = recorder.values[parent, default: []].count
+                stableSettles = count == parentCount ? stableSettles + 1 : 0
+                parentCount = count
             }
             #expect(parentCount > 0)
             #expect(recorder.values[leaf]?.last == resting)
-            let size = host.fittingSize
-            let identities = nativeViewIdentities(host)
             for entered in [true, false, true, false] {
                 hover.isHovering = entered
                 try await settle(host)
