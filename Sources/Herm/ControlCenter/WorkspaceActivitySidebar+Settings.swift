@@ -84,8 +84,8 @@ extension WorkspaceActivitySidebar {
             }
             if selectedSettingsCategory == .updates {
                 settingsDisclosure(
-                    title: "Herm update", subtitle: "Herm \(appUpdater.versionLabel)",
-                    icon: .arrowsClockwise, isExpanded: $isAppUpdateExpanded
+                    title: "Herm update", subtitle: "Herm \(appUpdater.currentVersion ?? "dev build")",
+                    icon: .arrowsClockwise, isExpanded: $isAppUpdateExpanded, badge: appUpdater.nightlyBadge
                 ) {
                     appUpdateSection
                 }
@@ -1283,9 +1283,10 @@ extension WorkspaceActivitySidebar {
         icon: Ph,
         isExpanded: Binding<Bool>,
         tint: Color = .dockAccent,
+        badge: String? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
-        SettingsSection(title: title, subtitle: subtitle, tint: tint) {
+        SettingsSection(title: title, subtitle: subtitle, tint: tint, badge: badge) {
             content()
         }
     }

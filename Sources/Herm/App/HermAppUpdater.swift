@@ -121,11 +121,11 @@ enum HermUpdateParsing {
         isNewer(candidate, than: current) || (isNightly && !isNewer(current, than: candidate))
     }
 
-    /// "0.1.1 · Nightly (1a2b3c4d)" for nightly bundles, the plain version otherwise.
-    static func versionLabel(version: String?, channel: String?, commit: String?) -> String {
-        guard let version, !version.isEmpty else { return "dev build" }
-        guard channel == "nightly" else { return version }
-        return "\(version) · Nightly" + (commit.map { " (\($0.prefix(8)))" } ?? "")
+    /// "Nightly 1a2b3c4d" for nightly bundles; stable builds have no badge.
+    static func nightlyBadge(channel: String?, commit: String?) -> String? {
+        guard channel == "nightly" else { return nil }
+        return ["Nightly", commit.map { String($0.prefix(8)) }].compactMap { $0 }.filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 }
 
@@ -152,9 +152,9 @@ final class HermAppUpdater: ObservableObject {
 
     let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
     let isNightly = Bundle.main.infoDictionary?["HermBuildChannel"] as? String == "nightly"
-    var versionLabel: String {
-        HermUpdateParsing.versionLabel(
-            version: currentVersion, channel: Bundle.main.infoDictionary?["HermBuildChannel"] as? String,
+    var nightlyBadge: String? {
+        HermUpdateParsing.nightlyBadge(
+            channel: Bundle.main.infoDictionary?["HermBuildChannel"] as? String,
             commit: Bundle.main.infoDictionary?["HermBuildCommit"] as? String)
     }
 

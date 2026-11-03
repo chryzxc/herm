@@ -137,6 +137,7 @@ struct SettingsSection<Content: View>: View {
     let title: String
     let subtitle: String
     let tint: Color
+    var badge: String? = nil
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -152,6 +153,9 @@ struct SettingsSection<Content: View>: View {
                         .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if let badge {
+                    DockMetadataPill(text: badge, compact: true)
                 }
             }
             .dockPadding(.horizontal, 2)

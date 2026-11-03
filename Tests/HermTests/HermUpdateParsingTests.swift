@@ -4,11 +4,9 @@ import Testing
 
 @Suite struct HermUpdateParsingTests {
     @Test func labelsNightlyBuildsWithShortCommit() {
-        #expect(
-            HermUpdateParsing.versionLabel(version: "0.1.1", channel: "nightly", commit: "1a2b3c4d5e6f")
-                == "0.1.1 · Nightly (1a2b3c4d)")
-        #expect(HermUpdateParsing.versionLabel(version: "0.1.1", channel: nil, commit: "1a2b3c4d") == "0.1.1")
-        #expect(HermUpdateParsing.versionLabel(version: nil, channel: "nightly", commit: nil) == "dev build")
+        #expect(HermUpdateParsing.nightlyBadge(channel: "nightly", commit: "1a2b3c4d5e6f") == "Nightly 1a2b3c4d")
+        #expect(HermUpdateParsing.nightlyBadge(channel: "nightly", commit: "") == "Nightly")
+        #expect(HermUpdateParsing.nightlyBadge(channel: nil, commit: "1a2b3c4d") == nil)
     }
 
     @Test func nightlyTakesTheStableBuildOfItsVersion() {
