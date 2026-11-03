@@ -182,8 +182,12 @@ struct ConversationMessageRowTests {
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.contentView = host
             defer { window.contentView = nil }
-            try await settle(host)
-            let parentCount = recorder.values[parent, default: []].count
+            // Slow runners can evaluate the first frame late, so take the baseline once the count stops moving.
+            var parentCount = -1
+            for _ in 0..<20 where recorder.values[parent, default: []].count != parentCount {
+                parentCount = recorder.values[parent, default: []].count
+                try await settle(host)
+            }
             #expect(parentCount > 0)
             #expect(recorder.values[leaf]?.last == resting)
             let size = host.fittingSize
