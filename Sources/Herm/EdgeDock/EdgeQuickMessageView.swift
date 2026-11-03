@@ -10,6 +10,7 @@ struct EdgeQuickMessageView: View {
     let close: () -> Void
     let openDock: () -> Void
     @State private var focused = false
+    @State private var choosingDestination = false
     @State private var composerHeight = ComposerLayout.minHeight
     @State private var confirmingReview = false
     @State private var confirmingDiscard = false
@@ -136,7 +137,7 @@ struct EdgeQuickMessageView: View {
                 .disabled(state.quickSending || state.quickNeedsReview)
                 .accessibilityLabel(inline ? "Reply" : "Quick message")
                 if state.quickDraft.isEmpty {
-                    Text(inline ? "Reply…" : "Message Herm…")
+                    Text(inline ? "Reply…" : "Message \(destinationName)…")
                         .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
                         .foregroundStyle(Color.dockSecondaryText)
                         .dockPadding(.leading, 16)
@@ -197,56 +198,91 @@ struct EdgeQuickMessageView: View {
 
     private var startsNewSession: Bool { state.quickTarget == nil && state.quickCreatedSession == nil }
 
+    private var destinationBot: BotSummary? {
+        let profile = state.captureRecord().destination.profileID
+        return state.bots.first { $0.id == profile }
+    }
+    private var destinationName: String { destinationBot?.name ?? model.agentDisplayName }
+
+    @ViewBuilder private func destinationArt(size: CGFloat) -> some View {
+        if let bot = destinationBot {
+            BotAvatarView(bot: bot, imageData: state.avatarImages[bot.id], size: size, animated: false)
+        } else {
+            DockIcon(.chatCenteredText, size: size * 0.6, color: Color.dockSecondaryText).frame(width: size, height: size)
+        }
+    }
+
     private var emptyState: some View {
-        VStack(spacing: DockSpacing.tight) {
-            DockIcon(.chatCenteredText, size: 20, color: Color.dockSecondaryText)
-            Text("Start a new session").dockFont(.body, weight: .semibold)
-            Text("Your first message creates it.").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+        VStack(spacing: DockSpacing.control) {
+            destinationArt(size: 56)
+            Text("Message \(destinationName)").dockFont(.body, weight: .semibold)
+            Text("Your first message starts a new session.").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
         }
         .allowsHitTesting(false)
     }
 
     private var destination: some View {
         let record = state.captureRecord()
-        let profile = record.destination.profileID ?? "Launch profile"
         let project = record.destination.projectPath.map { URL(fileURLWithPath: $0).lastPathComponent }
-        return VStack(alignment: .leading, spacing: 2) {
-            Text(startsNewSession ? "New session" : record.destination.title)
-                .dockFont(.body, weight: .semibold).lineLimit(1).truncationMode(.middle)
-                .foregroundStyle(Color.dockPrimaryText)
-            Text([profile, project].compactMap { $0 }.joined(separator: " · "))
-                .dockFont(.metadata).lineLimit(1).truncationMode(.middle)
-                .foregroundStyle(Color.dockSecondaryText)
+        return HStack(spacing: DockSpacing.control) {
+            destinationArt(size: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(startsNewSession ? destinationName : record.destination.title)
+                    .dockFont(.body, weight: .semibold).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(Color.dockPrimaryText)
+                Text(([startsNewSession ? "New session" : destinationName] + [project].compactMap { $0 })
+                    .joined(separator: " · "))
+                    .dockFont(.metadata).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(Color.dockSecondaryText)
+            }
         }
     }
 
     private func destinationMenu() -> some View {
-        DockMenu {
-            Button("New session in \(model.agentDisplayName)") {
-                state.switchQuickProfile(model.profileScopeID)
-                state.composing = true
-            }
-            ForEach(state.bots) { bot in
-                Button("New session · \(bot.name)") {
-                    state.switchQuickProfile(bot.id)
-                    state.composing = true
-                }
-            }
-            ForEach(model.sessions) { session in
-                Button("\(session.profileID ?? model.agentDisplayName) · \(session.displayTitle)") {
-                    state.selectQuickTarget(session)
-                }
-            }
-        } label: {
+        Button { choosingDestination.toggle() } label: {
             HStack(spacing: DockSpacing.tight) {
                 destination
                 DockIcon(.caretDown, size: 10, color: Color.dockSecondaryText)
             }
             .contentShape(Rectangle())
         }
+        .buttonStyle(.dockHover)
+        .dockPopover(isPresented: $choosingDestination, arrowEdge: .bottom) { destinationPicker }
         .disabled(state.quickSending || state.quickPreparing > 0)
         .help("Choose message destination")
         .accessibilityLabel("Choose message destination")
+    }
+
+    private var destinationPicker: some View {
+        func pick(_ action: @escaping () -> Void) -> () -> Void {
+            { choosingDestination = false; action() }
+        }
+        return VStack(alignment: .leading, spacing: DockSpacing.control) {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(76), spacing: 4), count: 4), spacing: 4) {
+                ForEach(state.bots) { bot in
+                    destinationTile(bot.name, action: pick {
+                        state.switchQuickProfile(bot.id)
+                        state.composing = true
+                    }) { BotAvatarView(bot: bot, imageData: state.avatarImages[bot.id], size: 32, animated: false) }
+                }
+            }
+        }
+        .dockPadding(DockSpacing.control)
+        .frame(width: 76 * 4 + 12 + DockSpacing.control * 2)
+    }
+
+    private func destinationTile<Art: View>(
+        _ title: String, action: @escaping () -> Void, @ViewBuilder art: () -> Art
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                art()
+                Text(title).dockFont(.metadata).lineLimit(1).truncationMode(.tail)
+            }
+            .frame(width: 76, height: 62)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockHover)
     }
 
     private var captureActions: some View {
