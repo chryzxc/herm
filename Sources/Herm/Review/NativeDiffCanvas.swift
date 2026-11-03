@@ -49,6 +49,9 @@ final class DiffCanvasContainer: NSView {
         addSubview(stack)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    static func wrappedTextWidth(in scroll: NSScrollView) -> CGFloat {
+        scroll.contentSize.width - (scroll.rulersVisible ? scroll.verticalRulerView?.ruleThickness ?? 0 : 0)
+    }
     override func layout() {
         super.layout()
         stack.frame = bounds
@@ -60,18 +63,12 @@ final class DiffCanvasContainer: NSView {
             sizingKey = key
             for scroll in scrolls {
                 guard let text = scroll.documentView as? NSTextView else { continue }
-                if !text.isHorizontallyResizable {
-                    let width = max(100, scroll.contentSize.width)
-                    text.frame.size.width = width
-                    text.textContainer?.containerSize.width = width
-                }
+                // The line ruler floats over the clip view, so wrapped text fits the width beside it.
+                let width = max(100, Self.wrappedTextWidth(in: scroll))
+                // Wrapped text tracks its view's width, so the container follows the frame.
+                if !text.isHorizontallyResizable { text.frame.size.width = width }
                 text.sizeToFit()
-                if !text.isHorizontallyResizable {
-                    // AppKit may shrink the document by the ruler width during sizeToFit.
-                    let width = max(100, scroll.contentSize.width)
-                    text.frame.size.width = width
-                    text.textContainer?.containerSize.width = width
-                }
+                if !text.isHorizontallyResizable { text.frame.size.width = width }
             }
         }
         alignWrappedRows()

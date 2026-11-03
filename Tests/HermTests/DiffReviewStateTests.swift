@@ -99,7 +99,12 @@ struct DiffReviewStateTests {
         canvas.setFrameSize(NSSize(width: 400, height: 400))
         canvas.layoutSubtreeIfNeeded()
         #expect(text.frame.width < wide)
-        #expect(text.frame.width == max(100, scroll.contentSize.width))
+        #expect(text.frame.width == max(100, DiffCanvasContainer.wrappedTextWidth(in: scroll)))
+        // Legacy scrollers (as on CI) reserve their own track; wrapped text must still fit beside the ruler.
+        scroll.scrollerStyle = .legacy
+        canvas.setFrameSize(NSSize(width: 420, height: 400))
+        canvas.layoutSubtreeIfNeeded()
+        #expect(text.frame.width == max(100, DiffCanvasContainer.wrappedTextWidth(in: scroll)))
     }
 
     @Test func longDiffStartsAtLeftEdge() throws {
