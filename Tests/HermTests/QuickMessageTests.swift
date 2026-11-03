@@ -20,6 +20,7 @@ private final class QuickMessageRPC: HermesRPCClientProtocol {
         if method == "session.resume" {
             return ["session_id": resumedID ?? (params["session_id"] as? String ?? ""), "running": running]
         }
+        if method == "prompt.submit" { return ["status": "streaming"] }
         return ["session_id": "created-chat"]
     }
 }

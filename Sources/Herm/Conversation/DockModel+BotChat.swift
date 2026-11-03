@@ -492,10 +492,10 @@ extension DockModel {
             $0.id.hasPrefix("bot-dispatch:") && $0.processID != nil && ($0.state == .working || $0.state == .queued)
         }
         // `agents.list` lists every running and recently finished background
-        // process without needing a live session. Not a capability ID on
-        // purpose: a failed call just leaves the records as they were.
+        // process without needing a live session. A transport ID, not a
+        // capability: a failed call just leaves the records as they were.
         guard !pending.isEmpty,
-            let result = try? await sessionRPCClient.request("agents.list", params: [:]),
+            let result = try? await sessionRPCClient.request(HermesFeatureIDs.ID.agentsList.rawValue, params: [:]),
             let rows = result["processes"] as? [[String: Any]]
         else { return }
         let status = Dictionary(

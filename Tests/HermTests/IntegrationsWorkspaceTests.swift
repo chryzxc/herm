@@ -375,9 +375,10 @@ struct IntegrationsWorkspaceTests {
         host.cacheDisplay(in: host.bounds, to: bitmap)
         try #require(bitmap.representation(using: .png, properties: [:])).write(
             to: directory.appendingPathComponent(name + ".png"))
-        for field in descendants(host).compactMap({ $0 as? NSTextField }) where !field.isHidden {
+        // Fields in a collapsed split pane are clipped away; only drawn text must stay in the window.
+        for field in descendants(host).compactMap({ $0 as? NSTextField }) where !field.isHidden && !field.visibleRect.isEmpty {
             let frame = field.convert(field.bounds, to: host)
-            #expect(frame.minX >= -1 && frame.maxX <= width + 1)
+            #expect(frame.minX >= -1 && frame.maxX <= width + 1, "\(field.stringValue) at \(frame)")
         }
     }
 
@@ -408,9 +409,10 @@ struct IntegrationsWorkspaceTests {
                         to: directory.appendingPathComponent(
                             "\(theme.rawValue)-\(dark ? "dark" : "light")-\(Int(width))-\(detail ? "detail" : "list").png"
                         ))
-                    for field in descendants(host).compactMap({ $0 as? NSTextField }) where !field.isHidden {
+                    // Fields in a collapsed split pane are clipped away; only drawn text must stay in the window.
+                    for field in descendants(host).compactMap({ $0 as? NSTextField }) where !field.isHidden && !field.visibleRect.isEmpty {
                         let frame = field.convert(field.bounds, to: host)
-                        #expect(frame.minX >= -1 && frame.maxX <= width + 1)
+                        #expect(frame.minX >= -1 && frame.maxX <= width + 1, "\(field.stringValue) at \(frame)")
                     }
                 }
             }

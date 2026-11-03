@@ -177,6 +177,7 @@ enum HermesFeatureIDs {
         case mcpOAuthStart = "mcp.servers.oauth.start"
         case mcpOAuthPoll = "mcp.servers.oauth.poll"
         case mcpOAuthCancel = "mcp.servers.oauth.cancel"
+        case agentsList = "agents.list"
         case subagentList = "subagent.list"
         case subagentSteer = "subagent.steer"
         case learningDetail = "learning.detail"
@@ -212,7 +213,7 @@ enum HermesFeatureIDs {
         "connectors.accounts.rename", "connectors.policy.get", "connectors.policy.set", "mcp.catalog",
         "mcp.servers.list", "mcp.servers.add", "mcp.servers.set_api_key", "mcp.servers.test", "mcp.servers.remove",
         "mcp.servers.oauth.start", "mcp.servers.oauth.poll", "mcp.servers.oauth.cancel", "subagent.list",
-        "subagent.steer", "learning.detail", "learning.edit", "learning.delete", "browser.manage",
+        "subagent.steer", "learning.detail", "learning.edit", "learning.delete", "browser.manage", "agents.list",
     ]
     static let all = ID.allCases.map(\.rawValue)
     static let capabilityIDs = ID.allCases.filter { !transportIDs.contains($0.rawValue) }.map(\.rawValue)

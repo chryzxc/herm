@@ -33,6 +33,7 @@ private final class VoiceQueueRPCClient: HermesRPCClientProtocol {
         }
         if method == "config.get", params["key"] as? String == "voice" { return ["value": voiceMode] }
         if method == "voice.record" { return ["status": "recording"] }
+        if method == "session.interrupt" { return ["status": "interrupted"] }
         if method == "prompt.submit" {
             submitted.append(params["text"] as? String ?? "")
             queuedSubmissions.append(params["queued"] as? Bool ?? false)

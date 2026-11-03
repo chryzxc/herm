@@ -48,7 +48,7 @@ struct HermesFeatureContractTests {
             "connectors.accounts.rename", "connectors.policy.get", "connectors.policy.set", "mcp.catalog",
             "mcp.servers.list", "mcp.servers.add", "mcp.servers.set_api_key", "mcp.servers.test", "mcp.servers.remove",
             "mcp.servers.oauth.start", "mcp.servers.oauth.poll", "mcp.servers.oauth.cancel", "subagent.list",
-            "subagent.steer", "learning.detail", "learning.edit", "learning.delete", "browser.manage",
+            "subagent.steer", "learning.detail", "learning.edit", "learning.delete", "browser.manage", "agents.list",
         ]
         #expect(Set(HermesFeatureIDs.transportIDs) == Set(expectedMethods))
 
