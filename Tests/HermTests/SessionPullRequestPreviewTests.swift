@@ -14,10 +14,13 @@ private actor RetryPullRequestTransport: GitHubIssueTransport {
         let url = request.url!
         let row: [String: Any] = [
             "number": 42, "title": "Pull request", "state": "open",
-            "head": ["ref": "feature"], "base": ["ref": "main"], "user": ["login": "ada"],
+            "head": ["ref": "feature", "sha": "head"], "base": ["ref": "main", "sha": "base"],
+            "user": ["login": "ada"],
         ]
+        // Detail sections (files, comments, commits, events) are lists; only the pull request itself is a row.
+        let body: Any = url.path.hasSuffix("/42") ? row : [Any]()
         return (
-            try JSONSerialization.data(withJSONObject: row),
+            try JSONSerialization.data(withJSONObject: body),
             HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
         )
     }
@@ -55,9 +58,10 @@ struct SessionPullRequestPreviewTests {
                     && (($0.accessibilityLabel?() ?? "") + ($0.accessibilityTitle?() ?? "")).contains("Retry")
             })
         #expect(retry.accessibilityPerformPress?() == true)
-        for _ in 0..<50 {
+        // Wait for the detail load the retry starts, so its outcome is what the test checks.
+        for _ in 0..<250 {
             host.layoutSubtreeIfNeeded()
-            if center.selected?.number == 42 { break }
+            if let selected = center.selected, center.filesByID[selected.id] != nil, !center.isLoadingDetail { break }
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(center.selected?.number == 42)

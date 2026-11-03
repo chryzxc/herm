@@ -152,7 +152,9 @@ struct SessionTracePerformanceTests {
                 id: "live", name: "terminal", input: "Synthetic tool",
                 context: "", startedAt: Date(), isComplete: false)
         ]
-        try await Task.sleep(for: .milliseconds(450))
+        for _ in 0..<100 where trace.turns.last?.toolCount != 1 {
+            try await Task.sleep(for: .milliseconds(50))
+        }
         #expect(trace.turns.last?.toolCount == 1)
         let updated = trace.updateCount
         model.activityPresentationRevision &+= 1
