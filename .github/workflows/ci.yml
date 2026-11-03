@@ -13,8 +13,24 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Guard, tests and the release build run side by side; `verify` is the single required check.
 jobs:
-  verify:
+  guard:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Guard
+        run: make guard
+
+      - name: Check launcher scripts
+        run: sh -n Scripts/run-debug-app.sh Scripts/build-and-run-app.sh
+
+  test:
     runs-on: macos-26
     timeout-minutes: 40
     steps:
@@ -22,10 +38,6 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-
-      # Lint, contracts and diff checks need no build, so they fail in about a minute.
-      - name: Guard
-        run: make guard
 
       - name: Identify toolchain
         id: toolchain
@@ -36,13 +48,42 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('Package.resolved') }}
+          key: spm-debug-${{ runner.os }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('Package.resolved') }}
 
       - name: Test
         run: make test
 
-      - name: Check launcher scripts
-        run: sh -n Scripts/run-debug-app.sh Scripts/build-and-run-app.sh
+  release-build:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Identify toolchain
+        id: toolchain
+        run: echo "key=$(swift --version 2>&1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore SwiftPM build cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: .build
+          key: spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('Package.resolved') }}
 
       - name: Release build
         run: make build-release
+
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [guard, test, release-build]
+    if: always()
+    steps:
+      - name: Require every job to pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "guard, test, release-build: $RESULTS"
+          for result in $RESULTS; do [ "$result" = success ] || exit 1; done

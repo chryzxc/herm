@@ -48,8 +48,10 @@ versioned release DMG.
 
 ## CI and releases
 
-CI (`.github/workflows/ci.yml`) runs on every pull request and push to `main`:
-`make guard` first, then the test suite, launcher syntax, and a release build.
+CI (`.github/workflows/ci.yml`) runs on every pull request and push to `main`.
+Three jobs run in parallel: `guard` (`make guard` and launcher syntax), `test`,
+and `release-build`. The `verify` job passes only when all three do, and it is
+the required check on `main`.
 A newer push to the same branch cancels the older run.
 
 `.github/workflows/release-dmg.yml` publishes two channels:
