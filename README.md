@@ -12,6 +12,12 @@
 
 Glance at the notch to see what your agents are doing and how much provider allowance remains. Send a quick message without opening the workspace, reply to a specific session when it is idle, or talk with your agent through continuous **Voice mode**. Expand into the full workspace when you want to inspect files, review changes, answer an approval, or manage your bots and tasks.
 
+[![Herm driving a shared browser with a live agent cursor](docs/media/browser-demo-poster.webp)](docs/media/browser-demo.mp4)
+
+*▶ [Play the recording](docs/media/browser-demo.mp4)*
+
+Screens and recordings in this README show fictional projects and conversations.
+
 > **Ask from anywhere → keep working → notice when needed → respond quickly → inspect the result.**
 
 App labels and default chat identities use **Herm**. **Hermes Agent** names the backend; its commands, API endpoints, and shared configuration keep their Hermes names. `make naming-contract` checks default labels and common client-branding regressions as part of `make guard`.
@@ -94,6 +100,10 @@ The design priorities are **useful attention rather than constant activity**, **
 
 The notch is the main way to use Herm. It sits against the left or right edge of your screen, stays out of the way while nothing is happening, and shows you when Hermes needs attention.
 Side-notch previews and expanded side panels keep a visible themed border, including in Liquid Glass.
+
+[![The Herm side panel showing tasks and provider quota from the screen edge](docs/media/notch-side-poster.webp)](docs/media/notch-side.mp4)
+
+*▶ [Play the recording](docs/media/notch-side.mp4)*
 
 ### Hermes companion
 
@@ -238,6 +248,10 @@ Generated replies use a macOS-style document surface with a tonal toolbar, visib
 Expand action, grouped provenance, inset sections, and rounded metric figures.
 The treatment follows your current Herm theme, including Glass and Monochrome.
 
+[![A Herm reply rendered as an interactive visual answer](docs/media/genui-demo-poster.webp)](docs/media/genui-demo.mp4)
+
+*▶ [Play the recording](docs/media/genui-demo.mp4)*
+
 Hermes can answer with **visual, interactive replies** instead of plain Markdown: tables you can sort, charts, forms, plans, findings, diagrams, and small offline HTML apps such as calculators, quizzes, and simulations. You don't need special wording. Ask "Create a savings calculator with starting balance, monthly contribution, interest rate, and years" or "Compare these three databases", and Herm asks Hermes for a visual reply when it helps. Simple answers stay Markdown, and explicit requests for plain text, source code, or file changes keep their requested format.
 
 Turn it on or off in **Settings → Chat → Replies → Generative UI** (on by default, applies immediately). When off, Herm stops requesting visual formatting and existing visual replies show their readable text. Rendering instructions travel with your normal messages (workspace, notch, group chats, and voice); they don't change the model or add a model call.
@@ -278,6 +292,10 @@ See [Generative UI formats and isolation](docs/generative-ui.md) for the `herm-u
 The Herm window's interface scale (its setting is temporarily hidden) is
 **Compact** (100%), **Default** (110%), **Large** (120%), or **Larger** (130%). Icons and controls scale
 with the text, and the choice is saved across launches.
+
+[![Switching Herm skins across the workspace](docs/media/skins-demo-poster.webp)](docs/media/skins-demo.mp4)
+
+*▶ [Play the recording](docs/media/skins-demo.mp4)*
 
 Actions use visible buttons, including compact buttons in dense panes. Inline
 navigation and Show more links stay underlined before hover, and linked GitHub
@@ -370,6 +388,8 @@ Shared interface motion includes short tab and navigation selection transitions,
 
 The session-title popover reuses the sidebar session row, with matching typography,
 status marks, timestamps, inline project pills, previews, and session actions.
+
+![A Herm workspace conversation with tool calls and files inline](docs/media/workspace-conversation.webp)
 
 Workspace pages share Calendar’s top titlebar treatment, with sidebar toggles aligned
 beside the traffic lights. Chat uses three full-height panes: the session list,
@@ -561,6 +581,8 @@ The composer’s **@** picker shows each bot’s actual name, with its descripti
 
 Voice mode is more than a microphone button for dictating a prompt. Speak with your agent, hear its replies, and continue the conversation without typing each turn.
 
+![Herm full voice mode speaking a reply, with helper orbs and live captions](docs/media/voice-speaking.webp)
+
 - **Earlier spoken replies:** complete prose sentences begin synthesis while Hermes is still generating. The final response drains only the remaining text; interruption or a session change discards queued speech. Structured output waits for completion so partial markup is not read aloud.
 - **Conversation-focused requests:** voice uses a compact spoken-response instruction instead of the visual UI catalog, asks for concise replies, and encourages available background delegation for substantial work. Hermes still owns tools, persona, memory, and approvals; delegation depends on its configured capabilities.
 - **Background completion announcements:** active-session task and subagent completions are spoken once, after the current reply or in a quiet microphone gap. They do not replace approval questions or speech already in progress.
@@ -585,6 +607,8 @@ Hermes Agent Desktop [also documents voice mode](https://hermes-agent.nousresear
 ### Pull requests
 
 Selected pull request and issue cards use a themed fill and outline. Wide pull request summaries separate the description/activity column from the details sidebar with a themed vertical hairline.
+
+![The Herm pull requests page](docs/media/page-pull-requests.webp)
 
 - The pull request detail uses a ChatGPT-inspired open reading layout: Summary, Changes with line totals, and Reviews tabs; description and activity in the main column; and changes, reviewers, checks, readiness, and metadata on the right. Narrow panes stack the columns. The header separates the tabs from a labeled pull request actions row, which wraps in narrow panes. Compact tabs omit line totals, which remain in the summary. Expand Changes for file categories and partial-coverage notices. The Merge dropdown opens protected landing controls from the toolbar.
 - On the standalone Pull Requests page, a floating bottom-right **Chat** panel uses the session chat’s composer, message bubbles, activity, and reply actions. Minimized and expanded chat float over the page without reserving a bottom strip. PR content remains visible around the panel in Summary, Changes, and Reviews. Each PR links to its own Hermes session under the default bot profile; reopening the PR, including after restarting Herm, resumes that conversation. PR context accompanies messages, and the selected workspace conversation and attachments stay separate. Minimize the panel or open its linked conversation in the workspace.
@@ -638,6 +662,8 @@ The **GitHub** destination opens a navigation panel with **Pull requests**
 and **Issues**, with the selected page beside it. GitHub reopens the last section
 used during the current app session. Narrow windows use a section picker instead
 of the extra panel. Settings can hide either section; hiding both hides GitHub.
+
+![The Herm GitHub issues page](docs/media/page-issues.webp)
 
 - PR and Issues headers share compact action spacing and keep window dragging clear of controls. The Issues repository filter uses the themed menu.
 - Header icon actions share a 28pt footprint; section refresh/edit actions use 24pt with no extra button-style padding.
@@ -766,6 +792,8 @@ Timeline uses compact 36pt bot faces and shows bot context only after selection.
 
 ### Native review and workflow tools
 
+![A split diff in Herm review](docs/media/pr-split.webp)
+
 - Source Control uses matching outlined **Review comparisons** and **Actions** controls with leading icons and a dropdown chevron for Actions. Section icons and count badges use a consistent neutral tint; file statuses and graph lanes retain their semantic colors.
 - Source Control's **Review comparisons** opens staged, working-tree, branch, and
   commit comparisons from local Git, without fetching. Search covers loaded files;
@@ -816,6 +844,8 @@ Review actions group pull-request watching and guide actions in a compact menu. 
 
 The session inspector's **Browser** tab is a real Chromium browser that you and Hermes share, so you can watch it work.
 
+![The Herm browser tab with the agent cursor on a page](docs/media/workspace-browser.webp)
+
 - **Attach browser context.** Click **Attach Page** in the browser toolbar to add the page title, URL, shared Chromium tab ID, and selected text to the session composer. Review or remove the context chip, then type and send your request in chat. Attaching never sends a message or replaces your draft; reattaching the same page refreshes its context. This is a snapshot, so attach again after navigating.
 - **Hermes browses here.** Herm starts a background Chrome (or Brave, Edge or Chromium) and connects Hermes' browser tools to it. When Hermes uses the browser, the inspector opens on the Browser tab, the page gets an accent frame, a status pill shows its current step, and a "Herm" cursor shows where it moves, clicks and types. Its last observed position stays visible between steps and when reopening the pane; taking over, using the page, or navigating clears it.
 - **Embedded pages.** The cursor also follows observed pointer and focus events in supported embedded frames, including cross-origin frames. Page changes made without a pointer or focus event show browser activity without a fabricated cursor position. When a frame cannot be mapped, its cursor events are omitted while browsing continues.
@@ -841,6 +871,8 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 
 Simulator and Emulator tabs show a virtual device's screen live in the session inspector, so you can watch Hermes run your app and step in yourself. Herm streams device pixels and sends input directly; it never mirrors the Simulator.app or emulator window and needs no Screen Recording or Accessibility permission.
 
+![An iOS simulator in Herm Annotate mode, outlining a hovered element](docs/media/workspace-annotate-ios.webp)
+
 - **Hermes launches the device.** Ask "Run this app on the iPhone simulator" or "Open the Android emulator for this project". With the [Herm simulator tool](Sources/Herm/Resources/HermesPlugins/herm-simulator/README.md) installed, Hermes picks the right device, booting one if none is running, and the matching tab opens in that session. A banner at the top of the chat shows when the session's device is connected, with **Open tab**. iOS boots without opening Simulator.app; new Android emulators start headless. Turn this off in **Settings → Chat → Simulators → Open simulators in Herm**.
 - **Drive it yourself.** Click to focus, drag to swipe, and type to send keys. Home and Power on both platforms; Back and Recent apps on Android. Open a tab manually from the inspector's **+** menu, pick a running or stopped device, and **Start device** if needed.
 - **Annotate the UI.** Annotate freezes the frame and reads the device's accessibility hierarchy. Click an element or drag a region, write a comment, and **Send** sends the cropped image and the element's label, identifier, role, value, and bounds to the chat (they stay in the draft if the session is busy).
@@ -865,6 +897,10 @@ Setup: run `Scripts/setup-simulator-bridge.sh` (plus `brew install facebook/fb/i
 ### Bots
 
 Recognized bot mentions show their avatar-and-name pill inside your sent message bubble, whether picked from the **@** menu or typed manually. Saved history uses the current bot roster to recognize mentions. Picker selections follow unsent drafts and queued messages. A single resolved bot mention is submitted to that profile’s canonical Bot Chat, including when sent from another bot’s session. Queued mentions retain their recipient and wait their turn. Herm verifies the recipient’s profile and session before sending, and shows its reply in the current conversation. A busy or unconfirmed recipient shows an error. Selected bots accept one text request per message; attachments or multiple recipients keep the draft with an explanation.
+
+[![A Herm group chat with several bots replying](docs/media/bots-demo-poster.webp)](docs/media/bots-demo.mp4)
+
+*▶ [Play the recording](docs/media/bots-demo.mp4)*
 
 Once sent, a mentioned bot keeps answering when you switch conversations. Return to see its replying bubble or completed reply with the same bot attribution; replies received while you are elsewhere are restored from saved activity. Mentions reuse the recipient’s persistent **Bot Chat**, which Hermes hides from the regular session list. Click the recipient on the **Bots** page to view that conversation; each mention does not create a separate session.
 
@@ -899,6 +935,8 @@ Bot availability follows the Hermes roster API and honors an explicit `hermes-bo
 ### Activity
 
 Activity navigation uses a pulse waveform icon.
+
+![The Herm activity calendar with a week summary](docs/media/page-activity.webp)
 
 Activity Work uses full-width count bars with aligned totals and wrapping day metadata.
 Its adaptive Usage grid shows reported input, output, cache-read and reasoning tokens,
@@ -1099,6 +1137,8 @@ App Intents metadata is generated by `Scripts/appintents.sh` during `package-app
 ### Apple Intelligence
 
 Herm uses Apple's on-device language model (the Foundation Models framework) for Activity summaries, optional approval explanations and reply summaries, and automatic titles for untitled sessions. Everything else in Herm, including the agent itself, works without it.
+
+![A notch reply summary labeled Generated by Apple Intelligence](docs/media/notch-top-summary.webp)
 
 | Feature | What the model receives | What you see |
 |---|---|---|
