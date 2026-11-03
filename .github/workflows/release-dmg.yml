@@ -99,6 +99,8 @@ jobs:
         if: steps.version.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.version.outputs.value }}
+          HERM_BUILD_CHANNEL: ${{ steps.version.outputs.tag == 'nightly' && 'nightly' || '' }}
+          HERM_BUILD_COMMIT: ${{ steps.version.outputs.source_sha }}
         run: Scripts/package-app.sh "$VERSION"
 
       - name: Verify DMG

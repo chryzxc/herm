@@ -115,6 +115,18 @@ enum HermUpdateParsing {
         }
         return parts(current).lexicographicallyPrecedes(parts(candidate))
     }
+
+    /// A nightly is built ahead of its stable release, so it also takes the stable build of the same version.
+    static func shouldOffer(_ candidate: String, over current: String, isNightly: Bool) -> Bool {
+        isNewer(candidate, than: current) || (isNightly && !isNewer(current, than: candidate))
+    }
+
+    /// "0.1.1 · Nightly (1a2b3c4d)" for nightly bundles, the plain version otherwise.
+    static func versionLabel(version: String?, channel: String?, commit: String?) -> String {
+        guard let version, !version.isEmpty else { return "dev build" }
+        guard channel == "nightly" else { return version }
+        return "\(version) · Nightly" + (commit.map { " (\($0.prefix(8)))" } ?? "")
+    }
 }
 
 /// Checks chryzxc/herm releases, downloads and verifies the DMG, stages the
@@ -139,6 +151,12 @@ final class HermAppUpdater: ObservableObject {
     private var stagedAppURL: URL?
 
     let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    let isNightly = Bundle.main.infoDictionary?["HermBuildChannel"] as? String == "nightly"
+    var versionLabel: String {
+        HermUpdateParsing.versionLabel(
+            version: currentVersion, channel: Bundle.main.infoDictionary?["HermBuildChannel"] as? String,
+            commit: Bundle.main.infoDictionary?["HermBuildCommit"] as? String)
+    }
 
     var canCheck: Bool {
         switch phase {
@@ -178,7 +196,7 @@ final class HermAppUpdater: ObservableObject {
                 let release = try await Self.fetchLatestRelease(token: token)
                 latest = release
                 lastChecked = Date()
-                guard HermUpdateParsing.isNewer(release.version, than: currentVersion) else {
+                guard HermUpdateParsing.shouldOffer(release.version, over: currentVersion, isNightly: isNightly) else {
                     phase = .upToDate
                     return
                 }

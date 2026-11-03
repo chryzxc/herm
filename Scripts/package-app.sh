@@ -50,6 +50,13 @@ if [ -n "$VERSION" ]; then
         /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$PLIST"
 fi
 
+# Nightly builds carry their channel and commit so Settings can label them.
+if [ -n "${HERM_BUILD_CHANNEL:-}" ]; then
+    PLIST="$APP_DIR/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :HermBuildChannel string $HERM_BUILD_CHANNEL" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :HermBuildCommit string ${HERM_BUILD_COMMIT:-}" "$PLIST"
+fi
+
 # Keep the signing identity stable across releases when a certificate is configured.
 if [ "$SIGNING_IDENTITY" = "-" ]; then
     echo "Warning: ad-hoc signing changes Herm’s privacy identity on rebuild."

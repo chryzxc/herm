@@ -84,7 +84,7 @@ extension WorkspaceActivitySidebar {
             }
             if selectedSettingsCategory == .updates {
                 settingsDisclosure(
-                    title: "Herm update", subtitle: "Herm \(appUpdater.currentVersion ?? "dev build")",
+                    title: "Herm update", subtitle: "Herm \(appUpdater.versionLabel)",
                     icon: .arrowsClockwise, isExpanded: $isAppUpdateExpanded
                 ) {
                     appUpdateSection
