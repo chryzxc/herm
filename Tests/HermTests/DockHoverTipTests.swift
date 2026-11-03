@@ -51,7 +51,7 @@ struct DockHoverTipTests {
         presenter.update(button)
         presenter.update(row)
         #expect(presenter.activeAnchor === button)
-        try await Task.sleep(for: .milliseconds(550))
+        for _ in 0..<60 where presenter.panel == nil { try await Task.sleep(for: .milliseconds(50)) }
         let panel = try #require(presenter.panel)
         #expect(panel.frame.width < 200)
         #expect(panel.parent === window)
@@ -120,7 +120,7 @@ struct DockHoverTipTests {
         let anchor = try #require(findAnchor(host))
         anchor.hovering = true
         presenter.update(anchor)
-        try await Task.sleep(for: .milliseconds(550))
+        for _ in 0..<60 where presenter.panel == nil { try await Task.sleep(for: .milliseconds(50)) }
         let panel = try #require(presenter.panel)
         #expect(panel.parent === window)
         #expect(panel.frame.width <= 334)
