@@ -107,6 +107,15 @@ struct SessionPullRequestRailTests {
         #expect(rail.references.map(\.number) == [9])
     }
 
+    @Test func nonGhToolInputsDoNotLinkPullRequests() {
+        let fetch = ActiveToolCall(
+            id: "fetch", name: "web_extract", input: "https://github.com/axios/axios/pull/1", context: "",
+            startedAt: .now, result: nil, isComplete: false, args: ["url": "https://github.com/axios/axios/pull/2"])
+        let rail = SessionPullRequestRailModel(details: PullRequestDetailStore())
+        rail.discover(messages: [], activity: [fetch])
+        #expect(rail.references.isEmpty)
+    }
+
     @Test func targetedToolInputsAndCreatedPullRequestsStayLinked() {
         let targeted = ActiveToolCall(
             id: "target", name: "terminal", input: "gh pr view https://github.com/owner/repo/pull/8", context: "",

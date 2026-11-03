@@ -31,7 +31,9 @@ enum SessionPullRequestReferences {
                         options: .regularExpression) != nil
                 }
                 // A list, search, session-history read, or repository scan does not link its results to this chat.
-                guard directOperation, let result = call.result else { return inputs }
+                // Inputs of other tools (curl, web fetch, file reads) can mention any PR; only `gh pr` targets count.
+                guard directOperation else { return [] }
+                guard let result = call.result else { return inputs }
                 let references = extract(texts: [result])
                 let targets = extract(texts: inputs)
                 guard references.count == 1,
