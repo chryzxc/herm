@@ -57,9 +57,13 @@ A newer push to the same branch cancels the older run.
 - **Nightly**: each green CI run on `main` replaces `Herm.dmg` on the rolling
   `nightly` pre-release. Use it to test the latest `main`. Herm's updater
   ignores pre-releases, so nightlies never reach installed copies.
-- **Stable**: push a tag (`git tag v1.2.3 && git push origin v1.2.3`) or run the
-  workflow by hand with a version. It packages only a commit whose CI already
-  passed, and writes notes from the previous stable tag.
+- **Stable**: `.github/workflows/release-please.yml` keeps a
+  `chore: release X.Y.Z` pull request open after each green CI run on `main`.
+  It picks the version from Conventional Commits (`fix:` patch, `feat:` minor)
+  and writes `CHANGELOG.md`. Merging that PR tags `vX.Y.Z`, creates the release,
+  and attaches `Herm.dmg`. To release by hand instead, push a tag
+  (`git tag v1.2.3 && git push origin v1.2.3`) or run the DMG workflow with a
+  version. Either way it packages only a commit whose CI already passed.
 
 ## Before opening a PR
 

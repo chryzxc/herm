@@ -1,0 +1,40 @@
+name: Release Please
+
+# Runs after green CI on main, so a merged release PR tags a commit CI already passed.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    steps:
+      # Keeps the "chore: release X.Y.Z" PR current; merging it tags vX.Y.Z and creates the GitHub release.
+      - name: Update release PR or tag release
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          target-branch: main
+
+      # Tags made with the workflow token do not trigger other workflows, so start the DMG build explicitly.
+      - name: Build and attach Herm.dmg
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: gh workflow run release-dmg.yml -R "$REPO" --ref main -f version="$VERSION" -f source_ref="$TAG"
