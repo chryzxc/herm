@@ -5,6 +5,7 @@
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138)](#development)
 [![local-first](https://img.shields.io/badge/local-first-f0883e)](#how-it-works)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2)](https://github.com/sponsors/chryzxc)
 
 **A native macOS companion for [Hermes Agent](https://github.com/NousResearch/hermes-agent), always within reach.**
 
@@ -1365,6 +1366,10 @@ Herm is an unofficial, community-built app. It is not affiliated with or endorse
 ## License
 
 [MIT](LICENSE) © 2026 Christian Rey Villablanca
+
+The MIT license covers the code, not the Herm name or icon. Forks and redistributed builds are welcome, but please give them a different name and icon so people can tell them apart from official Herm releases.
+
+If Herm is useful to you, consider [sponsoring its development](https://github.com/sponsors/chryzxc).
 
 
 ### Generative visualization refinements
