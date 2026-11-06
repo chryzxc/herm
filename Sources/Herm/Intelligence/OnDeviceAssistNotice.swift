@@ -16,14 +16,7 @@ struct OnDeviceAssistNotice: View {
         }
         .dockPadding(.horizontal, 6)
         .dockPadding(.vertical, 3)
-        .background(
-            DockThemeShape(cornerRadius: DockLayout.controlRadius, role: .control)
-                .fill(Color.dockSurface2)
-        )
-        .overlay(
-            DockThemeShape(cornerRadius: DockLayout.controlRadius, role: .control)
-                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-        )
+        .dockWell()
         .help(help)
         .accessibilityElement(children: .combine)
         .accessibilityHint(help)

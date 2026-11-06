@@ -10,25 +10,26 @@ struct IntegrationInspectorHeader<Icon: View, Status: View>: View {
     @ViewBuilder let status: Status
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center, spacing: 12) {
-                icon
-                VStack(alignment: .leading, spacing: 5) {
-                    DockSectionLabel(title: category.uppercased())
-                    Text(scope).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                        .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top, spacing: 16) {
+                icon.accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(title).dockFont(.pageTitle, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    status
                 }
                 Spacer(minLength: 0)
-            }
-            VStack(alignment: .leading, spacing: 10) {
-                Text(title).dockFont(.pageTitle).foregroundStyle(Color.dockPrimaryText)
-                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                status
             }
             if !detail.isEmpty, detail != title {
                 Text(detail).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             }
+            HStack(spacing: 8) {
+                Text(category).dockFont(.body, weight: .semibold)
+                Text(scope).dockFont(.body)
+            }
+            .foregroundStyle(Color.dockMetadataText)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .dockPadding(.bottom, 4)

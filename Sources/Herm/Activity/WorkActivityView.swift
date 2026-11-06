@@ -70,6 +70,7 @@ struct WorkActivityView: View {
                                 .dockPadding(.trailing, 16)
                             }
                             .scrollIndicators(.hidden)
+                            .scrollClipDisabled()
                             .frame(width: min(560, proxy.size.width * 0.45))
                             detail(index)
                         }
@@ -300,14 +301,13 @@ struct WorkActivityView: View {
 
 /// Category colors remain consistent across the calendar, charts, and rows.
 private enum CalendarInk {
-    private static var neutral: Bool { DockThemeRuntime.current == .mono || DockThemeRuntime.current == .eInk }
-    static var shipped: Color { neutral ? .dockPrimaryText.opacity(0.78) : .dockReview }
-    static var sessions: Color { neutral ? .dockPrimaryText.opacity(0.42) : .dockInfo }
-    static var automation: Color { neutral ? .dockPrimaryText.opacity(0.2) : .dockMerged }
+    static var shipped: Color { .dockReview }
+    static var sessions: Color { .dockInfo }
+    static var automation: Color { .dockMerged }
     static var failed: Color { .dockWarning }
-    static var shippedFill: Color { neutral ? shipped : .dockReviewFill }
-    static var sessionsFill: Color { neutral ? sessions : .dockInfoFill }
-    static var automationFill: Color { neutral ? automation : .dockMergedFill }
+    static var shippedFill: Color { .dockReviewFill }
+    static var sessionsFill: Color { .dockInfoFill }
+    static var automationFill: Color { .dockMergedFill }
     static var failedFill: Color { .dockWarningFill }
 }
 
@@ -425,7 +425,7 @@ private struct CalendarGridCard: View, Equatable {
             Color.dockBorderLight.frame(height: DockLayout.hairline).dockPadding(.top, 4)
             footer
         }
-        .dockPadding(12)
+        .dockPadding(14)
         // Keep the strip at its natural height; the day detail below gets the rest.
         .fixedSize(horizontal: false, vertical: true)
         .dockCard(padding: 0)

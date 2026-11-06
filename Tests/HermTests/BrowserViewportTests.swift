@@ -78,6 +78,10 @@ struct BrowserViewportTests {
         window.contentView = canvas
         defer { window.contentView = nil }
         #expect(first.viewers == 1)
+        canvas.surfaceVisible = false
+        #expect(first.viewers == 0)
+        canvas.surfaceVisible = true
+        #expect(first.viewers == 1)
         canvas.browser = second
         #expect(first.viewers == 0)
         #expect(second.viewers == 1)

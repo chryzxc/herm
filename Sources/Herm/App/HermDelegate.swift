@@ -205,6 +205,9 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
                 body: "\(reference.id): " + changes.joined(separator: " · "), openURL: reference.url)
         }
         PullRequestWatchStore.shared.start()
+        model.presentationDemand.$hasVisibleHost.removeDuplicates()
+            .sink { PullRequestWatchStore.shared.setWorkspaceVisible($0) }
+            .store(in: &keepAwakeObservers)
         _ = DesktopCaptureService.shared
         quickCaptureHotKey = QuickCaptureHotKey { [weak self] in self?.edgeDock?.toggleQuickCapture() }
         windowCaptureHotKey = QuickCaptureHotKey(
@@ -400,8 +403,29 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     }
 
     nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        guard
+            UserDefaults.standard.double(forKey: HermNotificationPreferences.snoozeKey)
+                <= Date().timeIntervalSince1970
+        else { return [] }
+        return HermNotificationPreferences.enabled(
+            HermNotificationPreferences.soundKey, defaults: .standard, fallback: true)
+            ? [.banner, .list, .sound] : [.banner, .list]
+    }
+
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
     ) async {
+        if response.actionIdentifier == HermNotificationAction.snooze {
+            await MainActor.run {
+                UserDefaults.standard.set(
+                    Date().addingTimeInterval(30 * 60).timeIntervalSince1970,
+                    forKey: HermNotificationPreferences.snoozeKey)
+            }
+            return
+        }
+        guard response.actionIdentifier != UNNotificationDismissActionIdentifier else { return }
         let choice = HermNotificationAction.choice(for: response.actionIdentifier)
         let requestID = response.notification.request.content.userInfo[HermNotificationAction.requestIDKey] as? String
         let reply = (response as? UNTextInputNotificationResponse)?.userText

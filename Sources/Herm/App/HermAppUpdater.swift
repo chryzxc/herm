@@ -120,13 +120,6 @@ enum HermUpdateParsing {
     static func shouldOffer(_ candidate: String, over current: String, isNightly: Bool) -> Bool {
         isNewer(candidate, than: current) || (isNightly && !isNewer(current, than: candidate))
     }
-
-    /// "Nightly 1a2b3c4d" for nightly bundles; stable builds have no badge.
-    static func nightlyBadge(channel: String?, commit: String?) -> String? {
-        guard channel == "nightly" else { return nil }
-        return ["Nightly", commit.map { String($0.prefix(8)) }].compactMap { $0 }.filter { !$0.isEmpty }
-            .joined(separator: " ")
-    }
 }
 
 /// Checks chryzxc/herm releases, downloads and verifies the DMG, stages the
@@ -151,12 +144,7 @@ final class HermAppUpdater: ObservableObject {
     private var stagedAppURL: URL?
 
     let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-    let isNightly = Bundle.main.infoDictionary?["HermBuildChannel"] as? String == "nightly"
-    var nightlyBadge: String? {
-        HermUpdateParsing.nightlyBadge(
-            channel: Bundle.main.infoDictionary?["HermBuildChannel"] as? String,
-            commit: Bundle.main.infoDictionary?["HermBuildCommit"] as? String)
-    }
+    let isNightly = HermBuildInfo.current.channel == .nightly
 
     var canCheck: Bool {
         switch phase {

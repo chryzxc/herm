@@ -1,5 +1,24 @@
 import Foundation
 
+/// Immutable value snapshots cross to the calendar worker; no model or AppKit state is shared.
+struct WorkCalendarBuildInput: @unchecked Sendable {
+    let month: Date
+    let sessions: [SessionSummary]
+    let tasks: [KanbanTaskSummary]
+    let commits: [WorkCommit]
+    let pullRequests: [WorkPullRequest]
+    let runs: [CronRunSummary]
+    let usage: [TokenUsageReport.Day]
+
+    struct Result: @unchecked Sendable { let index: WorkCalendarIndex }
+    nonisolated func build() -> Result {
+        Result(
+            index: WorkCalendarIndex.build(
+                month: month, sessions: sessions, tasks: tasks, commits: commits,
+                pullRequests: pullRequests, runs: runs, usage: usage))
+    }
+}
+
 /// One local `git log` row from a project repository Herm has attached.
 struct WorkCommit: Identifiable, Equatable, Sendable {
     let repo: String
@@ -247,9 +266,12 @@ struct WorkCalendarIndex: Equatable {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
+    private static let formatterLock = NSLock()
 
     static func parseDate(_ string: String) -> Date? {
-        plainISO.date(from: string) ?? fractionalISO.date(from: string)
+        formatterLock.lock()
+        defer { formatterLock.unlock() }
+        return plainISO.date(from: string) ?? fractionalISO.date(from: string)
     }
 }
 

@@ -3,6 +3,14 @@ import Testing
 
 @testable import Herm
 
+@MainActor
+private final class ArtifactProgressProbe {
+    var reads = 0
+    var first: ArtifactIndexLoader.SessionProgress?
+    var second: ArtifactIndexLoader.SessionProgress?
+    var resume: CheckedContinuation<Void, Never>?
+}
+
 struct ArtifactServiceTests {
     @Test func artifactSelectionPreservesVisibleSelectionOrFallsBackToFirst() {
         #expect(ArtifactSelectionPresentation.reconciledID(current: "b", visibleIDs: ["a", "b"]) == "b")
@@ -109,6 +117,57 @@ struct ArtifactIndexLoaderTests {
     private let session = HermesSession(
         id: "s", profileID: "work", title: "Archive", preview: "", startedAt: nil,
         updatedAt: Date(timeIntervalSince1970: 100), messageCount: 650, source: "hermes")
+
+    @Test func sharedProgressReplaysToLateConsumersAndFailureDoesNotCache() async throws {
+        let index = ArtifactIndexStore()
+        let owner = NSObject()
+        let probe = ArtifactProgressProbe()
+        let read: @MainActor @Sendable (HermesSession, Int) async throws -> [String: Any] = { _, offset in
+            probe.reads += 1
+            if offset > 0 {
+                await withCheckedContinuation { probe.resume = $0 }
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            return [
+                "messages": [["role": "assistant", "content": "MEDIA: /tmp/first.png"]], "pagination": ["limit": 1],
+            ]
+        }
+        let session = session
+        let ownerID = ObjectIdentifier(owner)
+        let first = Task {
+            await ArtifactIndexLoader.load(
+                sessions: [session], index: index, owner: ownerID,
+                onProgress: { probe.first = $0 }, messages: read)
+        }
+        defer {
+            probe.resume?.resume()
+            first.cancel()
+        }
+        for _ in 0..<200 where probe.resume == nil { try await Task.sleep(for: .milliseconds(5)) }
+        _ = try #require(probe.resume)
+        #expect(probe.first?.records.map(\.value) == ["/tmp/first.png"])
+        let second = Task {
+            await ArtifactIndexLoader.load(
+                sessions: [session], index: index, owner: ownerID,
+                onProgress: { probe.second = $0 }, messages: read)
+        }
+        defer { second.cancel() }
+        for _ in 0..<200 where probe.second == nil { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(try #require(probe.second).pagesRead == 1)
+        first.cancel()
+        try await Task.sleep(for: .milliseconds(20))
+        probe.resume?.resume()
+        probe.resume = nil
+        #expect(await second.value.first?.error != nil)
+        _ = await first.value
+        let readsBeforeRetry = probe.reads
+        let retry = await ArtifactIndexLoader.load(sessions: [session], index: index, owner: ownerID) { _, _ in
+            probe.reads += 1
+            return ["data": []]
+        }
+        #expect(probe.reads == readsBeforeRetry + 1)
+        #expect(retry.first?.error == nil)
+    }
 
     @Test func publishesCompletedSessionsBeforeStartingQueuedReads() async {
         let sessions = (0..<5).map {

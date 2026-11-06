@@ -15,6 +15,16 @@ enum IntegrationsCategory: String, CaseIterable, Identifiable {
         case .mcp: "MCP servers"
         }
     }
+    var purpose: String {
+        switch self {
+        case .skills: "Instructions that teach your agent how to handle specific tasks."
+        case .plugins: "Extensions that add capabilities to Hermes Agent."
+        case .tools: "Choose the toolsets your agent can use in this profile."
+        case .connectors: "Connect your accounts and manage access to external services."
+        case .mcp: "Connect external tools and data through MCP servers."
+        case .messaging: "Set up the channels where people can reach your agent."
+        }
+    }
     var section: WorkflowIntegrationSection? {
         switch self {
         case .messaging: nil
@@ -37,8 +47,34 @@ enum IntegrationsCategory: String, CaseIterable, Identifiable {
     }
 }
 
+enum IntegrationStatusFilter: String, CaseIterable, Identifiable {
+    case all, enabled, disabled, updates, needsSetup
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .all: "All statuses"
+        case .enabled: "Enabled"
+        case .disabled: "Disabled"
+        case .updates: "Updates available"
+        case .needsSetup: "Needs attention"
+        }
+    }
+
+    func includes(enabled: Bool?, tone: DockStatusTone?, update: Bool) -> Bool {
+        switch self {
+        case .all: true
+        case .enabled: enabled == true
+        case .disabled: enabled == false
+        case .updates: update
+        case .needsSetup: tone == .attention
+        }
+    }
+}
+
 struct IntegrationsBrowsingState: Equatable {
     var search = ""
+    var statusFilter = IntegrationStatusFilter.all
     var selection: String?
     var discover = false
     var pluginCategory = ""

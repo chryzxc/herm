@@ -59,7 +59,7 @@ struct RichNativeBlockView: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .dockCard(padding: 12, isQuiet: true)
+                .dockCard(padding: 12)
             }
         }
     }

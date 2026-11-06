@@ -178,15 +178,8 @@ struct AgentBoardView: View {
                 }
             }
             .dockPadding(2)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                    Color.dockSurface4)
-            )
+            .dockWell(.sunken)
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
-                    Color.dockBorderLight, lineWidth: 0.5)
-            )
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Active agents scope")
         }
@@ -478,7 +471,9 @@ struct AgentBoardView: View {
                                 pipelineMetadata(item)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(item.agent).foregroundStyle(Color.dockAccent).frame(width: 88, alignment: .leading)
+                            Text(item.agent)
+                                .foregroundStyle(pipelineAgentColor(item))
+                                .frame(width: 88, alignment: .leading)
                                 .lineLimit(1)
                             DockIcon(expandedPipelineItemID == item.id ? .caretUp : .caretDown)
                                 .dockFont(.metadata, weight: .semibold)
@@ -546,13 +541,7 @@ struct AgentBoardView: View {
         .dockPadding(.leading, 12)
         .dockPadding(.vertical, 6)
         .dockPadding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
-                Color.dockSurface4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(
-                Color.dockBorder, lineWidth: 0.5))
+        .dockWell(.sunken)
     }
 
     @ViewBuilder
@@ -564,7 +553,7 @@ struct AgentBoardView: View {
                     contentField("TASK NAME", item.task, accent: item.color)
                 }
                 if !item.agent.isEmpty {
-                    contentField("AGENT", item.agent, accent: Color.dockAccent)
+                    contentField("AGENT", item.agent, accent: pipelineAgentColor(item))
                 }
                 let durationStr =
                     elapsedDuration(for: item, at: Date()).map(Self.formatDuration) ?? (item.isActive ? "RUNNING" : "—")
@@ -588,13 +577,7 @@ struct AgentBoardView: View {
         .dockPadding(.leading, 12)
         .dockPadding(.vertical, 6)
         .dockPadding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
-                Color.dockSurface4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(
-                Color.dockBorder, lineWidth: 0.5))
+        .dockWell(.sunken)
     }
 
     private func contentField(_ label: String, _ value: String, accent: Color) -> some View {
@@ -806,6 +789,11 @@ struct AgentBoardView: View {
         if lower.contains("block") || lower.contains("approval") || lower.contains("interrupt") { return .dockWarning }
         if lower.contains("queue") { return .dockSecondaryText }
         return .dockAccent
+    }
+
+    private func pipelineAgentColor(_ item: PipelineItem) -> Color {
+        guard let id = item.agentID, !id.isEmpty else { return .dockAccent }
+        return DockAccentColor.identity(for: id).color
     }
 
     private func agentColor(for id: String) -> Color {

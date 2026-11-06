@@ -51,7 +51,7 @@ struct KanbanCardActionAvailability: Equatable {
 /// vertically on its own; the board scrolls horizontally.
 struct KanbanBoardView: View, Equatable {
     static let laneWidth: CGFloat = 272
-    static let railWidth: CGFloat = 40
+    static let railWidth: CGFloat = 48
 
     let tasks: [KanbanTaskSummary]
     let bots: [BotSummary]
@@ -212,15 +212,12 @@ struct KanbanBoardView: View, Equatable {
         }
         .frame(width: Self.laneWidth)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(targetedLane == lane ? lane.color.opacity(0.10) : Color.dockSurface.opacity(0.20))
+        .background(lane.color.opacity(targetedLane == lane ? 0.10 : 0))
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         .contentShape(Rectangle())
-        .overlay {
-            if targetedLane == lane {
-                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                    .stroke(lane.color.opacity(0.7), lineWidth: 1)
-            }
-        }
+        .dockWell(
+            .sunken, radius: DockLayout.paneRadius, role: .pane,
+            stroke: targetedLane == lane ? lane.color.opacity(0.7) : nil)
     }
 }
 
@@ -301,14 +298,12 @@ private struct KanbanLaneRail: View {
                 Text("\(count)")
                     .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                     .foregroundStyle(count > 0 ? lane.color : Color.dockMetadataText)
-                VStack(spacing: 1) {
-                    ForEach(Array(lane.rawValue.uppercased().enumerated()), id: \.offset) { _, letter in
-                        Text(String(letter))
-                            .dockFont(.metadata, weight: .semibold)
-                            .foregroundStyle(isHovered ? Color.dockPrimaryText : Color.dockSecondaryText)
-                            .frame(height: 13)
-                    }
-                }
+                Text(lane.rawValue)
+                    .dockFont(.metadata, weight: .semibold)
+                    .foregroundStyle(isHovered ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    .fixedSize()
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: KanbanBoardView.railWidth, height: 90)
                 DockIcon(.caretRight)
                     .dockFont(.metadata, weight: .bold)
                     .foregroundStyle(Color.dockMetadataText)
@@ -359,6 +354,7 @@ private struct KanbanTaskCard: View, Equatable {
 
     // Hover is local so it re-renders one card, not the board.
     @State private var isHovered = false
+    @Environment(\.chatContextRouter) private var chatRouter
     #if DEBUG
         @Environment(\.kanbanCardEvaluations) private var evaluations
     #endif
@@ -384,7 +380,7 @@ private struct KanbanTaskCard: View, Equatable {
         let isDraggable = !actions.destinations(for: task.status).isEmpty && !isMutationPending
         VStack(alignment: .leading, spacing: 6) {
             Text(task.title)
-                .dockFont(.navigation, weight: .medium)
+                .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
@@ -396,7 +392,8 @@ private struct KanbanTaskCard: View, Equatable {
                 Text(summary)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 6) {
@@ -413,12 +410,6 @@ private struct KanbanTaskCard: View, Equatable {
                 Text(activityLabel)
                     .foregroundStyle(Color.dockMetadataText)
                     .layoutPriority(1)
-                Text(task.id)
-                    .fontDesign(.monospaced)
-                    .foregroundStyle(Color.dockMetadataText.opacity(0.75))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .layoutPriority(1)
             }
             .dockFont(.compactStatus, weight: .medium)
             .lineLimit(1)
@@ -426,20 +417,19 @@ private struct KanbanTaskCard: View, Equatable {
         .dockPadding(.horizontal, 10)
         .dockPadding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(background)
-        .overlay {
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .stroke(
-                    isSelected ? Color.dockAccent.opacity(0.7) : (isHovered ? Color.dockBorder : Color.dockBorderLight),
-                    lineWidth: isSelected ? 1 : 0.5)
-        }
         .overlay(alignment: .leading) {
             if lane == .blocked || lane == .running {
                 lane.color.frame(width: 2).dockPadding(.vertical, 8)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+        .dockCard(padding: 0, isActive: isHovered)
+        .overlay {
+            if isSelected {
+                DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
+                    .stroke(Color.dockAccent.opacity(0.7), lineWidth: 1)
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         .dockHoverable()
         .overlay {
             KanbanCardDragSource(
@@ -497,11 +487,6 @@ private struct KanbanTaskCard: View, Equatable {
     private var isMutationPending: Bool { pendingActionIDs.contains { $0.hasSuffix(":\(task.id)") } }
     private var isAssignPending: Bool { pendingActionIDs.contains("kanban.reassign:\(task.id)") }
 
-    private var background: Color {
-        if isSelected { return Color.dockAccent.opacity(0.10) }
-        return isHovered ? Color.dockSurface2 : Color.dockSurface
-    }
-
     private func priorityTag(_ priority: String) -> some View {
         let tint = (Int(priority) ?? 0) >= 80 ? Color.dockWarning : Color.dockSecondaryText
         return Text("P\(priority)")
@@ -532,7 +517,11 @@ private struct KanbanTaskCard: View, Equatable {
             Button("Details", icon: .fileText) { onSelect(task) }
                 .disabled(isLoadingDetail)
         }
-        AttachToChatMenu { ChatContext(kanbanTask: task) }
+        if let chatRouter {
+            Button("Send to chat", icon: .chatCircleText) {
+                chatRouter.attach(ChatContext(kanbanTask: task), to: nil)
+            }
+        }
         let destinations = actions.destinations(for: task.status)
         if !destinations.isEmpty {
             DockMenu("Move to") {

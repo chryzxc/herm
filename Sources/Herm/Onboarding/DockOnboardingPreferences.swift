@@ -49,18 +49,8 @@ struct DockOnboardingAppearance: View {
                     DockIcon(.check).foregroundStyle(Color.dockAccent).opacity(selected ? 1 : 0)
                 }
             }
-            .dockPadding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                selected ? Color.dockAccentMuted : Color.dockSurface2,
-                in: RoundedRectangle(cornerRadius: DockLayout.controlRadius)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius)
-                    .strokeBorder(
-                        selected ? Color.dockAccent : Color.dockBorderLight,
-                        lineWidth: DockLayout.hairline)
-            }
+            .dockCard(padding: 10, isActive: selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
@@ -109,11 +99,7 @@ struct DockOnboardingIntelligence: View {
             }
             .dockPadding(.horizontal, 16)
             .disabled(!available)
-            .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius)
-                    .strokeBorder(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-            }
+            .dockCard(padding: 0)
             DockCallout(
                 tone: .warning, icon: .info, title: "Find Herm in your menu bar",
                 message:

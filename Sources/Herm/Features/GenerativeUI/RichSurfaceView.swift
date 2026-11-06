@@ -349,11 +349,7 @@ struct RichSourceDisclosure: View {
                                 .dockPadding(4)
                         }.frame(maxHeight: 220)
                     }
-                    .dockPadding(12)
-                    .background {
-                        DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
-                            .dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight)
-                    }
+                    .dockCard(padding: 12)
                 }
             }
         }

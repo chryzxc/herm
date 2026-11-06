@@ -49,8 +49,9 @@ final class EdgeDockController: NSObject {
     private var lastQuotas: [ProviderQuotaSnapshot]?
     /// Quota readers whose usage has moved; these are the services being
     /// spent (by Hermes or any other app), so they are read on every tick.
-    private var hotQuotaReaders = Set<String>()
+    private var hotQuotaReaders: [String: Date] = [:]
     private var quotaTick = 0
+    private var lastQuotaPoll: Date?
     private var displayID: NSNumber?
     private var fraction: CGFloat = 0.5
     private let defaults: UserDefaults
@@ -268,6 +269,11 @@ final class EdgeDockController: NSObject {
         Timer.publish(every: 30, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in self?.pollQuota() }
             .store(in: &subscriptions)
+        model.presentationDemand.$hasVisibleHost.removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] visible in
+                if visible { self?.pollQuota(force: true) }
+            }.store(in: &subscriptions)
         model.$currentSessionTitle.combineLatest(model.$runtimeConfiguration, model.$defaultBotName)
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _, _ in
@@ -746,7 +752,7 @@ final class EdgeDockController: NSObject {
         collapseTask?.cancel()
         controlCenter.bind(to: model)
         guard controlCenter.refreshState(for: "provider.quota")?.isRefreshing != true else { return }
-        let lastRead = controlCenter.providerQuotas.map(\.updatedAt).max()
+        let lastRead = controlCenter.providerQuotaFreshness.checkedAt.values.max()
         if lastRead == nil || Date().timeIntervalSince(lastRead!) > 60 {
             controlCenter.refreshProviderQuota()
         }
@@ -756,13 +762,19 @@ final class EdgeDockController: NSObject {
     /// reads them all, so a provider that starts moving is picked up. Right
     /// after work finishes, the spent providers are read at once so their
     /// final usage joins the completion preview.
-    private func pollQuota(afterWork: Bool = false) {
+    private func pollQuota(afterWork: Bool = false, force: Bool = false) {
         // Keeps reading while the workspace is open: the chat header shows it too.
         guard controlCenter.refreshState(for: "provider.quota")?.isRefreshing != true else { return }
-        controlCenter.bind(to: model)
+        let now = Date()
+        let interval: TimeInterval = model.presentationDemand.hasVisibleHost || state.expanded ? 30 : 300
+        guard force || afterWork || (lastQuotaPoll.map { now.timeIntervalSince($0) >= interval } ?? true) else {
+            return
+        }
+        lastQuotaPoll = now
+        hotQuotaReaders = hotQuotaReaders.filter { now.timeIntervalSince($0.value) < 120 }
         quotaTick &+= 1
         let fullRead = hotQuotaReaders.isEmpty || (!afterWork && quotaTick.isMultiple(of: 2))
-        controlCenter.refreshProviderQuota(only: fullRead ? nil : hotQuotaReaders, quiet: !afterWork)
+        controlCenter.refreshProviderQuota(only: fullRead ? nil : Set(hotQuotaReaders.keys), quiet: !afterWork)
     }
 
     private func quotaChanged(_ quotas: [ProviderQuotaSnapshot]) {
@@ -771,7 +783,7 @@ final class EdgeDockController: NSObject {
         defer { lastQuotas = quotas }
         if let previousQuotas = lastQuotas {
             for provider in EdgeQuotaBands.movedProviders(from: previousQuotas, to: quotas) {
-                if let reader = controlCenter.quotaReaderID(for: provider) { hotQuotaReaders.insert(reader) }
+                if let reader = controlCenter.quotaReaderID(for: provider) { hotQuotaReaders[reader] = Date() }
             }
         }
         guard let previousQuotas = lastQuotas,
@@ -958,6 +970,13 @@ final class EdgeDockController: NSObject {
     private func announce(quota: Bool = false, notice: HermNotice? = nil) {
         let reference =
             notice ?? model.interruptionNotice(state.sessionRailActivity.attention ? .failure : .information)
+        if reference.source == .kanban || reference.source == .quota {
+            model.publishWorkflowNotice(
+                reference,
+                body: reference.source == .kanban
+                    ? "A Kanban card changed. Open Herm to review its current state."
+                    : "Provider quota dropped to a lower band. Open Herm to review usage.")
+        }
         guard state.interruptions.admit(reference, channel: .notch) else { return }
         guard !workspacePresented, !dragging, !petDragging, !state.composing, !state.isReadingDetail,
             state.previewInteraction.mode == .passive
@@ -2030,7 +2049,7 @@ struct EdgeNotchView: View {
                         }
                     }
                     .dockPadding(2)
-                    .background(DockThemeShape(cornerRadius: 14).dockSurfaceFill(Color.dockSurface4.opacity(0.6)))
+                    .dockWell(.sunken, radius: 14)
                     if isIsland {
                         // Leave the camera housing clear; the controls sit in the ears either side.
                         Spacer(minLength: state.notchSize.width + 12)

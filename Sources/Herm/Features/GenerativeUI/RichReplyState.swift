@@ -110,7 +110,7 @@ final class RichReplyContext {
     }
 
     var isCurrent: Bool {
-        guard let model, destination.sessionID != nil,
+        guard let model, model.sessionActionsReady, destination.sessionID != nil,
             model.navigationSessionID == destination.sessionID,
             (model.sessionProfileID ?? model.profileScopeID) == destination.profileID
         else { return false }

@@ -12,6 +12,7 @@ private final class IntegrationsFixture: HermesRPCClientProtocol {
     var richInventory = false
     var failWrites = false
     var connectorPolicyLayers: [[String: Any]]?
+    var connectorLogoURL: String?
     var blockedPath: String?
     var pending: CheckedContinuation<Void, Never>?
     var platforms: [[String: Any]] = [
@@ -53,6 +54,7 @@ private final class IntegrationsFixture: HermesRPCClientProtocol {
                     [
                         "slug": "calendar", "name": "Calendar",
                         "description": "Read events and manage connected calendars",
+                        "logo_url": connectorLogoURL as Any,
                     ]
                 ]
             ]
@@ -128,6 +130,27 @@ struct IntegrationsWorkspaceTests {
         WorkspaceStore(
             fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("integrations-\(UUID()).json"))
     }
+    @Test func inventoryStatusFiltersUseReportedState() {
+        #expect(IntegrationStatusFilter.all.includes(enabled: nil, tone: nil, update: false))
+        #expect(IntegrationStatusFilter.enabled.includes(enabled: true, tone: nil, update: false))
+        #expect(!IntegrationStatusFilter.enabled.includes(enabled: nil, tone: .complete, update: false))
+        #expect(IntegrationStatusFilter.disabled.includes(enabled: false, tone: nil, update: false))
+        #expect(!IntegrationStatusFilter.disabled.includes(enabled: nil, tone: .inactive, update: false))
+        #expect(IntegrationStatusFilter.updates.includes(enabled: false, tone: nil, update: true))
+        #expect(IntegrationStatusFilter.needsSetup.includes(enabled: true, tone: .attention, update: false))
+        #expect(!IntegrationStatusFilter.needsSetup.includes(enabled: false, tone: .inactive, update: false))
+    }
+
+    @Test func statusFiltersStayIndependentPerCategory() {
+        let state = IntegrationsWorkspaceState(client: IntegrationsFixture(), store: store())
+        state.currentBrowsing.statusFilter = .updates
+        state.selectCategory(.messaging)
+        #expect(state.currentBrowsing.statusFilter == .all)
+        state.currentBrowsing.statusFilter = .disabled
+        state.selectCategory(.skills)
+        #expect(state.currentBrowsing.statusFilter == .updates)
+    }
+
     @Test func navigationAndCategoryContracts() {
         #expect(ControlTab.globalNavigation.filter { $0 == .integrations }.count == 1)
         #expect(ControlTab.integrations.globalRailLabel == "Integrations")
@@ -240,6 +263,25 @@ struct IntegrationsWorkspaceTests {
         #expect(!state.messaging.hasLoaded && state.messaging.platforms.isEmpty)
     }
 
+    @Test func connectorArtworkUsesTheCatalogURLOnlyWhenItIsHTTPS() async throws {
+        let client = IntegrationsFixture()
+        let service = HermesWorkflowRPC(client: client, profileID: nil)
+        client.connectorLogoURL = "https://assets.example.com/calendar.png"
+        let withLogo = try await service.connectors()
+        #expect(withLogo.first?.logoURL?.absoluteString == "https://assets.example.com/calendar.png")
+        for invalid in [
+            "http://example.com/logo.png", "file:///tmp/logo.png", "https://user:secret@example.com/logo.png",
+            "not a url",
+        ] {
+            client.connectorLogoURL = invalid
+            let withoutLogo = try await service.connectors()
+            #expect(withoutLogo.first?.logoURL == nil)
+        }
+        client.connectorLogoURL = nil
+        let absent = try await service.connectors()
+        #expect(absent.first?.logoURL == nil)
+    }
+
     @Test func connectorPolicyReadFailsClosedWithoutAVerifiedMemberRevision() async throws {
         let client = IntegrationsFixture()
         for (layers, expected): ([[String: Any]]?, Bool?) in [
@@ -291,7 +333,7 @@ struct IntegrationsWorkspaceTests {
         let directory = URL(fileURLWithPath: "/tmp/herm-integrations-renders")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         for category in IntegrationsCategory.allCases {
-            for width: CGFloat in [450, 900, 1200] {
+            for width: CGFloat in [450, 900, 1000, 1200, 1500] {
                 let client = IntegrationsFixture()
                 client.richInventory = true
                 client.connectorPolicyLayers = [["kind": "member", "revision": "r1"]]
@@ -300,7 +342,7 @@ struct IntegrationsWorkspaceTests {
                 await state.load()
                 state.currentBrowsing.showsDetail = true
                 state.workflow.preview = "# Swift review\nCheck ownership and state transitions."
-                try capture(state, width: width, directory: directory, name: "\(category.rawValue)-\(Int(width))")
+                try await capture(state, width: width, directory: directory, name: "\(category.rawValue)-\(Int(width))")
             }
         }
         for kind in ["empty", "unavailable", "stale", "unsaved"] {
@@ -316,7 +358,7 @@ struct IntegrationsWorkspaceTests {
             }
             state.isDirty = kind == "unsaved"
             state.currentBrowsing.showsDetail = kind == "unsaved"
-            try capture(state, width: 450, directory: directory, name: kind)
+            try await capture(state, width: 450, directory: directory, name: kind)
         }
     }
 
@@ -353,7 +395,7 @@ struct IntegrationsWorkspaceTests {
                     for detail in [false, true] {
                         state.currentBrowsing.showsDetail = detail
                         state.currentBrowsing.selection = names.first
-                        try capture(
+                        try await capture(
                             state, width: width, directory: directory,
                             name: "library-\(category.rawValue)-\(theme.rawValue)-\(dark)-\(Int(width))-\(detail)",
                             dark: dark)
@@ -365,11 +407,14 @@ struct IntegrationsWorkspaceTests {
 
     private func capture(
         _ state: IntegrationsWorkspaceState, width: CGFloat, directory: URL, name: String, dark: Bool = false
-    ) throws {
+    ) async throws {
         let host = NSHostingView(
             rootView: IntegrationsWorkspaceView(state: state).environment(\.colorScheme, dark ? .dark : .light))
         host.frame = CGRect(x: 0, y: 0, width: width, height: 720)
         host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        host.layoutSubtreeIfNeeded()
+        // Native split dividers apply their initial position on the next main-queue turn.
+        try await Task.sleep(for: .milliseconds(50))
         host.layoutSubtreeIfNeeded()
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
@@ -390,32 +435,18 @@ struct IntegrationsWorkspaceTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         for (theme, dark): (DockThemeID, Bool) in [(.clean, false), (.clean, true), (.glass, true), (.mono, true)] {
             DockThemeRuntime.current = theme
-            for width: CGFloat in [450, 900, 1200] {
+            for width: CGFloat in [450, 900, 1000, 1200, 1500] {
                 let state = IntegrationsWorkspaceState(client: IntegrationsFixture(), store: store())
                 state.selectCategory(.messaging)
                 await state.load()
                 for detail in [false, true] {
                     state.currentBrowsing.showsDetail = detail
                     state.currentBrowsing.selection = detail ? "telegram" : nil
-                    let view = IntegrationsWorkspaceView(state: state)
-                        .environment(\.colorScheme, dark ? .dark : .light)
-                    let host = NSHostingView(rootView: view)
-                    host.frame = CGRect(x: 0, y: 0, width: width, height: 720)
-                    host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-                    host.layoutSubtreeIfNeeded()
-                    let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-                    host.cacheDisplay(in: host.bounds, to: bitmap)
-                    let png = try #require(bitmap.representation(using: .png, properties: [:]))
-                    try png.write(
-                        to: directory.appendingPathComponent(
-                            "\(theme.rawValue)-\(dark ? "dark" : "light")-\(Int(width))-\(detail ? "detail" : "list").png"
-                        ))
-                    // Fields in a collapsed split pane are clipped away; only drawn text must stay in the window.
-                    for field in descendants(host).compactMap({ $0 as? NSTextField })
-                    where !field.isHidden && !field.visibleRect.isEmpty {
-                        let frame = field.convert(field.bounds, to: host)
-                        #expect(frame.minX >= -1 && frame.maxX <= width + 1, "\(field.stringValue) at \(frame)")
-                    }
+                    try await capture(
+                        state, width: width, directory: directory,
+                        name:
+                            "\(theme.rawValue)-\(dark ? "dark" : "light")-\(Int(width))-\(detail ? "detail" : "list")",
+                        dark: dark)
                 }
             }
         }

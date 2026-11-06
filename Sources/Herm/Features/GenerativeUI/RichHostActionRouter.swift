@@ -34,7 +34,7 @@ final class RichHostActionRouter: ObservableObject {
     func canRunCommand(context: RichReplyContext?) -> Bool {
         guard UserDefaults.standard.object(forKey: GenerativeUIIntegration.preferenceKey) as? Bool != false,
             let terminal, !terminal.directory.isEmpty, let scope, let context, context.isCurrent,
-            context.model?.isRestoringSession == false
+            context.model?.isRestoringSession == false, context.model?.sessionActionsReady == true
         else { return false }
         return scope.resourceID == context.destination.sessionID && scope.profileID == context.destination.profileID
     }

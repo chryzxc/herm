@@ -792,7 +792,6 @@ struct CalendarWorkspaceView: View {
     }
 
     private func tint(_ item: CalendarItem) -> Color {
-        if DockThemeRuntime.current == .mono || DockThemeRuntime.current == .eInk { return .dockSecondaryText }
         switch item.kind {
         case .event: return item.color ?? DockCategoryTone.event.color
         case .reminder: return item.color ?? DockCategoryTone.reminder.color

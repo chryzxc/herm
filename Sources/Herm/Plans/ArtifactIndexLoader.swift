@@ -2,6 +2,14 @@ import Foundation
 
 /// Page-owned work: cancellation stops queued sessions and discards partial results.
 enum ArtifactIndexLoader {
+    struct SessionProgress: Sendable {
+        let sessionID: String
+        let profileID: String?
+        let records: [ArtifactRecord]
+        let pagesRead: Int
+    }
+    typealias ProgressHandler = @MainActor @Sendable (SessionProgress) -> Void
+
     struct SessionResult: Sendable {
         let sessionID: String
         let profileID: String?
@@ -29,6 +37,7 @@ enum ArtifactIndexLoader {
         force: Bool = false,
         invalidatedSessions: Set<ProfileScopedID> = [],
         onSession: @MainActor (SessionResult) -> Void = { _ in },
+        onProgress: @escaping ProgressHandler = { _ in },
         messages: @escaping @MainActor @Sendable (HermesSession, Int) async throws -> [String: Any]
     ) async -> [SessionResult] {
         await withTaskGroup(of: SessionResult.self) { group in
@@ -37,12 +46,16 @@ enum ArtifactIndexLoader {
                 let force = force || invalidatedSessions.contains(session.scopedID)
                 group.addTask {
                     if let index, let owner {
-                        return await index.load(owner: owner, session: session, force: force) {
+                        return await index.load(owner: owner, session: session, force: force, onProgress: onProgress) {
+                            progress in
                             await loadSession(
-                                session, cached: force ? nil : cache[session.scopedID], messages: messages)
+                                session, cached: force ? nil : cache[session.scopedID],
+                                onProgress: progress, messages: messages)
                         }
                     }
-                    return await loadSession(session, cached: force ? nil : cache[session.scopedID], messages: messages)
+                    return await loadSession(
+                        session, cached: force ? nil : cache[session.scopedID],
+                        onProgress: onProgress, messages: messages)
                 }
             }
             for _ in 0..<4 {
@@ -67,6 +80,7 @@ enum ArtifactIndexLoader {
     private static func loadSession(
         _ session: HermesSession,
         cached: CachedSession?,
+        onProgress: ProgressHandler,
         messages: @MainActor @Sendable (HermesSession, Int) async throws -> [String: Any]
     ) async -> SessionResult {
         do {
@@ -77,6 +91,7 @@ enum ArtifactIndexLoader {
             }
             var found: [String: ArtifactRecord] = [:]
             var offset = 0
+            var pagesRead = 0
             while true {
                 try Task.checkCancellation()
                 let page = try await messages(session, offset)
@@ -84,6 +99,11 @@ enum ArtifactIndexLoader {
                 for record in extracted.records where found[record.id] == nil {
                     found[record.id] = record
                 }
+                pagesRead += 1
+                onProgress(
+                    .init(
+                        sessionID: session.id, profileID: session.profileID,
+                        records: Array(found.values), pagesRead: pagesRead))
                 guard extracted.hasMore else { break }
                 offset += extracted.messageCount
             }

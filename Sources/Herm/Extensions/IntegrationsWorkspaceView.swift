@@ -7,32 +7,13 @@ struct IntegrationsWorkspaceView: View {
         DockExpandedPage(
             title: "Integrations", subtitle: state.status, showsClose: false, close: {}, trailing: { headerActions }
         ) {
-            GeometryReader { geometry in
-                HStack(spacing: 0) {
-                    if geometry.size.width >= 1100 {
-                        categoryList.frame(width: 208)
-                        Color.dockBorderLight.frame(width: DockLayout.hairline)
-                    }
-                    VStack(spacing: 0) {
-                        if geometry.size.width < 1100 {
-                            DockMenuPicker(
-                                title: state.category.title,
-                                selection: Binding(get: { state.category }, set: { state.selectCategory($0) })
-                            ) {
-                                ForEach(IntegrationsCategory.allCases) { category in
-                                    DockMenuOption(category.title, value: category)
-                                }
-                            }
-                            .disabled(state.navigationLocked)
-                            .frame(maxWidth: .infinity, alignment: .leading).dockPadding(12)
-                            Color.dockBorderLight.frame(height: DockLayout.hairline)
-                        }
-                        if state.category == .messaging {
-                            MessagingWorkspaceView(workspace: state)
-                        } else if let section = state.category.section {
-                            WorkflowIntegrationView(workspace: state, section: section)
-                        }
-                    }
+            VStack(spacing: 0) {
+                categoryNavigation
+                Color.dockBorderLight.frame(height: DockLayout.hairline)
+                if state.category == .messaging {
+                    MessagingWorkspaceView(workspace: state)
+                } else if let section = state.category.section {
+                    WorkflowIntegrationView(workspace: state, section: section)
                 }
             }
         }
@@ -85,46 +66,46 @@ struct IntegrationsWorkspaceView: View {
         }
     }
 
-    private var categoryList: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            categoryGroup("Capabilities", [.skills, .plugins, .tools])
-            categoryGroup("Connections", [.connectors, .mcp, .messaging])
-            Spacer(minLength: 0)
-        }
-        .dockPadding(.horizontal, 12).dockPadding(.top, 24)
-        .dockShellPane()
-    }
-
-    private func categoryGroup(_ title: String, _ categories: [IntegrationsCategory]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            DockSectionLabel(title: title.uppercased()).dockPadding(.horizontal, 10).dockPadding(.bottom, 4)
-            ForEach(categories) { category in
-                Button {
-                    state.selectCategory(category)
-                } label: {
-                    HStack(spacing: 10) {
-                        DockIcon(
-                            category.icon, size: 16,
-                            color: state.category == category ? .dockPrimaryText : .dockSecondaryText)
-                        Text(category.title).dockFont(.body, weight: state.category == category ? .semibold : .regular)
-                        Spacer(minLength: 0)
-                        if let count = state.count(category) {
-                            Text(count.formatted()).dockFont(.metadata).monospacedDigit()
-                                .foregroundStyle(Color.dockMetadataText)
+    private var categoryNavigation: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 4) {
+                ForEach([IntegrationsCategory.skills, .plugins, .tools, .connectors, .mcp, .messaging]) { category in
+                    Button {
+                        state.selectCategory(category)
+                    } label: {
+                        HStack(spacing: 8) {
+                            DockIcon(category.icon, size: 16)
+                            Text(category.title).dockFont(
+                                .body, weight: state.category == category ? .semibold : .regular)
+                            if let count = state.count(category) {
+                                Text(count.formatted()).dockFont(.metadata).monospacedDigit()
+                                    .foregroundStyle(Color.dockMetadataText)
+                            }
                         }
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .dockPadding(.horizontal, 14).dockPadding(.vertical, 12)
+                        .dockSelectionBackground(
+                            DockThemeShape(cornerRadius: DockLayout.controlRadius),
+                            active: state.category == category, fill: Color.dockSurface4, allowsInvert: false
+                        )
+                        .contentShape(Rectangle())
                     }
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .dockPadding(.horizontal, 10).dockPadding(.vertical, 12)
-                    .dockSelectionBackground(
-                        DockThemeShape(cornerRadius: DockLayout.controlRadius),
-                        active: state.category == category, fill: Color.dockSurface4, allowsInvert: false
-                    )
-                    .contentShape(Rectangle())
+                    .buttonStyle(.dockHover)
+                    .accessibilityAddTraits(state.category == category ? .isSelected : [])
                 }
-                .buttonStyle(.dockHover)
-                .accessibilityAddTraits(state.category == category ? .isSelected : [])
-                .disabled(state.navigationLocked)
+                Spacer(minLength: 0)
             }
+            DockMenuPicker(
+                title: state.category.title,
+                selection: Binding(get: { state.category }, set: { state.selectCategory($0) })
+            ) {
+                ForEach(IntegrationsCategory.allCases) { category in
+                    DockMenuOption(category.title, value: category)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .disabled(state.navigationLocked)
+        .dockPadding(.horizontal, 20).dockPadding(.vertical, 8)
     }
 }

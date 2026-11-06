@@ -605,6 +605,7 @@ struct WorkflowIntegrationView: View {
         var builtin = false
         /// Hermes reports a newer version upstream.
         var update = false
+        var logoURL: URL?
     }
     let destination: IntegrationDestination
     let workspace: IntegrationsWorkspaceState?
@@ -841,7 +842,7 @@ struct WorkflowIntegrationView: View {
                 if let preview = model.preview {
                     Text(preview).dockFont(.body).textSelection(.enabled)
                         .dockPadding(12).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface))
+                        .dockWell(radius: 10)
                 }
                 MemoryCorrectionView(service: model.service)
                 group("MCP servers", count: model.servers.count) {
@@ -914,40 +915,48 @@ struct WorkflowIntegrationView: View {
     private func page(_ tab: Binding<Section>) -> some View {
         let section = tab.wrappedValue
         let canDiscover = [.skills, .plugins, .mcp].contains(section)
-        let list = visibleEntries(section, discovering: canDiscover && discover)
+        let inventory = visibleEntries(section, discovering: canDiscover && discover)
+        let list = inventory.filter {
+            browsing.statusFilter.includes(enabled: $0.on, tone: $0.badge?.0, update: $0.update)
+        }
         let current = list.first { $0.id == selection } ?? list.first
-        return AdaptiveSplit(
-            breakpoint: 800, primaryMinWidth: 340, secondaryMinWidth: 400,
-            showsSecondary: browsing.showsDetail,
-            onBack: { if !hasPendingEdits { browsing.showsDetail = false } }
+        return IntegrationLibraryLayout(
+            showsDetail: browsing.showsDetail,
+            close: { if !hasPendingEdits { browsing.showsDetail = false } }
         ) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 20) {
                 IntegrationLibraryHeader(
-                    title: workspace?.category.title ?? section.rawValue, summary: summary(section, list: list))
+                    title: workspace?.category.title ?? section.rawValue, summary: summary(section, list: inventory),
+                    symbol: workspace?.category.icon ?? .puzzlePiece,
+                    purpose: workspace?.category.purpose ?? "")
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { pageControls(section, canDiscover: canDiscover) }
                     VStack(alignment: .leading, spacing: 8) { pageControls(section, canDiscover: canDiscover) }
                 }
-                Color.dockBorderLight.frame(height: DockLayout.hairline)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(grouped(list), id: \.0) { name, rows in
-                            if !name.isEmpty {
-                                DockSectionLabel(title: name.uppercased(), count: rows.count).dockPadding(.top, 6)
-                            }
-                            IntegrationCardGrid {
-                                ForEach(rows) { entry in
-                                    card(entry, selected: browsing.showsDetail && entry.id == current?.id)
-                                }
+            }
+        } library: {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(grouped(list), id: \.0) { name, rows in
+                        if !name.isEmpty {
+                            DockSectionLabel(title: name.uppercased(), count: rows.count).dockPadding(.top, 6)
+                        }
+                        IntegrationInventoryList {
+                            ForEach(rows) { entry in
+                                card(entry, selected: browsing.showsDetail && entry.id == current?.id)
                             }
                         }
-                        if list.isEmpty {
+                    }
+                    if list.isEmpty {
+                        if browsing.statusFilter != .all && !inventory.isEmpty {
+                            IntegrationFilterEmptyState { browsing.statusFilter = .all }
+                        } else {
                             emptyList(section, loading: model.busy || (discover && model.catalogLoading))
                         }
-                    }.dockPadding(.bottom, 14)
-                }
-            }.dockPadding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
-        } secondary: {
+                    }
+                }.dockPadding(.bottom, 14)
+            }
+        } inspector: {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
@@ -958,7 +967,7 @@ struct WorkflowIntegrationView: View {
                         } else {
                             emptyList(section, loading: model.busy)
                         }
-                    }.dockPadding(24).frame(maxWidth: 600, alignment: .leading).frame(
+                    }.dockPadding(24).frame(maxWidth: 720, alignment: .leading).frame(
                         maxWidth: .infinity, alignment: .leading)
                 }
                 if hasPendingEdits {
@@ -983,6 +992,7 @@ struct WorkflowIntegrationView: View {
         }
         .onChange(of: discover) {
             selection = nil
+            browsing.statusFilter = .all
             browsing.showsDetail = false
         }
         .onChange(of: category) {
@@ -1020,6 +1030,17 @@ struct WorkflowIntegrationView: View {
             DockAsyncButton("Search Skills Hub") { await model.searchHub(filter) }
                 .buttonStyle(.dockSecondary).fixedSize()
                 .disabled(model.busy || filter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        if !discover && section != .mcp {
+            IntegrationStatusPicker(
+                selection: binding(\.statusFilter),
+                options: section == .connectors
+                    ? [.all, .needsSetup]
+                    : section == .tools
+                        ? [.all, .enabled, .disabled, .needsSetup]
+                        : [.all, .enabled, .disabled, .updates]
+            )
+            .disabled(hasPendingEdits || model.busy)
         }
         if !filter.isEmpty {
             Button("Clear filter") { filter = "" }.buttonStyle(.dockSecondary).fixedSize().disabled(hasPendingEdits)
@@ -1066,7 +1087,7 @@ struct WorkflowIntegrationView: View {
         let switches = list.compactMap(\.on)
         let attention = list.filter { $0.badge?.0 == .attention }.count
         var parts = ["\(list.count) \(list.count == 1 ? "item" : "items")"]
-        if !switches.isEmpty { parts.append("\(switches.filter { $0 }.count) on") }
+        if !switches.isEmpty { parts.append("\(switches.filter { $0 }.count) enabled") }
         if attention > 0 { parts.append("\(attention) need attention") }
         let updates = list.filter(\.update).count
         if updates > 0 { parts.append("\(updates) \(updates == 1 ? "update" : "updates") available") }
@@ -1163,7 +1184,7 @@ struct WorkflowIntegrationView: View {
             }
         case .connectors:
             return model.connectors.map {
-                Entry(id: $0.id, title: $0.name, subtitle: $0.detail, badge: connectorBadge($0))
+                Entry(id: $0.id, title: $0.name, subtitle: $0.detail, badge: connectorBadge($0), logoURL: $0.logoURL)
             }
         case .plugins:
             return model.plugins.map {
@@ -1183,8 +1204,18 @@ struct WorkflowIntegrationView: View {
         if ["failed", "expired", "revoked"].contains(connector.status ?? "") { return (.attention, "Reconnect") }
         return connector.connected ? (.complete, "Connected") : (.queued, "Available")
     }
+    private func artworkSymbol(_ entry: Entry) -> Ph {
+        guard pageSection?.wrappedValue == .connectors else { return workspace?.category.icon ?? .puzzlePiece }
+        switch entry.id.lowercased() {
+        case "notion": return .notionLogo
+        case "slack": return .slackLogo
+        case "discord", "discordbot": return .discordLogo
+        case "github": return .githubLogo
+        default: return workspace?.category.icon ?? .plugsConnected
+        }
+    }
     private func card(_ entry: Entry, selected: Bool) -> some View {
-        IntegrationCard(
+        IntegrationInventoryRow(
             title: entry.title, detail: entry.subtitle == entry.title ? "" : entry.subtitle,
             status: model.updatingItem == entry.id
                 ? (.working, "Updating…")
@@ -1196,7 +1227,7 @@ struct WorkflowIntegrationView: View {
                 browsing.showsDetail = true
             }
         ) {
-            IntegrationCardIcon(symbol: workspace?.category.icon ?? .puzzlePiece)
+            IntegrationArtwork(url: entry.logoURL, symbol: artworkSymbol(entry), size: 36)
         }
         .disabled(hasPendingEdits)
     }
@@ -1207,9 +1238,7 @@ struct WorkflowIntegrationView: View {
             category: workspace?.category.title ?? pageSection?.wrappedValue.rawValue ?? "Integration",
             scope: scopeLine, detail: text
         ) {
-            DockIcon(workspace?.category.icon ?? .puzzlePiece, size: 24, color: .dockPrimaryText)
-                .frame(width: 48, height: 48)
-                .background(DockThemeShape(cornerRadius: DockLayout.paneRadius).dockSurfaceFill(Color.dockSurface4))
+            IntegrationArtwork(url: entry.logoURL, symbol: artworkSymbol(entry), size: 48)
         } status: {
             DockChipFlow(spacing: 6) {
                 ForEach(pills.indices, id: \.self) { DockStatusPill(tone: pills[$0].0, text: pills[$0].1) }
@@ -1231,7 +1260,7 @@ struct WorkflowIntegrationView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .dockCard(padding: 12, isQuiet: true)
+        .dockCard(padding: 12)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Updating \(name)")
     }
@@ -1282,7 +1311,9 @@ struct WorkflowIntegrationView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
-    private func enabledPill(_ on: Bool) -> (DockStatusTone, String) { on ? (.complete, "On") : (.inactive, "Off") }
+    private func enabledPill(_ on: Bool) -> (DockStatusTone, String) {
+        on ? (.complete, "Enabled") : (.inactive, "Disabled")
+    }
     private var appliesNote: some View {
         Label("Changes apply to new sessions.", systemImage: "info.circle").dockFont(.metadata)
             .foregroundStyle(Color.dockMetadataText)
@@ -1372,8 +1403,7 @@ struct WorkflowIntegrationView: View {
                                 markdown: Self.withoutFrontmatter(preview), cacheKey: "skill:\(skill.id)"
                             )
                             .dockPadding(16).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                DockThemeShape(cornerRadius: DockLayout.paneRadius).fill(Color.dockSurface2))
+                            .dockWell(radius: DockLayout.paneRadius, role: .pane)
                         } else if model.inspecting {
                             DockLoadingState(title: "Loading skill instructions…", minHeight: 100)
                         } else {
@@ -1412,8 +1442,7 @@ struct WorkflowIntegrationView: View {
                                 ForEach(toolset.tools, id: \.self) { tool in
                                     Text(tool).dockFont(.metadata, design: .monospaced)
                                         .foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
-                                        .dockPadding(.horizontal, 7).dockPadding(.vertical, 3)
-                                        .background(Capsule().fill(Color.dockSurface4))
+                                        .dockPill()
                                 }
                             }
                         }
@@ -1574,8 +1603,6 @@ struct WorkflowIntegrationView: View {
                     }
                 }
             }
-            .dockPadding(.horizontal, 12)
-            .background(DockThemeShape(cornerRadius: DockLayout.paneRadius).fill(Color.dockSurface2))
         }
     }
     private var customServerCard: some View {
@@ -1693,8 +1720,7 @@ struct WorkflowIntegrationView: View {
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0, content: content)
             .dockPadding(.horizontal, 12)
-            .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.dockBorderLight, lineWidth: 0.5))
+            .dockWell(radius: 10)
     }
     /// One line per item: name (plus a description only when it adds something), controls trailing.
     private func row<Trailing: View>(

@@ -689,9 +689,7 @@ private struct OfficeBoardInspector: View {
                             }
                             .dockPadding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1).fill(Color.dockSurface2)
-                            )
+                            .dockWell()
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.dockHover)
@@ -701,9 +699,7 @@ private struct OfficeBoardInspector: View {
                 .dockPadding([.horizontal, .bottom], 10)
             }
         }
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).fill(Color.dockSurface.opacity(0.7)))
-        .overlay(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .dockWell()
     }
 
     static func status(for lane: OfficePreviewLane) -> OfficeAgentStatus {
@@ -738,9 +734,7 @@ private struct OfficeCard<Content: View>: View {
         }
         .dockPadding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).fill(Color.dockSurface.opacity(0.7)))
-        .overlay(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .dockWell()
     }
 }
 

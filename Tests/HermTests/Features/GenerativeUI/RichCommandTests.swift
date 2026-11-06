@@ -93,6 +93,11 @@ struct RichCommandTests {
         #expect(!other.canRunCommand(context: context))
         #expect(throws: (any Error).self) { try other.run(command, context: context) }
         #expect(throws: (any Error).self) { try router.run(.init(command: "pwd\n"), context: context) }
+        model.sessionTranscriptLoadState = .refreshing
+        #expect(!context.isCurrent)
+        #expect(!router.canRunCommand(context: context))
+        #expect(throws: (any Error).self) { try router.run(command, context: context) }
+        model.sessionTranscriptLoadState = .ready
         try router.run(command, context: context)
         #expect(received == [command.command])
         #expect(router.generationContext().terminalDirectory == "/tmp")

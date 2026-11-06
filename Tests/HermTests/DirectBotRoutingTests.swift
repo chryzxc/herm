@@ -133,7 +133,7 @@ struct DirectBotRoutingTests {
         let submit = try #require(rpc.requests.first { $0.method == "prompt.submit" })
         #expect(submit.params["session_id"] as? String == "recipient-chat")
         #expect(submit.params["profile"] as? String == "default")
-        #expect(submit.params["text"] as? String == "hey")
+        #expect(submit.params["text"] as? String == GenerativeUIIntegration.preparePrompt("hey"))
         #expect(model.messages.first?.text == "@default hey")
         #expect(model.messages.first?.botMentions.map(\.bot.id) == ["default"])
         #expect(model.composer.selectedBots.isEmpty)
@@ -155,6 +155,32 @@ struct DirectBotRoutingTests {
         #expect(model.messages.first?.text == "@default hey")
         #expect(model.messages.first?.botMentions.isEmpty == true)
         #expect(rpc.requests.last?.params["profile"] as? String == "default")
+    }
+
+    @Test func unopenedBotChatReceivesVisualReplyGuidanceForItsOwnDestination() async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        let request = "Create an interactive savings calculator"
+        var captured: QuickDestination?
+        model.richGenerationContextProvider = { destination in
+            captured = destination
+            return RichGenerationContext(profileID: destination.profileID, sessionID: destination.sessionID)
+        }
+
+        model.sendDirectBotRequest(
+            profileID: "default", displayName: "Nexus", text: request, chatSessionID: "recipient-chat")
+        await waitForSubmission(rpc)
+
+        let submit = try #require(rpc.requests.first { $0.method == "prompt.submit" })
+        #expect(
+            submit.params["text"] as? String
+                == GenerativeUIIntegration.preparePrompt(
+                    request, context: RichGenerationContext(profileID: "default", sessionID: "recipient-chat")))
+        #expect(captured?.profileID == "default")
+        #expect(captured?.sessionID == "recipient-chat")
+        #expect(model.sessionID == "cypher-chat")
+        #expect(model.messages.first?.text == "@Nexus " + request)
     }
 
     @Test func pickedBotOwnsDeliveryWhenTheRequestAlsoTypesAnotherHandle() async throws {

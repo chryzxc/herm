@@ -74,6 +74,8 @@ struct ArtifactsInspectorView: View {
     @State private var presentationCache = ArtifactBrowserProjectionCache()
     @State private var indexedSessions: [HermesSession] = []
     @State private var artifactCache: [ProfileScopedID: ArtifactIndexLoader.CachedSession] = [:]
+    @State private var artifactProgress: [ProfileScopedID: ArtifactIndexLoader.SessionProgress] = [:]
+    @State private var artifactProgressTask: Task<Void, Never>?
     @State private var query = ""
     @State private var filter: ArtifactFilter = .all
     @State private var imagePage = 1
@@ -287,28 +289,9 @@ struct ArtifactsInspectorView: View {
     }
 
     private var searchField: some View {
-        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
-        return HStack(spacing: 6) {
-            DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
-            TextField("", text: $query, prompt: Text("Search artifacts").foregroundColor(Color.dockMetadataText))
-                .textFieldStyle(.plain)
-                .dockFont(.body)
-                .foregroundStyle(Color.dockPrimaryText)
-                .accessibilityLabel("Search artifacts by name, path, URL, or session")
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                } label: {
-                    DockIcon(.xCircle, size: 13, color: .dockMetadataText)
-                }
-                .buttonStyle(.dockHover)
-                .accessibilityLabel("Clear search")
-            }
-        }
-        .dockPadding(.horizontal, 10)
-        .frame(height: 32)
-        .background(
-            shape.dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight, lineWidth: DockLayout.outline))
+        DockSearchField(
+            placeholder: "Search artifacts", text: $query,
+            accessibilityDescription: "Search artifacts by name, path, URL, or session")
     }
 
     @ViewBuilder
@@ -659,13 +642,7 @@ struct ArtifactsInspectorView: View {
                             .dockPadding(.vertical, 8)
                     }
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).dockSurfaceFill(
-                        Color.dockSurface)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(
-                        Color.dockBorderLight))
+                .dockCard(padding: 0)
             case .missing:
                 previewPlaceholder(
                     icon: .warning, title: "File no longer exists",
@@ -813,7 +790,9 @@ struct ArtifactsInspectorView: View {
         if isLoading && records.isEmpty { return "Indexing Hermes sessions…" }
         let count = records.count
         let sessions = Set(records.map(\.scopedSessionID)).count
-        return "\(count) \(count == 1 ? "output" : "outputs") across \(sessions) session\(sessions == 1 ? "" : "s")"
+        let summary =
+            "\(count) \(count == 1 ? "output" : "outputs") across \(sessions) session\(sessions == 1 ? "" : "s")"
+        return isLoading ? "Indexing… · \(summary)" : summary
     }
 
     private func loadTextPreview(for record: ArtifactRecord) async {
@@ -838,7 +817,8 @@ struct ArtifactsInspectorView: View {
         if failedSessionCount > 0 { return "\(failedSessionCount) sessions could not be read. Refresh to retry." }
         if isLoading && records.isEmpty { return "Indexing Hermes sessions…" }
         let count = visibleRecords.count
-        return "\(count) \(count == 1 ? "output" : "outputs") from Hermes sessions"
+        let summary = "\(count) \(count == 1 ? "output" : "outputs") from Hermes sessions"
+        return isLoading ? "Indexing… · \(summary)" : summary
     }
 
     private var content: some View {
@@ -867,7 +847,7 @@ struct ArtifactsInspectorView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 if !pagedImages.isEmpty {
-                    sectionHeader("IMAGES", count: visibleImages.count)
+                    DockSectionLabel(title: "Images", count: visibleImages.count)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 10)], spacing: 10) {
                         ForEach(pagedImages) { record in imageCard(record) }
                     }
@@ -892,7 +872,7 @@ struct ArtifactsInspectorView: View {
                     }
                 }
                 if !pagedFiles.isEmpty {
-                    sectionHeader("FILES AND LINKS", count: visibleFiles.count)
+                    DockSectionLabel(title: "Files and links", count: visibleFiles.count)
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(pagedFiles) { record in fileRow(record) }
                     }
@@ -910,13 +890,7 @@ struct ArtifactsInspectorView: View {
             }
         }
         .dockPadding(3)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).dockSurfaceFill(
-                Color.dockSurface2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).stroke(
-                Color.dockBorderLight))
+        .dockWell()
     }
 
     private var compactFilterMenu: some View {
@@ -1002,19 +976,6 @@ struct ArtifactsInspectorView: View {
         case .interactive: value.interactive
         case .saved: value.saved
         }
-    }
-
-    private func sectionHeader(_ title: String, count: Int) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .dockFont(.compactStatus, weight: .bold, design: .monospaced)
-                .foregroundStyle(Color.dockMetadataText)
-                .tracking(0.8)
-            Text("· \(count)")
-                .dockFont(.compactStatus, weight: .regular, design: .monospaced)
-                .foregroundStyle(Color.dockSecondaryText)
-        }
-        .accessibilityAddTraits(.isHeader)
     }
 
     private func imageCard(_ record: ArtifactRecord) -> some View {
@@ -1233,8 +1194,17 @@ struct ArtifactsInspectorView: View {
         guard !Task.isCancelled else { return }
         let generation = UUID()
         refreshGeneration = generation
+        artifactProgressTask?.cancel()
+        artifactProgressTask = nil
+        artifactProgress = [:]
         isLoading = true
-        defer { if refreshGeneration == generation { isLoading = false } }
+        defer {
+            if refreshGeneration == generation {
+                artifactProgressTask?.cancel()
+                artifactProgressTask = nil
+                isLoading = false
+            }
+        }
         errorMessage = nil
         let previous = records
         let sessions: [HermesSession]
@@ -1284,10 +1254,27 @@ struct ArtifactsInspectorView: View {
                     .sorted { $0.timestamp > $1.timestamp }
                 reconcileSelection()
             },
+            onProgress: { progress in
+                guard refreshGeneration == generation else { return }
+                let key = ProfileScopedID(profileID: progress.profileID, resourceID: progress.sessionID)
+                artifactProgress[key] = progress
+                guard artifactProgressTask == nil else { return }
+                artifactProgressTask = Task { @MainActor in
+                    await Task.yield()
+                    guard !Task.isCancelled, refreshGeneration == generation else { return }
+                    artifactProgressTask = nil
+                    var merged = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                    for record in artifactProgress.values.flatMap(\.records) { merged[record.id] = record }
+                    records = merged.values.sorted { $0.timestamp > $1.timestamp }
+                    reconcileSelection()
+                }
+            },
             messages: { session, offset in
                 try await model.artifactMessages(for: session, offset: offset)
             })
         guard !Task.isCancelled, refreshGeneration == generation else { return }
+        artifactProgressTask?.cancel()
+        artifactProgressTask = nil
         var next: [ArtifactRecord] = []
         var failedSessionIDs = Set<ProfileScopedID>()
         var lastFailure: String?
@@ -1306,6 +1293,8 @@ struct ArtifactsInspectorView: View {
             }
         }
         artifactCache = nextCache
+        next.append(contentsOf: artifactProgress.filter { failedSessionIDs.contains($0.key) }.values.flatMap(\.records))
+        artifactProgress = [:]
         // Keep the prior artifacts for sessions that could not be read this
         // cycle, while allowing successful sessions and removed sessions to
         // converge to the latest authoritative index.

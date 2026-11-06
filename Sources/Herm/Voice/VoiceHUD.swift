@@ -348,14 +348,7 @@ struct VoiceHUDState: Equatable {
 
 extension View {
     fileprivate func hudCard(tint: Color = .dockAccent) -> some View {
-        padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
-                    .dockSurfaceFill(
-                        Color.dockSurface6.opacity(0.94), stroke: tint.opacity(0.3), lineWidth: 0.6, strokeOnGlass: true
-                    )
-            )
-            .shadow(color: tint.opacity(0.18), radius: 16)
+        padding(12).dockHUDSurface(tint: tint)
     }
 }
 

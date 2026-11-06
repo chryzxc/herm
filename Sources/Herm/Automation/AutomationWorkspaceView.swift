@@ -115,6 +115,7 @@ struct AutomationWorkspaceRowPresentation: Equatable {
 }
 
 struct AutomationWorkspaceView: View {
+    @Environment(\.dockHostVisible) private var hostVisible
     @ObservedObject var control: ControlCenterModel
     var bots: [BotSummary] = []
     var avatarImages: [String: Data] = [:]
@@ -279,8 +280,8 @@ struct AutomationWorkspaceView: View {
                     ])
             }
         }
-        .task(id: routineProgressTaskID) {
-            guard let selectedJobID else { return }
+        .task(id: "\(routineProgressTaskID):\(hostVisible)") {
+            guard hostVisible, let selectedJobID else { return }
             let profile = control.routineProfileID
             while !Task.isCancelled {
                 guard await control.refreshRoutineProgress(jobID: selectedJobID, profileID: profile) else { return }
@@ -382,12 +383,22 @@ struct AutomationWorkspaceView: View {
             } else if control.cronJobs.isEmpty {
                 emptyWorkspace
             } else {
-                if showingOverview {
-                    jobList
-                } else if let selectedJob {
-                    jobPanel(selectedJob)
-                } else {
-                    jobList
+                GeometryReader { geo in
+                    if geo.size.width >= 860, let selectedJob {
+                        HStack(spacing: 0) {
+                            jobList(showsSelection: true)
+                                .frame(width: 300)
+                                .background(Color.dockSurface2)
+                            Color.dockBorderLight.frame(width: DockLayout.hairline)
+                            jobPanel(selectedJob, showsBack: false)
+                        }
+                    } else if showingOverview {
+                        jobList(showsSelection: false)
+                    } else if let selectedJob {
+                        jobPanel(selectedJob, showsBack: true)
+                    } else {
+                        jobList(showsSelection: false)
+                    }
                 }
             }
         }
@@ -426,112 +437,195 @@ struct AutomationWorkspaceView: View {
 
     // MARK: Job list
 
-    private var jobList: some View {
+    /// Groups put what needs a decision first; paused work stays out of the way.
+    private var jobGroups: [(title: String, tint: Color, jobs: [CronSummary])] {
+        let overdue = filteredJobs.filter { $0.enabled && AutomationWorkspaceRowPresentation.isOverdue($0) }
+        let active = filteredJobs.filter { $0.enabled && !AutomationWorkspaceRowPresentation.isOverdue($0) }
+        let paused = filteredJobs.filter { !$0.enabled }
+        return [
+            ("Overdue", Color.dockWarning, overdue),
+            ("Active", Color.dockSuccess, active),
+            ("Paused", Color.dockMetadataText, paused),
+        ].filter { !$0.2.isEmpty }
+    }
+
+    private func jobList(showsSelection: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Schedules")
-                        .dockFont(.body, weight: .semibold)
-                        .foregroundStyle(Color.dockPrimaryText)
-                    Text("\(filteredJobs.count)")
-                        .dockFont(.metadata).monospacedDigit()
-                        .foregroundStyle(Color.dockMetadataText)
-                    Spacer()
-                }
-                HStack(spacing: 8) {
-                    DockIcon(.magnifyingGlass, size: 14, color: .dockMetadataText)
-                    DockTextField("Filter automations", text: $searchText)
-                        .textFieldStyle(.plain)
-                        .dockFont(.body)
-                }
-                .dockPadding(.horizontal, 10)
-                .frame(height: 34)
-                .frame(maxWidth: 360)
-                .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius)
-                        .dockSurfaceFill(Color.dockControlSurface, stroke: Color.dockBorder)
-                )
+            DockSearchField(placeholder: "Filter by name or job ID", text: $searchText)
+                .dockPadding(.horizontal, DockSpacing.inspectorInset)
+                .dockPadding(.vertical, DockSpacing.group)
+            HStack {
+                Text("Schedules")
+                    .dockFont(.body, weight: .semibold)
+                    .foregroundStyle(Color.dockPrimaryText)
+                Spacer()
+                Text("\(filteredJobs.count)")
+                    .dockFont(.metadata)
+                    .foregroundStyle(Color.dockMetadataText)
+                    .monospacedDigit()
             }
-            .dockPadding(.horizontal, 20)
-            .dockPadding(.vertical, 14)
-            Divider().overlay(Color.dockBorderLight)
+            .dockPadding(.horizontal, 16)
+            .dockPadding(.bottom, 10)
             ScrollView {
                 LazyVStack(spacing: 0) {
                     if filteredJobs.isEmpty {
                         placeholder("No matching automations", detail: "Try a different name or job ID.")
                     }
-                    ForEach(filteredJobs) { job in jobRow(job) }
+                    ForEach(jobGroups, id: \.title) { group in
+                        groupHeader(group.title, tint: group.tint, count: group.jobs.count)
+                        ForEach(group.jobs) { job in
+                            jobRow(job, selected: showsSelection && job.id == selectedJobID)
+                        }
+                    }
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func jobRow(_ job: CronSummary) -> some View {
+    /// Inset, stroke-free selection so the list stays quiet in every skin; Glass keeps its native edge.
+    @ViewBuilder
+    private func selectionBackground(_ selected: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+        if selected {
+            if DockThemeStyle.current.material == .glass {
+                Color.clear.dockLiquidGlass(shape, interactive: true)
+                    .overlay(shape.stroke(Color.dockGlassSelectionEdge, lineWidth: 1))
+                    .padding(.horizontal, 6)
+            } else {
+                shape.fill(Color.dockAccentMuted).padding(.horizontal, 6)
+            }
+        }
+    }
+
+    private func jobTitle(_ job: CronSummary) -> some View {
+        Text(job.name)
+            .dockFont(.body, weight: .semibold)
+            .foregroundStyle(job.enabled ? Color.dockPrimaryText : Color.dockSecondaryText)
+            .lineLimit(2)
+            .multilineTextAlignment(.leading)
+    }
+
+    private func scheduleText(_ job: CronSummary) -> some View {
+        HStack(spacing: 5) {
+            DockIcon(.clock, size: 11, color: DockCategoryTone.automation.color)
+            Text(CronScheduleFormatting.humanReadable(job.schedule))
+                .dockFont(.metadata)
+                .foregroundStyle(Color.dockSecondaryText)
+        }
+    }
+
+    @ViewBuilder
+    private func nextRunText(_ job: CronSummary, overdue: Bool) -> some View {
+        if job.enabled, let next = job.nextRun {
+            Text(overdue ? "Overdue" : HumanDateFormatting.relative(next).capitalizedFirst)
+                .dockFont(.body, weight: .medium)
+                .foregroundStyle(overdue ? Color.dockWarning : Color.dockPrimaryText)
+        } else {
+            Text("Paused").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+        }
+    }
+
+    private func outcomeText(_ result: AutomationWorkspaceRowPresentation.Result) -> some View {
+        HStack(spacing: 5) {
+            statusDot(result)
+            Text(result.title).foregroundStyle(statusColor(result))
+        }
+        .dockFont(.metadata)
+    }
+
+    private func groupHeader(_ title: String, tint: Color, count: Int) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(tint).frame(width: 6, height: 6)
+            Text(title).dockFont(.metadata, weight: .semibold)
+                .foregroundStyle(Color.dockSecondaryText)
+            Text("\(count)").dockFont(.metadata).monospacedDigit()
+                .foregroundStyle(Color.dockMetadataText)
+            Spacer(minLength: 0)
+        }
+        .dockPadding(.horizontal, 16)
+        .frame(height: 32)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private enum Column {
+        static let schedule: CGFloat = 200
+        static let next: CGFloat = 130
+        static let last: CGFloat = 150
+    }
+
+    private var columnHeader: some View {
+        HStack(spacing: 12) {
+            Text("Automation").frame(maxWidth: .infinity, alignment: .leading)
+            Text("Schedule").frame(width: Column.schedule, alignment: .leading)
+            Text("Next run").frame(width: Column.next, alignment: .leading)
+            Text("Last run").frame(width: Column.last, alignment: .leading)
+            Color.clear.frame(width: 12, height: 1)
+        }
+        .dockFont(.metadata, weight: .semibold)
+        .foregroundStyle(Color.dockMetadataText)
+        .dockPadding(.horizontal, 20)
+        .frame(height: 28)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+        .accessibilityHidden(true)
+    }
+
+    private func jobRow(_ job: CronSummary, selected: Bool) -> some View {
         let result = presentation(for: job)
-        let overdue = AutomationWorkspaceRowPresentation.isOverdue(job)
+        let overdue = job.enabled && AutomationWorkspaceRowPresentation.isOverdue(job)
         return Button {
             selectedJobID = job.id
             selectedRunID = nil
             isRunPanelOpen = false
             showingOverview = false
         } label: {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(job.name)
-                        .dockFont(.body, weight: .semibold)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                    Text(CronScheduleFormatting.humanReadable(job.schedule))
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    jobTitle(job)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    nextRunText(job, overdue: overdue)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                HStack(spacing: 8) {
+                    scheduleText(job)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    outcomeText(result.result)
                         .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .layoutPriority(1)
-                VStack(alignment: .trailing, spacing: 5) {
-                    HStack(spacing: 5) {
-                        statusDot(result.result)
-                        Text(result.result.title)
-                            .foregroundStyle(statusColor(result.result))
-                    }
-                    if job.enabled, let next = job.nextRun {
-                        Text(overdue ? "Overdue" : "Next \(HumanDateFormatting.relative(next))")
-                            .foregroundStyle(overdue ? Color.dockWarning : Color.dockMetadataText)
-                    }
-                }
-                .dockFont(.metadata)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                DockIcon(.caretRight, size: 12, color: .dockMetadataText)
             }
-            .dockPadding(.horizontal, 20)
+            .dockPadding(.horizontal, 16)
             .dockPadding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background { selectionBackground(selected) }
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .contextMenu { menuActions(for: job) }
     }
 
     // MARK: Selected job
 
-    private func jobPanel(_ job: CronSummary) -> some View {
+    private func jobPanel(_ job: CronSummary, showsBack: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                showingOverview = true
-                isRunPanelOpen = false
-            } label: {
-                DockIconLabel("All automations", icon: .caretLeft)
+            if showsBack {
+                Button {
+                    showingOverview = true
+                    isRunPanelOpen = false
+                } label: {
+                    DockIconLabel("All automations", icon: .caretLeft)
+                }
+                .buttonStyle(.dockLink)
+                .dockPadding(.horizontal, 20)
+                .dockPadding(.top, 16)
             }
-            .buttonStyle(.dockLink)
-            .dockPadding(.horizontal, 20)
-            .dockPadding(.top, 16)
             jobHeader(job)
             statStrip(job)
-                .dockPadding(.horizontal, 20)
+                .dockPadding(.horizontal, 24)
+                .dockPadding(.bottom, 12)
             HStack(spacing: 12) {
                 DockTabBar(
                     options: AutomationWorkspaceTab.allCases, selection: $tab, title: \.title)
@@ -546,9 +640,9 @@ struct AutomationWorkspaceView: View {
                 .accessibilityLabel(isRunPanelOpen ? "Hide run output" : "Show run output")
                 .accessibilityValue(isRunPanelOpen ? "Expanded" : "Collapsed")
             }
-            .dockPadding(.horizontal, 20)
-            .dockPadding(.vertical, 10)
-            Divider().overlay(Color.dockBorderLight)
+            .dockPadding(.horizontal, 24)
+            .dockPadding(.vertical, 12)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             ScrollView {
                 if tab == .history {
                     history(job)
@@ -563,44 +657,44 @@ struct AutomationWorkspaceView: View {
         let overdue = AutomationWorkspaceRowPresentation.isOverdue(job)
         let reference = RoutineReference(
             profileID: control.profileForRoutine(job), job: job, run: runs(for: job).first)
-        return VStack(alignment: .leading, spacing: 8) {
-            Text(job.name)
-                .dockFont(.pageTitle)
-                .foregroundStyle(Color.dockPrimaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                statePill(
-                    job.enabled ? (overdue ? "Overdue" : "Active") : "Paused",
-                    tint: !job.enabled
-                        ? Color.dockMetadataText : (overdue ? Color.dockWarning : Color.dockSuccess)
-                )
-                Text(CronScheduleFormatting.humanReadable(job.schedule))
-                    .dockFont(.body)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack(spacing: 8) {
-                Button("Edit") { editingJob = job }
-                    .buttonStyle(.dockSecondary)
-                    .disabled(!control.cronControlAvailable)
-                    .help(
-                        control.cronControlAvailable
-                            ? "Edit this automation" : "Editing is unavailable through this Hermes gateway.")
-                Button {
-                    runRequest = job
-                    isShowingRunConfirmation = true
-                } label: {
-                    DockIconLabel("Run now", icon: .play)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(job.name)
+                        .dockFont(.pageTitle)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        statePill(
+                            job.enabled ? (overdue ? "Overdue" : "Active") : "Paused",
+                            tint: !job.enabled
+                                ? Color.dockMetadataText
+                                : (overdue ? Color.dockWarning : Color.dockSuccess)
+                        )
+                        Text(CronScheduleFormatting.humanReadable(job.schedule))
+                            .dockFont(.body)
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .buttonStyle(.dockPrimary)
-                .disabled(
-                    !control.canTriggerRoutine(
-                        RoutineReference(
-                            profileID: control.profileForRoutine(job), job: job,
-                            run: runs(for: job).first)))
                 Spacer(minLength: 0)
-                if hasMenuActions(for: job) {
+                HStack(spacing: 8) {
+                    Button("Edit") { editingJob = job }
+                        .buttonStyle(.dockSecondary)
+                        .disabled(!control.cronControlAvailable)
+                        .help(
+                            control.cronControlAvailable
+                                ? "Edit this automation"
+                                : "Editing is unavailable through this Hermes gateway.")
+                    Button {
+                        runRequest = job
+                        isShowingRunConfirmation = true
+                    } label: {
+                        DockIconLabel("Run now", icon: .play)
+                    }
+                    .buttonStyle(.dockPrimary)
+                    .disabled(!control.canTriggerRoutine(reference))
                     DockMenu {
                         menuActions(for: job)
                     } label: {
@@ -613,8 +707,8 @@ struct AutomationWorkspaceView: View {
                     .help("More actions")
                     .accessibilityLabel("More actions for \(job.name)")
                 }
+                .controlSize(.small)
             }
-            .controlSize(.small)
             Text(
                 control.routineFeedback(reference)
                     ?? (control.routineActions.contains(reference.id)
@@ -630,9 +724,9 @@ struct AutomationWorkspaceView: View {
             .help(control.routineFeedback(reference) ?? "")
             .accessibilityLabel("\(job.name): \(control.routineFeedback(reference) ?? "")")
         }
-        .dockPadding(.horizontal, 20)
-        .dockPadding(.top, 18)
-        .dockPadding(.bottom, 8)
+        .dockPadding(.horizontal, 24)
+        .dockPadding(.top, 24)
+        .dockPadding(.bottom, 16)
     }
 
     private func statStrip(_ job: CronSummary) -> some View {
@@ -677,8 +771,7 @@ struct AutomationWorkspaceView: View {
             )
         }
         .fixedSize(horizontal: false, vertical: true)
-        .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+        .dockWell()
     }
 
     private func history(_ job: CronSummary) -> some View {
@@ -687,8 +780,8 @@ struct AutomationWorkspaceView: View {
         let selected = isRunPanelOpen ? selectedRun(for: job)?.id : nil
         return LazyVStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("RUN HISTORY")
-                    .dockFont(.sectionLabel)
+                Text("Run history")
+                    .dockFont(.metadata, weight: .semibold)
                 Text("\(jobRuns.count)")
                     .dockFont(.machineMetadata)
                 Spacer()
@@ -700,9 +793,9 @@ struct AutomationWorkspaceView: View {
                     .help(state?.error ?? "Reported execution status")
             }
             .foregroundStyle(Color.dockMetadataText)
-            .dockPadding(.horizontal, 20)
-            .frame(height: 32)
-            .dockPaneTint(Color.dockSurface2)
+            .dockPadding(.horizontal, 24)
+            .dockPadding(.top, 18)
+            .dockPadding(.bottom, 10)
             if jobRuns.isEmpty {
                 if state?.isRefreshing == true {
                     HStack(spacing: 8) {
@@ -908,9 +1001,9 @@ struct AutomationWorkspaceView: View {
         -> some View
     {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
-                .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
-                .foregroundStyle(Color.dockMetadataText)
+            Text(title)
+                .dockFont(.body, weight: .semibold)
+                .foregroundStyle(Color.dockPrimaryText)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -988,7 +1081,6 @@ struct AutomationWorkspaceView: View {
         control.requestedAutomationOwner = nil
         control.requestedAutomationDidNavigate = false
     }
-    private func hasMenuActions(for job: CronSummary) -> Bool { true }
 
     private var emptyWorkspace: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1023,7 +1115,7 @@ struct AutomationWorkspaceView: View {
     private func statusColor(_ result: AutomationWorkspaceRowPresentation.Result) -> Color {
         switch result {
         case .paused, .noRun: Color.dockMetadataText
-        case .running: Color.dockAccent
+        case .running: DockStatusTone.working.color
         case .succeeded: Color.dockSuccess
         case .failed: Color.dockDestructive
         case .unknown: Color.dockMetadataText
@@ -1049,24 +1141,22 @@ private struct AutomationRunDetailPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text("Run output")
-                            .dockFont(.body, weight: .semibold)
-                            .foregroundStyle(Color.dockPrimaryText)
-                        Text(run.status.capitalized)
-                            .dockFont(.metadata, weight: .semibold)
-                            .foregroundStyle(
-                                result == .failed
-                                    ? Color.dockDestructive
-                                    : (result == .running
-                                        ? Color.dockAccent
-                                        : (result == .succeeded
-                                            ? Color.dockSuccess : Color.dockMetadataText)))
-                    }
                     Text(run.claimedAt.map(HumanDateFormatting.dateAndTime) ?? "Unknown time")
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
+                    let tint: Color =
+                        result == .failed
+                        ? Color.dockDestructive
+                        : (result == .running
+                            ? Color.dockAccent
+                            : (result == .succeeded ? Color.dockSuccess : Color.dockMetadataText))
+                    HStack(spacing: 5) {
+                        Circle().fill(tint).frame(width: 6, height: 6)
+                        Text(run.status.capitalized).foregroundStyle(tint)
+                        Text("· Run output").foregroundStyle(Color.dockMetadataText)
+                    }
+                    .dockFont(.metadata, weight: .medium)
                 }
                 Spacer(minLength: 8)
                 if let output = report?.markdown ?? run.outputPreview {
@@ -1103,9 +1193,9 @@ private struct AutomationRunDetailPanel: View {
                         .dockPadding(18)
                     }
                     VStack(alignment: .leading, spacing: 12) {
-                        Text(run.source == "cron_output" ? "OUTPUT PREVIEW" : "OUTPUT")
-                            .dockFont(.sectionLabel)
-                            .foregroundStyle(Color.dockMetadataText)
+                        Text(run.source == "cron_output" ? "Output preview" : "Output")
+                            .dockFont(.body, weight: .semibold)
+                            .foregroundStyle(Color.dockPrimaryText)
                         output
                     }
                     .dockPadding(18)
@@ -1289,6 +1379,13 @@ private struct AutomationCreationSheet: View {
 
     private var modelTitle: String { configuration.model.isEmpty ? "Default model" : configuration.model }
 
+    private func formSection(_ title: String) -> some View {
+        Text(title)
+            .dockFont(.body, weight: .semibold)
+            .foregroundStyle(DockCategoryTone.automation.color)
+            .accessibilityAddTraits(.isHeader)
+    }
+
     private func menuFrame<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         content()
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1303,7 +1400,7 @@ private struct AutomationCreationSheet: View {
     var body: some View {
         DockModal(
             title: "New automation",
-            subtitle: "Schedule a prompt to run on a cron expression and deliver the results.", width: 560
+            subtitle: "Hermes runs this prompt on a schedule and sends the result where you choose.", width: 560
         ) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -1337,6 +1434,7 @@ private struct AutomationCreationSheet: View {
                     if let blueprint {
                         ForEach(blueprint.fields) { field in blueprintField(field) }
                     } else {
+                        formSection("What runs")
                         labeledField("Name", hint: "Optional") {
                             DockTextField("Nightly review", text: $name).textFieldStyle(.dockGlass)
                         }
@@ -1345,6 +1443,8 @@ private struct AutomationCreationSheet: View {
                                 .lineLimit(4...8)
                                 .textFieldStyle(.dockGlass)
                         }
+                        Divider().overlay(Color.dockBorderLight)
+                        formSection("When")
                         labeledField("Frequency") {
                             menuFrame {
                                 DockMenuPicker(title: preset.title, selection: presetSelection) {
@@ -1360,14 +1460,20 @@ private struct AutomationCreationSheet: View {
                             }
                             ModalNote(
                                 text: schedule.isEmpty
-                                    ? "Enter an interval or a cron expression."
-                                    : CronScheduleFormatting.humanReadable(schedule), icon: .clock
+                                    ? "Enter an interval or a cron expression to preview when it runs."
+                                    : "Runs \(CronScheduleFormatting.humanReadable(schedule).lowercased())",
+                                icon: .clock
                             )
                             .frame(minHeight: 24, alignment: .leading)
                         } else {
-                            ModalNote(text: "\(preset.hint) · \(schedule)", icon: .clock)
-                                .frame(minHeight: 24, alignment: .leading)
+                            ModalNote(
+                                text: "Runs \(CronScheduleFormatting.humanReadable(schedule).lowercased())",
+                                icon: .clock
+                            )
+                            .frame(minHeight: 24, alignment: .leading)
                         }
+                        Divider().overlay(Color.dockBorderLight)
+                        formSection("Where it goes")
                         labeledField("Deliver to", hint: "Choose one or more destinations") {
                             deliveryChecklist(
                                 selected: configuration,

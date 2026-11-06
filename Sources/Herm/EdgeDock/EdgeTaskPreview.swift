@@ -429,9 +429,7 @@ struct EdgeTaskPreview: View {
                     .dockPadding(.vertical, isApproval ? 6 : 0)
                     .background {
                         if isApproval {
-                            DockThemeShape(cornerRadius: DockLayout.controlRadius)
-                                .fill(Color.dockSurface2)
-                                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+                            Color.clear.dockWell()
                         }
                     }
             }
@@ -673,9 +671,7 @@ struct EdgeTaskPreview: View {
             Text("Current")
                 .dockFont(.metadata, weight: .medium)
                 .foregroundStyle(Color.dockSecondaryText)
-                .dockPadding(.horizontal, 6)
-                .frame(height: 16)
-                .background(Capsule().fill(Color.dockSurface4.opacity(0.8)))
+                .dockPill()
                 .fixedSize()
         } else if let updatedAt = task.updatedAt {
             Text("\(EdgeQuotaPreview.shortDuration(now.timeIntervalSince(updatedAt))) ago")

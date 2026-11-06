@@ -1,22 +1,20 @@
 import SwiftUI
 
-/// Adaptive library shared by every Integrations tab; wider columns keep descriptions readable.
-struct IntegrationCardGrid<Content: View>: View {
+/// A responsive grid keeps each integration's identity, description and state together.
+struct IntegrationInventoryList<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 20, alignment: .top)], spacing: 0) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12, alignment: .top)], spacing: 12) {
             content
         }
     }
 }
 
-/// One integration tile: identity, a two-line description, live status and Hermes-reported source marks.
-struct IntegrationCard<Icon: View>: View {
+struct IntegrationInventoryRow<Icon: View>: View {
     let title: String
     let detail: String
     var status: (DockStatusTone, String)?
-    /// Hermes Agent ships this item (bundled skill or plugin, catalog MCP preset).
     var builtin = false
     var official = false
     var stars: Int?
@@ -26,57 +24,51 @@ struct IntegrationCard<Icon: View>: View {
     @ViewBuilder let icon: Icon
 
     var body: some View {
-        let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
         Button(action: action) {
-            HStack(alignment: .top, spacing: 12) {
-                icon
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    icon.accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 5) {
                         Text(title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                            .lineLimit(2).multilineTextAlignment(.leading)
-                        Spacer(minLength: 0)
-                        DockIcon(.caretRight, size: 12, color: .dockMetadataText)
-                    }
-                    if !detail.isEmpty {
-                        Text(detail).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                            .lineLimit(2).multilineTextAlignment(.leading)
-                    }
-                    DockChipFlow(spacing: 8) {
-                        if let status {
-                            HStack(spacing: 5) {
-                                DockStatusDot(tone: status.0, size: 6)
-                                Text(status.1)
-                            }
-                        }
-                        if builtin { Label("Built-in", systemImage: "checkmark.shield") }
-                        if official { Text("Official") }
-                        if let stars {
-                            Label(stars.formatted(.number.notation(.compactName)), systemImage: "star")
-                                .monospacedDigit().help("\(stars) GitHub stars")
-                        }
-                        if update {
-                            Label("Update available", systemImage: "arrow.up.circle")
-                                .foregroundStyle(Color.dockAccent)
+                            .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                        if !detail.isEmpty {
+                            Text(detail).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                                .lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-                    .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                    DockIcon(.caretRight, size: 12, color: .dockMetadataText)
                 }
+                Spacer(minLength: 0)
+                DockChipFlow(spacing: 8) {
+                    if let status {
+                        HStack(spacing: 5) {
+                            DockStatusDot(tone: status.0, size: 6)
+                            Text(status.1)
+                        }
+                    }
+                    if builtin { Text("Built-in") }
+                    if official { Text("Official") }
+                    if let stars {
+                        Label(stars.formatted(.number.notation(.compactName)), systemImage: "star")
+                            .monospacedDigit().help("\(stars) GitHub stars")
+                    }
+                    if update {
+                        Label("Update available", systemImage: "arrow.up.circle").foregroundStyle(Color.dockAccent)
+                    }
+                }
+                .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
             }
-            .dockPadding(14)
-            .frame(maxWidth: .infinity, minHeight: detail.isEmpty ? 72 : 112, alignment: .topLeading)
-            .background {
-                if selected { shape.dockSurfaceFill(Color.dockSurface4) }
-            }
-            .overlay(alignment: .bottom) {
-                Color.dockBorderLight.frame(height: DockLayout.hairline).dockPadding(.horizontal, 14)
-                    .opacity(selected ? 0 : 1)
-            }
-            .overlay(shape.stroke(Color.dockAccent, lineWidth: 1).opacity(selected ? 1 : 0))
-            .contentShape(shape)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+            .dockCard(padding: 14, isActive: selected)
+            .contentShape(DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane))
         }
         .buttonStyle(.dockHover)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityLabel("Show details for \(title)")
+        .accessibilityValue(
+            [status?.1, builtin ? "Built-in" : nil, update ? "Update available" : nil]
+                .compactMap { $0 }.joined(separator: ", "))
     }
 }
 
@@ -93,27 +85,115 @@ struct IntegrationCardIcon: View {
     let symbol: Ph
 
     var body: some View {
-        DockIcon(symbol, size: 18, color: .dockPrimaryText)
-            .frame(width: 36, height: 36)
-            .background {
-                DockThemeShape(cornerRadius: DockLayout.controlRadius)
-                    .dockSurfaceFill(Color.dockSurface4, stroke: Color.dockBorderLight)
-            }
+        DockIcon(symbol, size: 18, color: .dockSecondaryText)
+            .frame(width: 28, height: 28)
+            .accessibilityHidden(true)
     }
 }
 
-/// Stable category heading; inventory refreshes only replace the single-line summary.
+/// Catalog artwork is optional. Failed or unsupported images retain the category glyph.
+struct IntegrationArtwork: View {
+    let url: URL?
+    let symbol: Ph
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if let url {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFit().dockPadding(5)
+                    } else {
+                        fallback
+                    }
+                }
+            } else {
+                fallback
+            }
+        }
+        .frame(width: size, height: size)
+        .dockWell(.sunken, radius: DockLayout.controlRadius)
+        .accessibilityHidden(true)
+    }
+
+    private var fallback: some View {
+        DockIcon(symbol, size: size * 0.5, color: .dockSecondaryText)
+    }
+}
+
 struct IntegrationLibraryHeader: View {
     let title: String
     let summary: String
+    let symbol: Ph
+    var purpose = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).dockFont(.pageTitle, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-            Text(summary).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).dockFont(.pageTitle, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                if !purpose.isEmpty {
+                    Text(purpose).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text(summary).dockFont(.body).foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
         }
-        .dockPadding(.bottom, 6)
-        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The grid remains usable beside details; narrow windows show one pane at a time.
+struct IntegrationLibraryLayout<Header: View, Library: View, Inspector: View>: View {
+    let showsDetail: Bool
+    let close: () -> Void
+    @ViewBuilder let header: Header
+    @ViewBuilder let library: Library
+    @ViewBuilder let inspector: Inspector
+
+    var body: some View {
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                if !showsDetail || geometry.size.width >= 800 {
+                    header.frame(maxWidth: .infinity, alignment: .leading)
+                        .dockPadding(.horizontal, 24).dockPadding(.vertical, 20)
+                    Color.dockBorderLight.frame(height: DockLayout.hairline)
+                }
+                AdaptiveSplit(
+                    breakpoint: 800, primaryMinWidth: 300,
+                    primaryIdealWidth: max(340, geometry.size.width - 520), secondaryMinWidth: 400,
+                    showsSecondary: showsDetail, onBack: close
+                ) {
+                    library.dockPadding(20)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } secondary: {
+                    inspector
+                }
+            }
+        }
+    }
+}
+
+struct IntegrationStatusPicker: View {
+    @Binding var selection: IntegrationStatusFilter
+    let options: [IntegrationStatusFilter]
+
+    var body: some View {
+        DockMenuPicker(title: selection.title, selection: $selection) {
+            ForEach(options) { DockMenuOption($0.title, value: $0) }
+        }.fixedSize()
+    }
+}
+
+struct IntegrationFilterEmptyState: View {
+    let clear: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("No integrations match this status").dockFont(.body, weight: .semibold)
+            Text("Choose another status or show the full inventory.")
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+            Button("Show all statuses", action: clear).buttonStyle(.dockSecondary)
+        }.frame(maxWidth: .infinity, alignment: .leading).dockPadding(20)
     }
 }

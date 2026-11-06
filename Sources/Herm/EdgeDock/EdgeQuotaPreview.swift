@@ -68,7 +68,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
             }
         }
         .dockPadding(2)
-        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockSurface4))
+        .dockWell(.sunken)
     }
 }
 
@@ -112,6 +112,7 @@ struct EdgeQuotaToolbar: View {
 /// A small projection of the same quota inventory used by the full workspace:
 /// every connected provider with its 5-hour and weekly windows.
 struct EdgeQuotaPreview: View {
+    @State private var quotaCheckedAt: [String: Date] = [:]
     @ObservedObject var control: ControlCenterModel
     let openQuota: () -> Void
     /// Set while a quota announcement is showing: only that provider is drawn.
@@ -162,11 +163,12 @@ struct EdgeQuotaPreview: View {
         .foregroundStyle(Color.dockPrimaryText)
         .dockPadding(.horizontal, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onReceive(control.providerQuotaFreshness.$checkedAt) { quotaCheckedAt = $0 }
     }
 
     private var footer: some View {
         HStack(spacing: 8) {
-            if let updatedAt = quotas.map(\.updatedAt).max() {
+            if let updatedAt = quotas.map({ quotaCheckedAt[$0.provider] ?? $0.updatedAt }).max() {
                 TimelineView(.periodic(from: .now, by: 60)) { timeline in
                     Text(
                         refreshing
@@ -300,13 +302,7 @@ struct EdgeQuotaPreview: View {
                 .dockPadding(.horizontal, 8)
                 .dockPadding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                        Color.dockSurface2)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
-                        Color.dockBorderLight, lineWidth: DockLayout.hairline))
+                .dockWell()
             }
         }
         .dockPadding(.vertical, 8)

@@ -28,6 +28,23 @@ struct DockThemeContrastTests {
         return (max(x, y) + 0.05) / (min(x, y) + 0.05)
     }
 
+    @Test func buildBadgeTextContrastsWithTintedToolbar() {
+        for theme in DockThemeID.allCases {
+            let palette = DockThemePalette(theme: theme)
+            for dark in [false, true] {
+                let background = resolve(palette.sidebarBackground, dark: dark)
+                for accent in [DockAccentColor.violet, .blue] {
+                    let tint = resolve(palette.fill(accent), dark: dark)
+                    let pill = NSColor(
+                        srgbRed: background.redComponent * 0.86 + tint.redComponent * 0.14,
+                        green: background.greenComponent * 0.86 + tint.greenComponent * 0.14,
+                        blue: background.blueComponent * 0.86 + tint.blueComponent * 0.14, alpha: 1)
+                    #expect(ratio(resolve(palette.primaryText, dark: dark), pill) >= 4.5, "\(theme) \(accent)")
+                }
+            }
+        }
+    }
+
     static func failures() -> [String] { MainActor.assumeIsolated { DockThemeContrastTests().audit() } }
 
     func audit() -> [String] {
@@ -155,14 +172,19 @@ struct DockThemeContrastTests {
         for theme in [DockThemeID.clean, .glass, .mono, .eInk] {
             let palette = DockThemePalette(theme: theme)
             for dark in [false, true] {
-                // Clean's soft violet is its primary action only (DESIGN.md); its selection stays gray.
-                for token in theme == .clean ? [palette.selectedFill] : [palette.accent, palette.selectedFill] {
+                for token in [palette.accent, palette.selectedFill] {
                     let color = resolve(token, dark: dark)
                     #expect(abs(color.blueComponent - color.redComponent) < 0.025)
                     #expect(abs(color.greenComponent - color.redComponent) < 0.025)
                 }
             }
         }
+    }
+
+    @Test func liveActivityUsesTheSharedWorkingTone() {
+        #expect(DockActivityState.running.color == DockStatusTone.working.color)
+        #expect(DockActivityState.clarification.color == DockStatusTone.working.color)
+        #expect(SessionAttentionDot.activity.color == DockStatusTone.working.color)
     }
 
     @Test func characterSkinsKeepTheirOwnInteractionHue() {
@@ -184,7 +206,7 @@ struct DockThemeContrastTests {
         for (family, hex) in approved { #expect(family.hex == hex) }
         for family in DockAccentColor.allCases {
             let expected = NSColor(hex: family.hex).usingColorSpace(.sRGB)!
-            for theme in DockThemeID.allCases where theme != .mono && theme != .eInk {
+            for theme in DockThemeID.allCases {
                 for dark in [false, true] {
                     let fill = resolve(DockThemePalette(theme: theme).fill(family), dark: dark)
                     #expect(abs(fill.redComponent - expected.redComponent) < 0.001)
@@ -208,13 +230,11 @@ struct DockThemeContrastTests {
                 #expect(abs(a.hueComponent - b.hueComponent) < 0.02)
             }
         }
-        for theme in [DockThemeID.mono, .eInk] {
+        for theme in DockThemeID.allCases {
             let palette = DockThemePalette(theme: theme)
-            for family in DockAccentColor.allCases {
-                let color = resolve(palette.color(family), dark: theme == .mono)
-                #expect(abs(color.redComponent - color.greenComponent) < 0.001)
-                #expect(abs(color.redComponent - color.blueComponent) < 0.001)
-            }
+            let blue = resolve(palette.color(.blue), dark: theme.appearance == .dark)
+            let green = resolve(palette.color(.green), dark: theme.appearance == .dark)
+            #expect(abs(blue.hueComponent - green.hueComponent) > 0.1)
         }
     }
 

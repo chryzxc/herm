@@ -51,6 +51,7 @@ enum BotChatsOrdering {
 /// The Bots page's left panel: every bot's main chat and every group room in
 /// one list. The chat, toolbar and workspace beside it are the Sessions layout's.
 struct BotChatsPage: View, Equatable {
+    @Environment(\.dockHostVisible) private var hostVisible
     @ObservedObject var bots: BotModeModel
     @ObservedObject var groups: GroupChatStore
     let activeBotID: String?
@@ -126,8 +127,9 @@ struct BotChatsPage: View, Equatable {
         .dockSheet(isPresented: $isShowingNewGroupChat) {
             NewGroupChatSheet(store: groups, bots: visibleBots, onCreated: openRoom)
         }
-        .task {
+        .task(id: hostVisible) {
             // ponytail: 15s room-list poll for unread dots and previews; Hermes has no room push events.
+            guard hostVisible else { return }
             while !Task.isCancelled {
                 await groups.refreshRooms()
                 try? await Task.sleep(for: .seconds(15))
@@ -194,24 +196,7 @@ struct BotChatsPage: View, Equatable {
     }
 
     private var searchField: some View {
-        HStack(spacing: 6) {
-            DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
-            DockTextField("Search Bots and groups", text: $query)
-                .textFieldStyle(.plain)
-                .dockFont(.body)
-                .accessibilityLabel("Search Bots and groups")
-                .onExitCommand { query = "" }
-            if !query.isEmpty {
-                DockIconButton(icon: .x, label: "Clear search", size: 24, style: style) { query = "" }
-            }
-        }
-        .dockPadding(.horizontal, 8)
-        .frame(minHeight: 32)
-        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(Color.dockControlSurface))
-        .overlay {
-            DockThemeShape(cornerRadius: DockLayout.controlRadius)
-                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-        }
+        DockSearchField(placeholder: "Search Bots and groups", text: $query)
     }
 
     private func open(_ bot: BotSummary) {

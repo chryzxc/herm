@@ -24,15 +24,7 @@ struct WorkActivityBreakdown: View {
                         Text(row.1.formatted()).dockFont(.body, weight: .semibold)
                             .monospacedDigit().foregroundStyle(Color.dockPrimaryText)
                     }
-                    GeometryReader { geometry in
-                        Capsule().fill(Color.dockBorderLight)
-                            .overlay(alignment: .leading) {
-                                Capsule().fill(row.2)
-                                    .frame(width: geometry.size.width * Double(row.1) / Double(peak))
-                            }
-                    }
-                    .frame(height: 4)
-                    .accessibilityHidden(true)
+                    DockProgressBar(fraction: Double(row.1) / Double(peak), tint: row.2)
                 }
                 .accessibilityElement(children: .combine)
             }

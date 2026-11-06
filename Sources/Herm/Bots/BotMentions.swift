@@ -9,6 +9,12 @@ enum BotMentions {
     /// Bumped when the roster or avatars change, so cached renders redraw.
     private(set) static var revision = 0
     private static var byHandle: [String: BotSummary] = [:]
+    private struct VisualIdentity: Equatable {
+        let id: String
+        let name: String
+        let isHidden: Bool
+    }
+    private static var visualIdentities: [String: VisualIdentity] = [:]
     private static var botsByID: [String: BotSummary] = [:]
     private static var avatars: [String: Data] = [:]
     private static var pills: [String: NSImage] = [:]
@@ -19,10 +25,13 @@ enum BotMentions {
     static func update(bots: [BotSummary], avatars: [String: Data]) {
         mainChatSessionIDs = Set(bots.compactMap(\.chat?.sessionID))
         let index = index(bots)
-        guard index != byHandle || avatars != self.avatars else { return }
+        let identities = index.mapValues { VisualIdentity(id: $0.id, name: $0.name, isHidden: $0.isHidden) }
+        let changed = identities != visualIdentities || avatars != self.avatars
         byHandle = index
         botsByID = Dictionary(bots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         self.avatars = avatars
+        guard changed else { return }
+        visualIdentities = identities
         pills.removeAll()
         revision &+= 1
     }

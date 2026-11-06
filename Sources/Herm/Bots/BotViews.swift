@@ -4,6 +4,7 @@ import SwiftUI
 /// Full Bots destination page for the right workspace pane. Bot profiles use
 /// an adaptive card grid; recurring jobs remain a compact schedule list.
 struct BotRosterPage: View {
+    @Environment(\.dockHostVisible) private var hostVisible
     @ObservedObject var model: BotModeModel
     @ObservedObject var dockModel: DockModel
     let onSelectBot: (BotSummary) -> Void
@@ -35,7 +36,6 @@ struct BotRosterPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -139,11 +139,13 @@ struct BotRosterPage: View {
             await model.loadRuntimeConfigs()
             await model.loadRoutines()
         }
-        .task {
+        .task(id: hostVisible) {
             // Presence is a live projection, not a value that should remain
             // frozen after the page was opened. Keep the refresh bounded to
             // this visible surface so the roster's blue activity state stays
             // truthful without creating a background poller for hidden pages.
+            guard hostVisible else { return }
+            await model.refreshNow()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled else { return }
@@ -152,66 +154,63 @@ struct BotRosterPage: View {
         }
     }
 
-    private var header: some View {
-        DockPageHeader(
-            title: "Bots",
-            subtitle: "\(model.visibleBots.count) Bots · \(model.activeNowBots.count) active",
-            onRefresh: {
+    private var rosterActions: some View {
+        HStack(spacing: 10) {
+            if selectedSection == .bots {
+                Button {
+                    isShowingCreateSheet = true
+                } label: {
+                    DockIconLabel("New Bot", icon: .plus)
+                }
+                .buttonStyle(.dockPrimary)
+                .disabled(!model.canCreateBots)
+                .help(
+                    model.canCreateBots
+                        ? "Create a new Hermes Bot profile"
+                        : "Bot creation requires a Hermes runtime with profile support")
+                Button {
+                    showsAvatarTip.toggle()
+                } label: {
+                    DockActionLabel(
+                        title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
+                }
+                .buttonStyle(.dockSecondary)
+                .disabled(isPopulatingAvatars)
+                .dockPopover(isPresented: $showsAvatarTip, arrowEdge: .bottom) {
+                    BotAvatarGeneratorTip(
+                        pending: model.bots.filter { !$0.hasCustomAvatar && !$0.hasAvatar },
+                        onFillMissing: { generateAvatars(all: false) },
+                        onRegenerateAll: {
+                            showsAvatarTip = false
+                            confirmsRegenerateAll = true
+                        }
+                    )
+                }
+                .confirmationDialog("Regenerate all avatars?", isPresented: $confirmsRegenerateAll) {
+                    Button("Regenerate All") { generateAvatars(all: true) }
+                } message: {
+                    Text("Every Bot gets its Herm face, replacing uploaded and generated images.")
+                }
+            } else {
+                Button {
+                    isShowingRoutineForm = true
+                } label: {
+                    DockIconLabel("New Routine", icon: .plus)
+                }
+                .buttonStyle(.dockPrimary)
+                .disabled(!model.canCreateBots || model.visibleBots.isEmpty)
+                .help("Attach a recurring routine to a Bot")
+            }
+            DockIconButton(
+                icon: .arrowsClockwise, label: "Refresh", isBusy: model.isRefreshing, hasBackground: false,
+                style: DockThemePalette(theme: DockThemeRuntime.current)
+            ) {
                 Task {
                     await model.refreshNow(force: true)
                     await model.loadBotDeletionCapability()
                 }
-            },
-            isRefreshing: model.isRefreshing,
-            trailing: {
-                HStack(spacing: 10) {
-                    if selectedSection == .bots {
-                        Button {
-                            isShowingCreateSheet = true
-                        } label: {
-                            DockIconLabel("New Bot", icon: .plus)
-                        }
-                        .buttonStyle(.dockPrimary)
-                        .disabled(!model.canCreateBots)
-                        .help(
-                            model.canCreateBots
-                                ? "Create a new Hermes Bot profile"
-                                : "Bot creation requires a Hermes runtime with profile support")
-                        Button {
-                            showsAvatarTip.toggle()
-                        } label: {
-                            DockActionLabel(
-                                title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
-                        }
-                        .buttonStyle(.dockSecondary)
-                        .disabled(isPopulatingAvatars)
-                        .dockPopover(isPresented: $showsAvatarTip, arrowEdge: .bottom) {
-                            BotAvatarGeneratorTip(
-                                pending: model.bots.filter { !$0.hasCustomAvatar && !$0.hasAvatar },
-                                onFillMissing: { generateAvatars(all: false) },
-                                onRegenerateAll: {
-                                    showsAvatarTip = false
-                                    confirmsRegenerateAll = true
-                                }
-                            )
-                        }
-                        .confirmationDialog("Regenerate all avatars?", isPresented: $confirmsRegenerateAll) {
-                            Button("Regenerate All") { generateAvatars(all: true) }
-                        } message: {
-                            Text("Every Bot gets its Herm face, replacing uploaded and generated images.")
-                        }
-                    } else {
-                        Button {
-                            isShowingRoutineForm = true
-                        } label: {
-                            DockIconLabel("New Routine", icon: .plus)
-                        }
-                        .buttonStyle(.dockPrimary)
-                        .disabled(!model.canCreateBots || model.visibleBots.isEmpty)
-                        .help("Attach a recurring routine to a Bot")
-                    }
-                }.dockButtonSize(.compact)
-            })
+            }
+        }.dockButtonSize(.compact)
     }
 
     @ViewBuilder
@@ -271,6 +270,9 @@ struct BotRosterPage: View {
                     .dockPadding(.horizontal, DockLayout.contentInset)
                     .dockPadding(.vertical, DockLayout.tight)
             }
+            rosterActions
+                .dockPadding(.horizontal, DockLayout.contentInset)
+                .dockPadding(.bottom, DockLayout.tight)
             if selectedSection == .bots { botsContent } else { routinesContent }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -296,23 +298,8 @@ struct BotRosterPage: View {
     }
 
     private var botSearch: some View {
-        HStack(spacing: 8) {
-            DockIcon(.magnifyingGlass)
-                .dockFont(.body, weight: .medium)
-                .foregroundStyle(Color.dockMetadataText)
-            DockTextField("Search Bots", text: $model.searchText)
-                .textFieldStyle(.plain)
-                .dockFont(.body)
-                .foregroundStyle(Color.dockPrimaryText)
-                .frame(minWidth: 140)
-        }
-        .dockPadding(.horizontal, DockLayout.compactInset)
-        .frame(maxWidth: .infinity, minHeight: DockLayout.controlHeight)
-        .background(
-            DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(
-                Color.dockControlSurface, stroke: Color.dockBorder)
-        )
-        .clipShape(DockThemeShape(cornerRadius: DockLayout.controlRadius))
+        DockSearchField(placeholder: "Search Bots", text: $model.searchText)
+            .frame(minWidth: 140, maxWidth: .infinity)
     }
 
     private var botFilterActions: some View {
@@ -1067,9 +1054,7 @@ struct SessionNavBotRow: View, Equatable {
             .foregroundStyle(color)
             .lineLimit(1)
             .truncationMode(.middle)
-            .dockPadding(.horizontal, 6)
-            .dockPadding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.12)))
+            .dockPill(tint: color)
     }
 
     private var modelLabel: String? {
@@ -1228,8 +1213,7 @@ private struct BotAvatarOptionCard: View {
                         if let badge {
                             Text(badge).dockFont(.compactStatus, weight: .semibold, design: .rounded)
                                 .foregroundStyle(Color.dockAccent)
-                                .dockPadding(.horizontal, 5).dockPadding(.vertical, 1)
-                                .background(Capsule().fill(Color.dockAccent.opacity(0.14)))
+                                .dockPill(tint: .dockAccent)
                         }
                     }
                     Text(detail).dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockSecondaryText)

@@ -5,6 +5,18 @@ import Testing
 
 @MainActor
 struct BotMentionsTests {
+    @Test func activityChangesDoNotInvalidateMentionArtwork() {
+        var bot = BotSummary(
+            id: "fixture", name: "Fixture", title: nil, description: nil, model: nil, isActive: false, chat: nil,
+            avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
+        BotMentions.update(bots: [bot], avatars: [:])
+        defer { BotMentions.update(bots: [], avatars: [:]) }
+        let revision = BotMentions.revision
+        bot.liveBusy = true
+        BotMentions.update(bots: [bot], avatars: [:])
+        #expect(BotMentions.revision == revision)
+        #expect(BotMentions.matches(in: "@fixture").first?.bot.liveBusy == true)
+    }
     @Test func pillsKnownBotsAnywhereButLeavesCodeLinksAndStrangersAlone() {
         let forge = BotSummary(
             id: "forge", name: "Forge", title: nil, description: nil, model: nil, isActive: false, chat: nil,

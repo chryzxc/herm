@@ -351,9 +351,10 @@ final class BotService {
         }
     }
 
-    func modelOptions() async throws -> [(provider: String, models: [String])] {
+    /// Profile-scoped so a bot only offers providers it holds credentials for.
+    func modelOptions(profileID: String) async throws -> [(provider: String, models: [String])] {
         let result = try await client.request(
-            HermesFeatureIDs.ID.modelOptions.rawValue, params: ["explicit_only": true])
+            HermesFeatureIDs.ID.modelOptions.rawValue, params: ["explicit_only": true, "profile": profileID])
         let providers = result["providers"] as? [[String: Any]] ?? []
         return providers.compactMap { provider in
             guard let name = (provider["slug"] as? String) ?? (provider["name"] as? String) else { return nil }
@@ -1114,9 +1115,9 @@ final class BotModeModel: ObservableObject {
         }
     }
 
-    func modelOptions() async -> [(provider: String, models: [String])] {
+    func modelOptions(for bot: BotSummary) async -> [(provider: String, models: [String])] {
         guard capabilityAvailable, let service else { return [] }
-        return (try? await service.modelOptions()) ?? []
+        return (try? await service.modelOptions(profileID: bot.id)) ?? []
     }
 
     /// `failed` must never be presented to the user as a model confirmation.

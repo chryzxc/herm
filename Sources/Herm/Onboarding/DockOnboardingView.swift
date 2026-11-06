@@ -146,13 +146,8 @@ struct DockOnboardingView: View {
                     .foregroundStyle(Color.dockSecondaryText)
             }
         }
-        .dockPadding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius)
-                .strokeBorder(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-        }
+        .dockCard(padding: 16)
     }
 
     private var botSetup: some View {
@@ -253,18 +248,8 @@ struct DockOnboardingView: View {
                     .foregroundStyle(Color.dockAccent)
                     .opacity(bots.selectedProfileID == bot.id ? 1 : 0)
             }
-            .dockPadding(12)
-            .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
-            .background(
-                bots.selectedProfileID == bot.id ? Color.dockAccentMuted : Color.dockSurface2,
-                in: RoundedRectangle(cornerRadius: DockLayout.controlRadius)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius)
-                    .strokeBorder(
-                        bots.selectedProfileID == bot.id ? Color.dockAccent : Color.dockBorderLight,
-                        lineWidth: DockLayout.hairline)
-            }
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .dockCard(isActive: bots.selectedProfileID == bot.id)
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)

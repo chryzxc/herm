@@ -372,12 +372,7 @@ private struct VoicePillCard: View {
         .dockPadding(.horizontal, 12)
         .dockPadding(.vertical, 10)
         .frame(maxWidth: maxWidth, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
-                .dockSurfaceFill(
-                    Color.dockSurface6.opacity(0.92), stroke: tint.opacity(0.3), lineWidth: 0.6, strokeOnGlass: true)
-        )
-        .shadow(color: .black.opacity(0.28), radius: 8, y: 3)
+        .dockHUDSurface(tint: tint)
         .fixedSize(horizontal: false, vertical: true)
         .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous))
         .accessibilityElement(children: .combine)
@@ -429,13 +424,7 @@ struct VoiceRecentTranscript: View {
         }
         .frame(maxHeight: 220)
         .fixedSize(horizontal: false, vertical: true)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
-                .dockSurfaceFill(
-                    Color.dockSurface6.opacity(0.95), stroke: Color.dockAccent.opacity(0.25), lineWidth: 0.6,
-                    strokeOnGlass: true)
-        )
-        .shadow(color: .black.opacity(0.28), radius: 8, y: 3)
+        .dockHUDSurface()
     }
 
     static func recent(_ messages: [ChatMessage]) -> [ChatMessage] {

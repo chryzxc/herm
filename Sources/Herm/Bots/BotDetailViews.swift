@@ -355,6 +355,7 @@ struct BotProfileEditorSheet: View {
                             DockMenuOption($0, value: $0)
                         }
                     }
+                    Spacer(minLength: 0)
                     Button("Add") {
                         let ref = BotRuntimeConfig.ModelRef(provider: fallbackProvider, model: fallbackModel)
                         if !fallbacks.contains(where: { $0.provider == ref.provider && $0.model == ref.model }) {
@@ -497,7 +498,7 @@ struct BotProfileEditorSheet: View {
         selectedModel = detail?.model ?? ""
         runtime = await runtimeConfig
         limits = runtime
-        modelChoices = await model.modelOptions()
+        modelChoices = await model.modelOptions(for: bot)
         await model.checkImageGeneration()
     }
 

@@ -43,7 +43,7 @@ enum DockActivityState: Int, Comparable, CaseIterable, Sendable {
     var color: Color {
         switch self {
         case .approval: .dockWarning
-        case .clarification, .running: .dockAccent
+        case .clarification, .running: DockStatusTone.working.color
         case .failed: .dockDestructive
         case .done: .dockSuccess
         }

@@ -325,7 +325,7 @@ struct NewGroupChatSheet: View {
             }
         }
         .dockPadding(10)
-        .background(RoundedRectangle(cornerRadius: 8).dockSurfaceFill(Color.dockSurface2))
+        .dockWell(radius: 8)
     }
 }
 
@@ -379,6 +379,7 @@ private struct ShareBotForm: View {
 }
 
 struct GroupChatView: View {
+    @Environment(\.dockHostVisible) private var hostVisible
     @ObservedObject var store: GroupChatStore
     @ObservedObject var botMode: BotModeModel
     let roomID: String
@@ -492,7 +493,8 @@ struct GroupChatView: View {
             closedThreads = []
         }
         .onChange(of: room == nil) { _, gone in if gone, store.isAvailable { onDisbanded() } }
-        .task(id: roomID) {
+        .task(id: "\(roomID):\(hostVisible)") {
+            guard hostVisible else { return }
             while !Task.isCancelled {
                 await store.poll(roomID)
                 // ponytail: fixed-interval polling; Hermes has no room push events.
@@ -814,7 +816,7 @@ struct GroupChatView: View {
             actions()
         }
         .dockPadding(12)
-        .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface2))
+        .dockWell(radius: 10)
         .dockPadding(.horizontal, 20)
         .dockPadding(.top, 8)
     }
@@ -849,7 +851,7 @@ struct GroupChatView: View {
             .buttonStyle(.dockPrimary)
         }
         .dockPadding(12)
-        .background(RoundedRectangle(cornerRadius: 10).dockSurfaceFill(Color.dockSurface2))
+        .dockWell(radius: 10)
         .dockPadding(.horizontal, 20)
         .dockPadding(.top, 8)
     }

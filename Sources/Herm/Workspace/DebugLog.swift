@@ -112,7 +112,7 @@ final class ConversationPerformanceMonitor {
     private func flushIfNeeded() {
         guard Date().timeIntervalSince(startedAt) >= 1 else { return }
         DebugLog.writePerformance(
-            "conversation instance=\(instanceID) model_publications=\(modelPublications) scroll_bounds=\(scrollBoundsUpdates) scroll_settled=\(scrollSettledEvents) streaming=\(streamingUpdates) transcript_evaluations=\(transcriptEvaluations) pages=\(pageTransactions) anchor_corrections=\(anchorCorrections) markdown_sync_parses=\(MarkdownRenderDocumentCache.parseCount) markdown_prefetched=\(MarkdownRenderDocumentCache.prefetchedDocuments) measurement_hits=\(NativeMarkdownCompletedHeightCache.hits) measurement_misses=\(NativeMarkdownCompletedHeightCache.misses)"
+            "conversation instance=\(instanceID) model_publications=\(modelPublications) scroll_bounds=\(scrollBoundsUpdates) scroll_settled=\(scrollSettledEvents) streaming=\(streamingUpdates) transcript_evaluations=\(transcriptEvaluations) pages=\(pageTransactions) anchor_corrections=\(anchorCorrections) markdown_sync_parses=\(MarkdownRenderDocumentCache.parseCount) markdown_prefetched=\(MarkdownRenderDocumentCache.prefetchedDocuments) measurement_hits=\(NativeMarkdownCompletedHeightCache.hits) measurement_misses=\(NativeMarkdownCompletedHeightCache.misses) viewport_section_visits=\(NativeMarkdownDocumentContainerView.totalViewportSectionVisits) viewport_mount_changes=\(NativeMarkdownDocumentContainerView.totalViewportMountChanges) foreground_measurements=\(NativeMarkdownDocumentContainerView.totalForegroundMeasurements) max_inactive_views=\(NativeMarkdownDocumentContainerView.maxInactiveViews)"
         )
         startedAt = Date()
         modelPublications = 0
