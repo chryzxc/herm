@@ -192,6 +192,10 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         splitView.addArrangedSubview(context.coordinator.leadingHost)
         splitView.addArrangedSubview(context.coordinator.trailingHost)
         context.coordinator.splitView = splitView
+        splitView.onUserResizeEnded = { [weak splitView, weak coordinator = context.coordinator] in
+            guard let splitView else { return }
+            coordinator?.persistLeadingWidth(in: splitView)
+        }
         return splitView
     }
 
@@ -299,12 +303,19 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         }
 
         func splitViewDidResizeSubviews(_ notification: Notification) {
-            guard let leadingWidth else { return }
             guard let splitView = notification.object as? NSSplitView,
+                (splitView as? FractionPreservingSplitView)?.isDraggingDivider != true
+            else { return }
+            persistLeadingWidth(in: splitView)
+        }
+
+        func persistLeadingWidth(in splitView: NSSplitView) {
+            guard let leadingWidth,
                 (splitView as? FractionPreservingSplitView)?.isTrailingCollapsed != true,
                 (splitView as? FractionPreservingSplitView)?.isLeadingCollapsed != true
             else { return }
-            leadingWidth.wrappedValue = splitView.subviews.first?.frame.width ?? leadingWidth.wrappedValue
+            let width = splitView.subviews.first?.frame.width ?? leadingWidth.wrappedValue
+            if leadingWidth.wrappedValue != width { leadingWidth.wrappedValue = width }
         }
     }
 }

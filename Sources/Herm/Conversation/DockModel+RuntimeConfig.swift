@@ -58,9 +58,12 @@ extension DockModel {
         effortCatalog == nil && runtimeModelOptionsError == nil
     }
 
-    func invalidateRuntimeModelOptionsRefresh() {
+    func invalidateRuntimeModelOptionsRefresh(keepingCatalog: Bool = false) {
+        runtimeModelOptionsTask?.cancel()
+        runtimeModelOptionsTask = nil
+        runtimeModelOptionsRequestKey = nil
         runtimeModelOptionsRefreshGeneration &+= 1
-        effortCatalog = nil
+        if !keepingCatalog { effortCatalog = nil }
         isLoadingRuntimeModelOptions = false
         runtimeModelOptionsError = nil
     }
@@ -68,18 +71,28 @@ extension DockModel {
     /// `keepingCatalog` leaves the current effort catalog visible while the refresh runs, so the
     /// effort controls do not blink to "Loading…" after a model switch.
     func refreshRuntimeModelOptions(sessionID: String? = nil, keepingCatalog: Bool = false) {
-        runtimeModelOptionsRefreshGeneration += 1
-        let generation = runtimeModelOptionsRefreshGeneration
+        guard sessionID == nil || sessionActionsReady else { return }
         let resumeGeneration = sessionResumeGeneration
         let profile = sessionID == nil ? profileScopeID : (sessionProfileID ?? profileScopeID)
+        if let request = runtimeModelOptionsRequestKey,
+            request.sessionID == sessionID, request.profileID == profile, request.generation == resumeGeneration
+        {
+            return
+        }
+        runtimeModelOptionsTask?.cancel()
+        runtimeModelOptionsRequestKey = (sessionID, profile, resumeGeneration)
+        runtimeModelOptionsRefreshGeneration += 1
+        let generation = runtimeModelOptionsRefreshGeneration
         if !keepingCatalog { effortCatalog = nil }
         isLoadingRuntimeModelOptions = true
         runtimeModelOptionsError = nil
-        Task { [weak self] in
+        runtimeModelOptionsTask = Task { [weak self] in
             guard let self else { return }
             defer {
                 if generation == runtimeModelOptionsRefreshGeneration {
                     isLoadingRuntimeModelOptions = false
+                    runtimeModelOptionsRequestKey = nil
+                    runtimeModelOptionsTask = nil
                 }
             }
             do {
@@ -153,12 +166,12 @@ extension DockModel {
     }
 
     func refreshSessionModelOptions(keepingCatalog: Bool = false) {
-        guard let sessionID, !sessionID.isEmpty else { return }
+        guard sessionActionsReady, let sessionID, !sessionID.isEmpty else { return }
         refreshRuntimeModelOptions(sessionID: sessionID, keepingCatalog: keepingCatalog)
     }
 
     func refreshSessionReasoningVariant() {
-        guard let sessionID, !sessionID.isEmpty else { return }
+        guard sessionActionsReady, let sessionID, !sessionID.isEmpty else { return }
         let generation = sessionResumeGeneration
         let profile = sessionProfileID ?? profileScopeID
         sessionReasoningRevision &+= 1
@@ -260,6 +273,7 @@ extension DockModel {
     }
 
     func updateSessionModel(_ option: HermesModelOption) {
+        guard sessionActionsReady else { return }
         guard let sessionID, !sessionID.isEmpty else {
             // No session yet: hold the pick until createAuthorizedSession.
             sessionModelOptionID = option.id
@@ -307,6 +321,8 @@ extension DockModel {
                 }
                 refreshSessionModelOptions(keepingCatalog: true)
                 refreshSessionReasoningVariant()
+                refreshSessionFast()
+                await refreshModelSwitchNotice(sessionID: sessionID, generation: generation, profile: profile)
             } catch {
                 guard self.sessionResumeGeneration == generation, self.sessionID == sessionID,
                     (self.sessionProfileID ?? self.profileScopeID) == profile, self.sessionModelMutationToken == token
@@ -319,6 +335,44 @@ extension DockModel {
                 refreshSessionModelOptions(keepingCatalog: true)
             }
 
+        }
+    }
+
+    /// Read the durable pivot Hermes wrote, rather than creating a second history store.
+    func refreshModelSwitchNotice(sessionID: String, generation: Int, profile: String?) async {
+        guard let storageID = sessionStorageID,
+            let path = TranscriptHistoryPaging.pagePath(
+                sessionID: storageID, profileID: profile, limit: TranscriptHistoryPaging.pageRowLimit, offset: 0)
+        else { return }
+        do {
+            guard let page = TranscriptHistoryPaging.page(from: try await sessionRPCClient.fetchHTTP(path)) else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: page.rows).filter {
+                SystemEvent.classify(
+                    role: $0["role"] as? String ?? "", text: $0["text"] as? String ?? "",
+                    displayKind: $0["display_kind"] as? String)?.isModelSwitch == true
+            }
+            guard sessionResumeGeneration == generation, self.sessionID == sessionID,
+                sessionStorageID == storageID, (sessionProfileID ?? profileScopeID) == profile
+            else { return }
+            let fresh = rows.suffix(1).filter {
+                guard let id = TranscriptHistoryPaging.rowID($0, key: "row_id") else { return false }
+                return transcriptMessageIDsByRowID[id] == nil
+            }
+            let restored = Self.parseMessages(fresh)
+            transcriptMessageIDsByRowID.merge(restored.rowIDs) { current, _ in current }
+            storedMessageReferences.merge(StoredMessageReference.references(rows: fresh, rowIDs: restored.rowIDs)) {
+                current, _ in current
+            }
+            transcriptHistoryCursor?.seenRowIDs.formUnion(restored.rowIDs.keys)
+            for message in restored.messages { appendBelowLiveTurn(message) }
+        } catch {
+            guard sessionResumeGeneration == generation, self.sessionID == sessionID,
+                (sessionProfileID ?? profileScopeID) == profile
+            else { return }
+            runtimeConfigurationError =
+                "Model changed, but its chat notice could not be loaded: \(Self.safeUserDiagnostic(error.localizedDescription))"
         }
     }
 

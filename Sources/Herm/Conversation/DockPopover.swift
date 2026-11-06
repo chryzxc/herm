@@ -53,12 +53,21 @@ struct ConversationScrollAnchor: Equatable {
     }
 }
 
+@MainActor
+final class WorkspaceGeometry {
+    var width: CGFloat = 1200
+}
+
 struct DockPopover: View {
     @AppStorage(DockWorkspaceScale.preferenceKey) private var textSize = DockWorkspaceScale.defaultTextSize
     @StateObject var expandedReviewRouter = ExpandedReviewRouter()
-    @ObservedObject var model: DockModel
+    @StateObject var hostPresentation = DockHostPresentation()
+    @State private var presentationHostID = UUID()
+    let model: DockModel
+    @State var modelPresentationRevision = 0
     @ObservedObject var panelPresentation: DockPanelPresentation
-    @ObservedObject var controlCenter: ControlCenterModel
+    let controlCenter: ControlCenterModel
+    @State var controlPresentationRevision = 0
     /// Read-only screen capacity. Layout decisions must never resize the live
     /// panel while they are merely determining whether desktop content fits.
     var availableWorkspaceWidth: () -> CGFloat = { .greatestFiniteMagnitude }
@@ -258,11 +267,34 @@ struct DockPopover: View {
     }
 
     var body: some View {
+        let _ = modelPresentationRevision
+        let _ = controlPresentationRevision
+        let _ = workspaceLayoutRevision
         // Bound the root's generic layout before observer modifiers copy its sheet state.
-        observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(AnyView(rootPopoverContent)))))
+        return observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(AnyView(rootPopoverContent)))))
+            .onReceive(model.workspacePresentationChanges) { _ in modelPresentationRevision &+= 1 }
+            .onReceive(model.$activityPresentationRevision.dropFirst().receive(on: RunLoop.main)) { _ in
+                if sessionWorkspaceMode == .voice { modelPresentationRevision &+= 1 }
+            }
+            .onReceive(controlCenter.workspacePresentationChanges) { _ in controlPresentationRevision &+= 1 }
             .environment(\.dockWorkspaceScale, CGFloat(DockWorkspaceScale.supportedTextSize(textSize)))
+            .environment(\.dockHostVisible, hostPresentation.isVisible)
+            .environment(\.dockHostResizing, hostPresentation.isResizing)
+            .background { DockHostPresentationObserver(presentation: hostPresentation).frame(width: 0, height: 0) }
+            .onChange(of: hostPresentation.isVisible, initial: true) { _, visible in
+                model.presentationDemand.update(presentationHostID, visible: visible)
+                if visible, model.sessionID != nil {
+                    model.refreshDelegationStatus()
+                    model.startDelegationMonitoring()
+                }
+            }
+            .onDisappear { model.presentationDemand.update(presentationHostID, visible: false) }
             .environment(\.chatContextRouter, chatContextRouter)
             .environment(\.richHostActionRouter, richHostRouter)
+            .environment(
+                \.sessionUnreadReplies,
+                SessionUnreadReplyContext(replies: model.sessionUnreadReplies, profileID: model.profileScopeID)
+            )
             .generativeUISession(model: model)
             .overlay(alignment: .bottomTrailing) {
                 if let reference = gitHubInspector.opening[WorkspaceIdentity.session(model)] {
@@ -308,7 +340,9 @@ struct DockPopover: View {
     @AppStorage("herm.chatListCollapsed") var isChatListCollapsed = false
     /// The group room open on the Bots page; empty means the selected bot's chat.
     @AppStorage(BotChatsOrdering.lastRoomKey) var openGroupRoomID = ""
-    @State var workspaceLayoutWidth: CGFloat = 1200
+    @State var workspaceGeometry = WorkspaceGeometry()
+    @State var workspaceLayoutRevision = 0
+    var workspaceLayoutWidth: CGFloat { workspaceGeometry.width }
     var desktopRequiredWidth: CGFloat { 1_110 }
     var conversationMessageMaxWidth: CGFloat { conversationMetrics.readingWidth }
     var navigatorMinimumConversationWidth: CGFloat { 820 }

@@ -129,7 +129,7 @@ private struct BotActivityRow: View {
     private var working: Bool { record.state == .working }
     private var stateColor: Color {
         switch record.state {
-        case .working: .dockAccent
+        case .working: DockStatusTone.working.color
         case .waiting: .dockWarning
         case .completed: .dockSuccess
         case .failed: .dockDestructive
@@ -196,7 +196,9 @@ private struct BotActivityRow: View {
         .background(hovering ? Color.dockSurface6.opacity(0.8) : Color.dockSurface4.opacity(0.72))
         .overlay {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .stroke(working ? Color.dockAccent.opacity(0.45) : Color.dockBorderLight, lineWidth: working ? 1 : 0.5)
+                .stroke(
+                    working ? DockStatusTone.working.color.opacity(0.45) : Color.dockBorderLight,
+                    lineWidth: working ? 1 : 0.5)
         }
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .onHover { hovering = $0 }
@@ -213,9 +215,7 @@ private struct BotActivityRow: View {
                 .contentTransition(.interpolate)
         }
         .foregroundStyle(stateColor)
-        .dockPadding(.horizontal, 7)
-        .dockPadding(.vertical, 3)
-        .background(Capsule().fill(stateColor.opacity(0.14)))
+        .dockPill(tint: stateColor)
     }
 }
 

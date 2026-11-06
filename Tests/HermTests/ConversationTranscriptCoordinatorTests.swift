@@ -5,6 +5,31 @@ import Testing
 
 @MainActor
 struct ConversationTranscriptCoordinatorTests {
+    @Test func unreadRepliesIncludeSameRowCompletionButExcludeUserAndActivityRows() {
+        let model = DockModel(initialSessionID: "unread-replies")
+        model.messages = [ChatMessage(role: .user, text: "Question")]
+        let coordinator = ConversationTranscriptCoordinator()
+        coordinator.synchronize(model: model)
+        coordinator.presentation.isAtBottom = false
+        let replyID = UUID()
+        model.messages.append(ChatMessage(id: replyID, role: .hermes, text: ""))
+        coordinator.synchronize(model: model)
+        #expect(coordinator.presentation.unseenMessageCount == 0)
+        model.messages[1] = ChatMessage(id: replyID, role: .hermes, text: "Final reply")
+        coordinator.synchronize(model: model)
+        coordinator.synchronize(model: model)
+        #expect(coordinator.presentation.unseenMessageCount == 1)
+        model.messages.append(ChatMessage(role: .user, text: "Follow-up"))
+        model.messages.append(ChatMessage(role: .hermes, text: "Activity", systemEvent: SystemEvent(label: "System")))
+        coordinator.synchronize(model: model)
+        #expect(coordinator.presentation.unseenMessageCount == 1)
+        model.messages.append(ChatMessage(role: .hermes, text: "Second reply"))
+        coordinator.synchronize(model: model)
+        #expect(coordinator.presentation.unseenMessageCount == 2)
+        coordinator.jumpToLatest(reduceMotion: true)
+        #expect(coordinator.presentation.unseenMessageCount == 0)
+    }
+
     private final class Document: NSView {
         override var isFlipped: Bool { true }
     }
@@ -26,6 +51,54 @@ struct ConversationTranscriptCoordinatorTests {
             })
     }
     private let identities = (0..<500).map { _ in UUID() }
+
+    @Test func historyWaitsForPreparationAndRejectsAReversedGesture() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        let document = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 3_600))
+        scroll.documentView = document
+        controller.clipView = scroll.contentView
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500)
+        coordinator.receiveLayout(layout(coordinator))
+        controller.shiftVisibleTop(by: 40)
+        let original = coordinator.mountedRange
+        var ready = false
+        coordinator.isPageReady = { _, _ in ready }
+        coordinator.userMoved(try #require(controller.geometry), delta: -10)
+        #expect(coordinator.mountedRange == original)
+        #expect(coordinator.pendingPage == nil)
+        coordinator.userMoved(try #require(controller.geometry), delta: 10)
+        ready = true
+        coordinator.retryPreparedPage()
+        #expect(coordinator.mountedRange == original)
+        coordinator.userMoved(try #require(controller.geometry), delta: -10)
+        #expect(coordinator.mountedRange.lowerBound == original.lowerBound - ConversationMessageWindow.pageSize)
+        #expect(coordinator.pendingPage != nil)
+    }
+
+    @Test func historyDoesNotMountAnUnpreparedPageAfterOneSecond() async throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        let document = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 3_600))
+        scroll.documentView = document
+        controller.clipView = scroll.contentView
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500)
+        coordinator.receiveLayout(layout(coordinator))
+        controller.shiftVisibleTop(by: 40)
+        let original = coordinator.mountedRange
+        var ready = false
+        coordinator.isPageReady = { _, _ in ready }
+        coordinator.userMoved(try #require(controller.geometry), delta: -10)
+        try await Task.sleep(for: .milliseconds(1_100))
+        #expect(coordinator.mountedRange == original)
+        #expect(coordinator.pendingPage == nil)
+        ready = true
+        coordinator.retryPreparedPage()
+        #expect(coordinator.mountedRange.lowerBound == original.lowerBound - ConversationMessageWindow.pageSize)
+        #expect(coordinator.pendingPage != nil)
+    }
 
     @Test func settleCannotCompleteAnUnlaidOutPageAndOldGeometryCannotRestoreIt() async throws {
         let controller = ConversationScrollController()

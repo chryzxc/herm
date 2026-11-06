@@ -418,7 +418,8 @@ struct TextAnnotator: View {
         }
         .dockButtonSize(.compact)
         .dockPadding(.horizontal, 10)
-        .frame(height: 44)
+        .dockPadding(.vertical, 8)
+        .frame(minHeight: 44)
     }
 
     private var barSummary: String {
@@ -482,9 +483,7 @@ struct TextAnnotator: View {
     }
 
     private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .dockFont(.sectionLabel)
-            .foregroundStyle(Color.dockMetadataText)
+        DockSectionLabel(title: title)
             .dockPadding(.horizontal, 8)
             .dockPadding(.top, 8)
             .dockPadding(.bottom, 2)
@@ -681,12 +680,7 @@ private struct AnnotationEditor: View {
             .lineLimit(3...8)
             .focused($isFocused)
             .dockPadding(10)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .dockSurfaceFill(
-                        Color.dockSurface2, stroke: isFocused ? Color.dockAccent.opacity(0.45) : Color.dockBorderLight,
-                        lineWidth: 1)
-            )
+            .dockWell(stroke: isFocused ? Color.dockAccent.opacity(0.45) : nil)
     }
 
     private var footer: some View {

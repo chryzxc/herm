@@ -17,7 +17,9 @@ extension DockPopover {
             .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(model))
     }
     func reasoningBlock(_ reasoning: ReasoningState) -> some View {
-        DisclosureGroup(isExpanded: $model.isShowingReasoning) {
+        DisclosureGroup(
+            isExpanded: Binding(get: { model.isShowingReasoning }, set: { model.isShowingReasoning = $0 })
+        ) {
             Text(reasoning.text.isEmpty ? "…" : reasoning.text)
                 .dockFont(.body)
                 .textSelection(.enabled)
@@ -41,10 +43,7 @@ extension DockPopover {
         .disclosureGroupStyle(DockDisclosureGroupStyle())
         .dockPadding(.horizontal, 10)
         .dockPadding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .dockSurfaceFill(Color.dockSurface, stroke: Color.dockBorderLight, lineWidth: 0.5)
-        )
+        .dockWell()
     }
 
     func quickPromptChip(_ quickPrompt: QuickPrompt) -> some View {

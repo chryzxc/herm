@@ -8,6 +8,7 @@ struct SessionTraceView: View, Equatable {
     let model: DockModel
     var isVisible = true
     @StateObject private var trace = SessionTraceModel()
+    @StateObject private var windowVisibility = SessionTraceWindowVisibility()
     private let themeRevision: Int
     init(
         model: DockModel, isVisible: Bool = true,
@@ -27,16 +28,19 @@ struct SessionTraceView: View, Equatable {
     @State private var expandedSheet = false
     @State private var expandedLayer: UUID?
     /// Hidden timelines neither project nor tick; the expanded copy keeps the feed alive.
-    private var active: Bool { isVisible && (panelVisible || trace.isExpanded) }
+    private var active: Bool { isVisible && (panelVisible || trace.isExpanded) && windowVisibility.isVisible }
 
     var body: some View {
         SessionTraceCanvas(
             turns: trace.turns, connected: trace.connected,
-            availableSessionIDs: trace.sessionIDs, isVisible: isVisible && panelVisible,
+            availableSessionIDs: trace.sessionIDs, isVisible: isVisible && panelVisible && windowVisibility.isVisible,
             isLoading: trace.isLoading, listMaxHeight: 360, expand: expand, openSession: open
         )
+        // Cards need a gutter or their borders clip against the panel edges.
+        .dockPadding(.horizontal, 16)
+        .background { SessionTraceWindowVisibilityObserver(visibility: windowVisibility) }
         .dockSheet(isPresented: $expandedSheet) {
-            SessionTraceExpanded(trace: trace, open: open) { expandedSheet = false }
+            SessionTraceExpanded(trace: trace, visibility: windowVisibility, open: open) { expandedSheet = false }
                 .frame(minWidth: 900, minHeight: 640)
                 .modifier(ReviewSheetContext())
         }
@@ -75,7 +79,8 @@ struct SessionTraceView: View, Equatable {
         let router = router
         let shown =
             router?.present(
-                SessionTraceExpanded(trace: trace, open: open) { router?.close() }) ?? false
+                SessionTraceExpanded(trace: trace, visibility: windowVisibility, open: open) { router?.close() }
+            ) ?? false
         if shown { expandedLayer = router?.layers.last?.id } else { expandedSheet = true }
     }
 }
@@ -84,6 +89,7 @@ struct SessionTraceView: View, Equatable {
 /// timeline stays mounted and keeps feeding `trace`.
 private struct SessionTraceExpanded: View {
     @ObservedObject var trace: SessionTraceModel
+    @ObservedObject var visibility: SessionTraceWindowVisibility
     let open: (String, String?) -> Void
     let close: () -> Void
 
@@ -91,7 +97,7 @@ private struct SessionTraceExpanded: View {
         DockExpandedPage(title: "Timeline", subtitle: "Session execution", close: close) {
             SessionTraceCanvas(
                 turns: trace.turns, connected: trace.connected,
-                availableSessionIDs: trace.sessionIDs, isLoading: trace.isLoading,
+                availableSessionIDs: trace.sessionIDs, isVisible: visibility.isVisible, isLoading: trace.isLoading,
                 openSession: { id, profile in
                     close()
                     open(id, profile)
@@ -99,6 +105,7 @@ private struct SessionTraceExpanded: View {
             )
             .dockPadding(.horizontal, 16)
         }
+        .background { SessionTraceWindowVisibilityObserver(visibility: visibility) }
         .onAppear { trace.isExpanded = true }
         .onDisappear { trace.isExpanded = false }
     }
@@ -169,6 +176,7 @@ struct SessionTraceCanvas: View {
     /// Observed only by plot drawing, so scrolling never re-renders the labels.
     @State private var scroll = SessionTraceScroll()
     @State private var rowViewport = SessionTraceRowViewport()
+    @State private var preparation = SessionTracePreparationCache()
     @State private var replay: SessionTraceReplay?
     @State private var speed: Double = 1
     @FocusState private var searchFocused: Bool
@@ -297,9 +305,21 @@ struct SessionTraceCanvas: View {
     }
 
     /// Search, Fit and Live act only on the steps, so they sit on the Steps header.
-    private func stepControls(matches: Int?) -> some View {
+    private func stepControls(turn: SessionTraceTurn, matches: Int?) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                searchField(matches: matches)
+                stepActions(turn)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                searchField(matches: matches)
+                stepActions(turn)
+            }
+        }
+    }
+
+    private func stepActions(_ turn: SessionTraceTurn) -> some View {
         HStack(spacing: 6) {
-            searchField(matches: matches)
             Button("Fit time") { fit() }
                 .buttonStyle(.dockCompact).disabled(turns.isEmpty)
                 .help("Fit the whole request in view")
@@ -318,7 +338,15 @@ struct SessionTraceCanvas: View {
             .help("Follow new activity as it arrives. Scrolling the timeline turns this off.")
             .accessibilityLabel("Live tracking")
             .accessibilityValue(follow ? "On" : "Off")
+            if turn.errorCount > 0 {
+                Button("Next error") {
+                    search = ""
+                    query = ""
+                    select(SessionTraceNavigation.nextFailure(in: turn.rows, after: selectedRowID))
+                }.buttonStyle(.dockCompact)
+            }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func searchField(matches: Int?) -> some View {
@@ -400,15 +428,17 @@ struct SessionTraceCanvas: View {
     private func trace(_ turn: SessionTraceTurn, size: CGSize, labelWidth: CGFloat, floats: Bool)
         -> some View
     {
-        let crew = SessionCrewProjection(rows: turn.rows)
-        let lanes = SessionActivityLanes(crew)
+        let prepared = preparation.prepare(turn)
+        let crew = prepared.crew
+        let lanes = prepared.lanes
         let filterLane = lanes.lanes.first { $0.id == laneFilter }
         let steps =
             filterLane.map { lane in
-                SessionActivityLanes.scoped(turn.rows) { lane.actorIDs.contains(crew.ownerByRow[$0.id] ?? $0.id) }
+                let actorIDs = lane.actorIDs
+                return SessionActivityLanes.scoped(turn.rows) { actorIDs.contains(crew.ownerByRow[$0.id] ?? $0.id) }
             } ?? turn.rows
         let visible = SessionTraceProjection.visible(steps, collapsed: collapsed, query: query)
-        let bounds = SessionTraceTimeBounds(turn)
+        let bounds = prepared.bounds
         let live = connected && turn.rows.contains(where: \.active)
         let plotWidth = max(100, size.width - 16 - labelWidth)
         let selected = turn.rows.first { $0.id == selectedRowID }
@@ -421,7 +451,8 @@ struct SessionTraceCanvas: View {
                         clock(live) { now in
                             let frame = frame(bounds, now: now, plotWidth: plotWidth)
                             SessionActivityLaneChart(
-                                lanes: lanes, span: frame.span, origin: bounds.origin, now: now,
+                                lanes: lanes, toolGeometry: prepared.toolGeometry,
+                                span: frame.span, origin: bounds.origin, now: now,
                                 replayTime: frame.replayTime, connected: connected,
                                 stepsScale: frame.scale, stepsWidth: plotWidth, scroll: scroll,
                                 selectedRowID: selectedRowID, filter: filterLane?.id, select: select,
@@ -453,16 +484,8 @@ struct SessionTraceCanvas: View {
                     }
                 }
                 if showsSteps {
-                    HStack(spacing: 6) {
-                        stepControls(matches: query.isEmpty ? nil : visible.count)
-                        if turn.errorCount > 0 {
-                            Button("Next error") {
-                                search = ""
-                                query = ""
-                                select(SessionTraceNavigation.nextFailure(in: turn.rows, after: selectedRowID))
-                            }.buttonStyle(.dockCompact)
-                        }
-                    }.dockPadding(.horizontal, 4).dockPadding(.vertical, 6)
+                    stepControls(turn: turn, matches: query.isEmpty ? nil : visible.count)
+                        .dockPadding(.horizontal, 4).dockPadding(.vertical, 6)
                     HStack(spacing: 0) {
                         Text("Step").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                             .dockPadding(.leading, 4)
@@ -607,7 +630,7 @@ struct SessionTraceCanvas: View {
         return ScrollViewReader { vertical in
             ScrollView(.vertical) {
                 HStack(alignment: .top, spacing: 0) {
-                    SessionTraceRowWindow(viewport: rowViewport, items: items) { row, depth in
+                    SessionTraceRowWindow(viewport: rowViewport.rowWindow, items: items) { row, depth in
                         stepLabel(
                             row, depth: depth,
                             hasChildren: childIDs.contains(row.id)
@@ -667,7 +690,7 @@ struct SessionTraceCanvas: View {
             ScrollView(.horizontal) {
                 VStack(spacing: 0) {
                     SessionTraceScrolled(scroll: scroll) { offset in
-                        SessionTraceRowWindow(viewport: rowViewport, items: items) { row, _ in
+                        SessionTraceRowWindow(viewport: rowViewport.rowWindow, items: items) { row, _ in
                             barRow(
                                 row, origin: frame.origin, now: now,
                                 replayTime: frame.replayTime, width: frame.width,
@@ -872,8 +895,7 @@ struct SessionTraceCanvas: View {
                         if slowest, replayTime.map({ $0 >= offset + (full ?? 0) }) ?? true {
                             Text("Slowest").dockFont(.metadata, weight: .medium)
                                 .foregroundStyle(DockAccentColor.amber.color)
-                                .dockPadding(.horizontal, 6).dockPadding(.vertical, 1)
-                                .background(Capsule().fill(DockAccentColor.amber.fill.opacity(0.14)))
+                                .dockPill(tint: DockAccentColor.amber.fill)
                                 .overlay(Capsule().stroke(DockAccentColor.amber.fill.opacity(0.4)))
                         }
                     }
@@ -1032,8 +1054,7 @@ struct SessionTraceCanvas: View {
             : row.failed ? "Failed" : row.outcome == "Succeeded" ? "Done" : "Finished"
         return Text(label).dockFont(.metadata, weight: .medium)
             .foregroundStyle(color)
-            .dockPadding(.horizontal, 6).dockPadding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.12)))
+            .dockPill(tint: color)
             .overlay(Capsule().stroke(color.opacity(0.3), lineWidth: 0.5))
             .lineLimit(1).fixedSize()
             .help(row.status).accessibilityLabel(row.status)
@@ -1109,6 +1130,23 @@ struct SessionTraceCanvas: View {
     // MARK: Footer
 
     private func footer(_ turn: SessionTraceTurn) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                replayControls(turn)
+                Spacer(minLength: 8)
+                footerLegend(turn)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                replayControls(turn)
+                footerLegend(turn)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+        .dockPadding(.vertical, 4)
+        .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private func replayControls(_ turn: SessionTraceTurn) -> some View {
         let finished = !turn.rows.contains(where: \.active) && turn.rows.contains { $0.start != nil }
         let span = extent(turn)
         return HStack(spacing: 6) {
@@ -1166,15 +1204,19 @@ struct SessionTraceCanvas: View {
             if replay != nil {
                 Button("Exit replay") { replay = nil }.buttonStyle(.dockCompact)
             }
-            Spacer(minLength: 8)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func footerLegend(_ turn: SessionTraceTurn) -> some View {
+        HStack(spacing: 6) {
             coverage(turn)
             legend("Model", fills: [DockAccentColor.violet.fill.opacity(0.75)])
             legend(
                 "Tools",
                 fills: [DockAccentColor.teal, .orange, .blue].map { $0.fill.opacity(0.9) })
         }
-        .frame(height: 38)
-        .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func legend(_ title: String, fills: [Color]) -> some View {

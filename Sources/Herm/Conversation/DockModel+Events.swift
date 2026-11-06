@@ -75,6 +75,11 @@ extension DockModel {
         capturePendingClarification(type: type, params: params)
         let eventPayload = params["payload"] as? [String: Any] ?? [:]
         let eventSessionID = (params["session_id"] as? String) ?? (eventPayload["session_id"] as? String)
+        if type == "message.start" || type == "message.complete", let eventSessionID {
+            let owner = interruptionNotice(.information, owner: eventSessionID)
+            sessionTranscriptCache.remove(
+                WorkspaceIdentity.session(profileID: owner.profileID, sessionID: rowSessionID(eventSessionID)))
+        }
         if type == "approval.expire", let eventSessionID {
             let requestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
             resolveApproval(for: eventSessionID, requestID: requestID)
@@ -1149,22 +1154,24 @@ extension DockModel {
                 if wasDelegation, let args = payload["args"] as? [String: Any] {
                     refreshSynthesizedSubagents(toolCallID: id, args: args)
                 }
-                activeToolCalls[index].result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
-                activeToolCalls[index].isComplete = true
-                activeToolCalls[index].completedAt =
+                var call = activeToolCalls[index]
+                call.result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
+                call.isComplete = true
+                call.completedAt =
                     dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
-                activeToolCalls[index].traceDuration = SessionTraceProjection.measuredDuration(payload["duration_s"])
-                activeToolCalls[index].traceOutcome = SessionTraceProjection.outcome(
+                call.traceDuration = SessionTraceProjection.measuredDuration(payload["duration_s"])
+                call.traceOutcome = SessionTraceProjection.outcome(
                     payload["result"] ?? payload["output"])
                 if params["herm_trace_replayed"] as? Bool == true && dateValue(params["timestamp"]) == nil
                     && dateValue(payload["timestamp"]) == nil
                 {
-                    activeToolCalls[index].traceTiming = .unavailable
+                    call.traceTiming = .unavailable
                 }
-                activeToolCalls[index].diffPreview = diffPreview
-                if activeToolCalls[index].args == nil {
-                    activeToolCalls[index].args = Self.textArgs(Self.parseArgsDict(payload["args"]))
+                call.diffPreview = diffPreview
+                if call.args == nil {
+                    call.args = Self.textArgs(Self.parseArgsDict(payload["args"]))
                 }
+                activeToolCalls[index] = call
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: id, result: result, payload: payload) }
                 bindBotDispatch(toolCallID: id, result: result)
             } else if !activeToolCalls.isEmpty, let last = activeToolCalls.lastIndex(where: { !$0.isComplete }) {
@@ -1172,16 +1179,18 @@ extension DockModel {
                 if wasDelegation, let args = payload["args"] as? [String: Any] {
                     refreshSynthesizedSubagents(toolCallID: activeToolCalls[last].id, args: args)
                 }
-                activeToolCalls[last].result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
-                activeToolCalls[last].isComplete = true
-                activeToolCalls[last].completedAt =
+                var call = activeToolCalls[last]
+                call.result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
+                call.isComplete = true
+                call.completedAt =
                     dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
                 // The legacy completion fallback does not prove trace ownership.
-                activeToolCalls[last].traceTiming = .unavailable
-                activeToolCalls[last].diffPreview = diffPreview
-                if activeToolCalls[last].args == nil {
-                    activeToolCalls[last].args = Self.textArgs(Self.parseArgsDict(payload["args"]))
+                call.traceTiming = .unavailable
+                call.diffPreview = diffPreview
+                if call.args == nil {
+                    call.args = Self.textArgs(Self.parseArgsDict(payload["args"]))
                 }
+                activeToolCalls[last] = call
                 if wasDelegation {
                     completeSynthesizedSubagent(toolCallID: activeToolCalls[last].id, result: result, payload: payload)
                 }
@@ -1469,10 +1478,15 @@ extension DockModel {
     }
 
     static func upsert(_ calls: [ActiveToolCall], into log: inout [ActiveToolCall]) {
+        var indices: [String: Int] = [:]
+        for (index, call) in log.enumerated() where indices[call.id] == nil {
+            indices[call.id] = index
+        }
         for call in calls {
-            if let index = log.firstIndex(where: { $0.id == call.id }) {
+            if let index = indices[call.id] {
                 log[index] = call
             } else {
+                indices[call.id] = log.count
                 log.append(call)
             }
         }

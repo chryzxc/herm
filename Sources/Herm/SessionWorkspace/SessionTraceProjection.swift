@@ -2,7 +2,7 @@ import CoreFoundation
 import Foundation
 
 /// Optional metadata keeps older tool archives decodable without inventing timing.
-enum SessionTraceTiming: String, Codable { case runtime, observed, unavailable }
+enum SessionTraceTiming: String, Codable, Sendable { case runtime, observed, unavailable }
 
 struct SessionTraceRow: Identifiable, Equatable {
     enum Kind: Equatable { case turn, agent, model, tool, thinking, compaction, marker }

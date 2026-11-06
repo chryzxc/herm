@@ -6,6 +6,34 @@ import Testing
 @testable import Herm
 
 @MainActor
+private final class SessionSwitchTimingRPC: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    let rows: [[String: Any]]
+
+    init(rows: [[String: Any]]) { self.rows = rows }
+    func connect() async throws {}
+    func close() {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        guard method == "session.resume" else { return [:] }
+        try await Task.sleep(for: .milliseconds(30))
+        let id = params["session_id"] as? String ?? ""
+        return ["session_id": "runtime-\(id)", "session_key": id, "messages": [], "hydrating": true]
+    }
+
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        try await Task.sleep(for: .milliseconds(10))
+        if path.contains("/timeline") { return ["entries": []] }
+        let query = URLComponents(string: path)?.queryItems ?? []
+        let limit = Int(query.first { $0.name == "limit" }?.value ?? "") ?? 120
+        let offset = Int(query.first { $0.name == "offset" }?.value ?? "") ?? 0
+        let upper = max(0, rows.count - offset)
+        let page = Array(rows[max(0, upper - limit)..<upper])
+        return ["messages": page, "pagination": ["returned": page.count]]
+    }
+}
+
+@MainActor
 struct ConversationTranscriptIntegrationTests {
     /// Match DockPopover's broad observation around an equatable transcript.
     struct Parent: View {
@@ -64,12 +92,20 @@ struct ConversationTranscriptIntegrationTests {
 
         init(
             source: String? = nil, streaming: Bool = false, messages: [ChatMessage]? = nil,
-            includeTimeline: Bool = false, trailingContentInset: CGFloat = 0
+            includeTimeline: Bool = false, trailingContentInset: CGFloat = 0,
+            rpcClient: HermesRPCClientProtocol? = nil
         ) {
             timeline = includeTimeline ? SessionTraceModel() : nil
             coordinator = ConversationTranscriptCoordinator(controller: controller)
             _ = NSApplication.shared
-            model = DockModel(initialSessionID: "scroll-integration")
+            let fixtureID = UUID().uuidString
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("herm-transcript-test-\(fixtureID)")
+            let defaults = UserDefaults(suiteName: "Herm.TranscriptTests.\(fixtureID)")!
+            model = DockModel(
+                sessionAgentStateFileURL: root.appendingPathComponent("agents.json"), defaults: defaults,
+                initialSessionID: "scroll-integration", botActivityFileURL: root.appendingPathComponent("bots.json"),
+                rpcClient: rpcClient)
             model.messages =
                 messages
                 ?? (0..<500).map { index in
@@ -118,6 +154,32 @@ struct ConversationTranscriptIntegrationTests {
             let origin = document.isFlipped ? top : geometry.documentHeight - geometry.visibleHeight - top
             clip.scroll(to: NSPoint(x: 0, y: origin))
         }
+    }
+
+    @Test func visibleHistoryWaitsForAdjacentPreparation() async throws {
+        let source = "```swift\n" + String(repeating: "let value = 42 // complete line\n", count: 2_000) + "```"
+        let fixture = Fixture(source: source)
+        fixture.controller.allowsOccludedPreparationForTesting = true
+        fixture.window.orderFrontRegardless()
+        defer { fixture.window.orderOut(nil) }
+        try await fixture.settle()
+        let original = fixture.coordinator.mountedRange
+        let first = try #require(fixture.coordinator.rowViewports.min { $0.index < $1.index })
+        NativeMarkdownCompletedHeightCache.removeAll()
+        fixture.controller.userScrollDidMove()
+        try fixture.move(to: first.minY + 20)
+        fixture.host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(fixture.coordinator.mountedRange == original)
+        fixture.controller.userScrollDidSettle()
+        let deadline = Date().addingTimeInterval(20)
+        while fixture.coordinator.mountedRange == original, Date() < deadline {
+            fixture.host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(fixture.coordinator.mountedRange.lowerBound == original.lowerBound - ConversationMessageWindow.pageSize)
+        try await fixture.settle()
+        #expect(fixture.coordinator.pendingPage == nil)
     }
 
     @Test(arguments: [CGFloat(220), CGFloat(360)])
@@ -169,6 +231,50 @@ struct ConversationTranscriptIntegrationTests {
 
     @Test func productionPagingKeepsTheVisibleMessageWithoutManualCorrection() async throws {
         try await checkProductionPaging()
+    }
+
+    @Test func cachedTranscriptPromotesToFreshRowsWithoutChangingTheirIdentity() async throws {
+        let fixture = Fixture(
+            messages: (0..<36).map {
+                ChatMessage(role: .hermes, text: String(repeating: "Cached reply \($0). ", count: 20))
+            })
+        defer { fixture.window.orderOut(nil) }
+        let cached = fixture.model.messages
+        fixture.model.sessionStorageID = "stored-session"
+        fixture.model.storageIDsByRuntimeID["requested-session"] = "stored-session"
+        fixture.model.storageIDsByRuntimeID["resolved-runtime"] = "stored-session"
+        fixture.model.sessionID = "requested-session"
+        fixture.model.messages = []
+        fixture.model.sessionTranscriptPreview = SessionTranscriptPreview(
+            messages: cached, rowIDs: [:], references: [:], pendingImages: [])
+        fixture.model.sessionTranscriptLoadState = .refreshing
+        try await fixture.settle()
+        #expect(fixture.coordinator.sessionID == fixture.model.transcriptPresentationID)
+        #expect(!fixture.coordinator.rowViewports.isEmpty)
+        let geometry = try #require(fixture.controller.geometry)
+        try fixture.move(to: max(0, geometry.visibleTop - 200))
+        fixture.coordinator.presentation.isAtBottom = false
+        try await fixture.settle()
+        let visible = try #require(fixture.controller.geometry)
+        let anchor = try #require(
+            fixture.coordinator.rowViewports.filter {
+                $0.maxY > visible.visibleTop && $0.minY < visible.visibleTop + visible.visibleHeight
+            }.min { $0.index < $1.index })
+        let offset = anchor.minY - visible.visibleTop
+
+        fixture.model.sessionID = "resolved-runtime"
+        fixture.model.messages = (0..<10).map { ChatMessage(role: .user, text: "Older \($0)") } + cached
+        fixture.model.sessionTranscriptPreview = nil
+        fixture.model.sessionTranscriptLoadState = .ready
+        try await fixture.settle()
+        #expect(fixture.coordinator.sessionID == fixture.model.transcriptPresentationID)
+        #expect(
+            fixture.coordinator.rowViewports.allSatisfy { row in
+                fixture.model.messages.contains { $0.id == row.target.messageID }
+            })
+        let restored = try #require(
+            fixture.coordinator.rowViewports.first { $0.target.messageID == anchor.target.messageID })
+        #expect(abs(restored.minY - (try #require(fixture.controller.geometry)).visibleTop - offset) < 1)
     }
 
     @Test func streamingTailStillAllowsPagingWhileBrowsingHistory() async throws {
@@ -438,6 +544,35 @@ struct ConversationTranscriptIntegrationTests {
         #endif
     }
 
+    @Test func thousandLiveToolsKeepHistoryAndStreamingTextStable() async throws {
+        let fixture = Fixture(streaming: true)
+        defer { fixture.window.orderOut(nil) }
+        var calls = (0..<1_000).map { index in
+            ActiveToolCall(
+                id: "tool-\(index)", name: "terminal", input: "", context: "", startedAt: .distantPast,
+                isComplete: false)
+        }
+        fixture.model.activeToolCalls = calls
+        try await fixture.settle()
+        fixture.coordinator.jump(to: 250)
+        try await fixture.settle()
+        let row = try #require(fixture.coordinator.rowViewports.first { $0.index == 250 })
+        try fixture.move(to: row.minY + 20)
+        try await fixture.settle()
+        let top = try #require(fixture.controller.geometry).visibleTop
+        let bodies = fixture.evaluations.messageBodies
+        let initial = fixture.model.streamingText.text
+        calls[500].isComplete = true
+        fixture.model.activeToolCalls = calls
+        fixture.model.streamingText.appendPresentation(" exact streamed suffix")
+        try await fixture.settle()
+        #expect(fixture.model.streamingTurnActivity.map(\.id) == calls.map(\.id))
+        #expect(fixture.model.streamingTurnActivity[500].isComplete)
+        #expect(fixture.model.streamingText.text == initial + " exact streamed suffix")
+        #expect(fixture.evaluations.messageBodies == bodies)
+        #expect(abs((try #require(fixture.controller.geometry)).visibleTop - top) < 1)
+    }
+
     @Test func sessionReplacementResetsProductionMountingAndRejectsOldGeometry() async throws {
         let fixture = Fixture()
         defer { fixture.window.orderOut(nil) }
@@ -450,7 +585,7 @@ struct ConversationTranscriptIntegrationTests {
         fixture.model.messages = (0..<4).map { ChatMessage(role: .hermes, text: "Replacement message \($0)") }
         try await fixture.settle()
         fixture.coordinator.receiveLayout(stale)
-        #expect(fixture.coordinator.sessionID == "replacement")
+        #expect(fixture.coordinator.sessionID == fixture.model.transcriptPresentationID)
         #expect(fixture.coordinator.mountedRange == 0..<4)
         #expect(fixture.coordinator.pendingPage == nil)
         #expect(fixture.coordinator.rowViewports.allSatisfy { $0.target.sessionID == "replacement" })
@@ -493,6 +628,10 @@ struct ConversationTranscriptIntegrationTests {
         let top = try #require(fixture.controller.geometry).visibleTop
         let bodies = fixture.evaluations.messageBodies
         let timeline = try #require(fixture.timeline)
+        // This fixture's window stays offscreen; subscribe explicitly so this
+        // test exercises simultaneous updates independently of occlusion.
+        timeline.observe(fixture.model)
+        defer { timeline.suspend() }
         let scans = timeline.historyScanCount
         for batch in 0..<5 {
             for index in 0..<200 {
@@ -537,6 +676,68 @@ struct ConversationTranscriptIntegrationTests {
         #expect(fixture.coordinator.pendingPage == nil)
         let restored = try #require(fixture.coordinator.rowViewports.first { $0.target == first.target })
         #expect(abs(restored.minY - (try #require(fixture.controller.geometry)).visibleTop - offset) < 1)
+    }
+
+    /// Five cold/warm pairs; layout/display work excludes synthetic pacing sleeps.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["HERM_SESSION_PROFILE"] == "1"))
+    func releaseSessionSwitchTimings() async throws {
+        func session(_ id: String) -> HermesSession {
+            HermesSession(id: id, title: id, preview: "", startedAt: nil, messageCount: 0, source: "test")
+        }
+        func waitForLayout(_ fixture: Fixture, generation: Int, cached: Bool) async throws -> Double {
+            for _ in 0..<1_000 {
+                fixture.host.layoutSubtreeIfNeeded()
+                fixture.host.displayIfNeeded()
+                let recorded =
+                    cached
+                    ? fixture.model.sessionSwitchCachedLayoutRecorded : fixture.model.sessionSwitchFreshLayoutRecorded
+                if fixture.model.sessionResumeGeneration == generation,
+                    recorded
+                {
+                    return Double(DispatchTime.now().uptimeNanoseconds - fixture.model.sessionSwitchStartedAt)
+                        / 1_000_000
+                }
+                try await Task.sleep(for: .milliseconds(2))
+            }
+            throw URLError(.timedOut)
+        }
+        for scenario in ["prose", "code", "tool_heavy", "streaming"] {
+            for pair in 0..<5 {
+                let body =
+                    scenario == "code"
+                    ? "```swift\n" + String(repeating: "let value = 42\n", count: 500) + "```"
+                    : String(repeating: "A **readable** paragraph with `code`.\n\n", count: 80)
+                var rows: [[String: Any]] = []
+                for turn in 0..<18 {
+                    rows.append(["id": rows.count + 1, "role": "user", "content": "Question \(turn)"])
+                    if scenario == "tool_heavy" {
+                        for _ in 0..<20 {
+                            rows.append(["id": rows.count + 1, "role": "tool", "content": "Tool output"])
+                        }
+                    }
+                    rows.append(["id": rows.count + 1, "role": "assistant", "content": body])
+                }
+                let fixture = Fixture(messages: [], rpcClient: SessionSwitchTimingRPC(rows: rows))
+                defer { fixture.window.orderOut(nil) }
+                try await fixture.settle()
+                let coldGeneration = fixture.model.sessionResumeGeneration + 1
+                let cold = Task { await fixture.model.resumeSession(session("a"), reportFailure: true) }
+                let coldMS = try await waitForLayout(fixture, generation: coldGeneration, cached: false)
+                #expect(await cold.value)
+                #expect(await fixture.model.resumeSession(session("b"), reportFailure: true))
+                try await fixture.settle()
+                if scenario == "streaming" {
+                    fixture.model.streamingMessageID = fixture.model.messages.last?.id
+                    fixture.model.streamingText.appendPresentation("Background streaming")
+                }
+                let warmGeneration = fixture.model.sessionResumeGeneration + 1
+                let warm = Task { await fixture.model.resumeSession(session("a"), reportFailure: true) }
+                let cachedMS = try await waitForLayout(fixture, generation: warmGeneration, cached: true)
+                #expect(await warm.value)
+                print(
+                    "session_switch_fixture scenario=\(scenario) pair=\(pair) cold_ms=\(coldMS) cached_ms=\(cachedMS)")
+            }
+        }
     }
 
     /// Five cold/warm pairs; layout/display work excludes synthetic pacing sleeps.

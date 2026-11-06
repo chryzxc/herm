@@ -147,8 +147,9 @@ enum TranscriptHistoryPaging {
     /// Hermes applies there: hidden scaffolding never renders, system rows
     /// keep their `display_kind` for the system card, compaction summaries show their display projection, and a
     /// slash-skill turn shows the invocation instead of the expanded skill.
-    static func displayRows(fromStoredRows rows: [[String: Any]]) -> [[String: Any]] {
+    static func displayRows(fromStoredRows rows: [[String: Any]], cancelOnTask: Bool = false) -> [[String: Any]] {
         rows.compactMap { row in
+            guard !cancelOnTask || !Task.isCancelled else { return nil }
             guard let role = row["role"] as? String else { return nil }
             guard (row["display_kind"] as? String) != "hidden" else { return nil }
             // Tool rows and tool-only assistant rows carry the turn's
@@ -186,8 +187,12 @@ enum TranscriptHistoryPaging {
                 )
                 if let invocation = skillInvocationText(text) { text = invocation }
             }
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !activity.isEmpty else { return nil }
+            guard
+                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !activity.isEmpty
+                    || (role == "user" && !DockModel.embeddedTranscriptImages(row["content"]).isEmpty)
+            else { return nil }
             var display: [String: Any] = activity.merging(["role": role, "text": text]) { _, new in new }
+            if role == "user", row["content"] is [[String: Any]] { display["content"] = row["content"] }
             if let id = rowID(row) { display["row_id"] = id }
             if let uid = row["message_uid"] as? String { display["message_uid"] = uid }
             if let timestamp = row["timestamp"] { display["timestamp"] = timestamp }

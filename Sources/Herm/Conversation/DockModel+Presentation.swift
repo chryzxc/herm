@@ -6,6 +6,60 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 extension DockModel {
+    /// Inputs read by the workspace shell; chat activity is observed by its own leaves.
+    func makeWorkspacePresentationChanges() -> AnyPublisher<Void, Never> {
+        Publishers.MergeMany(
+            $status.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $isHermesConnected.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $hermesConnectionIssue.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $messages.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $isSending.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $approvalTitle.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $approvalText.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $approvalDetails.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $clarificationQuestion.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $clarificationChoices.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $clarificationMultiSelect.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $clarificationProgress.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $valuePrompt.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $isShowingSessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $isLoadingSessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $deletingSessionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $renamingSessionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $updatingSessionVisibilityID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $pinningSessionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $pinnedSessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $isRestoringSession.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $currentSessionTitle.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $isShowingReasoning.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $runtimeConfiguration.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $runtimeModelOptions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $sessionModelOptionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $defaultModelOptionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $sessionModelValue.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $isUpdatingSessionModel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $sessionReasoningVariant.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $isUpdatingSessionReasoning.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $defaultReasoningVariant.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $draftReasoningVariant.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $voiceState.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $voiceSpokenCaption.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $voiceRepliesEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $isVoiceMicMuted.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $sessionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $sessionStorageID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $profileScopeID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $profileScopeUnavailable.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $sessionProfileID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $activeBotProfileID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $activeBotDisplayName.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $defaultBotName.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $browserActivityID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $sessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $storedMessageReferences.dropFirst().map { _ in () }.eraseToAnyPublisher()
+        ).receive(on: RunLoop.main).eraseToAnyPublisher()
+    }
+
     nonisolated static func safeUserDiagnostic(_ raw: String) -> String {
         HermesDiagnosticsService.safeSummary(raw)
     }

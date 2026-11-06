@@ -19,6 +19,7 @@ struct ConversationTranscriptView: View, Equatable {
     @Binding var pinnedMessageJumpID: UUID?
     @Binding var selectedChatImage: ChatImagePreview?
     @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @Environment(\.dockHostVisible) private var hostVisible
     @StateObject var source: ConversationTranscriptSource
     /// Message a jump just landed on; shown with a brief spotlight so it is easy to find.
     @State private var spotlightMessageID: UUID?
@@ -73,9 +74,8 @@ struct ConversationTranscriptView: View, Equatable {
 
     var effectiveMountedRange: Range<Int> { source.snapshot.range }
 
-    var renderedMessageBubbleCount: Int {
-        ConversationUnreadMessagePolicy.renderedMessageCount(
-            model.messages, streamingID: model.streamingMessageIDForPresentation)
+    var assistantResponseCount: Int {
+        ConversationUnreadMessagePolicy.assistantResponseCount(model.displayedTranscriptMessages)
     }
 
     var body: some View {
@@ -113,7 +113,8 @@ struct ConversationTranscriptView: View, Equatable {
                                             Color.clear.preference(
                                                 key: ConversationTranscriptLayoutPreferenceKey.self,
                                                 value: ConversationTranscriptLayout(
-                                                    sessionID: sessionID, generation: generation, range: range,
+                                                    sessionID: snapshot.layoutSessionID, generation: generation,
+                                                    range: range,
                                                     rows: [
                                                         MessageNavigatorViewport(
                                                             target: MessageNavigatorTarget(
@@ -130,12 +131,21 @@ struct ConversationTranscriptView: View, Equatable {
                                     }
                                     .id(message.id)
                                 }
-                                ConversationPromptRows(model: model, conversationMetrics: conversationMetrics)
-                                botHandoffRow
-                                    .animation(.spring(response: 0.45, dampingFraction: 0.8), value: workingCrewIDs)
+                                if model.sessionActionsReady {
+                                    ConversationPromptRows(model: model, conversationMetrics: conversationMetrics)
+                                    botHandoffRow
+                                        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: workingCrewIDs)
+                                }
                             }
-                            .task(id: [snapshot.sessionID ?? ""] + model.workingBotDispatches.map(\.id)) {
-                                guard !model.workingBotDispatches.isEmpty else { return }
+                            .task(
+                                id: [
+                                    snapshot.sessionID ?? "", snapshot.context.actionsReady ? "ready" : "loading",
+                                    hostVisible ? "visible" : "hidden",
+                                ]
+                                    + model.workingBotDispatches.map(\.id)
+                            ) {
+                                guard hostVisible, snapshot.context.actionsReady, !model.workingBotDispatches.isEmpty
+                                else { return }
                                 var tick = 0
                                 repeat {
                                     if tick % 3 == 0 {
@@ -170,7 +180,7 @@ struct ConversationTranscriptView: View, Equatable {
                         }
                         .coordinateSpace(name: "conversation-document")
                     }
-                    .id(snapshot.sessionID)
+                    .id(snapshot.layoutSessionID)
                     .onPreferenceChange(ConversationTranscriptLayoutPreferenceKey.self) { layout in
                         if let layout { coordinator.receiveLayout(layout) }
                     }
@@ -180,7 +190,10 @@ struct ConversationTranscriptView: View, Equatable {
                     .onChange(of: latestJumpRequest) { _, _ in
                         coordinator.jumpToLatest(animated: true, reduceMotion: reduceMotion)
                     }
-                    ConversationLatestMessageControl(presentation: coordinator.presentation) {
+                    ConversationLatestMessageControl(
+                        presentation: coordinator.presentation,
+                        isWorking: !snapshot.isPreview && snapshot.context.status == .working
+                    ) {
                         coordinator.jumpToLatest(animated: true, reduceMotion: reduceMotion)
                     }
                     .dockPadding(.trailing, trailingContentInset)
@@ -225,7 +238,10 @@ struct ConversationTranscriptView: View, Equatable {
         .environment(\.conversationScrollController, coordinator.controller)
         .onAppear {
             reset()
-            source.resume()
+            if hostVisible { source.resume() } else { source.suspend() }
+        }
+        .onChange(of: hostVisible) { _, visible in
+            if visible { source.resume() } else { source.suspend() }
         }
         .onChange(of: themeRevision) { _, _ in source.prefetch() }
         .onDisappear {
@@ -237,8 +253,8 @@ struct ConversationTranscriptView: View, Equatable {
 
     private func reset() {
         coordinator.reset(
-            sessionID: model.sessionID, totalCount: model.messages.count,
-            bubbleCount: renderedMessageBubbleCount)
+            sessionID: model.transcriptPresentationID, totalCount: model.displayedTranscriptMessages.count,
+            bubbleCount: assistantResponseCount)
         coordinator.onEarlierHistory = { [weak model] in model?.loadEarlierTranscriptIfAvailable() }
     }
 
@@ -345,6 +361,7 @@ struct ConversationTranscriptView: View, Equatable {
                 activity: activity,
                 runningSince: isStreaming ? (model.streamingResponseStartedAt ?? message.timestamp) : nil,
                 duration: message.responseDuration,
+                expandsByDefault: !message.hasBodyText && message.images.isEmpty,
                 bot: isStreaming ? workingBot : nil,
                 botAvatar: workingBot.flatMap { botMode.avatarImages[$0.id] },
                 dispatches: rowDispatches,
@@ -382,7 +399,8 @@ struct ConversationTranscriptView: View, Equatable {
                 },
                 pendingAction: messageActionState.pendingAction(for: message.id),
                 areSessionActionsAvailable:
-                    !(model.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
+                    source.snapshot.context.actionsReady
+                    && !(model.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
                 isSpeaking: voiceOutput.speakingMessageID == message.id,
                 metrics: conversationMetrics,
                 actionTarget: target,
@@ -399,11 +417,13 @@ struct ConversationTranscriptView: View, Equatable {
                 isSpotlit: spotlightMessageID == message.id,
                 onPin: { source.perform(.pin, target: target) },
                 onOpenInTab: {
-                    guard let current = source.message(for: target) else { return }
+                    guard model.sessionActionsReady, let current = source.message(for: target) else { return }
                     SessionMessageTabs.shared.open(current, in: WorkspaceIdentity.session(model))
                 },
                 forwardContent: { bot, dismiss in
-                    guard let current = source.message(for: target) else { return AnyView(EmptyView()) }
+                    guard model.sessionActionsReady, let current = source.message(for: target) else {
+                        return AnyView(EmptyView())
+                    }
                     return AnyView(
                         ForwardToBotPopover(
                             model: model, botMode: botMode, bot: bot, messageText: current.text, dismiss: dismiss)

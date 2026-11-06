@@ -226,19 +226,21 @@ enum ConversationMessageWindow {
 
 }
 
-/// The unread badge represents message presentations the reader can actually
-/// see, never transport-only assistant placeholders or activity events.
+/// Session and viewport badges count visible AI responses, never user prompts,
+/// transport-only placeholders, or activity events.
 enum ConversationUnreadMessagePolicy {
-    static func rendersMessageBubble(_ message: ChatMessage, streamingID: UUID?) -> Bool {
-        if message.id == streamingID { return true }
-        if message.isSteering { return true }
-        if !message.images.isEmpty { return true }
-        return message.hasBodyText
+    static func isAssistantResponse(_ message: ChatMessage) -> Bool {
+        message.role == .hermes && !message.isError && !message.isSteering
+            && message.systemEvent == nil && message.kanbanNotice == nil
+            && (message.hasBodyText || !message.images.isEmpty)
     }
 
-    static func renderedMessageCount(_ messages: [ChatMessage], streamingID: UUID?) -> Int {
-        messages.count { rendersMessageBubble($0, streamingID: streamingID) }
+    static func assistantResponseCount(_ messages: [ChatMessage], after seenAt: Date? = nil) -> Int {
+        messages.count { message in
+            isAssistantResponse(message) && (seenAt.map { message.timestamp > $0 } ?? true)
+        }
     }
+
 }
 
 /// Live text gets progressively more expensive to line-wrap as it grows. Keep

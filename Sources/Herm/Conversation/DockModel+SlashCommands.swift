@@ -91,6 +91,7 @@ extension DockModel {
     /// then `slash.exec`, falling back to `command.dispatch` for skills,
     /// bundles, quick commands and prompt builtins.
     func runSlashCommand(_ command: ComposerSlashCommand, echo: String) {
+        guard sessionActionsReady else { return }
         let key = "/\(command.name)"
         switch command.name {
         case "new", "reset":

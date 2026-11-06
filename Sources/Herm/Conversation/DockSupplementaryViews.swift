@@ -507,24 +507,30 @@ struct CronEditEditor: View {
                         ProgressView("Loading automation details…").controlSize(.small)
                     }
                     Group {
+                        editSection("What runs")
                         labeledField("Name") {
                             DockTextField("Name", text: $draft.name).textFieldStyle(.dockGlass)
                         }
-                        labeledField("Schedule", hint: "every 2h · 0 9 * * *") {
-                            DockTextField("Schedule", text: $draft.schedule).textFieldStyle(.dockGlass)
-                        }
-                        ModalNote(
-                            text: draft.schedule.isEmpty
-                                ? "Enter an interval or a cron expression."
-                                : CronScheduleFormatting.humanReadable(draft.schedule), icon: .clock
-                        )
-                        .frame(minHeight: 24, alignment: .leading)
                         if loadedJob?.details.noAgent != true {
                             labeledField("Request") {
                                 DockTextField("Request", text: $draft.prompt, axis: .vertical)
                                     .lineLimit(4...8).textFieldStyle(.dockGlass)
                             }
                         }
+                        Divider().overlay(Color.dockBorderLight)
+                        editSection("When")
+                        labeledField("Schedule", hint: "every 2h · 0 9 * * *") {
+                            DockTextField("Schedule", text: $draft.schedule).textFieldStyle(.dockGlass)
+                        }
+                        ModalNote(
+                            text: draft.schedule.isEmpty
+                                ? "Enter an interval or a cron expression."
+                                : "Runs \(CronScheduleFormatting.humanReadable(draft.schedule).lowercased())",
+                            icon: .clock
+                        )
+                        .frame(minHeight: 24, alignment: .leading)
+                        Divider().overlay(Color.dockBorderLight)
+                        editSection("Configuration")
                         CronConfigurationFields(
                             draft: $draft.configuration, isScriptOnly: loadedJob?.details.noAgent == true)
                     }.disabled(loadedJob == nil || isSaving)
@@ -564,6 +570,13 @@ struct CronEditEditor: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    private func editSection(_ title: String) -> some View {
+        Text(title)
+            .dockFont(.body, weight: .semibold)
+            .foregroundStyle(DockCategoryTone.automation.color)
+            .accessibilityAddTraits(.isHeader)
     }
 
     @MainActor private func load() async {

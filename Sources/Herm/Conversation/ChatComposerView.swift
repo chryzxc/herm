@@ -21,7 +21,7 @@ struct ChatComposerView: View {
     /// The session's folder and branch, shown in the tray under the input.
     var worktreeBar: WorktreePicker? = nil
 
-    @State private var composerHeight: CGFloat = 44
+    @State private var composerHeight: CGFloat = ComposerLayout.minHeight
     @State private var isComposerPulsing = false
     @State private var sendKick = 0
     @State private var contextCaret = 0
@@ -587,9 +587,10 @@ struct ChatComposerView: View {
                             .buttonStyle(.dockHover)
                             .frame(width: 32, height: 32)
                             .disabled(
-                                model.isRestoringSession || model.isUpdatingSessionModel
+                                model.isRestoringSession || !model.sessionActionsReady || model.isUpdatingSessionModel
                                     || (!speechInput.isRecording && !showStop
-                                        && (!canSubmit || (!isSteeringTurn && model.isSending)))
+                                        && (!canSubmit || model.isUpdatingSessionFast
+                                            || (!isSteeringTurn && model.isSending)))
                             )
                             .accessibilityLabel(
                                 speechInput.isRecording
@@ -658,8 +659,7 @@ struct ChatComposerView: View {
             .background {
                 let skin = DockSkinPresentation.current
                 if skin.composer != .line {
-                    DockThemeShape(cornerRadius: skin.composerRadius, role: .pane)
-                        .dockSurfaceFill(Color.dockSurface4, stroke: Color.dockBorderLight)
+                    Color.clear.dockWell(.sunken, radius: skin.composerRadius, role: .pane, stroke: .dockBorderLight)
                 }
             }
         }
@@ -683,6 +683,7 @@ struct ChatComposerView: View {
             effortModel: model,
             effortSelection: reasoningVariantSelection
         )
+        .disabled(!model.sessionActionsReady)
         .dockFont(.control)
         .foregroundStyle(Color.dockSecondaryText)
         .dockPadding(.horizontal, 8)
@@ -1265,6 +1266,7 @@ private struct PinnedWorkStrip: View {
 
 /// Hermes background terminal processes for the current session, with a stop button each.
 private struct RunningProcessesStrip: View {
+    @Environment(\.dockHostVisible) private var hostVisible
     @ObservedObject var control: ControlCenterModel
     var isTurnActive = false
     @State private var isExpanded = false
@@ -1273,8 +1275,8 @@ private struct RunningProcessesStrip: View {
     var body: some View {
         content
             // Processes outlive the turn that started them, so poll while a turn runs or any are listed.
-            .task(id: isTurnActive || !control.processes.isEmpty) {
-                guard isTurnActive || !control.processes.isEmpty else { return }
+            .task(id: hostVisible && (isTurnActive || !control.processes.isEmpty)) {
+                guard hostVisible && (isTurnActive || !control.processes.isEmpty) else { return }
                 while !Task.isCancelled {
                     await control.pollProcesses()
                     try? await Task.sleep(for: .seconds(5))

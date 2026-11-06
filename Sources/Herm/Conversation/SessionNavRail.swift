@@ -13,10 +13,10 @@ enum SessionAttentionDot: Equatable {
     var color: Color {
         switch self {
         case .warning: .dockWarning
-        case .clarification: .dockAccent
+        case .clarification: DockStatusTone.working.color
         case .failure: .dockDestructive
         case .success: .dockSuccess
-        case .activity: .dockAccent
+        case .activity: DockStatusTone.working.color
         }
     }
 }
@@ -27,12 +27,13 @@ enum SessionAttentionDot: Equatable {
 struct SessionActivityGlyph: View {
     let isWorking: Bool
     let hasUnreadUpdate: Bool
+    var session: HermesSession? = nil
 
     var body: some View {
         if isWorking {
             DockActivityIndicator(state: .running, size: 10)
-        } else if hasUnreadUpdate {
-            DockActivityIndicator(state: .done, size: 10, unreadDot: true)
+        } else if hasUnreadUpdate, let session {
+            SessionUnreadReplyBadge(session: session)
         }
     }
 }

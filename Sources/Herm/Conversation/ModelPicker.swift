@@ -175,6 +175,9 @@ struct ModelPickerView: View {
                         .truncationMode(.tail)
                         .layoutPriority(1)
                 }
+                if effortModel?.sessionID != nil, effortModel?.sessionFastEnabled == true {
+                    FastModeIcon()
+                }
                 if let notice = selectedPeakNotice, notice.isPeak {
                     DockIcon(.warning, size: 11, color: Color.dockWarning)
                 }
@@ -187,6 +190,7 @@ struct ModelPickerView: View {
         .accessibilityLabel(
             "Select model\(effortStatus == nil ? "" : " and effort"), currently \(selectedOption?.displayName ?? "none")"
                 + (effortStatus.map { ", effort \($0)" } ?? "")
+                + (effortModel?.sessionID != nil && effortModel?.sessionFastEnabled == true ? ", Fast enabled" : "")
         )
         .dockSheet(isPresented: $showingEditor) {
             ModelPickerEditorView(options: options, activeID: selectedID, disabledIDs: $disabledModelIDs)
@@ -250,10 +254,7 @@ struct ModelPickerView: View {
                         model: effortModel, modelID: selectedID, selection: effortSelection, stacked: true
                     )
                     .dockPadding(10)
-                    .background(
-                        DockThemeShape(cornerRadius: DockLayout.controlRadius + 2)
-                            .dockSurfaceFill(Color.dockSurface2, stroke: Color.dockBorderLight)
-                    )
+                    .dockWell()
                 } else {
                     Color.dockBorder.frame(height: DockLayout.hairline)
                 }
@@ -411,6 +412,19 @@ struct ModelPickerView: View {
     }
 }
 
+private struct FastModeIcon: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+
+    var body: some View {
+        DockIcon(.lightning, size: 11, color: .dockSecondaryText)
+            .scaleEffect(appeared || !DockMotion.isEnabled(reduceMotion: reduceMotion) ? 1 : 0.65)
+            .opacity(appeared || !DockMotion.isEnabled(reduceMotion: reduceMotion) ? 1 : 0)
+            .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.25), value: appeared)
+            .onAppear { appeared = true }
+    }
+}
+
 private struct ModelPickerEditorView: View {
     let options: [HermesModelOption]
     let activeID: String?
@@ -477,27 +491,7 @@ private struct ModelPickerEditorView: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 8) {
-            DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
-            DockTextField("Search models", text: $query)
-                .textFieldStyle(.plain)
-                .dockFont(.body)
-                .foregroundStyle(Color.dockPrimaryText)
-                .accessibilityLabel("Search models")
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                } label: {
-                    DockIcon(.xCircle, size: 13, color: .dockMetadataText)
-                }
-                .buttonStyle(.dockHover)
-                .help("Clear search")
-                .accessibilityLabel("Clear search")
-            }
-        }
-        .dockPadding(.horizontal, 10)
-        .frame(maxWidth: .infinity, minHeight: 32)
-        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface))
+        DockSearchField(placeholder: "Search models", text: $query)
     }
 
     private func providerSection(_ group: ModelPickerProviderGroup) -> some View {
@@ -533,9 +527,7 @@ private struct ModelPickerEditorView: View {
                     modelRow(option, provider: group.provider)
                 }
             }
-            .background(
-                DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(
-                    Color.dockSurface2, stroke: Color.dockBorderLight))
+            .dockWell()
         }
     }
 

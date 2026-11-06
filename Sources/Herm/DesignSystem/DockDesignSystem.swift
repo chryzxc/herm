@@ -179,6 +179,7 @@ struct DockStatusPill: View {
 
 /// Uppercase monospaced section label with an optional live count.
 struct DockSectionLabel: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
     var count: Int?
 
@@ -190,6 +191,8 @@ struct DockSectionLabel: View {
             if let count {
                 Text("\(count)")
                     .dockFont(.sectionLabel).monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(DockMotion.animation(reduceMotion: reduceMotion), value: count)
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
@@ -280,6 +283,7 @@ struct DockNavRow: View {
                         ? style.background
                         : isSelected || isHovering ? style.primaryText : style.secondaryText
                 )
+                .scaleEffect(isSelected ? 1.08 : 1)
                 .frame(width: 18)
                 Text(title)
                     .dockFont(
@@ -331,9 +335,12 @@ struct DockRailButton: View {
         Button(action: action) {
             DockIcon(
                 icon, size: 17, weight: isSelected ? .fill : .regular,
-                color: isSelected || isHovering ? style.primaryText : style.secondaryText
+                color: isSelected && style.theme.style.selection == .invert
+                    ? style.background : isSelected || isHovering ? style.primaryText : style.secondaryText
             )
+            .scaleEffect(isSelected ? 1.08 : 1)
             .frame(width: 38, height: 38)
+            .dockSelectionBackground(shape, active: isSelected, fill: style.selectedFill, theme: style.theme)
             .background(shape.fill(!isSelected && isHovering ? style.accent.opacity(0.14) : .clear))
             .overlay(alignment: .topTrailing) {
                 if showsUpdateBadge {

@@ -184,6 +184,7 @@ extension HermesReasoningVariant: Comparable {
 /// Standard / Fast as a two-way capsule whose thumb slides to the chosen side, matching the effort bar.
 struct ComposerSpeedSwitch: View {
     @Binding var isFast: Bool
+    var isPending = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let height: CGFloat = 24
@@ -208,7 +209,7 @@ struct ComposerSpeedSwitch: View {
         .onTapGesture { isFast.toggle() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Speed")
-        .accessibilityValue(isFast ? "Fast" : "Standard")
+        .accessibilityValue("\(isFast ? "Fast" : "Standard")\(isPending ? ", changing" : "")")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { isFast.toggle() }
     }

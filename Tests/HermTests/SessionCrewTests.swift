@@ -18,6 +18,22 @@ struct SessionCrewTests {
             active: active, outcome: active ? nil : "Completed")
     }
 
+    @Test func completedToolMarksArePreparedInOrderAndLiveMarksStayDynamic() throws {
+        var calls = (0..<1_000).map { index in
+            row("tool-\(index)", .tool, parent: "root", start: Double(index), end: Double(index + 1))
+        }
+        for index in calls.indices { calls[index].toolName = "terminal" }
+        calls[0].active = true
+        let crew = SessionCrewProjection(rows: [row("root", .turn, end: 1_001)] + calls)
+        let geometry = SessionActivityToolGeometry(lanes: SessionActivityLanes(crew), origin: origin)
+        let segments = geometry.segmentsByActor["root"] ?? []
+        #expect(segments.count == 2)
+        let first = try #require(segments.first)
+        let last = try #require(segments.last)
+        if case .dynamic(let live) = first { #expect(live.id == "tool-0") } else { Issue.record("Missing live mark") }
+        if case .batch = last {} else { Issue.record("Completed marks were not batched") }
+    }
+
     @Test func selectionFollowsExactOwnershipAndRequests() throws {
         let rows = [
             row("one", .turn), row("a", .agent, parent: "one"),

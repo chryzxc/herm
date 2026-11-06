@@ -342,7 +342,7 @@ struct SessionRailCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .dockCard(padding: 16, isQuiet: true)
+        .dockCard(padding: 16)
     }
 
     private func changesRow(_ changes: SessionRailChangeSummary) -> some View {

@@ -209,17 +209,25 @@ extension DockModel {
         guard !pending.isEmpty else { return Task<Void, Never> {} }
         let generation = sessionResumeGeneration
         return Task { @MainActor in
-            let loaded = await Task.detached(priority: .userInitiated) { () -> [(UUID, [Data])] in
+            let worker = Task.detached(priority: .userInitiated) { () -> [(UUID, [Data])] in
                 pending.map { entry in
                     (
                         entry.messageID,
-                        entry.fileURLs.compactMap { url in
-                            loadData.map { loader in loader(url) } ?? (try? Data(contentsOf: url))
+                        entry.fileURLs.compactMap { url -> Data? in
+                            guard !Task.isCancelled else { return nil }
+                            return loadData.map { loader in loader(url) } ?? Self.transcriptImageData(url)
                         }
                     )
                 }
-            }.value
-            guard generation == sessionResumeGeneration, sessionID == requestedSessionID else { return }
+            }
+            let loaded = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard !Task.isCancelled, generation == sessionResumeGeneration, sessionID == requestedSessionID else {
+                return
+            }
             // One `messages` publication for the whole batch, not one per image.
             var updated = messages
             var changed = false
@@ -242,16 +250,35 @@ extension DockModel {
         _ value: Any?,
         defaultBotProfileID: String?,
         defaultBotDisplayName: String?
-    ) async -> RestoredTranscript {
+    ) async -> (RestoredTranscript, [UUID: StoredMessageReference]) {
         let rows = UncheckedTranscriptValue(value: value)
-        return await Task.detached(priority: .userInitiated) {
+        let task = Task.detached(priority: .userInitiated) {
+            let restored = parseMessages(
+                rows.value,
+                defaultBotProfileID: defaultBotProfileID,
+                defaultBotDisplayName: defaultBotDisplayName,
+                cancelOnTask: true)
+            return UncheckedTranscriptValue(
+                value: (restored, StoredMessageReference.references(rows: rows.value, rowIDs: restored.rowIDs)))
+        }
+        return await withTaskCancellationHandler {
+            await task.value.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    static func projectStoredRowsOffMain(_ value: [[String: Any]]) async -> [[String: Any]] {
+        let rows = UncheckedTranscriptValue(value: value)
+        let task = Task.detached(priority: .userInitiated) {
             UncheckedTranscriptValue(
-                value: parseMessages(
-                    rows.value,
-                    defaultBotProfileID: defaultBotProfileID,
-                    defaultBotDisplayName: defaultBotDisplayName
-                ))
-        }.value.value
+                value: TranscriptHistoryPaging.displayRows(fromStoredRows: rows.value, cancelOnTask: true))
+        }
+        return await withTaskCancellationHandler {
+            await task.value.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     /// The cpipe plugin queues slash commands as an expanded prompt, and that
@@ -265,7 +292,8 @@ extension DockModel {
     }
 
     nonisolated static func parseMessages(
-        _ value: Any?, defaultBotProfileID: String? = nil, defaultBotDisplayName: String? = nil
+        _ value: Any?, defaultBotProfileID: String? = nil, defaultBotDisplayName: String? = nil,
+        cancelOnTask: Bool = false
     ) -> RestoredTranscript {
         guard let rows = value as? [[String: Any]] else {
             return RestoredTranscript(messages: [], pendingImages: [])
@@ -278,6 +306,7 @@ extension DockModel {
         var pendingActivity: [ActiveToolCall] = []
         var turnStartedAt: Date?
         for row in rows {
+            if cancelOnTask && Task.isCancelled { break }
             guard let role = row["role"] as? String else { continue }
             let rowTimestamp = (row["timestamp"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
             // `display_reasoning` is `reasoning` minus the commentary shown below.
@@ -343,8 +372,10 @@ extension DockModel {
                 continue
             }
             let persisted = persistedImageContent(from: messageText(row["text"] ?? row["content"]))
-            let text = persisted.text
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !persisted.imageFileURLs.isEmpty
+            let imageURLs =
+                persisted.imageFileURLs.isEmpty ? embeddedTranscriptImages(row["content"]) : persisted.imageFileURLs
+            let text = role == "user" ? userTextWithoutRecalledMemory(persisted.text) : persisted.text
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !imageURLs.isEmpty
             else { continue }
             let timestamp = rowTimestamp ?? Date()
             guard role == "user" || role == "assistant" || role == "hermes" || role == "system" else { continue }
@@ -405,16 +436,45 @@ extension DockModel {
             if let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id") {
                 rowIDs[rowID] = message.id
             }
-            if !persisted.imageFileURLs.isEmpty {
+            if !imageURLs.isEmpty {
                 pendingImages.append(
                     RestoredTranscript.PendingImages(
                         messageID: message.id,
-                        fileURLs: persisted.imageFileURLs
+                        fileURLs: imageURLs
                     ))
             }
         }
         return RestoredTranscript(
             messages: messages, pendingImages: pendingImages, rowIDs: rowIDs, trailingActivity: pendingActivity)
+    }
+
+    nonisolated static func userTextWithoutRecalledMemory(_ text: String) -> String {
+        let marker = "\n\n<memory-context>\n[System note: The following is recalled memory context, NOT new user input."
+        guard text.hasSuffix("</memory-context>"), let range = text.range(of: marker, options: .backwards) else {
+            return text
+        }
+        return String(text[..<range.lowerBound])
+    }
+
+    nonisolated static func embeddedTranscriptImages(_ content: Any?) -> [URL] {
+        guard let parts = content as? [[String: Any]] else { return [] }
+        return parts.compactMap { part in
+            guard part["type"] as? String == "image_url",
+                let image = part["image_url"] as? [String: Any],
+                let value = image["url"] as? String, value.lowercased().hasPrefix("data:image/"),
+                let url = URL(string: value)
+            else { return nil }
+            return url
+        }
+    }
+
+    nonisolated static func transcriptImageData(_ url: URL) -> Data? {
+        if url.isFileURL { return try? Data(contentsOf: url) }
+        let value = url.absoluteString
+        guard value.lowercased().hasPrefix("data:image/"), let comma = value.firstIndex(of: ","),
+            value[..<comma].lowercased().hasSuffix(";base64")
+        else { return nil }
+        return Data(base64Encoded: String(value[value.index(after: comma)...]))
     }
 
     /// Tool calls an assistant history row requested, in either the OpenAI

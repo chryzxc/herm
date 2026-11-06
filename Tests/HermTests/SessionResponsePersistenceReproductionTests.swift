@@ -222,6 +222,37 @@ struct SessionResponsePersistenceReproductionTests {
         expect(model.messages.filter { $0.role == .user }.count == 1)
     }
 
+    @Test func recalledMemoryDoesNotDuplicateConfirmedMessageOnReturn() async throws {
+        let rpc = ResponsePersistenceRPCClient()
+        let model = DockModel(rpcClient: rpc)
+        defer { model.delegationMonitoringTask?.cancel() }
+        #expect(await model.resumeSession(session("origin"), reportFailure: true))
+        let prompt = "Fix this error"
+        model.pendingSessionSends.append(
+            SessionPendingSend(
+                id: UUID(), owner: model.composerDraftKey,
+                snapshot: SessionComposerDraft(
+                    text: prompt, images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+                    attachmentError: nil, pdfError: nil),
+                message: ChatMessage(role: .user, text: prompt), baselineRowID: 0,
+                submittedText: prompt, phase: .acknowledged))
+        rpc.resumeRows = [
+            [
+                "row_id": 1, "role": "user",
+                "content": prompt + "\n\n<memory-context>\n"
+                    + "[System note: The following is recalled memory context, NOT new user input. Background.]\n"
+                    + "Recall\n</memory-context>",
+            ]
+        ]
+        #expect(await model.resumeSession(session("other"), reportFailure: true))
+        #expect(await model.resumeSession(session("origin"), reportFailure: true))
+        expect(model.pendingSessionSends.isEmpty)
+        expect(model.messages.filter { $0.role == .user }.map(\.text) == [prompt])
+        expect(!model.messages.contains { $0.text.contains("could not confirm") })
+        expect(
+            DockModel.userTextWithoutRecalledMemory("Explain <memory-context> tags") == "Explain <memory-context> tags")
+    }
+
     @Test func capacityKeepsDequeuedPromptAndAttachments() async throws {
         let rpc = ResponsePersistenceRPCClient()
         let model = DockModel(rpcClient: rpc)

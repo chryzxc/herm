@@ -25,6 +25,8 @@ struct RestoredTranscript {
 
 @MainActor
 final class DockModel: ObservableObject {
+    let presentationDemand = DockPresentationDemand()
+    lazy var workspacePresentationChanges = makeWorkspacePresentationChanges()
     var interruptionCoordinator: HermInterruptionCoordinator?
     var completionNoticeIDs: [String: String] = [:]
     var quickSessionOwners: [String: QuickDestination] = [:]
@@ -254,8 +256,14 @@ final class DockModel: ObservableObject {
     @Published var sessionReasoningWire: String?
     /// Hermes' live service tier for the session (`fast` in session info); nil until reported.
     @Published var sessionFastEnabled: Bool?
+    @Published var pendingSessionFastEnabled: Bool?
     @Published var isUpdatingSessionFast = false
+    var sessionFastRevision = 0
     var sessionInfoSequencesBySessionID: [String: Int] = [:]
+    @Published var sessionWorkspace: HermesSessionWorkspace?
+    var sessionWorkspaceRevision = 0
+    var pendingWorktreeDirectory: String?
+    var pendingWorktreeDirectories: [String: String] = [:]
     @Published var isUpdatingSessionReasoning = false
     @Published var defaultReasoningVariant: HermesReasoningVariant?
     @Published var draftReasoningVariant: HermesReasoningVariant?
@@ -281,6 +289,7 @@ final class DockModel: ObservableObject {
     let gateway = HermesGateway()
     var richGenerationContextProvider: ((QuickDestination) -> RichGenerationContext)?
     let sessionRPCClient: HermesRPCClientProtocol
+    lazy var sessionUnreadReplies = SessionUnreadReplies(client: sessionRPCClient)
     var quickWorkflowClient: HermesRPCClientProtocol { sessionRPCClient }
     let interruptRPC: HermesControlRPC
     let eventRouter = HermesEventRouter()
@@ -400,6 +409,40 @@ final class DockModel: ObservableObject {
     let agentStateStore: SessionAgentStateStore
     let agentStateWriter: SessionAgentStateWriter
     var sessionResumeGeneration = 0
+    let sessionTranscriptCache = SessionTranscriptCache()
+    @Published var sessionTranscriptPreview: SessionTranscriptPreview?
+    @Published var sessionTranscriptLoadState: SessionTranscriptLoadState = .ready
+    var sessionActionsReady: Bool { sessionTranscriptLoadState.allowsActions }
+    var displayedTranscriptMessages: [ChatMessage] { sessionTranscriptPreview?.messages ?? messages }
+    var cachedTranscriptPresentationID: (profileID: String?, sessionID: String, value: String)?
+    var transcriptPresentationID: String? {
+        guard let sessionID else { return nil }
+        let stored = sessionStorageID.flatMap { id in
+            id == sessionID || storageIDsByRuntimeID[sessionID] == id ? id : nil
+        }
+        let owner = stored ?? sessionID
+        if let cached = cachedTranscriptPresentationID,
+            cached.profileID == sessionProfileID, cached.sessionID == owner
+        {
+            return cached.value
+        }
+        let value = WorkspaceIdentity.session(profileID: sessionProfileID, sessionID: owner)
+        cachedTranscriptPresentationID = (sessionProfileID, owner, value)
+        return value
+    }
+    var sessionResumeTask: Task<Void, Never>?
+    var sessionResumeWorkTask: Task<Bool, Never>?
+    var sessionResumeWorkToken: UUID?
+    var transcriptTimelineTask: Task<Void, Never>?
+    var runtimeModelOptionsTask: Task<Void, Never>?
+    var runtimeModelOptionsRequestKey: (sessionID: String?, profileID: String?, generation: Int)?
+    var sessionPreviewImageTask: Task<Void, Never>?
+    var sessionTranscriptImageTask: Task<Void, Never>?
+    var gatewayAuthenticationObserver: AnyCancellable?
+    var sessionSwitchStartedAt: UInt64 = 0
+    var sessionSwitchToken = ""
+    var sessionSwitchCachedLayoutRecorded = false
+    var sessionSwitchFreshLayoutRecorded = false
     /// Older rows of the active transcript still stored in Hermes. Nil when the
     /// whole transcript was delivered inline (legacy resume or a new session).
     var transcriptHistoryCursor: TranscriptHistoryCursor?
@@ -523,6 +566,33 @@ final class DockModel: ObservableObject {
                 DeveloperWorkflowModel.shared.turnBaselines.removeAll()
             }
         }
+        gatewayAuthenticationObserver = NotificationCenter.default.publisher(for: .hermGatewayAuthenticationChanged)
+            .sink { [weak self] notification in
+                let changedURL = notification.object as? URL
+                MainActor.assumeIsolated {
+                    let settings = GatewayConnectionStore.shared.launchSettings
+                    guard let self, settings.authentication == .signIn, let changedURL,
+                        (try? GatewayConnectionSettings.normalizedURL(settings.remoteURL)) == changedURL
+                            || (settings.mode == .cloud && changedURL == GatewayWebAuthentication.portalURL)
+                    else {
+                        return
+                    }
+                    self.sessionTranscriptCache.removeAll()
+                    self.sessionTranscriptPreview = nil
+                    self.sessionResumeTask?.cancel()
+                    self.sessionResumeWorkTask?.cancel()
+                    self.transcriptTimelineTask?.cancel()
+                    self.sessionPreviewImageTask?.cancel()
+                    self.sessionTranscriptImageTask?.cancel()
+                    self.runtimeModelOptionsTask?.cancel()
+                    self.sessionResumeGeneration &+= 1
+                    if self.sessionID != nil {
+                        self.sessionTranscriptLoadState = .failed(
+                            "Connection changed. Retry loading this conversation.")
+                        self.status = .offline
+                    }
+                }
+            }
     }
 
     var sendQueuedPromptAfterInterrupt = false

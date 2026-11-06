@@ -13,6 +13,14 @@ extension DockModel {
         guard !hasShutDown else { return }
         hasShutDown = true
         streamingMessageFlushTask?.cancel()
+        sessionResumeTask?.cancel()
+        sessionResumeWorkTask?.cancel()
+        transcriptTimelineTask?.cancel()
+        runtimeModelOptionsTask?.cancel()
+        sessionPreviewImageTask?.cancel()
+        sessionTranscriptImageTask?.cancel()
+        gatewayAuthenticationObserver = nil
+        sessionTranscriptCache.removeAll()
         sessionLoadTask?.cancel()
         delegationRefreshTask?.cancel()
         delegationMonitoringTask?.cancel()

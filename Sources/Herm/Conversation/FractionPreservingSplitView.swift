@@ -28,6 +28,8 @@ final class FractionPreservingSplitView: NSSplitView {
         didSet { if oldValue != minimumTrailingWidth { invalidatePositions() } }
     }
     private var userAdjusted = false
+    private(set) var isDraggingDivider = false
+    var onUserResizeEnded: (() -> Void)?
     private var expandedLeadingWidth: CGFloat?
     private var lastAppliedWidth: CGFloat = 0
 
@@ -94,7 +96,10 @@ final class FractionPreservingSplitView: NSSplitView {
     override func mouseDown(with event: NSEvent) {
         guard !isLeadingCollapsed, !isTrailingCollapsed else { return }
         userAdjusted = true
+        isDraggingDivider = true
         super.mouseDown(with: event)
+        isDraggingDivider = false
+        onUserResizeEnded?()
     }
 
     override func layout() {

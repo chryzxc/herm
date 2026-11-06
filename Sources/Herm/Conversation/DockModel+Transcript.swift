@@ -15,6 +15,7 @@ extension DockModel {
         minimumRowCount: Int,
         fallbackResumeParams: [String: Any]
     ) async throws -> (rows: [[String: Any]], cursor: TranscriptHistoryCursor?) {
+        let generation = sessionResumeGeneration
         let cursor = TranscriptHistoryCursor(storageSessionID: storageSessionID, profileID: profileID)
         let limit = min(
             TranscriptHistoryPaging.maximumPageRowLimit,
@@ -27,7 +28,11 @@ extension DockModel {
                 minimumDisplayRows: ConversationMessageWindow.initialLimit
             )
             return (loaded.rows, loaded.cursor)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
+            try Task.checkCancellation()
+            guard generation == sessionResumeGeneration else { throw CancellationError() }
             DebugLog.write(
                 "model: transcript page read failed, resuming inline: \(Self.safeUserDiagnostic(error.localizedDescription))"
             )
@@ -35,7 +40,16 @@ extension DockModel {
             params.removeValue(forKey: "defer_history")
             params.removeValue(forKey: "omit_messages")
             let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: params)
-            guard let rows = result["messages"] as? [[String: Any]] else {
+            try Task.checkCancellation()
+            guard generation == sessionResumeGeneration else { throw CancellationError() }
+            guard let requested = params["session_id"] as? String,
+                Self.resumeResponseProvesSessionOwnership(
+                    requestedSessionID: requested,
+                    resolvedSessionID: (result["session_id"] as? String) ?? requested,
+                    result: result),
+                Self.stableSessionID(from: result).map({ $0 == storageSessionID }) ?? true,
+                let rows = result["messages"] as? [[String: Any]]
+            else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
             return (rows, nil)
@@ -55,7 +69,10 @@ extension DockModel {
         var cursor = start
         var collected: [[String: Any]] = []
         var pagesRead = 0
+        let generation = sessionResumeGeneration
         while cursor.hasMore, pagesRead < maximumPages {
+            try Task.checkCancellation()
+            guard generation == sessionResumeGeneration else { throw CancellationError() }
             guard
                 let path = TranscriptHistoryPaging.pagePath(
                     sessionID: cursor.storageSessionID,
@@ -64,12 +81,22 @@ extension DockModel {
                     offset: cursor.nextOffset
                 )
             else { throw HermesGateway.GatewayError.malformedResponse }
+            let fetchStartedAt = DispatchTime.now().uptimeNanoseconds
             guard let page = TranscriptHistoryPaging.page(from: try await sessionRPCClient.fetchHTTP(path)) else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
+            try Task.checkCancellation()
+            guard generation == sessionResumeGeneration else { throw CancellationError() }
+            recordSessionSwitch(
+                "history_fetch", startedAt: fetchStartedAt, extra: "page=\(pagesRead + 1) rows=\(page.returned)")
             pagesRead += 1
             let fresh = TranscriptHistoryPaging.advance(&cursor, with: page, limit: limit)
-            collected = TranscriptHistoryPaging.displayRows(fromStoredRows: fresh) + collected
+            let projectStartedAt = DispatchTime.now().uptimeNanoseconds
+            let projected = await Self.projectStoredRowsOffMain(fresh)
+            try Task.checkCancellation()
+            guard generation == sessionResumeGeneration else { throw CancellationError() }
+            recordSessionSwitch("history_project", startedAt: projectStartedAt, extra: "rows=\(fresh.count)")
+            collected = projected + collected
             if let targetRowID {
                 if cursor.seenRowIDs.contains(targetRowID) { break }
             } else if collected.filter({ !(($0["text"] as? String) ?? "").isEmpty }).count >= minimumDisplayRows {
@@ -280,11 +307,14 @@ extension DockModel {
     /// navigator covering loaded messages only.
     func loadTranscriptTimeline(generation: Int) {
         guard let cursor = transcriptHistoryCursor else { return }
-        Task { @MainActor in
+        transcriptTimelineTask?.cancel()
+        transcriptTimelineTask = Task { @MainActor in
             var entries: [TranscriptTimelineEntry] = []
             var after = 0
             do {
                 for _ in 0..<TranscriptHistoryPaging.maximumTimelinePages {
+                    try Task.checkCancellation()
+                    guard generation == sessionResumeGeneration else { return }
                     guard
                         let path = TranscriptHistoryPaging.timelinePath(
                             sessionID: cursor.storageSessionID,
@@ -295,6 +325,8 @@ extension DockModel {
                             from: try await sessionRPCClient.fetchHTTP(path)
                         )
                     else { break }
+                    try Task.checkCancellation()
+                    guard generation == sessionResumeGeneration else { return }
                     entries += page.entries
                     guard let next = page.nextCursor, next > after else { break }
                     after = next

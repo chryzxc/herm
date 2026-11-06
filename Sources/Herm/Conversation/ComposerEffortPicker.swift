@@ -74,17 +74,21 @@ struct ComposerEffortControls: View {
     /// Always present in the stacked layout so the row does not jump; disabled when Hermes offers no Fast tier.
     private var speedSwitch: some View {
         let available = model.sessionID != nil && offersFast
-        return ComposerSpeedSwitch(isFast: fastBinding)
+        return ComposerSpeedSwitch(isFast: fastBinding, isPending: model.isUpdatingSessionFast)
             .frame(width: 124)
             .disabled(!available || model.isUpdatingSessionFast)
             .help(
-                model.sessionID == nil
-                    ? "Start a chat to change speed."
-                    : offersFast ? "Fast uses priority processing." : "Fast is not available for this model.")
+                model.isUpdatingSessionFast
+                    ? "Changing speed…"
+                    : model.sessionID == nil
+                        ? "Start a chat to change speed."
+                        : offersFast ? "Fast uses priority processing." : "Fast is not available for this model.")
     }
 
     private var fastBinding: Binding<Bool> {
-        Binding(get: { model.sessionFastEnabled ?? false }, set: { model.updateSessionFast($0) })
+        Binding(
+            get: { model.pendingSessionFastEnabled ?? model.sessionFastEnabled ?? false },
+            set: { model.updateSessionFast($0) })
     }
 
     var body: some View {

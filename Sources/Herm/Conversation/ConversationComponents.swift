@@ -9,7 +9,7 @@ struct ThinkingDots: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        if reduceMotion {
+        if !DockMotion.isEnabled(reduceMotion: reduceMotion) {
             dots(at: 0)
         } else {
             // This indicator is informative, not motion-critical. Ten updates a
@@ -316,6 +316,9 @@ extension EnvironmentValues {
 @MainActor
 final class ConversationScrollController {
     weak var clipView: NSClipView?
+    var allowsOccludedPreparationForTesting = false
+    var markdownMeasurementContext: NativeMarkdownDocumentContainerView.MeasurementContext?
+    var preparedPage: ConversationPreparedPage?
     private var adjustmentGeneration: UInt64 = 0
     private(set) var isAdjustingScroll = false
     private(set) var isUserScrolling = false
@@ -787,15 +790,7 @@ struct BotDispatchCard: View {
                         .foregroundStyle(Color.dockSecondaryText)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .dockPadding(DockSpacing.group)
-                        .background {
-                            RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
-                                .dockSurfaceFill(Color.dockSurface2)
-                        }
-                        .overlay {
-                            RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
-                                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-                        }
+                        .dockCard(padding: DockSpacing.group)
                         .transition(.opacity)
                 }
             }
@@ -858,7 +853,72 @@ extension BotActivityRecord {
 
 /// The tool calls behind one response, shown above its bubble. While the
 /// response streams the list stays open and grows per call; once complete it
-/// collapses to a "Worked for …" summary the reader can expand.
+/// collapses to a "Worked for …" summary when there is a visible reply.
+struct TurnActivitySegment: Identifiable, Equatable {
+    var calls: [ActiveToolCall]
+    var records: [BotActivityRecord]
+    var id: String { calls[0].id }
+}
+
+@MainActor
+final class TurnActivityPreparation {
+    struct Projection {
+        let segments: [TurnActivitySegment]
+        let signature: [String]
+    }
+    private var previousActivity: [ActiveToolCall]?
+    private var previousDispatches: [String: BotActivityRecord] = [:]
+    private var projection = Projection(segments: [], signature: [])
+    private(set) var preparationCount = 0
+
+    func value(activity: [ActiveToolCall], dispatches: [String: BotActivityRecord]) -> Projection {
+        guard previousActivity != activity || previousDispatches != dispatches else { return projection }
+        preparationCount += 1
+        var segments: [TurnActivitySegment] = []
+        var signature: [String] = []
+        segments.reserveCapacity(activity.count)
+        signature.reserveCapacity(activity.count)
+        for call in activity {
+            let record = dispatches[call.id]
+            signature.append("\(call.id):\(call.isComplete):\(record?.state.rawValue ?? "")")
+            if let record {
+                if !segments.isEmpty, !segments[segments.count - 1].records.isEmpty {
+                    segments[segments.count - 1].calls.append(call)
+                    segments[segments.count - 1].records.append(record)
+                } else {
+                    segments.append(.init(calls: [call], records: [record]))
+                }
+            } else {
+                segments.append(.init(calls: [call], records: []))
+            }
+        }
+        previousActivity = activity
+        previousDispatches = dispatches
+        projection = Projection(segments: segments, signature: signature)
+        return projection
+    }
+}
+
+private struct EquatableActivityStep<Content: View>: View, Equatable {
+    let segment: TurnActivitySegment
+    let thoughtOpen: Bool
+    let diffOpen: Bool
+    let rosterRevision: Int
+    let workspace: String?
+    let reasoningID: ObjectIdentifier?
+    let motionEnabled: Bool
+    let themeRevision: Int
+    let content: Content
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.segment == rhs.segment && lhs.thoughtOpen == rhs.thoughtOpen && lhs.diffOpen == rhs.diffOpen
+            && lhs.rosterRevision == rhs.rosterRevision && lhs.workspace == rhs.workspace
+            && lhs.reasoningID == rhs.reasoningID && lhs.motionEnabled == rhs.motionEnabled
+            && lhs.themeRevision == rhs.themeRevision
+    }
+    var body: some View { content }
+}
+
 struct TurnActivityView: View, Equatable {
     #if DEBUG
         @Environment(\.conversationRowEvaluation) private var evaluation
@@ -867,6 +927,7 @@ struct TurnActivityView: View, Equatable {
     /// Turn start while streaming; nil once the response is complete.
     let runningSince: Date?
     let duration: TimeInterval?
+    var expandsByDefault = false
     var bot: BotSummary? = nil
     var botAvatar: Data? = nil
     /// Bot DMs keyed by the tool call that sent them; those calls render as a card.
@@ -882,16 +943,18 @@ struct TurnActivityView: View, Equatable {
     /// Live reasoning for an open, unfinished thought row; excluded from `==`.
     var liveReasoning: LiveReasoningText? = nil
     @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
-    @State private var isExpanded = false
+    @State private var expansionOverride: Bool?
     @State private var expandedThoughtIDs: Set<String> = []
     @State private var expandedDiffIDs: Set<String> = []
+    @State private var preparation = TurnActivityPreparation()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The transcript re-renders on every DockModel publication; unchanged
     /// turns skip their body instead of re-laying out each tool row.
     nonisolated static func == (lhs: TurnActivityView, rhs: TurnActivityView) -> Bool {
         lhs.activity == rhs.activity && lhs.runningSince == rhs.runningSince
-            && lhs.duration == rhs.duration && lhs.bot == rhs.bot && lhs.crew == rhs.crew
+            && lhs.duration == rhs.duration && lhs.expandsByDefault == rhs.expandsByDefault
+            && lhs.bot == rhs.bot && lhs.crew == rhs.crew
             && lhs.dispatches == rhs.dispatches && lhs.botLiveSteps == rhs.botLiveSteps
             && lhs.rosterRevision == rhs.rosterRevision
     }
@@ -900,10 +963,12 @@ struct TurnActivityView: View, Equatable {
         #if DEBUG
             let _ = evaluation?("turn-activity", 0)
         #endif
-        VStack(alignment: .leading, spacing: 2) {
+        let prepared = preparation.value(activity: activity, dispatches: dispatches)
+        let isExpanded = expansionOverride ?? expandsByDefault
+        return VStack(alignment: .leading, spacing: 2) {
             if let runningSince {
                 // One transaction keeps each new step and the Bot's movement together.
-                steps
+                steps(prepared.segments)
                 let phase = SignalTrace.Phase(activity: activity)
                 let crew = bot.map { lead in self.crew.filter { $0.id != lead.id } } ?? []
                 DockLiveActivityDecoration {
@@ -956,7 +1021,7 @@ struct TurnActivityView: View, Equatable {
             } else {
                 HStack {
                     Button {
-                        withAnimation(disclosureMotion) { isExpanded.toggle() }
+                        withAnimation(disclosureMotion) { expansionOverride = !isExpanded }
                     } label: {
                         HStack(spacing: 6) {
                             Text(summary).dockFont(.body, weight: .medium)
@@ -971,17 +1036,17 @@ struct TurnActivityView: View, Equatable {
                     .transition(.opacity)
                 }
                 if isExpanded {
-                    steps
-                } else if segments.contains(where: { !$0.records.isEmpty }) {
+                    steps(prepared.segments)
+                } else if prepared.segments.contains(where: { !$0.records.isEmpty }) {
                     // Bot interactions stay in the conversation as pills, collapsed or not.
                     VStack(alignment: .leading, spacing: 6) {
-                        ForEach(segments.filter { !$0.records.isEmpty }) { card($0) }
+                        ForEach(prepared.segments.filter { !$0.records.isEmpty }) { card($0) }
                     }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(stepMotion, value: stepSignature)
+        .animation(stepMotion, value: prepared.signature)
         .animation(stepMotion, value: runningSince != nil)
     }
 
@@ -1008,62 +1073,42 @@ struct TurnActivityView: View, Equatable {
     private var motionEnabled: Bool { !reduceMotion && DockThemeStyle.current.animates }
     private var stepMotion: Animation? { motionEnabled ? .spring(response: 0.38, dampingFraction: 0.86) : nil }
     private var disclosureMotion: Animation? { motionEnabled ? .dockEase(duration: 0.18) : nil }
-    private var stepSignature: [String] {
-        activity.map { "\($0.id):\($0.isComplete):\(dispatches[$0.id]?.state.rawValue ?? "")" }
-    }
-
-    /// One step, or a run of consecutive Bot DMs shown as one card.
-    private struct Segment: Identifiable {
-        let calls: [ActiveToolCall]
-        let records: [BotActivityRecord]
-        var id: String { calls[0].id }
-    }
-
-    private var segments: [Segment] {
-        var result: [Segment] = []
-        for call in activity {
-            if let record = dispatches[call.id] {
-                if let last = result.last, !last.records.isEmpty {
-                    result[result.count - 1] = Segment(calls: last.calls + [call], records: last.records + [record])
-                    continue
-                }
-                result.append(Segment(calls: [call], records: [record]))
-            } else {
-                result.append(Segment(calls: [call], records: []))
-            }
-        }
-        return result
-    }
-
-    private func card(_ segment: Segment) -> some View {
+    private func card(_ segment: TurnActivitySegment) -> some View {
         let assigned = zip(segment.calls, segment.records).filter { $0.0.name == "kanban_create" }.map(\.1.id)
         return BotDispatchCard(
             records: segment.records, assignedIDs: Set(assigned), botsByID: botsByID, avatars: avatars)
     }
 
-    private var steps: some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func steps(_ segments: [TurnActivitySegment]) -> some View {
+        LazyVStack(alignment: .leading, spacing: 6) {
             ForEach(segments) { segment in
                 let call = segment.calls[0]
-                Group {
-                    if !segment.records.isEmpty {
-                        card(segment)
-                    } else if call.name == ActiveToolCall.thinkingName {
-                        thoughtRow(call)
-                    } else if call.name == ActiveToolCall.compactionName {
-                        if call.isComplete { CompactionStepRow(call: call) }
-                    } else if call.diffPreview == nil, let previewWorkspace {
-                        Button {
-                            SessionMessageTabs.shared.open(.tool(call), in: previewWorkspace)
-                        } label: {
-                            toolLabel(call)
+                EquatableActivityStep(
+                    segment: segment, thoughtOpen: expandedThoughtIDs.contains(call.id),
+                    diffOpen: expandedDiffIDs.contains(call.id), rosterRevision: rosterRevision,
+                    workspace: previewWorkspace, reasoningID: liveReasoning.map(ObjectIdentifier.init),
+                    motionEnabled: motionEnabled, themeRevision: DockThemeRuntime.revision,
+                    content: Group {
+                        if !segment.records.isEmpty {
+                            card(segment)
+                        } else if call.name == ActiveToolCall.thinkingName {
+                            thoughtRow(call)
+                        } else if call.name == ActiveToolCall.compactionName {
+                            if call.isComplete { CompactionStepRow(call: call) }
+                        } else if call.diffPreview == nil, let previewWorkspace {
+                            Button {
+                                SessionMessageTabs.shared.open(.tool(call), in: previewWorkspace)
+                            } label: {
+                                toolLabel(call)
+                            }
+                            .buttonStyle(.dockHover)
+                            .help("Preview full activity details")
+                        } else {
+                            toolRow(call)
                         }
-                        .buttonStyle(.dockHover)
-                        .help("Preview full activity details")
-                    } else {
-                        toolRow(call)
                     }
-                }
+                )
+                .equatable()
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             }
@@ -1139,12 +1184,15 @@ struct TurnActivityView: View, Equatable {
                 .buttonStyle(.dockHover)
                 .accessibilityLabel(isOpen ? "Hide changes" : "Show changes")
                 if isOpen {
-                    ScrollView([.horizontal, .vertical]) {
+                    ScrollView(.vertical) {
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(PullRequestDiffPresentation.lines(diff)) { line in
-                                PullRequestDiffLineView(line: line)
+                                PullRequestDiffLineView(line: line, wraps: true)
                             }
                         }
+                        .dockFont(.body, design: .monospaced)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(maxHeight: 280)
                     .background(

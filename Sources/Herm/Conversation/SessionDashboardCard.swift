@@ -31,6 +31,7 @@ struct SessionDashboardCard: View {
     @FocusState private var replyFocused: Bool
 
     private var ids: [String] { [row.id] + runtimeIDs }
+    private var engaged: Bool { hovered || replyFocused || !draft.isEmpty }
     private var isWorking: Bool { isCurrent && row.status == .working }
     private var replyUnavailableReason: String? {
         if !isCurrent { return "Activity is not current. Refresh to retry." }
@@ -50,18 +51,11 @@ struct SessionDashboardCard: View {
             footer
         }
         .foregroundStyle(Color.dockPrimaryText)
-        .dockPadding(16)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(
-            DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
-                .fill(hovered ? Color.dockSurface2 : Color.dockSurface)
-                .contentShape(Rectangle())
-                .onTapGesture { if !isLoadingSession { onRespond() } }
-        )
-        .overlay {
-            DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane).stroke(
-                hovered || replyFocused ? Color.dockBorderStrong : Color.dockBorderLight,
-                lineWidth: DockLayout.hairline)
+        .dockCard(padding: 16, isActive: hovered || replyFocused)
+        // Behind the content, so the reply field and buttons keep their own taps.
+        .background {
+            Color.clear.contentShape(Rectangle()).onTapGesture { if !isLoadingSession { onRespond() } }
         }
         .onHover { hovered = $0 }
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: hovered)
@@ -117,10 +111,13 @@ struct SessionDashboardCard: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                if isCurrent, let state = row.status.activityState {
+                if row.status == .unreadComplete {
+                    SessionUnreadReplyBadge(session: row.session)
+                } else if isCurrent, let state = row.status.activityState {
                     DockActivityIndicator(state: state, size: 12, unreadDot: true)
                 }
-                if !isCurrent || row.status != .none {
+                // "Ready to review" is already the section heading; repeating it on every tile is noise.
+                if !isCurrent || (row.status != .none && row.status != .unreadComplete) {
                     Text(statusText).dockFont(.body, weight: .medium).lineLimit(1)
                 }
                 if isWorking, let label = liveActivity ?? activity?.activityName {
@@ -141,7 +138,8 @@ struct SessionDashboardCard: View {
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.dockLink)
+            // The whole tile is the target and lights up on hover; an underlined link per tile is loud.
+            .buttonStyle(.dockHover)
             .disabled(isLoadingSession)
             .help("Open \(row.session.displayTitle)")
             // Reserved even without a project so every tile has the same height.
@@ -239,17 +237,25 @@ struct SessionDashboardCard: View {
                     )
                     .disabled(
                         replyUnavailableReason != nil || sending
-                            || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                    // Same slot, so the field never resizes; idle send buttons are clutter.
+                    .opacity(engaged || sending ? 1 : 0.35)
                 }
             }
             .dockPadding(.leading, 10)
             .dockPadding(.trailing, 4)
             .frame(height: 36)
-            .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(Color.dockControlSurface))
+            // At rest the reply is a quiet field; it takes its surface and border once the tile is engaged.
+            .background(
+                DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                    .fill(Color.dockControlSurface.opacity(engaged ? 1 : 0.45))
+            )
             .overlay {
                 DockThemeShape(cornerRadius: DockLayout.controlRadius)
                     .stroke(
-                        replyFocused ? Color.dockBorderStrong : Color.dockBorderLight,
+                        replyFocused
+                            ? Color.dockBorderStrong : Color.dockBorderLight.opacity(engaged ? 1 : 0),
                         lineWidth: DockLayout.hairline)
             }
             if let actionError {

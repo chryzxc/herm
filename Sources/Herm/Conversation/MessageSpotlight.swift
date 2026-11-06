@@ -12,7 +12,7 @@ struct MessageSpotlightEffect: View {
     var body: some View {
         ZStack {
             shape.fill(Color.dockAccent.opacity(0.08))
-            if !reduceMotion {
+            if DockMotion.isEnabled(reduceMotion: reduceMotion) {
                 GeometryReader { geometry in
                     LinearGradient(
                         colors: [.clear, Color.dockAccent.opacity(0.28), .clear],
@@ -29,6 +29,7 @@ struct MessageSpotlightEffect: View {
         }
         .allowsHitTesting(false)
         .onAppear {
+            guard DockMotion.isEnabled(reduceMotion: reduceMotion) else { return }
             withAnimation(.easeInOut(duration: 0.9)) { swept = true }
             withAnimation(.easeOut(duration: 1.2)) { rippled = true }
         }
@@ -38,7 +39,7 @@ struct MessageSpotlightEffect: View {
 extension View {
     /// Highlights (and, for compact bubbles, lifts) this view while `active`; the effect follows `shape`.
     func messageSpotlight(_ active: Bool, shape: AnyShape, lifts: Bool = true, reduceMotion: Bool) -> some View {
-        scaleEffect(active && lifts && !reduceMotion ? 1.03 : 1)
+        scaleEffect(active && lifts && DockMotion.isEnabled(reduceMotion: reduceMotion) ? 1.03 : 1)
             .overlay {
                 if active { MessageSpotlightEffect(shape: shape).transition(.opacity) }
             }

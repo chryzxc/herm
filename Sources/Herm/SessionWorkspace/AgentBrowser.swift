@@ -91,6 +91,9 @@ final class AgentBrowser: ObservableObject {
         var isUnsolicited: Bool {
             ["chrome://settings", "chrome://whats-new", "chrome://welcome"].contains { url.hasPrefix($0) }
         }
+
+        /// A new tab is blank until it reports where it's going; only then can it be told apart from Chrome's own.
+        var hasDestination: Bool { !url.isEmpty && url != "about:blank" }
     }
 
     @Published private(set) var state = State.off
@@ -248,6 +251,8 @@ final class AgentBrowser: ObservableObject {
     /// The Hermes session whose tab is on screen; each remembers the tab it last showed.
     private var shownSession: String?
     private var tabs: [String: String] = [:]
+    /// Tabs Hermes opened for the chat on screen, shown once they report a real URL.
+    private var tabsToFollow: Set<String> = []
 
     private func owns(_ model: DockModel?) -> Bool {
         model.map { $0.profileScopeID == profileID } ?? false
@@ -739,8 +744,10 @@ final class AgentBrowser: ObservableObject {
             } else {
                 pages.append(page)
                 // Follow a tab Hermes opens for the chat on screen; another chat's stays in the tab strip.
-                if state == .running, model?.activeBrowserCall != nil { Task { try? await attach(page.id) } }
+                if state == .running, model?.activeBrowserCall != nil { tabsToFollow.insert(page.id) }
             }
+            // Chrome's settings tab also opens blank first; following it then swapped the view back and forth.
+            if page.hasDestination, tabsToFollow.remove(page.id) != nil { Task { try? await attach(page.id) } }
         case "Target.targetDestroyed":
             guard let id = params["targetId"] as? String else { return }
             dropPage(id)
@@ -821,6 +828,7 @@ final class AgentBrowser: ObservableObject {
     /// Unlists a tab; if it was on screen, the view moves to the newest remaining one.
     private func dropPage(_ id: String) {
         pages.removeAll { $0.id == id }
+        tabsToFollow.remove(id)
         guard id == activeTargetID else { return }
         pointerTracker?.stop()
         pointerTracker = nil
@@ -1406,6 +1414,7 @@ final class CDPConnection {
 
 /// Live view of the agent browser: draws screencast frames and forwards input as CDP events.
 final class AgentBrowserCanvas: NSView {
+    var surfaceVisible = true { didSet { updateViewing() } }
     /// SwiftUI reuses one canvas across sessions, so rebinding moves the viewer to the new browser;
     /// otherwise the new one never streams and the old one streams to nobody.
     var browser: AgentBrowser? {
@@ -1673,10 +1682,23 @@ final class AgentBrowserCanvas: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2)
-        let viewing = window != nil
+        updateViewing()
+    }
+
+    private func updateViewing() {
+        let viewing = window != nil && surfaceVisible && !isHiddenOrHasHiddenAncestor
         guard viewing != isViewing else { return }
         isViewing = viewing
         browser?.viewers += viewing ? 1 : -1
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        updateViewing()
+    }
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        updateViewing()
     }
 
     override init(frame: NSRect) {
@@ -1943,12 +1965,17 @@ private final class AgentClickRipple: NSView {
 
 private struct AgentCanvasView: NSViewRepresentable {
     let browser: AgentBrowser
+    @Environment(\.dockHostVisible) private var hostVisible
     func makeNSView(context: Context) -> AgentBrowserCanvas {
         let canvas = AgentBrowserCanvas(frame: .zero)
+        canvas.surfaceVisible = hostVisible
         canvas.browser = browser
         return canvas
     }
-    func updateNSView(_ nsView: AgentBrowserCanvas, context: Context) { nsView.browser = browser }
+    func updateNSView(_ nsView: AgentBrowserCanvas, context: Context) {
+        nsView.surfaceVisible = hostVisible
+        nsView.browser = browser
+    }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: AgentBrowserCanvas, context: Context) -> CGSize? {
         CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
     }

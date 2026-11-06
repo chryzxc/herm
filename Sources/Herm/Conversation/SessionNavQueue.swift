@@ -49,6 +49,7 @@ struct SessionNavQueue: View, Equatable {
     @State private var isShowingProjectSheet = false
     @ObservedObject private var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dockHostVisible) private var hostVisible
 
     init(
         model: DockModel,
@@ -304,6 +305,8 @@ struct SessionNavQueue: View, Equatable {
             // The session list owns its title strip beside the conversation and inspector.
             if isDockedWindow && showsWindowTitleRow {
                 HStack(spacing: 0) {
+                    DockBuildBadge()
+                        .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 8)
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
                     DockHistoryButtons()
                     Spacer(minLength: 0)
@@ -625,7 +628,8 @@ struct SessionNavQueue: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task {
+        .task(id: hostVisible && !isSidebarCollapsed) {
+            guard hostVisible, !isSidebarCollapsed else { return }
             // ponytail: 10s roster poll while the rail is on screen (cancelled
             // on disappear); Hermes has no roster push event.
             while !Task.isCancelled {
@@ -660,30 +664,9 @@ struct SessionNavQueue: View, Equatable {
     }
 
     private var sessionSearchField: some View {
-        HStack(spacing: 6) {
-            DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
-            DockTextField("Search sessions", text: $sessionSearchQuery)
-                .textFieldStyle(.plain)
-                .dockFont(.body)
-                .accessibilityLabel("Search sidebar sessions")
-                .accessibilityIdentifier("sidebar-session-search")
-                .onExitCommand { sessionSearchQuery = "" }
-            if !sessionSearchQuery.isEmpty {
-                DockIconButton(
-                    icon: .x, label: "Clear session search", size: 24,
-                    style: DockThemePalette(theme: dockThemeStore.selectedThemeID)
-                ) {
-                    sessionSearchQuery = ""
-                }
-            }
-        }
-        .dockPadding(.horizontal, 8)
-        .frame(minHeight: 32)
-        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(Color.dockControlSurface))
-        .overlay {
-            DockThemeShape(cornerRadius: DockLayout.controlRadius)
-                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-        }
+        DockSearchField(
+            placeholder: "Search sessions", text: $sessionSearchQuery,
+            accessibilityDescription: "Search sidebar sessions", accessibilityID: "sidebar-session-search")
     }
 
     @ViewBuilder

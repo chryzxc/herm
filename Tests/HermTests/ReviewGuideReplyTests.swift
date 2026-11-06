@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 
@@ -60,6 +61,19 @@ struct ReviewGuideReplyTests {
         #expect(model.reply == "## Review\nCheck recovery.")
         #expect(client.paths.last?.contains("order=latest") == true)
         #expect(client.paths.last?.contains("profile=reviewer") == true)
+    }
+
+    @Test func unchangedGuideDoesNotPublishReplyAgain() async {
+        let client = ReviewGuideRPC()
+        client.response = ["messages": [["role": "assistant", "content": "Saved guide"]]]
+        let model = ReviewGuideReplyModel()
+        var publications: [String?] = []
+        let subscription = model.$reply.sink { publications.append($0) }
+        await model.refresh(session: session(), client: client)
+        let count = publications.count
+        await model.refresh(session: session(), client: client)
+        #expect(publications.count == count)
+        withExtendedLifetime(subscription) {}
     }
 
     @Test func blankRepliesKeepTheWaitingState() async {

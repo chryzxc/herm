@@ -9,6 +9,8 @@ struct DockLayerMotion: NSViewRepresentable {
     enum Kind: Equatable {
         /// A 70% arc turning clockwise over a faint ring.
         case spin(period: Double, lineWidth: CGFloat)
+        /// A highlight travelling around a capsule without rotating its contents.
+        case capsuleRim(period: Double, lineWidth: CGFloat)
         /// A filled dot dimming to 30% and back once per `period`.
         case breathe(period: Double)
         /// A band crossing left to right, `fraction` of the width within `clamp`.
@@ -24,6 +26,12 @@ struct DockLayerMotion: NSViewRepresentable {
     /// Tide only: a hairline inside the edge line, so it separates from whatever is underneath.
     var rim: Color?
     var paused = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dockHostVisible) private var hostVisible
+
+    static func dismantleNSView(_ view: DockLayerMotionView, coordinator: ()) {
+        for layer in view.layer?.sublayers ?? [] { layer.removeAllAnimations() }
+    }
 
     func makeNSView(context: Context) -> DockLayerMotionView { DockLayerMotionView() }
 
@@ -31,7 +39,8 @@ struct DockLayerMotion: NSViewRepresentable {
         view.spec = .init(
             kind: kind, color: color.resolve(in: context.environment).cgColor,
             glow: glow?.resolve(in: context.environment).cgColor,
-            rim: rim?.resolve(in: context.environment).cgColor, paused: paused)
+            rim: rim?.resolve(in: context.environment).cgColor,
+            paused: paused || !hostVisible || !DockMotion.isEnabled(reduceMotion: reduceMotion))
     }
 }
 
@@ -90,6 +99,26 @@ final class DockLayerMotionView: NSView {
             host.addSublayer(arc)
             // Negative turns clockwise in AppKit's y-up layer space.
             if !spec.paused { loop(arc, "transform.rotation.z", from: 0, to: -2 * Double.pi, duration: period) }
+
+        case .capsuleRim(let period, let lineWidth):
+            let rect = bounds.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+            let radius = min(rect.width, rect.height) / 2
+            let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            let perimeter = 2 * (rect.width + rect.height - 4 * radius) + 2 * .pi * radius
+            let track = ring(path, lineWidth: lineWidth, color: color.copy(alpha: color.alpha * 0.2) ?? color)
+            let highlight = ring(path, lineWidth: lineWidth, color: color)
+            if let glow = spec.glow {
+                highlight.shadowColor = glow
+                highlight.shadowOpacity = 0.6
+                highlight.shadowRadius = 2
+                highlight.shadowOffset = .zero
+            }
+            highlight.lineDashPattern = [NSNumber(value: perimeter * 0.22), NSNumber(value: perimeter * 0.78)]
+            host.addSublayer(track)
+            host.addSublayer(highlight)
+            if !spec.paused {
+                loop(highlight, "lineDashPhase", from: 0, to: -perimeter, duration: period)
+            }
 
         case .breathe(let period):
             let dot = CAShapeLayer()

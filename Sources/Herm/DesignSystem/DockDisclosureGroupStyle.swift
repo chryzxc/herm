@@ -37,6 +37,7 @@ struct DockDisclosureGroupStyle: DisclosureGroupStyle {
 
 /// Mount on first use, then keep nested inputs and disclosures alive while closed.
 struct DockRetainedDisclosureContent<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var isExpanded: Bool
     @ViewBuilder var content: () -> Content
     @State private var hasExpanded = false
@@ -45,14 +46,20 @@ struct DockRetainedDisclosureContent<Content: View>: View {
         Group {
             if isExpanded || hasExpanded {
                 content()
+                    .offset(
+                        y: isExpanded || !DockMotion.isEnabled(reduceMotion: reduceMotion)
+                            ? 0 : -DockMotion.revealDistance
+                    )
                     .frame(height: isExpanded ? nil : 0, alignment: .top)
                     .clipped()
                     .opacity(isExpanded ? 1 : 0)
                     .disabled(!isExpanded)
                     .allowsHitTesting(isExpanded)
                     .accessibilityHidden(!isExpanded)
+                    .transition(.opacity.combined(with: .offset(y: -DockMotion.revealDistance)))
             }
         }
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2), value: isExpanded)
         .onChange(of: isExpanded, initial: true) { _, expanded in
             if expanded { hasExpanded = true }
         }

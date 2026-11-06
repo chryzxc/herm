@@ -73,7 +73,7 @@ enum HermesVoiceState: Equatable {
     }
 }
 
-struct ActiveToolCall: Identifiable, Equatable, Codable {
+struct ActiveToolCall: Identifiable, Equatable, Codable, Sendable {
     let id: String
     let name: String
     let input: String
@@ -364,6 +364,7 @@ actor SessionAgentStateWriter {
     private var pending: [String: SessionAgentState]?
     private var isCommitScheduled = false
     private var lastEncoded: Data?
+    private var lastCommittedStates: [String: SessionAgentState]?
 
     init(store: SessionAgentStateStore) { self.store = store }
 
@@ -372,6 +373,7 @@ actor SessionAgentStateWriter {
     /// runs, dirtying 2 GB of disk in minutes. `flush()` covers session
     /// switches and quit.
     func enqueue(_ states: [String: SessionAgentState]) {
+        if states == pending || (pending == nil && states == lastCommittedStates) { return }
         pending = states
         guard !isCommitScheduled else { return }
         isCommitScheduled = true
@@ -391,12 +393,18 @@ actor SessionAgentStateWriter {
     }
 
     private func commit() {
-        guard let pending,
-            let data = try? JSONEncoder.sessionAgentState.encode(SessionAgentStateArchive(states: pending)),
-            data != lastEncoded
-        else { return }
-        lastEncoded = data
+        guard let pending else { return }
+        if pending == lastCommittedStates {
+            self.pending = nil
+            return
+        }
+        guard let data = try? JSONEncoder.sessionAgentState.encode(SessionAgentStateArchive(states: pending)) else {
+            return
+        }
+        lastCommittedStates = pending
         self.pending = nil
+        guard data != lastEncoded else { return }
+        lastEncoded = data
         // Write to disk on a background thread to avoid blocking the main thread
         // during atomic writes of large session state files (440KB+).
         Task.detached(priority: .background) { [store = self.store] in
@@ -611,6 +619,15 @@ struct SystemEvent: Equatable {
     var tone: DockStatusTone = .inactive
     /// A plugin feed row: rendered as a one-line activity entry.
     var isFeed = false
+    var isModelSwitch = false
+
+    static func modelSwitchSummary(_ text: String) -> String {
+        let prefix = "[System: The active model for this chat has changed to "
+        let suffix =
+            ". From this point forward, use this runtime metadata when answering questions about what model/provider is active.]"
+        guard text.hasPrefix(prefix), text.hasSuffix(suffix) else { return text }
+        return "Switched to " + text.dropFirst(prefix.count).dropLast(suffix.count)
+    }
 
     private static let prefixLabels: [(prefix: String, label: String)] = [
         ("[ASYNC DELEGATION BATCH COMPLETE", "Delegation complete"),
@@ -630,6 +647,13 @@ struct SystemEvent: Equatable {
     /// Classifies a stored transcript row; nil keeps it an ordinary bubble.
     /// Steers and slash-skill turns are typed but are the user's own words.
     static func classify(role: String, text: String, displayKind: String?) -> SystemEvent? {
+        if displayKind == "model_switch"
+            || (role == "user"
+                && text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .hasPrefix("[System: The active model"))
+        {
+            return SystemEvent(label: "Model switch", isModelSwitch: true)
+        }
         if role == "system" { return SystemEvent(label: "System") }
         if let kind = displayKind, !kind.isEmpty, kind != "steer", kind != "skill_invocation" {
             return SystemEvent(label: humanized(kind), tone: kind == "failed_turn" ? .attention : .inactive)

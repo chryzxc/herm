@@ -88,7 +88,7 @@ extension DockModel {
             normalized != "untitled",
             normalized != "untitled chat",
             normalized != "untitled session",
-            normalized != "hermes session"
+            normalized != "hermes session", currentSessionTitle != trimmed
         else { return }
         currentSessionTitle = trimmed
     }
@@ -111,7 +111,7 @@ extension DockModel {
             guard let self else { return }
             defer {
                 if self.sessionLoadGeneration == generation {
-                    isLoadingSessions = false
+                    if isLoadingSessions { isLoadingSessions = false }
                     isPollingSessions = false
                     sessionLoadTask = nil
                 }
@@ -198,6 +198,9 @@ extension DockModel {
             var params: [String: Any] = ["session_id": session.id]
             if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
             _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: params)
+            sessionTranscriptCache.remove(
+                WorkspaceIdentity.session(
+                    profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id))
             discardComposerDraft(
                 for: SessionComposerDraft.Key(
                     profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id
@@ -394,10 +397,14 @@ extension DockModel {
         defer { renamingSessionID = nil }
         do {
             try await sessionRPCClient.connect()
-            var params: [String: Any] = ["session_id": session.id, "title": cleanTitle]
-            if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
-            _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionTitle.rawValue, params: params)
-            if session.id == sessionID { currentSessionTitle = cleanTitle }
+            if session.id == navigationSessionID, let sessionID {
+                _ = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.sessionTitle.rawValue, params: ["session_id": sessionID, "title": cleanTitle])
+                currentSessionTitle = cleanTitle
+            } else {
+                try await HermesCLIAdapter(rpc: HermesControlRPC(client: sessionRPCClient)).renameSavedSession(
+                    sessionID: session.id, title: cleanTitle, profileID: session.profileID ?? profileScopeID)
+            }
             loadSessions()
             return true
         } catch {
@@ -464,8 +471,14 @@ extension DockModel {
         }
     }
 
-    func resumeSession(_ session: HermesSession) {
-        Task { _ = await resumeSession(session, reportFailure: true) }
+    func resumeSession(_ session: HermesSession, profileID: String? = nil) {
+        let selectedAt = DispatchTime.now().uptimeNanoseconds
+        sessionResumeTask?.cancel()
+        sessionResumeWorkTask?.cancel()
+        sessionTranscriptLoadState = .loading
+        sessionResumeTask = Task {
+            _ = await resumeSession(session, reportFailure: true, profileID: profileID, selectedAt: selectedAt)
+        }
     }
 
     /// Reloads the selected transcript from Hermes rather than patching the
@@ -490,7 +503,7 @@ extension DockModel {
     /// source message ID is sent to Hermes so the source conversation remains
     /// unchanged and the returned branch is the only conversation selected.
     func branchConversation(from message: ChatMessage) async {
-        guard let sessionID, !sessionID.isEmpty,
+        guard sessionActionsReady, let sessionID, !sessionID.isEmpty,
             message.role == .hermes,
             message.hasBodyText
         else { return }
@@ -592,7 +605,35 @@ extension DockModel {
     }
 
     @discardableResult
-    func resumeSession(_ session: HermesSession, reportFailure: Bool, profileID: String? = nil) async -> Bool {
+    func resumeSession(
+        _ session: HermesSession, reportFailure: Bool, profileID: String? = nil, selectedAt: UInt64? = nil
+    ) async -> Bool {
+        sessionResumeWorkTask?.cancel()
+        let token = UUID()
+        sessionResumeWorkToken = token
+        let selectedAt = selectedAt ?? DispatchTime.now().uptimeNanoseconds
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return false }
+            return await performResumeSession(
+                session, reportFailure: reportFailure, profileID: profileID, selectedAt: selectedAt)
+        }
+        sessionResumeWorkTask = task
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if sessionResumeWorkToken == token {
+            sessionResumeWorkTask = nil
+            sessionResumeWorkToken = nil
+        }
+        return result
+    }
+
+    private func performResumeSession(
+        _ session: HermesSession, reportFailure: Bool, profileID: String?, selectedAt: UInt64
+    ) async -> Bool {
+        guard !Task.isCancelled else { return false }
         let owningProfileID = Self.normalizedProfileID(profileID ?? session.profileID ?? profileScopeID)
         // The session queue uses Hermes' durable storage identity, whereas a
         // resume can expose a different runtime identity. Both identify the
@@ -600,6 +641,10 @@ extension DockModel {
         let isRefreshingActiveSession =
             (session.id == sessionID || session.id == sessionStorageID)
             && owningProfileID == Self.normalizedProfileID(sessionProfileID)
+        if !isRefreshingActiveSession {
+            sessionWorkspace = nil
+            pendingWorktreeDirectory = nil
+        }
         if let sessionStorageID, streamingMessageID != nil {
             inFlightTurnActivityBySessionID[sessionStorageID] = streamingTurnActivity
             unconfirmedUserMessagesBySessionID[sessionStorageID] = Self.unconfirmedUserMessages(
@@ -619,16 +664,39 @@ extension DockModel {
             saveComposerDraft()
             restoreComposerDraft(for: SessionComposerDraft.Key(profileID: owningProfileID, sessionID: session.id))
 
-            invalidateRuntimeModelOptionsRefresh()
             detachInFlightBotActivities(as: .canceled, keepingSubmitted: true)
         }
+        invalidateRuntimeModelOptionsRefresh(keepingCatalog: isRefreshingActiveSession)
         // A refresh re-reads at least as much history as the reader already
         // paged in, so refreshing never collapses the transcript they scrolled.
         let refreshedTranscriptRowCount = isRefreshingActiveSession ? (transcriptHistoryCursor?.nextOffset ?? 0) : 0
         sessionResumeGeneration &+= 1
+        transcriptTimelineTask?.cancel()
+        transcriptTimelineTask = nil
         resetEffortTransition()
         interruptGeneration &+= 1
         let resumeGeneration = sessionResumeGeneration
+        sessionPreviewImageTask?.cancel()
+        sessionTranscriptImageTask?.cancel()
+        sessionSwitchStartedAt = selectedAt
+        let switchStartedAt = sessionSwitchStartedAt
+        sessionSwitchToken = UUID().uuidString
+        let switchToken = sessionSwitchToken
+        sessionSwitchCachedLayoutRecorded = false
+        sessionSwitchFreshLayoutRecorded = false
+        let requestedStorageID = isRefreshingActiveSession ? (sessionStorageID ?? session.id) : session.id
+        let previewKey = WorkspaceIdentity.session(profileID: owningProfileID, sessionID: requestedStorageID)
+        if !isRefreshingActiveSession {
+            let isUnprovenAlias =
+                session.id == BotService.canonicalBotChatTitle
+                || storageIDsByRuntimeID[session.id].map { $0 != session.id } == true
+            sessionTranscriptPreview = isUnprovenAlias ? nil : sessionTranscriptCache.value(for: previewKey)
+        }
+        sessionTranscriptLoadState = sessionTranscriptPreview == nil ? .loading : .refreshing
+        recordSessionSwitch(
+            "selection", startedAt: switchStartedAt,
+            extra: "cache_hit=\(sessionTranscriptPreview == nil ? 0 : 1)")
+        loadPreviewImages()
         transcriptHistoryCursor = nil
         isLoadingEarlierTranscript = false
         isLoadingTranscriptHistory = false
@@ -666,6 +734,8 @@ extension DockModel {
         sessionModelValue = nil
         sessionReasoningVariant = nil
         sessionStorageID = session.id
+        let workspaceKey = WorkspaceIdentity.session(profileID: owningProfileID, sessionID: session.id)
+        pendingWorktreeDirectory = pendingWorktreeDirectories[workspaceKey]
         sessionReasoningWire = nil
         if !isRefreshingActiveSession { restorePendingSendIfPossible(for: composerDraftKey) }
         _ = restoreAgentState(for: session.id)
@@ -687,7 +757,12 @@ extension DockModel {
         currentSessionTitle = resumedTitle.isEmpty ? nil : resumedTitle
         restorePendingApproval(for: [session.id])
         do {
+            let connectionStartedAt = DispatchTime.now().uptimeNanoseconds
             try await sessionRPCClient.connect()
+            recordSessionSwitch(
+                "connect", startedAt: connectionStartedAt, generation: resumeGeneration, token: switchToken)
+            try Task.checkCancellation()
+            guard resumeGeneration == sessionResumeGeneration else { return false }
             var resumeParams: [String: Any] = [
                 "session_id": session.id,
                 "source": HermesFeatureIDs.sessionSource,
@@ -699,8 +774,12 @@ extension DockModel {
                 "omit_messages": true,
             ]
             if let owningProfileID, !owningProfileID.isEmpty { resumeParams["profile"] = owningProfileID }
+            let resumeStartedAt = DispatchTime.now().uptimeNanoseconds
+            let workspaceRevision = sessionWorkspaceRevision
             let result = try await sessionRPCClient.request(
                 HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
+            recordSessionSwitch("resume", startedAt: resumeStartedAt, generation: resumeGeneration, token: switchToken)
+            try Task.checkCancellation()
             guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
             let reportedSessionID = (result["session_id"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -719,8 +798,10 @@ extension DockModel {
             else {
                 guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
                 let safeMessage = "Hermes returned a different session than the one requested. Try opening it again."
+                sessionTranscriptLoadState = .failed(safeMessage)
                 sessionProjectionState = Self.failedOrStale(sessionProjectionState, safeMessage: safeMessage)
-                if reportFailure {
+                if reportFailure { status = .offline }
+                if reportFailure, sessionTranscriptPreview == nil {
                     status = .offline
                     messages = [
                         ChatMessage(
@@ -739,6 +820,9 @@ extension DockModel {
             )
             sessionStorageID = Self.stableSessionID(from: result) ?? session.id
             storageIDsByRuntimeID[resolvedSessionID] = sessionStorageID
+            if workspaceRevision == sessionWorkspaceRevision {
+                applySessionWorkspace(result, owner: resolvedSessionID)
+            }
             restorePendingApproval(for: [session.id, resolvedSessionID, sessionStorageID])
             persistActiveSessionID(sessionID)
             let model = (result["model"] as? String) ?? (result["model_name"] as? String)
@@ -746,8 +830,6 @@ extension DockModel {
                 currentModelName = model
                 sessionModelValue = model
             }
-            refreshSessionModelOptions()
-            refreshSessionReasoningVariant()
             guard result["messages"] is [[String: Any]] else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
@@ -765,14 +847,47 @@ extension DockModel {
                 transcriptRows = tail.rows
                 transcriptHistoryCursor = tail.cursor
             }
-            let restored = await Self.parseMessagesOffMain(
+            let parseStartedAt = DispatchTime.now().uptimeNanoseconds
+            let (parsed, references) = await Self.parseMessagesOffMain(
                 transcriptRows,
                 defaultBotProfileID: profileID,
                 defaultBotDisplayName: profileID == nil ? nil : session.displayTitle
             )
+            recordSessionSwitch("parse", startedAt: parseStartedAt, generation: resumeGeneration, token: switchToken)
+            try Task.checkCancellation()
             guard resumeGeneration == sessionResumeGeneration else { return false }
+            let stable = Self.keepingMessageIDs(parsed, previous: sessionTranscriptPreview?.rowIDs ?? [:])
+            let renamed = Dictionary(
+                parsed.rowIDs.compactMap { row, id in stable.rowIDs[row].map { (id, $0) } },
+                uniquingKeysWith: { first, _ in first })
+            let restored = RestoredTranscript(
+                messages: stable.messages,
+                pendingImages: parsed.pendingImages.map {
+                    .init(messageID: renamed[$0.messageID] ?? $0.messageID, fileURLs: $0.fileURLs)
+                },
+                rowIDs: stable.rowIDs,
+                trailingActivity: parsed.trailingActivity)
             transcriptMessageIDsByRowID = restored.rowIDs
-            storedMessageReferences = StoredMessageReference.references(rows: transcriptRows, rowIDs: restored.rowIDs)
+            storedMessageReferences = Dictionary(
+                references.map { (renamed[$0.key] ?? $0.key, $0.value) }, uniquingKeysWith: { first, _ in first })
+            let resolvedKey = WorkspaceIdentity.session(profileID: owningProfileID, sessionID: sessionStorageID)
+            if sessionStorageID != BotService.canonicalBotChatTitle {
+                sessionTranscriptCache.store(restored, references: storedMessageReferences, for: resolvedKey)
+            }
+            let previewImages = Dictionary(
+                (sessionTranscriptPreview?.messages ?? []).filter { !$0.images.isEmpty }.map { ($0.id, $0.images) },
+                uniquingKeysWith: { first, _ in first })
+            let previewPaths = Dictionary(
+                (sessionTranscriptPreview?.pendingImages ?? []).map { ($0.messageID, $0.fileURLs) },
+                uniquingKeysWith: { first, _ in first })
+            let restoredPaths = Dictionary(
+                restored.pendingImages.map { ($0.messageID, $0.fileURLs) }, uniquingKeysWith: { first, _ in first })
+            let freshMessages = restored.messages.map { message in
+                guard let images = previewImages[message.id], let paths = previewPaths[message.id],
+                    restoredPaths[message.id] == paths
+                else { return message }
+                return message.attachingImages(images)
+            }
             // A turn that went live while the transcript loaded keeps its row.
             let liveRow = streamingMessageID.flatMap { id in messages.first { $0.id == id } }
             // Mid-turn messages Hermes has not stored yet stay until it does.
@@ -780,7 +895,7 @@ extension DockModel {
                 sessionStorageID
                 .flatMap { unconfirmedUserMessagesBySessionID.removeValue(forKey: $0) }
                 .map { Self.missingUserMessages($0, from: restored.messages) } ?? []
-            messages = restored.messages + [liveRow].compactMap { $0 }
+            messages = freshMessages + [liveRow].compactMap { $0 }
             let pendingSends = reconcilePendingSends(
                 for: composerDraftKey, restored: restored.messages, rowIDs: restored.rowIDs)
             messages.append(contentsOf: pendingSends)
@@ -809,9 +924,9 @@ extension DockModel {
                 let index = messages.firstIndex { $0.id == streamingMessageID } ?? messages.endIndex
                 messages.insert(contentsOf: Self.missingUserMessages(pendingUserMessages, from: messages), at: index)
             }
-            rehydratePendingTranscriptImages(
+            sessionTranscriptImageTask = rehydratePendingTranscriptImages(
                 restored.pendingImages,
-                requestedSessionID: session.id
+                requestedSessionID: resolvedSessionID
             )
             if transcriptHistoryCursor?.hasMore == true {
                 loadTranscriptTimeline(generation: resumeGeneration)
@@ -840,26 +955,58 @@ extension DockModel {
                     todos, sessionID: resolvedSessionID, revision: state["revision"] as? Int ?? 0,
                     updatedAt: written ?? .distantPast)
             }
-            scrollToLatestMessageRequest &+= 1
+            let promotedPreview = sessionTranscriptPreview != nil
+            sessionTranscriptPreview = nil
+            sessionPreviewImageTask?.cancel()
+            sessionTranscriptLoadState = .ready
+            recordSessionSwitch(
+                "fresh_publication", startedAt: switchStartedAt, generation: resumeGeneration, token: switchToken)
+            if !promotedPreview && !isRefreshingActiveSession {
+                scrollToLatestMessageRequest &+= 1
+            }
+            refreshSessionModelOptions()
+            refreshSessionReasoningVariant()
+            refreshSessionFast()
             cacheCurrentAgentState()
             refreshDelegationStatus()
             startDelegationMonitoring()
             if approvalText == nil, clarificationQuestion == nil, streamingMessageID == nil {
                 status = .idle
             }
+            drainQueuedPromptIfIdle()
             DebugLog.write(
                 "model: resumed session \(session.id) (\(messages.count) messages, \(activeSubagents.count) rehydrated agents)"
             )
             Task { await refreshMessagePins() }
             return true
+        } catch is CancellationError {
+            recordSessionSwitch(
+                "cancelled", startedAt: switchStartedAt, generation: resumeGeneration, token: switchToken)
+            if resumeGeneration == sessionResumeGeneration {
+                sessionTranscriptLoadState = .failed("Conversation loading was canceled. Try again.")
+                status = .offline
+            }
+            return false
         } catch {
-            guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
+            guard resumeGeneration == sessionResumeGeneration else { return false }
+            let rpcError = error as NSError
+            let notFound =
+                (rpcError.domain == "Hermes" && (rpcError.userInfo["HermesRPCCode"] as? Int) == 4007)
+                || (error as? HermesGateway.GatewayError).map {
+                    if case .httpError(404) = $0 { return true }
+                    return false
+                } == true
+            if notFound {
+                sessionTranscriptCache.remove(previewKey)
+                sessionTranscriptPreview = nil
+            }
+            sessionTranscriptLoadState = .failed("Hermes session data is unavailable. Try refreshing.")
             if effortCatalog == nil, !isLoadingRuntimeModelOptions {
                 runtimeModelOptionsError = "Hermes could not load its model catalog."
             }
             sessionProjectionState = Self.failedOrStale(
                 sessionProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
-            if reportFailure, !isRefreshingActiveSession {
+            if reportFailure, !isRefreshingActiveSession, sessionTranscriptPreview == nil {
                 status = .offline
                 messages = [
                     ChatMessage(
@@ -878,6 +1025,21 @@ extension DockModel {
     }
 
     func newChat(projectPath: String? = nil) {
+        sessionWorkspace = nil
+        pendingWorktreeDirectory = nil
+        sessionResumeTask?.cancel()
+        sessionResumeTask = nil
+        sessionResumeWorkTask?.cancel()
+        sessionResumeWorkTask = nil
+        sessionResumeWorkToken = nil
+        transcriptTimelineTask?.cancel()
+        transcriptTimelineTask = nil
+        sessionPreviewImageTask?.cancel()
+        sessionPreviewImageTask = nil
+        sessionTranscriptImageTask?.cancel()
+        sessionTranscriptImageTask = nil
+        sessionTranscriptPreview = nil
+        sessionTranscriptLoadState = .ready
         detachInFlightBotActivities(as: .canceled, keepingSubmitted: true)
         commitStreamingMessage()
         streamingMessageFlushTask?.cancel()

@@ -475,13 +475,7 @@ struct ConversationMessageRow: View, Equatable {
                                 ChatMediaAttachmentCard(path: path, grouped: true)
                             }
                         }
-                        .background(
-                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .dockSurfaceFill(Color.dockSurface2.opacity(0.55))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
-                                Color.dockBorderLight, lineWidth: 0.5))
+                        .dockWell()
                     }
                 }
             }
@@ -508,13 +502,13 @@ struct ConversationMessageRow: View, Equatable {
         HStack(spacing: 0) {
             actionButton(.copy, action: onCopy)
             actionButton(.branch, action: onBranch, isAvailable: areSessionActionsAvailable)
-            actionButton(.reply, action: onReply)
+            actionButton(.reply, action: onReply, isAvailable: areSessionActionsAvailable)
             if showsPinAction {
                 actionButton(.pin, action: onPin, isAvailable: isPinAvailable)
             }
             moreMessageActions
             if isSpeaking {
-                actionButton(.readAloud, action: onReadAloud)
+                actionButton(.readAloud, action: onReadAloud, isAvailable: areSessionActionsAvailable)
             }
             messageMetadata
         }
@@ -536,7 +530,7 @@ struct ConversationMessageRow: View, Equatable {
                 .disabled(pendingAction != nil || !areSessionActionsAvailable)
             if let onOpenInTab {
                 Button(action: onOpenInTab) { Label("Open message in new tab", icon: .arrowSquareOut) }
-                    .disabled(isStreamingMessage)
+                    .disabled(isStreamingMessage || !areSessionActionsAvailable)
             }
             sendToBotMenu
         } label: {
@@ -560,7 +554,14 @@ struct ConversationMessageRow: View, Equatable {
         if forwardContent != nil, message.hasBodyText, message.systemEvent == nil, !message.isError {
             DockMenu {
                 ForEach(targets) { bot in
-                    Button(bot.name) { sendTarget = bot }
+                    Button {
+                        sendTarget = bot
+                    } label: {
+                        HStack(spacing: 8) {
+                            BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 18, animated: false)
+                            Text(bot.name)
+                        }
+                    }
                 }
             } label: {
                 Label("Forward to bot", icon: .paperPlaneTilt)
@@ -671,60 +672,77 @@ struct SystemEventCard: View {
         #if DEBUG
             let _ = evaluation?("system", -1)
         #endif
-        let firstLine = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? text
-        let canExpand = firstLine != text || text.count > 90
-        VStack(alignment: .leading, spacing: DockSpacing.micro) {
-            Button {
-                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
-            } label: {
-                HStack(spacing: DockSpacing.tight) {
-                    DockIcon(event.tone.activityIcon, size: 12, weight: .fill, color: event.tone.color)
-                    Text(event.label)
-                        .fontWeight(.medium)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .fixedSize()
-                    if !isExpanded {
-                        Self.inlineMarkdown(firstLine)
-                            .foregroundStyle(Color.dockMetadataText)
-                            .lineLimit(1)
-                            .layoutPriority(-1)
-                    }
-                    Spacer(minLength: DockSpacing.control)
-                    Text(timeLabel).foregroundStyle(Color.dockMetadataText).fixedSize()
-                    if canExpand {
-                        DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: .dockMetadataText)
-                    }
-                }
-                .dockFont(.machineMetadata)
-                .dockPadding(.horizontal, 8)
-                .frame(height: 26)
-                .background(
-                    ConversationRowHoverBackground(hover: hoverPresentation, isExpanded: isExpanded)
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.dockHover)
-            .disabled(!canExpand)
-            .onHover { hoverPresentation.isHovering = $0 }
-            .help(canExpand ? (isExpanded ? "Collapse" : "Show full text") : "")
-
-            if isExpanded {
-                Self.inlineMarkdown(text)
-                    .dockFont(.body)
+        if event.isModelSwitch {
+            HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
+                DockIcon(.swap, size: 12, color: .dockMetadataText)
+                Text(SystemEvent.modelSwitchSummary(text))
                     .foregroundStyle(Color.dockSecondaryText)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                    .dockPadding(.leading, 10)
-                    .overlay(alignment: .leading) {
-                        Rectangle().fill(event.tone.color.opacity(0.5)).frame(width: 2)
-                    }
-                    .dockPadding(.leading, 14)
-                    .dockPadding(.bottom, 4)
+                Spacer(minLength: DockSpacing.control)
+                Text(timeLabel).foregroundStyle(Color.dockMetadataText).fixedSize()
             }
+            .dockFont(.metadata)
+            .dockPadding(.horizontal, 8)
+            .dockPadding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        } else {
+            let firstLine = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? text
+            let canExpand = firstLine != text || text.count > 90
+            VStack(alignment: .leading, spacing: DockSpacing.micro) {
+                Button {
+                    withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
+                } label: {
+                    HStack(spacing: DockSpacing.tight) {
+                        DockIcon(event.tone.activityIcon, size: 12, weight: .fill, color: event.tone.color)
+                        Text(event.label)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .fixedSize()
+                        if !isExpanded {
+                            Self.inlineMarkdown(firstLine)
+                                .foregroundStyle(Color.dockMetadataText)
+                                .lineLimit(1)
+                                .layoutPriority(-1)
+                        }
+                        Spacer(minLength: DockSpacing.control)
+                        Text(timeLabel).foregroundStyle(Color.dockMetadataText).fixedSize()
+                        if canExpand {
+                            DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: .dockMetadataText)
+                        }
+                    }
+                    .dockFont(.machineMetadata)
+                    .dockPadding(.horizontal, 8)
+                    .frame(height: 26)
+                    .background(
+                        ConversationRowHoverBackground(hover: hoverPresentation, isExpanded: isExpanded)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.dockHover)
+                .disabled(!canExpand)
+                .onHover { hoverPresentation.isHovering = $0 }
+                .help(canExpand ? (isExpanded ? "Collapse" : "Show full text") : "")
+
+                if isExpanded {
+                    Self.inlineMarkdown(text)
+                        .dockFont(.body)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .dockPadding(.leading, 10)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(event.tone.color.opacity(0.5)).frame(width: 2)
+                        }
+                        .dockPadding(.leading, 14)
+                        .dockPadding(.bottom, 4)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(event.label): \(text)")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(event.label): \(text)")
     }
 
     /// Bold and code spans render; block markdown stays literal text.

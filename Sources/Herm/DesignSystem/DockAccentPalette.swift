@@ -30,9 +30,7 @@ enum DockAccentColor: Int, CaseIterable {
     var signageColor: NSColor {
         var result = NSColor.gray
         NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance {
-            let monochrome = DockThemeRuntime.current == .mono || DockThemeRuntime.current == .eInk
-            result =
-                NSColor(DockThemePalette(theme: monochrome ? .mono : .clean).fill(self)).usingColorSpace(.sRGB) ?? .gray
+            result = NSColor(DockThemePalette(theme: .clean).fill(self)).usingColorSpace(.sRGB) ?? .gray
         }
         return result
     }

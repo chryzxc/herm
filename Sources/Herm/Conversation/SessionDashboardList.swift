@@ -178,20 +178,8 @@ struct SessionDashboardList: View, Equatable {
     }
 
     private var searchField: some View {
-        HStack(spacing: 6) {
-            DockIcon(.magnifyingGlass, size: 13, color: Color.dockMetadataText)
-            DockTextField("Search sessions", text: $query)
-                .textFieldStyle(.plain)
-                .dockFont(.body)
-                .accessibilityLabel("Search sessions")
-        }
-        .dockPadding(.horizontal, 10)
-        .frame(minWidth: 140, maxWidth: 320, minHeight: 32)
-        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(Color.dockControlSurface))
-        .overlay {
-            DockThemeShape(cornerRadius: DockLayout.controlRadius)
-                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-        }
+        DockSearchField(placeholder: "Search sessions", text: $query)
+            .frame(minWidth: 140, maxWidth: 320)
     }
 
     private var projectFilter: some View {

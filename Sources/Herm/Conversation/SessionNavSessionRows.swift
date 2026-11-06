@@ -68,8 +68,9 @@ struct SessionNavConversationSessionRow: View, Equatable {
                     .foregroundStyle(style.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                SessionActivityGlyph(isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate)
-                if let attentionDot, !(attentionDot == .failure && session.isWorking) {
+                SessionActivityGlyph(
+                    isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate, session: session)
+                if let attentionDot, attentionDot != .success, !(attentionDot == .failure && session.isWorking) {
                     if let state = attentionDot.activityState {
                         DockActivityIndicator(state: state, size: 10, unreadDot: true)
                     } else {
@@ -223,7 +224,6 @@ struct SessionNavProjectList: View {
         let isCollapsed = disclosureState.isCollapsed(
             projectID: group.id, isEmpty: sessionCount == 0 && group.sessions.isEmpty)
         let sessions = disclosureState.visibleSessions(group.sessions, projectID: group.id, limit: sessionLimit)
-        let isActiveProject = group.sessions.contains { $0.id == selectedSessionID }
         let isCreatingHere = creatingProjectPath != nil && creatingProjectPath == group.projectPath
         HStack(spacing: 0) {
             Button {
@@ -234,8 +234,11 @@ struct SessionNavProjectList: View {
                 HStack(spacing: 7) {
                     DockIcon(isCollapsed ? .caretRight : .caretDown, size: 11, color: style.metadataText)
                         .frame(width: 12)
-                    DockIcon(.folder, size: 15, color: isActiveProject ? style.primaryText : style.metadataText)
-                        .frame(width: 16)
+                    DockIcon(
+                        .folder, size: 15,
+                        color: DockAccentColor.identity(for: group.title).color
+                    )
+                    .frame(width: 16)
                     Text(group.title)
                         .dockFont(.navigation)
                         .foregroundStyle(style.secondaryText)
@@ -326,7 +329,7 @@ struct SessionNavProjectList: View {
                     .dockPadding(.leading, 12)
             } else {
                 ForEach(sessions, id: \.[sidebarSection: group.id]) { session in
-                    sessionRow(session).dockPadding(.leading, 12)
+                    sessionRow(session).dockPadding(.leading, DockSpacing.tight)
                 }
                 if group.sessions.count > sessionLimit {
                     Button {
@@ -488,7 +491,8 @@ struct SessionNavBotSessionRow: View, Equatable {
                         .dockPadding(.vertical, 1)
                         .background(Capsule().fill(style.selectedFill))
                     Spacer(minLength: 4)
-                    SessionActivityGlyph(isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate)
+                    SessionActivityGlyph(
+                        isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate, session: session)
                     if let date = session.lastUpdatedAt {
                         Text(SidebarSessionTime.short(date))
                             .dockFont(.metadata).monospacedDigit()
@@ -608,7 +612,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
                         if let repository { repositoryPill(repository) }
                         if let preview {
                             Text(preview)
-                                .dockFont(.body)
+                                .dockFont(.metadata)
                                 .foregroundStyle(style.metadataText)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
@@ -625,6 +629,12 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         .background(
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).fill(rowFill)
         )
+        .overlay(alignment: .bottom) {
+            // Inset hairline separates rows; the lit row's own fill already marks its edge.
+            if !isSelected, !isHovered {
+                Rectangle().fill(Color.dockBorderLight).frame(height: 1).dockPadding(.horizontal, 8)
+            }
+        }
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         // rowFill already tracks hover; a second hover tracker doubled the work per row while scrolling.
         .onTapGesture { if !isEditingTitle { onSelect(session) } }
@@ -682,8 +692,8 @@ struct SessionNavSidebarSessionRow: View, Equatable {
                 }
             } else {
                 Text(session.displayTitle)
-                    .dockFont(.navigation, weight: isSelected ? .medium : .regular)
-                    .foregroundStyle(isSelected ? style.primaryText : style.primaryText.opacity(0.88))
+                    .dockFont(.navigation, weight: .medium)
+                    .foregroundStyle(style.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .modifier(WorkingTitleShimmer(isActive: sessionStatus == .working, color: style.accent))
@@ -699,7 +709,18 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     }
 
     private var repository: String? { Self.nonEmpty(repositoryName) }
-    private var preview: String? { Self.nonEmpty(session.displayPreview) }
+    /// The title is usually derived from the first message, so a preview that repeats it adds no information.
+    private var preview: String? {
+        guard let text = Self.nonEmpty(session.displayPreview) else { return nil }
+        let title = session.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(
+            of: "…", with: "")
+        if text.range(of: title, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+            || title.range(of: text, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        {
+            return nil
+        }
+        return text
+    }
 
     private static func nonEmpty(_ text: String?) -> String? {
         guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
@@ -708,16 +729,15 @@ struct SessionNavSidebarSessionRow: View, Equatable {
 
     /// Wired repo shown as a pill ahead of the last-message preview.
     private func repositoryPill(_ name: String) -> some View {
-        HStack(spacing: 4) {
+        let tint = DockAccentColor.identity(for: name).color
+        return HStack(spacing: 4) {
             DockIcon(.folder, size: 11)
             Text(name)
                 .dockFont(.metadata, weight: .medium)
                 .lineLimit(1)
         }
-        .foregroundStyle(style.accent)
-        .dockPadding(.horizontal, 6)
-        .dockPadding(.vertical, 1)
-        .background(Capsule().fill(style.accent.opacity(0.14)))
+        .foregroundStyle(tint)
+        .dockPill(tint: tint)
         .fixedSize()
         .accessibilityLabel("Project: \(name)")
         .help("Wired to \(name)")
@@ -759,14 +779,15 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     /// Leading status slot. Fixed width keeps titles aligned whether or not a
     /// row has status. Only working rows spin, so scrolling stays cheap.
     private var statusIndicator: some View {
-        Group {
-            if let state = sessionStatus.activityState {
+        ZStack {
+            Color.clear
+            if sessionStatus == .unreadComplete {
+                SessionUnreadReplyBadge(session: session)
+            } else if let state = sessionStatus.activityState {
                 DockActivityIndicator(state: state, size: 12, unreadDot: true)
-            } else {
-                Color.clear
             }
         }
-        .frame(width: 14, height: 14)
+        .frame(width: 20, height: 18, alignment: .trailing)
         // Shapes and spinners have no text baseline; center on the title's x-height so every state lines up.
         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4.5 }
     }

@@ -5,6 +5,68 @@ import Testing
 
 @MainActor
 struct SessionProcessIsolationTests {
+    @Test(arguments: [false, true])
+    func listedProcessCanStopWithoutActivityProbe(includeUnavailableProbe: Bool) async throws {
+        let client = SessionProcessIsolationClient()
+        client.processState = "running"
+        let defaults = try #require(UserDefaults(suiteName: "session-process-\(UUID().uuidString)"))
+        let dock = DockModel(defaults: defaults, rpcClient: client)
+        dock.sessionID = "session-a"
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        control.dockModel = dock
+        control.focus(sessionID: "session-a")
+        control.capabilities = [
+            CapabilityState(
+                id: "rpc-sessions", title: "Sessions", detail: "Available", isAvailable: true, recovery: nil)
+        ]
+        if includeUnavailableProbe {
+            control.capabilities.append(
+                CapabilityState(
+                    id: "rpc-activity", title: "Activity", detail: "Unavailable", isAvailable: false, recovery: nil))
+        }
+        let refresh = try #require(
+            control.refreshFocusedProcesses(for: "session-a", generation: control.sessionProcessesGeneration))
+        await refresh.value
+        let process = try #require(control.processes.first)
+        let confirmation = control.processStopConfirmation(process)
+
+        client.output = "New output while the stop confirmation is open"
+        await control.pollProcesses()
+        #expect(control.processes.first?.latestOutput == client.output)
+        client.processState = "completed"
+        await control.pollProcesses()
+        #expect(!control.canStopCurrentProcess(confirmation))
+        client.processState = "running"
+        await control.pollProcesses()
+        #expect(await control.killProcess(confirmation))
+        #expect(client.killedSessionIDs == ["session-a"])
+        #expect(client.killedProcessIDs == [process.id])
+        await control.refreshTask?.value
+    }
+
+    @Test
+    func pollingDiscoversProcessesWithoutActivityProbe() async throws {
+        let client = SessionProcessIsolationClient()
+        let defaults = try #require(UserDefaults(suiteName: "session-process-\(UUID().uuidString)"))
+        let dock = DockModel(defaults: defaults, rpcClient: client)
+        dock.sessionID = "session-a"
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        control.dockModel = dock
+        control.focus(sessionID: "session-a")
+        control.capabilities = [
+            CapabilityState(
+                id: "rpc-sessions", title: "Sessions", detail: "Available", isAvailable: true, recovery: nil)
+        ]
+
+        await control.pollProcesses()
+        #expect(client.processSessionIDs == ["session-a"])
+        #expect(control.processControlAvailable)
+
+        dock.sessionID = nil
+        control.focus(sessionID: nil)
+        #expect(!control.processControlAvailable)
+    }
+
     @Test(arguments: [Optional<String>.none, .some("")])
     func newChatClearsPreviousSessionProcesses(clearedSessionID: String?) async throws {
         let client = SessionProcessIsolationClient()
@@ -248,7 +310,10 @@ private final class SessionProcessIsolationClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     private(set) var processSessionIDs: [String] = []
     private(set) var killedSessionIDs: [String] = []
+    private(set) var killedProcessIDs: [String] = []
     var processID = "finished-in-a"
+    var processState = "completed"
+    var output = ""
     var deferNextProcess = false
     private var deferredProcess: CheckedContinuation<[String: Any], Error>?
     private var processStarted: CheckedContinuation<Void, Never>?
@@ -281,6 +346,7 @@ private final class SessionProcessIsolationClient: HermesRPCClientProtocol {
         }
         if method == "process.kill" {
             killedSessionIDs.append(params["session_id"] as? String ?? "")
+            killedProcessIDs.append(params["process_id"] as? String ?? "")
             return [:]
         }
         guard method == "process.list" else { return [:] }
@@ -295,7 +361,7 @@ private final class SessionProcessIsolationClient: HermesRPCClientProtocol {
         }
         return [
             "processes": [
-                ["id": processID, "command": "completed job from A", "state": "completed"]
+                ["id": processID, "command": "completed job from A", "state": processState, "output_tail": output]
             ]
         ]
     }

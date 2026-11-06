@@ -13,7 +13,8 @@ extension DockPopover {
             .onChange(of: controlCenter.capabilities) { _, capabilities in
                 handleCapabilitiesChange(capabilities)
             }
-            .task(id: model.kanbanSessionID) {
+            .task(id: "\(model.kanbanSessionID ?? ""):\(hostPresentation.isVisible)") {
+                guard hostPresentation.isVisible else { return }
                 // Keeps chat kanban handoff notices current while the Activity
                 // panel (which polls on its own) is closed.
                 while !Task.isCancelled {
@@ -197,7 +198,12 @@ extension DockPopover {
         .background {
             GeometryReader { geometry in
                 Color.clear.onChange(of: geometry.size.width, initial: true) { _, width in
-                    workspaceLayoutWidth = width
+                    let oldHidesList = hidesChatList
+                    let oldMinimum = desktopConversationMinimumWidth
+                    workspaceGeometry.width = width
+                    if oldHidesList != hidesChatList || oldMinimum != desktopConversationMinimumWidth {
+                        workspaceLayoutRevision &+= 1
+                    }
                 }
             }
         }
@@ -310,7 +316,11 @@ extension DockPopover {
         .dockSheet(item: $selectedChatImage) { preview in
             ChatImagePreviewModal(image: preview.image)
         }
-        .dockSheet(item: $controlCenter.integrationDestination) { destination in
+        .dockSheet(
+            item: Binding(
+                get: { controlCenter.integrationDestination },
+                set: { controlCenter.integrationDestination = $0 })
+        ) { destination in
             WorkflowIntegrationView(destination: destination, client: model.controlRPCClient)
         }
         .modifier(
@@ -388,7 +398,10 @@ extension DockPopover {
     var desktopLeadingPanel: AnyView {
         AnyView(
             (fullscreenSurface == .bots ? AnyView(botsListPanel) : AnyView(sessionNavQueue))
-                .environment(\.dockNavigationHistory, navigationHistoryControls))
+                .environment(\.dockNavigationHistory, navigationHistoryControls)
+                .environment(
+                    \.dockHostVisible,
+                    hostPresentation.isVisible && showsChatsPanel && !isNarrowLayout && !hidesChatList))
     }
 
     var openGroupRoom: GroupRoom? { botMode.groupChats.rooms.first { $0.id == openGroupRoomID } }
@@ -469,8 +482,8 @@ extension DockPopover {
             onOpenWindow: onOpenWindow
         )
         .underTitlebar(titlebarInset, separator: false)
-        .task(id: isWorkspaceVisible) {
-            guard isWorkspaceVisible else { return }
+        .task(id: isWorkspaceVisible && hostPresentation.isVisible) {
+            guard isWorkspaceVisible, hostPresentation.isVisible else { return }
             // Keep Chats status current even when its session list is unmounted.
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
@@ -509,8 +522,10 @@ extension DockPopover {
             return AnyView(
                 FullscreenPanelSplitView(
                     leading: conversationColumn,
-                    trailing: contextPanel.environment(
-                        \.localPreviewDiscoveryVisible, isVisible && expandedReviewRouter.layers.isEmpty),
+                    trailing:
+                        contextPanel
+                        .environment(\.dockHostVisible, hostPresentation.isVisible && isVisible)
+                        .environment(\.localPreviewDiscoveryVisible, isVisible && expandedReviewRouter.layers.isEmpty),
                     // Fraction of the *remaining* space after the outer
                     // queue split, chosen so the three visible columns land
                     // at the DesktopWorkspaceFractions targets (queue /
@@ -664,7 +679,8 @@ extension DockPopover {
                         scope: activeSessionRepositoryScope,
                         onRefresh: { await refreshSessionWorkflow() },
                         onSelectFile: selectChangeFile,
-                        selectedFilePath: selectedChange?.file.path
+                        selectedFilePath: selectedChange?.scope == activeSessionRepositoryScope
+                            ? selectedChange?.file.path : nil
                     )
                 case .pullRequests:
                     SessionPullRequestsSurface(
@@ -699,15 +715,12 @@ extension DockPopover {
                 openQuota: { panelPresentation.quotaRequest += 1 },
                 worktreeBar: activeSessionRepositoryScope.map { scope in
                     WorktreePicker(
-                        worktrees: developerWorkflow.repository.isGitRepository
-                            ? developerWorkflow.worktrees.filter { tree in
-                                activeSessionRepositoryPath.map {
-                                    RepositoryWorktreeSummary.isPath(tree.path, within: $0)
-                                } ?? false
-                            }
-                            : [],
-                        mainPath: activeSessionRepositoryPath,
-                        selection: Binding(get: { scope.repositoryPath }, set: { $0.map(selectWorktree) }),
+                        worktrees: developerWorkflow.repository.path == scope.repositoryPath
+                            ? developerWorkflow.worktrees : [],
+                        selection: scope.repositoryPath,
+                        worktreesUnavailable: developerWorkflow.repository.isGitRepository
+                            && developerWorkflow.worktreesUnavailable,
+                        onOpenWorktree: { await selectWorktree($0) },
                         newTask: { await startWorktreeTask(from: scope.repositoryPath) }
                     )
                 }

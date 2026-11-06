@@ -71,7 +71,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .glass: "Native macOS Liquid Glass with neutral graphite tint. Follows macOS appearance."
         case .clean:
-            "Airy porcelain surfaces, soft violet accent, gray selection, and hairline cards. Follows macOS appearance."
+            "Airy porcelain surfaces, graphite controls, gray selection, and hairline cards. Follows macOS appearance."
         case .hermesClassic:
             "The Hermes desktop look: clean chrome, Nous blue, square controls, and a faint etched backdrop. Follows macOS appearance."
         case .ares: "Oxblood panels, bronze contours, crisp corners, and hard offset shadows."
@@ -354,7 +354,6 @@ struct DockThemePalette {
 
     fileprivate static func roles(_ theme: DockThemeID, dark isDark: Bool) -> Roles {
         var roles = baseRoles(theme, dark: isDark)
-        guard theme != .mono && theme != .eInk else { return roles }
         // Interaction and selection belong to the skin, never the status palette.
         roles.success = DockAccentColor.green.hex(on: roles)
         roles.warning = DockAccentColor.orange.hex(on: roles)
@@ -485,12 +484,12 @@ struct DockThemePalette {
         case .clean:
             return isDark
                 ? (
-                    "#232328", "#2D2D33", "#28282D", "#3A3A41", "#E4E4E8", "#C8C8CF", "#A8A8B2", "#A9A1F7", "#35353A",
-                    "#3C3C44", "#4CC27A", "#E5A640", "#FF6B6B"
+                    "#2A2B31", "#33343B", "#303137", "#40414A", "#EDEDF1", "#CFCFD6", "#AEAEB8", "#C4C4C4", "#3D3E42",
+                    "#44454D", "#4CC27A", "#E5A640", "#FF6B6B"
                 )
                 : (
-                    "#FFFFFF", "#FFFFFF", "#F6F6F9", "#F0F0F4", "#26262C", "#52525C", "#6A6A74", "#6358DD", "#ECECF1",
-                    "#E1E1E8", "#2F8F4E", "#B26A00", "#D13B3B"
+                    "#FFFFFF", "#FFFFFF", "#F8F9FB", "#F1F3F6", "#1F2025", "#4B4D57", "#666975", "#505050", "#EDEEF1",
+                    "#DFE1E7", "#2F8F4E", "#B26A00", "#D13B3B"
                 )
         case .eInk:
             return (
@@ -515,6 +514,7 @@ struct DockThemePalette {
     /// variant from whatever appearance happened to be current when read.
     private static let tokens: [DockThemeID: Tokens] = Dictionary(
         uniqueKeysWithValues: DockThemeID.allCases.map { ($0, Tokens(theme: $0)) })
+    private static let solidAccents = DockAccentColor.allCases.map { Color(nsColor: NSColor(hex: $0.hex)) }
     private var resolvedTokens: Tokens { Self.tokens[theme]! }
     var windowBackground: Color { resolvedTokens.windowBackground }
     var opaqueBackground: Color { resolvedTokens.opaqueBackground }
@@ -528,7 +528,7 @@ struct DockThemePalette {
     func color(_ accent: DockAccentColor) -> Color { resolvedTokens.accents[accent.rawValue] }
     /// Solid identity artwork keeps the midtone fill; small text uses contrast-adjusted ink.
     func fill(_ accent: DockAccentColor) -> Color {
-        theme == .mono || theme == .eInk ? color(accent) : Color(nsColor: NSColor(hex: accent.hex))
+        Self.solidAccents[accent.rawValue]
     }
     var info: Color { resolvedTokens.info }
     var merged: Color { resolvedTokens.merged }
@@ -592,7 +592,7 @@ private struct Tokens {
         }
         accents = DockAccentColor.allCases.map { accent in
             color { roles in
-                theme == .mono || theme == .eInk ? roles.secondary : accent.hex(on: roles)
+                accent.hex(on: roles)
             }
         }
         info = accents[DockAccentColor.blue.rawValue]

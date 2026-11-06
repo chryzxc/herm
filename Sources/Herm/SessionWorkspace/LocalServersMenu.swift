@@ -2,11 +2,12 @@ import SwiftUI
 
 struct LocalServersMenu: View {
     @Environment(\.localPreviewDiscoveryVisible) private var surfaceVisible
+    @Environment(\.dockHostVisible) private var hostVisible
     let processIDs: [Int32]
     var active = true
     @StateObject private var discovery = LocalPreviewDiscoveryModel()
     @State private var isOpen = false
-    private var isActive: Bool { active && surfaceVisible }
+    private var isActive: Bool { active && surfaceVisible && hostVisible && isOpen }
     private var scope: String { processIDs.map(String.init).joined(separator: ",") + ":\(isActive)" }
     var body: some View {
         Button {
@@ -37,7 +38,8 @@ struct LocalServersMenu: View {
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
             }
         }
-        .onChange(of: scope) { _, _ in isOpen = false }
+        .onChange(of: hostVisible) { _, visible in if !visible { isOpen = false } }
+        .onChange(of: surfaceVisible) { _, visible in if !visible { isOpen = false } }
         .onDisappear {
             isOpen = false
             discovery.configure(processIDs: processIDs, active: false)

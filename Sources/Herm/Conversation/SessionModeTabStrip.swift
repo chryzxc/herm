@@ -2,9 +2,11 @@ import SwiftUI
 
 /// Compact visible tabs inside full-height hit targets in the conversation header.
 struct SessionModeTabStrip: View {
+    @Namespace private var selectionNamespace
     let modes: [DockPopover.SessionWorkspaceMode]
     let selectedMode: DockPopover.SessionWorkspaceMode
     let style: DockThemePalette
+    var voiceEnabled = true
     let onSelect: (DockPopover.SessionWorkspaceMode) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -25,12 +27,14 @@ struct SessionModeTabStrip: View {
                         .dockPadding(.horizontal, 8)
                         .frame(minWidth: DockControlMetrics.hitTarget, minHeight: DockControlMetrics.compactHeight - 4)
                         .dockSelectionBackground(
-                            segment, active: isSelected, fill: style.selectedFill, theme: style.theme
+                            segment, active: isSelected, fill: style.selectedFill, theme: style.theme,
+                            namespace: selectionNamespace
                         )
                         .frame(height: DockControlMetrics.hitTarget)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.dockHover)
+                .disabled(mode == .voice && !voiceEnabled)
                 .help(mode.help)
                 .accessibilityLabel(mode.label)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -42,6 +46,6 @@ struct SessionModeTabStrip: View {
                 .frame(height: DockControlMetrics.compactHeight)
         }
         .fixedSize()
-        .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: selectedMode)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.22), value: selectedMode)
     }
 }

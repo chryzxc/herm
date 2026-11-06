@@ -11,12 +11,10 @@ extension DockModel {
         // has no canonical session pointer yet, Hermes resolves (and lazily
         // creates) the chat by its exact title during profile-scoped resume.
         let chat = bot.chat ?? BotChatReference(sessionID: BotService.canonicalBotChatTitle, profileID: bot.id)
-        Task {
-            _ = await resumeSession(
-                HermesSession(
-                    id: chat.sessionID, title: bot.name, preview: chat.preview ?? "", startedAt: chat.lastActive,
-                    messageCount: 0, source: "hermes-bot"), reportFailure: true, profileID: chat.profileID)
-        }
+        resumeSession(
+            HermesSession(
+                id: chat.sessionID, title: bot.name, preview: chat.preview ?? "", startedAt: chat.lastActive,
+                messageCount: 0, source: "hermes-bot"), profileID: chat.profileID)
     }
 
     /// Routes an explicit, unambiguous Bot mention to its profile-scoped Bot Chat.
@@ -27,6 +25,7 @@ extension DockModel {
         profileID: String, displayName: String, text: String, chatSessionID: String? = nil, quote: ReplyQuote? = nil,
         originalText: String? = nil, botMentions: [ComposerBotMention] = [], clearsComposer: Bool = true
     ) {
+        guard sessionActionsReady else { return }
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // First message of a new chat: create the origin, then contact the Bot.
         if sessionID == nil, !request.isEmpty, !isSending, !isRestoringSession,
@@ -70,7 +69,11 @@ extension DockModel {
         let sendGeneration = sessionResumeGeneration
         let visibleText = originalText ?? "@\(displayName) \(request)"
         let transcriptText = quote?.composing(visibleText) ?? visibleText
-        let relayMessage = Self.botRelayMessage(request: quote?.composing(request) ?? request, transcript: messages)
+        let relayMessage = GenerativeUIIntegration.preparePrompt(
+            Self.botRelayMessage(request: quote?.composing(request) ?? request, transcript: messages),
+            context: generationContext(
+                for: QuickDestination(
+                    profileID: profileID, sessionID: explicitBotSessionID, title: displayName)))
         if clearsComposer {
             draft = ""
             replyQuote = nil

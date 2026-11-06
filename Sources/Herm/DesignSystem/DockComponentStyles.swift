@@ -357,6 +357,46 @@ private struct DockFoldCrease: Shape {
     }
 }
 
+/// Only selection artwork moves between controls; labels, hit targets and content stay mounted.
+private struct DockSelectionSurface<S: Shape>: View {
+    let shape: S
+    let fill: Color
+    let allowsInvert: Bool
+    let theme: DockThemeID
+
+    var body: some View {
+        let mode = theme.style.selection
+        let palette = DockThemePalette(theme: theme)
+        Color.clear.background {
+            switch mode {
+            case .underline:
+                Color.clear
+            case .invert where allowsInvert:
+                shape.fill(palette.primaryText)
+            case .highlight:
+                // A marker swipe behind the label, set slightly off-level.
+                Color.dockMarker.opacity(0.5)
+                    .frame(height: 12)
+                    .rotationEffect(.degrees(-0.8))
+                    .dockPadding(.bottom, 4)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+            case .neon where !palette.neonHues.isEmpty:
+                shape.fill(
+                    LinearGradient(
+                        colors: [palette.neonHues[0].opacity(0.24), palette.neonHues[1].opacity(0.06)],
+                        startPoint: .leading, endPoint: .trailing)
+                )
+                .overlay(shape.stroke(palette.neonHues[0].opacity(0.22), lineWidth: 0.5))
+            default:
+                shape.fill(fill)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if mode == .underline { palette.accent.frame(height: 2) }
+        }
+    }
+}
+
 extension Animation {
     static func dockEase(duration: TimeInterval = 0.3) -> Animation {
         switch DockThemeStyle.current.motion {
@@ -404,40 +444,18 @@ extension View {
     /// style: tinted fill, inverted ink, or an accent underline. `allowsInvert`
     /// is false for containers whose children set their own text colors.
     func dockSelectionBackground<S: Shape>(
-        _ shape: S, active: Bool, fill: Color, allowsInvert: Bool = true, theme: DockThemeID = DockThemeRuntime.current
+        _ shape: S, active: Bool, fill: Color, allowsInvert: Bool = true, theme: DockThemeID = DockThemeRuntime.current,
+        namespace: Namespace.ID? = nil
     ) -> some View {
-        let mode = theme.style.selection
-        let palette = DockThemePalette(theme: theme)
-        return background {
-            switch mode {
-            case .underline:
-                Color.clear
-            case .invert where allowsInvert:
-                shape.fill(active ? palette.primaryText : .clear)
-            case .highlight:
-                // A marker swipe behind the label, set slightly off-level.
-                if active {
-                    Color.dockMarker.opacity(0.5)
-                        .frame(height: 12)
-                        .rotationEffect(.degrees(-0.8))
-                        .dockPadding(.bottom, 4)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
+        background {
+            if active {
+                let surface = DockSelectionSurface(shape: shape, fill: fill, allowsInvert: allowsInvert, theme: theme)
+                if let namespace {
+                    surface.matchedGeometryEffect(id: "dock-selection", in: namespace)
+                } else {
+                    surface
                 }
-            case .neon where !palette.neonHues.isEmpty:
-                if active {
-                    shape.fill(
-                        LinearGradient(
-                            colors: [palette.neonHues[0].opacity(0.24), palette.neonHues[1].opacity(0.06)],
-                            startPoint: .leading, endPoint: .trailing)
-                    )
-                    .overlay(shape.stroke(palette.neonHues[0].opacity(0.22), lineWidth: 0.5))
-                }
-            default:
-                shape.fill(active ? fill : .clear)
             }
-        }
-        .overlay(alignment: .bottom) {
-            if mode == .underline && active { palette.accent.frame(height: 2) }
         }
     }
 
@@ -695,6 +713,11 @@ struct DockHoverButtonStyle: ButtonStyle {
             .scaleEffect(
                 DockMotion.pressScale(
                     isPressed: configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
+            )
+            .offset(
+                y: DockMotion.hoverOffset(
+                    isHovered: isHovering, isPressed: configuration.isPressed,
+                    isEnabled: isEnabled, reduceMotion: reduceMotion)
             )
             .animation(
                 reduceMotion ? nil : .dockFeedback(configuration.isPressed, duration: 0.2),
@@ -1021,8 +1044,12 @@ struct DockPageHeader<Trailing: View>: View {
     private func windowTitleRow(_ row: DockTitleRow) -> some View {
         HStack(spacing: 8) {
             HStack(spacing: 0) {
-                sidebarToggle
                 // Only the leftmost title row; GitHub's detail header sits beside its own navigation.
+                if row.leadingClearance > 0 {
+                    DockBuildBadge()
+                        .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 8)
+                }
+                sidebarToggle
                 if row.leadingClearance > 0 { DockHistoryButtons() }
             }
             Text(title)
@@ -1238,22 +1265,30 @@ struct DockSidebarToggle: View {
 /// A compact in-place pending treatment for actions that call Hermes. The
 /// button retains its footprint so the surrounding control surface never jumps.
 struct DockActionLabel: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
     let pendingTitle: String
     let isPending: Bool
     var tint: Color = .dockAccent
 
     var body: some View {
-        HStack(spacing: 6) {
-            if isPending {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(tint)
+        ZStack {
+            Text(title).opacity(isPending ? 0 : 1)
+            HStack(spacing: 6) {
+                ZStack {
+                    if isPending {
+                        DockLayerMotion(kind: .spin(period: 1.2, lineWidth: 1.5), color: tint)
+                    }
+                }
+                .frame(width: 12, height: 12)
+                Text(pendingTitle)
             }
-            Text(isPending ? pendingTitle : title)
+            .opacity(isPending ? 1 : 0)
         }
         .lineLimit(1)
-        .contentTransition(.opacity)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion), value: isPending)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(isPending ? pendingTitle : title)
     }
 }
 
@@ -1281,10 +1316,7 @@ struct DockCallout<Content: View>: View {
 
     var body: some View {
         let tint = tone.color
-        let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
-        VStack(alignment: .leading, spacing: 0) {
-            // Header band: the tone lives here, so every callout reads the same
-            // at a glance and the body stays neutral.
+        VStack(alignment: .leading, spacing: DockSpacing.control) {
             HStack(spacing: DockSpacing.control) {
                 DockIcon(icon, size: 14, weight: .fill, color: tint)
                 Text(title)
@@ -1295,10 +1327,7 @@ struct DockCallout<Content: View>: View {
                 Spacer(minLength: DockSpacing.control)
                 if let badge { statusPill(badge, tint: tint) }
             }
-            .dockPadding(.horizontal, DockSpacing.group)
-            .dockPadding(.vertical, DockSpacing.control + 2)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(tint.opacity(0.09))
 
             let hasMessage = !(message ?? "").isEmpty
             if hasMessage || Content.self != EmptyView.self {
@@ -1308,15 +1337,11 @@ struct DockCallout<Content: View>: View {
                     }
                     content()
                 }
-                .dockPadding(DockSpacing.group)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(shape.dockSurfaceFill(Color.dockSurface))
-        .clipShape(shape)
-        .overlay(shape.stroke(tint.opacity(0.35), lineWidth: DockLayout.hairline))
-        .dockFoldCrease()
+        .dockCard(padding: DockSpacing.group)
         .accessibilityElement(children: .contain)
     }
 
@@ -1655,10 +1680,11 @@ extension View {
         return
             self
             .frame(maxWidth: .infinity, alignment: .leading)
-            .dockPadding(.horizontal, 10)
-            .dockPadding(.vertical, 10)
+            .dockPadding(.horizontal, DockSpacing.group)
+            .dockPadding(.vertical, DockSpacing.control)
             .dockSelectionBackground(
-                shape, active: isHighlighted, fill: Color.dockAccent.opacity(0.10), allowsInvert: false
+                shape, active: isHighlighted,
+                fill: DockThemePalette(theme: DockThemeRuntime.current).selectedFill, allowsInvert: false
             )
             .overlay(alignment: .bottom) {
                 Color.dockBorderLight
@@ -1670,8 +1696,9 @@ extension View {
 
     /// Shared compact surface for secondary inspectors and detail groups.
     /// It uses the same low-contrast treatment as the main Control panel.
+    /// `isActive` marks a hovered, focused or selected card: raised fill, strong border.
     @ViewBuilder
-    func dockCard(padding: CGFloat = 12, isQuiet: Bool = false) -> some View {
+    func dockCard(padding: CGFloat = 12, isActive: Bool = false) -> some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
         let style = DockThemeStyle.current
         if style.chrome == .open {
@@ -1681,19 +1708,15 @@ extension View {
             self
                 .dockPadding(padding)
                 .dockLiquidGlass(shape)
-        } else if isQuiet {
-            self
-                .dockPadding(padding)
-                .background(shape.fill(Color.dockSurface))
-                .overlay(shape.stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
         } else {
             self
                 .dockPadding(padding)
-                .background(shape.fill(Color.dockSurface.opacity(style.cardFill)))
+                .background(shape.fill(isActive ? Color.dockSurface2 : Color.dockSurface.opacity(style.cardFill)))
                 // A 0-width stroke still draws a hairline, so outline-free skins skip it.
                 .overlay(
                     shape.stroke(
-                        DockLayout.outline > 1 ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72),
+                        isActive || DockLayout.outline > 1
+                            ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72),
                         lineWidth: DockLayout.outline
                     ).opacity(DockLayout.outline > 0 ? 1 : 0)
                 )
@@ -1704,6 +1727,35 @@ extension View {
                 .dockCardMarks()
                 .dockCardDepth()
         }
+    }
+
+    /// Inset surface for tiles, notices and fields inside a card or panel. Not a card:
+    /// no padding or shadow, control radius. `.raised` sits above its parent, `.sunken` is a field.
+    @MainActor
+    func dockWell(
+        _ tone: DockWellTone = .raised, radius: CGFloat = DockLayout.controlRadius,
+        role: DockThemeShapeRole = .control, stroke: Color? = nil
+    ) -> some View {
+        background(
+            DockThemeShape(cornerRadius: radius, role: role)
+                .dockSurfaceFill(tone.fill, stroke: stroke ?? tone.stroke))
+    }
+
+    /// Compact label capsule: neutral by default, or washed with `tint` for status and identity.
+    func dockPill(tint: Color? = nil) -> some View {
+        dockPadding(.horizontal, 6).dockPadding(.vertical, 2)
+            .background(Capsule().fill(tint.map { $0.opacity(0.14) } ?? Color.dockSurface4))
+    }
+
+    /// Floating tinted surface for the voice HUD and its activity pills.
+    @MainActor
+    func dockHUDSurface(tint: Color = .dockAccent) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
+                .dockSurfaceFill(
+                    Color.dockSurface6.opacity(0.94), stroke: tint.opacity(0.3), lineWidth: 0.6, strokeOnGlass: true)
+        )
+        .shadow(color: tint.opacity(0.18), radius: 16)
     }
 
     /// Soft drop shadow and accent halo for themes that opt in; both are 0 by default.
@@ -1724,6 +1776,7 @@ struct DockTabButton: View {
     let title: String
     let isSelected: Bool
     var showsSelectionMark = false
+    var selectionNamespace: Namespace.ID? = nil
     let action: () -> Void
 
     var body: some View {
@@ -1747,20 +1800,15 @@ struct DockTabButton: View {
             .frame(height: 30)
             .dockSelectionBackground(
                 shape, active: isSelected,
-                fill: DockThemeStyle.current.material == .glass ? .clear : Color.dockSurface4
+                fill: DockThemeStyle.current.material == .glass
+                    ? (colorScheme == .light ? Color.white.opacity(0.9) : Color.dockPrimaryText.opacity(0.14))
+                    : Color.dockSurface4,
+                namespace: selectionNamespace
             )
-            .background {
-                if isSelected && DockThemeStyle.current.material == .glass {
-                    Color.clear.dockLiquidGlass(
-                        shape, tint: colorScheme == .light ? Color.dockAccentMuted : nil, interactive: true)
-                    // Glass over a glass track barely reads; lift the selected tab.
-                    shape.fill(Color.dockPrimaryText.opacity(colorScheme == .light ? 0.06 : 0.16))
-                    shape.stroke(Color.dockGlassSelectionEdge, lineWidth: 1)
-                }
-            }
             .overlay(
                 shape.stroke(
-                    isSelected && (showsSelectionMark || DockLayout.outline > 1) ? Color.dockBorderStrong : .clear,
+                    isSelected && DockThemeStyle.current.material != .glass
+                        && (showsSelectionMark || DockLayout.outline > 1) ? Color.dockBorderStrong : .clear,
                     lineWidth: DockLayout.outline))
         }
         .buttonStyle(.dockHover)
@@ -1772,6 +1820,8 @@ struct DockTabButton: View {
 
 /// A row of `DockTabButton`s bound to a selection, replacing segmented pickers.
 struct DockTabBar<Option: Hashable>: View {
+    @Namespace private var selectionNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let options: [Option]
     @Binding var selection: Option
     let title: (Option) -> String
@@ -1779,10 +1829,13 @@ struct DockTabBar<Option: Hashable>: View {
     var body: some View {
         HStack(spacing: 2) {
             ForEach(options, id: \.self) { option in
-                DockTabButton(title: title(option), isSelected: selection == option) { selection = option }
+                DockTabButton(
+                    title: title(option), isSelected: selection == option, selectionNamespace: selectionNamespace
+                ) { selection = option }
             }
         }
         .dockTabTrack()
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.22), value: selection)
     }
 }
 
@@ -1878,5 +1931,66 @@ struct DockTextField: View {
 
     var body: some View {
         TextField("", text: $text, prompt: Text(placeholder).foregroundColor(Color.dockMetadataText), axis: axis)
+    }
+}
+
+/// Search input shared by list and inspector toolbars.
+struct DockSearchField: View {
+    let placeholder: String
+    @Binding var text: String
+    var accessibilityDescription: String? = nil
+    var accessibilityID: String = ""
+
+    var body: some View {
+        HStack(spacing: DockSpacing.tight) {
+            DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
+            DockTextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .dockFont(.body)
+                .foregroundStyle(Color.dockPrimaryText)
+                .accessibilityLabel(accessibilityDescription ?? placeholder)
+                .accessibilityIdentifier(accessibilityID)
+                .onExitCommand { text = "" }
+            if !text.isEmpty {
+                DockIconButton(
+                    icon: .x, label: "Clear search", size: 24,
+                    style: DockThemePalette(theme: DockThemeRuntime.current)
+                ) { text = "" }
+            }
+        }
+        .dockPadding(.horizontal, DockSpacing.control)
+        .frame(minHeight: 32)
+        .dockWell(.sunken)
+    }
+}
+
+enum DockWellTone {
+    case raised, sunken
+
+    var fill: Color { self == .raised ? .dockSurface2 : .dockSurface4 }
+    var stroke: Color { self == .raised ? .dockBorderLight : .dockBorder }
+}
+
+/// Thin capsule meter: `fraction` (0...1) of the track filled with `tint`.
+struct DockProgressBar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let fraction: Double
+    var tint: Color = .dockAccent
+    var height: CGFloat = 4
+    var track: Color = .dockBorderLight
+    /// Keeps a non-zero value visible at tiny fractions.
+    var minFill: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { proxy in
+            Capsule().fill(track)
+                .overlay(alignment: .leading) {
+                    Capsule().fill(tint)
+                        .frame(width: max(minFill, proxy.size.width * min(1, max(0, fraction))))
+                        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.22), value: fraction)
+                }
+        }
+        .frame(height: height)
+        .accessibilityHidden(true)
     }
 }

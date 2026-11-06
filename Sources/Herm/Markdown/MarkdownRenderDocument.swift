@@ -111,6 +111,7 @@ enum MarkdownRenderDocumentCache {
 @MainActor
 struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
+    @Environment(\.conversationScrollController) private var scrollController
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @Environment(\.accessibilitySwitchControlEnabled) private var switchControlEnabled
     let source: String
@@ -142,6 +143,7 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
 
     func makeNSView(context: Context) -> NativeMarkdownDocumentContainerView {
         let view = NativeMarkdownDocumentContainerView()
+        view.scrollController = scrollController
         view.markdownOpenURL = context.environment.markdownOpenURL
         view.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         view.setBodyStyle(size: DockWorkspaceScale.points(bodySize, scale: workspaceScale), weight: bodyWeight)
@@ -151,6 +153,7 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
     }
 
     func updateNSView(_ nsView: NativeMarkdownDocumentContainerView, context: Context) {
+        nsView.scrollController = scrollController
         nsView.markdownOpenURL = context.environment.markdownOpenURL
         nsView.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
         nsView.setBodyStyle(size: DockWorkspaceScale.points(bodySize, scale: workspaceScale), weight: bodyWeight)
@@ -191,7 +194,13 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
                     || renderedCacheResult != cacheResult
             else { return }
             let started = DispatchTime.now().uptimeNanoseconds
-            let document = MarkdownRenderDocumentCache.document(for: source, key: key, cacheResult: cacheResult)
+            let prepared = cacheResult ? view.scrollController?.preparedPage?.documents[key] : nil
+            let document: MarkdownRenderDocument
+            if let prepared, prepared.source == source {
+                document = prepared
+            } else {
+                document = MarkdownRenderDocumentCache.document(for: source, key: key, cacheResult: cacheResult)
+            }
             if cacheResult {
                 view.apply(document: document)
             } else {
@@ -255,6 +264,24 @@ struct NativeMarkdownHeightCache {
 
 @MainActor
 final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
+    private static let tracksPerformance =
+        ProcessInfo.processInfo.environment["HERM_CHAT_PROFILE"] == "1"
+        || ProcessInfo.processInfo.environment["HERM_SCROLL_PROFILE"] == "1"
+        || ProcessInfo.processInfo.environment["HERMES_DOCK_DEBUG_LOGS"] == "1"
+        || ProcessInfo.processInfo.arguments.contains("--perf-trace")
+    private(set) static var totalViewportSectionVisits = 0
+    private(set) static var totalViewportMountChanges = 0
+    private(set) static var totalForegroundMeasurements = 0
+    private(set) static var maxInactiveViews = 0
+    struct MeasurementContext: Equatable {
+        let width: CGFloat
+        let bodySize: CGFloat
+        let bodyWeight: NSFont.Weight
+        let themeRevision: Int
+        let mentionRevision: Int
+        let themeID: DockThemeID
+    }
+    weak var scrollController: ConversationScrollController?
     var markdownOpenURL = OpenURLAction {
         InAppBrowser.open($0)
         return .handled
@@ -268,11 +295,14 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         var view: (any NativeMarkdownMeasurableSection)?
         var spacingBefore: CGFloat
         var heights = NativeMarkdownHeightCache()
+        var horizontalOffset: CGFloat = 0
+        let estimatedCost: Int
 
         init(section: MarkdownRenderSection, view: (any NativeMarkdownMeasurableSection)?, spacingBefore: CGFloat) {
             self.section = section
             self.view = view
             self.spacingBefore = spacingBefore
+            estimatedCost = section.source.utf8.count * 4
         }
     }
 
@@ -291,6 +321,14 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     private(set) var cachedIntrinsicHeight: CGFloat?
     private(set) var cachedSolveWidth: CGFloat = -1
     private var cachedFrames: [CGRect] = []
+    private var mountedIndices: Set<Int> = []
+    private var inactiveIndices: [Int] = []
+    private var viewIndices: [ObjectIdentifier: Int] = [:]
+    private var lastMountedRange: Range<Int>?
+    private var lastKeepAll = false
+    private var lastFocusedIndex: Int?
+    private(set) var viewportSectionVisits = 0
+    private(set) var viewportMountChanges = 0
     private weak var observedClipView: NSClipView?
     nonisolated(unsafe) private var viewportObservers: [NSObjectProtocol] = []
     var keepsAccessibilitySectionsMounted = false {
@@ -333,7 +371,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                         NotificationCenter.default.addObserver(
                             forName: name, object: view, queue: .main
                         ) { [weak self] _ in
-                            MainActor.assumeIsolated { self?.updateMountedSections() }
+                            MainActor.assumeIsolated { self?.needsLayout = true }
                         })
                 }
                 if view === clip { break }
@@ -359,6 +397,10 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
 
     func measuredHeight(forWidth proposedWidth: CGFloat) -> CGFloat {
         let width = max(1, proposedWidth)
+        scrollController?.markdownMeasurementContext = MeasurementContext(
+            width: width, bodySize: bodySize, bodyWeight: bodyWeight,
+            themeRevision: DockThemeRuntime.revision, mentionRevision: BotMentions.revision,
+            themeID: DockThemeRuntime.current)
         if let cached = cachedIntrinsicHeight, cachedSolveWidth == width {
             return cached
         }
@@ -368,16 +410,21 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         var hasVisibleSection = false
         for entry in entries {
             let height: CGFloat
+            let measurementWidth: CGFloat
+            if case .code = entry.section.kind { measurementWidth = 0 } else { measurementWidth = width }
             let sharedKey = NativeMarkdownCompletedHeightCache.Key(
-                source: entry.section.source, kind: entry.section.kind, width: width,
+                source: entry.section.source, kind: entry.section.kind, width: measurementWidth,
                 bodySize: bodySize, bodyWeight: bodyWeight.rawValue,
                 themeRevision: DockThemeRuntime.revision, mentionRevision: BotMentions.revision,
                 themeID: DockThemeRuntime.current)
-            if let cached = entry.heights.height(forWidth: width) {
+            if let cached = entry.heights.height(forWidth: measurementWidth) {
                 height = cached
-            } else if !isStreamingDocument, let cached = NativeMarkdownCompletedHeightCache.height(for: sharedKey) {
-                height = cached
-                entry.heights.store(height, forWidth: width)
+            } else if !isStreamingDocument,
+                let cached = scrollController?.preparedPage?.measurements[sharedKey]
+                    ?? NativeMarkdownCompletedHeightCache.measurement(for: sharedKey)
+            {
+                height = cached.height
+                entry.heights.store(height, forWidth: measurementWidth)
             } else {
                 let measuringView: any NativeMarkdownMeasurableSection
                 if let view = entry.view {
@@ -390,8 +437,12 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                 Self.update(measuringView, with: entry.section, bodySize: bodySize, bodyWeight: bodyWeight)
                 height = measuringView.measuredHeight(forWidth: width)
                 sectionMeasurementCount += 1
-                entry.heights.store(height, forWidth: width)
-                if !isStreamingDocument { NativeMarkdownCompletedHeightCache.store(height, for: sharedKey) }
+                if Self.tracksPerformance { Self.totalForegroundMeasurements += 1 }
+                entry.heights.store(height, forWidth: measurementWidth)
+                if !isStreamingDocument {
+                    NativeMarkdownCompletedHeightCache.store(
+                        height, for: sharedKey, codeSize: (measuringView as? NativeMarkdownCodeView)?.contentSize)
+                }
             }
             guard height > 0 else {
                 frames.append(CGRect(x: 0, y: y, width: width, height: 0))
@@ -406,6 +457,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         cachedSolveWidth = width
         cachedIntrinsicHeight = height
         cachedFrames = frames
+        lastMountedRange = nil
         return height
     }
 
@@ -436,38 +488,123 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
             visible.isEmpty ? .zero : visible.insetBy(dx: 0, dy: -clip.bounds.height)
         }
         let keepAll = keepsAccessibilitySectionsMounted || NSApp?.isFullKeyboardAccessEnabled == true
-        let focused = window?.firstResponder as? NSView
-        var nextMounted: NSView?
-        for (entry, frame) in zip(entries, cachedFrames).reversed() {
-            let containsFocus =
-                entry.view.flatMap { view in
-                    focused.map { $0 === view || $0.isDescendant(of: view) }
-                } ?? false
-            let shouldMount = keepAll || containsFocus || (viewport.map { frame.intersects($0) } ?? true)
-            guard shouldMount else {
-                entry.view?.removeFromSuperview()
-                continue
+        let range = keepAll || viewport == nil ? entries.indices : sectionRange(intersecting: viewport!)
+        var focused = window?.firstResponder as? NSView
+        var focusedIndex: Int?
+        while let view = focused, view !== self {
+            if let index = viewIndices[ObjectIdentifier(view)] {
+                focusedIndex = index
+                break
             }
+            focused = view.superview
+        }
+        if range == lastMountedRange, keepAll == lastKeepAll, focusedIndex == lastFocusedIndex { return }
+        lastMountedRange = range
+        lastKeepAll = keepAll
+        lastFocusedIndex = focusedIndex
+        var desired = Set(range)
+        if let focusedIndex { desired.insert(focusedIndex) }
+        for index in mountedIndices.subtracting(desired) {
+            guard let view = entries[index].view else { continue }
+            if let code = view as? NativeMarkdownCodeView { entries[index].horizontalOffset = code.horizontalOffset }
+            view.removeFromSuperview()
+            inactiveIndices.removeAll { $0 == index }
+            inactiveIndices.append(index)
+            viewportMountChanges += 1
+            if Self.tracksPerformance { Self.totalViewportMountChanges += 1 }
+        }
+        mountedIndices = desired
+        var nextMounted: NSView?
+        for index in desired.sorted().reversed() {
+            viewportSectionVisits += 1
+            if Self.tracksPerformance { Self.totalViewportSectionVisits += 1 }
+            let entry = entries[index]
+            let frame = cachedFrames[index]
             let view: any NativeMarkdownMeasurableSection
+            var created = false
             if let existing = entry.view {
                 view = existing
             } else {
                 view = Self.makeView(for: entry.section)
-                Self.update(view, with: entry.section, bodySize: bodySize, bodyWeight: bodyWeight)
+                let context = MeasurementContext(
+                    width: bounds.width, bodySize: bodySize, bodyWeight: bodyWeight,
+                    themeRevision: DockThemeRuntime.revision, mentionRevision: BotMentions.revision,
+                    themeID: DockThemeRuntime.current)
+                let preparedSize: NSSize?
+                if !isStreamingDocument, case .code = entry.section.kind {
+                    let key = Self.measurementKey(for: entry.section, context: context)
+                    preparedSize =
+                        scrollController?.preparedPage?.measurements[key]?.codeSize
+                        ?? NativeMarkdownCompletedHeightCache.codeSize(for: key)
+                } else {
+                    preparedSize = nil
+                }
+                Self.update(
+                    view, with: entry.section, bodySize: bodySize, bodyWeight: bodyWeight,
+                    preparedCodeSize: preparedSize)
                 entry.view = view
+                viewIndices[ObjectIdentifier(view)] = index
+                if let code = view as? NativeMarkdownCodeView {
+                    code.onInteractionEnded = { [weak self] in self?.trimInactiveSections() }
+                }
+                created = true
             }
+            inactiveIndices.removeAll { $0 == index }
             if view.superview !== self {
                 if let nextMounted {
                     addSubview(view, positioned: .below, relativeTo: nextMounted)
                 } else {
                     addSubview(view)
                 }
+                viewportMountChanges += 1
+                if Self.tracksPerformance { Self.totalViewportMountChanges += 1 }
             }
             nextMounted = view
-            let isEmpty = frame.height <= 0
-            if view.isHidden != isEmpty { view.isHidden = isEmpty }
+            if view.isHidden != (frame.height <= 0) { view.isHidden = frame.height <= 0 }
             if view.frame != frame { view.frame = frame }
+            if created, let code = view as? NativeMarkdownCodeView {
+                code.restoreHorizontalOffset(entry.horizontalOffset)
+            }
         }
+        if !keepAll { trimInactiveSections() }
+    }
+
+    private func sectionRange(intersecting viewport: CGRect) -> Range<Int> {
+        guard !viewport.isEmpty else { return 0..<0 }
+        var lower = 0
+        var upper = cachedFrames.count
+        while lower < upper {
+            let middle = (lower + upper) / 2
+            if cachedFrames[middle].maxY <= viewport.minY { lower = middle + 1 } else { upper = middle }
+        }
+        let start = lower
+        upper = cachedFrames.count
+        while lower < upper {
+            let middle = (lower + upper) / 2
+            if cachedFrames[middle].minY < viewport.maxY { lower = middle + 1 } else { upper = middle }
+        }
+        return start..<lower
+    }
+
+    private func trimInactiveSections() {
+        var bytes = inactiveIndices.reduce(0) { $0 + entries[$1].estimatedCost }
+        var count = inactiveIndices.count
+        for index in inactiveIndices {
+            guard count > 8 || bytes > 256 * 1024 else { break }
+            guard let view = entries[index].view, !Self.hasSelectionOrInteraction(view) else { continue }
+            bytes -= entries[index].estimatedCost
+            count -= 1
+            viewIndices.removeValue(forKey: ObjectIdentifier(view))
+            entries[index].view = nil
+        }
+        inactiveIndices.removeAll { entries[$0].view == nil }
+        if Self.tracksPerformance { Self.maxInactiveViews = max(Self.maxInactiveViews, inactiveIndices.count) }
+    }
+
+    private static func hasSelectionOrInteraction(_ view: NSView) -> Bool {
+        if let text = view as? NSTextView, text.selectedRange().length > 0 { return true }
+        if let code = view as? NativeMarkdownCodeView, code.hasActiveInteraction { return true }
+        return view.subviews.contains { hasSelectionOrInteraction($0) }
     }
 
     private var bodySize: CGFloat = DockTypography.size(.conversation)
@@ -515,6 +652,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                 let view = existing?.view.flatMap { Self.isCompatible($0, with: section) ? $0 : nil }
                 if let view { Self.update(view, with: section, bodySize: bodySize, bodyWeight: bodyWeight) }
                 entry = Entry(section: section, view: view, spacingBefore: spacing)
+                entry.horizontalOffset = existing?.horizontalOffset ?? 0
             }
             next.append(entry)
             previousSource = section.source
@@ -524,6 +662,13 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
             if let view = entry.view, !kept.contains(ObjectIdentifier(view)) { view.removeFromSuperview() }
         }
         entries = next
+        mountedIndices = Set(next.indices.filter { next[$0].view?.superview === self })
+        inactiveIndices = next.indices.filter { next[$0].view != nil && next[$0].view?.superview !== self }
+        viewIndices = Dictionary(
+            uniqueKeysWithValues: next.indices.compactMap { index in
+                next[index].view.map { (ObjectIdentifier($0), index) }
+            })
+        lastMountedRange = nil
         cachedIntrinsicHeight = nil
         cachedSolveWidth = -1
         cachedFrames = []
@@ -544,6 +689,10 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     func reset() {
         for entry in entries { entry.view?.removeFromSuperview() }
         entries.removeAll(keepingCapacity: true)
+        mountedIndices.removeAll()
+        inactiveIndices.removeAll()
+        viewIndices.removeAll()
+        lastMountedRange = nil
         source = ""
         renderedSections = []
         renderedThemeRevision = -1
@@ -600,18 +749,44 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
 
     private static func update(
         _ view: any NativeMarkdownMeasurableSection, with section: MarkdownRenderSection, bodySize: CGFloat,
-        bodyWeight: NSFont.Weight
+        bodyWeight: NSFont.Weight, preparedCodeSize: NSSize? = nil
     ) {
         switch view {
         case let codeView as NativeMarkdownCodeView:
             if case .code(let language) = section.kind {
-                codeView.update(code: section.source, language: language, bodySize: bodySize)
+                codeView.update(
+                    code: section.source, language: language, bodySize: bodySize, preparedSize: preparedCodeSize)
             }
         case let textView as NativeMarkdownTextSectionView:
             textView.update(markdown: section.source, kind: section.kind, bodySize: bodySize, bodyWeight: bodyWeight)
         default:
             break
         }
+    }
+
+    static func warmHeight(
+        for section: MarkdownRenderSection, context: MeasurementContext,
+        textMeasurer: NativeMarkdownTextSectionView, codeMeasurer: NativeMarkdownCodeView
+    ) {
+        let key = measurementKey(for: section, context: context)
+        guard NativeMarkdownCompletedHeightCache.height(for: key) == nil else { return }
+        let view: any NativeMarkdownMeasurableSection
+        if case .code = section.kind { view = codeMeasurer } else { view = textMeasurer }
+        update(view, with: section, bodySize: context.bodySize, bodyWeight: context.bodyWeight)
+        NativeMarkdownCompletedHeightCache.store(
+            view.measuredHeight(forWidth: context.width), for: key,
+            codeSize: (view as? NativeMarkdownCodeView)?.contentSize)
+    }
+
+    static func measurementKey(for section: MarkdownRenderSection, context: MeasurementContext)
+        -> NativeMarkdownCompletedHeightCache.Key
+    {
+        let width: CGFloat
+        if case .code = section.kind { width = 0 } else { width = context.width }
+        return NativeMarkdownCompletedHeightCache.Key(
+            source: section.source, kind: section.kind, width: width,
+            bodySize: context.bodySize, bodyWeight: context.bodyWeight.rawValue,
+            themeRevision: context.themeRevision, mentionRevision: context.mentionRevision, themeID: context.themeID)
     }
 }
 
@@ -1182,6 +1357,35 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         return height
     }
 
+    /// A preparation view keeps its TextKit state between slices; displayed views never use this path.
+    func beginIncrementalLayout(forWidth width: CGFloat) {
+        isMeasuringHeight = true
+        if wrapsToWidth { setContainerWidth(width) }
+    }
+
+    func advanceIncrementalLayout(from offset: Int, limit: Int = 2_048) -> Int {
+        let length = textStorage?.length ?? 0
+        let end = min(length, offset + limit)
+        if end > offset {
+            layoutManager?.ensureLayout(forCharacterRange: NSRange(location: offset, length: end - offset))
+        }
+        return end
+    }
+
+    var incrementalTextLength: Int { textStorage?.length ?? 0 }
+
+    func finishIncrementalLayout(forWidth width: CGFloat) -> NSSize {
+        defer {
+            isMeasuringHeight = false
+            if wrapsToWidth, bounds.width > 1 { setContainerWidth(bounds.width) }
+        }
+        guard let textContainer, let layoutManager else { return .zero }
+        let used = layoutManager.usedRect(for: textContainer)
+        let size = NSSize(width: ceil(used.width), height: ceil(used.height))
+        heights.store(size.height, forWidth: width)
+        return size
+    }
+
     /// The unwrapped text extent, used by horizontally scrolling code.
     func naturalContentSize() -> NSSize {
         guard let textContainer, let layoutManager, (textStorage?.length ?? 0) > 0 else { return .zero }
@@ -1279,8 +1483,17 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
     private var renderedCode: String?
     private var renderedLanguage: String?
     private var renderedThemeRevision: Int?
-    private var contentSize: NSSize = .zero
+    private(set) var contentSize: NSSize = .zero
     private var copyResetTask: Task<Void, Never>?
+    var onInteractionEnded: (() -> Void)?
+    private var pendingHorizontalOffset: CGFloat?
+    var horizontalOffset: CGFloat { scrollView.contentView.bounds.origin.x }
+    var hasActiveInteraction: Bool { copyResetTask != nil || textView.selectedRange().length > 0 }
+
+    func restoreHorizontalOffset(_ offset: CGFloat) {
+        pendingHorizontalOffset = offset
+        needsLayout = true
+    }
     /// Code without its fences, used when the block is copied.
     private(set) var codeBody = ""
     /// False for a streaming continuation of a block opened by an earlier section.
@@ -1378,6 +1591,12 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
             height: contentSize.height + Self.verticalPadding * 2
         )
         if textView.frame != documentFrame { textView.frame = documentFrame }
+        if let offset = pendingHorizontalOffset {
+            pendingHorizontalOffset = nil
+            scrollView.contentView.scroll(
+                to: NSPoint(x: min(max(0, offset), max(0, documentFrame.width - scrollFrame.width)), y: 0))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
     }
 
     private static func isBareFence(_ line: String) -> Bool {
@@ -1397,6 +1616,8 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled else { return }
             self?.setCopyTitle("Copy")
+            self?.copyResetTask = nil
+            self?.onInteractionEnded?()
         }
     }
 
@@ -1408,7 +1629,10 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         needsLayout = true
     }
 
-    func update(code: String, language: String?, bodySize: CGFloat = DockTypography.size(.conversation)) {
+    func update(
+        code: String, language: String?, bodySize: CGFloat = DockTypography.size(.conversation),
+        preparedSize: NSSize? = nil, deferMeasurement: Bool = false
+    ) {
         let sizeChanged = self.bodySize != bodySize
         self.bodySize = bodySize
         languageLabel.font = labelFont
@@ -1434,9 +1658,16 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         languageLabel.stringValue = opensBlock ? (language ?? "").lowercased() : ""
         setHeaderHidden(!opensBlock)
         textView.update(markdown: body, kind: .code(language: language), bodySize: bodySize)
-        contentSize = textView.naturalContentSize()
+        contentSize = preparedSize ?? (deferMeasurement ? .zero : textView.naturalContentSize())
         needsLayout = true
         invalidateIntrinsicContentSize()
+    }
+
+    func beginIncrementalLayout() { textView.beginIncrementalLayout(forWidth: 0) }
+    var incrementalTextLength: Int { textView.incrementalTextLength }
+    func advanceIncrementalLayout(from offset: Int) -> Int { textView.advanceIncrementalLayout(from: offset) }
+    func finishIncrementalLayout() {
+        contentSize = textView.finishIncrementalLayout(forWidth: 0)
     }
 
     static func parsedCode(_ code: String) -> (body: String, opensBlock: Bool) {

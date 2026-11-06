@@ -4,16 +4,6 @@ import Testing
 @testable import Herm
 
 struct SessionWorktreeTests {
-    @Test func scopesWorktreesToTheSourceFolder() {
-        #expect(RepositoryWorktreeSummary.isPath("/repo", within: "/repo/"))
-        #expect(RepositoryWorktreeSummary.isPath("/repo/.worktrees/a", within: "/repo"))
-        #expect(!RepositoryWorktreeSummary.isPath("/repo-2", within: "/repo"))
-        #expect(!RepositoryWorktreeSummary.isPath("/repo/../other", within: "/repo"))
-        #expect(
-            !RepositoryWorktreeSummary.isPath("/Users/me/Library/Application Support/Herm/Worktrees/x", within: "/repo")
-        )
-    }
-
     @Test func parsesSecretFreeStructuredSummaries() throws {
         let data = Data(
             #"{"session_id":"session-1","export":{"format":"jsonl","record_count":3},"history":{"event_count":4,"latest_at":"2026-08-29T12:00:00Z"},"worktree":{"id":"tree-1","session_id":"session-1","state":"ready"}}"#
@@ -68,5 +58,42 @@ struct SessionWorktreeTests {
         #expect(projection.export == .ready)
         #expect(projection.history == .unsupported)
         #expect(projection.worktree == .unavailable)
+    }
+}
+
+extension SessionWorktreeTests {
+    @Test func findsExternalWorktreeAndItsOwnRoot() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("herm-trees-\(UUID())")
+        let repo = base.appendingPathComponent("source")
+        let tree = base.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        func git(_ arguments: [String]) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", repo.path] + arguments
+            process.standardOutput = Pipe()
+            process.standardError = Pipe()
+            try process.run()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+        }
+        try git(["init", "--quiet"])
+        try "hello".write(to: repo.appendingPathComponent("file.txt"), atomically: true, encoding: .utf8)
+        try git(["add", "file.txt"])
+        try git([
+            "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "initial",
+        ])
+        try git(["worktree", "add", "--quiet", "-b", "feature/example", tree.path])
+        let trees = try #require(await RepositoryService.worktrees(path: repo.path))
+        let expected = tree.resolvingSymlinksInPath().path
+        #expect(
+            trees.contains {
+                URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == expected
+                    && $0.branch == "feature/example"
+            })
+        let root = await RepositoryService.worktreeRoot(path: tree.path)
+        #expect(root.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path } == expected)
+        #expect(await RepositoryService.worktrees(path: base.appendingPathComponent("missing").path) == nil)
     }
 }

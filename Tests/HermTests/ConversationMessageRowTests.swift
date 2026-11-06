@@ -7,6 +7,13 @@ import Testing
 
 @MainActor
 struct ConversationMessageRowTests {
+    @Test func activityExpansionDefaultParticipatesInEquality() {
+        let collapsed = TurnActivityView(activity: [], runningSince: nil, duration: nil)
+        let expanded = TurnActivityView(activity: [], runningSince: nil, duration: nil, expandsByDefault: true)
+        #expect(collapsed != expanded)
+        #expect(expanded == TurnActivityView(activity: [], runningSince: nil, duration: nil, expandsByDefault: true))
+    }
+
     private func makeRow(
         message: ChatMessage,
         isStreamingMessage: Bool = false,

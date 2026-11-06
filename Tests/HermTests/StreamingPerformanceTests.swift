@@ -24,6 +24,42 @@ private final class StreamingAttachmentRPCClient: HermesRPCClientProtocol {
 
 @MainActor
 struct StreamingPerformanceTests {
+    @Test func activityPreparationKeepsOrderAndReusesUnchangedSegments() {
+        let calls = (0..<1_000).map { index in
+            ActiveToolCall(
+                id: "call-\(index)", name: "terminal", input: "", context: "", startedAt: .distantPast,
+                isComplete: false)
+        }
+        var dispatches: [String: BotActivityRecord] = [:]
+        for index in 100..<900 {
+            dispatches["call-\(index)"] = BotActivityRecord(
+                id: "bot-\(index)", originSessionID: "session", botID: "bot", botName: "Bot", summary: "")
+        }
+        let preparation = TurnActivityPreparation()
+        let first = preparation.value(activity: calls, dispatches: dispatches)
+        #expect(first.segments.flatMap(\.calls).map(\.id) == calls.map(\.id))
+        #expect(first.segments.filter { !$0.records.isEmpty }.first?.records.count == 800)
+        #expect(first.signature.count == calls.count)
+        _ = preparation.value(activity: calls, dispatches: dispatches)
+        #expect(preparation.preparationCount == 1)
+        var updated = calls
+        updated[500].isComplete = true
+        let next = preparation.value(activity: updated, dispatches: dispatches)
+        #expect(preparation.preparationCount == 2)
+        #expect(next.segments.flatMap(\.calls)[500].isComplete)
+    }
+
+    @Test func activityUpsertPreservesFirstPositionsAndLastUpdates() {
+        func call(_ id: String, _ input: String) -> ActiveToolCall {
+            ActiveToolCall(
+                id: id, name: "terminal", input: input, context: "", startedAt: .distantPast, isComplete: false)
+        }
+        var log = [call("one", "old"), call("two", "old"), call("one", "duplicate")]
+        DockModel.upsert([call("two", "updated"), call("three", "first"), call("three", "last")], into: &log)
+        #expect(log.map(\.id) == ["one", "two", "one", "three"])
+        #expect(log.map(\.input) == ["old", "updated", "duplicate", "last"])
+    }
+
     @Test func midTurnTextRedirectsAndLandsAsPlainUserMessageBelowStreamedOutput() async throws {
         let client = StreamingAttachmentRPCClient()
         let model = DockModel(

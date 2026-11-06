@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import Testing
 
@@ -6,9 +7,94 @@ import Testing
 
 @MainActor
 struct SessionTracePerformanceTests {
+    @Test func pixelMovementPublishesOnlyWhenBufferedRowsChange() {
+        let viewport = SessionTraceRowViewport()
+        let host = NSView()
+        var updates = 0
+        let subscription = viewport.rowWindow.$range.dropFirst().sink { _ in updates += 1 }
+        for offset in 1...5 {
+            viewport.update(host: host, rect: CGRect(x: 0, y: CGFloat(offset), width: 1, height: 360))
+        }
+        #expect(viewport.visibleRect.minY == 5)
+        #expect(updates == 0)
+        viewport.update(host: host, rect: CGRect(x: 0, y: 35, width: 1, height: 360))
+        #expect(updates == 1)
+        withExtendedLifetime(subscription) {}
+    }
+
+    @Test func traceVisibilityStaysActiveWhileAnExpandedWindowIsVisible() {
+        let visibility = SessionTraceWindowVisibility()
+        let inspector = UUID()
+        let expanded = UUID()
+        visibility.update(inspector, visible: false)
+        #expect(!visibility.isVisible)
+        visibility.update(expanded, visible: true)
+        #expect(visibility.isVisible)
+        visibility.update(expanded, visible: nil)
+        #expect(!visibility.isVisible)
+        visibility.update(inspector, visible: nil)
+        #expect(visibility.isVisible)
+    }
+
+    @Test func preparationReusesUnchangedHistoryAndRebuildsForChanges() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        var turn = SessionTraceTurn(
+            id: "one", title: "Request", start: start,
+            rows: [.init(id: "root", kind: .turn, title: "Request", start: start, timing: .runtime)])
+        let cache = SessionTracePreparationCache()
+        #expect(cache.prepare(turn).lanes.lanes.count == 1)
+        for _ in 0..<20 { _ = cache.prepare(turn) }
+        #expect(cache.buildCount == 1)
+        turn.rows.append(.init(id: "tool", parentID: "root", kind: .tool, title: "Tool", timing: .unavailable))
+        #expect(cache.prepare(turn).crew.ownerByRow["tool"] == "root")
+        #expect(cache.buildCount == 2)
+    }
+
     final class Evaluations {
         var labels = 0
         var bars = 0
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["HERM_SCROLL_PROFILE"] == "1"))
+    func profileTimelineScrolling() async throws {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let rows = (0..<1_000).map { index in
+            SessionTraceRow(
+                id: "row-\(index)", kind: .tool, title: "Tool \(index)",
+                start: start.addingTimeInterval(Double(index)), duration: 1, timing: .runtime)
+        }
+        let host = NSHostingView(
+            rootView: SessionTraceCanvas(
+                turns: [.init(id: "profile", title: "Profile", start: start, rows: rows)], connected: false))
+        host.sizingOptions = []
+        host.frame = NSRect(x: 0, y: 0, width: 760, height: 640)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        for _ in 0..<5 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        func observer(_ view: NSView) -> SessionTraceViewportObserver.Observer? {
+            (view as? SessionTraceViewportObserver.Observer) ?? view.subviews.lazy.compactMap(observer).first
+        }
+        let viewport = try #require(observer(host)).viewport
+        let cpuStart = mainThreadCPUMilliseconds()
+        var timings: [Double] = []
+        for step in 0..<120 {
+            let started = DispatchTime.now().uptimeNanoseconds
+            viewport.scroll(to: step < 60 ? step * 4 : (120 - step) * 4, centered: true)
+            host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
+            timings.append(Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000)
+            try await Task.sleep(for: .milliseconds(8))
+        }
+        let cpu = mainThreadCPUMilliseconds() - cpuStart
+        let sorted = timings.sorted()
+        print(
+            "timeline_scroll p50_ms=\(sorted[sorted.count / 2]) p95_ms=\(sorted[Int(Double(sorted.count - 1) * 0.95)]) max_ms=\(sorted.last ?? 0) main_cpu_ms=\(cpu)"
+        )
     }
 
     @Test func longTimelinePreparesOnlyNearbyRows() async throws {

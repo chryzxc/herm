@@ -18,7 +18,8 @@ extension DockModel {
             queued?.botMentions ?? composer.botMentions, from: originalText, to: prompt)
         guard !prompt.isEmpty || !attachedImages.isEmpty || attachedPDF != nil || !contexts.isEmpty,
             !isSending,
-            !isUpdatingSessionModel,
+            sessionActionsReady,
+            !isUpdatingSessionModel, !isUpdatingSessionFast,
             !isRestoringSession,
             sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession)
         else { return }
@@ -134,7 +135,7 @@ extension DockModel {
                 guard self.sessionResumeGeneration == sendGeneration,
                     self.sessionID == sessionBeforeSend
                 else { return }
-                if sessionID == nil {
+                if sessionID == nil || pendingWorktreeDirectory != nil {
                     _ = try await createAuthorizedSession(source: HermesFeatureIDs.sessionSource)
                 }
                 guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
@@ -239,7 +240,7 @@ extension DockModel {
                 let baselineOrigin = QuickDestination(
                     profileID: sessionProfileID, sessionID: navigationSessionID ?? promptSessionID,
                     title: currentSessionTitle ?? "Session")
-                var baselineDirectory = createdSessionProjectPaths[promptSessionID]
+                var baselineDirectory = sessionWorkspace?.cwd ?? createdSessionProjectPaths[promptSessionID]
                 if baselineDirectory == nil {
                     let origin = HermesSession(
                         id: navigationSessionID ?? promptSessionID, profileID: sessionProfileID,
@@ -297,6 +298,11 @@ extension DockModel {
                 if acknowledgment["voice_stopped"] as? Bool == true { finishVoiceStopSubmission() }
                 DebugLog.write("model: prompt submitted")
             } catch {
+                if sessionBeforeSend == nil, self.sessionResumeGeneration == sendGeneration, self.sessionID != nil,
+                    let index = pendingSessionSends.firstIndex(where: { $0.id == sendID })
+                {
+                    pendingSessionSends[index].owner = composerDraftKey
+                }
                 if let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }),
                     pendingSessionSends[index].phase == .submitting
                 {
@@ -352,6 +358,7 @@ extension DockModel {
     /// slash commands, a turn parked on an approval) or a redirect Hermes
     /// refuses because the turn already ended goes to `queuedPrompts` instead.
     func steerDraft() {
+        guard sessionActionsReady else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let sessionID, !sessionID.isEmpty else { return }
         guard !hasQueuedOrRedirectingPrompt,
@@ -368,6 +375,7 @@ extension DockModel {
 
     /// Sends `text` into the running turn; if Hermes refuses, it becomes the next turn.
     func redirectTurn(with text: String, sessionID: String) {
+        guard sessionActionsReady else { return }
         steeringError = nil
         let submittedText = ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles)
         let steeringGeneration = sessionResumeGeneration
@@ -471,7 +479,7 @@ extension DockModel {
     /// Queue prompts a redirect can carry: text only, no slash command (desktop `isSteerableEntry`).
     func canSteerQueuedPrompt(_ prompt: QueuedPrompt) -> Bool {
         let text = prompt.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return status == .working && sessionID != nil && !isRedirectInFlight
+        return sessionActionsReady && status == .working && sessionID != nil && !isRedirectInFlight
             && !text.isEmpty
             && prompt.images.isEmpty && prompt.pdfURL == nil && prompt.contexts.isEmpty
             && prompt.replyQuote == nil && ComposerSlashCommand(text) == nil
@@ -490,7 +498,7 @@ extension DockModel {
     /// Prompts a steer can't carry (attachments, slash commands) jump the queue
     /// and stop the turn; the settled turn sends them (desktop `sendQueuedNow`).
     func canSendQueuedPromptNow(_ prompt: QueuedPrompt) -> Bool {
-        status == .working && sessionID != nil && interruptState != .requesting
+        sessionActionsReady && status == .working && sessionID != nil && interruptState != .requesting
             && !canSteerQueuedPrompt(prompt)
     }
 
@@ -504,7 +512,7 @@ extension DockModel {
 
     /// Parks the whole composer payload until the active turn settles.
     func queueDraft() {
-        guard let sessionID = queuedPromptSessionID else { return }
+        guard sessionActionsReady, let sessionID = queuedPromptSessionID else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !pendingImages.isEmpty || pendingPDFURL != nil || !attachedContexts.isEmpty else {
             return
@@ -536,7 +544,8 @@ extension DockModel {
 
     /// Sends the oldest queued prompt of the open session, one per settled turn.
     func drainQueuedPromptIfIdle() {
-        guard !isSending, status == .idle, !isRestoringSession, !isUpdatingSessionModel,
+        guard sessionActionsReady, !isSending, status == .idle, !isRestoringSession, !isUpdatingSessionModel,
+            !isUpdatingSessionFast,
             pendingBotMentions.isEmpty,
             !nativeVoiceCapture.isAwaitingPlaybackDrain,
             sessionID != nil, let sessionID = queuedPromptSessionID,
@@ -594,6 +603,7 @@ extension DockModel {
     }
 
     func submitComposerInput(mentionProfiles: [String]? = nil) {
+        guard sessionActionsReady else { return }
         if let mentionProfiles { composerMentionProfiles = mentionProfiles }
         if status == .needsClarification {
             respondToClarification(draft)

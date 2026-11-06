@@ -46,11 +46,55 @@ struct SessionTraceTimeBounds {
     }
 }
 
+/// Reuses the expensive ownership and time indexes until the trace changes.
+@MainActor
+final class SessionTracePreparationCache {
+    struct Prepared {
+        let crew: SessionCrewProjection
+        let lanes: SessionActivityLanes
+        let bounds: SessionTraceTimeBounds
+        let toolGeometry: SessionActivityToolGeometry
+    }
+
+    private var previous: SessionTraceTurn?
+    private var cached: Prepared?
+    private(set) var buildCount = 0
+
+    func prepare(_ turn: SessionTraceTurn) -> Prepared {
+        if previous == turn, let cached { return cached }
+        let crew = SessionCrewProjection(rows: turn.rows)
+        let lanes = SessionActivityLanes(crew)
+        let bounds = SessionTraceTimeBounds(turn)
+        let prepared = Prepared(
+            crew: crew, lanes: lanes, bounds: bounds,
+            toolGeometry: SessionActivityToolGeometry(lanes: lanes, origin: bounds.origin))
+        previous = turn
+        cached = prepared
+        buildCount += 1
+        return prepared
+    }
+}
+
 /// Fixed-height Timeline rows can keep their full extent without preparing every label and bar.
+@MainActor
+final class SessionTraceRowWindowState: ObservableObject {
+    @Published private(set) var range: Range<Int>
+
+    init(rect: CGRect) {
+        range = SessionTraceRowViewport.range(count: Int.max, rect: rect)
+    }
+
+    func update(rect: CGRect) {
+        let next = SessionTraceRowViewport.range(count: Int.max, rect: rect)
+        if range != next { range = next }
+    }
+}
+
 @MainActor
 final class SessionTraceRowViewport: ObservableObject {
     static let rowHeight: CGFloat = 34
     @Published private(set) var visibleRect = CGRect(x: 0, y: 0, width: 1, height: 360)
+    let rowWindow = SessionTraceRowWindowState(rect: CGRect(x: 0, y: 0, width: 1, height: 360))
     private weak var host: NSView?
 
     static func range(count: Int, rect: CGRect) -> Range<Int> {
@@ -63,6 +107,7 @@ final class SessionTraceRowViewport: ObservableObject {
 
     func update(host: NSView, rect: CGRect) {
         self.host = host
+        rowWindow.update(rect: rect)
         if visibleRect != rect { visibleRect = rect }
     }
 
@@ -80,16 +125,16 @@ final class SessionTraceRowViewport: ObservableObject {
 }
 
 struct SessionTraceRowWindow<Content: View>: View {
-    @ObservedObject var viewport: SessionTraceRowViewport
+    @ObservedObject var viewport: SessionTraceRowWindowState
     let items: [(row: SessionTraceRow, depth: Int)]
     @ViewBuilder let content: (SessionTraceRow, Int) -> Content
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.accessibilitySwitchControlEnabled) private var switchControl
 
     var body: some View {
-        let range =
-            voiceOver || switchControl || NSApp.isFullKeyboardAccessEnabled
-            ? items.indices : SessionTraceRowViewport.range(count: items.count, rect: viewport.visibleRect)
+        let lower = min(items.count, viewport.range.lowerBound)
+        let upper = min(items.count, viewport.range.upperBound)
+        let range = voiceOver || switchControl || NSApp.isFullKeyboardAccessEnabled ? items.indices : lower..<upper
         VStack(spacing: 0) {
             Color.clear.frame(height: CGFloat(range.lowerBound) * SessionTraceRowViewport.rowHeight)
             ForEach(items[range], id: \.row.id) { item in content(item.row, item.depth) }

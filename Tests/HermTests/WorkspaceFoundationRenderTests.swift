@@ -6,6 +6,47 @@ import Testing
 
 @MainActor
 struct WorkspaceFoundationRenderTests {
+    @Test func shortDraftDoesNotExpandComposer() async throws {
+        _ = NSApplication.shared
+        let name = "ComposerSizing.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(name),
+            defaults: defaults, initialSessionID: "sizing-fixture", rpcClient: FoundationFixtureRPC())
+        defer { model.shutdown() }
+        let composer = ChatComposerView(
+            model: model, composer: model.composer, speechInput: SpeechInput(), botMode: BotModeModel(), onStop: {})
+        let host = NSHostingView(
+            rootView: VStack {
+                Spacer()
+                composer
+            }.frame(width: 600, height: 500).dockThemedRoot())
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(200))
+        func find(_ view: NSView) -> ComposerInputTextView? {
+            if let text = view as? ComposerInputTextView { return text }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        let text = try #require(find(host))
+        let scroll = try #require(text.enclosingScrollView)
+        let initialHeight = scroll.frame.height
+        window.makeFirstResponder(text)
+        for character in "This" {
+            text.insertText(String(character), replacementRange: NSRange(location: NSNotFound, length: 0))
+            try await Task.sleep(for: .milliseconds(50))
+            host.layoutSubtreeIfNeeded()
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        host.layoutSubtreeIfNeeded()
+        #expect(abs(scroll.frame.height - initialHeight) < 1)
+    }
     @Test func preferenceRowsSupportEmptyConditionalAndMultipleControls() {
         for width: CGFloat in [300, 700] {
             for visible in [false, true] {
@@ -110,7 +151,7 @@ struct WorkspaceFoundationRenderTests {
                             }.labelsHidden().pickerStyle(.segmented).frame(width: 220)
                         }
                     }
-                    IntegrationCard(
+                    IntegrationInventoryRow(
                         title: "Project tools", detail: "Tools available for the selected workspace.",
                         selected: false, action: {}
                     ) { IntegrationCardIcon(symbol: .folder) }

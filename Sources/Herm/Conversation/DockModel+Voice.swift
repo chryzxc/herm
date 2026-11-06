@@ -9,7 +9,7 @@ extension DockModel {
     /// Local recognition starts without probing unused backend audio devices.
     /// Hermes synthesizes replies; Herm owns playback for this session only.
     func startVoiceConversation() {
-        guard !isRestoringSession else { return }
+        guard sessionActionsReady, !isRestoringSession else { return }
         guard sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession) else { return }
         guard
             voiceState == .inactive
@@ -32,7 +32,7 @@ extension DockModel {
                 guard voiceConversationGeneration == generation else { return }
                 try await sessionRPCClient.connect()
                 guard voiceConversationGeneration == generation else { return }
-                if sessionID == nil {
+                if sessionID == nil || pendingWorktreeDirectory != nil {
                     _ = try await createAuthorizedSession(source: HermesFeatureIDs.sessionSource)
                 }
                 guard sessionID != nil else { throw HermesGateway.GatewayError.malformedResponse }
@@ -69,12 +69,50 @@ extension DockModel {
         }
     }
 
+    func confirmPendingWorktree(sessionID: String) async throws -> String {
+        guard let expected = pendingWorktreeDirectory else { return sessionID }
+        let generation = sessionResumeGeneration
+        let owner = sessionStorageID ?? sessionID
+        let result = try await sessionRPCClient.request(
+            HermesFeatureIDs.ID.sessionResume.rawValue,
+            params: scopedSessionParams(["session_id": sessionID], profileID: sessionProfileID))
+        guard generation == sessionResumeGeneration, self.sessionID == sessionID else { throw CancellationError() }
+        let runtime = result["session_id"] as? String ?? sessionID
+        let info = result["info"] as? [String: Any] ?? [:]
+        let directory = (result["cwd"] as? String) ?? (info["cwd"] as? String)
+        let stored = Self.stableSessionID(from: result)
+        let reportedProfile = (result["profile"] as? String) ?? (info["profile_name"] as? String)
+        guard
+            runtime == sessionID
+                || Self.resumeResponseProvesSessionOwnership(
+                    requestedSessionID: owner, resolvedSessionID: runtime, result: result),
+            stored == nil || stored == owner,
+            reportedProfile == nil || reportedProfile == (sessionProfileID ?? profileScopeID ?? "default"),
+            let directory, directory.hasPrefix("/"),
+            URL(fileURLWithPath: directory).standardizedFileURL.path
+                == URL(fileURLWithPath: expected).standardizedFileURL.path
+        else {
+            throw QuickDraftError.message("Hermes could not confirm the worktree folder. Retry before sending.")
+        }
+        self.sessionID = runtime
+        kanbanAttributionSessionID = runtime
+        persistActiveSessionID(runtime)
+        storageIDsByRuntimeID[runtime] = owner
+        createdSessionProjectPaths[runtime] = expected
+        pendingWorktreeDirectories[WorkspaceIdentity.session(profileID: sessionProfileID, sessionID: owner)] = nil
+        pendingWorktreeDirectory = nil
+        applySessionWorkspace(result, owner: runtime)
+        return runtime
+    }
+
     /// Creates a backend session only for a New Chat that the user explicitly
     /// requested. Keeping this transition centralized prevents commands such
     /// as send, control prompts, and voice startup from silently creating chats
     /// after startup restoration or a failed resume.
     func createAuthorizedSession(source: String) async throws -> String {
-        if let sessionID { return sessionID }
+        if let sessionID {
+            return try await confirmPendingWorktree(sessionID: sessionID)
+        }
         guard newSessionCreationAuthorized else {
             throw NSError(
                 domain: "Herm",
@@ -98,6 +136,7 @@ extension DockModel {
         }
         if let newSessionProjectPath, !newSessionProjectPath.isEmpty {
             createParams["cwd"] = newSessionProjectPath
+            if pendingWorktreeDirectory != nil { createParams["cwd_explicit"] = true }
         }
         // Hermes rejects sessionless model switches; a new-chat pick rides on
         // session.create as a per-session override instead.
@@ -129,6 +168,11 @@ extension DockModel {
         sessionProfileID = profileScopeID
         sessionStorageID = Self.stableSessionID(from: result) ?? createdSessionID
         storageIDsByRuntimeID[createdSessionID] = sessionStorageID
+        if let pendingWorktreeDirectory {
+            let key = WorkspaceIdentity.session(profileID: sessionProfileID, sessionID: sessionStorageID)
+            pendingWorktreeDirectories[key] = pendingWorktreeDirectory
+        }
+        applySessionWorkspace(result, owner: createdSessionID)
         kanbanAttributionSessionID = createdSessionID
         persistActiveSessionID(sessionID)
         let model = (result["model"] as? String) ?? (result["model_name"] as? String)
@@ -140,10 +184,11 @@ extension DockModel {
         newSessionProjectPath = nil
         refreshSessionModelOptions()
         refreshSessionReasoningVariant()
+        refreshSessionFast()
         refreshDelegationStatus()
         startDelegationMonitoring()
         DebugLog.write("model: session created (id present: true)")
-        return createdSessionID
+        return try await confirmPendingWorktree(sessionID: createdSessionID)
     }
 
     func stopVoiceConversation() {
@@ -191,6 +236,18 @@ extension DockModel {
     /// `overPlayback`: audio was playing meanwhile, so it may be our own reply.
     func finishVoiceUtterance(transcript: String?, overPlayback: Bool = false) {
         guard !isVoiceMicMuted else { return }
+        if !sessionActionsReady {
+            guard voiceState.isNativeConversationActive, let voiceSessionID,
+                (storageIDsByRuntimeID[voiceSessionID] ?? voiceSessionID) == sessionStorageID,
+                Self.normalizedProfileID(voiceProfileID) == Self.normalizedProfileID(sessionProfileID ?? profileScopeID)
+            else { return }
+            if let transcript, !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                !(overPlayback && VoicePrompts.isEcho(transcript, of: lastVoiceSpeech))
+            {
+                stageDraft(transcript)
+            }
+            return
+        }
         if voiceState == .paused {
             // Asleep: only "hey <name>" wakes it, optionally with the request.
             guard !isVoiceMicMuted, let transcript,
@@ -423,6 +480,7 @@ extension DockModel {
     }
 
     func armNativeVoiceCapture(generation expectedGeneration: Int? = nil) {
+        guard sessionActionsReady else { return }
         if let expectedGeneration, !nativeVoiceCapture.isCurrent(generation: expectedGeneration) {
             return
         }

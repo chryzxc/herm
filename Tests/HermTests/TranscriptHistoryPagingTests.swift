@@ -12,6 +12,7 @@ private final class PagedTranscriptRPCClient: HermesRPCClientProtocol {
     private(set) var fetchedPaths: [String] = []
     var storedRows: [[String: Any]] = []
     var failHTTP = false
+    var inlineOverride: [String: Any]?
     var timelinePageSize = 500
 
     func connect() async throws {}
@@ -23,7 +24,10 @@ private final class PagedTranscriptRPCClient: HermesRPCClientProtocol {
         if params["defer_history"] as? Bool == true {
             return ["session_id": sessionID, "messages": [], "hydrating": true, "message_count": storedRows.count]
         }
-        return ["session_id": sessionID, "messages": storedRows.map { ["role": $0["role"]!, "text": $0["content"]!] }]
+        return inlineOverride ?? [
+            "session_id": sessionID,
+            "messages": storedRows.map { ["role": $0["role"]!, "text": $0["content"]!] },
+        ]
     }
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
@@ -80,6 +84,20 @@ private func waitUntil(_ condition: @escaping () -> Bool, timeout: TimeInterval 
 
 @MainActor
 struct TranscriptHistoryPagingTests {
+    @Test func structuredImagesSurviveStoredHistoryProjection() {
+        let encoded = Data("image bytes".utf8).base64EncodedString()
+        let content: [[String: Any]] = [
+            ["type": "text", "text": "What is this?"],
+            ["type": "image_url", "image_url": ["url": "data:image/png;base64,\(encoded)"]],
+        ]
+        let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [
+            ["id": 1, "role": "user", "content": content]
+        ])
+        let restored = DockModel.parseMessages(rows)
+        #expect(restored.messages.first?.text == "What is this?")
+        let url = restored.pendingImages.first?.fileURLs.first
+        #expect(url.flatMap(DockModel.transcriptImageData) == Data("image bytes".utf8))
+    }
     @Test func pagePathRequestsLatestDisplayPageForProfile() throws {
         let path = try #require(
             TranscriptHistoryPaging.pagePath(sessionID: "a/b c", profileID: "forge", limit: 120, offset: 240))
@@ -405,6 +423,24 @@ struct TranscriptHistoryPagingTests {
         #expect(resumes.last?.params["defer_history"] == nil)
         #expect(model.messages.count == 6)
         #expect(!model.canLoadEarlierTranscript)
+    }
+
+    @Test func inlineFallbackRejectsAnUnrelatedSession() async throws {
+        let rpc = PagedTranscriptRPCClient()
+        rpc.failHTTP = true
+        rpc.inlineOverride = [
+            "session_id": "other", "session_key": "other",
+            "messages": [["role": "assistant", "text": "other conversation"]],
+        ]
+        let model = DockModel(rpcClient: rpc)
+        model.resumeSession(
+            HermesSession(id: "s", title: "S", preview: "", startedAt: nil, messageCount: 9, source: "test"))
+        try await waitUntil {
+            if case .failed = model.sessionTranscriptLoadState { return true }
+            return false
+        }
+        #expect(!model.messages.contains { $0.text == "other conversation" })
+        #expect(!model.sessionActionsReady)
     }
 }
 

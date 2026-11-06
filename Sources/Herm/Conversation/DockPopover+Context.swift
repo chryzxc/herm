@@ -553,6 +553,7 @@ extension DockPopover {
                             sessionRepositoryPath: activeSessionRepositoryScope?.repositoryPath
                                 ?? activeSessionRepositoryPath,
                             sessionProjectIsBound: activeSessionRepositoryPath != nil,
+                            sessionTerminalPath: model.sessionWorkspace?.cwd,
                             showsHeader: false,
                             onToggle: toggleInspectorPanel,
                             headerHeight: usesWindowChrome
@@ -576,11 +577,11 @@ extension DockPopover {
             // membership can transiently disappear during a refresh after
             // this task has been scheduled; that must not turn a valid
             // session repository into nil.
-            let repositoryPath = liveSessionRepositoryPath ?? cachedSessionRepositoryPath
+            let repositoryPath = activeSessionRepositoryPath
             guard let repositoryPath else { return }
             if let liveSessionRepositoryPath { cachedSessionRepositoryPath = liveSessionRepositoryPath }
             await developerWorkflow.setActiveRepository(
-                path: activeWorktreePath ?? repositoryPath,
+                path: repositoryPath,
                 preferences: repositoryPreferences,
                 control: controlCenter
             )
@@ -693,13 +694,15 @@ extension DockPopover {
     }
 
     var activeSessionRepositoryPath: String? {
-        liveSessionRepositoryPath ?? cachedSessionRepositoryPath
+        if let workspace = model.sessionWorkspace { return workspace.repositoryPath }
+        return liveSessionRepositoryPath ?? cachedSessionRepositoryPath
     }
 
     var liveSessionRepositoryPath: String? {
+        if model.sessionID == nil, model.newSessionCreationAuthorized { return model.newSessionProjectPath }
         // The sidebar attaches projects under the stored session id, while a
         // resumed chat may stream under a runtime alias; check both.
-        workspaceStore.projectPath(forSessionID: model.navigationSessionID)
+        return workspaceStore.projectPath(forSessionID: model.navigationSessionID)
             ?? workspaceStore.resolvedProjectPath(
                 forSessionID: model.sessionID,
                 hermesProjectPath: model.sessionID.flatMap { controlCenter.project(forSessionID: $0)?.name },
@@ -712,37 +715,37 @@ extension DockPopover {
     }
 
     var activeSessionRepositoryScope: SessionRepositoryScope? {
-        guard let sessionID = model.sessionID,
-            let path = activeSessionRepositoryPath
-        else { return nil }
-        return SessionRepositoryScope(sessionID: sessionID, repositoryPath: activeWorktreePath ?? path)
+        guard let path = activeSessionRepositoryPath else { return nil }
+        let sessionID = model.navigationSessionID ?? model.sessionID ?? sessionWorkspaceIdentity
+        return SessionRepositoryScope(sessionID: sessionID, repositoryPath: path)
     }
 
-    /// The worktree the session is viewing, inside the bound folder. A removed
-    /// or outside worktree falls back to the bound folder.
-    var activeWorktreePath: String? {
-        guard let path = workspaceStore.worktreePath(forSessionID: model.sessionID),
-            let root = activeSessionRepositoryPath,
-            path != root,
-            RepositoryWorktreeSummary.isPath(path, within: root),
+    /// A worktree choice opens a separate session; it never changes this session's cwd.
+    func selectWorktree(_ path: String) async {
+        guard let scope = activeSessionRepositoryScope else { return }
+        let owner = sessionWorkspaceIdentity
+        guard let trees = await RepositoryService.worktrees(path: scope.repositoryPath),
+            owner == sessionWorkspaceIdentity, activeSessionRepositoryScope == scope,
+            trees.contains(where: { $0.path == path && !$0.isPrunable }),
             FileManager.default.fileExists(atPath: path)
-        else { return nil }
-        return path
-    }
-
-    /// View-only: the agent keeps its own cwd.
-    func selectWorktree(_ path: String) {
-        guard let sessionID = model.sessionID else { return }
-        workspaceStore.setWorktreePath(
-            path == activeSessionRepositoryPath ? nil : path, forSessionID: sessionID,
-            title: model.currentSessionTitle ?? "Untitled task")
+        else {
+            if owner == sessionWorkspaceIdentity, activeSessionRepositoryScope == scope {
+                model.reportAttachmentError("The worktree is unavailable. Refresh and try again.")
+            }
+            return
+        }
+        guard path != scope.repositoryPath else { return }
+        model.newChatMovingDraft(projectPath: path)
     }
 
     /// Branches the shown worktree into a fresh one and moves the draft to a
     /// new chat there, so its agent works beside this one without sharing edits.
     func startWorktreeTask(from path: String) async {
+        let owner = sessionWorkspaceIdentity
+        let scope = activeSessionRepositoryScope
         do {
             let worktree = try await RepositoryService.createTaskWorktree(path: path, id: UUID())
+            guard owner == sessionWorkspaceIdentity, scope == activeSessionRepositoryScope else { return }
             model.newChatMovingDraft(projectPath: worktree)
         } catch {
             model.reportAttachmentError(HermesDiagnosticsService.safeSummary(error.localizedDescription))
@@ -840,6 +843,10 @@ extension DockPopover {
             HStack(spacing: 4) {
                 // Leading like a native toolbar title; actions sit at the trailing edge.
                 if hidesChatList {
+                    if usesWindowChrome {
+                        DockBuildBadge()
+                            .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 4)
+                    }
                     DockSidebarToggle(isCollapsed: chatListCollapsed)
                     DockHistoryButtons()
                 }

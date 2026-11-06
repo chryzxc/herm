@@ -3,7 +3,7 @@ import SwiftUI
 /// Who worked when: one lane for Herm, one per Bot profile, one per subagent.
 /// Built from the same rows as the waterfall; spans and marks are recorded timing only.
 struct SessionActivityLanes {
-    struct Lane: Identifiable {
+    struct Lane: Identifiable, Equatable {
         enum Kind { case main, bot, subagent }
         let id: String
         let name: String
@@ -24,6 +24,7 @@ struct SessionActivityLanes {
     static let mainID = "lane:main"
     let lanes: [Lane]
     let ownerByRow: [String: String]
+    private let laneIndexByActor: [String: Int]
 
     init(_ crew: SessionCrewProjection) {
         var lanes: [Lane] = []
@@ -44,24 +45,32 @@ struct SessionActivityLanes {
             }
         }
         // Herm first, then by first recorded start; untimed lanes keep roster order at the end.
-        let first = { (lane: Lane) in
-            lane.actors.compactMap { $0.row.timing == .unavailable ? nil : $0.row.start }.min()
-        }
-        self.lanes = lanes.enumerated().sorted { a, b in
+        let first = Dictionary(
+            uniqueKeysWithValues: lanes.compactMap { lane in
+                lane.actors.compactMap { $0.row.timing == .unavailable ? nil : $0.row.start }.min()
+                    .map { (lane.id, $0) }
+            })
+        let sortedLanes = lanes.enumerated().sorted { a, b in
             if (a.element.kind == .main) != (b.element.kind == .main) { return a.element.kind == .main }
-            switch (first(a.element), first(b.element)) {
+            switch (first[a.element.id], first[b.element.id]) {
             case (let x?, let y?) where x != y: return x < y
             case (_?, nil): return true
             case (nil, _?): return false
             default: return a.offset < b.offset
             }
         }.map(\.element)
+        self.lanes = sortedLanes
         ownerByRow = crew.ownerByRow
+        var laneIndexByActor: [String: Int] = [:]
+        for (index, lane) in sortedLanes.enumerated() {
+            for actor in lane.actors where laneIndexByActor[actor.id] == nil { laneIndexByActor[actor.id] = index }
+        }
+        self.laneIndexByActor = laneIndexByActor
     }
 
     func lane(owning rowID: String) -> Lane? {
-        guard let owner = ownerByRow[rowID] else { return nil }
-        return lanes.first { $0.actorIDs.contains(owner) }
+        guard let owner = ownerByRow[rowID], let index = laneIndexByActor[owner] else { return nil }
+        return lanes[index]
     }
 
     /// Rows that satisfy `keep`, plus their ancestors so the waterfall tree stays intact.
@@ -76,11 +85,79 @@ struct SessionActivityLanes {
     }
 }
 
+/// Completed opaque tool marks use time-space paths that can be scaled without
+/// visiting each historical row on every clock tick. Replay keeps exact rows.
+@MainActor
+struct SessionActivityToolGeometry {
+    struct Batch {
+        let tone: DockAccentColor
+        let inset: CGFloat
+        var spans = Path()
+        var starts = Path()
+    }
+
+    enum Segment {
+        case batch(Batch)
+        case dynamic(SessionTraceRow)
+    }
+
+    let segmentsByActor: [String: [Segment]]
+    static let maximumPreparedTools = 20_000
+
+    init(lanes: SessionActivityLanes, origin: Date) {
+        let count = lanes.lanes.reduce(0) { total, lane in
+            total + lane.actors.reduce(0) { $0 + $1.tools.count }
+        }
+        guard count <= Self.maximumPreparedTools else {
+            segmentsByActor = [:]
+            return
+        }
+        var result: [String: [Segment]] = [:]
+        for (index, lane) in lanes.lanes.enumerated() {
+            let y = CGFloat(index) * 26
+            for actor in lane.actors {
+                var segments: [Segment] = []
+                var batch: Batch?
+                func flush() {
+                    if let batch { segments.append(.batch(batch)) }
+                    batch = nil
+                }
+                for tool in actor.tools {
+                    guard !tool.active, tool.kind == .tool, tool.timing != .unavailable,
+                        let start = tool.start, let elapsed = tool.elapsed(at: origin)
+                    else {
+                        flush()
+                        segments.append(.dynamic(tool))
+                        continue
+                    }
+                    let tone =
+                        tool.failed ? DockAccentColor.coral : tool.toolName.map(SessionTraceCanvas.toolTone) ?? .violet
+                    let inset: CGFloat = tool.failed ? 5 : 8
+                    if batch?.tone != tone || batch?.inset != inset {
+                        flush()
+                        batch = Batch(tone: tone, inset: inset)
+                    }
+                    let x = start.timeIntervalSince(origin)
+                    let top = y + inset
+                    let height = 26 - inset * 2
+                    batch?.spans.addRect(CGRect(x: x, y: top, width: max(0, elapsed), height: height))
+                    batch?.starts.move(to: CGPoint(x: x, y: top))
+                    batch?.starts.addLine(to: CGPoint(x: x, y: top + height))
+                }
+                flush()
+                result[actor.id] = segments
+            }
+        }
+        segmentsByActor = result
+    }
+}
+
 /// Fit-to-width overview of every lane. The box marks the range the Steps plot shows;
 /// clicking or dragging moves it, clicking a span selects that actor, a name filters Steps.
 struct SessionActivityLaneChart: View {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     let lanes: SessionActivityLanes
+    let toolGeometry: SessionActivityToolGeometry
     let span: Double
     let origin: Date
     let now: Date
@@ -102,16 +179,10 @@ struct SessionActivityLaneChart: View {
 
     var body: some View {
         let selectedLane = selectedRowID.flatMap(lanes.lane(owning:))?.id
-        let content = VStack(spacing: 0) {
-            ForEach(lanes.lanes) { lane in
-                HStack(spacing: 0) {
-                    label(lane)
-                    Color.clear
-                }
-                .frame(height: laneHeight)
-                .background(selectedLane == lane.id ? Color.dockSurface2 : Color.clear)
-            }
-        }
+        let content = SessionActivityLaneLabels(
+            lanes: lanes.lanes, selectedLane: selectedLane, origin: origin, replayTime: replayTime,
+            connected: connected, filter: filter, select: select, toggleFilter: toggleFilter
+        ).equatable()
         VStack(spacing: 2) {
             HStack(spacing: 0) {
                 Color.clear.frame(width: labelWidth, height: 1)
@@ -210,23 +281,24 @@ struct SessionActivityLaneChart: View {
                         Path(CGRect(x: rect.maxX - 2, y: rect.minY, width: 2, height: rect.height)),
                         with: .color(tone.color))
                 }
-                for tool in actor.tools {
-                    guard let mark = interval(tool) else { continue }
-                    let failedTool = tool.failed && replayTime.map { $0 >= mark.upperBound } ?? true
-                    let color: Color =
-                        failedTool
-                        ? DockAccentColor.coral.fill
-                        : tool.kind == .tool
-                            ? tool.toolName.map(SessionTraceCanvas.toolTone)?.fill ?? DockAccentColor.violet.fill
-                            : DockAccentColor.violet.fill.opacity(0.75)
-                    let inset: CGFloat = failedTool ? 5 : 8
-                    context.fill(
-                        Path(
-                            CGRect(
-                                x: mark.lowerBound * scale, y: y + inset,
-                                width: max(1.5, (mark.upperBound - mark.lowerBound) * scale),
-                                height: laneHeight - inset * 2)),
-                        with: .color(color))
+                if replayTime == nil, let segments = toolGeometry.segmentsByActor[actor.id] {
+                    for segment in segments {
+                        switch segment {
+                        case .batch(let batch):
+                            let color = batch.tone.fill
+                            var scaled = context
+                            scaled.scaleBy(x: scale, y: 1)
+                            scaled.fill(batch.spans, with: .color(color))
+                            var caps = context
+                            caps.translateBy(x: 0.75, y: 0)
+                            caps.scaleBy(x: scale, y: 1)
+                            caps.stroke(batch.starts, with: .color(color), lineWidth: 1.5 / scale)
+                        case .dynamic(let tool):
+                            drawTool(tool, in: &context, y: y, scale: scale)
+                        }
+                    }
+                } else {
+                    for tool in actor.tools { drawTool(tool, in: &context, y: y, scale: scale) }
                 }
             }
             if !drewSpan, replayTime == nil {
@@ -256,6 +328,25 @@ struct SessionActivityLaneChart: View {
         }
     }
 
+    private func drawTool(_ tool: SessionTraceRow, in context: inout GraphicsContext, y: CGFloat, scale: CGFloat) {
+        guard let mark = interval(tool) else { return }
+        let failedTool = tool.failed && replayTime.map { $0 >= mark.upperBound } ?? true
+        let color: Color =
+            failedTool
+            ? DockAccentColor.coral.fill
+            : tool.kind == .tool
+                ? tool.toolName.map(SessionTraceCanvas.toolTone)?.fill ?? DockAccentColor.violet.fill
+                : DockAccentColor.violet.fill.opacity(0.75)
+        let inset: CGFloat = failedTool ? 5 : 8
+        context.fill(
+            Path(
+                CGRect(
+                    x: mark.lowerBound * scale, y: y + inset,
+                    width: max(1.5, (mark.upperBound - mark.lowerBound) * scale),
+                    height: laneHeight - inset * 2)),
+            with: .color(color))
+    }
+
     /// Denser than the Steps ruler: the overview is narrow and never scrolls.
     private static func tickStep(_ scale: CGFloat) -> Double { SessionTraceCanvas.tickStep(scale * 1.6) }
 
@@ -268,6 +359,41 @@ struct SessionActivityLaneChart: View {
                     Text(SessionTraceCanvas.tickLabel(tick)).font(DockTypography.font(.metadata, scale: workspaceScale))
                         .foregroundColor(Color.dockSecondaryText),
                     at: CGPoint(x: tick * scale + 3, y: size.height / 2), anchor: .leading)
+            }
+        }
+    }
+
+}
+
+/// The chart clock changes only its plot; lane labels update when their inputs change.
+private struct SessionActivityLaneLabels: View, Equatable {
+    let lanes: [SessionActivityLanes.Lane]
+    let selectedLane: String?
+    let origin: Date
+    let replayTime: Double?
+    let connected: Bool
+    let filter: String?
+    let select: (String) -> Void
+    let toggleFilter: (String) -> Void
+    let laneHeight: CGFloat = 26
+    let labelWidth: CGFloat = 112
+    let themeRevision = DockThemeRuntime.revision
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.lanes == rhs.lanes && lhs.selectedLane == rhs.selectedLane && lhs.origin == rhs.origin
+            && lhs.replayTime == rhs.replayTime && lhs.connected == rhs.connected && lhs.filter == rhs.filter
+            && lhs.themeRevision == rhs.themeRevision
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(lanes) { lane in
+                HStack(spacing: 0) {
+                    label(lane)
+                    Color.clear
+                }
+                .frame(height: laneHeight)
+                .background(selectedLane == lane.id ? Color.dockSurface2 : Color.clear)
             }
         }
     }

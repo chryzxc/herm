@@ -122,7 +122,7 @@ struct ConversationTranscriptSourceTests {
         model.messages = (0..<500).map { ChatMessage(role: .hermes, text: "Message \($0)") }
         model.streamingMessageID = model.messages.last?.id
         let coordinator = ConversationTranscriptCoordinator()
-        coordinator.reset(sessionID: model.sessionID, totalCount: 500, bubbleCount: 500)
+        coordinator.reset(sessionID: model.transcriptPresentationID, totalCount: 500, bubbleCount: 500)
         coordinator.jump(to: 250)
         let source = ConversationTranscriptSource(
             model: model, bots: BotModeModel(),
@@ -154,7 +154,7 @@ struct ConversationTranscriptSourceTests {
         let model = DockModel(initialSessionID: "source-test")
         model.messages = (0..<500).map { ChatMessage(role: .hermes, text: "Message \($0)") }
         let coordinator = ConversationTranscriptCoordinator()
-        coordinator.reset(sessionID: model.sessionID, totalCount: 500, bubbleCount: 500)
+        coordinator.reset(sessionID: model.transcriptPresentationID, totalCount: 500, bubbleCount: 500)
         let source = ConversationTranscriptSource(
             model: model, bots: BotModeModel(),
             actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: coordinator)

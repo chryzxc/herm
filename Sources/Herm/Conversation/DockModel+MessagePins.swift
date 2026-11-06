@@ -7,7 +7,7 @@ import UserNotifications
 
 extension DockModel {
     func canPinMessage(_ message: ChatMessage) -> Bool {
-        messagePinsSupported && !isUpdatingMessagePin && message.id != streamingMessageID
+        sessionActionsReady && messagePinsSupported && !isUpdatingMessagePin && message.id != streamingMessageID
             && storedMessageReferences[message.id] != nil
             && message.systemEvent == nil && message.kanbanNotice == nil && !message.isError
     }
@@ -56,7 +56,7 @@ extension DockModel {
     }
 
     func setMessagePinned(_ record: MessagePinRecord, pinned: Bool) {
-        guard messagePinsSupported, let owner = navigationSessionID else { return }
+        guard sessionActionsReady, messagePinsSupported, let owner = navigationSessionID else { return }
         var records = messagePinStore.pins(profile: sessionProfileID, sessionID: owner)
         records.removeAll { $0.rowID == record.rowID }
         if pinned { records.append(record) }

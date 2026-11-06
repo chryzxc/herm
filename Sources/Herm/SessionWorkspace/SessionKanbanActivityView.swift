@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SessionKanbanActivityView: View {
+    @Environment(\.dockHostVisible) private var hostVisible
     @ObservedObject var model: DockModel
     @ObservedObject var control: ControlCenterModel
     @ObservedObject var botMode: BotModeModel
@@ -47,8 +48,8 @@ struct SessionKanbanActivityView: View {
                 unavailableContent
             }
         }
-        .task(id: sessionID) {
-            guard let sessionID else { return }
+        .task(id: "\(sessionID ?? ""):\(hostVisible)") {
+            guard hostVisible, let sessionID else { return }
             control.refreshSessionKanban(for: sessionID)
             while !Task.isCancelled {
                 // Feed rows and handoffs reach the chat through this poll, so
@@ -67,14 +68,14 @@ struct SessionKanbanActivityView: View {
             // A terminal tool row can disappear before the 15-second polling
             // pass. Its exact task reference is retained by DockModel, so
             // refresh immediately rather than presenting a false empty state.
-            if let sessionID { control.refreshSessionKanban(for: sessionID) }
+            if hostVisible, let sessionID { control.refreshSessionKanban(for: sessionID) }
         }
     }
 
     @ViewBuilder
     private var unavailableContent: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("SESSION ACTIVITY")
+            DockSectionLabel(title: "Session activity")
             Text(sessionID == nil ? "SESSION ATTRIBUTION UNAVAILABLE" : "KANBAN CAPABILITY UNAVAILABLE")
                 .dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockWarning)
@@ -195,7 +196,7 @@ struct SessionKanbanActivityView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            sectionLabel("BOT ACTIVITY")
+            DockSectionLabel(title: "Bot activity")
             Spacer(minLength: 0)
             if snapshot.activeCount > 0 {
                 Text("\(snapshot.activeCount) ACTIVE")
@@ -250,14 +251,8 @@ struct SessionKanbanActivityView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .dockPadding(.horizontal, 10)
                     .dockPadding(.vertical, 9)
-                    .background(
-                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                            Color.dockSurface4.opacity(0.68))
-                    )
+                    .dockWell(.sunken)
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
-                            Color.dockBorderLight, lineWidth: 0.5))
                 }
             }
         }
@@ -265,7 +260,7 @@ struct SessionKanbanActivityView: View {
 
     private var botWorkSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("BOT WORK")
+            DockSectionLabel(title: "Bot work")
             ForEach(botWorkRows) { row in
                 Button {
                     onOpenTask?(row.taskID)
@@ -273,7 +268,10 @@ struct SessionKanbanActivityView: View {
                     HStack(alignment: .top, spacing: 8) {
                         Circle().fill(statusColor(row.status)).frame(width: 7, height: 7).dockPadding(.top, 4)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(row.botName).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent)
+                            Text(row.botName)
+                                .dockFont(.metadata, weight: .semibold)
+                                .foregroundStyle(
+                                    DockAccentColor.identity(for: row.botID).color)
                             Text(row.title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
                                 .lineLimit(2)
                             Text("\(row.status.label) · KANBAN TASK \(row.taskID)")
@@ -340,14 +338,8 @@ struct SessionKanbanActivityView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .dockPadding(.horizontal, 10)
             .dockPadding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                    Color.dockSurface4.opacity(0.68))
-            )
+            .dockWell(.sunken)
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
-                    Color.dockBorderLight, lineWidth: 0.5))
         }
         .buttonStyle(.dockHover)
         .disabled(onOpenTask == nil && onOpenBoard == nil)
@@ -365,10 +357,4 @@ struct SessionKanbanActivityView: View {
         }
     }
 
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .dockFont(.metadata, weight: .semibold)
-            .tracking(0.8)
-            .foregroundStyle(Color.dockSecondaryText)
-    }
 }

@@ -37,6 +37,9 @@ struct SessionBrowserTests {
         #expect(page("chrome://whats-new/").isUnsolicited)
         #expect(!page("https://www.onlinejobs.ph/apply").isUnsolicited)
         #expect(!page("about:blank").isUnsolicited)
+        #expect(!page("about:blank").hasDestination)
+        #expect(!page("").hasDestination)
+        #expect(page("https://www.onlinejobs.ph/apply").hasDestination)
     }
 
     @Test func startupNeverAttachesToUnrelatedFixedPort() async throws {

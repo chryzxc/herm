@@ -8,7 +8,7 @@ import UserNotifications
 
 extension DockModel {
     func respondToApproval(_ choice: String) {
-        guard let sessionID else { return }
+        guard sessionActionsReady, let sessionID else { return }
         guard !isRespondingToApproval else { return }
         if let request = sessionAttention[sessionID]?.responseTarget,
             attentionAnswers[request]?.blocksSubmission == true
@@ -49,8 +49,8 @@ extension DockModel {
             freeText ? attention.status == .needsClarification : attention.choices.contains(choice),
             attentionAnswers[request]?.blocksSubmission != true
         else { return }
-        if currentSessionIDs.contains(request.sessionID) {
-            guard !isRespondingToApproval, !isRespondingToClarification else { return }
+        if currentSessionIDs.contains(request.sessionID) || rowSessionID(request.sessionID) == navigationSessionID {
+            guard sessionActionsReady, !isRespondingToApproval, !isRespondingToClarification else { return }
         }
         attentionAnswers[request] = .sending(choice)
         let responseGeneration = sessionResumeGeneration
@@ -173,6 +173,7 @@ extension DockModel {
     }
 
     func respondToClarification(_ response: String, displayText: String? = nil) {
+        guard sessionActionsReady else { return }
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
         let images = pendingImages
         guard !trimmed.isEmpty || !images.isEmpty, !isRespondingToClarification else { return }
@@ -336,7 +337,7 @@ extension DockModel {
     /// Answers the open sudo / secret / vault prompt; an empty value skips it.
     /// The value is never logged or kept after the request is sent.
     func respondToValuePrompt(_ value: String) {
-        guard let prompt = valuePrompt, !isRespondingToValuePrompt else { return }
+        guard sessionActionsReady, let prompt = valuePrompt, !isRespondingToValuePrompt else { return }
         isRespondingToValuePrompt = true
         valuePromptError = nil
         Task {

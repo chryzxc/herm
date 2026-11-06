@@ -236,7 +236,6 @@ extension DockPopover {
     }
 
     func handleSessionMetadataChange() {
-        model.refreshSessionModelOptions()
         synchronizeSessionMetadataFromControlCenter()
     }
 

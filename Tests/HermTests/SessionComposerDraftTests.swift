@@ -11,12 +11,18 @@ private final class ComposerDraftRPCClient: HermesRPCClientProtocol {
     var requests: [String] = []
     var runtimeRevision = 0
     var failResume = false
+    var worktreeDirectory: String?
+    var requestParameters: [(String, [String: Any])] = []
 
     func connect() async throws {}
     func close() {}
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         requests.append(method)
+        requestParameters.append((method, params))
+        if method == "session.resume", let worktreeDirectory {
+            return ["session_id": "created", "session_key": "stored-created", "info": ["cwd": worktreeDirectory]]
+        }
         if method == "session.resume" {
             if failResume { throw HermesGateway.GatewayError.malformedResponse }
             let storedID = params["session_id"] as? String ?? ""
@@ -389,6 +395,45 @@ struct SessionComposerDraftTests {
         model.setProfileScope("bot-a")
         #expect(await model.resumeSession(original, reportFailure: true))
         #expect(model.draft == "Belongs to bot A")
+    }
+
+    @Test func worktreeSessionMustConfirmDirectoryBeforeSending() async throws {
+        let rpc = ComposerDraftRPCClient()
+        rpc.worktreeDirectory = "/tmp/wrong"
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.draft = "Keep this draft"
+        model.newChatMovingDraft(projectPath: "/tmp/worktree-a")
+        do {
+            _ = try await model.createAuthorizedSession(source: "test")
+            Issue.record("An unconfirmed worktree was accepted")
+        } catch {}
+        #expect(model.pendingWorktreeDirectory == "/tmp/worktree-a")
+        #expect(model.draft == "Keep this draft")
+        let create = try #require(rpc.requestParameters.first { $0.0 == "session.create" })
+        #expect(create.1["cwd"] as? String == "/tmp/worktree-a")
+        #expect(create.1["cwd_explicit"] as? Bool == true)
+        rpc.worktreeDirectory = "/tmp/worktree-a"
+        #expect(try await model.createAuthorizedSession(source: "test") == "created")
+        #expect(model.pendingWorktreeDirectory == nil)
+        #expect(model.sessionWorkspace?.cwd == "/tmp/worktree-a")
+        #expect(rpc.requests.filter { $0 == "session.create" }.count == 1)
+    }
+
+    @Test func failedWorktreeConfirmationKeepsTheSendDraftForRetry() async throws {
+        let rpc = ComposerDraftRPCClient()
+        rpc.worktreeDirectory = "/tmp/wrong"
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.draft = "Keep this draft"
+        model.newChatMovingDraft(projectPath: "/tmp/worktree-a")
+        model.send()
+        for _ in 0..<200 where model.isSending {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(model.draft == "Keep this draft")
+        #expect(model.pendingWorktreeDirectory == "/tmp/worktree-a")
+        #expect(!rpc.requests.contains("prompt.submit"))
     }
 
     @Test func worktreeTaskMovesTheDraftInsteadOfCopyingIt() async {

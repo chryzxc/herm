@@ -16,7 +16,9 @@ extension DockModel {
                     self.activeSubagents.contains { AgentActivityPresentation.isActiveStatus($0.status) }
                     || self.sessionAgents.contains { AgentActivityPresentation.isActiveStatus($0.status) }
                     || self.status == .working
-                let interval: Duration = hasLiveWorkers ? .seconds(3) : .seconds(15)
+                let interval: Duration =
+                    hasLiveWorkers
+                    ? .seconds(3) : (self.presentationDemand.hasVisibleHost ? .seconds(60) : .seconds(300))
                 try? await Task.sleep(for: interval)
                 guard !Task.isCancelled, self.sessionID != nil else { return }
                 self.refreshDelegationStatus()
@@ -76,11 +78,12 @@ extension DockModel {
                 // their native worker ID.
                 let rpcAgents = projections.map(\.agent)
                 for agent in rpcAgents { upsertSessionAgent(agent) }
-                activeSubagents = Self.reconciledLiveAgents(
+                let reconciled = Self.reconciledLiveAgents(
                     authoritative: rpcAgents.filter { AgentActivityPresentation.isActiveStatus($0.status) },
                     current: activeSubagents,
                     synthesizedIDs: synthesizedSubagentIDs
                 )
+                if activeSubagents != reconciled { activeSubagents = reconciled }
                 cacheCurrentAgentState()
             } catch {
                 DebugLog.write(

@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 
@@ -5,6 +6,87 @@ import Testing
 
 @MainActor
 struct PerformanceAuditRegressionTests {
+    @MainActor @Test func demandRemainsVisibleUntilLastHostHides() {
+        let demand = DockPresentationDemand()
+        let first = UUID()
+        let second = UUID()
+        demand.update(first, visible: true)
+        demand.update(second, visible: true)
+        demand.update(first, visible: false)
+        #expect(demand.hasVisibleHost)
+        demand.update(second, visible: false)
+        #expect(!demand.hasVisibleHost)
+    }
+    @Test func archiveReadsAreLimitedToTwoAndKeepAllSessions() async throws {
+        let client = ArchiveConcurrencyClient()
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        try await control.refreshLatestActivities(
+            rpc: HermesControlRPC(client: client), generation: control.refreshGeneration, clientIdentity: nil)
+        #expect(client.maximumConcurrent == 2)
+        #expect(client.completed == 8)
+        #expect(control.latestActivities.count == 8)
+    }
+    @Test func workspaceObservationSkipsBackgroundActivityButKeepsNavigation() async throws {
+        let model = DockModel(initialSessionID: "workspace-one")
+        let control = ControlCenterModel()
+        var modelUpdates = 0
+        var controlUpdates = 0
+        let modelSubscription = model.workspacePresentationChanges.sink { modelUpdates += 1 }
+        let controlSubscription = control.workspacePresentationChanges.sink { controlUpdates += 1 }
+        model.activityPresentationRevision += 1
+        control.pendingActionIDs.insert("unrelated")
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(modelUpdates == 0)
+        #expect(controlUpdates == 0)
+        model.sessionID = "workspace-two"
+        control.projects = []
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(modelUpdates > 0)
+        #expect(controlUpdates > 0)
+        withExtendedLifetime((modelSubscription, controlSubscription)) {}
+    }
+
+    @Test func stalledRoutineDoesNotBlockSessionsOrAgents() async throws {
+        let client = HeldActivityClient()
+        client.holdRoutine = true
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        control.refresh()
+        defer {
+            control.routineInventoryTask?.cancel()
+            control.refreshTask?.cancel()
+            control.latestActivityRefreshTask?.cancel()
+        }
+        for _ in 0..<200 {
+            if client.routineStarted && client.agentRead && !control.activeSessions.isEmpty { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(client.routineStarted)
+        #expect(client.agentRead)
+        #expect(control.activeSessions.map(\.id) == ["active"])
+        #expect(control.isRefreshing)
+    }
+
+    @Test func rebindingTheSameModelDoesNotRestartKanban() async throws {
+        let client = HeldActivityClient()
+        let model = DockModel(initialSessionID: "bind-test", rpcClient: client)
+        let control = ControlCenterModel()
+        control.bind(to: model)
+        for _ in 0..<100 where control.hasKanbanReadInFlight || !control.pendingActionIDs.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let requests = client.requestCount
+        let generation = control.clientBindingGeneration
+        control.bind(to: model)
+        control.bind(to: model)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(client.requestCount == requests)
+        #expect(control.clientBindingGeneration == generation)
+        let replacement = DockModel(initialSessionID: "other", rpcClient: client)
+        control.bind(to: replacement)
+        #expect(control.clientBindingGeneration == generation + 1)
+        #expect(control.dockModel === replacement)
+    }
+
     @Test func revisionSnapshotRetainsOrderingAndHandlesLongReverseChains() throws {
         let descriptor = try #require(RichFeatureRegistry.local.first { $0.id == "metrics" })
         let source = RichFeatureRegistry.exampleSurface(descriptor)
@@ -159,15 +241,55 @@ struct PerformanceAuditRegressionTests {
 }
 
 @MainActor
+private final class ArchiveConcurrencyClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    var concurrent = 0
+    var maximumConcurrent = 0
+    var completed = 0
+    func connect() async throws {}
+    func close() {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        if path.hasPrefix("/api/sessions?") {
+            return [
+                "data": (0..<8).map {
+                    [
+                        "id": "s\($0)", "title": "Session \($0)", "updated_at": 100,
+                        "message_count": 1,
+                    ]
+                }, "has_more": false,
+            ]
+        }
+        concurrent += 1
+        maximumConcurrent = max(maximumConcurrent, concurrent)
+        defer { concurrent -= 1 }
+        try await Task.sleep(for: .milliseconds(10))
+        completed += 1
+        return ["data": [["id": "1", "role": "assistant", "timestamp": 100, "tool_name": "terminal"]]]
+    }
+}
+
+@MainActor
 private final class HeldActivityClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     var archiveStarted = false
     var archiveReads = 0
     var agentRead = false
+    var requestCount = 0
+    var holdRoutine = false
+    var routineStarted = false
     func connect() async throws {}
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        requestCount += 1
+        if holdRoutine, method == HermesFeatureIDs.ID.cronManage.rawValue, params["action"] as? String == "list" {
+            routineStarted = true
+            try await Task.sleep(for: .seconds(60))
+        }
         if method == HermesFeatureIDs.ID.delegationStatus.rawValue { agentRead = true }
+        if holdRoutine, method == HermesFeatureIDs.ID.sessionActiveList.rawValue {
+            return ["sessions": [["id": "active", "title": "Active"]]]
+        }
         return ["sessions": [], "jobs": [], "agents": [], "processes": [], "projects": []]
     }
     func fetchHTTP(_ path: String) async throws -> [String: Any] {

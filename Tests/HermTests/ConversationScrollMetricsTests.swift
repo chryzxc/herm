@@ -153,25 +153,16 @@ final class ConversationScrollMetricsTests: XCTestCase {
         XCTAssertFalse(ConversationMessageWindow.isLiveTail(380..<500, totalCount: 501))
     }
 
-    func testUnreadCountIgnoresTransportOnlyAssistantEntries() {
-        let emptyActivity = ChatMessage(role: .hermes, text: "")
-        let userMessage = ChatMessage(role: .user, text: "Visible user message")
-        let response = ChatMessage(role: .hermes, text: "Visible assistant response")
-        let steering = ChatMessage(role: .user, text: "", isSteering: true)
-
-        XCTAssertEqual(
-            ConversationUnreadMessagePolicy.renderedMessageCount(
-                [emptyActivity, userMessage, response, steering],
-                streamingID: nil
-            ),
-            3
-        )
-        XCTAssertTrue(
-            ConversationUnreadMessagePolicy.rendersMessageBubble(
-                emptyActivity,
-                streamingID: emptyActivity.id
-            )
-        )
+    func testUnreadCountIncludesOnlyAssistantResponses() {
+        let messages = [
+            ChatMessage(role: .hermes, text: ""),
+            ChatMessage(role: .user, text: "User message"),
+            ChatMessage(role: .hermes, text: "AI response"),
+            ChatMessage(role: .user, text: "", isSteering: true),
+            ChatMessage(role: .hermes, text: "Failure", isError: true),
+            ChatMessage(role: .hermes, text: "System update", systemEvent: SystemEvent(label: "System")),
+        ]
+        XCTAssertEqual(ConversationUnreadMessagePolicy.assistantResponseCount(messages), 1)
     }
 
     func testBodyTextFlagMatchesLegacyTrimmedEmptiness() {
@@ -181,29 +172,24 @@ final class ConversationScrollMetricsTests: XCTestCase {
     }
 
     func testUnreadSemanticsWithWhitespaceAndImageOnlyMessages() {
-        let whitespaceOnly = ChatMessage(role: .hermes, text: " \n\t ")
-        let imageOnly = ChatMessage(role: .user, text: "", images: [NSImage()])
-        let streamingPlaceholder = ChatMessage(role: .hermes, text: "")
+        let messages = [
+            ChatMessage(role: .hermes, text: " \n\t "),
+            ChatMessage(role: .user, text: "", images: [NSImage()]),
+            ChatMessage(role: .hermes, text: "", images: [NSImage()]),
+            ChatMessage(role: .hermes, text: ""),
+        ]
+        XCTAssertEqual(ConversationUnreadMessagePolicy.assistantResponseCount(messages), 1)
+    }
 
-        XCTAssertEqual(
-            ConversationUnreadMessagePolicy.renderedMessageCount(
-                [whitespaceOnly, imageOnly, streamingPlaceholder],
-                streamingID: nil
-            ),
-            1
-        )
-        XCTAssertTrue(
-            ConversationUnreadMessagePolicy.rendersMessageBubble(
-                imageOnly,
-                streamingID: nil
-            )
-        )
-        XCTAssertTrue(
-            ConversationUnreadMessagePolicy.rendersMessageBubble(
-                streamingPlaceholder,
-                streamingID: streamingPlaceholder.id
-            )
-        )
+    func testUnreadResponsesRespectTheReadBoundary() {
+        let seenAt = Date(timeIntervalSince1970: 100)
+        let messages = [
+            ChatMessage(role: .hermes, text: "Old", timestamp: seenAt.addingTimeInterval(-1)),
+            ChatMessage(role: .hermes, text: "Read", timestamp: seenAt),
+            ChatMessage(role: .hermes, text: "New", timestamp: seenAt.addingTimeInterval(1)),
+            ChatMessage(role: .user, text: "New prompt", timestamp: seenAt.addingTimeInterval(2)),
+        ]
+        XCTAssertEqual(ConversationUnreadMessagePolicy.assistantResponseCount(messages, after: seenAt), 1)
     }
 
     func testSentinelAtViewportBottomCountsAsAtBottom() {

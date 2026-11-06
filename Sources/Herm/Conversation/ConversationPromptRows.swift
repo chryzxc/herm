@@ -81,11 +81,7 @@ struct ConversationPromptRows: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .dockPadding(.horizontal, 10)
                 .dockPadding(.vertical, 8)
-                .background(
-                    DockThemeShape(cornerRadius: DockLayout.controlRadius)
-                        .dockSurfaceFill(
-                            Color.dockSurface2, stroke: Color.dockBorderLight, lineWidth: DockLayout.hairline)
-                )
+                .dockWell()
 
                 if let reason = approval.reason {
                     DockCalloutDisclosure(title: "Scope and limits", text: reason)
@@ -141,7 +137,7 @@ struct ConversationPromptRows: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .dockButtonSize(.accessible)
+        .dockButtonSize(.compact)
         .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
         .dockPadding(.vertical, 8)
     }
@@ -205,7 +201,6 @@ struct ConversationPromptRows: View {
                             .accessibilityAddTraits(isMultiSelect && isSelected ? .isSelected : [])
                         }
                     }
-                    .controlSize(.small)
                     .disabled(isDisabled)
                 }
                 if isMultiSelect {
@@ -224,7 +219,6 @@ struct ConversationPromptRows: View {
 
                     }
                     .buttonStyle(DockPrimaryButtonStyle())
-                    .controlSize(.small)
                     .disabled(isDisabled || clarificationSelection.isEmpty)
                 }
                 Text(
@@ -234,7 +228,7 @@ struct ConversationPromptRows: View {
                 .foregroundStyle(Color.dockMetadataText)
             }
         }
-        .dockButtonSize(.accessible)
+        .dockButtonSize(.compact)
         .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
         .dockPadding(.vertical, 8)
     }
@@ -302,7 +296,7 @@ struct ConversationPromptRows: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .dockButtonSize(.accessible)
+        .dockButtonSize(.compact)
         .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
         .dockPadding(.vertical, 8)
     }

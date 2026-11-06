@@ -245,7 +245,7 @@ extension DockModel {
 
     @discardableResult
     func stop() -> Task<Void, Never>? {
-        guard let sessionID, interruptState != .requesting else { return nil }
+        guard sessionActionsReady, let sessionID, interruptState != .requesting else { return nil }
         interruptGeneration &+= 1
         let requestGeneration = interruptGeneration
         let originProfileID = sessionProfileID ?? profileScopeID
@@ -345,13 +345,14 @@ extension DockModel {
 
     func publishWorkflowNotice(_ notice: HermNotice, body: String, openURL: URL? = nil) {
         if interruptionCoordinator?.admit(notice, channel: .system) == false { return }
-        guard defaults.bool(forKey: completionNotificationsKey), !isPopoverVisible,
+        guard HermNotificationPreferences.allows(notice, defaults: defaults), !isPopoverVisible,
             HermesAppRuntime.supportsUserNotifications
         else { return }
         let content = UNMutableNotificationContent()
         content.title = notice.kind.title
+        content.categoryIdentifier = HermNotificationAction.activityCategory
         content.body = String(body.prefix(240))
-        content.sound = .default
+        content.sound = HermNotificationPreferences.sound(defaults: defaults)
         if let openURL, openURL.scheme == "https", openURL.host == "github.com" {
             content.userInfo["herm.open-pr"] = openURL.absoluteString
         }
@@ -368,7 +369,9 @@ extension DockModel {
             : identifier.hasPrefix("failure:")
                 ? .failure : identifier.hasPrefix("approval:") ? .approval : .clarification
         let owner = identifier.split(separator: ":", maxSplits: 1).last.map(String.init)
-        if interruptionCoordinator?.admit(interruptionNotice(kind, owner: owner), channel: .system) == false { return }
+        let notice = interruptionNotice(kind, owner: owner)
+        guard HermNotificationPreferences.allows(notice, defaults: defaults) else { return }
+        if interruptionCoordinator?.admit(notice, channel: .system) == false { return }
         guard HermesAppRuntime.supportsUserNotifications,
             HermNotificationAction.showsBanner(
                 kind, popoverVisible: isPopoverVisible, appActive: NSApp?.isActive ?? false)
@@ -376,8 +379,9 @@ extension DockModel {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = String(body.prefix(240))
-        content.sound = .default
+        content.sound = HermNotificationPreferences.sound(defaults: defaults)
         content.userInfo = ["attention_id": identifier]
+        content.categoryIdentifier = HermNotificationAction.activityCategory
         if kind == .approval, let approvalRequestID, !approvalRequestID.isEmpty {
             content.categoryIdentifier = HermNotificationAction.approvalCategory
             content.userInfo[HermNotificationAction.requestIDKey] = approvalRequestID
@@ -395,6 +399,7 @@ extension DockModel {
             guard let explanation = await OnDeviceAssist.explainApproval(title: title, detail: body),
                 let updated = content.mutableCopy() as? UNMutableNotificationContent
             else { return }
+            guard HermNotificationPreferences.allows(notice, defaults: defaults) else { return }
             updated.subtitle = "\(OnDeviceAssist.attribution) · may be inaccurate"
             updated.body = "\(explanation)\n\(content.body)"
             updated.sound = nil
@@ -410,6 +415,8 @@ enum HermNotificationAction {
     static func showsBanner(_ kind: HermNotice.Kind, popoverVisible: Bool, appActive: Bool) -> Bool {
         !popoverVisible || ([.approval, .clarification].contains(kind) && !appActive)
     }
+    static let activityCategory = "herm.activity"
+    static let snooze = "herm.notifications.snooze"
     static let approvalCategory = "herm.approval"
     static let approve = "herm.approval.approve"
     static let deny = "herm.approval.deny"
@@ -418,19 +425,24 @@ enum HermNotificationAction {
     static let requestIDKey = "approval_request_id"
 
     static var categories: Set<UNNotificationCategory> {
-        [
+        let snoozeAction = UNNotificationAction(identifier: snooze, title: "Snooze alerts for 30 minutes", options: [])
+        return [
+            UNNotificationCategory(
+                identifier: activityCategory, actions: [snoozeAction], intentIdentifiers: []),
             UNNotificationCategory(
                 identifier: approvalCategory,
                 actions: [
                     UNNotificationAction(identifier: approve, title: "Approve once", options: []),
                     UNNotificationAction(identifier: deny, title: "Deny", options: [.destructive]),
+                    snoozeAction,
                 ], intentIdentifiers: []),
             UNNotificationCategory(
                 identifier: clarifyCategory,
                 actions: [
                     UNTextInputNotificationAction(
                         identifier: reply, title: "Reply", options: [],
-                        textInputButtonTitle: "Send", textInputPlaceholder: "Your answer")
+                        textInputButtonTitle: "Send", textInputPlaceholder: "Your answer"),
+                    snoozeAction,
                 ], intentIdentifiers: []),
         ]
     }

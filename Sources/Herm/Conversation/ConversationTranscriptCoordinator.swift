@@ -34,6 +34,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         let range: Range<Int>
         var anchor: ConversationScrollAnchor
         var isRestoring = false
+        var preparedPage: ConversationPreparedPage? = nil
     }
 
     @Published private(set) var mountedRange: Range<Int> = 0..<0
@@ -46,12 +47,18 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     let performance = ConversationPerformanceMonitor()
     private(set) var navigationGeneration: UInt64 = 0
     private var totalCount = 0
-    private var lastBubbleCount = 0
+    private var lastResponseCount = 0
+    private var countedMessagesRevision: UInt64?
     private var consumedPrependGeneration = 0
     private var queuedDirection: CGFloat = 0
+    private var preparingDirection: CGFloat = 0
     private var deferredScroll: Task<Void, Never>?
     var onEarlierHistory: () -> Void = {}
+    var onAcceptedLayout: (String?) -> Void = { _ in }
     var onScrollToBottom: ((Bool) -> Void)?
+    var isPageReady: ((Range<Int>, CGFloat) -> Bool)?
+    var onPreparationCancelled: () -> Void = {}
+    var onPreparationInvalidated: () -> Void = {}
     private var navigationAfterLayout: (@MainActor () -> Void)?
 
     init(controller: ConversationScrollController = ConversationScrollController()) {
@@ -62,7 +69,8 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         invalidate()
         self.sessionID = sessionID
         self.totalCount = totalCount
-        lastBubbleCount = bubbleCount
+        lastResponseCount = bubbleCount
+        countedMessagesRevision = nil
         consumedPrependGeneration = 0
         rowViewports = []
         presentation.reset()
@@ -78,8 +86,12 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     private func cancelMounting() {
         generation &+= 1
         pendingPage = nil
+        controller.preparedPage = nil
         navigationAfterLayout = nil
         queuedDirection = 0
+        preparingDirection = 0
+        onPreparationCancelled()
+        onPreparationInvalidated()
         deferredScroll?.cancel()
         deferredScroll = nil
         controller.cancelPendingAdjustments()
@@ -92,6 +104,10 @@ final class ConversationTranscriptCoordinator: ObservableObject {
 
     func userMoved(_ geometry: ConversationScrollGeometry, delta: CGFloat) {
         pendingPage?.anchor.recordUserScroll(delta: delta)
+        if preparingDirection * delta < 0 {
+            preparingDirection = 0
+            onPreparationCancelled()
+        }
         if delta < 0 { presentation.isAtBottom = false }
         if delta > 0, geometry.distanceToBottom <= ConversationScrollMetrics.pastEndTolerance {
             updatePosition(geometry)
@@ -158,6 +174,8 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         let next: Range<Int>
         if direction < 0, geometry.visibleTop < distance {
             guard range.lowerBound > 0 else {
+                preparingDirection = 0
+                onPreparationCancelled()
                 onEarlierHistory()
                 return
             }
@@ -167,21 +185,38 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             next = ConversationMessageWindow.revealLater(
                 range, totalCount: totalCount, visibleSpan: visibleSpan(geometry))
         } else {
+            preparingDirection = 0
+            onPreparationCancelled()
             return
         }
+        if preparingDirection == direction { return }
         guard next != range,
             let row = rowViewports.filter({
                 $0.maxY > geometry.visibleTop && $0.minY < geometry.visibleTop + geometry.visibleHeight
             })
             .min(by: { $0.index < $1.index })
         else { return }
+        guard isPageReady?(next, direction) ?? true else {
+            preparingDirection = direction
+            return
+        }
+        preparingDirection = 0
+        onPreparationCancelled()
         controller.cancelPendingAdjustments()
         setRange(next)
         pendingPage = PageTransaction(
             sessionID: sessionID, generation: generation, range: next,
             anchor: ConversationScrollAnchor(
-                messageID: row.target.messageID, offset: row.minY - geometry.visibleTop))
+                messageID: row.target.messageID, offset: row.minY - geometry.visibleTop),
+            preparedPage: controller.preparedPage)
         performance.recordPageTransaction()
+    }
+
+    func retryPreparedPage() {
+        guard preparingDirection != 0, pendingPage == nil, let geometry = controller.geometry else { return }
+        let direction = preparingDirection
+        preparingDirection = 0
+        checkEdge(geometry, direction: direction)
     }
 
     func receiveLayout(_ layout: ConversationTranscriptLayout) {
@@ -190,6 +225,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             layout.rows.count == mountedRange.count,
             Set(layout.rows.map(\.index)) == Set(mountedRange)
         else { return }
+        onAcceptedLayout(layout.sessionID)
         rowViewports = layout.rows
         if let navigate = navigationAfterLayout {
             navigationAfterLayout = nil
@@ -214,6 +250,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         ) { [weak self] in
             guard let self, self.generation == page.generation else { return }
             self.pendingPage = nil
+            self.controller.preparedPage = nil
             let direction = self.queuedDirection
             self.queuedDirection = 0
             self.scheduleScroll { [weak self] in
@@ -239,7 +276,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             consumedPrependGeneration = prepend.generation
             let range = ConversationMessageWindow.visibleRange(mountedRange, totalCount: oldCount)
             cancelMounting()
-            lastBubbleCount = bubbleCount
+            lastResponseCount = bubbleCount
             if !range.isEmpty {
                 setRange((range.lowerBound + prepend.count)..<(range.upperBound + prepend.count))
             }
@@ -259,30 +296,63 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             cancelMounting()
             setRange(range)
         }
-        let added = max(0, bubbleCount - lastBubbleCount)
-        lastBubbleCount = bubbleCount
+        let added = max(0, bubbleCount - lastResponseCount)
+        lastResponseCount = bubbleCount
         if newCount < oldCount { presentation.unseenMessageCount = 0 }
-        if newCount > oldCount, added > 0 {
-            if presentation.isAtBottom { followTail() } else { presentation.unseenMessageCount += added }
+        if presentation.isAtBottom {
+            if newCount > oldCount || added > 0 { followTail() }
+        } else if newCount >= oldCount {
+            presentation.unseenMessageCount += added
         }
     }
 
     func synchronize(model: DockModel) {
-        let count = model.messages.count
-        guard sessionID != model.sessionID || totalCount != count else {
-            reconcileAnchor(messages: model.messages)
+        let messages = model.displayedTranscriptMessages
+        let presentationID = model.transcriptPresentationID
+        let count = messages.count
+        guard sessionID != presentationID || totalCount != count || countedMessagesRevision != model.messagesRevision
+        else {
+            reconcileAnchor(messages: messages)
             return
         }
-        let bubbles = ConversationUnreadMessagePolicy.renderedMessageCount(
-            model.messages, streamingID: model.streamingMessageIDForPresentation)
-        if sessionID != model.sessionID {
-            reset(sessionID: model.sessionID, totalCount: count, bubbleCount: bubbles)
-        } else if totalCount != count {
+        let responses = ConversationUnreadMessagePolicy.assistantResponseCount(messages)
+        if sessionID != presentationID {
+            reset(sessionID: presentationID, totalCount: count, bubbleCount: responses)
+        } else {
             messagesChanged(
-                oldCount: totalCount, newCount: count, bubbleCount: bubbles,
+                oldCount: totalCount, newCount: count, bubbleCount: responses,
                 prepend: model.lastTranscriptPrepend)
         }
-        reconcileAnchor(messages: model.messages)
+        countedMessagesRevision = model.messagesRevision
+        reconcileAnchor(messages: messages)
+    }
+
+    func promotePreview(model: DockModel) {
+        let messages = model.messages
+        guard sessionID == model.transcriptPresentationID, !presentation.isAtBottom else {
+            synchronize(model: model)
+            return
+        }
+        guard let geometry = controller.geometry,
+            let row = rowViewports.filter({
+                $0.maxY > geometry.visibleTop && $0.minY < geometry.visibleTop + geometry.visibleHeight
+            }).min(by: { $0.index < $1.index }),
+            let index = messages.firstIndex(where: { $0.id == row.target.messageID })
+        else {
+            reset(
+                sessionID: model.transcriptPresentationID, totalCount: messages.count,
+                bubbleCount: ConversationUnreadMessagePolicy.assistantResponseCount(messages))
+            return
+        }
+        invalidate()
+        totalCount = messages.count
+        lastResponseCount = ConversationUnreadMessagePolicy.assistantResponseCount(messages)
+        countedMessagesRevision = model.messagesRevision
+        setRange(ConversationMessageWindow.jumpWindow(aroundIndex: index, totalCount: messages.count))
+        pendingPage = PageTransaction(
+            sessionID: sessionID, generation: generation, range: mountedRange,
+            anchor: ConversationScrollAnchor(
+                messageID: row.target.messageID, offset: row.minY - geometry.visibleTop))
     }
 
     func select(

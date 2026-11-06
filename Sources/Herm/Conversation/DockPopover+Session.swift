@@ -6,13 +6,18 @@ import UniformTypeIdentifiers
 
 extension DockPopover {
     func sessionIdentity(style: DockThemePalette) -> some View {
-        Button(action: { model.toggleSessions() }) {
+        let status = model.sessionTranscriptLoadState.statusText ?? model.status.title
+        let detail = model.sessionTranscriptLoadState.failureMessage ?? OnDeviceAssist.sessionTitleHelp
+        return Button(action: { model.toggleSessions() }) {
             HStack(spacing: 8) {
                 Text(model.currentSessionTitle ?? "Untitled chat")
                     .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(style.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                if let state = model.sessionTranscriptLoadState.statusText {
+                    Text(state).dockFont(.metadata).foregroundStyle(style.metadataText)
+                }
                 DockIcon(.caretUpDown, size: 12, color: style.metadataText)
             }
             .dockPadding(.horizontal, 8)
@@ -29,12 +34,15 @@ extension DockPopover {
         .onHover { isSessionIdentityHovering = $0 }
         .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: isSessionIdentityHovering)
         .help(
-            "\(model.currentSessionTitle ?? "Untitled chat") — \(model.status.title)\n\(OnDeviceAssist.sessionTitleHelp)"
+            "\(model.currentSessionTitle ?? "Untitled chat") — \(status)\n\(detail)"
         )
         .accessibilityLabel(
-            "Choose session: \(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)"
+            "Choose session: \(model.currentSessionTitle ?? "Untitled chat"), \(status)"
         )
-        .dockPopover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+        .dockPopover(
+            isPresented: Binding(get: { model.isShowingSessions }, set: { model.isShowingSessions = $0 }),
+            attachmentAnchor: .rect(.bounds), arrowEdge: .top
+        ) {
             sessionPicker
                 .frame(width: 400, height: 440)
                 .dockPadding(.vertical, 4)
@@ -47,21 +55,29 @@ extension DockPopover {
             modes: activeSessionRepositoryScope == nil ? [.chat, .voice] : [.chat, .voice, .pullRequests, .issues],
             selectedMode: sessionWorkspaceMode,
             style: style,
+            voiceEnabled: model.sessionActionsReady,
             onSelect: selectSessionMode
         )
     }
 
     func sessionViewMenu(includesInspector: Bool, style: DockThemePalette) -> some View {
         DockMenu {
+            if case .failed = model.sessionTranscriptLoadState {
+                Button("Retry loading conversation", icon: .arrowClockwise) {
+                    Task { await model.refreshCurrentSession() }
+                }
+            }
             if let session = currentSession {
                 let pinned = model.isSessionPinned(session.id)
                 Button(pinned ? "Unpin conversation" : "Pin conversation", icon: pinned ? .pushPinSlash : .pushPin) {
                     Task { await model.toggleSessionPinned(session) }
                 }
+                .disabled(!model.sessionActionsReady)
                 Button("Rename…", icon: .pencilSimple) {
                     renameDraft = session.displayTitle
                     isRenamingSession = true
                 }
+                .disabled(!model.sessionActionsReady)
                 Button(session.isHidden ? "Show in list" : "Hide from list", icon: session.isHidden ? .eye : .eyeSlash)
                 {
                     Task { @MainActor in
@@ -70,6 +86,7 @@ extension DockPopover {
                         }
                     }
                 }
+                .disabled(!model.sessionActionsReady)
                 // No trailing rule when nothing follows (voice mode, inspector shown).
                 if sessionWorkspaceMode == .chat || includesInspector { Divider() }
             }
@@ -531,14 +548,7 @@ extension DockPopover {
         }
         .dockPadding(.horizontal, 8)
         .frame(height: 28)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                Color.dockSurface4)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .stroke(Color.dockBorder, lineWidth: 0.5)
-        }
+        .dockWell(.sunken)
     }
 
     func conversationProjectName(for session: HermesSession) -> String? {

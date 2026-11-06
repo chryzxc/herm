@@ -14,6 +14,7 @@ struct SessionInspector: View {
     var onOpenIssueChat: (GitHubIssueRecord) -> Void
     let sessionRepositoryPath: String?
     let sessionProjectIsBound: Bool
+    var sessionTerminalPath: String? = nil
     var showsHeader = true
     /// Collapses the inspector; shown at the right of the tab strip when set.
     var onToggle: (() -> Void)?
@@ -51,6 +52,7 @@ struct SessionInspector: View {
     @State private var isSwitchingBranch = false
     @StateObject private var preferences = CommandCenterPreferencesStore()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dockHostVisible) private var hostVisible
     @Environment(\.expandedReviewRouter) private var reviewRouter
 
     private struct ExtraTab: Identifiable {
@@ -59,6 +61,37 @@ struct SessionInspector: View {
         let number: Int
         /// Extra surfaces belong to the session where they were opened.
         var sessionID: String?
+    }
+
+    private var matchingTerminalRecipes: [VerificationRecipe] {
+        guard let sessionRepositoryPath, workflow.repository.path == sessionRepositoryPath else { return [] }
+        return VerificationRecipeBuilder.make(facts: control.projectFacts, repository: workflow.repository)
+    }
+
+    private var matchingRepositoryID: String? {
+        guard workflow.repository.path == sessionRepositoryPath, workflow.repository.isGitRepository else { return nil }
+        return workflow.repository.repositoryID
+    }
+
+    private var sessionFolderUnavailable: Bool {
+        model.sessionWorkspace != nil && sessionRepositoryPath == nil
+    }
+
+    private var unavailableSessionFolder: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            DockIconLabel("Session folder unavailable", icon: .warningCircle)
+                .dockFont(.body)
+                .foregroundStyle(Color.dockSecondaryText)
+            if GatewayConnectionStore.isLocalBackend,
+                model.sessionWorkspace?.terminalBackend == nil || model.sessionWorkspace?.terminalBackend == "local"
+            {
+                Button("Retry") { model.retrySessionWorkspace() }
+                    .buttonStyle(.dockSecondary)
+            }
+        }
+        .dockButtonSize(.compact)
+        .dockPadding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var browserWorkspace: SessionBrowserWorkspace? {
@@ -189,6 +222,7 @@ struct SessionInspector: View {
                     }
                 }
                 .opacity(selectedExtraID == nil && selectedPreview == nil ? 1 : 0)
+                .environment(\.dockHostVisible, hostVisible && selectedExtraID == nil && selectedPreview == nil)
                 .allowsHitTesting(selectedExtraID == nil && selectedPreview == nil)
                 if let selectedPreview {
                     SessionDataPreviewView(
@@ -200,6 +234,10 @@ struct SessionInspector: View {
                 ForEach(extras) { extra in
                     extraContent(extra)
                         .opacity(isVisible(extra) && selectedPreview == nil ? 1 : 0)
+                        .environment(
+                            \.dockHostVisible,
+                            hostVisible && isVisible(extra) && selectedExtraID == extra.id && selectedPreview == nil
+                        )
                         .dockPadding(.horizontal, extra.kind == .browser ? 0 : DockSpacing.inspectorInset)
                         .opacity(selectedExtraID == extra.id ? 1 : 0)
                         .allowsHitTesting(selectedExtraID == extra.id && selectedPreview == nil)
@@ -361,7 +399,8 @@ struct SessionInspector: View {
             inspectorContent
                 .dockPadding(
                     .horizontal,
-                    selectedSection == .github || selectedSection == .browser ? 0 : DockSpacing.inspectorInset
+                    selectedSection == .github || selectedSection == .browser || selectedSection == .timeline
+                        ? 0 : DockSpacing.inspectorInset
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -381,12 +420,14 @@ struct SessionInspector: View {
                 SessionBrowserView(model: model, workspace: workspace, browser: browser)
                     .id(browser.id)
             }
+        } else if sessionFolderUnavailable {
+            unavailableSessionFolder
         } else {
             SessionTerminalView(
-                projectPath: sessionRepositoryPath,
-                recipes: VerificationRecipeBuilder.make(facts: control.projectFacts, repository: workflow.repository),
-                repositoryID: workflow.repository.isGitRepository ? workflow.repository.repositoryID : nil,
-                repositoryFingerprint: workflow.repositoryFingerprint,
+                projectPath: sessionTerminalPath ?? sessionRepositoryPath,
+                recipes: matchingTerminalRecipes,
+                repositoryID: matchingRepositoryID,
+                repositoryFingerprint: matchingRepositoryID == nil ? nil : workflow.repositoryFingerprint,
                 workspaceKey: WorkspaceIdentity.session(model) + ":extra:" + extra.id.uuidString,
                 discoveryActive: selectedExtraID == extra.id && isVisible(extra) && selectedPreview == nil
             )
@@ -410,9 +451,12 @@ struct SessionInspector: View {
     }
 
     private func extraTerminalKey(_ extra: ExtraTab) -> String {
-        WorkspaceIdentity.session(model) + ":extra:" + extra.id.uuidString + ":" + (sessionRepositoryPath ?? "home")
+        WorkspaceIdentity.session(model) + ":extra:" + extra.id.uuidString + ":"
+            + (sessionTerminalPath ?? sessionRepositoryPath ?? "home")
     }
-    private var baseTerminalKey: String { WorkspaceIdentity.session(model) + ":" + (sessionRepositoryPath ?? "home") }
+    private var baseTerminalKey: String {
+        WorkspaceIdentity.session(model) + ":" + (sessionTerminalPath ?? sessionRepositoryPath ?? "home")
+    }
     private func hasRunningCommand(_ key: String) -> Bool {
         TerminalWorkspaceStore.shared.workspace(key: key).sessions.contains {
             $0.hasForegroundJob
@@ -752,7 +796,7 @@ struct SessionInspector: View {
             Spacer(minLength: 0)
             Text(model.status.title.uppercased())
                 .dockFont(.compactStatus, weight: .semibold)
-                .foregroundStyle(model.status == .working ? Color.dockAccent : Color.dockSecondaryText)
+                .foregroundStyle(model.status == .working ? DockStatusTone.working.color : Color.dockSecondaryText)
         }
         .dockPadding(.horizontal, 16)
         .frame(height: sessionProjectName == nil ? 50 : 58)
@@ -802,33 +846,46 @@ struct SessionInspector: View {
                 .id(WorkspaceIdentity.session(model))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .files:
-            SessionFilesView(
-                projectPath: sessionRepositoryPath,
-                onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
-            )
+            if sessionFolderUnavailable {
+                unavailableSessionFolder
+            } else {
+                SessionFilesView(
+                    projectPath: sessionRepositoryPath,
+                    onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
+                )
+                .id(sessionRepositoryPath)
+            }
         case .diff:
             if let changes = filePreview.attachmentDiff {
                 SessionAttachmentDiffTab(changes: changes)
                     .id(attachmentDiffID)
             }
         case .changes:
-            RepositoryChangesBrowser(
-                model: model,
-                workflow: workflow,
-                projectPath: sessionRepositoryPath,
-                onRefresh: { await workflow.refresh(preferences: preferences, control: control) },
-                isInspector: true,
-                showsBranch: false
-            )
+            if sessionFolderUnavailable {
+                unavailableSessionFolder
+            } else {
+                RepositoryChangesBrowser(
+                    model: model,
+                    workflow: workflow,
+                    projectPath: sessionRepositoryPath,
+                    onRefresh: { await workflow.refresh(preferences: preferences, control: control) },
+                    isInspector: true,
+                    showsBranch: false
+                )
+            }
         case .terminal:
-            SessionTerminalView(
-                projectPath: sessionRepositoryPath,
-                recipes: VerificationRecipeBuilder.make(facts: control.projectFacts, repository: workflow.repository),
-                repositoryID: workflow.repository.isGitRepository ? workflow.repository.repositoryID : nil,
-                repositoryFingerprint: workflow.repositoryFingerprint,
-                workspaceKey: WorkspaceIdentity.session(model),
-                discoveryActive: selectedExtraID == nil && selectedPreview == nil
-            )
+            if sessionFolderUnavailable {
+                unavailableSessionFolder
+            } else {
+                SessionTerminalView(
+                    projectPath: sessionTerminalPath ?? sessionRepositoryPath,
+                    recipes: matchingTerminalRecipes,
+                    repositoryID: matchingRepositoryID,
+                    repositoryFingerprint: matchingRepositoryID == nil ? nil : workflow.repositoryFingerprint,
+                    workspaceKey: WorkspaceIdentity.session(model),
+                    discoveryActive: selectedExtraID == nil && selectedPreview == nil
+                )
+            }
         case .browser:
             if let workspace = browserWorkspace {
                 SessionBrowserView(model: model, workspace: workspace)

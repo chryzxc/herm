@@ -360,7 +360,7 @@ final class MessageNavigatorTests: XCTestCase {
         model.messages = (1...40).map { ChatMessage(role: .user, text: "message \($0)") }
         let selected = MessageNavigator.items(messages: model.messages, sessionID: "session-a")[19]
         let coordinator = ConversationTranscriptCoordinator()
-        coordinator.reset(sessionID: model.sessionID, totalCount: 40, bubbleCount: 40)
+        coordinator.reset(sessionID: model.transcriptPresentationID, totalCount: 40, bubbleCount: 40)
         var scrolledMessageID: UUID?
         let productionHandler: (MessageNavigatorItem) -> Void = { item in
             coordinator.select(item, model: model) { scrolledMessageID = $0 }
@@ -375,7 +375,7 @@ final class MessageNavigatorTests: XCTestCase {
         XCTAssertEqual(coordinator.presentation.unseenMessageCount, 0)
         XCTAssertNil(scrolledMessageID)
         let layout = ConversationTranscriptLayout(
-            sessionID: model.sessionID, generation: coordinator.generation, range: range,
+            sessionID: model.transcriptPresentationID, generation: coordinator.generation, range: range,
             rows: range.map { index in
                 MessageNavigatorViewport(
                     target: .init(sessionID: "session-a", messageID: model.messages[index].id),

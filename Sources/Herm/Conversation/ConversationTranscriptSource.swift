@@ -45,6 +45,7 @@ struct ConversationTranscriptSnapshot: Equatable {
         let valuePromptError: String?
         let respondingToValuePrompt: Bool
         let restoring: Bool
+        let actionsReady: Bool
         let dispatches: [String: BotActivityRecord]
         let workingBots: [BotActivityRecord]
         let mentions: [BotActivityRecord]
@@ -63,6 +64,8 @@ struct ConversationTranscriptSnapshot: Equatable {
     }
 
     let sessionID: String?
+    let layoutSessionID: String?
+    let isPreview: Bool
     let layoutGeneration: UInt64
     let messages: [ChatMessage]
     let range: Range<Int>
@@ -73,7 +76,8 @@ struct ConversationTranscriptSnapshot: Equatable {
     var navigatorItems: [MessageNavigatorItem] { navigator.items }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.sessionID == rhs.sessionID && lhs.layoutGeneration == rhs.layoutGeneration
+        lhs.sessionID == rhs.sessionID && lhs.layoutSessionID == rhs.layoutSessionID && lhs.isPreview == rhs.isPreview
+            && lhs.layoutGeneration == rhs.layoutGeneration
             && lhs.messages.count == rhs.messages.count
             && lhs.range == rhs.range && lhs.rows == rhs.rows && lhs.context == rhs.context
             && lhs.prepend == rhs.prepend && lhs.navigator === rhs.navigator
@@ -94,6 +98,7 @@ final class ConversationTranscriptSource: ObservableObject {
     private var subscriptions: Set<AnyCancellable> = []
     private var refreshScheduled = false
     private var isActive = true
+    private var showingPreview = false
     let markdownPrefetch = ConversationMarkdownPrefetch()
 
     init(
@@ -105,12 +110,36 @@ final class ConversationTranscriptSource: ObservableObject {
         self.actions = actions
         self.voice = voice
         self.coordinator = coordinator
+        showingPreview = model.sessionTranscriptPreview != nil
         coordinator.synchronize(model: model)
         snapshot = Self.makeSnapshot(
             model: model, bots: bots, actions: actions, voice: voice, range: coordinator.mountedRange,
             generation: coordinator.generation)
+        coordinator.onAcceptedLayout = { [weak self] sessionID in
+            guard let self, self.model.transcriptPresentationID == sessionID,
+                self.snapshot.layoutSessionID == sessionID,
+                self.snapshot.isPreview == (self.model.sessionTranscriptPreview != nil)
+            else { return }
+            self.model.recordSessionSwitchLayout()
+        }
+        coordinator.isPageReady = { [weak self] range, direction in
+            self?.isPageReady(range, direction: direction) ?? true
+        }
+        coordinator.onPreparationCancelled = { [weak self] in
+            self?.markdownPrefetch.cancelRequest()
+        }
+        coordinator.onPreparationInvalidated = { [weak self] in
+            self?.markdownPrefetch.cancel()
+        }
+        markdownPrefetch.onProgress = { [weak self] in
+            guard let self, self.isActive else { return }
+            self.coordinator.retryPreparedPage()
+        }
         observe(model.$messages)
+        observe(model.$sessionTranscriptPreview)
+        observe(model.$sessionTranscriptLoadState)
         observe(model.$sessionID)
+        observe(model.$sessionStorageID)
         observe(model.$status)
         observe(model.$activeBotProfileID)
         observe(model.$sessionProfileID)
@@ -165,7 +194,13 @@ final class ConversationTranscriptSource: ObservableObject {
 
     func refresh() {
         guard isActive else { return }
-        coordinator.synchronize(model: model)
+        let hasPreview = model.sessionTranscriptPreview != nil
+        if showingPreview && !hasPreview && model.sessionActionsReady {
+            coordinator.promotePreview(model: model)
+        } else {
+            coordinator.synchronize(model: model)
+        }
+        showingPreview = hasPreview
         let next = Self.makeSnapshot(
             model: model, bots: bots, actions: actions, voice: voice, range: coordinator.mountedRange,
             generation: coordinator.generation)
@@ -189,24 +224,61 @@ final class ConversationTranscriptSource: ObservableObject {
     func prefetch() {
         guard isActive else { return }
         let sessionID = snapshot.sessionID
+        let range = snapshot.range
+        let page = ConversationMessageWindow.pageSize
+        let indices =
+            Array(max(0, range.lowerBound - page)..<range.lowerBound)
+            + Array(range.upperBound..<min(snapshot.messages.count, range.upperBound + page))
+        let positions = Dictionary(
+            indices.map { (snapshot.messages[$0].id, $0) }, uniquingKeysWith: { first, _ in first })
         markdownPrefetch.update(
             messages: snapshot.messages, range: snapshot.range, sessionID: snapshot.sessionID,
-            streamingID: snapshot.context.streamingID
+            streamingID: snapshot.context.streamingID, controller: coordinator.controller
         ) { [weak model] id, revision in
-            model?.sessionID == sessionID && model?.messages.first(where: { $0.id == id })?.contentRevision == revision
+            guard let model, model.sessionID == sessionID, let index = positions[id] else { return false }
+            let messages = model.displayedTranscriptMessages
+            return messages.indices.contains(index) && messages[index].id == id
+                && messages[index].contentRevision == revision
         }
+    }
+
+    private func isPageReady(_ range: Range<Int>, direction: CGFloat) -> Bool {
+        guard isActive, let clip = coordinator.controller.clipView, let window = clip.window,
+            window.isVisible,
+            window.occlusionState.contains(.visible) || coordinator.controller.allowsOccludedPreparationForTesting,
+            let context = coordinator.controller.markdownMeasurementContext
+        else { return true }
+        prefetch()
+        let added = range.filter { !snapshot.range.contains($0) && snapshot.messages.indices.contains($0) }
+        let current = model.displayedTranscriptMessages
+        guard model.sessionID == snapshot.sessionID,
+            added.allSatisfy({ index in
+                current.indices.contains(index) && current[index].id == snapshot.messages[index].id
+                    && current[index].contentRevision == snapshot.messages[index].contentRevision
+            })
+        else {
+            markdownPrefetch.cancelRequest()
+            scheduleRefresh()
+            return false
+        }
+        let ordered = direction < 0 ? Array(added.reversed()) : added
+        let ready = markdownPrefetch.isReady(messageIDs: ordered.map { snapshot.messages[$0].id }, context: context)
+        if ready { coordinator.controller.preparedPage = markdownPrefetch.preparedPage }
+        return ready
     }
 
     private static func makeSnapshot(
         model: DockModel, bots: BotModeModel, actions: ConversationMessageActionState,
         voice: VoiceOutput, range: Range<Int>, generation: UInt64
     ) -> ConversationTranscriptSnapshot {
-        let clamped = ConversationMessageWindow.visibleRange(range, totalCount: model.messages.count)
+        let messages = model.displayedTranscriptMessages
+        let preview = model.sessionTranscriptPreview
+        let clamped = ConversationMessageWindow.visibleRange(range, totalCount: messages.count)
         let range =
-            clamped.isEmpty && !model.messages.isEmpty
-            ? ConversationMessageWindow.tailRange(totalCount: model.messages.count) : clamped
-        let streamingID = model.streamingMessageIDForPresentation
-        let streamingMounted = range.contains { model.messages[$0].id == streamingID }
+            clamped.isEmpty && !messages.isEmpty
+            ? ConversationMessageWindow.tailRange(totalCount: messages.count) : clamped
+        let streamingID = preview == nil ? model.streamingMessageIDForPresentation : nil
+        let streamingMounted = range.contains { messages[$0].id == streamingID }
         let dispatches = model.botDispatchesByToolCallID
         let workingBots = model.workingBotDispatches
         let mentions = model.pendingBotMentions
@@ -216,8 +288,9 @@ final class ConversationTranscriptSource: ObservableObject {
                 model.botLiveSteps[id].map { (id, $0) }
             })
         return ConversationTranscriptSnapshot(
-            sessionID: model.sessionID, layoutGeneration: generation, messages: model.messages, range: range,
-            rows: range.map { .init(index: $0, message: model.messages[$0]) },
+            sessionID: model.sessionID, layoutSessionID: model.transcriptPresentationID, isPreview: preview != nil,
+            layoutGeneration: generation, messages: messages, range: range,
+            rows: range.map { .init(index: $0, message: messages[$0]) },
             context: .init(
                 status: model.status, streamingID: streamingID,
                 // The canonical turn keeps accumulating while its row is unmounted.
@@ -233,15 +306,17 @@ final class ConversationTranscriptSource: ObservableObject {
                 respondingToClarification: model.isRespondingToClarification,
                 valuePrompt: model.valuePrompt, valuePromptError: model.valuePromptError,
                 respondingToValuePrompt: model.isRespondingToValuePrompt, restoring: model.isRestoringSession,
+                actionsReady: model.sessionActionsReady,
                 dispatches: dispatches, workingBots: workingBots,
                 mentions: mentions, botSteps: botSteps,
                 rosterRevision: bots.rosterRevision, selectedProfileID: bots.selectedProfileID,
                 pinSupport: model.messagePinsSupported, pinnedIDs: model.pinnedMessageUIDs,
                 pinnedRows: model.pinnedMessageRowIDs,
-                storedReferences: model.storedMessageReferences, updatingPin: model.updatingMessagePinRowID,
+                storedReferences: preview?.references ?? model.storedMessageReferences,
+                updatingPin: model.updatingMessagePinRowID,
                 pendingActions: actions.pendingActions, speakingID: voice.speakingMessageID,
                 historyLoading: model.isLoadingTranscriptHistory, latestRequest: model.scrollToLatestMessageRequest
-            ), prepend: model.lastTranscriptPrepend, navigator: model.messageNavigatorSnapshot
+            ), prepend: model.lastTranscriptPrepend, navigator: preview?.navigator ?? model.messageNavigatorSnapshot
         )
     }
 }
@@ -249,11 +324,12 @@ final class ConversationTranscriptSource: ObservableObject {
 extension ConversationTranscriptSource {
     func message(for target: MessageNavigatorTarget) -> ChatMessage? {
         guard target.sessionID == model.sessionID else { return nil }
-        return model.messages.first { $0.id == target.messageID }
+        return model.displayedTranscriptMessages.first { $0.id == target.messageID }
     }
 
     func perform(_ kind: ConversationMessageActionKind, target: MessageNavigatorTarget) {
         guard let message = message(for: target) else { return }
+        guard kind == .copy || model.sessionActionsReady else { return }
         switch kind {
         case .copy:
             actions.copy(message)

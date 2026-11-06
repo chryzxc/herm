@@ -65,6 +65,7 @@ extension DockModel {
     func newChatMovingDraft(projectPath: String) {
         let previous = composerDraftKey
         newChat(projectPath: projectPath)
+        pendingWorktreeDirectory = projectPath
         composerDrafts[composerDraftKey] = composerDrafts.removeValue(forKey: previous)
         restoreComposerDraft(for: composerDraftKey)
     }

@@ -2,7 +2,7 @@ import Foundation
 
 /// A disposable index over the same rows the waterfall renders. No separate event store.
 struct SessionCrewProjection {
-    struct Actor: Identifiable {
+    struct Actor: Identifiable, Equatable {
         let row: SessionTraceRow
         let parentID: String?
         let name: String
