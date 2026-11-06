@@ -1,0 +1,44 @@
+name: Hermes compatibility tracker
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'Sources/Herm/HermesRuntime/HermesCompatibilityContract.swift'
+      - 'Sources/Herm/Resources/HermesCompatibility.json'
+      - 'Scripts/hermes-compatibility/**'
+      - '.github/workflows/hermes-compatibility.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hermes-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  report:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Compile the shared contract scanner
+        run: >-
+          swiftc Sources/Herm/HermesRuntime/HermesCompatibilityContract.swift
+          Scripts/hermes-compatibility/main.swift -o /tmp/hermes-compatibility
+      - name: Check upstream against the reviewed baseline
+        run: >-
+          /tmp/hermes-compatibility Sources/Herm/Resources/HermesCompatibility.json
+          --upstream main > hermes-compatibility-report.md
+      - name: Show review work
+        run: cat hermes-compatibility-report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain the report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hermes-compatibility-report
+          path: hermes-compatibility-report.md
+          retention-days: 30
