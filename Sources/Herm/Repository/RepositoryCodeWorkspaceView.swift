@@ -21,6 +21,21 @@ struct RepositoryEditorDraft: Equatable {
     mutating func didSave(_ snapshot: String) { savedContents = snapshot }
 }
 
+@MainActor
+final class RepositoryEditorDraftStore {
+    static let shared = RepositoryEditorDraftStore()
+    struct Key: Hashable {
+        let repositoryPath: String
+        let filePath: String
+    }
+    private var drafts: [Key: RepositoryEditorDraft] = [:]
+
+    func draft(for key: Key) -> RepositoryEditorDraft? { drafts[key] }
+    func save(_ draft: RepositoryEditorDraft, for key: Key) {
+        drafts[key] = draft.isDirty ? draft : nil
+    }
+}
+
 /// Single-file code viewer/editor used by the Explorer and Changes surfaces:
 /// breadcrumb header with editor actions, a gutter with line numbers and
 /// toggleable git blame, inline blame for the caret line, and a status bar.
@@ -62,6 +77,9 @@ struct RepositoryCodeWorkspaceView: View {
         _draft = State(initialValue: RepositoryEditorDraft(document.contents))
     }
 
+    private var draftKey: RepositoryEditorDraftStore.Key {
+        .init(repositoryPath: repositoryPath, filePath: document.path)
+    }
     private var hasUnsavedChanges: Bool { draft.isDirty }
     private var language: CodeLanguage { CodeLanguage(path: document.path) }
 
@@ -98,18 +116,25 @@ struct RepositoryCodeWorkspaceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .confirmationDialog("Discard unsaved changes?", isPresented: $showsDiscardConfirmation) {
-            Button("Discard Changes", role: .destructive, action: onClose)
+            Button("Discard Changes", role: .destructive) {
+                draft.text = draft.savedContents
+                RepositoryEditorDraftStore.shared.save(draft, for: draftKey)
+                onClose()
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Your edits to \(document.path) have not been saved.")
         }
         .task(id: document.id) {
+            if let saved = RepositoryEditorDraftStore.shared.draft(for: draftKey) { draft = saved }
             await loadBlame()
             githubRemote = await RepositoryService.githubRemote(path: repositoryPath)
         }
         .onChange(of: document.contents) { _, contents in
             draft.receive(contents)
         }
+        .onChange(of: draft) { _, value in RepositoryEditorDraftStore.shared.save(value, for: draftKey) }
+        .onDisappear { RepositoryEditorDraftStore.shared.save(draft, for: draftKey) }
     }
 
     // MARK: Header

@@ -108,6 +108,20 @@ struct RepositorySafetyTests {
         #expect(draft.text == "fresh disk contents" && !draft.isDirty)
     }
 
+    @Test @MainActor func editorDraftsRemainSeparateAcrossWorktrees() {
+        let store = RepositoryEditorDraftStore()
+        let first = RepositoryEditorDraftStore.Key(repositoryPath: "/repo", filePath: "file.swift")
+        let second = RepositoryEditorDraftStore.Key(repositoryPath: "/other", filePath: "file.swift")
+        var draft = RepositoryEditorDraft("saved")
+        draft.text = "unsaved"
+        store.save(draft, for: first)
+        #expect(store.draft(for: first)?.text == "unsaved")
+        #expect(store.draft(for: second) == nil)
+        draft.text = "saved"
+        store.save(draft, for: first)
+        #expect(store.draft(for: first) == nil)
+    }
+
     @Test func oversizedFilesAreRejectedByABoundedRead() async throws {
         let root = try await repository()
         defer { try? FileManager.default.removeItem(at: root) }

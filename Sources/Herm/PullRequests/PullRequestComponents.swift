@@ -33,8 +33,7 @@ struct PullRequestRowView: View {
                     Text(pullRequest.readinessLabel)
                         .dockFont(.metadata)
                         .foregroundStyle(pullRequest.readinessColor)
-                        .dockPadding(.horizontal, 7).dockPadding(.vertical, 3)
-                        .background(Capsule().fill(pullRequest.readinessColor.opacity(0.12)))
+                        .dockPill(tint: pullRequest.readinessColor)
                     Spacer(minLength: 0)
                     if let adds = pullRequest.additions, let dels = pullRequest.deletions {
                         HStack(spacing: 6) {
@@ -137,6 +136,7 @@ struct PullRequestDiffLineView: View {
     let line: PullRequestDiffLine
     var counterpart: String? = nil
     var wordDiffsEnabled = false
+    var wraps = false
 
     var body: some View {
         let tint: Color =
@@ -154,12 +154,13 @@ struct PullRequestDiffLineView: View {
             guard let first = value.first, first == "+" || first == "-" else { return value }
             return String(value.dropFirst())
         }
-        HStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             if line.kind == .addition || line.kind == .deletion {
                 Text(String(line.text.prefix(1))).foregroundStyle(tint).fontWeight(.bold)
             }
             diffWords(content, counterpart: counterpartContent, tint: tint)
         }
+        .fixedSize(horizontal: false, vertical: wraps)
         .frame(maxWidth: .infinity, minHeight: 19, alignment: .leading)
         .dockPadding(.horizontal, 10)
         .background(fill)

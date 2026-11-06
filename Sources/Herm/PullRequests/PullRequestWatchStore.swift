@@ -35,6 +35,8 @@ final class PullRequestWatchStore: ObservableObject {
     private let defaults: UserDefaults
     private let client: GitHubClient
     private var task: Task<Void, Never>?
+    private var workspaceVisible = false
+    private var retryNotBefore: Date?
     var onNotice: ((WatchedPullRequest, [String]) -> Void)?
     init(defaults: UserDefaults = .standard, client: GitHubClient = GitHubClient()) {
         self.defaults = defaults
@@ -60,6 +62,11 @@ final class PullRequestWatchStore: ObservableObject {
         restart()
     }
     func start() { if task == nil { restart() } }
+    func setWorkspaceVisible(_ visible: Bool) {
+        guard workspaceVisible != visible else { return }
+        workspaceVisible = visible
+        restart()
+    }
     func stop() {
         task?.cancel()
         task = nil
@@ -73,7 +80,13 @@ final class PullRequestWatchStore: ObservableObject {
         task = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                let delay = await poll()
+                if let retryNotBefore, retryNotBefore > .now {
+                    do { try await Task.sleep(for: .seconds(retryNotBefore.timeIntervalSinceNow)) } catch { return }
+                }
+                let result = await poll()
+                guard !Task.isCancelled else { return }
+                if result > 120 { retryNotBefore = Date().addingTimeInterval(result) } else { retryNotBefore = nil }
+                let delay = max(result, workspaceVisible ? 120 : 300)
                 do { try await Task.sleep(for: .seconds(delay)) } catch { return }
             }
         }

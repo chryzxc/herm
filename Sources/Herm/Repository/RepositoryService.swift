@@ -192,13 +192,6 @@ struct RepositoryWorktreeSummary: Identifiable, Equatable {
     let snapshot: RepositorySnapshot?
     var id: String { RepositorySnapshot.stableID(path: path) }
 
-    /// Whether `path` is `root` or inside it. Session tools never reach
-    /// worktrees outside the session's source folder.
-    static func isPath(_ path: String, within root: String) -> Bool {
-        let path = RepositorySnapshot.stableID(path: path)
-        let root = RepositorySnapshot.stableID(path: root)
-        return path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
-    }
 }
 
 /// A deliberately small pre-commit signal pass over added diff lines. It never
@@ -941,12 +934,13 @@ enum RepositoryService {
     }
 
     private static func canonicalFingerprint(path: String, changes: RepositoryChangeSnapshot) async -> String {
+        let root = await topLevel(path: path)
         let identities = await withTaskGroup(of: String.self, returning: [String].self) { group in
             var iterator = changes.files.makeIterator()
             for _ in 0..<min(4, changes.files.count) {
                 if let file = iterator.next() {
                     group.addTask {
-                        "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file) ?? "unavailable")"
+                        "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file, root: root) ?? "unavailable")"
                     }
                 }
             }
@@ -955,7 +949,7 @@ enum RepositoryService {
                 values.append(value)
                 if let file = iterator.next() {
                     group.addTask {
-                        "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file) ?? "unavailable")"
+                        "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file, root: root) ?? "unavailable")"
                     }
                 }
             }
@@ -970,9 +964,15 @@ enum RepositoryService {
         return SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    static func worktrees(path: String) async -> [RepositoryWorktreeSummary] {
+    static func worktreeRoot(path: String) async -> String? {
+        let result = await runGit(path: path, arguments: ["rev-parse", "--show-toplevel"])
+        guard result.exitCode == 0, result.output.hasPrefix("/") else { return nil }
+        return URL(fileURLWithPath: result.output).standardizedFileURL.path
+    }
+
+    static func worktrees(path: String) async -> [RepositoryWorktreeSummary]? {
         let result = await runGit(path: path, arguments: ["worktree", "list", "--porcelain", "-z"])
-        guard result.exitCode == 0 else { return [] }
+        guard result.exitCode == 0 else { return nil }
         let records = result.output.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
         var rows: [[String]] = [[]]
         for record in records {
@@ -988,7 +988,7 @@ enum RepositoryService {
                     let worktreePath = String(worktree.dropFirst("worktree ".count))
                     let branchRow = row.first(where: { $0.hasPrefix("branch ") })
                     let branch = branchRow.map {
-                        URL(fileURLWithPath: String($0.dropFirst("branch ".count))).lastPathComponent
+                        String($0.dropFirst("branch refs/heads/".count))
                     }
                     let head = row.first(where: { $0.hasPrefix("HEAD ") }).map {
                         String($0.dropFirst("HEAD ".count).prefix(12))
@@ -1024,8 +1024,11 @@ enum RepositoryService {
             contentIdentity: identity)
     }
 
-    private static func fileIdentity(path: String, file: RepositoryFileChange) async -> String? {
-        guard isSafeRelativePath(file.path), let root = await topLevel(path: path) else { return nil }
+    private static func fileIdentity(path: String, file: RepositoryFileChange, root: URL? = nil) async -> String? {
+        guard isSafeRelativePath(file.path) else { return nil }
+        let resolvedRoot: URL?
+        if let root { resolvedRoot = root } else { resolvedRoot = await topLevel(path: path) }
+        guard let root = resolvedRoot else { return nil }
         if file.isStaged {
             let result = await runGit(path: root.path, arguments: ["rev-parse", ":\(file.path)"])
             return result.exitCode == 0 ? result.output : nil

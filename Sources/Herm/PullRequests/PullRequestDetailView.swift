@@ -351,7 +351,7 @@ struct PullRequestDetailView: View {
             if pr.body.isEmpty {
                 Text("No description provided.").dockFont(.body).foregroundStyle(Color.dockMetadataText)
             } else {
-                MarkdownMessageView(markdown: pr.body)
+                PullRequestDescription(markdown: pr.body)
                     .frame(maxWidth: 820, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -434,8 +434,7 @@ struct PullRequestDetailView: View {
             DockIcon(.gitBranch, size: 14, color: .dockMerged)
             Text(pr.baseBranch).foregroundStyle(Color.dockPrimaryText)
                 .dockPadding(.horizontal, 8).dockPadding(.vertical, 4)
-                .background(
-                    DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(Color.dockSurface4))
+                .dockWell(.sunken)
             DockIcon(.arrowLeft, size: 13, color: .dockMetadataText)
             Text(pr.headBranch).foregroundStyle(Color.dockSecondaryText)
         }.dockFont(.body, weight: .regular, design: .monospaced).lineLimit(1).truncationMode(.middle)
@@ -589,8 +588,7 @@ struct PullRequestDetailView: View {
             } icon: {
                 DockIcon(pr.presentationIcon, size: 12, color: pr.presentationColor)
             }
-            .dockFont(.body).dockPadding(.horizontal, 10).dockPadding(.vertical, 6)
-            .background(Capsule().fill(pr.presentationColor.opacity(0.12)))
+            .dockFont(.body).dockPill(tint: pr.presentationColor)
         } else {
             DockMenu {
                 ForEach(pr.availableStatusActions) { status in

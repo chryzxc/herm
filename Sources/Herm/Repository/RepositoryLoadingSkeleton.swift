@@ -26,6 +26,7 @@ struct RepositoryShimmerBlock: View {
     let cornerRadius: CGFloat
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dockHostVisible) private var hostVisible
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -34,8 +35,8 @@ struct RepositoryShimmerBlock: View {
             .frame(maxWidth: width ?? .infinity, alignment: .leading)
             .frame(height: height)
             .overlay {
-                if !reduceMotion {
-                    TimelineView(.dockMotion()) { context in
+                if DockMotion.isEnabled(reduceMotion: reduceMotion), hostVisible {
+                    TimelineView(.dockMotion(rate: 10)) { context in
                         GeometryReader { geometry in
                             let renderedWidth = geometry.size.width
                             LinearGradient(

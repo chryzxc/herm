@@ -90,7 +90,7 @@ struct GitHubRepositoryOverview: View {
 
     private var overviewContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 24) {
                 hero
                 detailsCard
                 latestRelease
@@ -127,7 +127,7 @@ struct GitHubRepositoryOverview: View {
                 DockMetadataPill(text: repository.isPrivate ? "Private" : "Public")
                 if repository.archived { DockMetadataPill(text: "Archived") }
             }
-            HStack(spacing: 16) {
+            DockChipFlow(spacing: 16) {
                 statistic(.star, value: repository.stars.formatted(), label: repository.stars == 1 ? "star" : "stars")
                 statistic(
                     .gitFork, value: repository.forks?.formatted() ?? "—",
@@ -214,7 +214,9 @@ struct GitHubRepositoryOverview: View {
             detail("Last updated", date: repository.updatedAt, icon: .clock)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .dockCard(padding: 14, isQuiet: true)
+        .dockPadding(.vertical, 12)
+        .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
     private func detail(_ title: String, date: Date?, icon: Ph) -> some View {

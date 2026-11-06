@@ -9,7 +9,7 @@ struct PullRequestWorkspace: View {
     @State private var refreshID = 0
     @State private var loadedBrowse = GitHubBrowseOptions()
     @Environment(\.openGitHubItem) private var openItem
-    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dockHostVisible) private var hostVisible
 
     private var header: some View {
         DockPageHeader(
@@ -17,7 +17,8 @@ struct PullRequestWorkspace: View {
             subtitle: "Review your GitHub work",
             onRefresh: { refreshID += 1 },
             isRefreshing: center.isRefreshing,
-            sidebarCollapsed: $isListCollapsed
+            sidebarCollapsed: $isListCollapsed,
+            trailing: { GitHubWorkspaceNavigation() }
         )
     }
 
@@ -53,11 +54,16 @@ struct PullRequestWorkspace: View {
                 if !Task.isCancelled, center.errorMessage == nil { loadedBrowse = center.browsing }
             }
         }
-        .task {
+        .task(id: hostVisible) {
+            guard hostVisible else { return }
+            if center.hasLoaded && center.errorMessage == nil {
+                await center.refresh(projects: projects)
+                await center.refreshSelectedDetail()
+            }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled else { return }
-                if scenePhase == .active && center.errorMessage == nil {
+                if center.errorMessage == nil {
                     await center.refresh(projects: projects)
                     await center.refreshSelectedDetail()
                 }
@@ -82,21 +88,7 @@ struct PullRequestWorkspace: View {
                     kind: .pullRequest, client: center.api.client, repositories: center.repositories,
                     options: $center.browsing, refresh: { refreshID += 1 }, onCreated: { item in openItem(item) },
                     isLoading: center.isRefreshing)
-                HStack(spacing: 8) {
-                    DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
-                    TextField(
-                        "", text: $center.query,
-                        prompt: Text("Search pull requests").foregroundColor(Color.dockMetadataText)
-                    )
-                    .textFieldStyle(.plain)
-                }
-                .dockPadding(.horizontal, 10)
-                .frame(maxWidth: .infinity, minHeight: 34)
-                .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                        Color.dockControlSurface, stroke: Color.dockBorder)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+                DockSearchField(placeholder: "Search pull requests", text: $center.query)
 
                 PullRequestFilterPicker(selection: $center.filter)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -178,9 +170,7 @@ struct PullRequestWorkspace: View {
         .dockPadding(.horizontal, 12)
         .dockPadding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).fill(Color.dockSurface2)
-        )
+        .dockWell()
         .accessibilityHidden(true)
     }
 }

@@ -25,6 +25,11 @@ final class ObservedRequestChanges: ObservableObject {
         if generations.count > 256 { generations = [origin.sessionKey: UUID()] }
     }
 
+    func discard(_ origin: QuickDestination) {
+        invalidate(origin)
+        comparisons.removeAll { $0.origin.sessionKey == origin.sessionKey }
+    }
+
     func capture(_ baseline: TurnRepositoryBaseline, concurrent: Bool) {
         guard baseline.eligible, baseline.clean, !concurrent, let head = baseline.head,
             let completionRowID = baseline.completionRowID, completionRowID > 0,

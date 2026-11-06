@@ -37,11 +37,12 @@ final class ReviewGuideReplyModel: ObservableObject {
             let loaded = try await HermesReviewGuideReplyService(client: client).load(session)
             guard !Task.isCancelled, generation == token else { return }
             // A transient empty history must not erase a guide already displayed.
-            if let loaded { reply = loaded }
-            error = nil
+            if let loaded, loaded != reply { reply = loaded }
+            if error != nil { error = nil }
         } catch {
             guard !Task.isCancelled, generation == token else { return }
-            self.error = DockModel.safeUserDiagnostic(error.localizedDescription)
+            let diagnostic = DockModel.safeUserDiagnostic(error.localizedDescription)
+            if self.error != diagnostic { self.error = diagnostic }
         }
     }
 }

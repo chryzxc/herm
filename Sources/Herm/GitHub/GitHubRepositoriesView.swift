@@ -8,7 +8,8 @@ struct GitHubRepositoriesView: View {
         VStack(spacing: 0) {
             DockPageHeader(
                 title: "Repositories", subtitle: "Browse your GitHub repositories",
-                onRefresh: { Task { await model.refresh() } }, isRefreshing: model.loading)
+                onRefresh: { Task { await model.refresh() } }, isRefreshing: model.loading,
+                trailing: { GitHubWorkspaceNavigation() })
             if let requirement = model.accessRequirement, model.repositories.isEmpty {
                 GitHubAccessRecoveryView(feature: "Repositories", requirement: requirement, isRetrying: model.loading) {
                     Task { await model.refresh() }
@@ -55,9 +56,12 @@ struct GitHubRepositoriesView: View {
                     } else {
                         sectionHeader("Pinned", count: pinned.count)
                         rows(pinned)
-                        sectionHeader("All repositories", count: model.visible.count - pinned.count)
-                            .dockPadding(.top, 8)
-                        rows(model.visible.filter { !model.isPinned($0) })
+                        let unpinned = model.visible.filter { !model.isPinned($0) }
+                        if !unpinned.isEmpty {
+                            sectionHeader("All repositories", count: unpinned.count)
+                                .dockPadding(.top, 12)
+                            rows(unpinned)
+                        }
                     }
                     if model.visible.isEmpty { emptyState }
                 }.dockPadding(.horizontal, 10).dockPadding(.vertical, 6)
@@ -86,13 +90,7 @@ struct GitHubRepositoriesView: View {
 
     private var toolbar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                DockIcon(.magnifyingGlass, size: 15, color: .dockMetadataText)
-                DockTextField("Search repositories", text: $model.query).textFieldStyle(.plain)
-            }
-            .dockPadding(.horizontal, 10).frame(maxWidth: .infinity, minHeight: 34)
-            .background(
-                DockThemeShape(cornerRadius: DockLayout.controlRadius).dockSurfaceFill(Color.dockControlSurface))
+            DockSearchField(placeholder: "Search repositories", text: $model.query)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
                     visibilityTabs
@@ -110,14 +108,14 @@ struct GitHubRepositoriesView: View {
                     model.loading
                         ? "Refreshing repositories…"
                         : (model.error ?? model.coverage
-                            ?? "\(model.visible.count) repositories · recently updated first")
+                            ?? "\(model.visible.count) repositories · recently updated")
                 )
                 .foregroundStyle(model.error == nil ? Color.dockMetadataText : Color.dockWarning)
                 .lineLimit(2)
                 Spacer(minLength: 8)
                 Toggle("Show archived", isOn: $model.includesArchived).toggleStyle(.dockCheckbox).fixedSize()
             }
-            .dockFont(.metadata).frame(minHeight: 22)
+            .dockFont(.metadata).frame(height: 34)
         }
         .dockPadding(.horizontal, 14).dockPadding(.vertical, 10)
         .background(Color.dockCanvas)
@@ -173,17 +171,25 @@ private struct GitHubRepositoryRow: View {
                         .accessibilityLabel("Private").help("Private repository")
                 }
                 Spacer(minLength: 4)
+                DockIcon(.caretRight, size: 11, color: .dockMetadataText)
+                    .accessibilityHidden(true)
+            }
+            .help(repository.id)
+            if !repository.description.isEmpty {
+                Text(repository.description).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                GitHubRepositoryFacts(repository: repository)
+                Spacer(minLength: 0)
                 if let updatedAt = repository.updatedAt {
                     Text(HumanDateFormatting.relative(updatedAt))
                         .dockFont(.metadata).foregroundStyle(Color.dockMetadataText).fixedSize()
                         .help("Last updated: \(updatedAt.formatted())")
+                        .accessibilityLabel("Updated \(HumanDateFormatting.relative(updatedAt))")
                 }
             }
-            if !repository.description.isEmpty {
-                Text(repository.description).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(1)
-            }
-            GitHubRepositoryFacts(repository: repository)
         }
         .multilineTextAlignment(.leading)
         .dockListRow(isHighlighted: isSelected)

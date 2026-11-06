@@ -13,6 +13,7 @@ struct ReviewGuideView: View {
     @Environment(\.chatContextRouter) private var contextRouter
     @Environment(\.expandedReviewRouter) private var reviewRouter
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dockHostVisible) private var hostVisible
 
     var body: some View {
         VStack(spacing: 0) {
@@ -104,7 +105,7 @@ struct ReviewGuideView: View {
         }.frame(minWidth: 700, idealWidth: 900, minHeight: 560, idealHeight: 760).background(Color.dockCanvas)
             .task(id: trackingIdentity) {
                 content.reset(session: coordinator.session)
-                guard !coordinator.requesting, coordinator.requestError == nil,
+                guard hostVisible, !coordinator.requesting, coordinator.requestError == nil,
                     let session = coordinator.session
                 else { return }
                 let client = model.controlRPCClient
@@ -128,6 +129,6 @@ struct ReviewGuideView: View {
     private var trackingIdentity: String {
         let session = coordinator.session
         return WorkspaceIdentity.session(profileID: session?.profileID, sessionID: session?.id)
-            + ":\(ObjectIdentifier(model.controlRPCClient)):\(coordinator.requesting):\(refreshID)"
+            + ":\(ObjectIdentifier(model.controlRPCClient)):\(coordinator.requesting):\(refreshID):\(hostVisible)"
     }
 }

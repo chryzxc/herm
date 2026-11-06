@@ -134,7 +134,7 @@ struct GitHubRepositoriesTests {
         for theme: DockThemeID in [.clean, .storm, .glass, .mono] {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
-            for width: CGFloat in [440, 1100] {
+            for width: CGFloat in [340, 470, 1100] {
                 for overview in [false, true] {
                     let content: AnyView
                     if overview, let repository = model.repositories.first {

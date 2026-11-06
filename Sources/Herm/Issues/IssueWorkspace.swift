@@ -11,7 +11,7 @@ struct IssueWorkspace: View {
     @State private var refreshID = 0
     @State private var loadedBrowse = GitHubBrowseOptions()
     @Environment(\.openGitHubItem) private var openItem
-    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dockHostVisible) private var hostVisible
 
     var body: some View {
         Group {
@@ -39,11 +39,16 @@ struct IssueWorkspace: View {
                 if !Task.isCancelled, center.errorMessage == nil { loadedBrowse = center.browsing }
             }
         }
-        .task {
+        .task(id: hostVisible) {
+            guard hostVisible else { return }
+            if center.hasLoaded && center.errorMessage == nil {
+                await center.refresh(projects: projects)
+                await center.refreshSelectedDetail()
+            }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled else { return }
-                if scenePhase == .active && center.errorMessage == nil {
+                if center.errorMessage == nil {
                     await center.refresh(projects: projects)
                     await center.refreshSelectedDetail()
                 }
@@ -134,18 +139,7 @@ struct IssueWorkspace: View {
             GitHubBrowseControls(
                 kind: .issue, client: center.api.client, repositories: center.repositories, options: $center.browsing,
                 refresh: refresh, onCreated: { openItem($0) }, isLoading: center.isRefreshing)
-            HStack(spacing: 8) {
-                DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
-                DockTextField("Search issues", text: $center.query)
-                    .textFieldStyle(.plain)
-            }
-            .dockPadding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 34)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                    Color.dockControlSurface, stroke: Color.dockBorder)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+            DockSearchField(placeholder: "Search issues", text: $center.query)
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
@@ -249,7 +243,8 @@ struct IssueWorkspacePage: View {
         DockPageHeader(
             title: "Issues", subtitle: "Triage your GitHub work",
             onRefresh: { Task { await center.refresh(projects: projects) } }, isRefreshing: center.isRefreshing,
-            sidebarCollapsed: $collapsed)
+            sidebarCollapsed: $collapsed,
+            trailing: { GitHubWorkspaceNavigation() })
     }
     var body: some View {
         VStack(spacing: 0) {

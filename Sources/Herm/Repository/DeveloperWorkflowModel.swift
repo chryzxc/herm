@@ -111,6 +111,7 @@ final class DeveloperWorkflowModel: ObservableObject {
     @Published private(set) var changes: RepositoryChangeSnapshot?
     @Published private(set) var review: RepositoryReviewSnapshot?
     @Published private(set) var worktrees: [RepositoryWorktreeSummary] = []
+    @Published private(set) var worktreesUnavailable = false
     @Published private(set) var notices: [RepositoryChangeNotice] = []
     @Published private(set) var watchState: RepositoryWatchState = .inactive
     @Published private(set) var baselineStatus: RepositoryReviewBaselineStatus = .none
@@ -220,7 +221,8 @@ final class DeveloperWorkflowModel: ObservableObject {
         githubRepository = resolvedGitHubRemote
         self.changes = resolvedChanges
         sourceControlError = resolvedChanges.error
-        self.worktrees = resolvedWorktrees
+        if let resolvedWorktrees { self.worktrees = resolvedWorktrees }
+        worktreesUnavailable = resolvedWorktrees == nil
         self.branches = resolvedBranches
         if githubRepositoryChanged {
             githubPullRequests = []
@@ -652,10 +654,13 @@ final class DeveloperWorkflowModel: ObservableObject {
             sourceID: id, eventID: "\(fingerprint):\(notice.createdAt.timeIntervalSince1970)")
         _ = interruptionCoordinator?.admit(interruption, channel: .record)
         if notificationsEnabled, HermesAppRuntime.supportsUserNotifications,
+            UserDefaults.standard.double(forKey: HermNotificationPreferences.snoozeKey) <= Date().timeIntervalSince1970,
             interruptionCoordinator?.admit(interruption, channel: .system) != false
         {
             let content = UNMutableNotificationContent()
             content.title = "Repository changed"
+            content.sound = HermNotificationPreferences.sound(defaults: .standard)
+            content.categoryIdentifier = HermNotificationAction.activityCategory
             content.body = "\(notice.displayName): \(notice.changedFiles) changed files"
             content.userInfo = ["repository_id": id]
             try? await UNUserNotificationCenter.current().add(

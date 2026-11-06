@@ -430,14 +430,7 @@ struct RepositoryChangesBrowser: View {
         }
         .dockPadding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(
-                Color.dockSurface2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).stroke(
-                Color.dockBorderLight, lineWidth: 0.5)
-        )
+        .dockWell()
         .dockPadding(.top, 2).dockPadding(.bottom, 8)
     }
 
@@ -851,15 +844,8 @@ struct RepositoryChangesBrowser: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).dockSurfaceFill(
-                Color.dockSurface2)
-        )
+        .dockWell()
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).stroke(
-                Color.dockBorderLight, lineWidth: 0.5)
-        )
         .dockPadding(.top, 4)
         .dockPadding(.bottom, 8)
     }

@@ -67,11 +67,10 @@ struct GitHubRepositoryActivityView: View {
                         Divider().overlay(Color.dockBorderLight)
                     }
                 }
-                .overlay(
-                    DockThemeShape(cornerRadius: DockLayout.controlRadius).stroke(
-                        Color.dockBorderLight, lineWidth: model.items.isEmpty ? 0 : DockLayout.hairline)
-                )
-                .dockPadding(16)
+                .frame(maxWidth: 820, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .dockPadding(.horizontal, 24)
+                .dockPadding(.vertical, 8)
             }
         }
         .dockFont(.body).foregroundStyle(Color.dockPrimaryText).background(Color.dockCanvas)
@@ -113,67 +112,71 @@ struct GitHubRepositoryActivityView: View {
     private func activityRow(_ item: GitHubRepositoryActivity) -> some View {
         let summary = model.summaries[item.id]
         let url = item.webURL(in: model.repository)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                Link(destination: url) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(summary?.title ?? "\(item.label) · \(item.branch)")
-                            .dockFont(.body, weight: .semibold).lineLimit(2).multilineTextAlignment(.leading)
-                        DockIcon(.arrowUpRight, size: 11, color: .dockMetadataText)
-                    }
-                }.buttonStyle(.dockHover)
-                if ["force_push", "pr_merge", "merge_queue_merge"].contains(item.type) { badge(item) }
-                Spacer(minLength: 0)
-                DockMenu {
-                    Button("View changes on GitHub") { InAppBrowser.open(url) }
-                    DockCopyButton(
-                        url.absoluteString, label: "Copy activity link", accessibilityLabel: "Copy activity link",
-                        presentation: .text)
-                    DockCopyButton(
-                        item.hasAfter ? item.after : item.before, label: "Copy commit SHA",
-                        accessibilityLabel: "Copy commit SHA", presentation: .text)
-                    if summary?.error != nil {
-                        Button("Retry commit details") { Task { await model.loadSummary(item, force: true) } }
-                    }
-                } label: {
-                    DockIcon(.dotsThree, size: 16, color: .dockMetadataText).frame(width: 28, height: 28)
-                }.accessibilityLabel("Activity actions")
-            }
-            HStack(alignment: .top, spacing: 8) {
-                avatar(item)
-                DockChipFlow(spacing: 6) {
-                    Text(item.actor ?? "Unknown user").dockFont(.metadata, weight: .semibold)
-                    Text(action(item, summary: summary)).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
-                    if item.type == "branch_deletion" {
-                        DockMetadataPill(text: short(item.branch), compact: true).help(item.branch)
-                    } else {
-                        Link(
-                            destination: model.repository.webURL.appendingPathComponent("tree").appendingPathComponent(
-                                item.branch)
-                        ) {
-                            DockMetadataPill(text: short(item.branch), navigationIcon: .arrowUpRight, compact: true)
-                        }.buttonStyle(.dockLink).help(item.branch)
-                    }
+        return HStack(alignment: .top, spacing: 10) {
+            avatar(item).dockPadding(.top, 2)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: 8) {
                     Link(destination: url) {
-                        DockCommitRange(
-                            before: item.before, after: item.after,
-                            hasBefore: item.hasBefore, hasAfter: item.hasAfter)
-                    }.buttonStyle(.dockLink)
-                    Text(HumanDateFormatting.relative(item.date)).dockFont(.metadata).foregroundStyle(
-                        Color.dockMetadataText
-                    )
-                    .help(item.date.formatted())
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(summary?.title ?? "\(item.label) · \(item.branch)")
+                                .dockFont(.body, weight: .semibold).lineLimit(2).multilineTextAlignment(.leading)
+                            DockIcon(.arrowUpRight, size: 11, color: .dockMetadataText)
+                        }
+                    }.buttonStyle(.dockHover)
+                    if ["force_push", "pr_merge", "merge_queue_merge"].contains(item.type) { badge(item) }
+                    Spacer(minLength: 0)
+                    DockMenu {
+                        Button("View changes on GitHub") { InAppBrowser.open(url) }
+                        DockCopyButton(
+                            url.absoluteString, label: "Copy activity link", accessibilityLabel: "Copy activity link",
+                            presentation: .text)
+                        DockCopyButton(
+                            item.hasAfter ? item.after : item.before, label: "Copy commit SHA",
+                            accessibilityLabel: "Copy commit SHA", presentation: .text)
+                        if summary?.error != nil {
+                            Button("Retry commit details") { Task { await model.loadSummary(item, force: true) } }
+                        }
+                    } label: {
+                        DockIcon(.dotsThree, size: 16, color: .dockMetadataText).frame(width: 28, height: 28)
+                    }.accessibilityLabel("Activity actions")
+                }
+                HStack(alignment: .top, spacing: 8) {
+                    DockChipFlow(spacing: 6) {
+                        Text(item.actor ?? "Unknown user").dockFont(.metadata, weight: .semibold)
+                        Text(action(item, summary: summary)).dockFont(.metadata).foregroundStyle(
+                            Color.dockSecondaryText)
+                        if item.type == "branch_deletion" {
+                            DockMetadataPill(text: short(item.branch), compact: true).help(item.branch)
+                        } else {
+                            Link(
+                                destination: model.repository.webURL.appendingPathComponent("tree")
+                                    .appendingPathComponent(
+                                        item.branch)
+                            ) {
+                                DockMetadataPill(text: short(item.branch), navigationIcon: .arrowUpRight, compact: true)
+                            }.buttonStyle(.dockLink).help(item.branch)
+                        }
+                        Link(destination: url) {
+                            DockCommitRange(
+                                before: item.before, after: item.after,
+                                hasBefore: item.hasBefore, hasAfter: item.hasAfter)
+                        }.buttonStyle(.dockLink)
+                        Text(HumanDateFormatting.relative(item.date)).dockFont(.metadata).foregroundStyle(
+                            Color.dockMetadataText
+                        )
+                        .help(item.date.formatted())
+                    }
+                }
+                if let error = summary?.error {
+                    Text(
+                        summary?.title != nil || summary?.commitCount != nil
+                            ? "Some commit details couldn’t be refreshed." : "Commit details unavailable."
+                    ).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                        .help(error)
                 }
             }
-            if let error = summary?.error {
-                Text(
-                    summary?.title != nil || summary?.commitCount != nil
-                        ? "Some commit details couldn’t be refreshed." : "Commit details unavailable."
-                ).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                    .help(error)
-            }
         }
-        .dockPadding(.horizontal, 12).dockPadding(.vertical, 10).frame(
+        .dockPadding(.vertical, 12).frame(
             maxWidth: .infinity, minHeight: 64, alignment: .leading)
     }
 

@@ -84,3 +84,35 @@ struct GitHubMarkdownPipelineTests {
         #expect(themed.key.themeRevision == 1)
     }
 }
+
+@MainActor
+struct PullRequestDescriptionTests {
+    @Test func imagesKeepTheirPositionAndCodeRemainsLiteral() {
+        let source =
+            "Before\n![Screenshot](https://example.com/screen.png)\nAfter\n```md\n"
+            + "![code](https://example.com/code.png)\n```\n<img width=\"400\" src=\"https://example.com/other.png\">"
+        let parts = PullRequestDescriptionContent.parts(source)
+        #expect(
+            parts == [
+                .markdown("Before"),
+                .image(URL(string: "https://example.com/screen.png")!, alt: "Screenshot"),
+                .markdown("After\n```md\n![code](https://example.com/code.png)\n```"),
+                .image(URL(string: "https://example.com/other.png")!, alt: "Image"),
+            ])
+    }
+
+    @Test func taskListsAndDividersRenderAsStructuredContent() {
+        let source = "- [x] Done **now**\n- [ ] Later\n\n---\n\n```\n- [x] literal\n```"
+        #expect(
+            PullRequestDescriptionContent.parts(source) == [
+                .task(checked: true, text: "Done **now**"),
+                .task(checked: false, text: "Later"),
+                .markdown(""), .divider, .markdown("\n```\n- [x] literal\n```"),
+            ])
+    }
+
+    @Test func unsupportedSourcesStayVisibleAsMarkdown() {
+        let source = "![local](file:///tmp/image.png)\n![relative](image.png)"
+        #expect(PullRequestDescriptionContent.parts(source) == [.markdown(source)])
+    }
+}
