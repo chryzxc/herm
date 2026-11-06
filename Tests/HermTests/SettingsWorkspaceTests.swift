@@ -3,14 +3,52 @@ import Testing
 
 @testable import Herm
 
+@MainActor
+private final class SettingsFixtureClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    var paths: [String] = []
+    func connect() async throws {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        paths.append(path)
+        return path.hasSuffix("schema") ? ["fields": [:]] : ["agent": ["name": "Herm"]]
+    }
+    func close() {}
+}
+
 @Suite("Settings workspace")
 struct SettingsWorkspaceTests {
+    @Test("configuration activation and categories share the schema")
+    @MainActor
+    func configLoadingReuse() async {
+        let client = SettingsFixtureClient()
+        var rpc = HermesControlRPC(client: client)
+        var profile = "first"
+        let editor = HermesConfigEditor(profile: { profile }, rpc: { rpc })
+        await editor.load(forceSchema: false)
+        await editor.loadIfNeeded()
+        await editor.loadIfNeeded()
+        #expect(client.paths == ["/api/config/schema", "/api/config"])
+        await editor.load(forceSchema: false)
+        #expect(client.paths == ["/api/config/schema", "/api/config", "/api/config"])
+        await editor.load()
+        #expect(client.paths.suffix(2) == ["/api/config/schema", "/api/config"])
+        profile = "second"
+        await editor.loadIfNeeded()
+        #expect(client.paths.suffix(2) == ["/api/config/schema", "/api/config"])
+        let other = SettingsFixtureClient()
+        rpc = HermesControlRPC(client: other)
+        await editor.loadIfNeeded()
+        #expect(other.paths == ["/api/config/schema", "/api/config"])
+    }
     @Test("categories keep the documented order")
     func categoryOrder() {
         #expect(
             SettingsCategory.allCases == [
-                .general, .gateway, .appearance, .notifications, .runtime, .providers, .bots, .chat, .workspace,
-                .safety, .browser, .memory, .voice, .advanced, .integrations, .session, .diagnostics, .updates,
+                .general, .gateway, .appearance, .notifications, .runtime, .subagents, .providers, .bots, .chat,
+                .workspace,
+                .safety, .browser, .passwords, .memory, .voice, .advanced, .integrations, .session, .diagnostics,
+                .updates,
             ])
         let grouped = SettingsCategoryGroup.allCases.flatMap(\.categories)
         #expect(grouped.count == Set(grouped).count)

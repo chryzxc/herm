@@ -172,10 +172,10 @@ extension ControlCenterModel {
         var nextCache: [String: LatestActivityCacheEntry] = [:]
         var cachedStepCount = 0
 
-        for start in stride(from: 0, to: sessions.count, by: 8) {
+        for start in stride(from: 0, to: sessions.count, by: 2) {
             try Task.checkCancellation()
             guard isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-            let end = min(start + 8, sessions.count)
+            let end = min(start + 2, sessions.count)
             let batch = Array(sessions[start..<end])
             let fetched = await withTaskGroup(
                 of: (String, [SessionActivityStep], Bool).self, returning: [(String, [SessionActivityStep], Bool)].self
@@ -234,7 +234,7 @@ extension ControlCenterModel {
             )
         }
         guard isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-        latestActivities = projectedActivities
+        if latestActivities != projectedActivities { latestActivities = projectedActivities }
     }
 
     func fetchActivitySteps(rpc: HermesControlRPC, sessionID: String) async -> (

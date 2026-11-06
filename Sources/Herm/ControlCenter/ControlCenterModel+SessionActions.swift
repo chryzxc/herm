@@ -249,7 +249,7 @@ extension ControlCenterModel {
 
     /// Cheap `process.list`-only refresh for the composer strip while a turn runs.
     func pollProcesses() async {
-        guard let rpc, capabilityAvailable("rpc-activity"),
+        guard let rpc, capabilityAvailable("rpc-sessions") || processControlAvailable,
             let sessionID = dockModel?.sessionID, !sessionID.isEmpty
         else { return }
         let generation = sessionProcessesGeneration
@@ -262,7 +262,7 @@ extension ControlCenterModel {
     }
 
     func killProcess(_ confirmation: ProcessStopConfirmation) async -> Bool {
-        guard rpc != nil, capabilityAvailable("rpc-activity") else {
+        guard processControlAvailable else {
             reportActionError(
                 "Could not stop process", message: "Process control is unavailable through this Hermes gateway.")
             return false

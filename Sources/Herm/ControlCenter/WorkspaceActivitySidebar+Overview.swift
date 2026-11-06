@@ -109,7 +109,7 @@ extension WorkspaceActivitySidebar {
 
     func sessionLifecycleColor(_ status: SessionLifecycleStatus) -> Color {
         switch status {
-        case .active: Color.dockAccent
+        case .active: DockStatusTone.working.color
         case .completed: Color.dockSuccess
         case .failed: Color.dockDestructive
         case .stale: Color.dockWarning
@@ -130,14 +130,7 @@ extension WorkspaceActivitySidebar {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .dockPadding(10)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .dockSurfaceFill(Color.dockSurface.opacity(0.34))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .stroke(Color.dockBorderLight, lineWidth: 0.5)
-        }
+        .dockWell()
 
         return Group {
             if let action {
@@ -327,7 +320,7 @@ extension WorkspaceActivitySidebar {
     func taskColor(_ status: WorkspaceTaskStatus) -> Color {
         switch status {
         case .todo: .dockSecondaryText
-        case .inProgress: .dockAccent
+        case .inProgress: DockStatusTone.working.color
         case .awaitingApproval: .dockWarning
         case .readyForReview: .dockSuccess
         case .done: .dockMetadataText

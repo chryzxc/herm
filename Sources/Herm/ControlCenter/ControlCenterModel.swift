@@ -2,7 +2,14 @@ import Combine
 import Foundation
 
 @MainActor
+final class ProviderQuotaFreshness: ObservableObject {
+    @Published var checkedAt: [String: Date] = [:]
+}
+
+@MainActor
 final class ControlCenterModel: ObservableObject {
+    let providerQuotaFreshness = ProviderQuotaFreshness()
+    lazy var workspacePresentationChanges = makeWorkspacePresentationChanges()
     var interruptionCoordinator: HermInterruptionCoordinator? { dockModel?.interruptionCoordinator }
     let pet = HermesPetModel()
     @Published var integrationDestination: IntegrationDestination?
@@ -97,6 +104,9 @@ final class ControlCenterModel: ObservableObject {
     var workCalendarRepoPaths: [String] = []
     var workCalendarGeneration = UUID()
     var workCalendarTask: Task<Void, Never>?
+    var workCalendarBuildGeneration = UUID()
+    var workCalendarBuildTask: Task<Void, Never>?
+    var workCalendarBuildNeedsSuccess = false
     var workCalendarLoadedAt: [Date: Date] = [:]
     @Published var providerQuotas: [ProviderQuotaSnapshot] = []
     /// Hermes' provider catalog (Settings → Providers); nil until first loaded.
@@ -172,7 +182,8 @@ final class ControlCenterModel: ObservableObject {
     var kanbanChatCheckedSessionIDs: Set<String> = []
     var rpc: HermesControlRPC?
     /// Desktop-parity editor for Hermes `config.yaml`, over the same backend.
-    lazy var configEditor = HermesConfigEditor { [weak self] in self?.rpc }
+    lazy var configEditor = HermesConfigEditor(
+        profile: { [weak self] in self?.dockModel?.profileScopeID }, rpc: { [weak self] in self?.rpc })
     var cli: HermesCLIAdapter?
     var refreshTask: Task<Void, Never>?
     var latestActivityRefreshTask: Task<Void, Never>?

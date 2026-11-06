@@ -26,7 +26,12 @@ struct MessagingWorkspaceView: View {
     }
 
     private var filtered: [MessagingPlatform] {
-        MessagingPlatform.matching(model.platforms, query: search)
+        MessagingPlatform.matching(model.platforms, query: search).filter {
+            workspace.currentBrowsing.statusFilter.includes(
+                enabled: $0.enabled,
+                tone: $0.statusLabels.contains { $0.0 == .attention } ? .attention : $0.statusTone,
+                update: false)
+        }
     }
     private var current: MessagingPlatform? {
         filtered.first { $0.id == selection } ?? filtered.first
@@ -38,36 +43,38 @@ struct MessagingWorkspaceView: View {
     }
 
     var body: some View {
-        AdaptiveSplit(
-            breakpoint: 800, primaryMinWidth: 340, secondaryMinWidth: 400,
-            showsSecondary: workspace.currentBrowsing.showsDetail,
-            onBack: { if !hasPendingEdits { workspace.currentBrowsing.showsDetail = false } }
+        IntegrationLibraryLayout(
+            showsDetail: workspace.currentBrowsing.showsDetail,
+            close: { if !hasPendingEdits { workspace.currentBrowsing.showsDetail = false } }
         ) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 IntegrationLibraryHeader(
                     title: "Messaging",
                     summary: model.hasLoaded
-                        ? "\(filtered.count) platforms"
-                        : model.loading ? "Reading platforms…" : "Inventory unavailable")
-                HStack(spacing: 8) {
-                    DockTextField("Search messaging", text: Binding(get: { search }, set: { search = $0 }))
-                        .textFieldStyle(.dockGlass).frame(minWidth: 180, maxWidth: 320)
-                        .disabled(workspace.navigationLocked)
-                    if !search.isEmpty {
-                        Button("Clear filter") { search = "" }.buttonStyle(.dockSecondary).fixedSize()
-                            .disabled(hasPendingEdits)
-                    }
-                    Spacer(minLength: 0)
+                        ? "\(model.platforms.count) platforms"
+                        : model.loading ? "Reading platforms…" : "Inventory unavailable",
+                    symbol: IntegrationsCategory.messaging.icon, purpose: IntegrationsCategory.messaging.purpose)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { searchControls }
+                    VStack(alignment: .leading, spacing: 8) { searchControls }
                 }
-                Color.dockBorderLight.frame(height: DockLayout.hairline)
+            }
+        } library: {
+            VStack(spacing: 0) {
                 if filtered.isEmpty {
-                    emptyState
+                    if workspace.currentBrowsing.statusFilter != .all && model.hasLoaded && !model.platforms.isEmpty
+                        && model.error == nil
+                    {
+                        IntegrationFilterEmptyState { workspace.currentBrowsing.statusFilter = .all }
+                    } else {
+                        emptyState
+                    }
                     Spacer(minLength: 0)
                 } else {
                     platformGrid
                 }
-            }.dockPadding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
-        } secondary: {
+            }
+        } inspector: {
             if let current {
                 detail(current)
             } else {
@@ -88,6 +95,23 @@ struct MessagingWorkspaceView: View {
             }
         }
         .onDisappear { model.cancelQR() }
+    }
+
+    @ViewBuilder private var searchControls: some View {
+        DockTextField("Search messaging", text: Binding(get: { search }, set: { search = $0 }))
+            .textFieldStyle(.dockGlass).frame(minWidth: 180, maxWidth: 320)
+            .disabled(workspace.navigationLocked)
+        if !search.isEmpty {
+            Button("Clear filter") { search = "" }.buttonStyle(.dockSecondary).fixedSize()
+                .disabled(hasPendingEdits)
+        }
+        IntegrationStatusPicker(
+            selection: Binding(
+                get: { workspace.currentBrowsing.statusFilter },
+                set: { workspace.currentBrowsing.statusFilter = $0 }),
+            options: [.all, .enabled, .disabled, .needsSetup]
+        )
+        .disabled(workspace.navigationLocked)
     }
 
     private func resetDrafts() {
@@ -124,9 +148,9 @@ struct MessagingWorkspaceView: View {
 
     private var platformGrid: some View {
         ScrollView {
-            IntegrationCardGrid {
+            IntegrationInventoryList {
                 ForEach(filtered) { platform in
-                    IntegrationCard(
+                    IntegrationInventoryRow(
                         title: platform.name, detail: platform.description,
                         status: (
                             platform.enabled ? platform.statusTone : .inactive,
@@ -138,7 +162,7 @@ struct MessagingWorkspaceView: View {
                             workspace.currentBrowsing.showsDetail = true
                         }
                     ) {
-                        MessagingPlatformIcon(platform: platform)
+                        MessagingPlatformIcon(platform: platform, size: 36)
                     }
                     .disabled(model.busy || model.loading || hasPendingEdits)
                 }
@@ -166,16 +190,16 @@ struct MessagingWorkspaceView: View {
                     if !advanced.isEmpty {
                         DisclosureGroup(isExpanded: $showsAdvanced) {
                             fields(advanced).frame(maxWidth: .infinity, alignment: .leading)
-                                .dockCard(padding: 12, isQuiet: true).dockPadding(.top, 8)
+                                .dockCard(padding: 12).dockPadding(.top, 8)
                                 .disabled(model.busy || model.loading || model.isStale)
                         } label: {
-                            sectionLabel("Advanced")
+                            DockSectionLabel(title: "Advanced")
                         }
                         .disclosureGroupStyle(DockDisclosureGroupStyle())
                     }
                 }
                 .dockPadding(24)
-                .frame(maxWidth: 600, alignment: .leading)
+                .frame(maxWidth: 720, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             footer(platform)
@@ -202,7 +226,7 @@ struct MessagingWorkspaceView: View {
         let telegram = platformID == "telegram"
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                sectionLabel("Quick setup")
+                DockSectionLabel(title: "Quick setup")
                 DockStatusPill(tone: .complete, text: "Recommended")
             }
             VStack(alignment: .leading, spacing: 10) {
@@ -256,7 +280,7 @@ struct MessagingWorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .dockCard(padding: 12, isQuiet: true)
+            .dockCard(padding: 12)
         }
     }
 
@@ -265,7 +289,7 @@ struct MessagingWorkspaceView: View {
         let text = first.map { $0.help.isEmpty ? $0.description : $0.help } ?? ""
         if !text.isEmpty || platform.docsURL != nil {
             VStack(alignment: .leading, spacing: 8) {
-                sectionLabel("Get your credentials")
+                DockSectionLabel(title: "Get your credentials")
                 if !text.isEmpty { Text(text).dockFont(.body).foregroundStyle(Color.dockSecondaryText) }
                 if let docs = platform.docsURL {
                     Link(destination: docs) {
@@ -283,8 +307,8 @@ struct MessagingWorkspaceView: View {
     private func section(_ title: String, _ vars: [MessagingEnvVar]) -> some View {
         if !vars.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                sectionLabel(title)
-                fields(vars).frame(maxWidth: .infinity, alignment: .leading).dockCard(padding: 12, isQuiet: true)
+                DockSectionLabel(title: title)
+                fields(vars).frame(maxWidth: .infinity, alignment: .leading).dockCard(padding: 12)
             }
         }
     }
@@ -318,10 +342,6 @@ struct MessagingWorkspaceView: View {
                 }
             }
         }
-    }
-
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title).dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockSectionText)
     }
 
     /// The latest outcome, toned so a failed test reads differently from a saved notice.
@@ -420,8 +440,7 @@ private struct MessagingPlatformIcon: View {
             }
         }
         .frame(width: size, height: size)
-        .background(RoundedRectangle(cornerRadius: size / 4).dockSurfaceFill(Color.dockSurface))
-        .overlay(RoundedRectangle(cornerRadius: size / 4).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .dockWell(radius: size / 4)
     }
 }
 

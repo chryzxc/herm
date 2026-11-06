@@ -238,6 +238,9 @@ final class HermesCapabilityService {
         let specs: [(String, HermesFeatureIDs.ID, [String: Any])] =
             [
                 ("session", HermesFeatureIDs.ID.sessionActiveList, [:]),
+                // Fast and in-process: whether prompts carry Herm's rules inline (`HermPlugin`) must not wait
+                // behind the shell probes, which a loaded machine can push past the batch timeout.
+                ("plugins", HermesFeatureIDs.ID.pluginsList, [:]),
                 // The roster RPC is fast and read-only; probing it before the
                 // slow shell.exec probes keeps it inside the batch's bounded
                 // timeout instead of starving at the end of the serial queue.
@@ -248,7 +251,7 @@ final class HermesCapabilityService {
                 ("profiles", HermesFeatureIDs.ID.profilesList, ["limit": 100]),
                 ("scheduling", HermesFeatureIDs.ID.cronManage, ["action": "list"]),
                 ("projects", HermesFeatureIDs.ID.projectsTree, [:]), ("tools", HermesFeatureIDs.ID.toolsList, [:]),
-                ("plugins", HermesFeatureIDs.ID.pluginsList, [:]), ("config", HermesFeatureIDs.ID.configShow, [:]),
+                ("config", HermesFeatureIDs.ID.configShow, [:]),
                 ("version", HermesFeatureIDs.ID.shellExec, ["command": "hermes --version"]),
                 ("skills", HermesFeatureIDs.ID.shellExec, ["command": "hermes skills list --enabled-only"]),
                 ("notes", HermesFeatureIDs.ID.shellExec, ["command": "memo --version"]),
@@ -751,6 +754,17 @@ final class HermesCapabilityService {
     /// A missing or malformed inventory must never enable onboarding mutations.
     func probeOnboardingPlugins(client: HermesRPCClientProtocol) async throws -> [WorkflowPlugin] {
         try await HermesWorkflowRPC(client: client, profileID: nil).plugins()
+    }
+
+    /// An on-demand, profile-scoped read probe. Never probe writes or load credential metadata globally.
+    func probeVault(service: HermesVaultService) async throws -> (
+        items: [HermesVaultItem], sources: [HermesVaultSource]
+    ) {
+        try await service.inventory()
+    }
+
+    func probeSubagentRouting(service: HermesSubagentService) async throws -> HermesSubagentRouting {
+        try await service.routing()
     }
 
     func probeProfileDeletion(client: HermesRPCClientProtocol) async -> Bool {

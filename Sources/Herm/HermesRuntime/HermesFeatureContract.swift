@@ -184,10 +184,18 @@ enum HermesFeatureIDs {
         case learningEdit = "learning.edit"
         case learningDelete = "learning.delete"
         case browserManage = "browser.manage"
+        case vaultList = "vault.list"
+        case vaultAdd = "vault.add"
+        case vaultRemove = "vault.remove"
+        case vaultSources = "vault.sources"
+        case vaultSourceSet = "vault.source.set"
+        case vaultUnlock = "vault.unlock"
+        case vaultLock = "vault.lock"
         case bots
     }
 
     static let transportIDs: [String] = [
+        "vault.list", "vault.add", "vault.remove", "vault.sources", "vault.source.set", "vault.unlock", "vault.lock",
         "pet.info", "pet.info.meta", "pet.gallery", "pet.thumb", "pet.select", "pet.disable", "pet.scale",
         "session.list", "session.active_list", "session.activate", "session.delete", "session.resume",
         "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.create",

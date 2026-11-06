@@ -723,10 +723,7 @@ extension WorkspaceActivitySidebar {
             .dockPadding(.horizontal, 10)
             .dockPadding(.vertical, 8)
             .frame(minHeight: 36)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .dockSurfaceFill(Color.dockSurface, stroke: Color.dockBorder, lineWidth: 0.5)
-            )
+            .dockWell(.sunken)
     }
 
     var canCreateAutomation: Bool {

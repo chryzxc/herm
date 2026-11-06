@@ -495,8 +495,10 @@ final class HermesGateway: NSObject {
             DebugLog.write("receive: response id=\(id)")
             timeoutTasks.removeValue(forKey: id)?.cancel()
             if let error = object["error"] as? [String: Any], let message = error["message"] as? String {
+                var details: [String: Any] = [NSLocalizedDescriptionKey: message]
+                if let code = error["code"] as? NSNumber { details["HermesRPCCode"] = code }
                 continuation.resume(
-                    throwing: NSError(domain: "Hermes", code: 1, userInfo: [NSLocalizedDescriptionKey: message]))
+                    throwing: NSError(domain: "Hermes", code: 1, userInfo: details))
             } else {
                 continuation.resume(returning: response.result)
             }

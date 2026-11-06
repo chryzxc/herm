@@ -143,15 +143,7 @@ struct ProvidersSettingsView: View {
             DockSectionLabel(title: title, count: count)
             VStack(spacing: 8) {
                 ForEach(rows) { row in
-                    providerRow(row)
-                        .background(
-                            RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                                .dockSurfaceFill(Color.dockSurface.opacity(0.34))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                                .stroke(Color.dockBorderLight, lineWidth: 0.5)
-                        )
+                    providerRow(row).dockCard(padding: 0)
                 }
             }
         }
@@ -225,9 +217,7 @@ struct ProvidersSettingsView: View {
         Text(text)
             .dockFont(.compactStatus, weight: .semibold)
             .foregroundStyle(color)
-            .dockPadding(.horizontal, 6)
-            .frame(height: 18)
-            .background(Capsule().fill(Color.dockSurface4))
+            .dockPill()
     }
 
     @ViewBuilder
@@ -319,7 +309,14 @@ struct ProvidersSettingsView: View {
     private func saveKey(_ row: HermesProviderRow) {
         let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
-        run(row, HermesFeatureIDs.ID.modelSaveKey, params: ["slug": row.slug, "api_key": key]) { keyDraft = "" }
+        run(row, HermesFeatureIDs.ID.modelSaveKey, params: ["slug": row.slug, "api_key": key]) {
+            keyDraft = ""
+            let failures = await control.shareProviderKeyWithBots(
+                row: row, key: key, client: model.quickWorkflowClient)
+            if !failures.isEmpty {
+                actionError[row.slug] = BotKeyShareError(failures: failures).localizedDescription
+            }
+        }
     }
 
     private func disconnect(_ row: HermesProviderRow) {
@@ -328,14 +325,15 @@ struct ProvidersSettingsView: View {
     }
 
     private func run(
-        _ row: HermesProviderRow, _ method: HermesFeatureIDs.ID, params: [String: Any], onSuccess: @escaping () -> Void
+        _ row: HermesProviderRow, _ method: HermesFeatureIDs.ID, params: [String: Any],
+        onSuccess: @escaping () async -> Void
     ) {
         busySlug = row.slug
         actionError[row.slug] = nil
         Task {
             do {
                 _ = try await model.quickWorkflowClient.request(method.rawValue, params: params)
-                onSuccess()
+                await onSuccess()
                 load()
                 control.refreshProviderQuota()
             } catch {

@@ -5,6 +5,22 @@ import Testing
 
 @MainActor
 struct HermesCLIAdapterTests {
+    @Test func savedSessionRenameQuotesArgumentsAndChecksCapability() async throws {
+        let client = CLITestRPCClient()
+        client.result = ["code": 0, "stdout": "usage: hermes sessions rename session_id title"]
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+        try await adapter.renameSavedSession(sessionID: "saved's", title: "title $(noop)", profileID: "bot's")
+        #expect(
+            client.commands == [
+                "'hermes' 'sessions' 'rename' '--help'",
+                "'hermes' '--profile' 'bot'\\''s' 'sessions' 'rename' '--' 'saved'\\''s' 'title $(noop)'",
+            ])
+        client.result = ["code": 0, "stdout": "unsupported"]
+        await #expect(throws: HermesCLIError.self) {
+            try await adapter.renameSavedSession(sessionID: "saved", title: "title", profileID: nil)
+        }
+        #expect(client.commands.count == 3)
+    }
     @Test func sessionPinCommandsKeepProfileAndSessionAsQuotedWords() async throws {
         let client = CLITestRPCClient()
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
@@ -72,7 +88,7 @@ struct HermesCLIAdapterTests {
 
         #expect(
             client.httpPaths == [
-                "/api/plugins/kanban/boards", "/api/plugins/kanban/board?board=default&include_archived=true",
+                "/api/plugins/kanban/boards", "/api/plugins/kanban/board?board=default&include_archived=false",
             ])
         #expect(result.succeeded)
         #expect(result.stdout.contains("ready-task"))
@@ -136,7 +152,7 @@ struct HermesCLIAdapterTests {
         #expect(client.commands.last == "'hermes' 'kanban' 'boards' 'list' '--json' '--all'")
 
         _ = try await adapter.kanbanList(boardSlug: "client-board")
-        #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client-board&include_archived=true"])
+        #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client-board&include_archived=false"])
     }
 
     @Test func kanbanBoardScopeSafelyEncodesQueryReservedCharacters() async throws {
@@ -145,26 +161,27 @@ struct HermesCLIAdapterTests {
 
         _ = try await adapter.kanbanList(boardSlug: "client&ops=west")
 
-        #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client%26ops%3Dwest&include_archived=true"])
+        #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client%26ops%3Dwest&include_archived=false"])
     }
 
     @Test func kanbanPollersShareOneBoardReadUntilACardChanges() async throws {
         let client = CLITestRPCClient()
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
-        let path = "/api/plugins/kanban/board?board=client-board&include_archived=true"
+        let path = "/api/plugins/kanban/board?board=client-board&include_archived=false"
+        let archivedPath = "/api/plugins/kanban/board?board=client-board&include_archived=true"
 
         _ = try await adapter.kanbanList(boardSlug: "client-board")
         _ = try await adapter.kanbanList(
             boardSlug: "client-board", filter: KanbanListFilter(includeArchived: true), background: true)
         _ = try await adapter.kanbanShow(boardSlug: "client-board", taskID: "t_1")
         _ = try await adapter.kanbanList(boardSlug: "client-board", background: true)
-        #expect(client.httpPaths == [path])
+        #expect(client.httpPaths == [path, archivedPath])
 
         // An explicit refresh, or any card change, reads fresh.
         _ = try await adapter.kanbanList(boardSlug: "client-board")
         _ = try await adapter.kanbanComment(boardSlug: "client-board", taskID: "t_1", text: "done")
         _ = try await adapter.kanbanList(boardSlug: "client-board", background: true)
-        #expect(client.httpPaths == [path, path, path])
+        #expect(client.httpPaths == [path, archivedPath, path, path])
     }
 
     @Test func aggregateKanbanIncludesArchivedBoardsOnlyWhenRequested() async throws {
@@ -175,7 +192,7 @@ struct HermesCLIAdapterTests {
 
         #expect(
             client.httpPaths == [
-                "/api/plugins/kanban/boards",
+                "/api/plugins/kanban/boards?include_archived=true",
                 "/api/plugins/kanban/board?board=default&include_archived=true",
                 "/api/plugins/kanban/board?board=archived-board&include_archived=true",
             ])
@@ -304,7 +321,7 @@ private final class CLITestRPCClient: HermesRPCClientProtocol {
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         httpPaths.append(path)
-        if path == "/api/plugins/kanban/boards" {
+        if path == "/api/plugins/kanban/boards" || path == "/api/plugins/kanban/boards?include_archived=true" {
             return [
                 "boards": [
                     ["slug": "default", "archived": false],

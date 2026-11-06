@@ -293,11 +293,7 @@ struct ProviderSignInFlow: View {
             .dockPadding(10)
         }
         .frame(maxHeight: 150)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .dockSurfaceFill(
-                    Color.dockSurface.opacity(0.4), stroke: Color.dockBorderLight, lineWidth: DockLayout.hairline)
-        )
+        .dockWell()
         .dockPadding(.top, 6)
     }
 

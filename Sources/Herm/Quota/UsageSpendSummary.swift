@@ -120,7 +120,6 @@ struct UsageSpendSummary: View {
 struct UsageSpendTotals: View {
     let report: TokenUsageReport
     var isWide = false
-    private var monochrome: Bool { DockThemeRuntime.current == .mono || DockThemeRuntime.current == .eInk }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -191,11 +190,11 @@ struct UsageSpendTotals: View {
                 .init(
                     label: "Cache reads", value: Double(report.cacheReadTokens),
                     display: UsageWorkspaceView.tokens(report.cacheReadTokens),
-                    color: Color.dockMergedFill.opacity(monochrome ? 0.65 : 1)),
+                    color: Color.dockMergedFill),
                 .init(
                     label: "Output", value: Double(report.totalOutputTokens),
                     display: UsageWorkspaceView.tokens(report.totalOutputTokens),
-                    color: Color.dockReviewFill.opacity(monochrome ? 0.4 : 1)),
+                    color: Color.dockReviewFill),
             ])
     }
 
@@ -209,7 +208,7 @@ struct UsageSpendTotals: View {
                 .init(
                     label: "Background", value: report.auxCost,
                     display: UsageWorkspaceView.cost(report.auxCost),
-                    color: Color.dockMergedFill.opacity(monochrome ? 0.65 : 1)),
+                    color: Color.dockMergedFill),
             ])
     }
 

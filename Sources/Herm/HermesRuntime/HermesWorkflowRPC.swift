@@ -95,6 +95,7 @@ struct WorkflowConnector: Identifiable, Equatable {
     let accounts: [WorkflowConnectorAccount]
     /// Nil means the policy read was unavailable; only a verified member revision enables edits.
     var policyWritable: Bool? = nil
+    var logoURL: URL? = nil
 }
 struct WorkflowConnectorOperation: Equatable {
     let id: String
@@ -656,8 +657,16 @@ final class HermesWorkflowRPC {
                     return WorkflowConnectorAccount(
                         id: id, label: $0["alias"] as? String ?? $0["label"] as? String ?? id,
                         status: $0["status"] as? String ?? "")
-                }, policyWritable: policyWritable)
+                }, policyWritable: policyWritable,
+                logoURL: Self.connectorLogoURL(entry?["logo_url"] as? String))
         }
+    }
+    static func connectorLogoURL(_ raw: String?) -> URL? {
+        guard let raw, let components = URLComponents(string: raw),
+            components.scheme?.lowercased() == "https", let host = components.host, !host.isEmpty,
+            components.user == nil, components.password == nil
+        else { return nil }
+        return components.url
     }
     func connectConnector(_ slug: String, reconnect: Bool) async throws -> WorkflowConnectorOperation {
         try Self.connectorOperation(

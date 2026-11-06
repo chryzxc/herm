@@ -85,7 +85,7 @@ extension WorkspaceActivitySidebar {
             if selectedSettingsCategory == .updates {
                 settingsDisclosure(
                     title: "Herm update", subtitle: "Herm \(appUpdater.currentVersion ?? "dev build")",
-                    icon: .arrowsClockwise, isExpanded: $isAppUpdateExpanded, badge: appUpdater.nightlyBadge
+                    icon: .arrowsClockwise, isExpanded: $isAppUpdateExpanded, buildBadge: .current
                 ) {
                     appUpdateSection
                 }
@@ -94,6 +94,11 @@ extension WorkspaceActivitySidebar {
                     isExpanded: $isAgentUpdateExpanded
                 ) {
                     agentUpdateSection
+                }
+                SettingsSection(
+                    title: "Compatibility", subtitle: "Upstream changes and known work", tint: .dockAccent
+                ) {
+                    HermesCompatibilitySettings(installedVersion: agentUpdateService.installed?.displayVersion)
                 }
             }
 
@@ -115,6 +120,19 @@ extension WorkspaceActivitySidebar {
                     HermBrowserSettings()
                         .dockPadding(.vertical, -8)
                 }
+            }
+
+            if selectedSettingsCategory == .passwords {
+                HermesVaultSettings(rpc: control.rpc, profile: model.profileScopeID, bots: botMode.bots)
+                    .task { await botMode.refreshNow() }
+            }
+
+            if selectedSettingsCategory == .subagents {
+                HermesSubagentSettings(
+                    rpc: control.rpc, profile: model.profileScopeID, bots: botMode.bots,
+                    avatarImages: botMode.avatarImages
+                )
+                .task { await botMode.refreshNow() }
             }
 
             HermesConfigCategoryView(editor: control.configEditor, category: selectedSettingsCategory)
@@ -520,66 +538,109 @@ extension WorkspaceActivitySidebar {
     }
 
     var runtimeSettingsSection: some View {
-        settingsDisclosure(
-            title: "Runtime configuration", subtitle: "Default model, tools, skills, and plugins", icon: .gearSix,
-            isExpanded: $isRuntimeConfigurationExpanded
-        ) {
-            HStack {
-                settingsSubheading("Default model")
-                Spacer()
-                Button(action: { model.refreshRuntimeConfiguration(force: true) }) {
-                    if model.isLoadingRuntimeConfiguration {
-                        ProgressView().controlSize(.small).tint(Color.dockAccent)
-                    } else {
-                        DockIcon(.arrowsClockwise)
-                            .dockFont(.body, weight: .medium)
-                            .foregroundStyle(Color.dockAccent)
+        VStack(alignment: .leading, spacing: 17) {
+            SettingsSection(title: "Default model", subtitle: "For new sessions", tint: .dockAccent) {
+                HStack {
+                    Text("Model and thinking")
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Spacer()
+                    Button(action: { model.refreshRuntimeConfiguration(force: true) }) {
+                        if model.isLoadingRuntimeConfiguration {
+                            ProgressView().controlSize(.small).tint(Color.dockAccent)
+                        } else {
+                            DockIcon(.arrowsClockwise)
+                                .dockFont(.body, weight: .medium)
+                                .foregroundStyle(Color.dockAccent)
+                        }
                     }
+                    .buttonStyle(.dockHover)
+                    .disabled(model.isLoadingRuntimeConfiguration)
+                    .accessibilityLabel("Refresh runtime configuration")
                 }
-                .buttonStyle(.dockHover)
-                .disabled(model.isLoadingRuntimeConfiguration)
-            }
 
-            if model.isLoadingRuntimeConfiguration && model.runtimeConfiguration == nil {
-                HStack(spacing: 7) {
-                    ProgressView().controlSize(.small)
-                    Text("READING HERMES RUNTIME…").dockFont(.body).tracking(0.6).foregroundStyle(
-                        Color.dockSecondaryText)
-                }
-            } else if let configuration = model.runtimeConfiguration {
-                diagnosticRow(
-                    label: "Model", value: configuration.model ?? "Not configured",
-                    color: configuration.model == nil ? Color.dockWarning : Color.dockSecondaryText)
-                diagnosticRow(
-                    label: "Provider", value: configuration.provider ?? "Not configured",
-                    color: configuration.provider == nil ? Color.dockWarning : Color.dockSecondaryText)
-                if model.runtimeModelOptions.isEmpty {
+                if model.isLoadingRuntimeConfiguration && model.runtimeConfiguration == nil {
                     HStack(spacing: 7) {
                         ProgressView().controlSize(.small)
-                        Text("LOADING HERMES MODEL CATALOG…").dockFont(.body).tracking(0.5).foregroundStyle(
+                        Text("READING HERMES RUNTIME…").dockFont(.body).tracking(0.6).foregroundStyle(
                             Color.dockSecondaryText)
                     }
-                } else {
-                    DockMenu {
-                        ForEach(model.runtimeModelOptions) { option in
-                            Button {
-                                selectedModelID = option.id
-                            } label: {
-                                HStack {
-                                    Text(option.displayName)
-                                    if option.id == selectedModelID {
-                                        Ph.check.image()
+                } else if let configuration = model.runtimeConfiguration {
+                    if model.runtimeModelOptions.isEmpty {
+                        HStack(spacing: 7) {
+                            ProgressView().controlSize(.small)
+                            Text("LOADING HERMES MODEL CATALOG…").dockFont(.body).tracking(0.5).foregroundStyle(
+                                Color.dockSecondaryText)
+                        }
+                    } else {
+                        DockMenu {
+                            ForEach(model.runtimeModelOptions) { option in
+                                Button {
+                                    selectedModelID = option.id
+                                } label: {
+                                    HStack {
+                                        Text(option.displayName)
+                                        if option.id == selectedModelID {
+                                            Ph.check.image()
+                                        }
                                     }
                                 }
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(selectedModelDisplayName)
+                                    .dockFont(.body, weight: .medium)
+                                    .foregroundStyle(Color.dockPrimaryText)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer(minLength: 4)
+                                DockIcon(.caretUpDown)
+                                    .dockFont(.body, weight: .semibold)
+                                    .foregroundStyle(Color.dockSecondaryText)
+                            }
+                            .dockPadding(.horizontal, 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(minHeight: DockWorkspaceScale.points(36, scale: workspaceScale))
+                            .background(
+                                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                    .dockSurfaceFill(Color.dockControlSurface)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
+                                    Color.dockBorder, lineWidth: 0.5)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+                        }
+                        .buttonStyle(.dockHover)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .disabled(model.isLoadingRuntimeConfiguration)
+                        .onChange(of: selectedModelID) { _, id in
+                            guard let option = model.runtimeModelOptions.first(where: { $0.id == id }),
+                                option.model != configuration.model || option.provider != configuration.provider
+                            else { return }
+                            model.updateRuntimeModel(option)
+                        }
+                    }
+                    DockMenu {
+                        DockMenuChoices(
+                            selection: Binding(
+                                get: { model.defaultReasoningVariant },
+                                set: { variant in
+                                    guard let variant, variant != model.defaultReasoningVariant else { return }
+                                    model.updateGlobalReasoning(variant)
+                                }
+                            )
+                        ) {
+                            ForEach(HermesReasoningVariant.allCases) { variant in
+                                DockMenuOption(variant.displayName, value: Optional(variant))
                             }
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            Text(selectedModelDisplayName)
+                            DockIcon(.brain, size: 13, color: Color.dockSecondaryText)
+                            Text("Thinking  ·  \(model.defaultReasoningVariant?.displayName ?? "Loading…")")
                                 .dockFont(.body, weight: .medium)
                                 .foregroundStyle(Color.dockPrimaryText)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
                             Spacer(minLength: 4)
                             DockIcon(.caretUpDown)
                                 .dockFont(.body, weight: .semibold)
@@ -587,10 +648,11 @@ extension WorkspaceActivitySidebar {
                         }
                         .dockPadding(.horizontal, 10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(height: 36)
+                        .frame(minHeight: DockWorkspaceScale.points(36, scale: workspaceScale))
                         .background(
                             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .dockSurfaceFill(Color.dockControlSurface)
+                                .dockSurfaceFill(
+                                    Color.dockControlSurface)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
@@ -600,202 +662,169 @@ extension WorkspaceActivitySidebar {
                     }
                     .buttonStyle(.dockHover)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .disabled(model.isLoadingRuntimeConfiguration)
-                    .onChange(of: selectedModelID) { _, id in
-                        guard let option = model.runtimeModelOptions.first(where: { $0.id == id }),
-                            option.model != configuration.model || option.provider != configuration.provider
-                        else { return }
-                        model.updateRuntimeModel(option)
-                    }
-                }
-                DockMenu {
-                    DockMenuChoices(
-                        selection: Binding(
-                            get: { model.defaultReasoningVariant },
-                            set: { variant in
-                                guard let variant, variant != model.defaultReasoningVariant else { return }
-                                model.updateGlobalReasoning(variant)
-                            }
-                        )
-                    ) {
-                        ForEach(HermesReasoningVariant.allCases) { variant in
-                            DockMenuOption(variant.displayName, value: Optional(variant))
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        DockIcon(.brain, size: 13, color: Color.dockSecondaryText)
-                        Text("Thinking  ·  \(model.defaultReasoningVariant?.displayName ?? "Loading…")")
-                            .dockFont(.body, weight: .medium)
-                            .foregroundStyle(Color.dockPrimaryText)
-                        Spacer(minLength: 4)
-                        DockIcon(.caretUpDown)
-                            .dockFont(.body, weight: .semibold)
-                            .foregroundStyle(Color.dockSecondaryText)
-                    }
-                    .dockPadding(.horizontal, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 36)
-                    .background(
-                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
-                            Color.dockControlSurface)
+                    .accessibilityLabel("Default thinking level")
+                    Text(
+                        "Selection updates the saved default for new sessions. Use the session model picker in the chat header to override one conversation. During a running turn, Hermes applies changes to the next turn."
                     )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(
-                            Color.dockBorder, lineWidth: 0.5)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-                }
-                .buttonStyle(.dockHover)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel("Default thinking level")
-                Text(
-                    "Selection updates the saved default for new sessions. Use the session model picker in the chat header to override one conversation. During a running turn, Hermes applies changes to the next turn."
-                )
-                .dockFont(.body)
-                .foregroundStyle(Color.dockMetadataText)
-                if let error = model.runtimeConfigurationError {
-                    Text(error)
-                        .dockFont(.body)
-                        .foregroundStyle(Color.dockWarning)
-                }
-                if let path = configuration.configPath {
-                    Text(path)
-                        .dockFont(.body)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-
-                Divider().overlay(Color.dockBorderLight)
-                settingsSubheading("EXECUTION")
-                if let turns = configuration.maxTurns {
-                    diagnosticRow(label: "Max turns", value: turns, color: Color.dockSecondaryText)
-                }
-                if let timeout = configuration.terminalTimeout {
-                    diagnosticRow(label: "Terminal timeout", value: "\(timeout)S", color: Color.dockSecondaryText)
-                }
-
-                Divider().overlay(Color.dockBorderLight)
-                settingsSubheading("INSTALLED SKILLS  ·  \(configuration.skills.count)")
-                configurationList(
-                    configuration.skills,
-                    empty: "No enabled skills reported by Hermes.",
-                    isExpanded: isShowingAllSkills,
-                    onToggle: { isShowingAllSkills.toggle() }
-                )
-
-                Divider().overlay(Color.dockBorderLight)
-                settingsSubheading(
-                    "MCP SERVERS  ·  \(control.mcpInventoryAvailable ? control.mcpServers.count : configuration.mcpServers.count)"
-                )
-                if control.mcpInventoryAvailable {
-                    if control.mcpServers.isEmpty {
-                        Text("No MCP servers configured in Hermes.")
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockMetadataText)
+                    if let error = model.runtimeConfigurationError {
+                        Text(error)
+                            .dockFont(.body)
+                            .foregroundStyle(Color.dockWarning)
+                    }
+                    if let path = configuration.configPath {
+                        Text(path)
                             .dockFont(.body)
                             .foregroundStyle(Color.dockMetadataText)
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(control.mcpServers) { server in
-                                HStack(alignment: .top, spacing: 8) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(server.name)
-                                            .dockFont(.body, weight: .semibold)
-                                            .foregroundStyle(Color.dockPrimaryText)
-                                        Text(
-                                            server.tools == "all"
-                                                ? server.transport : "\(server.transport)  ·  \(server.tools)"
-                                        )
-                                        .dockFont(.body)
-                                        .foregroundStyle(Color.dockMetadataText)
-                                        .lineLimit(2)
-                                    }
-                                    Spacer(minLength: 0)
-                                    VStack(alignment: .trailing, spacing: 4) {
-                                        Text(server.isEnabled ? "Enabled" : "Disabled")
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                } else {
+                    emptyState(
+                        icon: .warning, title: "Runtime unavailable",
+                        detail: "Hermes configuration could not be read. Start Hermes, then refresh.")
+                }
+            }
+            if let configuration = model.runtimeConfiguration {
+                SettingsSection(title: "Execution", subtitle: "Runtime limits", tint: .dockAccent) {
+                    if configuration.maxTurns == nil && configuration.terminalTimeout == nil {
+                        Text("Runtime limits are unavailable.")
+                            .dockFont(.body)
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                    if let turns = configuration.maxTurns {
+                        diagnosticRow(label: "Max turns", value: turns, color: Color.dockSecondaryText)
+                    }
+                    if let timeout = configuration.terminalTimeout {
+                        diagnosticRow(label: "Terminal timeout", value: "\(timeout)S", color: Color.dockSecondaryText)
+                    }
+
+                }
+                SettingsSection(
+                    title: "Installed skills", subtitle: "\(configuration.skills.count) reported", tint: .dockAccent
+                ) {
+                    configurationList(
+                        configuration.skills,
+                        empty: "No enabled skills reported by Hermes.",
+                        isExpanded: isShowingAllSkills,
+                        onToggle: { isShowingAllSkills.toggle() }
+                    )
+
+                }
+                SettingsSection(
+                    title: "MCP servers",
+                    subtitle:
+                        "\(control.mcpInventoryAvailable ? control.mcpServers.count : configuration.mcpServers.count) configured",
+                    tint: .dockAccent
+                ) {
+                    if control.mcpInventoryAvailable {
+                        if control.mcpServers.isEmpty {
+                            Text("No MCP servers configured in Hermes.")
+                                .dockFont(.body)
+                                .foregroundStyle(Color.dockMetadataText)
+                        } else {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(control.mcpServers) { server in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(server.name)
+                                                .dockFont(.body, weight: .semibold)
+                                                .foregroundStyle(Color.dockPrimaryText)
+                                            Text(
+                                                server.tools == "all"
+                                                    ? server.transport : "\(server.transport)  ·  \(server.tools)"
+                                            )
                                             .dockFont(.body)
-                                            .foregroundStyle(Color.dockSecondaryText)
-                                        if control.capabilityAvailable("mcp.test") {
-                                            Button {
-                                                control.testMCP(server)
-                                            } label: {
-                                                DockActionLabel(
-                                                    title: "Test",
-                                                    pendingTitle: "Testing…",
-                                                    isPending: control.isActionPending(control.mcpTestActionID(server))
-                                                )
+                                            .foregroundStyle(Color.dockMetadataText)
+                                            .lineLimit(2)
+                                        }
+                                        Spacer(minLength: 0)
+                                        VStack(alignment: .trailing, spacing: 4) {
+                                            Text(server.isEnabled ? "Enabled" : "Disabled")
+                                                .dockFont(.body)
+                                                .foregroundStyle(Color.dockSecondaryText)
+                                            if control.capabilityAvailable("mcp.test") {
+                                                Button {
+                                                    control.testMCP(server)
+                                                } label: {
+                                                    DockActionLabel(
+                                                        title: "Test",
+                                                        pendingTitle: "Testing…",
+                                                        isPending: control.isActionPending(
+                                                            control.mcpTestActionID(server))
+                                                    )
+                                                }
+                                                .buttonStyle(.dockCompact)
+                                                .dockFont(.body, weight: .semibold)
+                                                .foregroundStyle(Color.dockAccent)
+                                                .disabled(control.isActionPending(control.mcpTestActionID(server)))
                                             }
-                                            .buttonStyle(.dockCompact)
-                                            .dockFont(.body, weight: .semibold)
-                                            .foregroundStyle(Color.dockAccent)
-                                            .disabled(control.isActionPending(control.mcpTestActionID(server)))
                                         }
                                     }
-                                }
-                                if let result = control.mcpTestResults[server.id] {
-                                    Text(result)
-                                        .dockFont(.body)
-                                        .foregroundStyle(Color.dockMetadataText)
-                                        .lineLimit(2)
+                                    if let result = control.mcpTestResults[server.id] {
+                                        Text(result)
+                                            .dockFont(.body)
+                                            .foregroundStyle(Color.dockMetadataText)
+                                            .lineLimit(2)
+                                    }
                                 }
                             }
                         }
+                    } else {
+                        configurationList(configuration.mcpServers, empty: "No MCP servers configured in Hermes.")
                     }
-                } else {
-                    configurationList(configuration.mcpServers, empty: "No MCP servers configured in Hermes.")
-                }
-                if model.sessionID != nil {
-                    Button {
-                        isShowingMCPReloadConfirmation = true
-                    } label: {
-                        DockActionLabel(
-                            title: "Reload MCP tools",
-                            pendingTitle: "Reloading…",
-                            isPending: control.isActionPending(control.reloadMCPActionID)
-                        )
+                    if model.sessionID != nil {
+                        Button {
+                            isShowingMCPReloadConfirmation = true
+                        } label: {
+                            DockActionLabel(
+                                title: "Reload MCP tools",
+                                pendingTitle: "Reloading…",
+                                isPending: control.isActionPending(control.reloadMCPActionID)
+                            )
+                        }
+                        .buttonStyle(.dockCompact)
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(Color.dockAccent)
+                        .disabled(control.isActionPending(control.reloadMCPActionID))
                     }
-                    .buttonStyle(.dockCompact)
-                    .dockFont(.body, weight: .semibold)
-                    .foregroundStyle(Color.dockAccent)
-                    .disabled(control.isActionPending(control.reloadMCPActionID))
-                }
 
-                Divider().overlay(Color.dockBorderLight)
-                settingsSubheading("COMMAND ALLOWLIST  ·  \(control.commandAllowlistEntries?.count ?? 0)")
-                if let entries = control.commandAllowlistEntries {
-                    if entries.isEmpty {
-                        Text("No always-allowed commands.")
+                }
+                SettingsSection(title: "Command allowlist", subtitle: "", tint: .dockAccent) {
+                    if let entries = control.commandAllowlistEntries {
+                        if entries.isEmpty {
+                            Text("No always-allowed commands.")
+                                .dockFont(.body)
+                                .foregroundStyle(Color.dockMetadataText)
+                        } else {
+                            VStack(alignment: .leading, spacing: 5) {
+                                ForEach(entries, id: \.self) { pattern in
+                                    Text(pattern)
+                                        .dockFont(.metadata, weight: .regular, design: .monospaced)
+                                        .foregroundStyle(Color.dockPrimaryText)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }
+                        Text("Edit in Safety → Command Allowlist.")
+                            .dockFont(.metadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                            .textSelection(.enabled)
+                    } else {
+                        Text("Command allowlist is temporarily unavailable.")
                             .dockFont(.body)
                             .foregroundStyle(Color.dockMetadataText)
-                    } else {
-                        VStack(alignment: .leading, spacing: 5) {
-                            ForEach(entries, id: \.self) { pattern in
-                                Text(pattern)
-                                    .dockFont(.metadata, weight: .regular, design: .monospaced)
-                                    .foregroundStyle(Color.dockPrimaryText)
-                                    .textSelection(.enabled)
-                            }
-                        }
                     }
-                    Text("Edit in Safety → Command Allowlist.")
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .textSelection(.enabled)
-                } else {
-                    Text("Command allowlist is temporarily unavailable.")
-                        .dockFont(.body)
-                        .foregroundStyle(Color.dockMetadataText)
-                }
 
-                if !configuration.plugins.isEmpty {
-                    Divider().overlay(Color.dockBorderLight)
-                    settingsSubheading("ENABLED PLUGINS  ·  \(configuration.plugins.count)")
-                    configurationList(configuration.plugins, empty: "")
                 }
-            } else {
-                emptyState(
-                    icon: .warning, title: "Runtime unavailable",
-                    detail: "Hermes configuration could not be read. Start Hermes, then refresh.")
+                if !configuration.plugins.isEmpty {
+                    SettingsSection(
+                        title: "Enabled plugins", subtitle: "\(configuration.plugins.count) reported", tint: .dockAccent
+                    ) {
+                        configurationList(configuration.plugins, empty: "")
+                    }
+                }
             }
         }
         .task {
@@ -913,6 +942,8 @@ extension WorkspaceActivitySidebar {
     var notificationPreferencesSection: some View {
         SettingsSection(title: "Notifications", subtitle: "", tint: .dockAccent) {
             VStack(alignment: .leading, spacing: 0) {
+                HermNotificationDeliverySettings()
+                Divider().overlay(Color.dockBorderLight)
                 SettingsPreferenceRow(
                     title: "Completion alerts", detail: "Notify when a request finishes while Herm is hidden."
                 ) {
@@ -1283,10 +1314,10 @@ extension WorkspaceActivitySidebar {
         icon: Ph,
         isExpanded: Binding<Bool>,
         tint: Color = .dockAccent,
-        badge: String? = nil,
+        buildBadge: HermBuildInfo? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
-        SettingsSection(title: title, subtitle: subtitle, tint: tint, badge: badge) {
+        SettingsSection(title: title, subtitle: subtitle, tint: tint, buildBadge: buildBadge) {
             content()
         }
     }
@@ -1349,9 +1380,7 @@ extension WorkspaceActivitySidebar {
     }
 
     func sectionLabel(_ title: String) -> some View {
-        Text(title == title.uppercased() ? title.lowercased().capitalized : title)
-            .dockFont(.conversation, weight: .medium)
-            .foregroundStyle(Color.dockSectionText)
+        DockSectionLabel(title: title == title.uppercased() ? title.lowercased().capitalized : title)
             .frame(maxWidth: .infinity, alignment: .leading)
             .dockPadding(.top, 16)
             .dockPadding(.bottom, 10)
@@ -1473,16 +1502,17 @@ extension WorkspaceActivitySidebar {
                     .foregroundStyle(Color.dockMetadataText)
             } else {
                 LazyVGrid(
-                    columns: [
-                        GridItem(.flexible(minimum: 0), alignment: .leading),
-                        GridItem(.flexible(minimum: 0), alignment: .leading),
-                    ],
+                    columns: [GridItem(.adaptive(minimum: 180), alignment: .leading)],
                     alignment: .leading,
                     spacing: 8
                 ) {
                     ForEach(Array(visibleValues.enumerated()), id: \.offset) { _, value in
                         HStack(spacing: 7) {
-                            Circle().fill(Color.dockAccent.opacity(0.65)).frame(width: 4, height: 4)
+                            Circle()
+                                .fill(
+                                    DockAccentColor.identity(for: value).fill
+                                )
+                                .frame(width: 4, height: 4)
                             Text(value)
                                 .dockFont(.body, weight: .medium)
                                 .foregroundStyle(Color.dockPrimaryText)
@@ -1544,7 +1574,7 @@ extension WorkspaceActivitySidebar {
 
     func nativeAgentColor(_ status: String) -> Color {
         switch status.lowercased() {
-        case "running", "finalizing": .dockAccent
+        case "running", "finalizing": DockStatusTone.working.color
         case "complete", "completed": .dockSuccess
         case "blocked", "stalled", "error": .dockWarning
         default: .dockSecondaryText
@@ -1554,7 +1584,7 @@ extension WorkspaceActivitySidebar {
     var statusColor: Color {
         switch model.status {
         case .idle: .dockSuccess
-        case .working: .dockAccent
+        case .working: DockStatusTone.working.color
         case .needsApproval: .dockWarning
         case .needsClarification: .dockWarning
         case .offline: .dockDestructive

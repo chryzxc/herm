@@ -23,6 +23,8 @@ struct HermesFeatureContractTests {
 
     @Test func everySupportedTransportMethodIsExplicitlyRegistered() throws {
         let expectedMethods = [
+            "vault.list", "vault.add", "vault.remove", "vault.sources", "vault.source.set", "vault.unlock",
+            "vault.lock",
             "pet.info", "pet.info.meta", "pet.gallery", "pet.thumb", "pet.select", "pet.disable", "pet.scale",
             "session.list", "session.active_list", "session.activate", "session.resume", "session.delete",
             "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.close",

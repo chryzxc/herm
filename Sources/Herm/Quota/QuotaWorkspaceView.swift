@@ -458,15 +458,7 @@ struct QuotaWorkspaceView: View {
                 }
             }
         }
-        .dockPadding(14)
-        .background(
-            RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
-                .dockSurfaceFill(Color.dockSurface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
-                .stroke(Color.dockBorderLight, lineWidth: 1)
-        )
+        .dockCard(padding: 14)
         .contextMenu { providerActions(snapshot) }
     }
 
@@ -921,15 +913,9 @@ private struct QuotaMeter: View {
         GeometryReader { geometry in
             let width = geometry.size.width
             // The taller marker is an overlay so it can't stretch the 6pt capsules.
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.dockSurface4)
-                if remaining > 0 {
-                    Capsule()
-                        .fill(color)
-                        .frame(width: max(4, width * min(remaining, 100) / 100))
-                }
-            }
-            .frame(height: 6)
+            DockProgressBar(
+                fraction: remaining / 100, tint: color, height: 6, track: .dockSurface4, minFill: remaining > 0 ? 4 : 0
+            )
             .overlay(alignment: .leading) {
                 if let budgetMarker {
                     RoundedRectangle(cornerRadius: 1)
@@ -957,9 +943,7 @@ private struct QuotaHealthPill: View {
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
         }
-        .dockPadding(.horizontal, 8)
-        .frame(height: 22)
-        .background(Capsule().fill(Color.dockSurface4))
+        .dockPill()
         .accessibilityElement(children: .combine)
     }
 }

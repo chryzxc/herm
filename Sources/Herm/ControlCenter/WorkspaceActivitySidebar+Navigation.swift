@@ -105,7 +105,10 @@ extension WorkspaceActivitySidebar {
                 DockPageHeader(
                     title: selectedMode.pageHeaderTitle,
                     subtitle: pageHeaderSubtitle,
-                    onRefresh: { control.refresh() },
+                    onRefresh: {
+                        control.refresh()
+                        Task { await control.configEditor.load() }
+                    },
                     isRefreshing: control.isRefreshing,
                     sidebarCollapsed: $isSettingsRailCollapsed
                 ))
@@ -131,25 +134,27 @@ extension WorkspaceActivitySidebar {
             pageHeader
             GeometryReader { geometry in
                 let layout = SettingsLayoutMode.forWidth(geometry.size.width)
-                Group {
-                    if layout == .rail, isSettingsRailCollapsed {
-                        settingsDetail
-                    } else if layout == .rail {
-                        HStack(spacing: 0) {
+                let container =
+                    layout == .rail
+                    ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+                container {
+                    Group {
+                        if layout == .rail, !isSettingsRailCollapsed {
                             settingsCategoryRail
                                 .frame(width: 240)
                             Divider().overlay(Color.dockBorderLight)
-                            settingsDetail
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 0) {
+                        } else if layout == .menu {
                             settingsCategoryMenu
                             Divider().overlay(Color.dockBorderLight)
-                            settingsDetail
                         }
                     }
+                    settingsDetail
                 }
             }
+        }
+        .task(id: "\(model.profileScopeID ?? ""):\(hostVisible)") {
+            guard hostVisible else { return }
+            await control.configEditor.load(forceSchema: false)
         }
     }
 
@@ -239,13 +244,14 @@ extension WorkspaceActivitySidebar {
         case .session:
             let count = control.attention.filter { $0.state == .open }.count
             return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
-        case .general, .gateway, .appearance, .notifications, .runtime, .providers, .bots, .chat, .workspace, .safety,
-            .browser, .memory, .voice, .advanced, .diagnostics:
+        case .general, .gateway, .appearance, .notifications, .runtime, .subagents, .providers, .bots, .chat,
+            .workspace, .safety,
+            .browser, .passwords, .memory, .voice, .advanced, .diagnostics:
             return nil
         }
     }
 
-    /// Settings › Bots is the roster manager; it owns its header and scrolling.
+    /// Settings › Bots is the roster manager; it owns its scrolling.
     @ViewBuilder
     var settingsDetail: some View {
         if selectedSettingsCategory == .bots {
@@ -562,8 +568,8 @@ extension WorkspaceActivitySidebar {
                         applyKanbanFilters(trigger: .background)
                     }
                 }
-                .task(id: selectedMode == .quota) {
-                    guard selectedMode == .quota else { return }
+                .task(id: selectedMode == .quota && hostVisible) {
+                    guard selectedMode == .quota, hostVisible else { return }
                     while !Task.isCancelled {
                         try? await Task.sleep(nanoseconds: 60_000_000_000)
                         guard !Task.isCancelled, selectedMode == .quota else { return }

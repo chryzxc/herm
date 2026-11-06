@@ -63,4 +63,10 @@ struct HermesSimulatorPreferenceTests {
         #expect(!HermPlugin.isEnabled(in: ["plugins": [["name": "herm-simulator", "enabled": true]]]))
         #expect(!HermPlugin.isEnabled(in: nil))
     }
+
+    @Test func missingPluginProbeKeepsLastAnswer() {
+        #expect(HermPlugin.isLoaded(after: nil) == nil)
+        #expect(HermPlugin.isLoaded(after: ["plugins": [["name": "herm", "enabled": false]]]) == false)
+        #expect(HermPlugin.isLoaded(after: ["plugins": [["name": "herm", "enabled": true]]]) == true)
+    }
 }

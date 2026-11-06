@@ -37,10 +37,16 @@ enum HermPlugin {
     private static let loaded = OSAllocatedUnfairLock(initialState: false)
     static var isLoaded: Bool { loaded.withLock { $0 } }
 
-    /// Updates from a `plugins.list` result; a missing result keeps the inline fallback.
+    /// Updates from a `plugins.list` result. A missing result (a probe that timed out or failed) says nothing about
+    /// the plugin, so it keeps the last answer; resetting it would put the inline rules back on every message.
     static func note(_ result: [String: Any]?) {
-        let enabled = isEnabled(in: result)
+        guard let enabled = isLoaded(after: result) else { return }
         loaded.withLock { $0 = enabled }
+    }
+
+    /// nil when the result says nothing about the plugin.
+    static func isLoaded(after result: [String: Any]?) -> Bool? {
+        result == nil ? nil : isEnabled(in: result)
     }
 
     static func isEnabled(in result: [String: Any]?) -> Bool {

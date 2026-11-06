@@ -162,6 +162,9 @@ extension ControlCenterModel {
         }
         workCalendarTask?.cancel()
         workCalendarTask = nil
+        workCalendarBuildTask?.cancel()
+        workCalendarBuildGeneration = UUID()
+        workCalendarBuildNeedsSuccess = false
         workCalendarGeneration = UUID()
         workCalendarMonth = monthStart
         if globalKanbanTasks.isEmpty { refreshGlobalKanban(trigger: .background) }
@@ -170,8 +173,8 @@ extension ControlCenterModel {
             paths.isSubset(of: workCalendarPaths[monthStart] ?? []),
             (workCalendarLoadedAt[monthStart]?.timeIntervalSinceNow ?? -.infinity) > -60
         {
+            workCalendarBuildNeedsSuccess = true
             rebuildWorkCalendar()
-            recordProjectionSuccess("work.calendar", count: workCalendar?.activeDays ?? 0)
             return
         }
         let generation = UUID()
@@ -204,9 +207,8 @@ extension ControlCenterModel {
                 else { return }
                 workCalendarSources[monthStart] = fetched
                 workCalendarLoadedAt[monthStart] = Date()
+                workCalendarBuildNeedsSuccess = true
                 rebuildWorkCalendar()
-                guard generation == workCalendarGeneration else { return }
-                recordProjectionSuccess("work.calendar", count: workCalendar?.activeDays ?? 0)
             } catch {
                 guard generation == workCalendarGeneration,
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
@@ -236,17 +238,32 @@ extension ControlCenterModel {
         let monthEnd = Calendar.current.date(byAdding: .month, value: 1, to: month) ?? month
         if !workCalendarRepoPaths(monthStart: month, monthEnd: monthEnd).isSubset(of: workCalendarPaths[month] ?? []) {
             refreshWorkCalendar(month: month, repoPaths: workCalendarRepoPaths, force: true)
+            return
         }
-        let index = WorkCalendarIndex.build(
-            month: month,
-            sessions: sources.sessions,
-            tasks: globalKanbanTasks,
-            commits: sources.commits,
-            pullRequests: sources.pullRequests,
-            runs: cronRuns,
-            usage: sources.usage
-        )
-        if index != workCalendar { workCalendar = index }
+        let input = WorkCalendarBuildInput(
+            month: month, sessions: sources.sessions, tasks: globalKanbanTasks, commits: sources.commits,
+            pullRequests: sources.pullRequests, runs: cronRuns, usage: sources.usage)
+        let generation = UUID()
+        let binding = clientBindingGeneration
+        workCalendarBuildGeneration = generation
+        workCalendarBuildTask?.cancel()
+        workCalendarBuildTask = Task { @MainActor [weak self] in
+            let worker = Task.detached(priority: .utility) { input.build() }
+            let result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard let self, !Task.isCancelled, generation == workCalendarBuildGeneration,
+                binding == clientBindingGeneration, workCalendarMonth == month
+            else { return }
+            workCalendarBuildTask = nil
+            if result.index != workCalendar { workCalendar = result.index }
+            if workCalendarBuildNeedsSuccess {
+                workCalendarBuildNeedsSuccess = false
+                recordProjectionSuccess("work.calendar", count: result.index.activeDays)
+            }
+        }
     }
 
     /// Pages `/api/sessions` newest-first and stops at the first page that

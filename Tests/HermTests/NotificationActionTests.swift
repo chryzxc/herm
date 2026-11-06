@@ -8,7 +8,7 @@ struct NotificationActionTests {
         #expect(HermNotificationAction.choice(for: HermNotificationAction.approve) == ApprovalChoice.once)
         #expect(HermNotificationAction.choice(for: HermNotificationAction.deny) == ApprovalChoice.deny)
         #expect(HermNotificationAction.choice(for: "com.apple.UNNotificationDefaultActionIdentifier") == nil)
-        #expect(HermNotificationAction.categories.count == 2)
+        #expect(HermNotificationAction.categories.count == 3)
     }
 
     @Test func waitingRequestsBannerWhileTheWindowIsBehindOtherApps() {

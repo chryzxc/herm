@@ -196,7 +196,7 @@ struct ControlCenterProjectTests {
         #expect(compact.usesCompactToolbarLabels)
     }
 
-    @Test func arbitraryProjectSessionRenameTrimsTitleAndUsesProfileScopedRPC() async {
+    @Test func arbitraryProjectSessionRenameTrimsTitleAndUsesProfileScopedCommand() async {
         let client = ProjectSessionActionRPCClient()
         let model = DockModel(rpcClient: client)
         let session = HermesSession(
@@ -210,10 +210,23 @@ struct ControlCenterProjectTests {
         )
 
         #expect(await model.renameSession(session, title: "  New title  "))
+        let commands = client.requests.compactMap { $0.params["command"] as? String }
+        #expect(
+            commands.contains("'hermes' '--profile' 'profile-a' 'sessions' 'rename' '--' 'session-project' 'New title'")
+        )
+    }
+
+    @Test func activeSessionRenameUsesRuntimeID() async {
+        let client = ProjectSessionActionRPCClient()
+        let model = DockModel(rpcClient: client)
+        model.sessionID = "runtime-id"
+        model.sessionStorageID = "saved-id"
+        let session = HermesSession(
+            id: "saved-id", title: "Old", preview: "", startedAt: nil, messageCount: 1, source: "test")
+
+        #expect(await model.renameSession(session, title: "New"))
         #expect(client.requests.first?.method == "session.title")
-        #expect(client.requests.first?.params["session_id"] as? String == "session-project")
-        #expect(client.requests.first?.params["profile"] as? String == "profile-a")
-        #expect(client.requests.first?.params["title"] as? String == "New title")
+        #expect(client.requests.first?.params["session_id"] as? String == "runtime-id")
     }
 
     @Test func arbitraryProjectSessionRenameRejectsEmptyTitleWithoutRPC() async {
@@ -1747,7 +1760,7 @@ struct ControlCenterProjectTests {
         #expect(processes[1].latestOutput == nil)
     }
 
-    @Test func killProcessRequiresActivityCapabilityAndNeverCallsRPC() async {
+    @Test func killProcessRequiresVerifiedSupportAndNeverCallsRPC() async {
         let client = ProcessControlClient()
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
 
@@ -1889,7 +1902,7 @@ private final class DelayedSessionKanbanClient: HermesRPCClientProtocol {
         if path == "/api/plugins/kanban/boards" {
             return ["boards": [["slug": "default", "name": "Default", "is_current": true, "archived": false]]]
         }
-        if path == "/api/plugins/kanban/board?board=default&include_archived=true" {
+        if path == "/api/plugins/kanban/board?board=default&include_archived=false" {
             kanbanListCalls += 1
             try await Task.sleep(for: .seconds(10))
             return ["columns": []]
@@ -1928,7 +1941,7 @@ private final class SessionKanbanCacheClient: HermesRPCClientProtocol {
         if path == "/api/plugins/kanban/boards" {
             return ["boards": [["slug": "default", "name": "Default", "is_current": true, "archived": false]]]
         }
-        if path == "/api/plugins/kanban/board?board=default&include_archived=true" {
+        if path == "/api/plugins/kanban/board?board=default&include_archived=false" {
             return [
                 "columns": [
                     [
@@ -2040,6 +2053,7 @@ private final class ProjectSessionActionRPCClient: HermesRPCClientProtocol {
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         requests.append((method, params))
+        if method == "shell.exec" { return ["stdout": "usage: hermes sessions rename session_id title", "code": 0] }
         return [:]
     }
 }

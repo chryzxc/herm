@@ -8,6 +8,7 @@ private final class EffortFixtureRPC: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     var requests: [(String, [String: Any])] = []
     var failRead = false
+    var failFastSet = false
     var readValue = "medium"
     var modelOptionsResult: [String: Any] = [:]
     var onSet: (() -> Void)?
@@ -19,6 +20,8 @@ private final class EffortFixtureRPC: HermesRPCClientProtocol {
         onRequest?(method, params)
         if method == "config.set" {
             onSet?()
+            if params["key"] as? String == "fast", failFastSet { throw NSError(domain: "fixture", code: 1) }
+            if params["key"] as? String == "fast" { return ["key": "fast", "value": params["value"] ?? "normal"] }
             return ["key": "reasoning", "value": "high", "scope": "session"]
         }
         if method == "config.get" {
@@ -32,6 +35,59 @@ private final class EffortFixtureRPC: HermesRPCClientProtocol {
 
 @MainActor
 struct HermesEffortPolicyTests {
+    @Test func fastSelectionIsPendingImmediatelyAndRevertsOnFailure() async {
+        let client = EffortFixtureRPC()
+        client.failFastSet = true
+        let model = DockModel(initialSessionID: "owner", rpcClient: client)
+        model.sessionFastEnabled = false
+        model.updateSessionFast(true)
+        #expect(model.pendingSessionFastEnabled == true)
+        #expect(model.sessionFastEnabled == false)
+        #expect(model.isUpdatingSessionFast)
+        await withCheckedContinuation { continuation in
+            client.onRequest = { method, _ in
+                guard method == "config.set" else { return }
+                client.onRequest = nil
+                continuation.resume()
+            }
+        }
+        #expect(model.pendingSessionFastEnabled == nil)
+        #expect(model.sessionFastEnabled == false)
+        #expect(!model.isUpdatingSessionFast)
+        #expect(model.runtimeConfigurationError != nil)
+    }
+
+    @Test func fastMutationAndReadbackUseSessionScope() async {
+        let client = EffortFixtureRPC()
+        let model = DockModel(initialSessionID: "owner", rpcClient: client)
+        model.sessionProfileID = "profile"
+        await withCheckedContinuation { continuation in
+            client.onRequest = { method, params in
+                guard method == "config.set" else { return }
+                #expect(params["key"] as? String == "fast")
+                #expect(params["value"] as? String == "fast")
+                #expect(params["session_id"] as? String == "owner")
+                #expect(params["profile"] as? String == "profile")
+                client.onRequest = nil
+                continuation.resume()
+            }
+            model.updateSessionFast(true)
+        }
+        #expect(model.sessionFastEnabled == true)
+        client.readValue = "normal"
+        await withCheckedContinuation { continuation in
+            client.onRequest = { method, params in
+                guard method == "config.get" else { return }
+                #expect(params["key"] as? String == "fast")
+                client.onRequest = nil
+                continuation.resume()
+            }
+            model.refreshSessionFast()
+        }
+        #expect(model.sessionFastEnabled == false)
+        model.resetEffortTransition()
+        #expect(model.sessionFastEnabled == nil)
+    }
     @Test func routeChangeInvalidatesOldWireMappingBeforeEqualReadback() async {
         let client = EffortFixtureRPC()
         client.readValue = "ultra"
@@ -80,6 +136,54 @@ struct HermesEffortPolicyTests {
                 model.receiveGatewayEvent("session.info", params: ["session_id": "owner", "payload": payload])
             }
         }
+    }
+
+    @Test func sessionWorkspaceFollowsOnlyOwnedOrderedInfo() {
+        let model = DockModel(initialSessionID: "owner", rpcClient: EffortFixtureRPC())
+        model.sessionStorageID = "owner"
+        model.sessionProfileID = "profile"
+        model.receiveGatewayEvent(
+            "session.info",
+            params: [
+                "session_id": "owner", "seq": 10,
+                "payload": ["cwd": "/tmp/first", "stored_session_id": "owner", "reasoning_effort": "high"],
+            ])
+        #expect(model.sessionWorkspace?.cwd == "/tmp/first")
+        model.receiveGatewayEvent(
+            "session.info",
+            params: [
+                "session_id": "other", "seq": 11, "payload": ["cwd": "/tmp/other"],
+            ])
+        model.receiveGatewayEvent(
+            "session.info",
+            params: [
+                "session_id": "owner", "seq": 9, "payload": ["cwd": "/tmp/old", "reasoning_effort": "low"],
+            ])
+        #expect(model.sessionWorkspace?.cwd == "/tmp/first")
+        #expect(model.sessionReasoningVariant == .high)
+        model.receiveGatewayEvent(
+            "session.info",
+            params: [
+                "session_id": "owner", "seq": 12, "payload": ["branch": "feature/test"],
+            ])
+        #expect(model.sessionWorkspace?.cwd == "/tmp/first")
+        #expect(model.sessionWorkspace?.branch == "feature/test")
+        model.receiveGatewayEvent(
+            "session.info",
+            params: [
+                "session_id": "owner", "seq": 13,
+                "payload": ["cwd": "/tmp/wrong", "stored_session_id": "other"],
+            ])
+        #expect(model.sessionWorkspace?.cwd == "/tmp/first")
+        model.receiveGatewayEvent(
+            "session.info",
+            params: [
+                "session_id": "owner", "seq": 14, "payload": ["cwd": "/tmp/second"],
+            ])
+        #expect(model.sessionWorkspace?.cwd == "/tmp/second")
+        model.newChat()
+        #expect(model.sessionWorkspace == nil)
+        model.shutdown()
     }
 
     @Test func olderReplayDoesNotOverwriteSnapshot() {

@@ -83,6 +83,7 @@ final class HermesEventRouter {
 /// remains available on the protocol for forward-compatible Hermes methods.
 @MainActor
 final class HermesControlRPC {
+    func vault(profileID: String?) -> HermesVaultService { HermesVaultService(client: client, profile: profileID) }
     func workflow(profileID: String?) -> HermesWorkflowRPC { HermesWorkflowRPC(client: client, profileID: profileID) }
     private let client: HermesRPCClientProtocol
 
@@ -449,6 +450,20 @@ final class HermesControlRPC {
             let models = row["models"] as? [String] ?? []
             return models.isEmpty
                 ? nil : CronModelProvider(slug: slug, name: row["name"] as? String ?? slug, models: models)
+        }
+    }
+
+    func subagentModelProviders(profileID: String) async throws -> [CronModelProvider] {
+        let result = try await client.request(
+            HermesFeatureIDs.ID.modelOptions.rawValue, params: ["profile": profileID, "explicit_only": true])
+        guard let rows = result["providers"] as? [[String: Any]] else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        return rows.compactMap { row in
+            guard let slug = row["slug"] as? String, let models = row["models"] as? [String], !models.isEmpty else {
+                return nil
+            }
+            return CronModelProvider(slug: slug, name: row["name"] as? String ?? slug, models: models)
         }
     }
 

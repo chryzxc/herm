@@ -44,7 +44,8 @@ struct HermesGatewayResponseTests {
     @Test func errorsKeepHermesDomainCodeAndMessageAndCancelDeadline() async throws {
         let gateway = HermesGateway()
         let deadline = Task<Void, Never> {}
-        let decoded = try frame(#"{"id":1,"error":{"message":"Request refused"},"result":{"ignored":true}}"#)
+        let decoded = try frame(
+            #"{"id":1,"error":{"code":4007,"message":"Request refused"},"result":{"ignored":true}}"#)
         do {
             let _: HermesGatewayResponse = try await withCheckedThrowingContinuation { continuation in
                 gateway.pending[1] = continuation
@@ -56,6 +57,7 @@ struct HermesGatewayResponseTests {
             let error = error as NSError
             #expect(error.domain == "Hermes")
             #expect(error.code == 1)
+            #expect(error.userInfo["HermesRPCCode"] as? Int == 4007)
             #expect(error.localizedDescription == "Request refused")
         }
         #expect(deadline.isCancelled)

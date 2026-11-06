@@ -15,8 +15,8 @@ enum SettingsCategoryGroup: String, CaseIterable, Identifiable {
     var categories: [SettingsCategory] {
         switch self {
         case .app: [.general, .gateway, .appearance, .notifications]
-        case .agent: [.runtime, .providers, .bots, .chat, .memory, .voice, .advanced]
-        case .tools: [.workspace, .browser, .safety, .integrations]
+        case .agent: [.runtime, .subagents, .providers, .bots, .chat, .memory, .voice, .advanced]
+        case .tools: [.workspace, .browser, .passwords, .safety, .integrations]
         case .activity: [.session, .diagnostics, .updates]
         }
     }
@@ -28,12 +28,14 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance
     case notifications
     case runtime
+    case subagents
     case providers
     case bots
     case chat
     case workspace
     case safety
     case browser
+    case passwords
     case memory
     case voice
     case advanced
@@ -52,12 +54,14 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .notifications: "Notifications"
         case .updates: "Updates"
         case .runtime: "Models & tools"
+        case .subagents: "Subagents"
         case .providers: "Providers"
         case .bots: "Bots"
         case .chat: "Chat"
         case .workspace: "Files & terminal"
         case .safety: "Privacy & safety"
         case .browser: "Browser"
+        case .passwords: "Passwords & Logins"
         case .memory: "Memory & Context"
         case .voice: "Voice"
         case .advanced: "Advanced"
@@ -75,15 +79,17 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .notifications: "Completion alerts and repository changes"
         case .updates: "Herm and Hermes versions and updates"
         case .runtime: "Models, dispatch, and tools"
+        case .subagents: "Routing, model defaults, and delegation limits"
         case .providers: "Accounts, API keys, sign-in, and account rotation"
         case .bots: "Create, edit, and remove bots and their routines"
         case .chat: "Layout, typing, replies, session titles, and attachments"
         case .workspace: "Working directory, shell, file access, and output limits"
         case .safety: "Approvals, screen capture, privacy, and checkpoints"
         case .browser: "Browser profile and private URLs"
+        case .passwords: "Saved credentials and password managers"
         case .memory: "Persistent memory and context compression"
         case .voice: "Voice chat, speech to text, and text to speech"
-        case .advanced: "Agent limits and subagents"
+        case .advanced: "Agent limits and retries"
         case .integrations: "Permissions and connected services"
         case .session: "Active session controls and context"
         case .diagnostics: "Observed health and storage"
@@ -98,12 +104,14 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .notifications: .bell
         case .updates: .arrowsClockwise
         case .runtime: .gearSix
+        case .subagents: .gitBranch
         case .providers: .key
         case .bots: .ghost
         case .chat: .chatText
         case .workspace: .folder
         case .safety: .shieldWarning
         case .browser: .link
+        case .passwords: .key
         case .memory: .brain
         case .voice: .microphone
         case .advanced: .cpu
@@ -137,7 +145,7 @@ struct SettingsSection<Content: View>: View {
     let title: String
     let subtitle: String
     let tint: Color
-    var badge: String? = nil
+    var buildBadge: HermBuildInfo? = nil
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -154,8 +162,8 @@ struct SettingsSection<Content: View>: View {
                         .foregroundStyle(Color.dockMetadataText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if let badge {
-                    DockMetadataPill(text: badge, compact: true)
+                if let buildBadge {
+                    DockBuildBadge(build: buildBadge, includesCommit: true)
                 }
             }
             .dockPadding(.horizontal, 2)
@@ -199,24 +207,40 @@ struct SettingsPreferenceRow<Control: View>: View {
 
 /// Keep small controls trailing; only wide controls move below the readable label column.
 private struct SettingsPreferenceLayout: Layout {
-    private func measurements(_ subviews: Subviews, width: CGFloat?) -> (CGSize, CGSize, Bool, CGFloat) {
+    struct Cache {
+        var width: CGFloat?
+        var hasValue = false
+        var result: (CGSize, CGSize, Bool, CGFloat)?
+    }
+
+    func makeCache(subviews: Subviews) -> Cache { Cache() }
+    func updateCache(_ cache: inout Cache, subviews: Subviews) { cache = Cache() }
+
+    private func measurements(
+        _ subviews: Subviews, width: CGFloat?, cache: inout Cache
+    ) -> (CGSize, CGSize, Bool, CGFloat) {
+        if cache.hasValue, cache.width == width, let result = cache.result { return result }
         let control = subviews[1].sizeThatFits(.unspecified)
         let available = width ?? subviews[0].sizeThatFits(.unspecified).width + control.width + DockSpacing.section
         let horizontal = available >= 160 + control.width + DockSpacing.section
         let textWidth = horizontal ? available - control.width - DockSpacing.section : available
         let text = subviews[0].sizeThatFits(ProposedViewSize(width: textWidth, height: nil))
-        return (text, control, horizontal, available)
+        let result = (text, control, horizontal, available)
+        cache.width = width
+        cache.hasValue = true
+        cache.result = result
+        return result
     }
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let (text, control, horizontal, width) = measurements(subviews, width: proposal.width)
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        let (text, control, horizontal, width) = measurements(subviews, width: proposal.width, cache: &cache)
         return CGSize(
             width: width,
             height: horizontal ? max(text.height, control.height) : text.height + DockSpacing.group + control.height)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let (text, control, horizontal, _) = measurements(subviews, width: bounds.width)
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        let (text, control, horizontal, _) = measurements(subviews, width: bounds.width, cache: &cache)
         let textWidth = horizontal ? bounds.width - control.width - DockSpacing.section : bounds.width
         subviews[0].place(
             at: CGPoint(x: bounds.minX, y: horizontal ? bounds.midY - text.height / 2 : bounds.minY),

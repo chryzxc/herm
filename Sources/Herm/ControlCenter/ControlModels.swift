@@ -1058,6 +1058,11 @@ struct ProviderQuotaSnapshot: Equatable {
     /// Set when this account is an entry in Hermes' credential pool, which
     /// makes it removable through `hermes auth remove`.
     var hermesCredential: HermesPooledCredential? = nil
+
+    func hasSameContent(as other: Self) -> Bool {
+        provider == other.provider && displayName == other.displayName && model == other.model
+            && windows == other.windows && safeDetail == other.safeDetail && hermesCredential == other.hermesCredential
+    }
 }
 
 /// One entry of Hermes' credential pool (`hermes auth list <provider>`).

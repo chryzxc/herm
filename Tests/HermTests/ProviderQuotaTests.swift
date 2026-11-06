@@ -4,6 +4,20 @@ import Testing
 @testable import Herm
 
 struct ProviderQuotaTests {
+    @Test func quotaContentComparisonIgnoresOnlyTheCheckTime() {
+        let first = ProviderQuotaSnapshot(
+            provider: "test", displayName: "Test", model: nil, updatedAt: Date(timeIntervalSince1970: 1),
+            windows: [], safeDetail: nil)
+        let second = ProviderQuotaSnapshot(
+            provider: "test", displayName: "Test", model: nil, updatedAt: Date(timeIntervalSince1970: 2),
+            windows: [], safeDetail: nil)
+        let changed = ProviderQuotaSnapshot(
+            provider: "test", displayName: "Test", model: nil, updatedAt: Date(timeIntervalSince1970: 2),
+            windows: [], safeDetail: "Unavailable")
+        #expect(first != second)
+        #expect(first.hasSameContent(as: second))
+        #expect(!first.hasSameContent(as: changed))
+    }
     @Test func quotaWorkspaceNeedsAttentionFlagsCriticalOnly() {
         let critical = ProviderQuotaSnapshot(
             provider: "glm",

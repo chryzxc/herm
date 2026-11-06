@@ -44,6 +44,29 @@ extension ControlCenterModel {
         ).eraseToAnyPublisher()
     }
 
+    /// Values read by the workspace shell; child surfaces observe their own state.
+    func makeWorkspacePresentationChanges() -> AnyPublisher<Void, Never> {
+        Publishers.MergeMany(
+            $capabilities.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $activeSessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $projectSessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $projects.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $projectIDBySessionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $projectSessionsByProjectID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $projectProfileID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $integrationDestination.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $requestedAutomationJobID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $requestedAutomationOwner.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $requestedAutomationDidNavigate.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $requestedRepositoryReview.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $automationNavigationError.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $cronJobs.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $globalKanbanTasks.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $kanbanTasks.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $tokenUsage.dropFirst().map { _ in () }.eraseToAnyPublisher()
+        ).receive(on: RunLoop.main).eraseToAnyPublisher()
+    }
+
     /// Installs deterministic navigation data for local scroll profiling. It
     /// never runs in production because the caller gates it on the debug flag.
     func installScrollPerformanceFixture(_ fixture: ScrollPerformanceFixture) {

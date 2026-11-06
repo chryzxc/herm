@@ -82,7 +82,10 @@ final class HermesCLIAdapter {
     func kanbanListAggregate(filter: KanbanListFilter = .init(), background: Bool = false) async throws
         -> HermesCLIResult
     {
-        let inventory = try await rpc.fetchHTTP("/api/plugins/kanban/boards")
+        let inventoryPath =
+            filter.includeArchived
+            ? "/api/plugins/kanban/boards?include_archived=true" : "/api/plugins/kanban/boards"
+        let inventory = try await rpc.fetchHTTP(inventoryPath)
         let boards = inventory["boards"] as? [[String: Any]] ?? []
         let boardSlugs: [String] = boards.compactMap { board in
             guard filter.includeArchived || !(board["archived"] as? Bool ?? false),
@@ -102,7 +105,9 @@ final class HermesCLIAdapter {
         { group in
             for (index, boardSlug) in boardSlugs.enumerated() {
                 group.addTask {
-                    try await self.fetchKanbanBoardRows(index: index, boardSlug: boardSlug, background: background)
+                    try await self.fetchKanbanBoardRows(
+                        index: index, boardSlug: boardSlug, includeArchived: filter.includeArchived,
+                        background: background)
                 }
             }
             var results: [KanbanBoardRows] = []
@@ -121,15 +126,16 @@ final class HermesCLIAdapter {
         }.value
     }
 
-    private func fetchKanbanBoardRows(index: Int, boardSlug: String, background: Bool) async throws -> KanbanBoardRows {
-        if background, let read = boardReads[boardSlug],
+    private func fetchKanbanBoardRows(
+        index: Int, boardSlug: String, includeArchived: Bool, background: Bool
+    ) async throws -> KanbanBoardRows {
+        let key = "\(boardSlug):\(includeArchived)"
+        if background, let read = boardReads[key],
             Date().timeIntervalSince(read.startedAt) < backgroundBoardReadReuse
         {
             return KanbanBoardRows(index: index, rows: try await read.task.value.rows)
         }
-        // Archived cards are included once here and dropped by `matches`, so
-        // every caller (notch, board, session activity, chat) shares one read.
-        let path = try Self.kanbanBoardPath(boardSlug) + "&include_archived=true"
+        let path = try Self.kanbanBoardPath(boardSlug) + "&include_archived=\(includeArchived)"
         let task = Task { [rpc] in
             let response = try await rpc.fetchHTTP(path)
             let columns = response["columns"] as? [[String: Any]] ?? []
@@ -144,11 +150,11 @@ final class HermesCLIAdapter {
             }
             return KanbanBoardRows(index: 0, rows: rows)
         }
-        boardReads[boardSlug] = (Date(), task)
+        boardReads[key] = (Date(), task)
         do {
             return KanbanBoardRows(index: index, rows: try await task.value.rows)
         } catch {
-            if boardReads[boardSlug]?.task == task { boardReads[boardSlug] = nil }
+            if boardReads[key]?.task == task { boardReads[key] = nil }
             throw error
         }
     }
@@ -371,6 +377,21 @@ final class HermesCLIAdapter {
 
     func sessionPinHelp(pinned: Bool) async throws -> HermesCLIResult {
         try await run(["hermes", "sessions", pinned ? "pin" : "unpin", "--help"])
+    }
+
+    func renameSavedSession(sessionID: String, title: String, profileID: String?) async throws {
+        let help = try await run(["hermes", "sessions", "rename", "--help"])
+        guard help.succeeded, help.stdout.contains("sessions rename"), help.stdout.contains("session_id"),
+            help.stdout.contains("title")
+        else { throw HermesCLIError.failed("Session renaming is unavailable.") }
+        let result = try await run(
+            ["hermes"] + (profileID.map { ["--profile", $0] } ?? [])
+                + ["sessions", "rename", "--", sessionID, title])
+        guard result.succeeded else {
+            throw HermesCLIError.failed(
+                HermesDiagnosticsService.safeSummary(
+                    result.stderr.isEmpty ? result.stdout : result.stderr))
+        }
     }
 
     func setSessionPinned(_ pinned: Bool, sessionID: String, profileID: String?) async throws -> HermesCLIResult {

@@ -306,17 +306,7 @@ enum HermesConfigCatalog {
                         "Upper bound for tool-calling turns before Hermes stops a run."),
                     .init("agent.api_max_retries", "API Retries", nil),
                     .init("agent.service_tier", "Service Tier", nil),
-                ]),
-            Page(
-                title: "Subagents",
-                fields: [
-                    .init("delegation.model", "Subagent Model", nil),
-                    .init("delegation.provider", "Subagent Provider", nil),
-                    .init("delegation.max_iterations", "Subagent Turn Limit", nil),
-                    .init("delegation.max_concurrent_children", "Parallel Subagents", nil),
-                    .init("delegation.child_timeout_seconds", "Subagent Timeout", nil),
-                    .init("delegation.reasoning_effort", "Subagent Reasoning Effort", nil),
-                ]),
+                ])
         ],
     ]
 
@@ -399,31 +389,77 @@ final class HermesConfigEditor: ObservableObject {
     @Published private(set) var errors: [String: String] = [:]
 
     private let rpc: () -> HermesControlRPC?
+    private let profile: () -> String?
+    private struct Binding: Equatable {
+        let client: ObjectIdentifier
+        let profile: String?
+    }
+    private var loadedClient: Binding?
+    private var loadingClient: Binding?
+    private var loadGeneration = UUID()
+    private var editGeneration = UUID()
     /// Called after Hermes accepts a write, so views that project the same
     /// file (e.g. Runtime's max turns / terminal timeout) can re-read it.
     var onSaved: (() -> Void)?
 
-    init(rpc: @escaping () -> HermesControlRPC?) {
+    init(profile: @escaping () -> String? = { nil }, rpc: @escaping () -> HermesControlRPC?) {
+        self.profile = profile
         self.rpc = rpc
     }
 
-    func load() async {
+    func loadIfNeeded() async {
+        guard let rpc = rpc() else {
+            await load()
+            return
+        }
+        if state == .ready, loadedClient == Binding(client: ObjectIdentifier(rpc), profile: profile()) { return }
+        await load(forceSchema: false)
+    }
+
+    func load(forceSchema: Bool = true) async {
         // Reloads on every call so edits made elsewhere (CLI, Desktop) show up,
         // but never over a pending write and without flashing the spinner.
-        guard state != .loading, savingKeys.isEmpty else { return }
         guard let rpc = rpc() else {
             state = .failed("Hermes is not connected.")
             return
         }
+        let client = Binding(client: ObjectIdentifier(rpc), profile: profile())
+        let rebound = loadedClient != client
+        if rebound, !savingKeys.isEmpty {
+            savingKeys = []
+            errors = [:]
+        }
+        guard savingKeys.isEmpty, loadingClient != client else { return }
+        let generation = UUID()
+        loadGeneration = generation
+        loadingClient = client
+        defer { if loadGeneration == generation { loadingClient = nil } }
+        if rebound {
+            editGeneration = UUID()
+            loadedClient = nil
+            state = .loading
+            config = [:]
+            schema = [:]
+        }
         if state != .ready { state = .loading }
         do {
-            let schemaJSON = try await rpc.fetchHTTP("/api/config/schema")
+            let schemaJSON = forceSchema || rebound ? try await rpc.fetchHTTP("/api/config/schema") : nil
             let configJSON = try await rpc.fetchHTTP("/api/config")
-            guard savingKeys.isEmpty else { return }
-            schema = schemaJSON["fields"] as? [String: [String: Any]] ?? [:]
-            config = configJSON
-            state = .ready
+            guard generation == loadGeneration, self.rpc().map(ObjectIdentifier.init) == client.client,
+                profile() == client.profile,
+                savingKeys.isEmpty
+            else { return }
+            if let schemaJSON {
+                let next = schemaJSON["fields"] as? [String: [String: Any]] ?? [:]
+                if !NSDictionary(dictionary: schema).isEqual(to: next) { schema = next }
+            }
+            if !NSDictionary(dictionary: config).isEqual(to: configJSON) { config = configJSON }
+            loadedClient = client
+            if state != .ready { state = .ready }
         } catch {
+            guard generation == loadGeneration, self.rpc().map(ObjectIdentifier.init) == client.client,
+                profile() == client.profile
+            else { return }
             if state != .ready { state = .failed(error.localizedDescription) }
         }
     }
@@ -475,6 +511,8 @@ final class HermesConfigEditor: ObservableObject {
             errors[key] = "Hermes is not connected."
             return
         }
+        let binding = Binding(client: ObjectIdentifier(rpc), profile: profile())
+        let editGeneration = editGeneration
         let previous = config
         config = Self.setting(config, key, newValue)
         savingKeys.insert(key)
@@ -483,8 +521,14 @@ final class HermesConfigEditor: ObservableObject {
             do {
                 _ = try await rpc.sendHTTP(
                     "PUT", path: "/api/config", body: ["config": Self.setting([:], key, newValue)])
+                guard self.editGeneration == editGeneration, self.rpc().map(ObjectIdentifier.init) == binding.client,
+                    profile() == binding.profile
+                else { return }
                 onSaved?()
             } catch {
+                guard self.editGeneration == editGeneration, self.rpc().map(ObjectIdentifier.init) == binding.client,
+                    profile() == binding.profile
+                else { return }
                 config = Self.setting(config, key, Self.nested(previous, key) ?? NSNull())
                 errors[key] = error.localizedDescription
             }
@@ -553,7 +597,7 @@ struct HermesConfigCategoryView: View {
                     }
                 }
             }
-            .task { await editor.load() }
+            .task { await editor.loadIfNeeded() }
         }
     }
 }

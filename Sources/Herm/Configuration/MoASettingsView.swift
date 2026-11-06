@@ -4,6 +4,7 @@ import SwiftUI
 /// Desktop's Settings > Model > Mixture of Agents. Every edit saves immediately;
 /// Hermes is the only writer and its normalized reply replaces local state.
 struct MoASettingsView: View {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @ObservedObject var model: DockModel
     let service: HermesWorkflowRPC?
 
@@ -60,7 +61,7 @@ struct MoASettingsView: View {
                         DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
                     }
                 }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockLink)
                 .fixedSize()
             } else {
                 Text(preset).dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)
@@ -100,7 +101,7 @@ struct MoASettingsView: View {
                 )
                 .labelsHidden()
                 .toggleStyle(.dockSwitch)
-                .controlSize(.mini)
+                .controlSize(.small)
                 .accessibilityLabel("\(slot.enabled ? "Disable" : "Enable") reference \(index + 1)")
                 Button {
                     var updated = references
@@ -145,7 +146,7 @@ struct MoASettingsView: View {
             Text(title)
                 .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
-                .frame(width: 84, alignment: .leading)
+                .frame(minWidth: DockWorkspaceScale.points(84, scale: workspaceScale), alignment: .leading)
             DockMenu {
                 // A MoA preset cannot advise another preset; Hermes rejects recursion.
                 ForEach(model.runtimeModelOptions.filter { $0.provider != "moa" }) { option in
@@ -162,7 +163,7 @@ struct MoASettingsView: View {
                     DockIcon(.caretUpDown, size: 10, color: Color.dockMetadataText)
                 }
                 .dockPadding(.horizontal, 8)
-                .frame(height: 28)
+                .frame(minHeight: DockWorkspaceScale.points(36, scale: workspaceScale))
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).dockSurfaceFill(
                         Color.dockControlSurface)

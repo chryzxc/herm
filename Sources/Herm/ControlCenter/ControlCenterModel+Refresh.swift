@@ -3,6 +3,10 @@ import Foundation
 
 extension ControlCenterModel {
     func bind(to model: DockModel) {
+        if dockModel === model {
+            if processSessionID != model.sessionID { focus(sessionID: model.sessionID) }
+            return
+        }
         pet.bind(to: model)
         if dockModel !== model {
             refreshGeneration &+= 1
@@ -84,6 +88,10 @@ extension ControlCenterModel {
             workCalendarGeneration = UUID()
             workCalendarTask?.cancel()
             workCalendarTask = nil
+            workCalendarBuildGeneration = UUID()
+            workCalendarBuildTask?.cancel()
+            workCalendarBuildTask = nil
+            workCalendarBuildNeedsSuccess = false
             workCalendar = nil
             workCalendarMonth = nil
             workCalendarSources = [:]
@@ -95,6 +103,7 @@ extension ControlCenterModel {
             sessionCockpitSessionID = nil
             providerQuotas = []
             reportedProviderQuotas = []
+            providerQuotaFreshness.checkedAt = [:]
             kanbanDiagnostics = []
             kanbanAttachments = []
             promptBudget = nil
@@ -198,6 +207,14 @@ extension ControlCenterModel {
         selectedProjectID = nil
         selectedProject = nil
         isRefreshingProjectNavigation = false
+        if isRefreshing {
+            refreshGeneration &+= 1
+            refreshTask?.cancel()
+            refreshTask = nil
+            latestActivityRefreshTask?.cancel()
+            latestActivityRefreshTask = nil
+            isRefreshing = false
+        }
         refresh()
     }
 
@@ -232,179 +249,259 @@ extension ControlCenterModel {
                     self.refreshTask = nil
                 }
             }
-            var remindersAvailable = false
-            if let remindersAdapter {
-                do {
-                    let fetchedReminders = try await remindersAdapter.today()
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    reminders = fetchedReminders
-                    remindersAvailable = true
-                    reconcileReminderAttention()
-                    recordProjectionSuccess("reminders")
-                } catch {
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    let message = HermesDiagnosticsService.safeSummary(
-                        Self.safeUserDiagnostic(error.localizedDescription))
-                    recordProjectionFailure("reminders", error: message)
-                    lastError = message
+            var jobs: [@MainActor @Sendable () async -> Void] = []
+            jobs.append { [self] in
+                guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                var remindersAvailable = false
+                if let remindersAdapter {
+                    do {
+                        let fetchedReminders = try await remindersAdapter.today()
+                        guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                            return
+                        }
+                        if reminders != fetchedReminders { reminders = fetchedReminders }
+                        remindersAvailable = true
+                        reconcileReminderAttention()
+                        recordProjectionSuccess("reminders")
+                    } catch {
+                        guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                            return
+                        }
+                        let message = HermesDiagnosticsService.safeSummary(
+                            Self.safeUserDiagnostic(error.localizedDescription))
+                        recordProjectionFailure("reminders", error: message)
+                        updateSharedRefreshError()
+                    }
+                }
+                if let dockModel {
+                    var probedCapabilities: [CapabilityState]
+                    while true {
+                        let sessionID = dockModel.sessionID
+                        probedCapabilities = await capabilityService.probe(
+                            client: dockModel.controlRPCClient,
+                            remindersAvailable: remindersAvailable,
+                            sessionID: sessionID,
+                            forceRefresh: forceCapabilities
+                        )
+                        guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                            return
+                        }
+                        if sessionID == dockModel.sessionID { break }
+                    }
+                    if capabilities != probedCapabilities { capabilities = probedCapabilities }
+                    capabilitySnapshotGeneratedAt = .now
+                    // Activity may mount before the bounded capability probe finishes.
+                    // Refresh here, at the ownership boundary, so a successful Kanban
+                    // probe immediately hydrates the focused session projection rather
+                    // than leaving the renderer to wait for its next polling interval.
+                    if capabilityAvailable("kanban"), let sessionID = dockModel.kanbanSessionID {
+                        refreshSessionKanban(for: sessionID)
+                    }
+                    if forceCapabilities || diagnostics.isEmpty {
+                        let refreshedDiagnostics = await diagnosticsService.read(client: dockModel.controlRPCClient)
+                        guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                            return
+                        }
+                        diagnostics = refreshedDiagnostics
+                    }
+                    if forceCapabilities || sessionStoreStatus == nil || memoryHealthStatus == nil {
+                        refreshReadOnlyHealth()
+                    }
+                    refreshSessionCockpit(for: dockModel.sessionID)
+                    // Provider quota is refreshed when the Quota tab is opened. Antigravity
+                    // quota scans for a running language server, so it stays lazy instead
+                    // of adding subprocess churn to every startup.
+                    refreshPromptBudget()
+                    refreshVerification()
+                    recordProjectionSuccess("core")
                 }
             }
-
             if let rpc {
                 let sessionID = dockModel?.sessionID ?? ""
                 let processGeneration = sessionProcessesGeneration
                 let processBinding = clientBindingGeneration
-                await refreshRoutineInventory(profileID: dockModel?.profileScopeID, includeSessions: true)
-                guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-
-                do {
-                    let result = try await rpc.activeSessions()
-                    guard let parsedSessions = Self.parseSessions(result) else {
-                        throw HermesGateway.GatewayError.malformedResponse
+                jobs.append { [self] in
+                    guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                        return
                     }
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    activeSessions = parsedSessions
-                    establishFocusIfNeeded()
-                    recordProjectionSuccess("sessions")
-                } catch {
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    let message = HermesDiagnosticsService.safeSummary(
-                        Self.safeUserDiagnostic(error.localizedDescription))
-                    recordProjectionFailure("sessions", error: message)
-                    lastError = message
-                }
-
-                do {
-                    let result = try await rpc.delegationStatus()
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    activeAgents = Self.parseAgents(result)
-                    delegationPaused = result["paused"] as? Bool ?? delegationPaused
-                    recordProjectionSuccess("agents")
-                } catch {
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    let message = HermesDiagnosticsService.safeSummary(
-                        Self.safeUserDiagnostic(error.localizedDescription))
-                    recordProjectionFailure("agents", error: message)
-                    lastError = message
-                }
-
-                if !sessionID.isEmpty {
                     do {
-                        let result = try await rpc.processes(sessionID: sessionID)
-                        guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                        if acceptsProcessResponse(
-                            for: sessionID, generation: processGeneration, binding: processBinding)
-                        {
-                            processes = Self.parseProcesses(result)
-                            recordProjectionSuccess("processes")
+                        let result = try await rpc.activeSessions()
+                        guard let parsedSessions = Self.parseSessions(result) else {
+                            throw HermesGateway.GatewayError.malformedResponse
                         }
+                        guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity)
+                        else { return }
+                        if activeSessions != parsedSessions { activeSessions = parsedSessions }
+                        establishFocusIfNeeded()
+                        recordProjectionSuccess("sessions")
                     } catch {
-                        guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                        if acceptsProcessResponse(
-                            for: sessionID, generation: processGeneration, binding: processBinding)
-                        {
+                        guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity)
+                        else { return }
+                        let message = HermesDiagnosticsService.safeSummary(
+                            Self.safeUserDiagnostic(error.localizedDescription))
+                        recordProjectionFailure("sessions", error: message)
+                        updateSharedRefreshError()
+                    }
+                }
+                jobs.append { [self] in
+                    guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                        return
+                    }
+                    do {
+                        let result = try await rpc.delegationStatus()
+                        guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity)
+                        else { return }
+                        let agents = Self.parseAgents(result)
+                        if activeAgents != agents { activeAgents = agents }
+                        let paused = result["paused"] as? Bool ?? delegationPaused
+                        if delegationPaused != paused { delegationPaused = paused }
+                        recordProjectionSuccess("agents")
+                    } catch {
+                        guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity)
+                        else { return }
+                        let message = HermesDiagnosticsService.safeSummary(
+                            Self.safeUserDiagnostic(error.localizedDescription))
+                        recordProjectionFailure("agents", error: message)
+                        updateSharedRefreshError()
+                    }
+                }
+                jobs.append { [self] in
+                    guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                        return
+                    }
+                    if !sessionID.isEmpty {
+                        do {
+                            let result = try await rpc.processes(sessionID: sessionID)
+                            guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity)
+                            else { return }
+                            if acceptsProcessResponse(
+                                for: sessionID, generation: processGeneration, binding: processBinding)
+                            {
+                                let refreshed = Self.parseProcesses(result)
+                                if processes != refreshed { processes = refreshed }
+                                recordProjectionSuccess("processes")
+                            }
+                        } catch {
+                            guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity)
+                            else { return }
+                            if acceptsProcessResponse(
+                                for: sessionID, generation: processGeneration, binding: processBinding)
+                            {
+                                let message = HermesDiagnosticsService.safeSummary(
+                                    Self.safeUserDiagnostic(error.localizedDescription))
+                                recordProjectionFailure("processes", error: message)
+                                updateSharedRefreshError()
+                            }
+                        }
+                    }
+                }
+                jobs.append { [self] in
+                    guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                        return
+                    }
+                    if projectProfileScopeUnavailable {
+                        projects = []
+                        projectIDBySessionID = [:]
+                        resolvedProjectIDBySessionID = [:]
+                        projectSessionsByProjectID = [:]
+                        selectedProject = nil
+                        recordProjectionSuccess("projects")
+                    } else {
+                        do {
+                            let result = try await rpc.projectsTree(profileID: projectProfileID)
+                            let parsedProjects = Self.parseProjects(result)
+                            let refreshedProjects = Self.reconcileProjectRefresh(
+                                current: projects, incoming: parsedProjects)
+                            guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity)
+                            else { return }
+                            if projects != refreshedProjects { projects = refreshedProjects }
+                            let validProjectIDs = Set(refreshedProjects.map(\.id))
+                            let retainedSessions = projectSessionsByProjectID.filter {
+                                validProjectIDs.contains($0.key)
+                            }
+                            if projectSessionsByProjectID != retainedSessions {
+                                projectSessionsByProjectID = retainedSessions
+                            }
+                            // A compact tree response may provide only session counts.
+                            // Keep memberships already verified through
+                            // `projects.project_sessions` as long as their project is
+                            // still present, then enrich them with inline rows.
+                            var memberships = resolvedProjectIDBySessionID.filter { validProjectIDs.contains($0.value) }
+                            for project in refreshedProjects {
+                                for sessionID in project.sessionIDs {
+                                    memberships[sessionID] = project.id
+                                }
+                            }
+                            if resolvedProjectIDBySessionID != memberships {
+                                resolvedProjectIDBySessionID = memberships
+                            }
+                            if projectIDBySessionID != memberships { projectIDBySessionID = memberships }
+                            if let selectedProjectID,
+                                let refreshedSelection = refreshedProjects.first(where: { $0.id == selectedProjectID })
+                            {
+                                selectedProject = refreshedSelection
+                            }
+                            // The projects projection can complete after focus was
+                            // set (or before a dock model is bound). Resolve against
+                            // the focused session, which is the authoritative UI
+                            // selection for this model.
+                            resolveProjectMembership(for: currentFocus?.sessionID)
+                            if !refreshedProjects.isEmpty, projectProfileID != nil {
+                                refreshProjectNavigation(refreshProjects: false)
+                            }
+                            recordProjectionSuccess("projects")
+                        } catch {
+                            guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity)
+                            else { return }
                             let message = HermesDiagnosticsService.safeSummary(
                                 Self.safeUserDiagnostic(error.localizedDescription))
-                            recordProjectionFailure("processes", error: message)
-                            lastError = message
+                            recordProjectionFailure("projects", error: message)
+                            updateSharedRefreshError()
                         }
                     }
                 }
-
+                jobs.append { [self] in
+                    guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                        return
+                    }
+                    await refreshRoutineInventory(profileID: dockModel?.profileScopeID, includeSessions: true)
+                    guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                        return
+                    }
+                    refreshCronRuns(refreshGeneration: generation, clientIdentity: clientIdentity)
+                    updateSharedRefreshError()
+                }
                 refreshMCPInventory(refreshGeneration: generation, clientIdentity: clientIdentity)
                 refreshCommandAllowlist()
                 refreshAppearanceProjection(refreshGeneration: generation, clientIdentity: clientIdentity)
                 refreshInsights(refreshGeneration: generation, clientIdentity: clientIdentity)
-
-                if projectProfileScopeUnavailable {
-                    projects = []
-                    projectIDBySessionID = [:]
-                    resolvedProjectIDBySessionID = [:]
-                    projectSessionsByProjectID = [:]
-                    selectedProject = nil
-                    recordProjectionSuccess("projects")
-                } else {
-                    do {
-                        let result = try await rpc.projectsTree(profileID: projectProfileID)
-                        let parsedProjects = Self.parseProjects(result)
-                        let refreshedProjects = Self.reconcileProjectRefresh(
-                            current: projects, incoming: parsedProjects)
-                        guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                        projects = refreshedProjects
-                        let validProjectIDs = Set(refreshedProjects.map(\.id))
-                        projectSessionsByProjectID = projectSessionsByProjectID.filter {
-                            validProjectIDs.contains($0.key)
-                        }
-                        // A compact tree response may provide only session counts.
-                        // Keep memberships already verified through
-                        // `projects.project_sessions` as long as their project is
-                        // still present, then enrich them with inline rows.
-                        var memberships = resolvedProjectIDBySessionID.filter { validProjectIDs.contains($0.value) }
-                        for project in refreshedProjects {
-                            for sessionID in project.sessionIDs {
-                                memberships[sessionID] = project.id
-                            }
-                        }
-                        resolvedProjectIDBySessionID = memberships
-                        projectIDBySessionID = memberships
-                        if let selectedProjectID,
-                            let refreshedSelection = refreshedProjects.first(where: { $0.id == selectedProjectID })
-                        {
-                            selectedProject = refreshedSelection
-                        }
-                        // The projects projection can complete after focus was
-                        // set (or before a dock model is bound). Resolve against
-                        // the focused session, which is the authoritative UI
-                        // selection for this model.
-                        resolveProjectMembership(for: currentFocus?.sessionID)
-                        if !refreshedProjects.isEmpty, projectProfileID != nil {
-                            refreshProjectNavigation(refreshProjects: false)
-                        }
-                        recordProjectionSuccess("projects")
-                    } catch {
-                        guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                        let message = HermesDiagnosticsService.safeSummary(
-                            Self.safeUserDiagnostic(error.localizedDescription))
-                        recordProjectionFailure("projects", error: message)
-                        lastError = message
-                    }
-                }
+            } else {
+                refreshCronRuns(refreshGeneration: generation, clientIdentity: clientIdentity)
             }
-            refreshCronRuns(refreshGeneration: generation, clientIdentity: clientIdentity)
-
-            if let dockModel {
-                let probedCapabilities = await capabilityService.probe(
-                    client: dockModel.controlRPCClient,
-                    remindersAvailable: remindersAvailable,
-                    sessionID: dockModel.sessionID,
-                    forceRefresh: forceCapabilities
-                )
-                guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                capabilities = probedCapabilities
-                capabilitySnapshotGeneratedAt = .now
-                // Activity may mount before the bounded capability probe finishes.
-                // Refresh here, at the ownership boundary, so a successful Kanban
-                // probe immediately hydrates the focused session projection rather
-                // than leaving the renderer to wait for its next polling interval.
-                if capabilityAvailable("kanban"), let sessionID = dockModel.kanbanSessionID {
-                    refreshSessionKanban(for: sessionID)
+            await withTaskGroup(of: Void.self) { group in
+                var next = jobs.makeIterator()
+                for _ in 0..<4 {
+                    guard let job = next.next() else { break }
+                    group.addTask { await job() }
                 }
-                if forceCapabilities || diagnostics.isEmpty {
-                    let refreshedDiagnostics = await diagnosticsService.read(client: dockModel.controlRPCClient)
-                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    diagnostics = refreshedDiagnostics
+                while await group.next() != nil {
+                    guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                        group.cancelAll()
+                        break
+                    }
+                    if let job = next.next() { group.addTask { await job() } }
                 }
-                if forceCapabilities || sessionStoreStatus == nil || memoryHealthStatus == nil {
-                    refreshReadOnlyHealth()
-                }
-                refreshSessionCockpit(for: dockModel.sessionID)
-                // Provider quota is refreshed when the Quota tab is opened. Antigravity
-                // quota scans for a running language server, so it stays lazy instead
-                // of adding subprocess churn to every startup.
-                refreshPromptBudget()
-                refreshVerification()
-                recordProjectionSuccess("core")
             }
         }
+    }
+
+    /// Keep the shared diagnostic independent of the order parallel reads finish.
+    private func updateSharedRefreshError() {
+        let order = ["reminders", "cron.jobs", "sessions", "agents", "processes", "projects"]
+        let error = order.compactMap { key -> String? in
+            guard let state = projectionRefreshStates[key], !state.isRefreshing else { return nil }
+            return state.error
+        }.first
+        if lastError != error { lastError = error }
     }
 }

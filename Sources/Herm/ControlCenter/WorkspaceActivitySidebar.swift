@@ -5,6 +5,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct WorkspaceActivitySidebar: View {
+    @Environment(\.dockWorkspaceScale) var workspaceScale
     static let projectsPageSize = 25
     enum AutomationHistoryScope: String, CaseIterable, Identifiable {
         case selected
@@ -35,6 +36,7 @@ struct WorkspaceActivitySidebar: View {
     @ObservedObject var control: ControlCenterModel
     @ObservedObject var workflow: DeveloperWorkflowModel
     @ObservedObject var dockThemeStore: DockThemeStore
+    @Environment(\.dockHostVisible) var hostVisible
     var onClose: () -> Void = {}
     var onOpenArtifacts: () -> Void = {}
     var onRestartDock: () -> Void = {}

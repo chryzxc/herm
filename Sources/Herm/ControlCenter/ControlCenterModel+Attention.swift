@@ -5,6 +5,18 @@ extension ControlCenterModel {
     func respond(to item: AttentionItem, action: AttentionAction, response: String? = nil) {
         guard dockModel != nil || rpc != nil else { return }
         let reference = item.reference
+        if let dockModel, !dockModel.sessionActionsReady {
+            let sessionID = reference.sessionID ?? reference.sourceID
+            let selected =
+                dockModel.currentSessionIDs.contains(sessionID)
+                || dockModel.rowSessionID(sessionID) == dockModel.navigationSessionID
+            if selected {
+                switch action {
+                case .approve, .deny, .respond, .stop, .resume, .open: return
+                case .dismiss, .complete: break
+                }
+            }
+        }
         let actionID = attentionActionID(action, item: item)
         guard beginAction(actionID) else { return }
         Task {

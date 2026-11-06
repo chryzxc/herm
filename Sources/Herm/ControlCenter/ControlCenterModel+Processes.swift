@@ -8,6 +8,13 @@ struct ProcessStopConfirmation {
 }
 
 extension ControlCenterModel {
+    /// A session-scoped process listing also proves support when the broad capability probe is unavailable.
+    var processControlAvailable: Bool {
+        guard rpc != nil else { return false }
+        return capabilityAvailable("rpc-activity")
+            || (processSessionID != nil && processSessionID == dockModel?.sessionID && !processes.isEmpty)
+    }
+
     func clearProcessFocus() {
         currentFocus = nil
         sessionProcessesGeneration = UUID()
@@ -56,6 +63,8 @@ extension ControlCenterModel {
             && dockModel?.sessionID == confirmation.sessionID
             && acceptsProcessResponse(
                 for: confirmation.sessionID, generation: confirmation.generation, binding: confirmation.binding)
-            && processes.contains(confirmation.process)
+            && processes.contains {
+                $0.id == confirmation.process.id && $0.state == confirmation.process.state
+            }
     }
 }

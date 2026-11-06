@@ -117,14 +117,7 @@ struct UsageWorkspaceView: View {
     // MARK: Pieces
 
     private func meter(_ fraction: Double, tint: Color = .dockAccent) -> some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.dockBorderLight)
-                Capsule().fill(tint).frame(width: max(2, proxy.size.width * min(1, max(0, fraction))))
-            }
-        }
-        .frame(height: 4)
-        .accessibilityHidden(true)
+        DockProgressBar(fraction: fraction, tint: tint, minFill: 2)
     }
 
     private func message(title: String, detail: String) -> some View {
@@ -216,7 +209,7 @@ struct UsageReportContent: View, Equatable {
 
     private func modelsSection(_ report: TokenUsageReport) -> some View {
         let maxTokens = max(1, report.models.map(\.totalTokens).max() ?? 1)
-        return VStack(alignment: .leading, spacing: 10) {
+        return LazyVStack(alignment: .leading, spacing: 10) {
             DockSectionLabel(title: "By model", count: report.models.count)
             ForEach(report.models) { model in
                 VStack(alignment: .leading, spacing: 6) {
@@ -290,7 +283,7 @@ struct UsageReportContent: View, Equatable {
 
     private func tasksSection(_ report: TokenUsageReport) -> some View {
         let maxTokens = max(1, report.tasks.map(\.totalTokens).max() ?? 1)
-        return VStack(alignment: .leading, spacing: 10) {
+        return LazyVStack(alignment: .leading, spacing: 10) {
             HStack {
                 DockSectionLabel(title: "Background work", count: report.tasks.count)
                 Spacer()
@@ -374,14 +367,7 @@ struct UsageReportContent: View, Equatable {
     }
 
     private func meter(_ fraction: Double, tint: Color) -> some View {
-        GeometryReader { proxy in
-            Capsule().fill(Color.dockBorderLight)
-                .overlay(alignment: .leading) {
-                    Capsule().fill(tint).frame(width: proxy.size.width * min(1, max(0, fraction)))
-                }
-        }
-        .frame(height: 4)
-        .accessibilityHidden(true)
+        DockProgressBar(fraction: fraction, tint: tint)
     }
 }
 

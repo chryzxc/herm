@@ -23,6 +23,7 @@ extension ControlCenterModel {
         guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else {
             providerQuotas = []
             reportedProviderQuotas = []
+            providerQuotaFreshness.checkedAt = [:]
             return
         }
         if !quiet { beginProjectionRefresh("provider.quota") }
@@ -57,7 +58,14 @@ extension ControlCenterModel {
                     let snapshots = Self.providerQuotaSnapshots(readerID: readerID, raw: result.value)
                     for snapshot in snapshots { providerQuotaReaderIDs[snapshot.provider] = readerID }
                     seen.formUnion(snapshots.map(\.provider))
-                    guard snapshots != previous else { continue }
+                    var checkedAt = providerQuotaFreshness.checkedAt
+                    for snapshot in snapshots { checkedAt[snapshot.provider] = snapshot.updatedAt }
+                    if checkedAt != providerQuotaFreshness.checkedAt { providerQuotaFreshness.checkedAt = checkedAt }
+                    if snapshots.count == previous.count,
+                        zip(snapshots, previous).allSatisfy({ pair in pair.0.hasSameContent(as: pair.1) })
+                    {
+                        continue
+                    }
                     let replaced = Set(previous.map(\.provider))
                     reportedProviderQuotas =
                         reportedProviderQuotas.filter { !replaced.contains($0.provider) } + snapshots
@@ -173,8 +181,54 @@ extension ControlCenterModel {
             (key == nil ? HermesFeatureIDs.ID.modelDisconnect : .modelSaveKey).rawValue,
             params: key.map { ["slug": row.slug, "api_key": $0] } ?? ["slug": row.slug]
         )
+        if let key {
+            let failures = await shareProviderKeyWithBots(row: row, key: key, client: client)
+            if !failures.isEmpty { throw BotKeyShareError(failures: failures) }
+        }
         try? await loadHermesProviderRows()
         refreshProviderQuota()
+    }
+
+    /// Hermes only attaches `key_env` to providers that aren't connected yet, so
+    /// a connected one is looked up in the env catalog by its primary variable.
+    private func providerKeyEnv(for row: HermesProviderRow, client: HermesRPCClientProtocol) async -> String? {
+        if let keyEnv = row.keyEnv, !keyEnv.isEmpty { return keyEnv }
+        guard let vars = try? await client.fetchHTTP("/api/env") else { return nil }
+        return vars.first { name, info in
+            guard let info = info as? [String: Any] else { return false }
+            return info["provider"] as? String == row.slug && info["provider_primary"] as? Bool == true
+        }?.key
+    }
+
+    /// Hermes keeps API keys per profile and can't read one back, so a new key
+    /// is written to every bot profile while it is still in hand. Returns one
+    /// "<bot>: <reason>" line per profile Hermes refused.
+    @discardableResult
+    func shareProviderKeyWithBots(row: HermesProviderRow, key: String, client: HermesRPCClientProtocol) async
+        -> [String]
+    {
+        guard let keyEnv = await providerKeyEnv(for: row, client: client) else {
+            return ["Hermes doesn't say which environment variable \(row.name) uses"]
+        }
+        let profiles: [[String: Any]]
+        do {
+            let result = try await client.request(HermesFeatureIDs.ID.profilesList.rawValue, params: [:])
+            profiles = result["profiles"] as? [[String: Any]] ?? []
+        } catch {
+            return ["Couldn't list bots: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"]
+        }
+        var failures: [String] = []
+        for profile in profiles where (profile["is_default"] as? Bool) != true {
+            guard let name = profile["name"] as? String else { continue }
+            do {
+                _ = try await client.sendHTTP(
+                    "PUT", path: "/api/env",
+                    body: ["key": keyEnv, "value": key, "profile": name, "provider_setup": true])
+            } catch {
+                failures.append("\(name): \(HermesDiagnosticsService.safeSummary(error.localizedDescription))")
+            }
+        }
+        return failures
     }
 
     /// Saves (or removes, when nil) a user-entered API key for an API-key
@@ -509,4 +563,9 @@ extension ControlCenterModel {
             return QuotaReadResult(value: nil, error: Self.safeUserDiagnostic(error.localizedDescription))
         }
     }
+}
+
+struct BotKeyShareError: LocalizedError {
+    let failures: [String]
+    var errorDescription: String? { "Saved, but not for every bot. " + failures.joined(separator: "; ") }
 }

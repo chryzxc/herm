@@ -169,8 +169,9 @@ extension WorkspaceActivitySidebar {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: selectedMode == .kanban) {
-            guard selectedMode == .kanban else { return }
+        .task(id: selectedMode == .kanban && hostVisible) {
+            guard selectedMode == .kanban && hostVisible else { return }
+            applyKanbanFilters(trigger: .background)
             while !Task.isCancelled {
                 let hasLiveCards = control.kanbanTasks.contains {
                     ["running", "claimed", "in_progress", "blocked", "review", "waiting"].contains(
@@ -604,15 +605,7 @@ extension WorkspaceActivitySidebar {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         }
-        .dockPadding(12)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous).dockSurfaceFill(
-                Color.dockSurface2)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous).stroke(
-                Color.dockBorder, lineWidth: 0.5))
+        .dockCard(padding: 12)
     }
 
     func selectKanbanTask(_ task: KanbanTaskSummary) {
@@ -716,9 +709,6 @@ extension WorkspaceActivitySidebar {
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(3)
                     HStack(spacing: 7) {
-                        Text(detail.status.capitalized)
-                            .foregroundStyle(laneColor)
-                        Text("·")
                         Text(detail.id)
                             .dockFont(.compactStatus, weight: .regular, design: .monospaced)
                             .foregroundStyle(Color.dockMetadataText)
@@ -807,6 +797,10 @@ extension WorkspaceActivitySidebar {
                                 ))
                             if let why = detail.blockExplanation { kanbanBlockExplanation(why) }
                             if let body = detail.body, !body.isEmpty {
+                                Text("Description")
+                                    .dockFont(.body, weight: .semibold)
+                                    .foregroundStyle(Color.dockPrimaryText)
+                                    .dockPadding(.top, 4)
                                 MarkdownMessageView(markdown: body)
                                     .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -815,11 +809,14 @@ extension WorkspaceActivitySidebar {
                                     .dockFont(.body)
                                     .foregroundStyle(Color.dockMetadataText)
                             }
-                            kanbanAttachmentSection
+                            if !control.kanbanAttachments.isEmpty {
+                                kanbanAttachmentSection
+                            }
                         }
                     } else {
                         kanbanActivitySection(detail)
-                            .task(id: detail.id) {
+                            .task(id: "\(detail.id):\(hostVisible)") {
+                                guard hostVisible else { return }
                                 // ponytail: 4s poll of `kanban show`; Hermes has no per-task push stream.
                                 while !Task.isCancelled, !["done", "archived"].contains(task.status.lowercased()) {
                                     try? await Task.sleep(for: .seconds(4))
@@ -829,11 +826,12 @@ extension WorkspaceActivitySidebar {
                             }
                     }
                 }
-                .dockPadding(16)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .dockPadding(20)
+                .frame(maxWidth: 700, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(minWidth: 360, idealWidth: 400, maxWidth: 460, maxHeight: .infinity, alignment: .topLeading)
+        .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.dockCanvas)
         .overlay(alignment: .leading) { Color.dockBorderLight.frame(width: 0.5) }
     }

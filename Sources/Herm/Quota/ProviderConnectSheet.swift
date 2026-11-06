@@ -179,6 +179,7 @@ struct ProviderConnectSheet: View {
     @State private var testStartedAt: Date?
     @State private var saveError: String?
     @State private var isSaving = false
+    @State private var quotaCheckedAt: [String: Date] = [:]
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -235,6 +236,7 @@ struct ProviderConnectSheet: View {
             }
         }
         .onAppear { refreshStoredKeyState() }
+        .onReceive(control.providerQuotaFreshness.$checkedAt) { quotaCheckedAt = $0 }
         .onChange(of: login.exitStatus) { control.refreshProviderQuota() }
     }
 
@@ -300,7 +302,7 @@ struct ProviderConnectSheet: View {
         // report the previous read's "no key" error.
         guard !isSaving, let started = testStartedAt?.addingTimeInterval(-1) else { return nil }
         if let snapshot = control.providerQuotas.first(where: { $0.provider == descriptor.id }),
-            snapshot.updatedAt >= started
+            (quotaCheckedAt[snapshot.provider] ?? snapshot.updatedAt) >= started
         {
             let first = snapshot.windows.first.map {
                 " · \($0.label): \($0.remainingDisplay ?? $0.remainingPercent.map { "\(Int($0))% left" } ?? "reported")"

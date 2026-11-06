@@ -1,6 +1,10 @@
 import Combine
 import Foundation
 
+extension Notification.Name {
+    static let hermGatewayAuthenticationChanged = Notification.Name("herm.gateway.authentication.changed")
+}
+
 struct GatewayCloudAgent: Identifiable, Equatable {
     let id: String
     let name: String
@@ -96,6 +100,7 @@ final class GatewayConnectionModel: ObservableObject {
                     try await GatewayWebAuthentication.shared.signIn(base)
                 }
             }
+            NotificationCenter.default.post(name: .hermGatewayAuthenticationChanged, object: base)
             if portal { try await discover() }
             return "Signed in."
         }
@@ -113,6 +118,7 @@ final class GatewayConnectionModel: ObservableObject {
                 agents = []
                 organizations = []
             }
+            NotificationCenter.default.post(name: .hermGatewayAuthenticationChanged, object: base)
             return "Signed out."
         }
     }
