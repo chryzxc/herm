@@ -94,6 +94,10 @@ user-visible changes. Do not commit or push unless asked.
 - Full-window or expanded presentations use `DockExpandedPage` (see
   `docs/expanded-pages.md`). Never hand-roll a header for an expanded layer;
   it draws under the window controls.
+- Boxed surfaces use `.dockCard` (`isActive:` for hover/selected); never hand-build a
+  fill+stroke box. Insets use `.dockWell`, label capsules `.dockPill(tint:)`, meters
+  `DockProgressBar`. If none fits, extend the component rather than styling at the call site.
+  Run `make card-contract`; see `docs/cards.md`.
 - Match the closest existing component before introducing a new visual
   treatment. Reuse shared `Dock*` components and color tokens.
 - Text actions use `.dockPrimary` for local priority and `.dockSecondary` for

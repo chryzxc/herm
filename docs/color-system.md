@@ -12,7 +12,7 @@ claimed pixel samples from the original image.
 
 - Solid avatars, lifecycle dots, and data marks: `DockAccentColor.teal.fill`,
   `palette.fill(.teal)`, or `Color.dockSuccessFill`. Fills do not change between
-  Light and Dark. Monochrome/E-Ink are the deliberate neutral exception.
+  Light and Dark, across all skins.
 - Text and small symbols: `DockAccentColor.teal.color`, `palette.color(.teal)`,
   or `Color.dockSuccess`. These preserve hue while adjusting for readable contrast.
 - Interaction: `Color.dockAccent` and shared Dock button styles. This belongs

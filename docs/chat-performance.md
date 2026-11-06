@@ -1,5 +1,29 @@
 # Chat scroll verification
 
+## Session switching — work in progress
+
+Session switching retains a bounded in-memory preview of recently loaded messages
+while Hermes confirms and reloads the selected session. The preview is a display
+projection only; live events and pending sends remain in the model's canonical
+state. Session actions wait for the fresh transcript, and an unsuccessful refresh
+retains the preview with a retry action.
+
+Opt-in `HERMES_DOCK_DEBUG_LOGS=1` or `--perf-trace` metrics record selection,
+connection, resume, history fetch and projection, parsing, publication, and native
+layout. They contain timings and counts only. A paired Release baseline and live
+switch latency have not yet been measured; the initial history page therefore
+remains at 120 stored rows pending the planned comparison.
+
+The opt-in production transcript fixture runs five cold/cached pairs each for
+prose, code, tool-heavy history, and a session switch with streaming state. It
+uses controlled 30 ms resume and 10 ms history-read delays; fixture timings
+are not live Hermes or physical-display measurements:
+
+```sh
+HERM_SESSION_PROFILE=1 swift test -c release --disable-automatic-resolution --no-parallel \
+  --filter ConversationTranscriptIntegrationTests.releaseSessionSwitchTimings
+```
+
 ## Session composer drafts — 23 October 2026
 
 Draft snapshots run only during session/new-chat navigation. They retain existing
@@ -430,3 +454,110 @@ not include a physical-trackpad check or a fresh paired Release profile.
 
 The final Debug build, `make guard` (strict lint, color contract, and diff checks),
 and `git diff --check` passed.
+
+## Active-work performance changes — 4 November 2026
+
+Tool completion now updates each call once and merges the activity log using an
+ID index. The control center avoids repeating a same-session bind during quota
+polling and starts independent refresh branches concurrently. Timeline caches
+its ownership and timing projections until the turn changes, and suspends its
+presentation updates when all of its windows are hidden. Artifact reads can
+publish incomplete page progress while retaining the last complete result.
+The workspace shell subscribes to its own navigation and lifecycle inputs;
+tool activity stays with the transcript and other surfaces that display it.
+
+Regression fixtures were added for activity ordering, binding, concurrent
+refresh, Timeline preparation, and shared artifact progress. They have not been
+run. An initial isolated Swift test build was stopped at the user's request to
+avoid slowing their machine. No paired Release timings, interactive latency,
+memory comparison, or live scroll result was collected for this change, so no
+performance target or end-to-end improvement is claimed.
+
+## Chat viewport work — 4 November 2026
+
+Markdown viewport notifications now schedule native layout, which finds the
+buffered section range using the cached ordered frames. Mounting updates only
+that range and the retained focused section. Each document keeps at most eight
+inactive section views or 256 KiB of estimated attributed content; focused,
+selected, and active interaction views remain protected. Numeric heights and
+styled output continue to use the existing bounded caches. Code sections retain
+their horizontal position across eviction.
+
+The existing adjacent-page parser can warm exact completed-section heights
+while the reader is idle. Warming yields between sections, stops during scrolling
+or cancellation, and skips sections over 16 KiB. A single cold large code block
+still needs synchronous layout. Activity lists prepare grouped steps once per
+input change and mount their rows lazily. Disclosure state remains on the turn.
+
+Opt-in performance tracing adds section visits, mount changes, foreground
+measurements, and the maximum inactive-view count; it does not include message
+content. CI fixtures cover bounded traversal, focus and selection, code position,
+idle measurement, and activity grouping. These changes have not been built or
+tested locally at the user's request, and no before/after latency or CPU figures
+are available.
+
+## Workspace responsiveness work — 5 November 2026
+
+The workspace publishes width changes only when its responsive layout decisions change,
+and persists divider adjustments after dragging. Settings keeps its detail mounted across
+rail/menu transitions and reuses schema within a client/profile binding. Visible host
+state gates selected polling and transcript preparation; idle Markdown warming also pauses
+during window and divider resizing. Code-section height cache entries are width independent.
+
+Activity calendar indexes are prepared away from the main thread, archive requests are
+limited to two concurrent reads, and long Usage lists mount rows lazily. Bot roster updates
+that leave mention appearance unchanged no longer invalidate mention styling.
+
+This is a partial implementation of the broader workspace plan: host root reconciliation,
+complete hidden-host suspension, focused inspector/field snapshots, archive demand ownership,
+and selected-range background preparation remain open. The new regression fixtures have
+not been run, and CPU, interaction latency, scroll performance, and memory remain unmeasured.
+
+## Scroll preparation follow-up — 5 November 2026
+
+Unchanged quiet session refreshes no longer republish the current title or an already
+false loading flag. Timeline publishes its buffered row range separately from precise
+viewport coordinates. Adjacent completed Markdown pages prepare TextKit layout in
+2,048-character increments and cache exact code dimensions alongside section heights.
+History waits for prepared measurements, with a one-second fallback to normal rendering
+if preparation cannot complete. Session changes, navigation and direction reversals
+invalidate pending page work. The cache retains numeric presentation data only.
+
+The opt-in manual fixture records p50, p95 and maximum synchronous work without its
+pacing sleep, along with main-thread CPU and Markdown counters. A separate synthetic
+workspace fixture covers session rows, Usage and Settings in the shared shell. These
+fixtures do not measure physical trackpad input or displayed frame times; see test output
+and Instruments recordings for actual results. Exact TextKit parity, cancellation and
+scroll-anchor regressions must pass before relying on the new preparation path.
+
+The focused Debug gate passed 99 tests in 10 suites, and the Debug build and
+`make guard` passed. One Debug fixture run measured p95 synchronous scroll work of
+4.2 ms for completed 128 KiB Markdown, 3.1 ms for a 6,000-line code block, and
+1.7–1.9 ms for deferred streaming. Timeline measured 0.56 ms; synthetic session,
+Usage, and Settings surfaces measured 6.83–7.85 ms, 3.16–3.80 ms, and 0.73–2.14 ms,
+respectively. These are individual Debug runs, not before/after comparisons or
+displayed-frame measurements. CPU totals include time between paced steps.
+
+The frozen baseline Release build was stopped before tests ran when free disk space
+fell to approximately 5 GiB. An Animation Hitches recording targeted the SwiftPM
+launcher rather than the spawned test process and cannot establish app hitch rates.
+The five paired Release comparisons, Time Profiler capture, and physical-trackpad
+check remain outstanding; no smoothness or no-regression target is claimed.
+
+## Scroll preparation follow-up — 6 November 2026
+
+Requested history pages can prepare while the reader scrolls, while speculative
+warming remains idle-only. Paging no longer mounts an unprepared page after a
+one-second timeout. A prepared page holds its parsed documents and exact numeric
+measurements through the matching layout, including after cache eviction.
+
+Attributed-text construction and text installation still contain synchronous
+whole-section work. The production workspace benchmark, paired Release results,
+valid Instruments traces, and physical-trackpad confirmation remain outstanding.
+The changes above therefore do not establish a frame-rate or smoothness result.
+
+The focused Debug run passed 101 tests in 10 suites, and the Debug build passed.
+A subsequent Debug fixture run passed 24 tests; its 128 KiB completed Markdown
+p95 was 7.6 ms, the 6,000-line fence p95 was 2.8 ms, and deferred streaming p95
+was 3.8–3.9 ms. Live streaming reached 51.2 ms maximum in one run. These are
+individual synchronous fixture timings, not paired Release or frame measurements.
