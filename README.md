@@ -1,7 +1,5 @@
 # Herm
 
-Session PRs and Issues tabs appear when the session's local working directory belongs to a Git repository or worktree.
-
 [![CI](https://github.com/chryzxc/herm/actions/workflows/ci.yml/badge.svg)](https://github.com/chryzxc/herm/actions/workflows/ci.yml)
 [![platform: macOS 14+](https://img.shields.io/badge/platform-macOS%2014%2B-1f6feb)](#requirements)
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138)](#development)
@@ -668,7 +666,7 @@ Hermes Agent Desktop [also documents voice mode](https://hermes-agent.nousresear
 
 ### Pull requests
 
-Pull request descriptions display task lists, separators, and embedded HTTP(S) Markdown images and GitHub-style image tags.
+Pull request descriptions display task lists, separators, embedded HTTP(S) Markdown images and GitHub-style image tags, and common inline HTML (such as Dependabot release notes) as formatted text. Links on GitHub pages open in your default browser.
 
 Selected pull request and issue cards use a themed fill and outline. Wide pull request summaries separate the description/activity column from the details sidebar with a themed vertical hairline.
 
@@ -676,7 +674,7 @@ Selected pull request and issue cards use a themed fill and outline. Wide pull r
 
 - The pull request detail uses a ChatGPT-inspired open reading layout: Summary, Changes with line totals, and Reviews tabs; description and activity in the main column; and changes, reviewers, checks, readiness, and metadata on the right. Narrow panes stack the columns. The header separates the tabs from a labeled pull request actions row, which wraps in narrow panes. Compact tabs omit line totals, which remain in the summary. Expand Changes for file categories and partial-coverage notices. The Merge dropdown opens protected landing controls from the toolbar.
 - On the standalone Pull Requests page, a floating bottom-right **Chat** panel uses the session chat’s composer, message bubbles, activity, and reply actions. Minimized and expanded chat float over the page without reserving a bottom strip. PR content remains visible around the panel in Summary, Changes, and Reviews. Each PR links to its own Hermes session under the default bot profile; reopening the PR, including after restarting Herm, resumes that conversation. PR context accompanies messages, and the selected workspace conversation and attachments stay separate. Minimize the panel or open its linked conversation in the workspace.
-- PR tabs inside a session use the existing session chat instead of a floating panel. **Attach to chat** adds the PR as a removable context chip without sending, switching sessions, or replacing your draft. Reattaching refreshes the chip. The standalone Pull Requests page hides this action.
+- Session **PRs** and **Issues** tabs appear when the session's local working directory belongs to a Git repository or worktree. They use the existing session chat instead of a floating panel. **Attach to chat** adds the PR as a removable context chip without sending, switching sessions, or replacing your draft. Reattaching refreshes the chip. On the standalone Pull Requests page and the repository overview, the **Attach to chat** icon offers a new chat or a recent one.
 - Attached context appears once in the composer’s removable chip tray. PRs, browser pages, files, and other context no longer also insert a copy into your message text. Existing inline context moves to the tray without losing its contents.
 - Minimized PR chat collapses to a small **Chat · #PR** button, hiding both the conversation and composer. Click it to reopen and focus the composer; drafts and attachments are kept.
 - Pull request rows separate repository, title, branch, and status, with a visible selection marker. Lifecycle and readiness colors adapt to the active theme. Summary status controls include state icons, and description text keeps a readable line width.
