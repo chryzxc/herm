@@ -561,3 +561,26 @@ A subsequent Debug fixture run passed 24 tests; its 128 KiB completed Markdown
 p95 was 7.6 ms, the 6,000-line fence p95 was 2.8 ms, and deferred streaming p95
 was 3.8–3.9 ms. Live streaming reached 51.2 ms maximum in one run. These are
 individual synchronous fixture timings, not paired Release or frame measurements.
+
+## Incremental history preparation — 6 November 2026
+
+History requests retain an ordered eight-message target across partial mounts. The
+coordinator mounts a contiguous prepared prefix and restores the visible anchor;
+remaining work is retained until the reader returns to the edge, reverses direction,
+or the request is invalidated. Completed documents and exact measurements are held
+through each layout transaction. Background preparation now parses prose and list
+blocks and inline Markdown into a bounded, disposable cache; native styling and
+TextKit remain on the main actor.
+
+The focused Debug run passed 47 tests across native paging, scroll deferral,
+selection, code copy, horizontal offsets, and Markdown preparation. The opt-in
+manual fixture passed with 128 KiB Markdown (5.9 ms synchronous step p95), a
+252 KiB code fence (3.7 ms), and deferred streaming (1.8–1.9 ms). These are
+individual synthetic Debug measurements, not a paired comparison or displayed
+frame times. A separate jump-to-latest native test failed with a 200-point bottom
+offset and needs investigation.
+
+The Release baseline was stopped during compilation; paired Release results and a
+physical-trackpad check remain outstanding. Styling and text installation can still
+perform whole-section main-thread work; resumable styling/installation and detailed
+per-stage timing are not yet implemented.

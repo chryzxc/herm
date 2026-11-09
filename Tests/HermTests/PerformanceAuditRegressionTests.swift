@@ -46,6 +46,34 @@ struct PerformanceAuditRegressionTests {
         withExtendedLifetime((modelSubscription, controlSubscription)) {}
     }
 
+    @Test func repeatedLiveConnectionDoesNotRedrawWorkspace() async throws {
+        let model = DockModel(initialSessionID: "connection-one")
+        model.gateway.onConnectionChange?(true)
+        try await Task.sleep(for: .milliseconds(20))
+        var updates = 0
+        let subscription = model.workspacePresentationChanges.sink { updates += 1 }
+        model.gateway.onConnectionChange?(true)
+        model.gateway.onConnectionChange?(true)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(updates == 0)
+        #expect(model.isHermesConnected)
+        withExtendedLifetime(subscription) {}
+    }
+
+    @Test func inspectorObservationSkipsActivityButKeepsSessionInputs() async throws {
+        let model = DockModel(initialSessionID: "inspector-one")
+        var updates = 0
+        let subscription = model.inspectorPresentationChanges.sink { updates += 1 }
+        model.activityPresentationRevision += 1
+        model.messages.append(ChatMessage(role: .hermes, text: "tick"))
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(updates == 0)
+        model.currentSessionTitle = "Renamed"
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(updates > 0)
+        withExtendedLifetime(subscription) {}
+    }
+
     @Test func stalledRoutineDoesNotBlockSessionsOrAgents() async throws {
         let client = HeldActivityClient()
         client.holdRoutine = true
@@ -324,5 +352,32 @@ private final class ActivityCacheClient: HermesRPCClientProtocol {
         }
         messageReads += 1
         return ["data": [["id": "1", "role": "assistant", "timestamp": 100]]]
+    }
+}
+
+struct HermPerformanceRecorderTests {
+    @Test func droppedFramesIgnoresJitterAndCountsWholeMissedFrames() {
+        let frame = 1.0 / 120
+        #expect(HermPerformanceRecorder.droppedFrames(delta: frame, expected: frame) == 0)
+        #expect(HermPerformanceRecorder.droppedFrames(delta: frame * 1.4, expected: frame) == 0)
+        #expect(HermPerformanceRecorder.droppedFrames(delta: frame * 2, expected: frame) == 1)
+        #expect(HermPerformanceRecorder.droppedFrames(delta: 0.1, expected: frame) == 11)
+        #expect(HermPerformanceRecorder.droppedFrames(delta: 0, expected: frame) == 0)
+    }
+}
+
+struct WorkspaceMessageKeyTests {
+    @Test func streamingTextReachesTheRootOnlyInVoice() {
+        let user = ChatMessage(role: .user, text: "Hi")
+        var reply = ChatMessage(role: .hermes, text: "Hel")
+        let id = reply.id
+        let before = DockModel.workspaceMessageKey([user, reply], voiceActive: false)
+        reply = ChatMessage(role: .hermes, text: "Hello")
+        reply.id = id
+        #expect(DockModel.workspaceMessageKey([user, reply], voiceActive: false) == before)
+        #expect(
+            DockModel.workspaceMessageKey([user, reply], voiceActive: true)
+                != DockModel.workspaceMessageKey([user, ChatMessage(role: .hermes, text: "Hel")], voiceActive: true))
+        #expect(DockModel.workspaceMessageKey([user], voiceActive: false) != before)
     }
 }
