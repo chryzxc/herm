@@ -98,7 +98,11 @@ struct DockHoverTipTests {
         let presenter = DockHoverTipPresenter()
         let content = ScrollView {
             HStack {
-                Button("Sentry") {}.help(String(repeating: "Sentry is running. Crypto is done. ", count: 8))
+                // `.help` mounts its anchor only under the pointer; mount it directly.
+                Button("Sentry") {}.background(
+                    DockHoverTipAnchor(
+                        text: String(repeating: "Sentry is running. Crypto is done. ", count: 8),
+                        edge: .bottom, gap: 6, hovering: false))
                 Spacer()
             }
             .frame(height: 28)

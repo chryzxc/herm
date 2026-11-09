@@ -25,6 +25,11 @@ enum DockAccentColor: Int, CaseIterable {
     var color: Color { DockThemePalette(theme: DockThemeRuntime.current).color(self) }
     /// Solid artwork and data marks retain the approved color in Light and Dark.
     var fill: Color { DockThemePalette(theme: DockThemeRuntime.current).fill(self) }
+    /// Contrast-safe text on the solid reference fill.
+    var onFill: Color { Color(nsColor: NSColor(hex: DockThemePalette.onAccentHex(forAccent: hex))) }
+    static var unreadBadgeText: Color { .white }
+    static let unreadBadgeHex = "#E00000"
+    static var unreadBadgeFill: Color { Color(nsColor: NSColor(hex: unreadBadgeHex)) }
 
     /// Office signals sit on dark signage even in a light workspace.
     var signageColor: NSColor {

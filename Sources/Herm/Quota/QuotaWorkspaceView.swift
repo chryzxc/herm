@@ -563,9 +563,7 @@ struct QuotaWorkspaceView: View {
             .foregroundStyle(Color.dockMetadataText)
             .frame(width: 16, height: DockControlMetrics.compactHeight)
             .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
-            }
+            .modifier(DockDragCursor(isEnabled: true, isDragging: false))
             .onDrag {
                 draggingProviderID = snapshot.provider
                 return NSItemProvider(object: snapshot.provider as NSString)

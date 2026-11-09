@@ -4,6 +4,7 @@ enum NotchDisplayStyle: String, CaseIterable, Identifiable {
     case dots, line, ring, icons, count
 
     static let defaultsKey = "hermes.notch.display-style"
+    static let enabledKey = "hermes.notch.enabled"
     static let defaultStyle = NotchDisplayStyle.count
     var id: String { rawValue }
     /// Icons and Count would look identical to a bare working state, so preview what sets them apart.
@@ -29,9 +30,16 @@ enum NotchDisplayStyle: String, CaseIterable, Identifiable {
 struct NotchDisplaySettings: View {
     @AppStorage(NotchDisplayStyle.defaultsKey) private var style: NotchDisplayStyle = .defaultStyle
     @AppStorage("hermes.notch.side") private var side: EdgeDockSide = .right
+    @AppStorage(NotchDisplayStyle.enabledKey) private var enabled = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            SettingsPreferenceRow(
+                title: "Show notch", detail: "Turn the screen-edge activity indicator off entirely."
+            ) {
+                Toggle("Show notch", isOn: $enabled)
+                    .labelsHidden().toggleStyle(.dockSwitch).controlSize(.small).tint(Color.dockAccent)
+            }
             SettingsPreferenceRow(
                 title: "Notch position", detail: "Dock on a screen edge, or as an island around the camera."
             ) {

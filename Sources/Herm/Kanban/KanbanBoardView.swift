@@ -102,6 +102,10 @@ struct KanbanBoardView: View, Equatable {
                                 }
                             }
                         }
+                        .animation(
+                            reduceMotion || !DockThemeStyle.current.animates ? nil : .dockEase(duration: 0.16),
+                            value: targetedLane == lane
+                        )
                         .onDrop(
                             of: [UTType.text],
                             delegate: KanbanLaneDropDelegate(
@@ -205,7 +209,10 @@ struct KanbanBoardView: View, Equatable {
                             .equatable()
                         }
                     }
-                    .animation(reduceMotion ? nil : .dockEase(duration: 0.2), value: laneTasks.map(\.id))
+                    .animation(
+                        reduceMotion || !DockThemeStyle.current.animates ? nil : .dockEase(duration: 0.2),
+                        value: laneTasks.map(\.id)
+                    )
                     .dockPadding(8)
                 }
             }
@@ -355,6 +362,7 @@ private struct KanbanTaskCard: View, Equatable {
     // Hover is local so it re-renders one card, not the board.
     @State private var isHovered = false
     @Environment(\.chatContextRouter) private var chatRouter
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if DEBUG
         @Environment(\.kanbanCardEvaluations) private var evaluations
     #endif
@@ -470,9 +478,13 @@ private struct KanbanTaskCard: View, Equatable {
             .accessibilityLabel("More actions for \(task.title)")
         }
         .opacity(isDragging ? 0.18 : 1)
+        .animation(
+            reduceMotion || !DockThemeStyle.current.animates ? nil : .dockEase(duration: 0.16),
+            value: isDragging
+        )
         .onHover { isHovered = $0 }
         .modifier(
-            KanbanCardDragCursor(
+            DockDragCursor(
                 isEnabled: isDraggable,
                 isDragging: isDragging
             )
@@ -579,7 +591,7 @@ private struct KanbanTaskCard: View, Equatable {
 
 /// Uses the standard macOS grab cursors without leaving an entry on the
 /// cursor stack when a card becomes disabled or leaves the view hierarchy.
-private struct KanbanCardDragCursor: ViewModifier {
+struct DockDragCursor: ViewModifier {
     let isEnabled: Bool
     let isDragging: Bool
 

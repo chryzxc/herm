@@ -362,7 +362,6 @@ struct DockRailButton: View {
 /// Square icon action for sidebar headers: quiet until hovered; prominent
 /// actions keep an accent tint so the primary action reads at a glance.
 struct DockIconButton: View {
-    @Environment(\.dockWorkspaceScale) private var workspaceScale
     let icon: Ph
     let label: String
     var isProminent = false
@@ -372,39 +371,57 @@ struct DockIconButton: View {
     var size: CGFloat = 28
     let style: DockThemePalette
     let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            DockIconButtonLabel(
+                icon: icon, isProminent: isProminent, isBusy: isBusy, hasBackground: hasBackground, size: size,
+                style: style)
+        }
+        .buttonStyle(.dockHover)
+        .disabled(isBusy)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// The glyph, frame and fill of a `DockIconButton`, for triggers that cannot be a plain button
+/// (links, menus) so every icon in a row looks identical.
+struct DockIconButtonLabel: View {
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
+    let icon: Ph
+    var isProminent = false
+    var isBusy = false
+    var hasBackground = true
+    var size: CGFloat = 28
+    var style = DockThemePalette(theme: DockThemeRuntime.current)
     @State private var isHovering = false
 
     var body: some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
-        Button(action: action) {
-            Group {
-                if isBusy {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    DockIcon(
-                        icon, size: size * 0.5,
-                        color: isProminent ? style.onAccent : isHovering ? style.primaryText : style.secondaryText)
-                }
+        Group {
+            if isBusy {
+                ProgressView().controlSize(.mini)
+            } else {
+                DockIcon(
+                    icon, size: size * 0.5,
+                    color: isProminent ? style.onAccent : isHovering ? style.primaryText : style.secondaryText)
             }
-            .frame(
-                width: DockWorkspaceScale.points(size, scale: workspaceScale),
-                height: DockWorkspaceScale.points(size, scale: workspaceScale)
-            )
-            .background(
-                shape.fill(
-                    !hasBackground
-                        ? Color.clear
-                        : isProminent
-                            ? style.accent.opacity(isHovering ? 0.9 : 1)
-                            : style.surface4.opacity(isHovering ? 0.9 : 0.6))
-            )
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.dockHover)
-        .disabled(isBusy)
+        .frame(
+            width: DockWorkspaceScale.points(size, scale: workspaceScale),
+            height: DockWorkspaceScale.points(size, scale: workspaceScale)
+        )
+        .background(
+            shape.fill(
+                !hasBackground
+                    ? Color.clear
+                    : isProminent
+                        ? style.accent.opacity(isHovering ? 0.9 : 1)
+                        : style.surface4.opacity(isHovering ? 0.9 : 0.6))
+        )
+        .contentShape(Rectangle())
         .onHover { isHovering = $0 }
-        .help(label)
-        .accessibilityLabel(label)
     }
 }
 

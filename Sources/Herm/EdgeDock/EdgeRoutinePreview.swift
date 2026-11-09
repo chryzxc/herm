@@ -30,67 +30,76 @@ struct EdgeRoutinePreview: View {
                 }.dockPadding(.horizontal, 10).frame(width: geometry.size.width, height: 40)
                 Divider().overlay(Color.dockBorderLight)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Profile: \(reference.profileID ?? "Launch profile")").dockFont(.metadata)
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Text(
-                            "Execution: \(control.routineStatusUnavailable(currentReference) ? "Status unavailable" : Self.executionLabel(for: currentReference))"
-                        )
-                        if let execution = reference.run?.error ?? reference.job.lastError {
-                            Text(HermesDiagnosticsService.safeSummary(execution))
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            fact(
+                                "Execution",
+                                control.routineStatusUnavailable(currentReference)
+                                    ? "Status unavailable" : Self.executionLabel(for: currentReference))
+                            if let execution = reference.run?.error ?? reference.job.lastError {
+                                detail(execution)
+                            }
+                            fact(
+                                "Delivery",
+                                reference.job.details.deliveryError == nil ? "No recorded error" : "Failed")
+                            if let delivery = reference.job.details.deliveryError { detail(delivery) }
+                            if let reason = reference.job.details.pausedReason {
+                                fact("Configuration", HermesDiagnosticsService.safeSummary(reason))
+                            }
+                            if let next = reference.job.nextRun {
+                                fact("Next run", HumanDateFormatting.dateAndTime(next))
+                            }
+                            fact("Profile", reference.profileID ?? "Launch profile")
                         }
-                        Text(
-                            "Delivery: \(reference.job.details.deliveryError == nil ? "No recorded delivery error" : "Failed")"
-                        )
-                        if let delivery = reference.job.details.deliveryError {
-                            Text(HermesDiagnosticsService.safeSummary(delivery))
-                        }
-                        if let reason = reference.job.details.pausedReason {
-                            Text("Configuration: \(HermesDiagnosticsService.safeSummary(reason))")
-                        }
-                        if let next = reference.job.nextRun {
-                            Text("Next: \(HumanDateFormatting.dateAndTime(next))")
-                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .dockPadding(10)
+                        .dockWell()
                         if let report {
                             Text(report.text).textSelection(.enabled)
                         } else if loading {
                             ProgressView().controlSize(.small)
-                        } else {
-                            Button("View report") {
-                                reportTask?.cancel()
-                                reportTask = Task { await loadReport() }
-                            }.buttonStyle(.dockCompact)
                         }
                         if let error = error ?? control.routineActionErrors[reference.id] {
                             Text(error).foregroundStyle(Color.dockWarning)
                         } else if let feedback = control.routineFeedback(currentReference) {
                             Text(feedback).foregroundStyle(Color.dockSecondaryText)
                         }
-                        HStack {
-                            Button(reference.job.enabled ? "Pause…" : "Resume…") {
-                                confirming = reference.job.enabled ? "Pause" : "Resume"
-                            }.disabled(
-                                !control.cronControlAvailable
-                                    || control.unavailableRoutineActions.contains(
-                                        reference.job.enabled ? "pause" : "resume")
-                            )
-                            Button("Run now…") { confirming = "Start a new run" }.disabled(
-                                !control.canTriggerRoutine(currentReference))
-                        }.buttonStyle(.dockCompact).disabled(control.routineActions.contains(reference.id))
-                        if control.routineNeedsReview(reference) {
-                            Button("I reviewed the run; allow another…") { confirming = "Record reviewed run" }
-                                .buttonStyle(.dockCompact)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Button("Run now…") { confirming = "Start a new run" }
+                                    .buttonStyle(.dockPrimary)
+                                    .disabled(!control.canTriggerRoutine(currentReference))
+                                Button(reference.job.enabled ? "Pause…" : "Resume…") {
+                                    confirming = reference.job.enabled ? "Pause" : "Resume"
+                                }.disabled(
+                                    !control.cronControlAvailable
+                                        || control.unavailableRoutineActions.contains(
+                                            reference.job.enabled ? "pause" : "resume")
+                                )
+                                if report == nil && !loading {
+                                    Button("View report") {
+                                        reportTask?.cancel()
+                                        reportTask = Task { await loadReport() }
+                                    }
+                                }
+                            }.buttonStyle(.dockSecondary).disabled(control.routineActions.contains(reference.id))
+                            if control.routineNeedsReview(reference) {
+                                Button("I reviewed the run; allow another…") { confirming = "Record reviewed run" }
+                                    .buttonStyle(.dockSecondary)
+                            }
+                            Text("Run now starts a new execution. It does not retry delivery.").dockFont(.metadata)
+                                .foregroundStyle(Color.dockSecondaryText)
                         }
-                        Text("Run now starts a new execution. It does not retry delivery.").dockFont(.metadata)
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Button(preferences.routinePins.contains(reference.id) ? "Unpin routine" : "Pin routine") {
-                            preferences.toggleRoutinePin(reference.id)
-                        }.buttonStyle(.dockCompact)
-                        Button("Integrations…") {
-                            control.integrationDestination = IntegrationDestination(
-                                profileID: reference.profileID)
-                            openAutomation()
-                        }.buttonStyle(.dockCompact)
+                        HStack(spacing: 14) {
+                            Button(preferences.routinePins.contains(reference.id) ? "Unpin routine" : "Pin routine") {
+                                preferences.toggleRoutinePin(reference.id)
+                            }
+                            Button("Integrations…") {
+                                control.integrationDestination = IntegrationDestination(
+                                    profileID: reference.profileID)
+                                openAutomation()
+                            }
+                        }.buttonStyle(.dockLink)
                     }.dockFont(.body).dockPadding(10).frame(
                         width: geometry.size.width, alignment: .leading)
                 }.frame(width: geometry.size.width, height: max(0, geometry.size.height - 86))
@@ -138,6 +147,17 @@ struct EdgeRoutinePreview: View {
                 )
             }
         }
+    }
+    private func fact(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                .frame(width: 76, alignment: .leading)
+            Text(value).frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+    private func detail(_ message: String) -> some View {
+        Text(HermesDiagnosticsService.safeSummary(message)).dockFont(.metadata)
+            .foregroundStyle(Color.dockWarning).padding(.leading, 84)
     }
     private func loadReport() async {
         guard let sessionID = reference.run?.sessionID ?? reference.job.sessionID,

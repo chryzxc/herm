@@ -28,6 +28,14 @@ struct DockThemeContrastTests {
         return (max(x, y) + 0.05) / (min(x, y) + 0.05)
     }
 
+    @Test func unreadBadgeWhiteTextContrastsWithRedFill() {
+        for dark in [false, true] {
+            let text = resolve(DockAccentColor.unreadBadgeText, dark: dark)
+            let fill = resolve(DockAccentColor.unreadBadgeFill, dark: dark)
+            #expect(ratio(text, fill) >= 4.5)
+        }
+    }
+
     @Test func buildBadgeTextContrastsWithTintedToolbar() {
         for theme in DockThemeID.allCases {
             let palette = DockThemePalette(theme: theme)

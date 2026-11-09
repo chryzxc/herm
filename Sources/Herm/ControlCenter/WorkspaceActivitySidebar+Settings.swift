@@ -137,6 +137,10 @@ extension WorkspaceActivitySidebar {
 
             HermesConfigCategoryView(editor: control.configEditor, category: selectedSettingsCategory)
 
+            if selectedSettingsCategory == .diagnostics {
+                HermPerformanceCaptureSettings()
+            }
+
             if selectedSettingsCategory == .diagnostics, let insights = control.insightsSummary {
                 settingsDisclosure(
                     title: "Usage insights", subtitle: "Last \(insights.days) days", icon: .chartBar,

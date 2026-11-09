@@ -62,6 +62,7 @@ struct EdgeSurfaceReveal: ViewModifier {
     let side: EdgeDockSide
     let revealed: Bool
     let collapsed: CGSize
+    var collapsedOffsetY: CGFloat = 0
 
     @ViewBuilder func body(content: Content) -> some View {
         if isActive {
@@ -72,6 +73,8 @@ struct EdgeSurfaceReveal: ViewModifier {
                             width: revealed ? geometry.size.width : min(collapsed.width, geometry.size.width),
                             height: revealed ? geometry.size.height : min(collapsed.height, geometry.size.height)
                         )
+                        // Collapse onto the notch, which may sit off the clamped panel's center.
+                        .offset(y: revealed ? 0 : collapsedOffsetY)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: side.alignment)
                 }
             }

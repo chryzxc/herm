@@ -827,7 +827,7 @@ extension WorkspaceActivitySidebar {
                     }
                 }
                 .dockPadding(20)
-                .frame(maxWidth: 700, alignment: .topLeading)
+                .frame(maxWidth: kanbanInspectorTab == .overview ? .infinity : 700, alignment: .topLeading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }

@@ -1,4 +1,32 @@
+import AppKit
 import SwiftUI
+
+/// NSPopover places itself using the content size at show time; content that grows afterwards
+/// (async loads) can end up off-screen. Re-clamp the popover window into the visible screen on every layout.
+private struct PopoverScreenClamp: NSViewRepresentable {
+    final class ClampView: NSView {
+        override func layout() {
+            super.layout()
+            DispatchQueue.main.async { [weak self] in self?.clamp() }
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            DispatchQueue.main.async { [weak self] in self?.clamp() }
+        }
+
+        private func clamp() {
+            guard let window, let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+            var frame = window.frame
+            frame.origin.x = max(visible.minX, min(frame.origin.x, visible.maxX - frame.width))
+            frame.origin.y = max(visible.minY, min(frame.origin.y, visible.maxY - frame.height))
+            if frame != window.frame { window.setFrame(frame, display: true) }
+        }
+    }
+
+    func makeNSView(context: Context) -> ClampView { ClampView() }
+    func updateNSView(_ view: ClampView, context: Context) { view.needsLayout = true }
+}
 
 extension View {
     /// One opaque themed canvas covers both the content and native presentation chrome.
@@ -13,7 +41,7 @@ extension View {
         arrowEdge: Edge? = nil, @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         popover(isPresented: isPresented, attachmentAnchor: attachmentAnchor, arrowEdge: arrowEdge) {
-            content().dockPresentationSurface()
+            content().dockPresentationSurface().background(PopoverScreenClamp())
         }
     }
 
@@ -22,7 +50,7 @@ extension View {
         arrowEdge: Edge? = nil, @ViewBuilder content: @escaping (Item) -> Content
     ) -> some View {
         popover(item: item, attachmentAnchor: attachmentAnchor, arrowEdge: arrowEdge) { item in
-            content(item).dockPresentationSurface()
+            content(item).dockPresentationSurface().background(PopoverScreenClamp())
         }
     }
 

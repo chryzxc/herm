@@ -14,8 +14,12 @@ struct DockHoverTipAnchor: NSViewRepresentable {
         view.text = text
         view.edge = edge
         view.gap = gap
-        if view.hovering != hovering || changed {
-            view.hovering = hovering
+        guard view.hovering != hovering || changed else { return }
+        view.hovering = hovering
+        guard view.window == nil else { return DockHoverTipPresenter.shared.update(view) }
+        // Anchors mount already hovered, before they have a window or a frame.
+        DispatchQueue.main.async { [weak view] in
+            guard let view, view.hovering, view.window != nil else { return }
             DockHoverTipPresenter.shared.update(view)
         }
     }

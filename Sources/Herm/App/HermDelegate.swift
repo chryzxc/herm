@@ -141,10 +141,8 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         _ = NSScrollView.installDockScrollers
         actionErrorPresenter = DockActionErrorPresenter()
         Task {
-            for service in ["io.github.chryzxc.Herm.gateway", "io.github.chryzxc.Herm.browser"] {
-                do { try await HermKeychain.restrictAccess(service: service) } catch {
-                    DockActionErrorCenter.shared.report("Could not secure saved credentials", error: error)
-                }
+            do { try await HermKeychain.restrictAccess(service: "io.github.chryzxc.Herm.gateway") } catch {
+                DockActionErrorCenter.shared.report("Could not secure saved credentials", error: error)
             }
         }
         // AppKit's first tooltip waits ~1s; later ones are instant. Make the
@@ -961,6 +959,11 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         panelPresentation.compactWidth = fittedWidth
         panelPresentation.compactHeight = max(0, height - insets.top - insets.bottom)
         let frame = placement.frame(width: fittedWidth + insets.leading + insets.trailing, height: height)
+        // The notch clamps to the screen at its own height, so its rail can sit off the panel's center.
+        let notchMidY =
+            panelPresentation.islandStatus.map { $0.collapsedTop - $0.collapsedRailHeight / 2 }
+            ?? placement.frame(width: 1, height: panelPresentation.collapsedSize.height).midY
+        panelPresentation.collapsedOffsetY = placement.side == .top ? 0 : frame.midY - notchMidY
 
         // Session selection may re-evaluate layout without changing its size.
         guard !panel.frame.equalTo(frame) else { return fittedWidth }

@@ -125,6 +125,12 @@ final class EdgeDockController: NSObject {
         host.sizingOptions = []
         notchHost = host
         panel.contentView = host.panelContainer()
+        NotificationCenter.default.publisher(for: NSWindow.didResizeNotification, object: panel)
+            .merge(with: NotificationCenter.default.publisher(for: NSWindow.didMoveNotification, object: panel))
+            .compactMap { ($0.object as? NSWindow)?.frame.maxY }
+            .removeDuplicates()
+            .sink { [weak self] top in self?.state.windowTop = top }
+            .store(in: &subscriptions)
         panel.onCancel = { [weak self] in self?.escapePreview() }
         installInteractionMonitors()
         controlCenter.pet.$info.combineLatest(controlCenter.pet.$sheet)
@@ -308,12 +314,26 @@ final class EdgeDockController: NSObject {
                 self.position(animated: true)
             }
             .store(in: &subscriptions)
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .compactMap { [weak self] _ in self?.notchEnabled }
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.ensureNotchVisible() }
+            .store(in: &subscriptions)
         controlCenter.bind(to: model)
         ensureNotchVisible()
     }
 
+    private var notchEnabled: Bool { defaults.object(forKey: NotchDisplayStyle.enabledKey) as? Bool ?? true }
+
     private func ensureNotchVisible() {
         guard !workspacePresented else { return }
+        guard notchEnabled else {
+            panel.orderOut(nil)
+            petWindow?.hide()
+            return
+        }
         position(animated: false)
         panel.orderFrontRegardless()
     }
@@ -355,8 +375,7 @@ final class EdgeDockController: NSObject {
         workspacePresented = false
         state.activity.backgroundCompleted = false
         state.activity.responseCompleted = false
-        position(animated: false)
-        panel.orderFrontRegardless()
+        ensureNotchVisible()
         surfaceDigestIfPossible()
     }
 
@@ -1224,6 +1243,10 @@ final class EdgeDockController: NSObject {
         guard let placement else { return }
         notchHost?.bottomHoverExclusion = state.side == .top ? 0 : state.petReserve
         let target = placement.frame(width: state.panelSize.width, height: state.panelSize.height).integral
+        let collapsedTop = placement.frame(width: 1, height: state.collapsedRailHeight + state.petReserve).integral.maxY
+        let openTop = placement.frame(width: 1, height: state.openSize.height + state.petReserve).integral.maxY
+        if state.collapsedTop != collapsedTop { state.collapsedTop = collapsedTop }
+        if state.openTop != openTop { state.openTop = openTop }
         // On top the pet docks just right of the collapsed island, under the menu bar.
         let home =
             state.side == .top
@@ -1855,6 +1878,12 @@ final class EdgeNotchState: ObservableObject {
     var isComposingQuickMessage: Bool {
         composing && !isReadingDetail && !showingDigest && (quickTarget == nil || quickReplyTask == nil)
     }
+    /// Screen tops (AppKit) of the collapsed and open windows and of the live window. Both
+    /// clamp to the screen separately, so the view pins the shell to these tops: the
+    /// preview grows out of, and folds back into, the rail where it actually sits.
+    @Published var collapsedTop: CGFloat = 0
+    @Published var openTop: CGFloat = 0
+    @Published var windowTop: CGFloat = 0
     /// The window: the pet hangs below an edge rail but beside the top island.
     var panelSize: CGSize {
         side == .top
@@ -1893,7 +1922,9 @@ struct EdgeNotchView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            VStack(spacing: 4) {
+            // Pin the shell to its edge: the window stays expanded-wide while it collapses,
+            // and default center alignment made the shrinking notch drift to the middle.
+            VStack(alignment: state.side.alignment.horizontal, spacing: 4) {
                 HStack(spacing: 0) {
                     if open {
                         // The outer contour already supplies visual breathing room.
@@ -1966,7 +1997,11 @@ struct EdgeNotchView: View {
                     Color.clear.frame(height: max(44, state.petReserve - 4)).allowsHitTesting(false)
                 }
             }
-            .frame(width: geometry.size.width, height: geometry.size.height, alignment: state.side.alignment)
+            .frame(
+                width: geometry.size.width, height: geometry.size.height,
+                alignment: state.side == .top ? .top : state.side == .left ? .topLeading : .topTrailing
+            )
+            .offset(y: state.side == .top ? 0 : state.windowTop - (open ? state.openTop : state.collapsedTop))
         }
         .clipped()
         // Rail growth (more stacked marks) uses the same spring as the open/close morph.

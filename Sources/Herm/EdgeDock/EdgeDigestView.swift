@@ -4,24 +4,60 @@ struct EdgeQuietMenu: View {
     @ObservedObject var coordinator: HermInterruptionCoordinator
     let showDigest: () -> Void
     var body: some View {
-        DockMenu {
+        // The label width changes with the countdown, so pin the popover to the trailing edge.
+        DockMenu(anchor: .point(.bottomTrailing)) {
             if coordinator.quiet {
-                Button("End quiet period") { coordinator.end() }
+                Button {
+                    coordinator.end()
+                } label: {
+                    Label("End quiet period", icon: .bellRinging)
+                }
             } else {
-                Button("Quiet for 60 minutes") { coordinator.start() }
-                Button("Quiet for 30 minutes") { coordinator.start(minutes: 30) }
-                Button("Quiet until I end it") { coordinator.start(minutes: nil) }
+                Button {
+                    coordinator.start(minutes: 30)
+                } label: {
+                    Label("Quiet for 30 minutes", icon: .timer)
+                }
+                Button {
+                    coordinator.start()
+                } label: {
+                    Label("Quiet for 60 minutes", icon: .clockCountdown)
+                }
+                Button {
+                    coordinator.start(minutes: nil)
+                } label: {
+                    Label("Quiet until I end it", icon: .infinity)
+                }
             }
             if !coordinator.entries.isEmpty || coordinator.overflow > 0 {
                 Divider()
-                Button("Review digest (\(coordinator.entries.count))", action: showDigest)
+                Button(action: showDigest) {
+                    Label("Review digest (\(coordinator.entries.count))", icon: .tray)
+                }
             }
         } label: {
-            Text(coordinator.quiet ? "Quiet on" : "Quiet").dockFont(.metadata, weight: .medium)
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                HStack(spacing: 4) {
+                    DockIcon(coordinator.quiet ? .bellSimpleSlash : .bellSimple, size: 13)
+                    Text(Self.title(quiet: coordinator.quiet, expiry: coordinator.expiry, now: context.date))
+                        .dockFont(.metadata, weight: .medium)
+                        .monospacedDigit()
+                }
+                .foregroundStyle(coordinator.quiet ? Color.dockPrimaryText : Color.dockSecondaryText)
+            }
         }
         .fixedSize()
         .accessibilityLabel(
             coordinator.quiet ? "Quiet period active. Manage interruptions" : "Start a quiet period")
+    }
+
+    /// "Quiet", "Quiet · 42m", or "Quiet · On" for an open-ended period.
+    static func title(quiet: Bool, expiry: Date?, now: Date) -> String {
+        guard quiet else { return "Quiet" }
+        guard let expiry else { return "Quiet · On" }
+        let minutes = max(1, Int((expiry.timeIntervalSince(now) / 60).rounded(.up)))
+        guard minutes >= 60 else { return "Quiet · \(minutes)m" }
+        return minutes % 60 == 0 ? "Quiet · \(minutes / 60)h" : "Quiet · \(minutes / 60)h \(minutes % 60)m"
     }
 }
 

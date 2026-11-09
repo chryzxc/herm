@@ -386,10 +386,14 @@ extension View {
 private struct DockContextMenuModifier<Menu: View>: ViewModifier {
     let menu: () -> Menu
     @State private var isOpen = false
+    @State private var hovering = false
 
+    /// The catcher is an NSView; mounting it only under the pointer keeps lazy
+    /// lists from inserting one per row as they scroll.
     func body(content: Content) -> some View {
         content
-            .overlay(SecondaryClickCatcher { isOpen = true })
+            .onHover { hovering = $0 }
+            .overlay { if hovering { SecondaryClickCatcher { isOpen = true } } }
             .dockPopover(isPresented: $isOpen, arrowEdge: .bottom) {
                 DockMenuPanel(content: menu())
                     // Depth 1 makes nested DockMenus render as submenu rows.

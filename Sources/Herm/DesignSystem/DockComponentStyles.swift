@@ -1742,9 +1742,9 @@ extension View {
     }
 
     /// Compact label capsule: neutral by default, or washed with `tint` for status and identity.
-    func dockPill(tint: Color? = nil) -> some View {
-        dockPadding(.horizontal, 6).dockPadding(.vertical, 2)
-            .background(Capsule().fill(tint.map { $0.opacity(0.14) } ?? Color.dockSurface4))
+    func dockPill(tint: Color? = nil, solid: Bool = false, compact: Bool = false) -> some View {
+        dockPadding(.horizontal, compact ? 4 : 6).dockPadding(.vertical, compact ? 1 : 2)
+            .background(Capsule().fill(tint.map { solid ? $0 : $0.opacity(0.14) } ?? Color.dockSurface4))
     }
 
     /// Floating tinted surface for the voice HUD and its activity pills.
@@ -1857,10 +1857,12 @@ struct DockHoverTip: ViewModifier {
     var gap: CGFloat = 6
     @State private var hovering = false
 
+    /// The anchor is an NSView; mounting it only while hovered keeps lazy lists
+    /// from inserting one per row as they scroll. Unmounting dismisses the tip.
     func body(content: Content) -> some View {
         content
             .onHover { hovering = $0 }
-            .background(DockHoverTipAnchor(text: text, edge: edge, gap: gap, hovering: hovering))
+            .background { if hovering { DockHoverTipAnchor(text: text, edge: edge, gap: gap, hovering: true) } }
     }
 }
 
