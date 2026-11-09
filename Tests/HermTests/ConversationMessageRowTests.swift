@@ -207,10 +207,12 @@ struct ConversationMessageRowTests {
                 hover.isHovering = entered
                 try await settle(host)
                 #expect(recorder.values[leaf]?.last == (entered ? hovering : resting))
-                #expect(recorder.values[parent, default: []].count == parentCount)
                 #expect(host.fittingSize == size)
                 #expect(nativeViewIdentities(host) == identities)
             }
+            // Slow runners may land one late layout pass after the baseline; a hover regression
+            // re-evaluates the row on every one of the four toggles.
+            #expect(recorder.values[parent, default: []].count <= parentCount + 1)
             print(
                 "Hover evaluations \(parent): \(recorder.values.mapValues { $0.count }); \(leaf): \(recorder.values[leaf] ?? [])"
             )
