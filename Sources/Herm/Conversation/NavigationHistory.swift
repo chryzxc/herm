@@ -7,6 +7,10 @@ struct NavigationDestination: Equatable {
     var tab: ControlTab?
     /// Set only for `.conversation`.
     var sessionID: String?
+    /// Set only for the GitHub surfaces (`.pullRequests`, `.issues`).
+    var gitHubSection: GitHubWorkspaceSection? = nil
+    /// The pull request, issue, or repository selected inside `gitHubSection`.
+    var gitHubItemID: String? = nil
 }
 
 /// Back/forward stack of visited destinations, like a browser's.
@@ -27,6 +31,13 @@ struct NavigationHistory {
             return
         }
         guard entries[index] != destination else { return }
+        // A page that only now auto-selected its first item is the same visit, not a new one.
+        var unselected = destination
+        unselected.gitHubItemID = nil
+        if entries[index].gitHubItemID == nil, entries[index] == unselected {
+            entries[index] = destination
+            return
+        }
         entries.removeSubrange((index + 1)...)
         entries.append(destination)
         if entries.count > Self.limit { entries.removeFirst() }

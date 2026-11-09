@@ -73,6 +73,16 @@ struct ChatContext: Identifiable, Equatable, Codable, Sendable {
             projectPath: issue.localPath.isEmpty ? nil : issue.localPath
         )
     }
+
+    init(repository: GitHubRepositorySummary) {
+        var lines = [
+            "GitHub repository \(repository.id).", "Repository: \(repository.reference.webURL.absoluteString)",
+        ]
+        if let branch = repository.defaultBranch { lines.append("Default branch: \(branch)") }
+        if let language = repository.language { lines.append("Language: \(language)") }
+        if !repository.description.isEmpty { lines += ["Description:", repository.description] }
+        self.init(id: "github:\(repository.id)", title: repository.id, body: lines.joined(separator: "\n"))
+    }
 }
 
 /// Stable, app-wide handle for "attach to chat". A class (not a closure) in
@@ -126,12 +136,24 @@ extension EnvironmentValues {
 struct AttachToChatMenu: View {
     /// Header pill matching `GitHubLinkButton`; off for context menus.
     var pill = false
+    /// Icon-only button for rows of `DockIconButton` actions; wins over `pill`.
+    var icon = false
     let context: () -> ChatContext
     @Environment(\.chatContextRouter) private var router
 
     var body: some View {
         if let router {
-            if pill {
+            if icon {
+                DockMenu {
+                    items(router)
+                } label: {
+                    DockIconButtonLabel(icon: .chatCircleText)
+                }
+                .buttonStyle(.dockHover)
+                .fixedSize()
+                .help("Attach to chat")
+                .accessibilityLabel("Attach to chat")
+            } else if pill {
                 DockMenu {
                     items(router)
                 } label: {

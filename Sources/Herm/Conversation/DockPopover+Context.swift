@@ -125,7 +125,19 @@ extension DockPopover {
         NavigationDestination(
             surface: fullscreenSurface,
             tab: fullscreenSurface == .global ? fullscreenGlobalTab : nil,
-            sessionID: fullscreenSurface == .conversation ? model.navigationSessionID : nil)
+            sessionID: fullscreenSurface == .conversation ? model.navigationSessionID : nil,
+            gitHubSection: isGitHubSurface ? sessionNavNavigation.selectedGitHubSection : nil,
+            gitHubItemID: isGitHubSurface ? selectedGitHubItemID : nil)
+    }
+
+    private var isGitHubSurface: Bool { fullscreenSurface == .pullRequests || fullscreenSurface == .issues }
+
+    private var selectedGitHubItemID: String? {
+        switch sessionNavNavigation.selectedGitHubSection {
+        case .pullRequests: pullRequestCenter.selectedID
+        case .issues: issueCenter.selectedIssueID
+        case .repositories: githubRepositories.selectedID
+        }
     }
 
     var navigationHistoryControls: DockNavigationHistory {
@@ -166,8 +178,17 @@ extension DockPopover {
                 sessionNavNavigation.selectArtifacts()
                 fullscreenSurface = .artifacts
             case .bots: openBotsPage()
-            case .pullRequests: selectGitHubSection(.pullRequests)
-            case .issues: selectGitHubSection(.issues)
+            case .pullRequests, .issues:
+                let section = destination.gitHubSection ?? (destination.surface == .issues ? .issues : .pullRequests)
+                selectGitHubSection(section)
+                // A visit recorded before anything was selected keeps whatever the page selects now.
+                if let id = destination.gitHubItemID {
+                    switch section {
+                    case .pullRequests: pullRequestCenter.selectedID = id
+                    case .issues: issueCenter.selectedIssueID = id
+                    case .repositories: githubRepositories.selectedID = id
+                    }
+                }
             case .chatGrid:
                 sessionNavNavigation.clearSelection()
                 fullscreenSurface = .chatGrid
@@ -286,6 +307,24 @@ extension DockPopover {
                 }
                 .environment(\.openGitHubItem, openGitHubReference)
                 .environment(\.openGitHubRepository, openGitHubRepository)
+                // The in-app browser lives in a chat's inspector; GitHub pages have none, so links leave Herm.
+                .environment(
+                    \.openURL,
+                    OpenURLAction {
+                        ExternalOpen.open($0)
+                        return .handled
+                    }
+                )
+                .environment(
+                    \.markdownOpenURL,
+                    OpenURLAction { url in
+                        if let reference = GitHubMarkdownLink.reference(for: url) {
+                            openGitHubReference(reference)
+                        } else {
+                            ExternalOpen.open(url)
+                        }
+                        return .handled
+                    })
             } else if fullscreenSurface == .artifacts {
                 ArtifactsInspectorView(model: model, presentation: .page) { session in
                     sessionNavNavigation.openSession(session.id)
