@@ -6,7 +6,7 @@ SWIFT_FORMAT ?= $(shell xcrun --find swift-format 2>/dev/null)
 .PHONY: test build build-release run guard lint format smoke-contract color-contract button-contract card-contract shell-contract naming-contract resource-contract design-contract check package
 
 test:
-	# Native UI fixtures share the main actor; serialize to keep their deadlines meaningful.
+	# Parallel by default; suites sharing native fixtures opt out with @Suite(.serialized).
 	. Scripts/appintents.sh && reset_stale_metal_cache && swift test --disable-automatic-resolution
 
 build:
