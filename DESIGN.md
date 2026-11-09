@@ -407,7 +407,7 @@ controls do not compress. Existing skin-specific feedback curves remain in use.
   eases, as in the Hermes desktop.
 - Bubbles and cards appear with a short rise-and-fade (about 0.24s). A status
   or task change may pop once.
-- Live loops are the status pulse and the shimmer sweep (1.6s). The running
+- Live loops are the status pulse and the shimmer sweep (1.6s). GitHub loading skeletons use one slow opacity breath (1.2s) instead of a sweep. The running
   chat indicator draws a borderless 40pt Bot in a fixed 56pt slot. Real activity starts
   and completions trigger alternating reaches, tilts, and hops, with a short
   crouch, soft landing, and an echo of the current activity glyph. Rapid updates
@@ -3132,7 +3132,11 @@ Session PR inspector tabs, including expanded code review, omit the floating cha
 panel. Their toolbar offers Attach to chat, staging current PR
 context in the existing session composer without sending or replacing the draft.
 Reattaching updates the existing chip. Compact toolbars use a labelled icon action.
-The standalone Pull Requests page hides Attach to chat.
+The standalone Pull Requests page and the repository overview offer an icon-only Attach to chat
+menu (new chat or a recent chat); the issue header keeps its labelled pill. Issue chat links read
+Start chat, or Open chat once linked. Links on GitHub pages open in the external browser; the
+in-app browser opens only from a chat's inspector. Window back/forward restores the GitHub section
+and selected pull request, issue, or repository.
 
 The Changes group classifies current loaded file paths, with mocks/fixtures
 preceding tests, then docs/configuration/code/other. Totals lead the group, followed by compact rows with category, file count,
@@ -3942,6 +3946,8 @@ Pull request descriptions display task-list states, separators, and embedded rem
 ### GitHub workspace navigation
 
 Pull requests, Issues, and Repositories share a compact switcher in the page toolbar. At narrow widths it becomes a labeled menu. The list and detail panes use the recovered workspace width.
+
+Repository detail Overview aligns commit titles in a fixed SHA column and folds an empty release state into its section header. Activity keeps its title, count, sort, and filters in the same reading column as its rows; the 30-entry cap note sits after the list.
 
 ### Models & tools settings
 
