@@ -7,7 +7,7 @@ SWIFT_FORMAT ?= $(shell xcrun --find swift-format 2>/dev/null)
 
 test:
 	# Native UI fixtures share the main actor; serialize to keep their deadlines meaningful.
-	. Scripts/appintents.sh && reset_stale_metal_cache && swift test --no-parallel --disable-automatic-resolution
+	. Scripts/appintents.sh && reset_stale_metal_cache && swift test --disable-automatic-resolution
 
 build:
 	. Scripts/appintents.sh && reset_stale_metal_cache && swift build --disable-automatic-resolution
