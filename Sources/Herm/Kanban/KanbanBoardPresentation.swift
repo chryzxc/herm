@@ -52,6 +52,20 @@ struct KanbanBoardPresentation {
             tasksByLane[lane] ?? []
         }
 
+        /// Shows a dropped card at its drop slot while Hermes applies the move.
+        func placing(_ taskID: String, in lane: KanbanLane, at index: Int) -> Snapshot {
+            guard let source = tasksByLane.first(where: { $0.value.contains { $0.id == taskID } })?.key,
+                source != lane, let task = tasksByLane[source]?.first(where: { $0.id == taskID })
+            else { return self }
+            var lanes = tasksByLane
+            lanes[source]?.removeAll { $0.id == taskID }
+            var target = lanes[lane] ?? []
+            target.insert(task, at: min(max(index, 0), target.count))
+            lanes[lane] = target
+            return Snapshot(
+                tasksByLane: lanes, botByAssignee: botByAssignee, visibleBotByAssignee: visibleBotByAssignee)
+        }
+
         func bot(for assignee: String?) -> BotSummary? {
             guard let assignee else { return nil }
             return botByAssignee[KanbanBoardPresentation.normalized(assignee)]

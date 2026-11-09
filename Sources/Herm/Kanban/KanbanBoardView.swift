@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 #if DEBUG
     @MainActor
@@ -69,8 +68,7 @@ struct KanbanBoardView: View, Equatable {
     let onAssign: (KanbanTaskSummary, String?) -> Void
 
     @State private var expansion = KanbanLaneExpansionState()
-    @State private var draggingTaskID: String?
-    @State private var targetedLane: KanbanLane?
+    @State private var drag = KanbanDragController()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     nonisolated static func == (lhs: KanbanBoardView, rhs: KanbanBoardView) -> Bool {
@@ -85,10 +83,13 @@ struct KanbanBoardView: View, Equatable {
     }
 
     var body: some View {
-        let snapshot = KanbanBoardPresentation.makeSnapshot(tasks: tasks, bots: bots, visibleBots: visibleBots)
+        var snapshot = KanbanBoardPresentation.makeSnapshot(tasks: tasks, bots: bots, visibleBots: visibleBots)
+        if let placement = drag.placement {
+            snapshot = snapshot.placing(placement.taskID, in: placement.lane, at: placement.index)
+        }
         // Relative activity only needs minute resolution; one shared clock
         // replaces a per-card live timer.
-        TimelineView(.periodic(from: .now, by: 60)) { context in
+        return TimelineView(.periodic(from: .now, by: 60)) { context in
             ScrollView(.horizontal, showsIndicators: true) {
                 HStack(alignment: .top, spacing: 10) {
                     ForEach(KanbanLane.allCases) { lane in
@@ -97,35 +98,97 @@ struct KanbanBoardView: View, Equatable {
                             if expansion.isExpanded(lane, hasTasks: !laneTasks.isEmpty) {
                                 expandedLane(lane, tasks: laneTasks, snapshot: snapshot, now: context.date)
                             } else {
-                                KanbanLaneRail(lane: lane, count: laneTasks.count, isDropTarget: targetedLane == lane) {
+                                KanbanLaneRail(lane: lane, count: laneTasks.count, isDropTarget: drag.target == lane) {
                                     expansion.expand(lane, hasTasks: !laneTasks.isEmpty)
                                 }
                             }
                         }
-                        .animation(
-                            reduceMotion || !DockThemeStyle.current.animates ? nil : .dockEase(duration: 0.16),
-                            value: targetedLane == lane
-                        )
-                        .onDrop(
-                            of: [UTType.text],
-                            delegate: KanbanLaneDropDelegate(
-                                lane: lane,
-                                tasks: tasks,
-                                actions: actions,
-                                pendingActionIDs: pendingActionIDs,
-                                draggingTaskID: $draggingTaskID,
-                                targetedLane: $targetedLane,
-                                drop: onDrop
-                            ))
+                        .animation(motion, value: drag.target == lane)
+                        .onGeometryChange(for: CGRect.self) {
+                            $0.frame(in: .named(KanbanDragController.space))
+                        } action: { [drag] in
+                            drag.laneFrames[lane] = $0
+                        }
                     }
                 }
                 .dockPadding(.bottom, 8)
                 .frame(maxHeight: .infinity, alignment: .top)
             }
+            .overlay(alignment: .topLeading) {
+                if let session = drag.session {
+                    KanbanDragGhost(controller: drag, session: session) {
+                        card(
+                            session.task, lane: session.source, snapshot: snapshot, now: context.date, draggable: false)
+                    }
+                    .id(session.task.id)
+                }
+            }
+            .coordinateSpace(name: KanbanDragController.space)
         }
-        .onChange(of: draggingTaskID) { _, id in
-            if id == nil { targetedLane = nil }
+        .onAppear(perform: syncDrag)
+        .onChange(of: tasks) { _, tasks in
+            syncDrag()
+            // Hermes answered: the card is in its new lane, or the move failed.
+            if let placement = drag.placement,
+                tasks.contains(where: {
+                    $0.id == placement.taskID && KanbanBoardPresentation.lane(for: $0.status) == placement.lane
+                }) || !drag.isPending(placement.taskID)
+            {
+                withAnimation(motion) { drag.placement = nil }
+            }
         }
+        .onChange(of: pendingActionIDs) {
+            syncDrag()
+            guard let placement = drag.placement, !drag.isPending(placement.taskID) else { return }
+            // A failed move may not change the board, so do not wait for a refresh forever.
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                if drag.placement == placement { withAnimation(motion) { drag.placement = nil } }
+            }
+        }
+        .onChange(of: actions) { syncDrag() }
+        .onChange(of: reduceMotion) { syncDrag() }
+    }
+
+    private var motion: Animation? {
+        reduceMotion || !DockThemeStyle.current.animates ? nil : .dockEase(duration: 0.22)
+    }
+
+    private func syncDrag() {
+        drag.tasks = tasks
+        drag.actions = actions
+        drag.pendingActionIDs = pendingActionIDs
+        drag.motion = motion
+        drag.drop = onDrop
+    }
+
+    private func card(
+        _ task: KanbanTaskSummary,
+        lane: KanbanLane,
+        snapshot: KanbanBoardPresentation.Snapshot,
+        now: Date,
+        draggable: Bool
+    ) -> some View {
+        KanbanTaskCard(
+            task: task,
+            lane: lane,
+            bot: snapshot.visibleBot(for: task.assignee),
+            avatarData: snapshot.visibleBot(for: task.assignee).flatMap { avatarImages[$0.id] },
+            isSelected: selectedTaskID == task.id,
+            activityLabel: (task.latestEventAt ?? task.startedAt).map {
+                KanbanBoardPresentation.compactAge(since: $0, now: now)
+            } ?? "No activity",
+            actions: actions,
+            pendingActionIDs: pendingActionIDs.filter { $0.hasSuffix(":\(task.id)") },
+            isLoadingDetail: loadingDetailTaskID == task.id,
+            assignableBots: bots,
+            drag: draggable ? drag : nil,
+            onSelect: onSelect,
+            onAction: onAction,
+            onMove: onDrop,
+            onAssign: onAssign
+        )
+        .equatable()
     }
 
     private func expandedLane(
@@ -169,7 +232,8 @@ struct KanbanBoardView: View, Equatable {
             .frame(height: 36)
             Rectangle().fill(lane.color.opacity(0.45)).frame(height: 1)
 
-            if laneTasks.isEmpty {
+            let gapHeight = drag.target == lane ? drag.session?.size.height : nil
+            if laneTasks.isEmpty && gapHeight == nil {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(lane.emptyTitle)
                         .dockFont(.body, weight: .semibold)
@@ -183,107 +247,70 @@ struct KanbanBoardView: View, Equatable {
                 .dockPadding(12)
                 Spacer(minLength: 0)
             } else {
+                let rows = KanbanLaneRow.rows(laneTasks, gapHeight: gapHeight, at: drag.insertion)
                 ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(alignment: .leading, spacing: 6) {
-                        ForEach(laneTasks) { task in
-                            KanbanTaskCard(
-                                task: task,
-                                lane: lane,
-                                bot: snapshot.visibleBot(for: task.assignee),
-                                avatarData: snapshot.visibleBot(for: task.assignee).flatMap { avatarImages[$0.id] },
-                                isSelected: selectedTaskID == task.id,
-                                activityLabel: (task.latestEventAt ?? task.startedAt).map {
-                                    KanbanBoardPresentation.compactAge(since: $0, now: now)
-                                } ?? "No activity",
-                                actions: actions,
-                                pendingActionIDs: pendingActionIDs.filter { $0.hasSuffix(":\(task.id)") },
-                                isLoadingDetail: loadingDetailTaskID == task.id,
-                                assignableBots: bots,
-                                isDragging: draggingTaskID == task.id,
-                                draggingTaskID: $draggingTaskID,
-                                onSelect: onSelect,
-                                onAction: onAction,
-                                onMove: onDrop,
-                                onAssign: onAssign
-                            )
-                            .equatable()
+                    LazyVStack(alignment: .leading, spacing: KanbanDragController.cardSpacing) {
+                        ForEach(rows) { row in
+                            Group {
+                                switch row {
+                                case .card(let task): sourceAwareCard(task, lane: lane, snapshot: snapshot, now: now)
+                                case .gap(let height): KanbanDropSlot(height: height, tint: lane.color)
+                                }
+                            }
+                            .onGeometryChange(for: CGRect.self) {
+                                $0.frame(in: .named(KanbanDragController.space))
+                            } action: { [drag] in
+                                drag.rowFrames[row.id] = $0
+                            }
                         }
                     }
-                    .animation(
-                        reduceMotion || !DockThemeStyle.current.animates ? nil : .dockEase(duration: 0.2),
-                        value: laneTasks.map(\.id)
-                    )
+                    .animation(motion, value: rows.map(\.id))
                     .dockPadding(8)
                 }
             }
         }
         .frame(width: Self.laneWidth)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(lane.color.opacity(targetedLane == lane ? 0.10 : 0))
+        .background(lane.color.opacity(drag.target == lane ? 0.10 : 0))
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         .contentShape(Rectangle())
         .dockWell(
             .sunken, radius: DockLayout.paneRadius, role: .pane,
-            stroke: targetedLane == lane ? lane.color.opacity(0.7) : nil)
+            stroke: drag.target == lane ? lane.color.opacity(0.7) : nil)
+    }
+
+    /// The dragged card stays mounted so its gesture keeps running: it leaves a
+    /// slot behind, and collapses once another lane has opened a gap for it.
+    private func sourceAwareCard(
+        _ task: KanbanTaskSummary, lane: KanbanLane, snapshot: KanbanBoardPresentation.Snapshot, now: Date
+    ) -> some View {
+        let isSource = drag.session?.task.id == task.id
+        let collapsed = isSource && drag.target != nil
+        return card(task, lane: lane, snapshot: snapshot, now: now, draggable: true)
+            .opacity(isSource ? 0 : 1)
+            .overlay {
+                if isSource && !collapsed { KanbanDropSlot(height: nil, tint: lane.color) }
+            }
+            .frame(height: collapsed ? 0 : nil, alignment: .top)
+            .dockPadding(.bottom, collapsed ? -KanbanDragController.cardSpacing : 0)
     }
 }
 
-/// Lane drop target. Only cards dragged from this board are accepted; a lane
-/// the card cannot enter (its own, or a system-owned lane) shows the
-/// forbidden cursor instead of highlighting.
-private struct KanbanLaneDropDelegate: DropDelegate {
-    let lane: KanbanLane
-    let tasks: [KanbanTaskSummary]
-    let actions: KanbanCardActionAvailability
-    let pendingActionIDs: Set<String>
-    @Binding var draggingTaskID: String?
-    @Binding var targetedLane: KanbanLane?
-    let drop: @MainActor (KanbanTaskSummary, KanbanLane) -> Void
+private enum KanbanLaneRow: Identifiable {
+    case card(KanbanTaskSummary)
+    case gap(CGFloat)
 
-    private var draggedTask: KanbanTaskSummary? {
-        guard let draggingTaskID else { return nil }
-        return tasks.first { $0.id == draggingTaskID }
-    }
-
-    private var accepts: Bool {
-        guard let draggedTask,
-            !pendingActionIDs.contains(where: { $0.hasSuffix(":\(draggedTask.id)") })
-        else { return false }
-        return actions.destinations(for: draggedTask.status).contains(lane)
-    }
-
-    func validateDrop(info: DropInfo) -> Bool { draggedTask != nil }
-
-    func dropEntered(info: DropInfo) {
-        if accepts { targetedLane = lane }
-    }
-
-    func dropExited(info: DropInfo) {
-        if targetedLane == lane { targetedLane = nil }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: accepts ? .move : .forbidden)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        defer {
-            draggingTaskID = nil
-            targetedLane = nil
+    var id: String {
+        switch self {
+        case .card(let task): task.id
+        case .gap: KanbanDragController.gapID
         }
-        guard accepts, let draggedTask,
-            let provider = info.itemProviders(for: [UTType.text]).first
-        else { return false }
-        // Validate the transferred payload against this board’s active drag.
-        let lane = lane
-        let drop = drop
-        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-            let payload = (object as? NSString).map(String.init)
-            Task { @MainActor in
-                if payload == draggedTask.id { drop(draggedTask, lane) }
-            }
-        }
-        return true
+    }
+
+    static func rows(_ tasks: [KanbanTaskSummary], gapHeight: CGFloat?, at index: Int) -> [KanbanLaneRow] {
+        var rows = tasks.map(KanbanLaneRow.card)
+        if let gapHeight { rows.insert(.gap(gapHeight), at: min(max(index, 0), rows.count)) }
+        return rows
     }
 }
 
@@ -352,8 +379,8 @@ private struct KanbanTaskCard: View, Equatable {
     let pendingActionIDs: Set<String>
     let isLoadingDetail: Bool
     let assignableBots: [BotSummary]
-    let isDragging: Bool
-    @Binding var draggingTaskID: String?
+    /// The board's drag controller; `nil` for the lifted copy, which is not interactive.
+    let drag: KanbanDragController?
     let onSelect: (KanbanTaskSummary) -> Void
     let onAction: (KanbanTaskSummary, KanbanTaskAction) -> Void
     let onMove: @MainActor (KanbanTaskSummary, KanbanLane) -> Void
@@ -370,7 +397,6 @@ private struct KanbanTaskCard: View, Equatable {
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.isSelected == rhs.isSelected
             && lhs.isLoadingDetail == rhs.isLoadingDetail
-            && lhs.isDragging == rhs.isDragging
             && lhs.activityLabel == rhs.activityLabel
             && lhs.actions == rhs.actions
             && lhs.pendingActionIDs == rhs.pendingActionIDs
@@ -439,14 +465,13 @@ private struct KanbanTaskCard: View, Equatable {
         }
         .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         .dockHoverable()
-        .overlay {
-            KanbanCardDragSource(
-                taskID: task.id,
-                isEnabled: isDraggable,
-                select: { onSelect(task) },
-                dragging: { draggingTaskID = $0 ? task.id : nil }
-            )
-        }
+        .onTapGesture { onSelect(task) }
+        .gesture(
+            DragGesture(minimumDistance: 4, coordinateSpace: .named(KanbanDragController.space))
+                .onChanged { [drag] in drag?.dragChanged(task: task, lane: lane, value: $0) }
+                .onEnded { [drag] _ in drag?.dragEnded() },
+            including: isDraggable && drag != nil ? .all : .subviews
+        )
         // Attached after the tap/drag gestures so they cannot swallow the
         // click, and kept in the tree so losing hover while the menu is open
         // does not tear it down.
@@ -477,16 +502,11 @@ private struct KanbanTaskCard: View, Equatable {
             .help("More Kanban actions")
             .accessibilityLabel("More actions for \(task.title)")
         }
-        .opacity(isDragging ? 0.18 : 1)
-        .animation(
-            reduceMotion || !DockThemeStyle.current.animates ? nil : .dockEase(duration: 0.16),
-            value: isDragging
-        )
         .onHover { isHovered = $0 }
         .modifier(
             DockDragCursor(
-                isEnabled: isDraggable,
-                isDragging: isDragging
+                isEnabled: isDraggable && drag != nil,
+                isDragging: false
             )
         )
         .contextMenu { actionMenu }
