@@ -228,7 +228,8 @@ struct ModelPickerTests {
         let client = ModelPickerRefreshRPCClient()
         let model = DockModel(initialSessionID: "session-race", rpcClient: client)
 
-        model.refreshRuntimeModelOptions(sessionID: "session-race")
+        // An identical in-flight request is coalesced, so race two distinct ones.
+        model.refreshRuntimeModelOptions()
         model.refreshRuntimeModelOptions(sessionID: "session-race")
         while client.requests.count < 2 { await Task.yield() }
 

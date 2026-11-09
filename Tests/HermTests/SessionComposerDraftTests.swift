@@ -507,7 +507,8 @@ struct SessionComposerDraftTests {
         model.newChat()
         #expect(await model.resumeSession(original, reportFailure: true))
         #expect(model.draft.isEmpty)
-        #expect(model.currentSessionQueuedPrompts.map(\.text) == ["Queue this"])
+        // Reopening an idle session sends the queue instead of restoring it.
+        #expect(model.currentSessionQueuedPrompts.isEmpty)
 
         model.draft = "Clear this"
         model.newChat()
