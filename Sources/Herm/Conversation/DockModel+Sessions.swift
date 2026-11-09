@@ -495,7 +495,7 @@ extension DockModel {
                 messageCount: messages.count,
                 source: HermesFeatureIDs.sessionSource
             ),
-            reportFailure: true
+            reportFailure: true, reviewUnread: false
         )
     }
 
@@ -606,7 +606,8 @@ extension DockModel {
 
     @discardableResult
     func resumeSession(
-        _ session: HermesSession, reportFailure: Bool, profileID: String? = nil, selectedAt: UInt64? = nil
+        _ session: HermesSession, reportFailure: Bool, profileID: String? = nil, selectedAt: UInt64? = nil,
+        reviewUnread: Bool = true
     ) async -> Bool {
         sessionResumeWorkTask?.cancel()
         let token = UUID()
@@ -615,7 +616,8 @@ extension DockModel {
         let task = Task { @MainActor [weak self] in
             guard let self else { return false }
             return await performResumeSession(
-                session, reportFailure: reportFailure, profileID: profileID, selectedAt: selectedAt)
+                session, reportFailure: reportFailure, profileID: profileID, selectedAt: selectedAt,
+                reviewUnread: reviewUnread)
         }
         sessionResumeWorkTask = task
         let result = await withTaskCancellationHandler {
@@ -631,7 +633,7 @@ extension DockModel {
     }
 
     private func performResumeSession(
-        _ session: HermesSession, reportFailure: Bool, profileID: String?, selectedAt: UInt64
+        _ session: HermesSession, reportFailure: Bool, profileID: String?, selectedAt: UInt64, reviewUnread: Bool
     ) async -> Bool {
         guard !Task.isCancelled else { return false }
         let owningProfileID = Self.normalizedProfileID(profileID ?? session.profileID ?? profileScopeID)
@@ -641,6 +643,13 @@ extension DockModel {
         let isRefreshingActiveSession =
             (session.id == sessionID || session.id == sessionStorageID)
             && owningProfileID == Self.normalizedProfileID(sessionProfileID)
+        let seenStore = SidebarSessionSeenStore.shared
+        let seenAt = seenStore.seenAt(profileID: owningProfileID, sessionID: session.id)
+        let reviewCutoff = Date()
+        let needsUnreadReview =
+            reviewUnread
+            && (seenAt != nil || seenStore.isBaselined(profileID: owningProfileID))
+        if !isRefreshingActiveSession || needsUnreadReview { unreadDividerMessageID = nil }
         if !isRefreshingActiveSession {
             sessionWorkspace = nil
             pendingWorktreeDirectory = nil
@@ -705,7 +714,6 @@ extension DockModel {
         transcriptMessageIDsByRowID = [:]
         clearMessagePins()
         sessionID = session.id
-        updateSessionActivity(sessionID: session.id, unread: false)
         sessionProfileID = owningProfileID
         kanbanAttributionSessionID = session.id
         activeBotProfileID = profileID
@@ -931,6 +939,36 @@ extension DockModel {
             if transcriptHistoryCursor?.hasMore == true {
                 loadTranscriptTimeline(generation: resumeGeneration)
             }
+            if needsUnreadReview {
+                do {
+                    let unread = try await sessionUnreadReplies.project(
+                        session: session, profileID: owningProfileID,
+                        after: seenAt ?? .distantPast, through: reviewCutoff)
+                    guard resumeGeneration == sessionResumeGeneration, !Task.isCancelled else { return false }
+                    if unread.count > 0, unread.firstRowID == nil {
+                        throw HermesGateway.GatewayError.malformedResponse
+                    }
+                    if let rowID = unread.firstRowID {
+                        let target = await loadTranscriptHistory(through: rowID)
+                        guard resumeGeneration == sessionResumeGeneration, !Task.isCancelled else { return false }
+                        guard let target else { throw HermesGateway.GatewayError.malformedResponse }
+                        unreadDividerMessageID = target
+                    }
+                    if seenStore.seenAt(profileID: owningProfileID, sessionID: session.id) == seenAt {
+                        seenStore.markSeen(profileID: owningProfileID, sessionID: session.id, at: reviewCutoff)
+                        if sessions.first(where: { $0.id == session.id })?.lastUpdatedAt.map({ $0 <= reviewCutoff })
+                            ?? true
+                        {
+                            updateSessionActivity(sessionID: session.id, unread: false)
+                        }
+                    }
+                } catch is CancellationError {
+                    return false
+                } catch {
+                    DebugLog.write(
+                        "model: unread history unavailable: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                }
+            }
             restorePendingClarification(for: [session.id, resolvedSessionID, sessionStorageID])
             // Questions still waiting on this session (Herm was detached when Hermes asked).
             for request in result["open_requests"] as? [[String: Any]] ?? [] {
@@ -961,7 +999,7 @@ extension DockModel {
             sessionTranscriptLoadState = .ready
             recordSessionSwitch(
                 "fresh_publication", startedAt: switchStartedAt, generation: resumeGeneration, token: switchToken)
-            if !promotedPreview && !isRefreshingActiveSession {
+            if !promotedPreview && !isRefreshingActiveSession && unreadDividerMessageID == nil {
                 scrollToLatestMessageRequest &+= 1
             }
             refreshSessionModelOptions()
@@ -1059,6 +1097,7 @@ extension DockModel {
         delegationMonitoringTask?.cancel()
         delegationMonitoringTask = nil
         sessionID = nil
+        unreadDividerMessageID = nil
         activeBotProfileID = nil
         activeBotDisplayName = nil
         sessionProfileID = profileScopeID
@@ -1224,7 +1263,15 @@ extension DockModel {
         let stored = restored.filter { $0.role == .user }.map(\.text)
         return pending.filter { message in
             let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return !text.isEmpty && !stored.contains { $0.contains(text) }
+            guard !text.isEmpty else { return false }
+            let pendingContent = UserMessageAttachments.split(text)
+            return !stored.contains { storedText in
+                if storedText.contains(text) { return true }
+                guard !pendingContent.names.isEmpty else { return false }
+                let storedContent = UserMessageAttachments.split(storedText)
+                return pendingContent.names.allSatisfy { storedContent.names.contains($0) }
+                    && (pendingContent.text.isEmpty || storedContent.text.contains(pendingContent.text))
+            }
         }
     }
 }

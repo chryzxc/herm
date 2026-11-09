@@ -94,11 +94,11 @@ enum ConversationMessageWindow {
     static func revealEarlier(
         _ range: Range<Int>,
         totalCount: Int,
-        visibleSpan: ClosedRange<Int>?
+        visibleSpan: ClosedRange<Int>?, count: Int = pageSize
     ) -> Range<Int> {
         let bounds = visibleRange(range, totalCount: totalCount)
         guard bounds.lowerBound > 0 else { return bounds }
-        let newLower = max(0, bounds.lowerBound - pageSize)
+        let newLower = max(0, bounds.lowerBound - max(0, min(count, pageSize)))
         let visibleFloor = visibleSpan.map { min($0.upperBound + 1, max(0, totalCount)) }
         if let visibleFloor {
             let marginUpper = max(visibleFloor + pageSize, newLower + 1)
@@ -115,12 +115,12 @@ enum ConversationMessageWindow {
     static func revealLater(
         _ range: Range<Int>,
         totalCount: Int,
-        visibleSpan: ClosedRange<Int>?
+        visibleSpan: ClosedRange<Int>?, count: Int = pageSize
     ) -> Range<Int> {
         let bounds = visibleRange(range, totalCount: totalCount)
         let safeTotal = max(0, totalCount)
         guard !bounds.isEmpty, bounds.upperBound < safeTotal else { return bounds }
-        let newUpper = min(bounds.upperBound + pageSize, safeTotal)
+        let newUpper = min(bounds.upperBound + max(0, min(count, pageSize)), safeTotal)
         let visibleCeiling = visibleSpan.map { max($0.lowerBound, 0) }
         var newLower = bounds.lowerBound
         if let visibleCeiling {
@@ -229,6 +229,11 @@ enum ConversationMessageWindow {
 /// Session and viewport badges count visible AI responses, never user prompts,
 /// transport-only placeholders, or activity events.
 enum ConversationUnreadMessagePolicy {
+    struct Projection: Equatable {
+        let count: Int
+        let firstMessageID: UUID?
+    }
+
     static func isAssistantResponse(_ message: ChatMessage) -> Bool {
         message.role == .hermes && !message.isError && !message.isSteering
             && message.systemEvent == nil && message.kanbanNotice == nil
@@ -236,9 +241,26 @@ enum ConversationUnreadMessagePolicy {
     }
 
     static func assistantResponseCount(_ messages: [ChatMessage], after seenAt: Date? = nil) -> Int {
-        messages.count { message in
-            isAssistantResponse(message) && (seenAt.map { message.timestamp > $0 } ?? true)
+        project(messages, after: seenAt).count
+    }
+
+    static func project(_ messages: [ChatMessage], after seenAt: Date? = nil, through cutoff: Date? = nil)
+        -> Projection
+    {
+        var count = 0
+        var firstMessageID: UUID?
+        for message in messages
+        where (seenAt.map { message.timestamp > $0 } ?? true) && (cutoff.map { message.timestamp <= $0 } ?? true) {
+            // Replying shows the user read everything above, even from another client.
+            if message.role == .user, seenAt != nil {
+                count = 0
+                firstMessageID = nil
+            }
+            guard isAssistantResponse(message) else { continue }
+            count += 1
+            if firstMessageID == nil { firstMessageID = message.id }
         }
+        return Projection(count: count, firstMessageID: firstMessageID)
     }
 
 }

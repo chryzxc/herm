@@ -11,6 +11,9 @@ Serves what Herm publishes in `~/Library/Application Support/Herm/agent-surfaces
 - **`herm_reference`** returns a surface's full reference.
 - **`herm_inspector`** shows an inspector tab (files, changes, diff, terminal, browser,
   timeline, artifacts, github) beside the chat. Herm reads the tool's receipt.
+- **MCP Apps** (`transform_tool_result`): while Generative UI is on, an MCP tool that
+  declares a `ui://` view gets its view and call cached under `mcp-apps/` beside the
+  manifest, plus a `herm_app` receipt in the result. See `docs/generative-ui.md`.
 
 Herm also handles Hermes' built-in `focus_pane` (files, terminal, review) and
 `desktop_preview` events without this plugin.

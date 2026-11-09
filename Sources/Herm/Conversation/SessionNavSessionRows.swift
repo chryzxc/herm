@@ -465,18 +465,31 @@ struct SessionNavBotSessionRow: View, Equatable {
     let bot: BotSummary
     let imageData: Data?
     let isSelected: Bool
+    let sessionStatus: SidebarSessionStatus
     /// Approval or clarify from the sidebar status; nil keeps the busy face.
     var mood: BotMood? = nil
     let style: DockThemePalette
     let onOpen: () -> Void
 
+    static func showsUnreadCount(for status: SidebarSessionStatus) -> Bool {
+        status == .unreadComplete || status == .none
+    }
+
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.session == rhs.session && lhs.bot == rhs.bot && lhs.imageData == rhs.imageData
-            && lhs.mood == rhs.mood && lhs.isSelected == rhs.isSelected && lhs.style.theme == rhs.style.theme
+            && lhs.mood == rhs.mood && lhs.isSelected == rhs.isSelected && lhs.sessionStatus == rhs.sessionStatus
+            && lhs.style.theme == rhs.style.theme
     }
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
+            ZStack(alignment: .trailing) {
+                Color.clear
+                if Self.showsUnreadCount(for: sessionStatus) {
+                    SessionUnreadReplyBadge(session: session, showUnavailable: sessionStatus == .unreadComplete)
+                }
+            }
+            .frame(width: 20, height: 18)
             BotAvatarView(bot: bot, imageData: imageData, size: 30, mood: mood, orbits: session.isWorking)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -492,7 +505,8 @@ struct SessionNavBotSessionRow: View, Equatable {
                         .background(Capsule().fill(style.selectedFill))
                     Spacer(minLength: 4)
                     SessionActivityGlyph(
-                        isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate, session: session)
+                        isWorking: sessionStatus == .working,
+                        hasUnreadUpdate: false, session: session)
                     if let date = session.lastUpdatedAt {
                         Text(SidebarSessionTime.short(date))
                             .dockFont(.metadata).monospacedDigit()
@@ -629,12 +643,6 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         .background(
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).fill(rowFill)
         )
-        .overlay(alignment: .bottom) {
-            // Inset hairline separates rows; the lit row's own fill already marks its edge.
-            if !isSelected, !isHovered {
-                Rectangle().fill(Color.dockBorderLight).frame(height: 1).dockPadding(.horizontal, 8)
-            }
-        }
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         // rowFill already tracks hover; a second hover tracker doubled the work per row while scrolling.
         .onTapGesture { if !isEditingTitle { onSelect(session) } }
@@ -781,8 +789,8 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     private var statusIndicator: some View {
         ZStack {
             Color.clear
-            if sessionStatus == .unreadComplete {
-                SessionUnreadReplyBadge(session: session)
+            if sessionStatus == .unreadComplete || sessionStatus == .none {
+                SessionUnreadReplyBadge(session: session, showUnavailable: sessionStatus == .unreadComplete)
             } else if let state = sessionStatus.activityState {
                 DockActivityIndicator(state: state, size: 12, unreadDot: true)
             }

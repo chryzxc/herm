@@ -1,6 +1,6 @@
 name: herm
-version: 1.0.0
-description: Herm's agent surfaces (rules, tool guards, references) and opening Herm inspector tabs.
+version: 1.1.0
+description: Herm's agent surfaces (rules, tool guards, references), opening Herm inspector tabs, and MCP App views.
 author: Herm
 kind: standalone
 platforms:
@@ -11,3 +11,4 @@ provides_tools:
 provides_hooks:
   - pre_tool_call
   - pre_llm_call
+  - transform_tool_result

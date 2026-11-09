@@ -96,7 +96,7 @@ struct ArtifactService {
                             timestamp: date, origin: .generated, profileID: session.profileID,
                             generated: RichGeneratedArtifact(reference: reference, surface: surface, source: source))
                         found[record.id] = record
-                    case .unavailable, .pending: break
+                    case .unavailable, .pending, .diagram, .preview: break
                     }
                 }
                 continue

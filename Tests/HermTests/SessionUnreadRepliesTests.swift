@@ -83,6 +83,67 @@ struct SessionUnreadRepliesTests {
         #expect(count == 0)
     }
 
+    @Test func staleSessionTimestampDoesNotHideUnreadReplyFromBadge() async throws {
+        let client = Client()
+        client.rows = [row(1, role: "assistant", text: "Unread reply", timestamp: 102)]
+        let session = HermesSession(
+            id: "stored-session", profileID: "bot", title: "Chat", preview: "", startedAt: nil,
+            updatedAt: Date(timeIntervalSince1970: 100), messageCount: 1, source: "test")
+        let seenAt = Date(timeIntervalSince1970: 100)
+        let status = SidebarSessionStatusResolver.resolve(
+            session: session, summary: nil, activeSessionID: nil, activeStatus: nil, attention: nil,
+            seenAt: seenAt, isProfileBaselined: true)
+        #expect(status == .none)
+        #expect(SessionNavBotSessionRow.showsUnreadCount(for: status))
+        let projection = try await SessionUnreadReplies(client: client).project(
+            session: session, profileID: "bot", after: seenAt)
+        #expect(projection.count == 1)
+        #expect(projection.firstRowID == 1)
+    }
+
+    @Test func projectionReturnsFirstUnreadStoredRowAndHonorsCutoff() async throws {
+        let client = Client()
+        client.rows = [
+            row(1, role: "assistant", text: "Read", timestamp: 100),
+            row(2, role: "user", text: "Question", timestamp: 101),
+            row(3, role: "assistant", text: "First", timestamp: 102),
+            row(4, role: "assistant", text: "Later", timestamp: 104),
+        ]
+        let projection = try await SessionUnreadReplies(client: client).project(
+            session: session(), profileID: "bot", after: Date(timeIntervalSince1970: 100),
+            through: Date(timeIntervalSince1970: 103))
+        #expect(projection.count == 1)
+        #expect(projection.firstRowID == 3)
+    }
+
+    @Test func botCountsCountDistinctSessionsAndPreservePartialState() async throws {
+        let client = Client()
+        client.rows = [
+            row(1, role: "assistant", text: "First", timestamp: 101),
+            row(2, role: "assistant", text: "Second", timestamp: 102),
+        ]
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let seen = SidebarSessionSeenStore(defaults: defaults)
+        seen.baseline(profileID: "a", sessions: [])
+        seen.baseline(profileID: "b", sessions: [])
+        func session(_ id: String, _ profile: String) -> HermesSession {
+            HermesSession(
+                id: id, profileID: profile, title: "Chat", preview: "", startedAt: nil,
+                updatedAt: Date(timeIntervalSince1970: 102), messageCount: 2, source: "test")
+        }
+        let first = session("one", "a")
+        let second = session("two", "a")
+        let other = session("one", "b")
+        for item in [first, second, other] {
+            seen.markSeen(profileID: item.profileID, sessionID: item.id, at: Date(timeIntervalSince1970: 100))
+        }
+        let result = try await SessionUnreadReplies(client: client).botCounts(
+            sessions: [first, first, second, other], scopeProfileID: nil, seenStore: seen, incomplete: true)
+        #expect(result.counts == ["a": 2, "b": 1])
+        #expect(result.incomplete)
+        #expect(client.paths.count == 3)
+    }
+
     @Test func unavailableHistoryDoesNotInventACount() async {
         let client = Client()
         client.fails = true

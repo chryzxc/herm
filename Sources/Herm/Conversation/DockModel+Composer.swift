@@ -96,10 +96,17 @@ extension DockModel {
             clearAttachmentErrors()
             restorePendingSendIfPossible(for: sendOwner)
         }
-        let visibleText = isAttachmentOnly ? "" : text
-        let transcriptText =
-            attachedPDF.map { "[PDF: \($0.lastPathComponent)]" + (visibleText.isEmpty ? "" : "\n\(visibleText)") }
-            ?? visibleText
+        let visibleContexts = contexts.filter { $0.attachmentURL == nil }
+        let visibleText =
+            isAttachmentOnly
+            ? ""
+            : ChatContext.prompt(
+                ComposerCompletion.pathifyingBareRefs(snapshot.replyQuote?.composing(prompt) ?? prompt),
+                contexts: visibleContexts)
+        let attachmentLabels =
+            contexts.compactMap { context in context.attachmentURL.map { "[File: \($0.lastPathComponent)]" } }
+            + (attachedPDF.map { ["[PDF: \($0.lastPathComponent)]"] } ?? [])
+        let transcriptText = (attachmentLabels + [visibleText]).filter { !$0.isEmpty }.joined(separator: "\n")
         let sentMessage = ChatMessage(
             role: .user, text: transcriptText, images: attachedImages.map(\.image),
             botMentions: ComposerBotMention.rebasing(botMentions, from: prompt, to: transcriptText))
@@ -151,7 +158,7 @@ extension DockModel {
                 touchSession(sessionID: promptSessionID, at: Date(), preview: text)
 
                 var fileReferences: [String] = []
-                if contexts.contains(where: { $0.attachmentURL != nil }) {
+                if attachedPDF != nil || contexts.contains(where: { $0.attachmentURL != nil }) {
                     let capabilities = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.gatewayCapabilities.rawValue, params: [:])
                     guard capabilities["per_session_exclusive_submit"] as? Bool == true else {
@@ -179,6 +186,27 @@ extension DockModel {
                     else {
                         throw QuickDraftError.message(
                             "Hermes could not attach the file. The draft context is retained for retry.")
+                    }
+                    fileReferences.append(reference)
+                }
+                if let attachedPDF {
+                    let encoded = try await AttachmentPayload.encoded(at: attachedPDF, maximumBytes: 25 * 1024 * 1024)
+                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else {
+                        return
+                    }
+                    let result = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.fileAttach.rawValue,
+                        params: scopedSessionParams([
+                            "session_id": promptSessionID,
+                            "data_url": "data:application/pdf;base64," + encoded,
+                            "name": attachedPDF.lastPathComponent,
+                        ]))
+                    guard result["attached"] as? Bool == true,
+                        let reference = result["ref_text"] as? String, reference.hasPrefix("@file:"),
+                        !reference.contains("\n")
+                    else {
+                        throw QuickDraftError.message(
+                            "Hermes could not attach the PDF. The draft is retained for retry.")
                     }
                     fileReferences.append(reference)
                 }
@@ -211,26 +239,6 @@ extension DockModel {
                     }
                     DebugLog.write("model: image attached")
 
-                }
-
-                if let attachedPDF {
-                    let base64 = try await AttachmentPayload.encoded(at: attachedPDF, maximumBytes: 25 * 1024 * 1024)
-                    guard self.sessionResumeGeneration == sendGeneration,
-                        self.sessionID == promptSessionID
-                    else { return }
-                    let result = try await sessionRPCClient.request(
-                        HermesFeatureIDs.ID.pdfAttach.rawValue,
-                        params: scopedSessionParams([
-                            "session_id": promptSessionID,
-                            "content_base64": base64,
-                            "filename": attachedPDF.lastPathComponent,
-                        ])
-                    )
-                    guard result["attached"] as? Bool == true else {
-                        throw HermesGateway.GatewayError.imageAttachFailed(
-                            (result["message"] as? String) ?? "Hermes could not attach the PDF."
-                        )
-                    }
                 }
 
                 guard self.sessionResumeGeneration == sendGeneration,

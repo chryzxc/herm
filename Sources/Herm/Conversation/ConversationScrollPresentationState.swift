@@ -7,6 +7,16 @@ final class ConversationScrollPresentationState: ObservableObject {
     @Published private var atBottom = true
     @Published private var unreadCount = 0
     @Published private var targets: Set<MessageNavigatorTarget> = []
+    @Published private var scrolling = false
+
+    /// True from the reader's first scroll movement until the clip view settles.
+    var isUserScrolling: Bool {
+        get { scrolling }
+        set {
+            guard newValue != scrolling else { return }
+            scrolling = newValue
+        }
+    }
 
     var isAtBottom: Bool {
         get { atBottom }
@@ -54,5 +64,6 @@ final class ConversationScrollPresentationState: ObservableObject {
         isAtBottom = true
         unseenMessageCount = 0
         visibleTargets = []
+        isUserScrolling = false
     }
 }

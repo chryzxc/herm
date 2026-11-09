@@ -351,6 +351,7 @@ extension DockModel {
                 let result = messageText(row["content"])
                 if let index = pendingActivity.firstIndex(where: { $0.id == id }) {
                     if !result.isEmpty { pendingActivity[index].result = truncatedForPersistence(result) }
+                    pendingActivity[index].app = MCPApp.receiptID(tool: pendingActivity[index].name, result: result)
                     if pendingActivity[index].traceTiming == .runtime, let rowTimestamp,
                         rowTimestamp >= pendingActivity[index].startedAt
                     {
@@ -366,7 +367,8 @@ extension DockModel {
                             result: result.isEmpty ? nil : truncatedForPersistence(result),
                             isComplete: true, completedAt: rowTimestamp,
                             // Hermes stamps only the result row: the finish is exact, the start unknown.
-                            traceTiming: rowTimestamp == nil ? .unavailable : .runtime
+                            traceTiming: rowTimestamp == nil ? .unavailable : .runtime,
+                            app: MCPApp.receiptID(tool: name, result: result)
                         ))
                 }
                 continue

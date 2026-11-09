@@ -27,6 +27,7 @@ struct RestoredTranscript {
 final class DockModel: ObservableObject {
     let presentationDemand = DockPresentationDemand()
     lazy var workspacePresentationChanges = makeWorkspacePresentationChanges()
+    lazy var inspectorPresentationChanges = makeInspectorPresentationChanges()
     var interruptionCoordinator: HermInterruptionCoordinator?
     var completionNoticeIDs: [String: String] = [:]
     var quickSessionOwners: [String: QuickDestination] = [:]
@@ -281,6 +282,7 @@ final class DockModel: ObservableObject {
     @Published var composerFocusRequest = 0
     @Published var isComposerEditing = false
     @Published var scrollToLatestMessageRequest = 0
+    @Published var unreadDividerMessageID: UUID?
 
     /// The default bot's name from Hermes' roster, so a rename reaches the
     /// menu bar and the voice wake phrase without editing SOUL.md.
@@ -298,6 +300,10 @@ final class DockModel: ObservableObject {
             if let voiceSessionID, voiceSessionID != sessionID { stopVoiceConversation() }
         }
     }
+    @Published var sessionControl: HermesSessionControl?
+    @Published var sessionControlOwner: String?
+    @Published var sessionControlStale = false
+    var sessionControlEventGeneration = 0
     /// Authoritative `session.usage` total, keyed by the session it was read for
     /// so a switch never shows the previous chat's count.
     @Published var sessionTokenUsage: (sessionID: String, total: Int)?
@@ -556,12 +562,16 @@ final class DockModel: ObservableObject {
             self?.receiveGatewayEvent(type, params: params)
         }
         gateway.onConnectionChange = { [weak self] connected in
-            self?.isHermesConnected = connected
-            self?.hermesConnectionIssue = connected ? nil : self?.gateway.lastFailure
+            guard let self else { return }
+            // `connect()` re-announces a live socket on every RPC; equal writes
+            // would still publish and redraw the whole workspace each time.
+            let issue = connected ? nil : gateway.lastFailure
+            if isHermesConnected != connected { isHermesConnected = connected }
+            if hermesConnectionIssue != issue { hermesConnectionIssue = issue }
             DebugLog.write("model: Hermes connection \(connected ? "online" : "offline")")
             if connected {
-                self?.replayTrackedGatewayEvents()
-                if let gateway = self?.gateway, gateway.isLocal { HermesBundledPlugins.ensure(client: gateway) }
+                replayTrackedGatewayEvents()
+                if gateway.isLocal { HermesBundledPlugins.ensure(client: gateway) }
             } else {
                 DeveloperWorkflowModel.shared.turnBaselines.removeAll()
             }

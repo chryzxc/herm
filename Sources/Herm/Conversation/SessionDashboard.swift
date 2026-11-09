@@ -170,11 +170,6 @@ struct SessionDashboard<Conversation: View>: View {
         Task {
             let loaded = await model.resumeSession(session, reportFailure: true)
             selection.finish(generation, loaded: loaded)
-            if loaded, selection.generation == generation {
-                seen.markSeen(
-                    profileID: session.profileID ?? model.profileScopeID, sessionID: session.id,
-                    at: session.lastUpdatedAt)
-            }
         }
     }
 

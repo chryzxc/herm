@@ -111,6 +111,7 @@ enum HermesFeatureIDs {
         case sessionCompress = "session.compress"
         case sessionUndo = "session.undo"
         case sessionRedirect = "session.redirect"
+        case sessionControlRead = "session.control.read"
         case delegationPause = "delegation.pause"
         case subagentInterrupt = "subagent.interrupt"
         case processKill = "process.kill"
@@ -205,7 +206,8 @@ enum HermesFeatureIDs {
         "groups.capabilities", "groups.list", "groups.create", "groups.state", "groups.send", "groups.log",
         "groups.rename", "groups.stop", "groups.disband", "groups.approve", "groups.retry", "groups.peer.invite",
         "groups.peer.register", "prompt.background", "prompt.btw", "session.title", "session.steer", "session.branch",
-        "session.compress", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt",
+        "session.compress", "session.undo", "session.redirect", "session.control.read", "delegation.pause",
+        "subagent.interrupt",
         "process.kill",
         "approval.respond", "approval.pending", "request.answer", "clarify.lock", "delegation.status", "cron.manage",
         "reload.mcp", "process.list", "tools.list",

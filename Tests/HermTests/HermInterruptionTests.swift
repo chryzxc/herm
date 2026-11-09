@@ -14,6 +14,17 @@ struct HermInterruptionTests {
             kind: kind, source: .session, profileID: profile, sourceID: "session-1", eventID: event)
     }
 
+    @Test func quietMenuTitleShowsRemainingTime() {
+        let now = Date(timeIntervalSinceReferenceDate: 0)
+        #expect(EdgeQuietMenu.title(quiet: false, expiry: nil, now: now) == "Quiet")
+        #expect(EdgeQuietMenu.title(quiet: true, expiry: nil, now: now) == "Quiet · On")
+        #expect(
+            EdgeQuietMenu.title(quiet: true, expiry: now.addingTimeInterval(41 * 60 + 5), now: now) == "Quiet · 42m")
+        #expect(EdgeQuietMenu.title(quiet: true, expiry: now.addingTimeInterval(3600), now: now) == "Quiet · 1h")
+        #expect(EdgeQuietMenu.title(quiet: true, expiry: now.addingTimeInterval(90 * 60), now: now) == "Quiet · 1h 30m")
+        #expect(EdgeQuietMenu.title(quiet: true, expiry: now.addingTimeInterval(-5), now: now) == "Quiet · 1m")
+    }
+
     @Test func quietIsOptInAndChannelsDeduplicateIndependently() {
         let policy = HermInterruptionCoordinator()
         #expect(!policy.quiet)

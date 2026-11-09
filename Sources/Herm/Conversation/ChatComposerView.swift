@@ -41,6 +41,7 @@ struct ChatComposerView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let _ = HermPerformanceRecorder.countBody("ChatComposerView")
         composerContent
             // A single importer owns presentation; stacked importers can shadow one another.
             .fileImporter(
@@ -239,6 +240,7 @@ struct ChatComposerView: View {
             // One tray joins the plan, queue and folder bar to the input. With
             // none of them showing, the input covers it completely.
             VStack(spacing: 0) {
+                ComposerSessionControlView(model: model)
                 PinnedWorkStrip(model: model)
                 if let controlCenter { RunningProcessesStrip(control: controlCenter, isTurnActive: isResponding) }
 
@@ -428,7 +430,9 @@ struct ChatComposerView: View {
                         .dockPadding(.vertical, 5)
                         .background(
                             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .dockSurfaceFill(Color.dockSurface))
+                                .dockSurfaceFill(Color.dockSurface)
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     ForEach([model.pendingPDFError, model.pendingAttachmentError].compactMap { $0 }, id: \.self) {
                         error in

@@ -594,22 +594,12 @@ private struct MediaCard: View {
     }
 }
 
-/// Repo, elapsed time with steps, and the plan's progress, above the orb.
+/// Elapsed time with steps and the plan's progress, above the orb.
 struct VoiceStatusStrip: View {
     @ObservedObject var model: DockModel
-    let repositoryPath: String?
-    @State private var branch: String?
 
     var body: some View {
         HStack(spacing: 8) {
-            if let repositoryPath {
-                chip(
-                    icon: .gitBranch,
-                    text: ([(repositoryPath as NSString).lastPathComponent, branch].compactMap { $0 }).joined(
-                        separator: " · ")
-                )
-                .help(repositoryPath)
-            }
             if model.status == .working, let start = turnStart {
                 TimelineView(.dockMotion(rate: 1)) { context in
                     let elapsed = Int(context.date.timeIntervalSince(start))
@@ -643,7 +633,6 @@ struct VoiceStatusStrip: View {
                     plan.items.map { "\($0.status == "completed" ? "✓" : "○") \($0.content)" }.joined(separator: "\n"))
             }
         }
-        .task(id: repositoryPath) { branch = repositoryPath.flatMap(Self.branch(in:)) }
     }
 
     private var turnStart: Date? {
@@ -658,12 +647,6 @@ struct VoiceStatusStrip: View {
         .modifier(ChipStyle(tint: tint))
     }
 
-    /// The checked-out branch, read from `.git/HEAD`.
-    static func branch(in repository: String) -> String? {
-        guard let head = try? String(contentsOfFile: repository + "/.git/HEAD", encoding: .utf8) else { return nil }
-        let ref = head.trimmingCharacters(in: .whitespacesAndNewlines)
-        return ref.hasPrefix("ref: refs/heads/") ? String(ref.dropFirst(16)) : String(ref.prefix(7))
-    }
 }
 
 private struct ChipStyle: ViewModifier {

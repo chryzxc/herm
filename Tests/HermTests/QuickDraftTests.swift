@@ -219,14 +219,17 @@ struct QuickDraftTests {
             ["image.attach_bytes", "pdf.attach", "file.attach", "prompt.submit"].contains($0.0)
         }
         #expect(
-            uploads.map(\.0) == ["image.attach_bytes", "pdf.attach", "file.attach", "prompt.submit"])
+            uploads.map(\.0) == ["image.attach_bytes", "file.attach", "file.attach", "prompt.submit"])
+        #expect(uploads[1].1["name"] as? String == "sample.pdf")
+        #expect((uploads[1].1["data_url"] as? String)?.hasPrefix("data:application/octet-stream;base64,") == true)
         #expect(
             uploads.allSatisfy {
                 $0.1["session_id"] as? String == "runtime" && $0.1["profile"] as? String == "research"
             })
         #expect(
             rpc.calls.last?.1["text"] as? String
-                == GenerativeUIIntegration.preparePrompt("Review this\n\n@file:docs/sample.txt"))
+                == GenerativeUIIntegration.preparePrompt(
+                    "Review this\n\n@file:docs/sample.txt\n\n@file:docs/sample.txt"))
     }
 
     @Test func partialUploadRetriesOnlyUnacknowledgedFiles() async throws {

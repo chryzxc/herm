@@ -80,7 +80,7 @@ extension DockModel {
     }
 
     func markSessionsRead(
-        _ reviewed: [HermesSession], seenStore: SidebarSessionSeenStore = .shared
+        _ reviewed: [HermesSession], seenStore: SidebarSessionSeenStore = .shared, at readAt: Date? = nil
     ) {
         let reviewedIDs = Set(
             reviewed.map {
@@ -89,7 +89,7 @@ extension DockModel {
         for session in reviewed {
             seenStore.markSeen(
                 profileID: session.profileID ?? profileScopeID,
-                sessionID: session.id, at: session.lastUpdatedAt)
+                sessionID: session.id, at: readAt ?? session.lastUpdatedAt)
         }
         func clearingUnread(_ session: HermesSession) -> HermesSession {
             let identity = ProfileScopedID(profileID: session.profileID ?? profileScopeID, resourceID: session.id)

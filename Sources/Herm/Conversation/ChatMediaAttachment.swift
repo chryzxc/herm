@@ -47,6 +47,40 @@ enum ChatMediaSegment: Equatable {
     }
 }
 
+/// Separates Herm's pending labels and Hermes' persisted file references from message text.
+enum UserMessageAttachments {
+    static func split(_ text: String) -> (text: String, names: [String]) {
+        var names: [String] = []
+        var lines: [String] = []
+        for line in text.components(separatedBy: .newlines) {
+            let value = line.trimmingCharacters(in: .whitespaces)
+            var path: String?
+            if value.hasPrefix("[PDF: ") || value.hasPrefix("[File: "), value.hasSuffix("]") {
+                path = String(value.dropFirst(value.hasPrefix("[PDF: ") ? 6 : 7).dropLast())
+            } else if value.hasPrefix("@file:") {
+                var reference = String(value.dropFirst(6))
+                if reference.count >= 2, let first = reference.first, first == reference.last,
+                    "`\"'".contains(first)
+                {
+                    reference.removeFirst()
+                    reference.removeLast()
+                } else if reference.contains(where: \.isWhitespace) {
+                    lines.append(line)
+                    continue
+                }
+                path = reference
+            }
+            if let path, !path.isEmpty {
+                names.append((path as NSString).lastPathComponent)
+            } else {
+                lines.append(line)
+            }
+        }
+        if !names.isEmpty { lines.removeAll { $0 == "[document]" || $0 == "[attachments]" } }
+        return (lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), names)
+    }
+}
+
 enum ArtifactOpener {
     static func url(_ value: String) -> URL? {
         if value.hasPrefix("http://") || value.hasPrefix("https://") || value.hasPrefix("data:image/") {

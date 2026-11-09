@@ -166,11 +166,7 @@ enum QuickDraftSubmission {
                     method = .imageAttachBytes
                     params["content_base64"] = bytes
                     params["filename"] = file.name
-                case .pdf:
-                    method = .pdfAttach
-                    params["content_base64"] = bytes
-                    params["filename"] = file.name
-                case .file:
+                case .pdf, .file:
                     method = .fileAttach
                     params["data_url"] = "data:application/octet-stream;base64,\(bytes)"
                     params["name"] = file.name
@@ -191,12 +187,7 @@ enum QuickDraftSubmission {
                         throw HermesGateway.GatewayError.malformedResponse
                     }
                     draft.files[index].uploadedPaths = [path]
-                case .pdf:
-                    guard let pages = result["pages"] as? [[String: Any]], !pages.isEmpty,
-                        pages.allSatisfy({ ($0["path"] as? String)?.isEmpty == false })
-                    else { throw HermesGateway.GatewayError.malformedResponse }
-                    draft.files[index].uploadedPaths = pages.compactMap { $0["path"] as? String }
-                case .file:
+                case .pdf, .file:
                     guard let ref = result["ref_text"] as? String, ref.hasPrefix("@file:"),
                         !ref.contains("\n")
                     else {

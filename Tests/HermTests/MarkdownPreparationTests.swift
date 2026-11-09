@@ -5,6 +5,27 @@ import Testing
 
 @MainActor
 struct MarkdownPreparationTests {
+    @Test func backgroundMarkdownPreparationPreservesInlineSemantics() async {
+        let source =
+            "# Heading\n\nText **bold**, 👩‍💻 and [safe](https://example.invalid) "
+            + "and [unsafe](file:///tmp/example).\n\n- item\n- second"
+        let prepared = await Task.detached {
+            MarkdownRenderDocumentBuilder.preparedBlocks(for: source)
+        }.value
+        MarkdownPreparedBlockCache.insert(prepared, for: source)
+        let palette = NativeMarkdownPalette()
+        let cached = NativeMarkdownAttributedTextBuilder.document(source, palette: palette).string
+        let withoutCache = NativeMarkdownAttributedTextBuilder.document(source + "\n", palette: palette).string
+        #expect(cached.string == withoutCache.string)
+        let full = NSRange(location: 0, length: cached.length)
+        var links: [URL] = []
+        cached.enumerateAttribute(.link, in: full) { value, _, _ in
+            if let link = value as? URL { links.append(link) }
+        }
+        #expect(links.allSatisfy { $0.scheme == "https" })
+        #expect(!links.isEmpty)
+    }
+
     @Test func largeCodePreparationKeepsExactDimensionsAcrossRemount() {
         let source = "```swift\n" + String(repeating: "let value = 42 // a complete line\n", count: 6_000) + "```"
         let reference = NativeMarkdownCodeView()

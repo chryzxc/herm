@@ -105,6 +105,9 @@ struct ConversationTranscriptView: View, Equatable {
                                     // Activity and body are sibling views. One container must own
                                     // geometry and identity, including a zero-height hidden row.
                                     VStack(spacing: 0) {
+                                        if message.id == snapshot.unreadDividerMessageID {
+                                            unreadDivider
+                                        }
                                         messageRow(message, dispatches: dispatches, defaultBot: defaultBot)
                                     }
                                     .opacity(spotlightMessageID == nil || spotlightMessageID == message.id ? 1 : 0.3)
@@ -163,6 +166,7 @@ struct ConversationTranscriptView: View, Equatable {
                                     try? await Task.sleep(for: .seconds(5))
                                 } while !Task.isCancelled && !model.workingBotDispatches.isEmpty
                             }
+                            .modifier(ConversationScrollHitTesting(presentation: coordinator.presentation))
                             .dockPadding(.vertical, 12)
                             .frame(maxWidth: conversationMetrics.readingWidth)
                             .frame(maxWidth: .infinity)
@@ -226,6 +230,10 @@ struct ConversationTranscriptView: View, Equatable {
                             coordinator?.controller.scrollToBottom()
                         }
                     }
+                    jumpToUnread(snapshot.unreadDividerMessageID, proxy: proxy)
+                }
+                .onChange(of: snapshot.unreadDividerMessageID) { _, id in
+                    jumpToUnread(id, proxy: proxy)
                 }
                 .onChange(of: pinnedMessageJumpID) { _, id in
                     guard let id, let item = snapshot.navigatorItems.first(where: { $0.messageID == id })
@@ -263,6 +271,27 @@ struct ConversationTranscriptView: View, Equatable {
             proxy.scrollTo(messageID, anchor: .center)
             spotlight(messageID)
         }
+    }
+
+    private var unreadDivider: some View {
+        HStack(spacing: 8) {
+            DockAccentColor.unreadBadgeFill.opacity(0.55).frame(height: 1)
+            Text("Unread messages")
+                .dockFont(.metadata, weight: .semibold)
+                .foregroundStyle(DockAccentColor.unreadBadgeText)
+                .dockPill(tint: DockAccentColor.unreadBadgeFill, solid: true)
+                .fixedSize()
+            DockAccentColor.unreadBadgeFill.opacity(0.55).frame(height: 1)
+        }
+        .dockPadding(.vertical, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Unread messages begin here")
+    }
+
+    private func jumpToUnread(_ id: UUID?, proxy: ScrollViewProxy) {
+        guard let id, let index = model.displayedTranscriptMessages.firstIndex(where: { $0.id == id }) else { return }
+        coordinator.synchronize(model: model)
+        coordinator.jump(to: index) { proxy.scrollTo(id, anchor: .top) }
     }
 
     private func spotlight(_ id: UUID) {

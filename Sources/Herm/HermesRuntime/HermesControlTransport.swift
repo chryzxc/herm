@@ -91,6 +91,12 @@ final class HermesControlRPC {
         self.client = client
     }
 
+    func sessionControl(sessionID: String, profileID: String?) async throws -> [String: Any] {
+        try await client.request(
+            HermesFeatureIDs.ID.sessionControlRead.rawValue,
+            params: Self.profileParams(["session_id": sessionID], profileID: profileID))
+    }
+
     func activeSessions() async throws -> [String: Any] {
         try await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])
     }

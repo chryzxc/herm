@@ -265,6 +265,7 @@ extension DockPopover {
                 }
             } else if fullscreenSurface == .pullRequests || fullscreenSurface == .issues {
                 GitHubWorkspace(
+                    repositories: githubRepositories,
                     selection: Binding(
                         get: { () -> GitHubWorkspaceSection in
                             return sessionNavNavigation.selectedGitHubSection
@@ -718,6 +719,10 @@ extension DockPopover {
         guard let path = activeSessionRepositoryPath else { return nil }
         let sessionID = model.navigationSessionID ?? model.sessionID ?? sessionWorkspaceIdentity
         return SessionRepositoryScope(sessionID: sessionID, repositoryPath: path)
+    }
+
+    var sessionGitHubTabsAvailable: Bool {
+        activeSessionRepositoryScope?.containsGitRepository(developerWorkflow.repository) == true
     }
 
     /// A worktree choice opens a separate session; it never changes this session's cwd.

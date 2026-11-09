@@ -37,12 +37,19 @@ final class ConversationMarkdownPrefetch {
     private enum WarmResult { case finished, waiting, worked, progressed }
     private var identity: Identity?
     private var task: Task<Void, Never>?
+    private weak var activeController: ConversationScrollController?
+    private var currentCheck: (@MainActor (UUID, Int) -> Bool)?
     private var warmTask: Task<Void, Never>?
     private var warmQueue: [WarmJob] = []
     private var generation: UInt64 = 0
     private var inputsByMessage: [UUID: [Input]] = [:]
     private var pendingMessages: Set<UUID> = []
     private var requestedMessageIDs: Set<UUID> = []
+    private var requestedOrder: [UUID] = []
+    private var requestedContext: NativeMarkdownDocumentContainerView.MeasurementContext?
+    private var readyCount = 0
+    private var readyInput = 0
+    private var readySection = 0
     private var requestedDocumentKeys: Set<MarkdownRenderKey> = []
     private var requestedDocuments: [MarkdownRenderKey: MarkdownRenderDocument] = [:]
     private var requestedMeasurements:
@@ -63,6 +70,8 @@ final class ConversationMarkdownPrefetch {
         inputsByMessage.removeAll()
         pendingMessages.removeAll()
         cancelRequest()
+        activeController = nil
+        currentCheck = nil
         identity = nil
     }
 
@@ -91,6 +100,8 @@ final class ConversationMarkdownPrefetch {
         guard identity != next else { return }
         cancel()
         identity = next
+        activeController = controller
+        currentCheck = isCurrent
         let generation = generation
         let candidates = completed.map {
             Candidate(messageID: $0.id, revision: $0.contentRevision, source: $0.text, activity: $0.activity)
@@ -116,8 +127,8 @@ final class ConversationMarkdownPrefetch {
             }
             let preparedSegments = segmented
             let preparedInputs = await MainActor.run { [weak self] in
-                guard let self, self.generation == generation else { return [Input]() }
-                var inputs: [Input] = []
+                guard let self, self.generation == generation else { return [(Input, MarkdownRenderDocument?)]() }
+                var inputs: [(Input, MarkdownRenderDocument?)] = []
                 for (candidate, sources) in preparedSegments {
                     defer { self.pendingMessages.remove(candidate.messageID) }
                     guard isCurrent(candidate.messageID, candidate.revision) else { continue }
@@ -126,33 +137,52 @@ final class ConversationMarkdownPrefetch {
                         let input = Input(
                             messageID: candidate.messageID, revision: candidate.revision, source: source, key: key)
                         self.inputsByMessage[candidate.messageID, default: []].append(input)
-                        if let document = MarkdownRenderDocumentCache.cached(source: source, key: key) {
-                            self.enqueueWarm(input, document: document, controller: controller, isCurrent: isCurrent)
-                        } else {
-                            inputs.append(input)
-                        }
+                        let document = MarkdownRenderDocumentCache.cached(source: source, key: key)
+                        inputs.append((input, document))
                     }
                 }
                 self.onProgress?()
                 return inputs
             }
             var seen: Set<MarkdownRenderKey> = []
-            var inputs = preparedInputs.filter { seen.insert($0.key).inserted }
+            var inputs = preparedInputs.filter { seen.insert($0.0.key).inserted }
             while !inputs.isEmpty {
                 guard !Task.isCancelled else { return }
                 let candidates = inputs
                 let next = await MainActor.run { [weak self] in
-                    candidates.firstIndex { self?.isRequested($0) == true } ?? 0
+                    candidates.indices.min {
+                        (self?.priority(candidates[$0].0) ?? Int.max) < (self?.priority(candidates[$1].0) ?? Int.max)
+                    } ?? 0
                 }
-                let input = inputs.remove(at: next)
-                let document = MarkdownRenderDocumentBuilder.build(source: input.source, key: input.key)
+                let (input, cached) = inputs.remove(at: next)
+                let parseStarted = DispatchTime.now().uptimeNanoseconds
+                let document = cached ?? MarkdownRenderDocumentBuilder.build(source: input.source, key: input.key)
+                let blockParseTime = DispatchTime.now().uptimeNanoseconds - parseStarted
+                let inlineStarted = DispatchTime.now().uptimeNanoseconds
+                var parsed: [(String, [MarkdownPreparedBlock])] = []
+                for section in document.sections {
+                    guard !Task.isCancelled else { return }
+                    switch section.kind {
+                    case .code, .table: continue
+                    default:
+                        parsed.append(
+                            (section.source, MarkdownRenderDocumentBuilder.preparedBlocks(for: section.source)))
+                    }
+                }
                 guard !Task.isCancelled else { return }
+                let inlineParseTime = DispatchTime.now().uptimeNanoseconds - inlineStarted
                 await MainActor.run { [weak self] in
                     guard let self, self.generation == generation, isCurrent(input.messageID, input.revision) else {
                         return
                     }
-                    MarkdownRenderDocumentCache.insert(document, prefetched: true)
-                    self.committedDocuments += 1
+                    DebugLog.writePerformance(
+                        "markdown_prepare block_parse_ms=\(Double(blockParseTime) / 1_000_000) inline_parse_ms=\(Double(inlineParseTime) / 1_000_000) sections=\(document.sections.count)"
+                    )
+                    for (source, blocks) in parsed { MarkdownPreparedBlockCache.insert(blocks, for: source) }
+                    if cached == nil {
+                        MarkdownRenderDocumentCache.insert(document, prefetched: true)
+                        self.committedDocuments += 1
+                    }
                     self.enqueueWarm(input, document: document, controller: controller, isCurrent: isCurrent)
                     self.onProgress?()
                 }
@@ -228,7 +258,8 @@ final class ConversationMarkdownPrefetch {
             context.themeRevision == DockThemeRuntime.revision,
             context.mentionRevision == BotMentions.revision, context.themeID == DockThemeRuntime.current
         else { return .waiting }
-        let requested = warmQueue.firstIndex { isRequested($0.input) }
+        let requested = warmQueue.indices.filter { isRequested(warmQueue[$0].input) }
+            .min { priority(warmQueue[$0].input) < priority(warmQueue[$1].input) }
         guard !controller.isUserScrolling || requested != nil else { return .waiting }
         let next = requested ?? 0
         // Both scratch views are shared, so an interrupted section must restart
@@ -297,48 +328,66 @@ final class ConversationMarkdownPrefetch {
         return job.index < job.document.sections.count ? .worked : .progressed
     }
 
-    func isReady(messageIDs: [UUID], context: NativeMarkdownDocumentContainerView.MeasurementContext) -> Bool {
-        let requested = Set(messageIDs)
-        if requested != requestedMessageIDs {
+    /// Advances only through sections not already retained for this request.
+    func readyPrefix(
+        messageIDs: [UUID], context: NativeMarkdownDocumentContainerView.MeasurementContext
+    ) -> (count: Int, page: ConversationPreparedPage) {
+        if requestedOrder != messageIDs || requestedContext != context {
             cancelRequest()
-            requestedMessageIDs = requested
+            requestedOrder = messageIDs
+            requestedMessageIDs = Set(messageIDs)
+            requestedContext = context
         }
         requestedDocumentKeys = Set(messageIDs.flatMap { (inputsByMessage[$0] ?? []).map(\.key) })
-        for id in messageIDs {
-            if pendingMessages.contains(id) {
-                preparedPage = nil
-                return false
-            }
-            for input in inputsByMessage[id] ?? [] {
+        while readyCount < messageIDs.count {
+            let id = messageIDs[readyCount]
+            if pendingMessages.contains(id) { break }
+            let inputs = inputsByMessage[id] ?? []
+            while readyInput < inputs.count {
+                let input = inputs[readyInput]
                 guard
                     let document = requestedDocuments[input.key]
                         ?? MarkdownRenderDocumentCache.cached(source: input.source, key: input.key)
                 else {
-                    preparedPage = nil
                     restartIfIdle()
-                    return false
+                    return (readyCount, .init(documents: requestedDocuments, measurements: requestedMeasurements))
                 }
                 requestedDocuments[input.key] = document
-                for section in document.sections {
-                    let key = NativeMarkdownDocumentContainerView.measurementKey(for: section, context: context)
+                while readySection < document.sections.count {
+                    let key = NativeMarkdownDocumentContainerView.measurementKey(
+                        for: document.sections[readySection], context: context)
                     guard
                         let measurement = requestedMeasurements[key]
                             ?? NativeMarkdownCompletedHeightCache.measurement(for: key)
                     else {
-                        preparedPage = nil
                         restartIfIdle()
-                        return false
+                        return (readyCount, .init(documents: requestedDocuments, measurements: requestedMeasurements))
                     }
                     requestedMeasurements[key] = measurement
+                    readySection += 1
                 }
+                readyInput += 1
+                readySection = 0
             }
+            readyCount += 1
+            readyInput = 0
         }
-        preparedPage = ConversationPreparedPage(documents: requestedDocuments, measurements: requestedMeasurements)
-        return true
+        let page = ConversationPreparedPage(documents: requestedDocuments, measurements: requestedMeasurements)
+        preparedPage = readyCount == messageIDs.count ? page : nil
+        return (readyCount, page)
+    }
+
+    func isReady(messageIDs: [UUID], context: NativeMarkdownDocumentContainerView.MeasurementContext) -> Bool {
+        readyPrefix(messageIDs: messageIDs, context: context).count == messageIDs.count
     }
 
     func cancelRequest() {
         requestedMessageIDs.removeAll()
+        requestedOrder.removeAll()
+        requestedContext = nil
+        readyCount = 0
+        readyInput = 0
+        readySection = 0
         requestedDocumentKeys.removeAll()
         requestedDocuments.removeAll()
         requestedMeasurements.removeAll()
@@ -349,15 +398,51 @@ final class ConversationMarkdownPrefetch {
         requestedMessageIDs.contains(input.messageID) || requestedDocumentKeys.contains(input.key)
     }
 
+    private func priority(_ input: Input) -> Int {
+        requestedOrder.firstIndex { id in
+            id == input.messageID || (inputsByMessage[id] ?? []).contains { $0.key == input.key }
+        } ?? Int.max
+    }
+
     private func recordPreparationSlice(_ nanoseconds: UInt64) {
         preparationSlices += 1
         maximumPreparationSliceNanoseconds = max(maximumPreparationSliceNanoseconds, nanoseconds)
     }
 
     private func restartIfIdle() {
-        guard task == nil, warmTask == nil else { return }
-        identity = nil
-        DispatchQueue.main.async { [weak self] in self?.onProgress?() }
+        guard task == nil, warmTask == nil, let controller = activeController, let isCurrent = currentCheck else {
+            return
+        }
+        let inputs = inputsByMessage.values.flatMap { $0 }.filter { isRequested($0) }
+            .sorted { priority($0) < priority($1) }
+        var seen: Set<MarkdownRenderKey> = []
+        let work = inputs.filter { seen.insert($0.key).inserted }.map { input in
+            (
+                input,
+                requestedDocuments[input.key]
+                    ?? MarkdownRenderDocumentCache.cached(source: input.source, key: input.key)
+            )
+        }
+        guard !work.isEmpty else { return }
+        let generation = generation
+        task = Task.detached(priority: .utility) { [weak self, weak controller] in
+            for (input, cached) in work {
+                guard !Task.isCancelled, let controller else { return }
+                let document = cached ?? MarkdownRenderDocumentBuilder.build(source: input.source, key: input.key)
+                await MainActor.run { [weak self] in
+                    guard let self, self.generation == generation, isCurrent(input.messageID, input.revision) else {
+                        return
+                    }
+                    if cached == nil { MarkdownRenderDocumentCache.insert(document, prefetched: true) }
+                    self.enqueueWarm(input, document: document, controller: controller, isCurrent: isCurrent)
+                }
+            }
+            await MainActor.run { [weak self] in
+                guard let self, self.generation == generation else { return }
+                self.task = nil
+                self.onProgress?()
+            }
+        }
     }
 
     private static func isDraggingDivider(above view: NSView) -> Bool {

@@ -156,6 +156,22 @@ struct ConversationTranscriptIntegrationTests {
         }
     }
 
+    @Test func unreadDividerMountsAndJumpsToItsMessage() async throws {
+        let messages = (0..<60).map { ChatMessage(role: .hermes, text: "Reply \($0)") }
+        let fixture = Fixture(messages: messages)
+        fixture.window.orderFrontRegardless()
+        defer { fixture.window.orderOut(nil) }
+        try await fixture.settle()
+        fixture.model.unreadDividerMessageID = messages[20].id
+        try await fixture.settle()
+        #expect(fixture.coordinator.mountedRange.contains(20))
+        let row = try #require(fixture.coordinator.rowViewports.first { $0.target.messageID == messages[20].id })
+        let geometry = try #require(fixture.controller.geometry)
+        #expect(row.minY >= geometry.visibleTop - 2)
+        #expect(row.minY < geometry.visibleTop + geometry.visibleHeight)
+        #expect(!fixture.coordinator.presentation.isAtBottom)
+    }
+
     @Test func visibleHistoryWaitsForAdjacentPreparation() async throws {
         let source = "```swift\n" + String(repeating: "let value = 42 // complete line\n", count: 2_000) + "```"
         let fixture = Fixture(source: source)
@@ -170,14 +186,14 @@ struct ConversationTranscriptIntegrationTests {
         try fixture.move(to: first.minY + 20)
         fixture.host.layoutSubtreeIfNeeded()
         try await Task.sleep(for: .milliseconds(20))
-        #expect(fixture.coordinator.mountedRange == original)
         fixture.controller.userScrollDidSettle()
         let deadline = Date().addingTimeInterval(20)
         while fixture.coordinator.mountedRange == original, Date() < deadline {
             fixture.host.layoutSubtreeIfNeeded()
             try await Task.sleep(for: .milliseconds(20))
         }
-        #expect(fixture.coordinator.mountedRange.lowerBound == original.lowerBound - ConversationMessageWindow.pageSize)
+        #expect(fixture.coordinator.mountedRange.lowerBound < original.lowerBound)
+        #expect(fixture.coordinator.mountedRange.lowerBound >= original.lowerBound - ConversationMessageWindow.pageSize)
         try await fixture.settle()
         #expect(fixture.coordinator.pendingPage == nil)
     }

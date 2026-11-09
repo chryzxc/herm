@@ -46,6 +46,7 @@ struct InlineBotMentionText: NSViewRepresentable {
                 text: text, botMentions: botMentions, colorScheme: key.colorScheme, bodySize: key.bodySize))
         view.setAccessibilityLabel(text)
         view.invalidateIntrinsicContentSize()
+        view.window?.invalidateCursorRects(for: view)
     }
 
     static func attributedString(

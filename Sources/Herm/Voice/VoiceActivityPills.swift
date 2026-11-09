@@ -246,6 +246,7 @@ struct VoiceActivityPillsLayer: View {
             .frame(minHeight: height)
         }
         .scrollIndicators(.hidden)
+        .scrollClipDisabled()
         .frame(width: width, height: height)
     }
 

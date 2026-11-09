@@ -4,6 +4,27 @@ import Testing
 @testable import Herm
 
 struct ChatMediaSegmentTests {
+    @Test func userAttachmentsShowNamesAndPreserveMessageText() {
+        let pending = UserMessageAttachments.split("[PDF: A report.pdf]\nCheck this")
+        #expect(pending.names == ["A report.pdf"])
+        #expect(pending.text == "Check this")
+        let restored = UserMessageAttachments.split("Check this\n\n@file:`attachments/A report.pdf`")
+        #expect(restored.names == ["A report.pdf"])
+        #expect(restored.text == "Check this")
+        let ordinary = UserMessageAttachments.split("Please read @file:notes.txt later")
+        #expect(ordinary.names.isEmpty)
+        #expect(ordinary.text == "Please read @file:notes.txt later")
+        #expect(UserMessageAttachments.split("[document]\n\n@file:report.pdf").text.isEmpty)
+    }
+
+    @Test @MainActor func restoredFileReferenceMatchesPendingAttachment() {
+        let pending = ChatMessage(role: .user, text: "[PDF: report.pdf]\nCheck this")
+        let restored = ChatMessage(role: .user, text: "Check this\n\n@file:attachments/report.pdf")
+        #expect(DockModel.missingUserMessages([pending], from: [restored]).isEmpty)
+        let other = ChatMessage(role: .user, text: "Check this\n\n@file:attachments/other.pdf")
+        #expect(DockModel.missingUserMessages([pending], from: [other]).count == 1)
+    }
+
     @Test @MainActor func openingAttachmentDiffKeepsItsOwnWorktree() {
         let center = FilePreviewCenter(
             fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))

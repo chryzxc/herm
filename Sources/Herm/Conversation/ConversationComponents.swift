@@ -231,6 +231,11 @@ final class NativeMarkdownTextView: NSTextView {
         MainActor.assumeIsolated { markdownOpenURL(url) }
     }
 
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addMarkdownLinkCursorRects()
+    }
+
     override var intrinsicContentSize: NSSize {
         guard bounds.width > 1 else { return NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
         guard let textContainer, let layoutManager else { return NSSize(width: NSView.noIntrinsicMetric, height: 0) }
@@ -1042,6 +1047,10 @@ struct TurnActivityView: View, Equatable {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(prepared.segments.filter { !$0.records.isEmpty }) { card($0) }
                     }
+                }
+                // MCP App views stay in the same place whether the activity is expanded or not.
+                ForEach(activity.filter { $0.app != nil }) { call in
+                    if let app = call.app { MCPAppCard(callID: call.id, appID: app) }
                 }
             }
         }

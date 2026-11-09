@@ -23,6 +23,10 @@ struct SessionRepositoryScope: Equatable {
     let repositoryPath: String
 
     var identity: String { "\(sessionID):\(repositoryPath)" }
+
+    func containsGitRepository(_ snapshot: RepositorySnapshot) -> Bool {
+        snapshot.isGitRepository && snapshot.path == RepositorySnapshot.stableID(path: repositoryPath)
+    }
 }
 
 struct SessionRepositoryPathCache: Equatable {
@@ -105,6 +109,7 @@ struct DockPopover: View {
     @StateObject var developerWorkflow = DeveloperWorkflowModel.shared
     @StateObject var pullRequestCenter = PullRequestCenterModel(details: .shared)
     @StateObject var issueCenter = IssueCenterModel()
+    @StateObject var githubRepositories = GitHubRepositoriesModel()
     @StateObject var gitHubInspector = GitHubInspectorStore()
     @StateObject var pullRequestChatLinks = PullRequestChatLinkStore()
     @State var chatContextRouter = ChatContextRouter()
@@ -267,6 +272,7 @@ struct DockPopover: View {
     }
 
     var body: some View {
+        let _ = HermPerformanceRecorder.countBody("DockPopover")
         let _ = modelPresentationRevision
         let _ = controlPresentationRevision
         let _ = workspaceLayoutRevision
@@ -289,6 +295,7 @@ struct DockPopover: View {
                 }
             }
             .onDisappear { model.presentationDemand.update(presentationHostID, visible: false) }
+            .onAppear { registerPerformanceSources() }
             .environment(\.chatContextRouter, chatContextRouter)
             .environment(\.richHostActionRouter, richHostRouter)
             .environment(

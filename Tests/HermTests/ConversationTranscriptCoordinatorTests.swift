@@ -64,7 +64,9 @@ struct ConversationTranscriptCoordinatorTests {
         controller.shiftVisibleTop(by: 40)
         let original = coordinator.mountedRange
         var ready = false
-        coordinator.isPageReady = { _, _ in ready }
+        coordinator.pageReadiness = { range, _ in
+            .init(count: ready ? range.count : 0, preparedPage: nil)
+        }
         coordinator.userMoved(try #require(controller.geometry), delta: -10)
         #expect(coordinator.mountedRange == original)
         #expect(coordinator.pendingPage == nil)
@@ -75,6 +77,81 @@ struct ConversationTranscriptCoordinatorTests {
         coordinator.userMoved(try #require(controller.geometry), delta: -10)
         #expect(coordinator.mountedRange.lowerBound == original.lowerBound - ConversationMessageWindow.pageSize)
         #expect(coordinator.pendingPage != nil)
+    }
+
+    @Test func rowsIgnoreThePointerOnlyWhileTheReaderScrolls() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 3_600))
+        controller.clipView = scroll.contentView
+        coordinator.reset(sessionID: "one", totalCount: 10, bubbleCount: 10)
+        let geometry = try #require(controller.geometry)
+        coordinator.userMoved(geometry, delta: -10)
+        #expect(coordinator.presentation.isUserScrolling)
+        coordinator.settled(geometry)
+        #expect(!coordinator.presentation.isUserScrolling)
+        coordinator.userMoved(geometry, delta: -10)
+        coordinator.reset(sessionID: "two", totalCount: 10, bubbleCount: 10)
+        #expect(!coordinator.presentation.isUserScrolling)
+    }
+
+    @Test func partialHistoryRetainsItsRequestAcrossLayoutAndReversalCancelsIt() async throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        let document = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 3_600))
+        scroll.documentView = document
+        controller.clipView = scroll.contentView
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500)
+        coordinator.receiveLayout(layout(coordinator))
+        controller.shiftVisibleTop(by: 40)
+        let original = coordinator.mountedRange
+        var ready = 2
+        var targets: [Range<Int>] = []
+        coordinator.pageReadiness = { range, _ in
+            targets.append(range)
+            return .init(count: ready, preparedPage: nil)
+        }
+        coordinator.userMoved(try #require(controller.geometry), delta: -10)
+        #expect(coordinator.mountedRange.lowerBound == original.lowerBound - 2)
+        #expect(coordinator.hasHistoryRequest)
+        let newLayout = layout(coordinator)
+        document.setFrameSize(NSSize(width: 640, height: CGFloat(newLayout.range.count) * 300))
+        coordinator.receiveLayout(newLayout)
+        for _ in 0..<10 { await Task.yield() }
+        #expect(coordinator.pendingPage == nil)
+        // Continue after the reader returns to the edge; the original target stays fixed.
+        controller.shiftVisibleTop(by: -1_000)
+        ready = 4
+        coordinator.retryPreparedPage()
+        #expect(coordinator.mountedRange.lowerBound == original.lowerBound - 4)
+        #expect(targets.count >= 2 && targets.first == targets.last)
+        #expect(coordinator.hasHistoryRequest)
+        coordinator.userMoved(try #require(controller.geometry), delta: 10)
+        #expect(!coordinator.hasHistoryRequest)
+    }
+
+    @Test func laterHistoryRevealsOnlyTheReadyContiguousRows() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        let document = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 7_500))
+        scroll.documentView = document
+        controller.clipView = scroll.contentView
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500)
+        coordinator.jump(to: 250)
+        coordinator.receiveLayout(layout(coordinator))
+        let original = coordinator.mountedRange
+        controller.shiftVisibleTop(by: 6_850)
+        coordinator.pageReadiness = { _, _ in .init(count: 3, preparedPage: nil) }
+        coordinator.userMoved(try #require(controller.geometry), delta: 12)
+        #expect(coordinator.mountedRange.upperBound == original.upperBound + 3)
+        #expect(coordinator.hasHistoryRequest)
+        #expect(coordinator.pendingPage != nil)
+        coordinator.reset(sessionID: "two", totalCount: 500, bubbleCount: 500)
+        #expect(!coordinator.hasHistoryRequest)
+        #expect(coordinator.pendingPage == nil)
     }
 
     @Test func historyDoesNotMountAnUnpreparedPageAfterOneSecond() async throws {
@@ -89,7 +166,9 @@ struct ConversationTranscriptCoordinatorTests {
         controller.shiftVisibleTop(by: 40)
         let original = coordinator.mountedRange
         var ready = false
-        coordinator.isPageReady = { _, _ in ready }
+        coordinator.pageReadiness = { range, _ in
+            .init(count: ready ? range.count : 0, preparedPage: nil)
+        }
         coordinator.userMoved(try #require(controller.geometry), delta: -10)
         try await Task.sleep(for: .milliseconds(1_100))
         #expect(coordinator.mountedRange == original)

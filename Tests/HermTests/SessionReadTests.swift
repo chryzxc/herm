@@ -55,6 +55,8 @@ struct SessionReadTests {
         #expect(resolve(read, attention: .clarification, seenStore: seenStore) == .needsClarification)
         let later = session(id: "working", hasUnreadUpdate: false, updatedAt: Date(timeIntervalSince1970: 200))
         #expect(resolve(later, seenStore: seenStore) == .unreadComplete)
+        #expect(SessionNavBotSessionRow.showsUnreadCount(for: resolve(later, seenStore: seenStore)))
+        #expect(!SessionNavBotSessionRow.showsUnreadCount(for: resolve(read, seenStore: seenStore)))
         #expect(resolve(later, attention: .failure, seenStore: seenStore) == .failed)
     }
 

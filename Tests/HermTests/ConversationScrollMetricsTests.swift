@@ -187,9 +187,23 @@ final class ConversationScrollMetricsTests: XCTestCase {
             ChatMessage(role: .hermes, text: "Old", timestamp: seenAt.addingTimeInterval(-1)),
             ChatMessage(role: .hermes, text: "Read", timestamp: seenAt),
             ChatMessage(role: .hermes, text: "New", timestamp: seenAt.addingTimeInterval(1)),
-            ChatMessage(role: .user, text: "New prompt", timestamp: seenAt.addingTimeInterval(2)),
         ]
         XCTAssertEqual(ConversationUnreadMessagePolicy.assistantResponseCount(messages, after: seenAt), 1)
+    }
+
+    func testUserReplyMarksEarlierResponsesRead() {
+        let seenAt = Date(timeIntervalSince1970: 100)
+        let reply = ChatMessage(role: .hermes, text: "Reply", timestamp: seenAt.addingTimeInterval(3))
+        let messages = [
+            ChatMessage(role: .hermes, text: "Answered", timestamp: seenAt.addingTimeInterval(1)),
+            ChatMessage(role: .user, text: "Follow-up", timestamp: seenAt.addingTimeInterval(2)),
+            reply,
+        ]
+        XCTAssertEqual(
+            ConversationUnreadMessagePolicy.project(messages, after: seenAt),
+            .init(count: 1, firstMessageID: reply.id))
+        XCTAssertEqual(ConversationUnreadMessagePolicy.project(Array(messages.prefix(2)), after: seenAt).count, 0)
+        XCTAssertEqual(ConversationUnreadMessagePolicy.assistantResponseCount(messages), 2)
     }
 
     func testSentinelAtViewportBottomCountsAsAtBottom() {

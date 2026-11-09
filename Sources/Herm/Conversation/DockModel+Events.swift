@@ -108,6 +108,12 @@ extension DockModel {
             markUnreadUpdate()
             if let eventSessionID {
                 updateSessionActivity(sessionID: eventSessionID, isWorking: false, unread: eventSessionID != sessionID)
+                // A reply that lands in the chat being watched is read as it arrives.
+                if eventSessionID == sessionID, isPopoverVisible {
+                    let rowID = rowSessionID(eventSessionID)
+                    let profileID = sessions.first { $0.id == rowID }?.profileID ?? sessionProfileID ?? profileScopeID
+                    SidebarSessionSeenStore.shared.markSeen(profileID: profileID, sessionID: rowID)
+                }
             }
         }
         handleEvent(type, params: params)
@@ -625,6 +631,8 @@ extension DockModel {
             if status == .idle { status = .working }
         }
         switch type {
+        case "session.control.update":
+            applySessionControlEvent(payload, sessionID: currentSessionID)
         case "session.info":
             applyEffortSessionInfo(params, payload: payload, owner: eventSessionID)
         case "session.usage":
@@ -1156,6 +1164,7 @@ extension DockModel {
                 }
                 var call = activeToolCalls[index]
                 call.result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
+                call.app = MCPApp.receiptID(tool: call.name, result: result)
                 call.isComplete = true
                 call.completedAt =
                     dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
@@ -1181,6 +1190,7 @@ extension DockModel {
                 }
                 var call = activeToolCalls[last]
                 call.result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
+                call.app = MCPApp.receiptID(tool: call.name, result: result)
                 call.isComplete = true
                 call.completedAt =
                     dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()

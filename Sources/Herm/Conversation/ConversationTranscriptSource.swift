@@ -66,6 +66,7 @@ struct ConversationTranscriptSnapshot: Equatable {
     let sessionID: String?
     let layoutSessionID: String?
     let isPreview: Bool
+    let unreadDividerMessageID: UUID?
     let layoutGeneration: UInt64
     let messages: [ChatMessage]
     let range: Range<Int>
@@ -77,6 +78,7 @@ struct ConversationTranscriptSnapshot: Equatable {
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.sessionID == rhs.sessionID && lhs.layoutSessionID == rhs.layoutSessionID && lhs.isPreview == rhs.isPreview
+            && lhs.unreadDividerMessageID == rhs.unreadDividerMessageID
             && lhs.layoutGeneration == rhs.layoutGeneration
             && lhs.messages.count == rhs.messages.count
             && lhs.range == rhs.range && lhs.rows == rhs.rows && lhs.context == rhs.context
@@ -97,6 +99,8 @@ final class ConversationTranscriptSource: ObservableObject {
     let coordinator: ConversationTranscriptCoordinator
     private var subscriptions: Set<AnyCancellable> = []
     private var refreshScheduled = false
+    private var holdingPrefetch = false
+    private var heldMeasurementContext: NativeMarkdownDocumentContainerView.MeasurementContext?
     private var isActive = true
     private var showingPreview = false
     let markdownPrefetch = ConversationMarkdownPrefetch()
@@ -122,10 +126,13 @@ final class ConversationTranscriptSource: ObservableObject {
             else { return }
             self.model.recordSessionSwitchLayout()
         }
-        coordinator.isPageReady = { [weak self] range, direction in
-            self?.isPageReady(range, direction: direction) ?? true
+        coordinator.pageReadiness = { [weak self] range, direction in
+            self?.pageReadiness(range, direction: direction)
+                ?? ConversationPageReadiness(count: range.count, preparedPage: nil)
         }
         coordinator.onPreparationCancelled = { [weak self] in
+            self?.holdingPrefetch = false
+            self?.heldMeasurementContext = nil
             self?.markdownPrefetch.cancelRequest()
         }
         coordinator.onPreparationInvalidated = { [weak self] in
@@ -138,6 +145,7 @@ final class ConversationTranscriptSource: ObservableObject {
         observe(model.$messages)
         observe(model.$sessionTranscriptPreview)
         observe(model.$sessionTranscriptLoadState)
+        observe(model.$unreadDividerMessageID)
         observe(model.$sessionID)
         observe(model.$sessionStorageID)
         observe(model.$status)
@@ -218,11 +226,12 @@ final class ConversationTranscriptSource: ObservableObject {
 
     func suspend() {
         isActive = false
+        coordinator.cancelHistoryRequest()
         markdownPrefetch.cancel()
     }
 
     func prefetch() {
-        guard isActive else { return }
+        guard isActive, !holdingPrefetch else { return }
         let sessionID = snapshot.sessionID
         let range = snapshot.range
         let page = ConversationMessageWindow.pageSize
@@ -242,14 +251,22 @@ final class ConversationTranscriptSource: ObservableObject {
         }
     }
 
-    private func isPageReady(_ range: Range<Int>, direction: CGFloat) -> Bool {
+    private func pageReadiness(_ range: Range<Int>, direction: CGFloat) -> ConversationPageReadiness {
         guard isActive, let clip = coordinator.controller.clipView, let window = clip.window,
             window.isVisible,
             window.occlusionState.contains(.visible) || coordinator.controller.allowsOccludedPreparationForTesting,
             let context = coordinator.controller.markdownMeasurementContext
-        else { return true }
+        else { return .init(count: range.count, preparedPage: nil) }
+        if holdingPrefetch, heldMeasurementContext != context {
+            coordinator.cancelHistoryRequest()
+            markdownPrefetch.cancel()
+            prefetch()
+            return .init(count: 0, preparedPage: nil)
+        }
         prefetch()
-        let added = range.filter { !snapshot.range.contains($0) && snapshot.messages.indices.contains($0) }
+        holdingPrefetch = true
+        heldMeasurementContext = context
+        let added = range.filter { snapshot.messages.indices.contains($0) }
         let current = model.displayedTranscriptMessages
         guard model.sessionID == snapshot.sessionID,
             added.allSatisfy({ index in
@@ -257,14 +274,14 @@ final class ConversationTranscriptSource: ObservableObject {
                     && current[index].contentRevision == snapshot.messages[index].contentRevision
             })
         else {
-            markdownPrefetch.cancelRequest()
+            coordinator.cancelHistoryRequest()
+            markdownPrefetch.cancel()
             scheduleRefresh()
-            return false
+            return .init(count: 0, preparedPage: nil)
         }
         let ordered = direction < 0 ? Array(added.reversed()) : added
-        let ready = markdownPrefetch.isReady(messageIDs: ordered.map { snapshot.messages[$0].id }, context: context)
-        if ready { coordinator.controller.preparedPage = markdownPrefetch.preparedPage }
-        return ready
+        let ready = markdownPrefetch.readyPrefix(messageIDs: ordered.map { snapshot.messages[$0].id }, context: context)
+        return .init(count: ready.count, preparedPage: ready.page)
     }
 
     private static func makeSnapshot(
@@ -289,6 +306,7 @@ final class ConversationTranscriptSource: ObservableObject {
             })
         return ConversationTranscriptSnapshot(
             sessionID: model.sessionID, layoutSessionID: model.transcriptPresentationID, isPreview: preview != nil,
+            unreadDividerMessageID: preview == nil && model.sessionActionsReady ? model.unreadDividerMessageID : nil,
             layoutGeneration: generation, messages: messages, range: range,
             rows: range.map { .init(index: $0, message: messages[$0]) },
             context: .init(

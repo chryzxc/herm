@@ -1,5 +1,53 @@
 import SwiftUI
 
+/// Theme-independent Markdown preparation can run away from the UI actor.
+enum MarkdownPreparedBlock: Sendable {
+    case heading(level: Int, text: AttributedString)
+    case paragraph(AttributedString)
+    case listItem(text: AttributedString, marker: String)
+    case code(String, language: String?)
+    case quote(AttributedString)
+    case tableRow([AttributedString])
+}
+
+enum MarkdownInlineParser {
+    static let safeLinkSchemes: Set<String> = ["http", "https", "mailto"]
+
+    static func parse(_ value: String) -> AttributedString {
+        let value = value.replacingOccurrences(
+            of: #"\*\*(https?://[^\s*<>]+)\*\*"#, with: "**<$1>**", options: .regularExpression)
+        var parsed =
+            (try? AttributedString(
+                markdown: value, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+            )) ?? AttributedString(value)
+        for run in parsed.runs {
+            guard let link = run.link else { continue }
+            if !safeLinkSchemes.contains(link.scheme?.lowercased() ?? "") { parsed[run.range].link = nil }
+        }
+        return parsed
+    }
+}
+
+@MainActor
+enum MarkdownPreparedBlockCache {
+    private final class Entry {
+        let blocks: [MarkdownPreparedBlock]
+        init(_ blocks: [MarkdownPreparedBlock]) { self.blocks = blocks }
+    }
+    private static let cache: NSCache<NSString, Entry> = {
+        let result = NSCache<NSString, Entry>()
+        result.countLimit = 2_000
+        result.totalCostLimit = 16 * 1024 * 1024
+        return result
+    }()
+    static func blocks(for source: String) -> [MarkdownPreparedBlock]? {
+        cache.object(forKey: source as NSString)?.blocks
+    }
+    static func insert(_ blocks: [MarkdownPreparedBlock], for source: String) {
+        cache.setObject(Entry(blocks), forKey: source as NSString, cost: max(1, source.utf8.count * 4))
+    }
+}
+
 @MainActor
 extension MarkdownRenderDocumentBuilder {
     enum RenderBlock: Equatable {
@@ -11,9 +59,25 @@ extension MarkdownRenderDocumentBuilder {
         case tableRow([AttributedString])
     }
 
-    static func renderBlocks(for markdown: String) -> [RenderBlock] { renderBlocks(from: parseBlocks(markdown)) }
+    static func renderBlocks(for markdown: String) -> [RenderBlock] {
+        renderBlocks(from: preparedBlocks(for: markdown))
+    }
+
+    nonisolated static func preparedBlocks(for markdown: String) -> [MarkdownPreparedBlock] {
+        parseBlocks(markdown).map { block in
+            switch block {
+            case .heading(let level, let text): return .heading(level: level, text: MarkdownInlineParser.parse(text))
+            case .paragraph(let text): return .paragraph(MarkdownInlineParser.parse(text))
+            case .listItem(let text, let marker):
+                return .listItem(text: MarkdownInlineParser.parse(text), marker: marker)
+            case .code(let code, let language): return .code(code, language: language)
+            case .quote(let text): return .quote(MarkdownInlineParser.parse(text))
+            case .tableRow(let columns): return .tableRow(columns.map(MarkdownInlineParser.parse))
+            }
+        }
+    }
     /// Line-level parse output before inline Markdown is rendered.
-    private enum ParsedBlock {
+    private enum ParsedBlock: Sendable {
         case heading(level: Int, text: String)
         case paragraph(String)
         case listItem(text: String, marker: String)
@@ -22,7 +86,7 @@ extension MarkdownRenderDocumentBuilder {
         case tableRow([String])
     }
 
-    private static func parseBlocks(_ markdown: String) -> [ParsedBlock] {
+    nonisolated private static func parseBlocks(_ markdown: String) -> [ParsedBlock] {
         var result: [ParsedBlock] = []
         var code: [String] = []
         var language: String?
@@ -115,7 +179,7 @@ extension MarkdownRenderDocumentBuilder {
     /// JSON result. JSON is only Markdown when fenced, but its object syntax is
     /// unambiguous and should still be readable as structured output instead
     /// of flowing through a proportional prose paragraph.
-    private static func unmarkedJSONObject(
+    nonisolated private static func unmarkedJSONObject(
         in lines: [String], startingAt start: Int
     ) -> (text: String, nextLineIndex: Int)? {
         guard lines[start].trimmingCharacters(in: .whitespaces).hasPrefix("{") else {
@@ -185,20 +249,18 @@ extension MarkdownRenderDocumentBuilder {
             return marker
         }
     }
-    private static func renderBlocks(from parsed: [ParsedBlock]) -> [RenderBlock] {
+    private static func renderBlocks(from parsed: [MarkdownPreparedBlock]) -> [RenderBlock] {
         parsed.map { block in
             switch block {
-            case .heading(let level, let text): return .heading(level: level, text: inlineMarkdown(text))
-            case .paragraph(let text): return .paragraph(inlineMarkdown(text))
-            case .listItem(let text, let marker): return .listItem(text: inlineMarkdown(text), marker: marker)
+            case .heading(let level, let text):
+                return .heading(level: level, text: MarkdownMessageView.linkAffordances(in: text))
+            case .paragraph(let text): return .paragraph(MarkdownMessageView.linkAffordances(in: text))
+            case .listItem(let text, let marker):
+                return .listItem(text: MarkdownMessageView.linkAffordances(in: text), marker: marker)
             case .code(let code, let language): return .code(code, language: language)
-            case .quote(let text): return .quote(inlineMarkdown(text))
-            case .tableRow(let columns): return .tableRow(columns.map(inlineMarkdown))
+            case .quote(let text): return .quote(MarkdownMessageView.linkAffordances(in: text))
+            case .tableRow(let columns): return .tableRow(columns.map { MarkdownMessageView.linkAffordances(in: $0) })
             }
         }
-    }
-
-    private static func inlineMarkdown(_ value: String) -> AttributedString {
-        MarkdownMessageView.linkAffordances(in: NativeMarkdownAttributedTextBuilder.inlineMarkdown(value))
     }
 }

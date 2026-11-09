@@ -896,7 +896,9 @@ enum NativeMarkdownAttributedTextBuilder {
     }
 
     private static func ordinaryDocument(_ markdown: String, palette: NativeMarkdownPalette) -> Output {
-        let blocks = MarkdownRenderDocumentBuilder.renderBlocks(for: markdown)
+        let blocks =
+            MarkdownPreparedBlockCache.blocks(for: markdown)
+            ?? MarkdownRenderDocumentBuilder.preparedBlocks(for: markdown)
         let result = NSMutableAttributedString()
         var quoteRanges: [NSRange] = []
         for (index, block) in blocks.enumerated() {
@@ -1059,24 +1061,8 @@ enum NativeMarkdownAttributedTextBuilder {
     /// Markdown here includes agent output and third-party GitHub PR/issue
     /// bodies, so a link like `file:///…/Evil.app` or a custom app scheme must
     /// never become clickable. Unsafe links keep their text, lose the link.
-    static let safeLinkSchemes: Set<String> = ["http", "https", "mailto"]
-
     static func inlineMarkdown(_ value: String) -> AttributedString {
-        // The autolinker swallows the closing `**` of a bold bare URL; angle brackets end the URL there.
-        let value = value.replacingOccurrences(
-            of: #"\*\*(https?://[^\s*<>]+)\*\*"#, with: "**<$1>**", options: .regularExpression)
-        var parsed =
-            (try? AttributedString(
-                markdown: value,
-                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-            )) ?? AttributedString(value)
-        for run in parsed.runs {
-            guard let link = run.link else { continue }
-            if !safeLinkSchemes.contains(link.scheme?.lowercased() ?? "") {
-                parsed[run.range].link = nil
-            }
-        }
-        return parsed
+        MarkdownInlineParser.parse(value)
     }
 
     /// Converts Foundation inline presentation intents to AppKit fonts. An
@@ -1216,6 +1202,23 @@ enum NativeMarkdownAttributedTextBuilder {
 }
 
 @MainActor
+extension NSTextView {
+    func addMarkdownLinkCursorRects() {
+        guard let storage = textStorage, let layoutManager, let textContainer else { return }
+        let origin = textContainerOrigin
+        storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard value != nil else { return }
+            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            layoutManager.enumerateEnclosingRects(
+                forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                in: textContainer
+            ) { rect, _ in
+                self.addCursorRect(rect.offsetBy(dx: origin.x, dy: origin.y), cursor: .pointingHand)
+            }
+        }
+    }
+}
+
 final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableSection {
     var markdownOpenURL: OpenURLAction?
     private var renderedMarkdown: String?
@@ -1288,6 +1291,7 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         let palette = NativeMarkdownPalette(bodySize: bodySize, bodyWeight: bodyWeight)
         linkTextAttributes = [.foregroundColor: palette.accent, .underlineStyle: NSUnderlineStyle.single.rawValue]
         quoteBarColor = palette.border
+        let stylingStarted = DispatchTime.now().uptimeNanoseconds
         let output = NativeMarkdownAttributedOutputCache.output(
             markdown: markdown,
             kind: kind,
@@ -1307,7 +1311,12 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         // A reused measurement view must not inherit the previous block's font.
         typingAttributes = output.string.length > 0 ? output.string.attributes(at: 0, effectiveRange: nil) : [:]
         defaultParagraphStyle = typingAttributes[.paragraphStyle] as? NSParagraphStyle
+        let installStarted = DispatchTime.now().uptimeNanoseconds
         textStorage?.setAttributedString(output.string)
+        let installed = DispatchTime.now().uptimeNanoseconds
+        DebugLog.writePerformance(
+            "markdown_text_update styling_ms=\(Double(installStarted - stylingStarted) / 1_000_000) install_ms=\(Double(installed - installStarted) / 1_000_000) utf16=\(output.string.length)"
+        )
         heights.removeAll()
         invalidateIntrinsicContentSize()
         needsDisplay = true
@@ -1323,20 +1332,8 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
     /// pointing hand is registered explicitly over each link's line rects.
     override func resetCursorRects() {
         super.resetCursorRects()
-        guard let storage = textStorage, let layoutManager, let textContainer else { return }
-        let origin = textContainerOrigin
-        storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
-            guard value != nil else { return }
-            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            layoutManager.enumerateEnclosingRects(
-                forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
-                in: textContainer
-            ) { rect, _ in
-                self.addCursorRect(rect.offsetBy(dx: origin.x, dy: origin.y), cursor: .pointingHand)
-            }
-        }
+        addMarkdownLinkCursorRects()
     }
-
     func measuredHeight(forWidth width: CGFloat) -> CGFloat {
         if let cached = heights.height(forWidth: width) { return cached }
         guard let textContainer, let layoutManager, (textStorage?.length ?? 0) > 0 else {

@@ -57,6 +57,16 @@ struct ConversationLatestMessageControl: View {
     }
 }
 
+/// SwiftUI re-hit-tests every hover region on each scroll frame, so rows
+/// ignore the pointer until the scroll settles.
+struct ConversationScrollHitTesting: ViewModifier {
+    @ObservedObject var presentation: ConversationScrollPresentationState
+
+    func body(content: Content) -> some View {
+        content.allowsHitTesting(!presentation.isUserScrolling)
+    }
+}
+
 struct ConversationScrollNavigator: View {
     @ObservedObject var presentation: ConversationScrollPresentationState
     let snapshot: MessageNavigatorSnapshot

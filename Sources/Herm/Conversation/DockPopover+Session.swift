@@ -52,7 +52,7 @@ extension DockPopover {
 
     func sessionModeSwitcher(style: DockThemePalette) -> some View {
         SessionModeTabStrip(
-            modes: activeSessionRepositoryScope == nil ? [.chat, .voice] : [.chat, .voice, .pullRequests, .issues],
+            modes: sessionGitHubTabsAvailable ? [.chat, .voice, .pullRequests, .issues] : [.chat, .voice],
             selectedMode: sessionWorkspaceMode,
             style: style,
             voiceEnabled: model.sessionActionsReady,
@@ -149,6 +149,7 @@ extension DockPopover {
     }
 
     func selectSessionMode(_ mode: SessionWorkspaceMode) {
+        guard (mode != .pullRequests && mode != .issues) || sessionGitHubTabsAvailable else { return }
         guard mode != sessionWorkspaceMode else { return }
         withAnimation(.dockEase(duration: 0.2)) {
             sessionWorkspaceMode = mode
@@ -478,11 +479,6 @@ extension DockPopover {
                             isUpdatingVisibility: model.updatingSessionVisibilityID == session.id,
                             isRenaming: model.renamingSessionID == session.id,
                             onSelect: { selected in
-                                sidebarSessionSeenStore.markSeen(
-                                    profileID: selected.profileID ?? model.profileScopeID,
-                                    sessionID: selected.id,
-                                    at: selected.lastUpdatedAt
-                                )
                                 model.resumeSession(selected)
                             },
                             onTogglePin: { selected in

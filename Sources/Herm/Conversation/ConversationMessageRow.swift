@@ -202,8 +202,9 @@ struct ConversationMessageRow: View, Equatable {
             if message.role == .user {
                 let fullText = GenerativeUIIntegration.displayUserText(message.text).trimmingCharacters(
                     in: .whitespacesAndNewlines)
-                let replySplit = ReplyQuote.split(fullText)
-                let userText = replySplit?.body ?? fullText
+                let attachments = UserMessageAttachments.split(fullText)
+                let replySplit = ReplyQuote.split(attachments.text)
+                let userText = replySplit?.body ?? attachments.text
                 Spacer(minLength: 40)
                 VStack(alignment: .trailing, spacing: 4) {
                     // Attachments sit above the text surface instead of inside
@@ -232,14 +233,24 @@ struct ConversationMessageRow: View, Equatable {
                         }
                         .fixedSize()
                     }
-                    if !userText.isEmpty {
+                    if !userText.isEmpty || !attachments.names.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array(attachments.names.enumerated()), id: \.offset) { _, name in
+                                HStack(spacing: 8) {
+                                    FileTypeIcon(fileName: name)
+                                    Text(name).dockFont(.body, weight: .medium).lineLimit(2)
+                                }
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel("Attachment: " + name)
+                            }
                             if let quote = replySplit?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }
-                            InlineBotMentionText(
-                                text: userText,
-                                botMentions: ComposerBotMention.rebasing(
-                                    message.botMentions, from: message.text, to: userText),
-                                themeRevision: themeRevision)
+                            if !userText.isEmpty {
+                                InlineBotMentionText(
+                                    text: userText,
+                                    botMentions: ComposerBotMention.rebasing(
+                                        message.botMentions, from: message.text, to: userText),
+                                    themeRevision: themeRevision)
+                            }
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(Color.dockPrimaryText)

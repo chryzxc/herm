@@ -35,7 +35,9 @@ private final class ComposerQueueRPCClient: HermesRPCClientProtocol {
         if method == "image.attach_bytes", holdImageAttachment {
             return await withCheckedContinuation { pendingImageAttachment = $0 }
         }
-        if method == "image.attach_bytes" || method == "pdf.attach" { return ["attached": true] }
+        if method == "image.attach_bytes" { return ["attached": true] }
+        if method == "gateway.capabilities" { return ["per_session_exclusive_submit": true] }
+        if method == "file.attach" { return ["attached": true, "ref_text": "@file:document.pdf"] }
         if method == "session.resume" {
             return ["session_id": params["session_id"] ?? "", "messages": []]
         }
@@ -492,10 +494,12 @@ struct ComposerQueueOrderingTests {
         }
         complete(model)
         try await waitForSubmissions(hasEarlierMessage ? 2 : 1, client: client)
-        let expected = ChatContext.prompt(quote.composing("Later message"), contexts: [context])
+        let expected =
+            ChatContext.prompt(quote.composing("Later message"), contexts: [context])
+            + "\n\n@file:document.pdf"
         #expect(client.submitted == (hasEarlierMessage ? ["Earlier message", expected] : [expected]))
         #expect(client.requests.filter { $0.method == "image.attach_bytes" }.count == 1)
-        #expect(client.requests.filter { $0.method == "pdf.attach" }.count == 1)
+        #expect(client.requests.filter { $0.method == "file.attach" }.count == 1)
         #expect(model.messages.last { $0.role == .user }?.images.count == 1)
     }
 

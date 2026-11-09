@@ -134,7 +134,7 @@ struct SessionDashboardList: View, Equatable {
             Spacer(minLength: 0)
             if group == .review, let model {
                 DockIconButton(icon: .checks, label: "Mark all as read", size: 24, style: style) {
-                    model.markSessionsRead(members.map(\.session))
+                    model.markSessionsRead(members.map(\.session), at: .now)
                 }
                 .help("Mark all as read")
             }

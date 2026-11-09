@@ -24,6 +24,11 @@ struct ConversationTranscriptLayoutPreferenceKey: PreferenceKey {
     }
 }
 
+struct ConversationPageReadiness {
+    let count: Int
+    let preparedPage: ConversationPreparedPage?
+}
+
 /// One owner for session-local mounting, page anchors, and deferred scroll work.
 /// Only range changes publish; native geometry and transaction progress do not.
 @MainActor
@@ -52,11 +57,18 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     private var consumedPrependGeneration = 0
     private var queuedDirection: CGFloat = 0
     private var preparingDirection: CGFloat = 0
+    private struct HistoryRequest {
+        let id = UUID()
+        let target: Range<Int>
+        let direction: CGFloat
+    }
+    private var historyRequest: HistoryRequest?
+    var hasHistoryRequest: Bool { historyRequest != nil }
     private var deferredScroll: Task<Void, Never>?
     var onEarlierHistory: () -> Void = {}
     var onAcceptedLayout: (String?) -> Void = { _ in }
     var onScrollToBottom: ((Bool) -> Void)?
-    var isPageReady: ((Range<Int>, CGFloat) -> Bool)?
+    var pageReadiness: ((Range<Int>, CGFloat) -> ConversationPageReadiness)?
     var onPreparationCancelled: () -> Void = {}
     var onPreparationInvalidated: () -> Void = {}
     private var navigationAfterLayout: (@MainActor () -> Void)?
@@ -89,8 +101,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         controller.preparedPage = nil
         navigationAfterLayout = nil
         queuedDirection = 0
-        preparingDirection = 0
-        onPreparationCancelled()
+        cancelHistoryRequest()
         onPreparationInvalidated()
         deferredScroll?.cancel()
         deferredScroll = nil
@@ -103,11 +114,12 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     }
 
     func userMoved(_ geometry: ConversationScrollGeometry, delta: CGFloat) {
+        presentation.isUserScrolling = true
         pendingPage?.anchor.recordUserScroll(delta: delta)
-        if preparingDirection * delta < 0 {
-            preparingDirection = 0
-            onPreparationCancelled()
+        if let request = historyRequest, request.direction * delta < 0 {
+            cancelHistoryRequest()
         }
+        if historyRequest != nil { preparingDirection = 0 }
         if delta < 0 { presentation.isAtBottom = false }
         if delta > 0, geometry.distanceToBottom <= ConversationScrollMetrics.pastEndTolerance {
             updatePosition(geometry)
@@ -117,6 +129,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
 
     func settled(_ geometry: ConversationScrollGeometry) {
         performance.recordScrollSettled()
+        presentation.isUserScrolling = false
         guard pendingPage == nil else { return }
         updatePosition(geometry)
         presentation.visibleTargets = Set(
@@ -163,52 +176,80 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         return lower...upper
     }
 
-    private func checkEdge(_ geometry: ConversationScrollGeometry, direction: CGFloat) {
-        guard direction != 0 else { return }
+    func cancelHistoryRequest() {
+        historyRequest = nil
+        preparingDirection = 0
+        onPreparationCancelled()
+    }
+
+    private func checkEdge(_ geometry: ConversationScrollGeometry, direction delta: CGFloat) {
+        guard delta != 0 else { return }
+        let direction: CGFloat = delta < 0 ? -1 : 1
         guard pendingPage == nil else {
             queuedDirection = direction
             return
         }
         let distance = max(480, geometry.visibleHeight)
         let range = ConversationMessageWindow.visibleRange(mountedRange, totalCount: totalCount)
-        let next: Range<Int>
+        let proposed: Range<Int>
         if direction < 0, geometry.visibleTop < distance {
             guard range.lowerBound > 0 else {
-                preparingDirection = 0
-                onPreparationCancelled()
+                cancelHistoryRequest()
                 onEarlierHistory()
                 return
             }
-            next = ConversationMessageWindow.revealEarlier(
+            proposed = ConversationMessageWindow.revealEarlier(
                 range, totalCount: totalCount, visibleSpan: visibleSpan(geometry))
         } else if direction > 0, geometry.distanceToBottom < distance {
-            next = ConversationMessageWindow.revealLater(
+            proposed = ConversationMessageWindow.revealLater(
                 range, totalCount: totalCount, visibleSpan: visibleSpan(geometry))
         } else {
-            preparingDirection = 0
-            onPreparationCancelled()
+            if historyRequest != nil { preparingDirection = direction }
             return
         }
         if preparingDirection == direction { return }
-        guard next != range,
+        guard proposed != range,
             let row = rowViewports.filter({
                 $0.maxY > geometry.visibleTop && $0.minY < geometry.visibleTop + geometry.visibleHeight
-            })
-            .min(by: { $0.index < $1.index })
+            }).min(by: { $0.index < $1.index })
         else { return }
-        guard isPageReady?(next, direction) ?? true else {
+        if historyRequest == nil {
+            let target = direction < 0 ? proposed.lowerBound..<range.lowerBound : range.upperBound..<proposed.upperBound
+            historyRequest = HistoryRequest(target: target, direction: direction)
+        }
+        guard let request = historyRequest, request.direction == direction else { return }
+        let readiness =
+            pageReadiness?(request.target, direction)
+            ?? ConversationPageReadiness(count: request.target.count, preparedPage: nil)
+        guard historyRequest?.id == request.id else { return }
+        let ready = min(max(0, readiness.count), request.target.count)
+        let available =
+            direction < 0
+            ? range.lowerBound - max(request.target.lowerBound, request.target.upperBound - ready)
+            : min(request.target.upperBound, request.target.lowerBound + ready) - range.upperBound
+        guard available > 0 else {
             preparingDirection = direction
             return
         }
-        preparingDirection = 0
-        onPreparationCancelled()
+        let next =
+            direction < 0
+            ? ConversationMessageWindow.revealEarlier(
+                range, totalCount: totalCount, visibleSpan: visibleSpan(geometry), count: available)
+            : ConversationMessageWindow.revealLater(
+                range, totalCount: totalCount, visibleSpan: visibleSpan(geometry), count: available)
+        if ready == request.target.count {
+            cancelHistoryRequest()
+        } else {
+            preparingDirection = direction
+        }
+        controller.preparedPage = readiness.preparedPage
         controller.cancelPendingAdjustments()
         setRange(next)
         pendingPage = PageTransaction(
             sessionID: sessionID, generation: generation, range: next,
             anchor: ConversationScrollAnchor(
                 messageID: row.target.messageID, offset: row.minY - geometry.visibleTop),
-            preparedPage: controller.preparedPage)
+            preparedPage: readiness.preparedPage)
         performance.recordPageTransaction()
     }
 
@@ -255,7 +296,11 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             self.queuedDirection = 0
             self.scheduleScroll { [weak self] in
                 guard let self, let geometry = self.controller.geometry else { return }
-                self.checkEdge(geometry, direction: direction)
+                if self.historyRequest != nil {
+                    self.retryPreparedPage()
+                } else {
+                    self.checkEdge(geometry, direction: direction)
+                }
             }
         }
     }
@@ -316,6 +361,9 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             return
         }
         let responses = ConversationUnreadMessagePolicy.assistantResponseCount(messages)
+        if countedMessagesRevision != nil, countedMessagesRevision != model.messagesRevision, historyRequest != nil {
+            cancelHistoryRequest()
+        }
         if sessionID != presentationID {
             reset(sessionID: presentationID, totalCount: count, bubbleCount: responses)
         } else {

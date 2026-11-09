@@ -160,9 +160,9 @@ extension DockPopover {
             }
             .onChange(of: activeSessionRepositoryIdentity) { _, _ in
                 clearSessionSurfaceSelections()
-                if activeSessionRepositoryScope == nil,
-                    sessionWorkspaceMode == .pullRequests || sessionWorkspaceMode == .issues
-                {
+            }
+            .onChange(of: sessionGitHubTabsAvailable) { _, available in
+                if !available, sessionWorkspaceMode == .pullRequests || sessionWorkspaceMode == .issues {
                     selectSessionMode(.chat)
                 }
             }
@@ -300,7 +300,7 @@ extension DockPopover {
             EdgeSurfaceReveal(
                 isActive: panelPresentation.isEdgeAttached && !usesWindowChrome && !isFullscreen,
                 side: panelPresentation.edgeSide, revealed: panelPresentation.isRevealed,
-                collapsed: panelPresentation.collapsedSize)
+                collapsed: panelPresentation.collapsedSize, collapsedOffsetY: panelPresentation.collapsedOffsetY)
         )
         .ignoresSafeArea(edges: usesWindowChrome ? .top : [])
         .dockThemedRoot()
@@ -713,10 +713,12 @@ extension DockPopover {
                 metrics: conversationMetrics,
                 controlCenter: controlCenter,
                 openQuota: { panelPresentation.quotaRequest += 1 },
-                worktreeBar: activeSessionRepositoryScope.map { scope in
-                    WorktreePicker(
-                        worktrees: developerWorkflow.repository.path == scope.repositoryPath
-                            ? developerWorkflow.worktrees : [],
+                worktreeBar: activeSessionRepositoryScope.flatMap { scope in
+                    guard developerWorkflow.repository.isGitRepository,
+                        developerWorkflow.repository.path == scope.repositoryPath
+                    else { return nil }
+                    return WorktreePicker(
+                        worktrees: developerWorkflow.worktrees,
                         selection: scope.repositoryPath,
                         worktreesUnavailable: developerWorkflow.repository.isGitRepository
                             && developerWorkflow.worktreesUnavailable,

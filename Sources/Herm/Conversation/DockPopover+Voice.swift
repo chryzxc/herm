@@ -23,7 +23,7 @@ extension DockPopover {
         let orbScale: CGFloat = immersive ? 0.85 : 0.65
         let generativeReply = voiceGenerativeReply
         let stage = VStack(spacing: 0) {
-            VoiceStatusStrip(model: model, repositoryPath: activeSessionRepositoryPath)
+            VoiceStatusStrip(model: model)
                 .dockPadding(.top, 12)
                 .dockPadding(.horizontal, 16)
             Spacer(minLength: 12)

@@ -14,6 +14,9 @@ final class DockPanelPresentation: ObservableObject {
     /// Drives the notch-style grow/shrink of the edge-attached panel: false is the collapsed notch shape.
     @Published var isRevealed = true
     var collapsedSize = CGSize(width: 66, height: 96)
+    /// Vertical offset (SwiftUI, down is positive) from the panel's center to the notch's,
+    /// nonzero when the panel is clamped to the screen but the notch sits nearer an edge.
+    var collapsedOffsetY: CGFloat = 0
     @Published var edgeSide: EdgeDockSide = .right
     /// Clearance inside the edge silhouette; the top drop-down clears the menu bar and its shoulders.
     @Published var edgeInsets = EdgeDockLayout.insets(for: .right)

@@ -48,6 +48,44 @@ struct SessionNavQueue: View, Equatable {
     @State private var creatingProjectPath: String?
     @State private var isShowingProjectSheet = false
     @ObservedObject private var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
+    @State private var botUnreadCounts: [String: Int] = [:]
+    @State private var botUnreadIncomplete = true
+
+    private struct BotUnreadRequest: Hashable {
+        let sessions: [String]
+        let seen: [String]
+        let incomplete: Bool
+    }
+
+    private var botUnreadRequest: BotUnreadRequest {
+        let sessions = SessionDashboardProjection.sessions(in: sidebarSnapshot)
+        let incomplete: Bool
+        switch sidebarSnapshot.inputs.allBotSessionsState {
+        case .ready(let rows): incomplete = rows.count >= DockModel.allBotSessionsLimit
+        case .empty: incomplete = false
+        case .loading, .stale, .unavailable, .failed: incomplete = true
+        }
+        return BotUnreadRequest(
+            sessions: sessions.map {
+                "\($0.profileID ?? model.profileScopeID ?? "")|\($0.id)|\($0.lastUpdatedAt?.timeIntervalSince1970 ?? 0)|\($0.isHidden)"
+            }.sorted(),
+            seen: sidebarSessionSeenStore.seenAtByKey.map { "\($0.key)|\($0.value.timeIntervalSince1970)" }.sorted(),
+            incomplete: incomplete)
+    }
+
+    private func refreshBotUnreadCounts(_ request: BotUnreadRequest) async {
+        botUnreadCounts = [:]
+        botUnreadIncomplete = true
+        let sessions = SessionDashboardProjection.sessions(in: sidebarSnapshot)
+        guard
+            let result = try? await model.sessionUnreadReplies.botCounts(
+                sessions: sessions, scopeProfileID: model.profileScopeID,
+                seenStore: sidebarSessionSeenStore, incomplete: request.incomplete)
+        else { return }
+        guard !Task.isCancelled, request == botUnreadRequest else { return }
+        botUnreadCounts = result.counts
+        botUnreadIncomplete = result.incomplete
+    }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dockHostVisible) private var hostVisible
 
@@ -176,18 +214,9 @@ struct SessionNavQueue: View, Equatable {
         )
     }
 
-    private func markSessionSeen(_ session: HermesSession) {
-        sidebarSessionSeenStore.markSeen(
-            profileID: session.profileID ?? model.profileScopeID,
-            sessionID: session.id,
-            at: session.lastUpdatedAt
-        )
-    }
-
     /// Opens a chat from any bot. Another bot's chat switches the profile
     /// first, synchronously, so the scope change cannot replace the resume.
     private func openSession(_ session: HermesSession) {
-        markSessionSeen(session)
         if let profileID = session.profileID, profileID != model.profileScopeID,
             visibleBots.contains(where: { $0.id == profileID })
         {
@@ -222,9 +251,13 @@ struct SessionNavQueue: View, Equatable {
     }
 
     var body: some View {
+        let _ = HermPerformanceRecorder.countBody("SessionNavQueue")
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         listPanel(style: style)
             .dockShellPane()
+            .task(id: botUnreadRequest) {
+                await refreshBotUnreadCounts(botUnreadRequest)
+            }
             // This queue can move between AppKit split-view hosts as the center
             // destination changes. Loading the index is an initial-popover task,
             // not a navigation side effect; otherwise selecting a project or
@@ -260,12 +293,6 @@ struct SessionNavQueue: View, Equatable {
             }
             .onChange(of: sidebar.snapshot.inputs.allBotSessionsState) { _, _ in
                 baselineOtherBotSessions()
-            }
-            .onChange(of: sidebar.snapshot.inputs.activeSessionID) { _, _ in
-                guard let id = sidebar.snapshot.inputs.activeSessionID else { return }
-                if let session = sidebar.snapshot.allBotConversations.first(where: { $0.id == id }) {
-                    markSessionSeen(session)
-                }
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Herm control queue")
@@ -449,8 +476,7 @@ struct SessionNavQueue: View, Equatable {
         }
     }
 
-    /// Spinner + count while Bots are working, green check + count once a Bot
-    /// has finished with activity you have not looked at yet.
+    /// Running activity and unread sessions are independent signals.
     @ViewBuilder
     private func botActivityBadge(for bots: [BotSummary], style: DockThemePalette) -> some View {
         // Working is time-based (heartbeat age), so re-evaluate on a slow
@@ -458,11 +484,14 @@ struct SessionNavQueue: View, Equatable {
         TimelineView(.periodic(from: .now, by: 15)) { _ in
             // Sessions only: main-chat work shows on the Bots page instead.
             let workingBots = bots.filter(\.isSessionWorking)
-            let doneBots = bots.filter { !$0.isSessionWorking && botMode.hasUnread($0) }
             let working = workingBots.count
-            let done = doneBots.count
-            let summary = (workingBots.map { "\($0.name) is running" } + doneBots.map { "\($0.name) is done" }).joined(
-                separator: "\n")
+            let unread = bots.reduce(0) { $0 + botUnreadCounts[$1.id, default: 0] }
+            let unreadLabel = unread > 99 ? "99+" : "\(unread)\(botUnreadIncomplete ? "+" : "")"
+            let unreadDescription =
+                botUnreadIncomplete
+                ? (unread > 0 ? "At least \(unread) unread sessions" : "Unread session count unavailable")
+                : "\(unread) unread \(unread == 1 ? "session" : "sessions")"
+            let summary = (workingBots.map { "\($0.name) is running" } + [unreadDescription]).joined(separator: "\n")
             HStack(spacing: 6) {
                 if working > 0 {
                     HStack(spacing: 4) {
@@ -471,12 +500,14 @@ struct SessionNavQueue: View, Equatable {
                     }
                     .foregroundStyle(DockActivityState.running.color)
                 }
-                if done > 0 {
-                    HStack(spacing: 3) {
-                        DockActivityIndicator(state: .done, size: 12, unreadDot: true)
-                        if bots.count > 1 { Text("\(done)").dockFont(.compactStatus, weight: .bold) }
-                    }
-                    .foregroundStyle(DockActivityState.done.color)
+                if unread > 0 {
+                    Text(unreadLabel)
+                        .dockFont(.compactStatus, weight: .semibold)
+                        .monospacedDigit()
+                        .foregroundStyle(DockAccentColor.unreadBadgeText)
+                        .dockPill(tint: DockAccentColor.unreadBadgeFill, solid: true, compact: true)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
             }
             .help(summary)
@@ -508,7 +539,7 @@ struct SessionNavQueue: View, Equatable {
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     // The spinner doubles as "view the running session".
-                                    guard let worker = option.liveWorkerChat else {
+                                    guard option.isSessionWorking, let worker = option.liveWorkerChat else {
                                         onSelectProfile(option.id)
                                         isProfileSelectorPresented = false
                                         return
@@ -529,9 +560,7 @@ struct SessionNavQueue: View, Equatable {
                     }
                     .buttonStyle(.dockHover)
                     .accessibilityLabel(
-                        option.id == selectedBot?.id
-                            ? "\(option.name), selected"
-                            : "Select \(option.name)"
+                        botPickerAccessibilityLabel(option, selected: option.id == selectedBot?.id)
                     )
                 }
             }
@@ -539,6 +568,16 @@ struct SessionNavQueue: View, Equatable {
         }
         .frame(width: 300, height: popoverHeight)
         .background(style.background)
+    }
+
+    private func botPickerAccessibilityLabel(_ bot: BotSummary, selected: Bool) -> String {
+        let count = botUnreadCounts[bot.id, default: 0]
+        let prefix = selected ? "\(bot.name), selected" : "Select \(bot.name)"
+        if botUnreadIncomplete {
+            return count > 0
+                ? "\(prefix), at least \(count) unread sessions" : "\(prefix), unread session count unavailable"
+        }
+        return "\(prefix), \(count) unread \(count == 1 ? "session" : "sessions")"
     }
 
     /// A one-line horizontal rail keeps global navigation compact and makes
@@ -605,7 +644,6 @@ struct SessionNavQueue: View, Equatable {
                         renamingSessionID: sidebarSnapshot.inputs.renamingSessionID,
                         creatingProjectPath: creatingProjectPath,
                         onSelectSession: { session in
-                            markSessionSeen(session)
                             navigationState.selectSession(session.id)
                             onSelectSession(session)
                         },
@@ -759,6 +797,18 @@ struct SessionNavQueue: View, Equatable {
     /// Recents follow the selected Bot: another Bot's chat (kept in the model
     /// while it is open) must not leak into this Bot's list. Main chats live
     /// on the Bots page, never here.
+    /// The header badge counts every bot's sessions, so "mark all" must too.
+    private func markAllSessionsRead(_ conversations: [HermesSession]) {
+        let all = SessionDashboardProjection.sessions(in: sidebarSnapshot)
+        // Stamp "now": reply timestamps can run ahead of a stale index `updatedAt`.
+        model.markSessionsRead(all + conversations, seenStore: sidebarSessionSeenStore, at: .now)
+        botUnreadCounts = [:]
+    }
+
+    private func hasUnread(_ conversations: [HermesSession], _ statuses: [String: SidebarSessionStatus]) -> Bool {
+        conversations.contains { statuses[$0.id] == .unreadComplete } || botUnreadCounts.values.contains { $0 > 0 }
+    }
+
     private func botScopedConversations(_ base: [HermesSession]) -> [HermesSession] {
         let mainChats = BotMentions.mainChatSessionIDs
         let base = base.filter { !mainChats.contains($0.id) }
@@ -785,10 +835,10 @@ struct SessionNavQueue: View, Equatable {
                 bot: bot,
                 imageData: botMode.avatarImages[bot.id],
                 isSelected: isSessionSelected(session),
+                sessionStatus: statuses[session.id] ?? .none,
                 mood: BotMood(ask: statuses[session.id]?.activityState),
                 style: style
             ) {
-                markSessionSeen(session)
                 onOpenBotChat(bot, bot.chat?.sessionID == session.id ? nil : bot.recentSession)
             }
             .equatable()
@@ -929,9 +979,9 @@ struct SessionNavQueue: View, Equatable {
             isExpanded: $navigationState.areConversationsExpanded,
             style: style
         ) {
-            if conversations.contains(where: { statuses[$0.id] == .unreadComplete }) {
+            if hasUnread(conversations, statuses) {
                 DockIconButton(icon: .checks, label: "Mark all as read", size: 24, style: style) {
-                    model.markSessionsRead(conversations, seenStore: sidebarSessionSeenStore)
+                    markAllSessionsRead(conversations)
                 }
             }
             DockIconButton(
@@ -949,9 +999,9 @@ struct SessionNavQueue: View, Equatable {
         .dockPadding(.bottom, navigationState.areConversationsExpanded ? 2 : 0)
         .contextMenu {
             Button("Mark all as read") {
-                model.markSessionsRead(conversations, seenStore: sidebarSessionSeenStore)
+                markAllSessionsRead(conversations)
             }
-            .disabled(!conversations.contains { statuses[$0.id] == .unreadComplete })
+            .disabled(!hasUnread(conversations, statuses))
         }
 
         if navigationState.areConversationsExpanded {

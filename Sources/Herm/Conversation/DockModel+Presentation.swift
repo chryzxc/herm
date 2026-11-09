@@ -8,56 +8,101 @@ import UserNotifications
 extension DockModel {
     /// Inputs read by the workspace shell; chat activity is observed by its own leaves.
     func makeWorkspacePresentationChanges() -> AnyPublisher<Void, Never> {
+        Publishers.MergeMany(workspacePresentationSources().map(\.publisher))
+            .receive(on: RunLoop.main).eraseToAnyPublisher()
+    }
+
+    /// Named so the performance recorder can say which input redrew the workspace.
+    func workspacePresentationSources() -> [(name: String, publisher: AnyPublisher<Void, Never>)] {
+        [
+            ("status", Self.change($status)),
+            ("isHermesConnected", Self.change($isHermesConnected)),
+            ("hermesConnectionIssue", Self.change($hermesConnectionIssue)),
+            (
+                "messages",
+                $messages.combineLatest($voiceState)
+                    .map { Self.workspaceMessageKey($0, voiceActive: $1 != .inactive) }
+                    .removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher()
+            ),
+            ("isSending", Self.change($isSending)),
+            ("approvalTitle", Self.change($approvalTitle)),
+            ("approvalText", Self.change($approvalText)),
+            ("approvalDetails", Self.change($approvalDetails)),
+            ("clarificationQuestion", Self.change($clarificationQuestion)),
+            ("clarificationChoices", Self.change($clarificationChoices)),
+            ("clarificationMultiSelect", Self.change($clarificationMultiSelect)),
+            ("clarificationProgress", Self.change($clarificationProgress)),
+            ("valuePrompt", Self.change($valuePrompt)),
+            ("isShowingSessions", Self.change($isShowingSessions)),
+            ("isLoadingSessions", Self.change($isLoadingSessions)),
+            ("deletingSessionID", Self.change($deletingSessionID)),
+            ("renamingSessionID", Self.change($renamingSessionID)),
+            ("updatingSessionVisibilityID", Self.change($updatingSessionVisibilityID)),
+            ("pinningSessionID", Self.change($pinningSessionID)),
+            ("pinnedSessions", Self.change($pinnedSessions)),
+            ("isRestoringSession", Self.change($isRestoringSession)),
+            ("currentSessionTitle", Self.change($currentSessionTitle)),
+            ("isShowingReasoning", Self.change($isShowingReasoning)),
+            ("runtimeConfiguration", Self.change($runtimeConfiguration)),
+            ("runtimeModelOptions", Self.change($runtimeModelOptions)),
+            ("sessionModelOptionID", Self.change($sessionModelOptionID)),
+            ("defaultModelOptionID", Self.change($defaultModelOptionID)),
+            ("sessionModelValue", Self.change($sessionModelValue)),
+            ("isUpdatingSessionModel", Self.change($isUpdatingSessionModel)),
+            ("sessionReasoningVariant", Self.change($sessionReasoningVariant)),
+            ("isUpdatingSessionReasoning", Self.change($isUpdatingSessionReasoning)),
+            ("defaultReasoningVariant", Self.change($defaultReasoningVariant)),
+            ("draftReasoningVariant", Self.change($draftReasoningVariant)),
+            ("voiceState", Self.change($voiceState)),
+            ("voiceSpokenCaption", Self.change($voiceSpokenCaption)),
+            ("voiceRepliesEnabled", Self.change($voiceRepliesEnabled)),
+            ("isVoiceMicMuted", Self.change($isVoiceMicMuted)),
+            ("sessionID", Self.change($sessionID)),
+            ("sessionStorageID", Self.change($sessionStorageID)),
+            ("profileScopeID", Self.change($profileScopeID)),
+            ("profileScopeUnavailable", Self.change($profileScopeUnavailable)),
+            ("sessionProfileID", Self.change($sessionProfileID)),
+            ("activeBotProfileID", Self.change($activeBotProfileID)),
+            ("activeBotDisplayName", Self.change($activeBotDisplayName)),
+            ("defaultBotName", Self.change($defaultBotName)),
+            ("browserActivityID", Self.change($browserActivityID)),
+            ("sessions", Self.change($sessions)),
+            ("storedMessageReferences", Self.change($storedMessageReferences)),
+        ]
+    }
+
+    /// What the session inspector itself reads; its tabs observe their own inputs.
+    func makeInspectorPresentationChanges() -> AnyPublisher<Void, Never> {
         Publishers.MergeMany(
-            $status.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $isHermesConnected.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $hermesConnectionIssue.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $messages.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $isSending.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $approvalTitle.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $approvalText.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $approvalDetails.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $clarificationQuestion.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $clarificationChoices.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $clarificationMultiSelect.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $clarificationProgress.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $valuePrompt.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $isShowingSessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $isLoadingSessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $deletingSessionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $renamingSessionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $updatingSessionVisibilityID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $pinningSessionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $pinnedSessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $isRestoringSession.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $currentSessionTitle.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $isShowingReasoning.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $runtimeConfiguration.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $runtimeModelOptions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $sessionModelOptionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $defaultModelOptionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $sessionModelValue.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $isUpdatingSessionModel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $sessionReasoningVariant.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $isUpdatingSessionReasoning.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $defaultReasoningVariant.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $draftReasoningVariant.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $voiceState.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $voiceSpokenCaption.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $voiceRepliesEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $isVoiceMicMuted.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $sessionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $sessionStorageID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $profileScopeID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $profileScopeUnavailable.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $sessionProfileID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $activeBotProfileID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $activeBotDisplayName.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $defaultBotName.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $browserActivityID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $sessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $storedMessageReferences.dropFirst().map { _ in () }.eraseToAnyPublisher()
+            Self.change($status), Self.change($sessionID), Self.change($sessionStorageID),
+            Self.change($profileScopeID), Self.change($sessionProfileID), Self.change($currentSessionTitle),
+            Self.change($sessionWorkspace)
         ).receive(on: RunLoop.main).eraseToAnyPublisher()
+    }
+
+    private static func change<Value>(_ publisher: Published<Value>.Publisher) -> AnyPublisher<Void, Never> {
+        publisher.dropFirst().map { _ in () }.eraseToAnyPublisher()
+    }
+
+    struct WorkspaceMessageKey: Equatable {
+        let count: Int
+        let firstUserText: String?
+        let lastID: UUID?
+        let lastIsError: Bool
+        /// Streaming text only matters to the root while voice captions show it.
+        let voiceText: String?
+    }
+
+    /// What the workspace shell reads from `messages`. Streaming tokens, tool
+    /// events and history paging otherwise redraw the whole window per change.
+    nonisolated static func workspaceMessageKey(_ messages: [ChatMessage], voiceActive: Bool) -> WorkspaceMessageKey {
+        WorkspaceMessageKey(
+            count: messages.count,
+            firstUserText: messages.first { $0.role == .user }?.text,
+            lastID: messages.last?.id,
+            lastIsError: messages.last?.isError ?? false,
+            voiceText: voiceActive ? messages.last?.text : nil
+        )
     }
 
     nonisolated static func safeUserDiagnostic(_ raw: String) -> String {

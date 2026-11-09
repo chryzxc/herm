@@ -92,6 +92,8 @@ struct ActiveToolCall: Identifiable, Equatable, Codable, Sendable {
     var traceDuration: TimeInterval? = nil
     var traceTiming: SessionTraceTiming? = nil
     var traceOutcome: String? = nil
+    /// MCP Apps receipt: the cached view this call renders (`MCPApp.receiptID`).
+    var app: String? = nil
 
     /// Marks a thinking segment in a response's activity log.
     static let thinkingName = "__thinking"

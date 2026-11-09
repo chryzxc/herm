@@ -16,6 +16,7 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
     var heldModelOptions: CheckedContinuation<Void, Never>?
     var onPage: (() -> Void)?
     var pageCount = 0
+    var unreadRows: [[String: Any]]?
 
     func connect() async throws {}
     func close() {}
@@ -28,6 +29,17 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
         }
         guard method == "session.resume" else { return [:] }
         let id = params["session_id"] as? String ?? ""
+        if let unreadRows {
+            return [
+                "session_id": "runtime-\(id)", "session_key": id,
+                "messages": unreadRows.map { row in
+                    [
+                        "role": row["role"]!, "text": row["content"]!, "row_id": row["id"]!,
+                        "timestamp": row["timestamp"]!,
+                    ]
+                },
+            ]
+        }
         if id == "a", holdNextA {
             holdNextA = false
             await withCheckedContinuation { held = $0 }
@@ -57,6 +69,7 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         pageCount += 1
         onPage?()
+        if let unreadRows { return ["messages": unreadRows, "pagination": ["returned": unreadRows.count]] }
         let rows: [[String: Any]] = (0..<120).map {
             ["id": $0 + 1, "role": "tool", "content": "tool result"]
         }
@@ -66,6 +79,29 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
 
 @MainActor
 struct SessionSwitchCacheTests {
+    @Test func unreadReplyAfterStaleSessionRecencyStillGetsADivider() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        let profile = UUID().uuidString
+        let seen = SidebarSessionSeenStore.shared
+        let now = Date()
+        let previous = now.addingTimeInterval(-120)
+        let staleUpdate = now.addingTimeInterval(-90)
+        let reply = now.addingTimeInterval(-30)
+        seen.markSeen(profileID: profile, sessionID: "chat", at: previous)
+        defer { seen.reconcile(profileID: profile, availableSessionIDs: []) }
+        rpc.unreadRows = [
+            ["id": 1, "role": "user", "content": "Question", "timestamp": previous.timeIntervalSince1970],
+            ["id": 2, "role": "assistant", "content": "Reply", "timestamp": reply.timeIntervalSince1970],
+        ]
+        let session = HermesSession(
+            id: "chat", profileID: profile, title: "Chat", preview: "", startedAt: previous,
+            updatedAt: staleUpdate, messageCount: 2, source: "test")
+        #expect(await model.resumeSession(session, reportFailure: true))
+        #expect(model.unreadDividerMessageID == model.messages.last?.id)
+        #expect(seen.seenAt(profileID: profile, sessionID: "chat").map { $0 >= reply } == true)
+    }
+
     private func makeModel(_ rpc: SessionSwitchRPC) -> DockModel {
         let id = UUID().uuidString
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-switch-test-\(id)")
