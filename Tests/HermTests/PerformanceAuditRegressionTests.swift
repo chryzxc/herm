@@ -48,12 +48,16 @@ struct PerformanceAuditRegressionTests {
 
     @Test func repeatedLiveConnectionDoesNotRedrawWorkspace() async throws {
         let model = DockModel(initialSessionID: "connection-one")
-        model.gateway.onConnectionChange?(true)
+        // Detach from the live gateway: without a running Hermes (CI) its own
+        // failed connect would report offline mid-test.
+        let announce = model.gateway.onConnectionChange
+        model.gateway.onConnectionChange = nil
+        announce?(true)
         try await Task.sleep(for: .milliseconds(20))
         var updates = 0
         let subscription = model.workspacePresentationChanges.sink { updates += 1 }
-        model.gateway.onConnectionChange?(true)
-        model.gateway.onConnectionChange?(true)
+        announce?(true)
+        announce?(true)
         try await Task.sleep(for: .milliseconds(20))
         #expect(updates == 0)
         #expect(model.isHermesConnected)

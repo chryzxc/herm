@@ -69,7 +69,8 @@ struct HermesFeatureContractTests {
         let enumerator = FileManager.default.enumerator(at: sourceRoot, includingPropertiesForKeys: nil)
         let swiftFiles = (enumerator?.allObjects as? [URL] ?? []).filter { $0.pathExtension == "swift" }
         let directMethodPattern = try NSRegularExpression(
-            pattern: #"(?:gateway|client|sessionRPCClient)\.request\(\s*\"[^\"]+\""#)
+            // GitHub REST paths start with "/"; Hermes RPC method names never do.
+            pattern: #"(?:gateway|client|sessionRPCClient)\.request\(\s*\"[^\"/][^\"]*\""#)
         let violations = swiftFiles.flatMap { url -> [String] in
             guard let source = try? String(contentsOf: url, encoding: .utf8) else { return [] }
             let range = NSRange(source.startIndex..<source.endIndex, in: source)
