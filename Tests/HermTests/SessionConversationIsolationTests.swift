@@ -134,12 +134,12 @@ struct SessionConversationIsolationTests {
         #expect(model.currentSessionQueuedPrompts.isEmpty)
         #expect(FileManager.default.fileExists(atPath: imageURL.path))
         model.resumeSession(session)
-        try await waitUntil { model.sessionID == "runtime-a-2" && model.status == .idle }
-        #expect(model.currentSessionQueuedPrompts.first?.id == id)
-        #expect(model.currentSessionQueuedPrompts.first?.text == "Use the image")
-        #expect(model.currentSessionQueuedPrompts.first?.images.first?.fileURL == imageURL)
-        model.removeQueuedPrompt(id)
-        #expect(model.currentSessionQueuedPrompts.isEmpty)
+        // Reopening an idle session drains its queue, attachment included.
+        try await waitUntil { rpc.requests.contains { $0.method == "image.attach_bytes" } }
+        let attach = try #require(rpc.requests.first { $0.method == "image.attach_bytes" })
+        #expect(attach.params["session_id"] as? String == "runtime-a-2")
+        #expect(attach.params["filename"] as? String == imageURL.lastPathComponent)
+        #expect(!model.currentSessionQueuedPrompts.contains { $0.id == id })
     }
 
     @Test func clearingSelectedProfileDisablesUnscopedSessionLoading() async throws {
@@ -735,11 +735,11 @@ struct SessionConversationIsolationTests {
         send("status.update", ["kind": "compacting"])
         send("status.update", ["kind": "compressing"])
         #expect(model.streamingTurnActivity.map(\.name) == [ActiveToolCall.compactionName])
-        #expect(model.streamingTurnActivity[0].isComplete == false)
+        #expect(model.streamingTurnActivity.first?.isComplete == false)
 
         send("status.update", ["kind": "compacted"])
-        #expect(model.streamingTurnActivity[0].isComplete)
-        #expect(model.streamingTurnActivity[0].completedAt != nil)
+        #expect(model.streamingTurnActivity.first?.isComplete == true)
+        #expect(model.streamingTurnActivity.first?.completedAt != nil)
         #expect(model.compactingSessionID == nil)
 
         send("message.complete", ["text": "Done."])

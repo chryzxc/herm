@@ -91,7 +91,7 @@ struct YearActivityTests {
         #expect(control.workCalendar == nil)
     }
 
-    @Test func cachedMonthCancelsPreviousMonthAndSettlesRefresh() {
+    @Test func cachedMonthCancelsPreviousMonthAndSettlesRefresh() async throws {
         let control = ControlCenterModel()
         let month = Calendar.current.dateInterval(of: .month, for: Date())!.start
         let previous = Calendar.current.date(byAdding: .month, value: -1, to: month)!
@@ -101,8 +101,12 @@ struct YearActivityTests {
         let oldGeneration = control.workCalendarGeneration
         control.beginProjectionRefresh("work.calendar")
         control.refreshWorkCalendar(month: month, repoPaths: [])
-        #expect(control.workCalendar?.month == month)
         #expect(control.workCalendarGeneration != oldGeneration)
+        // The cached month is rebuilt off the main actor.
+        for _ in 0..<500 where control.workCalendar?.month != month {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(control.workCalendar?.month == month)
         #expect(control.refreshState(for: "work.calendar")?.isRefreshing == false)
     }
 

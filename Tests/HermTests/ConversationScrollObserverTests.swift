@@ -114,7 +114,8 @@ struct ConversationScrollObserverTests {
         #expect(recorder.deltas.isEmpty, "Anchor corrections must not trigger edge paging")
         #expect(controller.geometry?.visibleTop ?? .infinity < 1)
         #expect(recorder.scrollsAwayFromBottom == 0, "History anchor restoration must not stop following the tail")
-        try await Task.sleep(for: .milliseconds(120))
+        // The 80ms settle timer runs late on a loaded CI runner.
+        for _ in 0..<200 where controller.isUserScrolling { try await Task.sleep(for: .milliseconds(10)) }
         #expect(!controller.isUserScrolling)
         controller.shiftVisibleTop(by: 40)
         #expect(!controller.isUserScrolling, "Programmatic anchor corrections must not pause live rendering")

@@ -1775,13 +1775,18 @@ struct ControlCenterProjectTests {
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
 
         model.refresh()
-        try await Task.sleep(for: .milliseconds(50))
+        // refresh() is dropped while one is running; wait for the whole pass.
+        for _ in 0..<500 where model.isRefreshing || model.refreshState(for: "projects")?.lastSuccess == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         #expect(model.refreshState(for: "projects")?.isStale == false)
         #expect(model.refreshState(for: "projects")?.lastSuccess != nil)
 
         client.failProjects = true
         model.refresh()
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0..<500 where model.isRefreshing || model.refreshState(for: "projects")?.isStale != true {
+            try await Task.sleep(for: .milliseconds(10))
+        }
 
         #expect(model.refreshState(for: "projects")?.isStale == true)
         #expect(model.refreshState(for: "projects")?.isRefreshing == false)
@@ -1899,10 +1904,10 @@ private final class DelayedSessionKanbanClient: HermesRPCClientProtocol {
     func close() {}
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
-        if path == "/api/plugins/kanban/boards" {
+        if path.hasPrefix("/api/plugins/kanban/boards") {
             return ["boards": [["slug": "default", "name": "Default", "is_current": true, "archived": false]]]
         }
-        if path == "/api/plugins/kanban/board?board=default&include_archived=false" {
+        if path == "/api/plugins/kanban/board?board=default&include_archived=true" {
             kanbanListCalls += 1
             try await Task.sleep(for: .seconds(10))
             return ["columns": []]
@@ -1938,10 +1943,10 @@ private final class SessionKanbanCacheClient: HermesRPCClientProtocol {
     func close() {}
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
-        if path == "/api/plugins/kanban/boards" {
+        if path.hasPrefix("/api/plugins/kanban/boards") {
             return ["boards": [["slug": "default", "name": "Default", "is_current": true, "archived": false]]]
         }
-        if path == "/api/plugins/kanban/board?board=default&include_archived=false" {
+        if path == "/api/plugins/kanban/board?board=default&include_archived=true" {
             return [
                 "columns": [
                     [
@@ -2067,7 +2072,7 @@ private final class QueuedSessionKanbanClient: HermesRPCClientProtocol {
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
-        if path == "/api/plugins/kanban/boards" { return ["boards": [["slug": "default"]]] }
+        if path.hasPrefix("/api/plugins/kanban/boards") { return ["boards": [["slug": "default"]]] }
         calls += 1
         if calls == 1 { return await withCheckedContinuation { pending = $0 } }
         return [
@@ -2091,7 +2096,7 @@ private final class DelayedSessionCardClient: HermesRPCClientProtocol {
         return [:]
     }
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
-        if path == "/api/plugins/kanban/boards" { return ["boards": [["slug": "default"]]] }
+        if path.hasPrefix("/api/plugins/kanban/boards") { return ["boards": [["slug": "default"]]] }
         return [
             "columns": [
                 [

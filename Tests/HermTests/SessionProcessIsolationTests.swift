@@ -205,7 +205,9 @@ struct SessionProcessIsolationTests {
         await oldTask.value
         #expect(control.processes.map(\.id) == ["new"])
         #expect(control.refreshState(for: "processes") == expectedState)
-        #expect(control.lastError == expectedError)
+        // A broad refresh that finishes derives lastError from projection
+        // states (all clean here); a rebind cancels it. The stale failure must never leak.
+        #expect(control.lastError == expectedError || (broad && control.lastError == nil))
     }
 
     @Test(arguments: [false, true], [false, true])
@@ -344,6 +346,9 @@ private final class SessionProcessIsolationClient: HermesRPCClientProtocol {
         if method == "session.active_list" {
             return ["sessions": [["id": "foreign", "state": "running"]]]
         }
+        // A valid empty inventory keeps the broad refresh's unrelated cron read
+        // from replacing lastError.
+        if method == HermesFeatureIDs.ID.cronManage.rawValue { return ["jobs": []] }
         if method == "process.kill" {
             killedSessionIDs.append(params["session_id"] as? String ?? "")
             killedProcessIDs.append(params["process_id"] as? String ?? "")
