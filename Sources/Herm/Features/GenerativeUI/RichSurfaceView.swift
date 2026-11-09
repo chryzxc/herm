@@ -16,6 +16,8 @@ struct RichDocumentView: View {
                     Text(text).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
                     Text(RichDocument.validationReason(source)).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     RichSourceDisclosure(source: source)
+                case .diagram(let source): MermaidDiagramView(source: source)
+                case .preview(let file): HermesInlinePreviewView(file: file)
                 case .pending:
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small).frame(width: 16, height: 16)

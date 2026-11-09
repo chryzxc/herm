@@ -58,7 +58,7 @@ struct RichNativeBlockView: View {
                     if let comparison = metric.comparison { Text(comparison).foregroundStyle(Color.dockSecondaryText) }
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
                 .dockCard(padding: 12)
             }
         }

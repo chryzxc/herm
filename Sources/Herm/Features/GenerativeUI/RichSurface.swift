@@ -218,13 +218,21 @@ struct RichDocument: Equatable, Sendable {
     /// and the markdown prefetcher ask on every update; search the bytes.
     static func mentionsSurface(_ text: String) -> Bool {
         var text = text
-        return text.withUTF8 { memmem($0.baseAddress, $0.count, "herm-ui", 7) != nil }
+        return text.withUTF8 {
+            memmem($0.baseAddress, $0.count, "herm-ui", 7) != nil
+                || memmem($0.baseAddress, $0.count, "mermaid", 7) != nil
+                || memmem($0.baseAddress, $0.count, "::preview{", 10) != nil
+        }
     }
     enum Segment: Equatable, Sendable {
         case markdown(String)
         case surface(RichSurface, source: String)
         case unavailable(String, source: String)
         case pending
+        /// A finished ```mermaid fence; while streaming it stays Markdown code.
+        case diagram(String)
+        /// Hermes' inline widget directive, `::preview{file="path"}` alone on a line; finished replies only.
+        case preview(String)
     }
     let segments: [Segment]
     var hasSurfaces: Bool {
@@ -240,6 +248,8 @@ struct RichDocument: Equatable, Sendable {
             case .surface(let surface, _): return surface.plainText
             case .unavailable(let text, _): return text
             case .pending: return nil
+            case .diagram(let source): return "```mermaid\n" + source + "\n```"
+            case .preview(let file): return "::preview{file=\"" + file + "\"}"
             }
         }.joined(separator: "\n\n")
     }
@@ -255,6 +265,7 @@ struct RichDocument: Equatable, Sendable {
         var code: [String] = []
         var fence: MarkdownFence?
         var rich = false
+        var diagram: String?
         var overLimit = false
         var bytes = 0
         func flush() {
@@ -279,28 +290,38 @@ struct RichDocument: Equatable, Sendable {
                                 result.append(segment)
                             }
                         }
+                    } else if diagram != nil {
+                        result.append(.diagram(code.joined(separator: "\n")))
                     } else {
                         markdown.append(line)
                     }
                     fence = nil
                     rich = false
+                    diagram = nil
                     code = []
                     bytes = 0
                     overLimit = false
+                } else if diagram != nil {
+                    code.append(line)
                 } else if rich {
                     bytes += line.utf8.count + 1
                     if bytes <= Self.maximumBytes { code.append(line) } else { overLimit = true }
                 } else {
                     markdown.append(line)
                 }
+            } else if !streaming, let file = Self.previewFile(line) {
+                flush()
+                result.append(.preview(file))
             } else if let opening = MarkdownFence(opening: line) {
                 fence = opening
                 rich = opening.language == "herm-ui"
-                if rich { flush() } else { markdown.append(line) }
+                diagram = !streaming && opening.language?.lowercased() == "mermaid" ? line : nil
+                if rich || diagram != nil { flush() } else { markdown.append(line) }
             } else {
                 markdown.append(line)
             }
         }
+        if let diagram { markdown.append(contentsOf: [diagram] + code) }
         if rich {
             result.append(
                 streaming
@@ -310,6 +331,15 @@ struct RichDocument: Equatable, Sendable {
         }
         flush()
         segments = result
+    }
+
+    /// The `file` attribute of a lone `::preview{...}` line, matching Hermes' directive grammar.
+    static func previewFile(_ line: String) -> String? {
+        let line = line.trimmingCharacters(in: .whitespaces)
+        guard line.hasPrefix("::preview{"), line.hasSuffix("}"),
+            let match = line.firstMatch(of: /\bfile\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s"'}]+))/)
+        else { return nil }
+        return String(match.1 ?? match.2 ?? match.3 ?? "")
     }
 
     static func validationReason(_ source: String) -> String {

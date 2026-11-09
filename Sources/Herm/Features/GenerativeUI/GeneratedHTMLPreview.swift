@@ -113,6 +113,20 @@ enum GeneratedHTMLPolicy {
         }
         """
 
+    /// Relays postMessage objects between the sandboxed frame and a host bridge. Runs in its own content world,
+    /// so the frame can reach neither this script nor the native handler.
+    static let bridgeRelay = """
+        (() => {
+          const frame = () => document.querySelector('iframe');
+          addEventListener('message', event => {
+            const view = frame();
+            if (!view || event.source !== view.contentWindow || typeof event.data !== 'object' || !event.data) return;
+            try { webkit.messageHandlers.hermBridge.postMessage(JSON.stringify(event.data)); } catch {}
+          });
+          window.hermBridgeSend = message => frame()?.contentWindow?.postMessage(message, '*');
+        })();
+        """
+
     /// CSP does not cover WebRTC data channels. Disable realm-creating/network APIs before any authored script.
     static let restrictedAPIs = """
         (() => {
@@ -168,6 +182,13 @@ struct GeneratedHTMLPreview: View {
     }
 }
 
+/// Host side of a sandboxed view's postMessage channel; `send` posts back into the frame.
+@MainActor
+protocol GeneratedHTMLBridge: AnyObject {
+    var send: (([String: Any]) -> Void)? { get set }
+    func receive(_ message: [String: Any])
+}
+
 @MainActor
 final class GeneratedHTMLLoadState: ObservableObject {
     @Published var revision = 0
@@ -181,11 +202,17 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
     let state: GeneratedHTMLLoadState
     var identity: String? = nil
     var presentationPriority = 0
+    /// MCP Apps and Hermes inline widgets; generated HTML has no host bridge.
+    var bridge: (any GeneratedHTMLBridge)? = nil
+    /// The frame already fits its content, so wheel events scroll the transcript.
+    var passesScroll = false
     func makeCoordinator() -> Coordinator {
         if let identity {
             return GeneratedHTMLCoordinator.shared.coordinator(html: html, identity: identity, state: state)
         }
-        return Coordinator(html: html, state: state)
+        let coordinator = Coordinator(html: html, state: state)
+        coordinator.bridge = bridge
+        return coordinator
     }
 
     func makeNSView(context: Context) -> GeneratedHTMLContainer {
@@ -199,10 +226,12 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
         let container = GeneratedHTMLContainer()
         container.presentationPriority = presentationPriority
         coordinator.mount(container)
+        (coordinator.web as? GeneratedHTMLWebKitView)?.passesScroll = passesScroll
         return container
     }
     func updateNSView(_ view: GeneratedHTMLContainer, context: Context) {
         context.coordinator.setTextScale(workspaceScale)
+        (context.coordinator.web as? GeneratedHTMLWebKitView)?.passesScroll = passesScroll
         if view.presentationPriority != presentationPriority {
             view.presentationPriority = presentationPriority
             context.coordinator.mount(view)
@@ -224,11 +253,13 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
         web.stopLoading()
         web.navigationDelegate = nil
         web.uiDelegate = nil
+        web.configuration.userContentController.removeAllScriptMessageHandlers()
+        coordinator.bridge = nil
         web.loadHTMLString("", baseURL: nil)
     }
 
     @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKURLSchemeHandler {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKURLSchemeHandler, WKScriptMessageHandler {
         let initialURL = URL(string: "herm-generated://preview/\(UUID().uuidString)")!
         let html: String
         let state: GeneratedHTMLLoadState
@@ -275,6 +306,7 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
 
         var cancelled = false
         var timeout: Task<Void, Never>?
+        var bridge: (any GeneratedHTMLBridge)?
         init(html: String, state: GeneratedHTMLLoadState) {
             self.html = html
             self.state = state
@@ -292,7 +324,21 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
                 WKUserScript(
                     source: GeneratedHTMLPolicy.textSizeListener,
                     injectionTime: .atDocumentStart, forMainFrameOnly: false))
-            let view = WKWebView(frame: .zero, configuration: configuration)
+            if let bridge {
+                // The relay and handler live in their own world: the sandboxed iframe reaches Herm only via postMessage.
+                let world = WKContentWorld.world(name: "HermHTMLBridge")
+                configuration.userContentController.add(self, contentWorld: world, name: "hermBridge")
+                configuration.userContentController.addUserScript(
+                    WKUserScript(
+                        source: GeneratedHTMLPolicy.bridgeRelay, injectionTime: .atDocumentEnd, forMainFrameOnly: true,
+                        in: world))
+                bridge.send = { [weak self] message in
+                    self?.web?.callAsyncJavaScript(
+                        "hermBridgeSend(message)", arguments: ["message": message], in: nil, in: world,
+                        completionHandler: nil)
+                }
+            }
+            let view = GeneratedHTMLWebKitView(frame: .zero, configuration: configuration)
             view.navigationDelegate = self
             view.uiDelegate = self
             web = view
@@ -337,7 +383,7 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
                 "--herm-\(family):\(css(family.fill));--herm-\(family)-ink:\(css(family.color));"
             }.joined()
             let theme =
-                ":root{--herm-background:\(css(.dockCanvas));--herm-text:\(css(.dockPrimaryText));--herm-secondary:\(css(.dockSecondaryText));--herm-accent:\(css(.dockAccent));--herm-surface:\(css(.dockSurface));--herm-border:\(css(.dockBorder));\(accents)}html,body{background:var(--herm-background);color:var(--herm-text);}"
+                ":root{--herm-background:\(css(.dockCanvas));--herm-text:\(css(.dockPrimaryText));--herm-secondary:\(css(.dockSecondaryText));--herm-accent:\(css(.dockAccent));--herm-surface:\(css(.dockSurface));--herm-border:\(css(.dockBorder));--foreground:\(css(.dockPrimaryText));--muted-foreground:\(css(.dockSecondaryText));--accent:\(css(.dockAccent));--border:\(css(.dockBorder));--card:\(css(.dockSurface));\(accents)}html,body{background:var(--herm-background);color:var(--herm-text);}"
             let defaults = GeneratedHTMLTheme.defaults(
                 for: DockThemeRuntime.current,
                 systemDark: NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua,
@@ -351,6 +397,13 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
             urlSchemeTask.didFinish()
         }
         func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard !cancelled, message.frameInfo.isMainFrame, let text = message.body as? String,
+                text.utf8.count <= 1_048_576,
+                let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+            else { return }
+            bridge?.receive(object)
+        }
         func webView(
             _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
@@ -402,6 +455,19 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
 }
 
 @MainActor
+/// WebKit consumes every wheel event, even with nothing to scroll. A content-sized frame hands them to
+/// the transcript instead.
+final class GeneratedHTMLWebKitView: WKWebView {
+    var passesScroll = false
+    override func scrollWheel(with event: NSEvent) {
+        if passesScroll, let next = nextResponder {
+            next.scrollWheel(with: event)
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
+}
+
 final class GeneratedHTMLContainer: NSView {
     var presentationPriority = 0
     override var isFlipped: Bool { true }

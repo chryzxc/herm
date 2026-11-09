@@ -16,7 +16,7 @@ let package = Package(
             name: "Herm",
             dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm")],
             exclude: ["Info.plist", "Resources/DockAppIcon.icns"],
-            resources: [.copy("Resources/HermesCompatibility.json"), .copy("Resources/SimulatorBridge"), .copy("Resources/HermesPlugins"), .copy("Resources/DockAppIcon.png"), .copy("Resources/FileIcons"), .copy("Resources/ProviderIcons"), .copy("Resources/HermesSSHBridge.mjs"), .copy("Resources/HermesSSHBridge.LICENSE"), .copy("Resources/BrowserFinder.js"), .copy("Resources/BrowserFinder.LICENSE"), .copy("Resources/BrowserAnnotate.js"), .copy("Resources/HermesBackdrop.jpg"), .copy("Resources/HermesBackdrop.LICENSE")],
+            resources: [.copy("Resources/HermesCompatibility.json"), .copy("Resources/SimulatorBridge"), .copy("Resources/HermesPlugins"), .copy("Resources/DockAppIcon.png"), .copy("Resources/FileIcons"), .copy("Resources/ProviderIcons"), .copy("Resources/HermesSSHBridge.mjs"), .copy("Resources/HermesSSHBridge.LICENSE"), .copy("Resources/BrowserFinder.js"), .copy("Resources/BrowserFinder.LICENSE"), .copy("Resources/BrowserAnnotate.js"), .copy("Resources/Mermaid.js"), .copy("Resources/Mermaid.LICENSE"), .copy("Resources/HermesBackdrop.jpg"), .copy("Resources/HermesBackdrop.LICENSE")],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",

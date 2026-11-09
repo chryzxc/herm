@@ -22,12 +22,10 @@ struct RichCommandView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ScrollView(.horizontal) {
-                Text(command.command).dockFont(.code, design: .monospaced)
-                    .textSelection(.enabled).fixedSize(horizontal: true, vertical: false).dockPadding(12)
-                    .dockPadding(.bottom, 8)
-            }
-            .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 8))
+            Text(command.command).dockFont(.code, design: .monospaced)
+                .textSelection(.enabled).dockPadding(12).dockPadding(.bottom, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 8))
             HStack(spacing: 8) {
                 Button {
                     do {

@@ -141,7 +141,62 @@ existing loading animation, live tool steps and expandable completed summary.
 PRs, routines, integrations, checkpoints and updates keep their established
 native controls. Context and quota retain the existing monitoring views.
 Herm adds bounded typed native graph/tree components, not an arbitrary layout language
-or scriptable graph editor. A2UI/MCP Apps compatibility and connected HTML apps are not included.
+or scriptable graph editor. A2UI compatibility and connected HTML apps are not included.
+
+## Mermaid diagrams
+
+Finished ```` ```mermaid ```` fences in assistant replies split out of the Markdown
+like `herm-ui` fences (`RichDocument.Segment.diagram`) and render as images. One
+shared offscreen WebKit page loads the bundled `Resources/Mermaid.js` (11.17.2, MIT)
+through a custom scheme; a content rule list and CSP block every other load.
+Mermaid runs with `securityLevel: 'strict'` and `htmlLabels: false`, so the SVG
+rasterizes on an untainted canvas and only a PNG data URL returns to Herm.
+Sources over 50,000 bytes or renders over 10 seconds fail with a visible reason.
+Streaming fences and fences while Generative UI is off stay code blocks.
+
+## Hermes inline widgets
+
+Hermes tells models on the desktop surface to write an HTML file and put
+`::preview{file="path.html"}` alone on its own line. Herm follows the same contract as
+Hermes Desktop (`inline-preview-directive.tsx`):
+
+- Only finished replies and lines outside code fences count. Absolute local `.html`,
+  `.htm` and `.xhtml` paths up to 2 MiB render live and immediately; anything else (other
+  file types, relative paths, unreadable files) falls back to the attachment card.
+- The frame is the generated-HTML sandbox (offline, no storage). Herm injects
+  `--foreground`, `--muted-foreground`, `--accent`, `--border` and `--card` from the
+  current skin, zero margins, then the widget's own styles. The theme reloads the frame.
+- The widget reports its body height (`hermes-inline-preview-size`); Herm clamps it to
+  120–1200 pt, starting at 280. Width follows the transcript column.
+- `window.hermes.send(prompt)` and `data-hermes-send="prompt"` send the prompt as a normal
+  user turn in the reply's session. Prompts are trimmed, capped at 500 characters and
+  throttled to one per second; the frame gets `{ok}` or `{ok:false, error}` back.
+  Herm shows the turn in the transcript (Hermes Desktop hides it), and sends only while
+  that reply is still in the current session.
+
+## MCP Apps
+
+Any MCP tool that declares an [MCP Apps](https://github.com/modelcontextprotocol/ext-apps)
+view (`_meta.ui.resourceUri` pointing at a `ui://` resource, `text/html;profile=mcp-app`)
+renders that view under the turn's activity. Herm does not need to know the tool.
+
+1. The bundled `herm` plugin's `transform_tool_result` hook (only while Generative UI is on)
+   reads the tool's `_meta` from Hermes' MCP client, fetches the view with `resources/read`,
+   and caches the HTML plus this call's arguments and `CallToolResult` in
+   `~/Library/Application Support/Herm/mcp-apps/` (newest 200 kept). The model only sees
+   an added `herm_app: {schema: "herm.mcp-app.v1", id}` receipt. Any failure leaves the
+   result unchanged.
+2. Herm reads the receipt from the raw tool result (live and history) and shows an app card.
+   The view runs only after **Open**, in the same offline sandbox as generated HTML.
+3. A relay in a separate WebKit content world carries postMessage objects between the iframe and Herm.
+   The view can only `postMessage`; page scripts never see the native handler.
+
+Supported host methods: `ui/initialize` (theme, locale, time zone, tool info),
+`ui/notifications/initialized` (Herm answers with `tool-input` and `tool-result`),
+`ui/notifications/size-changed` (80–720 pt), `ui/open-link` (public HTTPS only), `ping`
+and `notifications/message`. `tools/call`, `resources/read`, `ui/message` and other requests
+get JSON-RPC `-32601`. Network domains declared in `_meta.ui.csp` are listed on the card
+but not granted.
 
 ## Expanded native formats and session Artifacts
 
