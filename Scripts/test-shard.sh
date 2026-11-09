@@ -20,4 +20,5 @@ suites=$(swift test list --skip-build --disable-automatic-resolution |
 
 [ -n "$suites" ] || { echo "shard $index/$count: no suites"; exit 0; }
 echo "shard $index/$count: ${suites//|/ }"
-swift test --skip-build --disable-automatic-resolution --filter "^HermTests\.($suites)/"
+# Shards give the speedup; tests inside one stay serial so main-actor UI deadlines hold.
+swift test --skip-build --no-parallel --disable-automatic-resolution --filter "^HermTests\.($suites)/"
