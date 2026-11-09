@@ -2464,9 +2464,12 @@ a large board does not process offscreen task bodies. Card comparisons include
 only their own selection, pending actions, drag state, and displayed activity age;
 updates to another card must not rebuild unchanged card content or menus.
 
-Cards drag between lanes, matching the Hermes desktop board. The native drag
-captures the full rendered card at its current size and pointer offset, leaving a
-faint source placeholder. Cancellation restores the card and clears drag targeting.
+Cards drag between lanes, matching the Hermes desktop board. The card lifts
+(slight scale, tilt, and shadow) and follows the pointer at its grab offset,
+leaving a dashed slot in its lane. Over a lane that accepts it, the source slot
+closes and the lane's cards part to open a dashed gap under the pointer; on drop
+the card settles into that gap. Cancellation, and Done/Blocked drops awaiting
+confirmation, fly the card back to its slot.
 Confirmed lane ordering changes use a short dockEase transition, respecting Reduce Motion. Expanded lanes and
 collapsed rails are both drop targets and highlight in the lane color while a
 droppable card is over them. Running, Review, and Scheduled are system-owned:
@@ -2475,8 +2478,10 @@ instead of a highlight. Triage, Todo, and Ready drops use the Kanban plugin's
 task route, enabled by a current successful HTTP board projection rather than
 the separate CLI probe. The Move to submenu exposes the same destinations.
 Done and Blocked drops require their CLI capabilities and use the same
-confirmation as the card menu because they release a worker claim. Cards stay
-in their current lane until Hermes confirms the change and the board refreshes.
+confirmation as the card menu because they release a worker claim. A dropped
+Triage/Todo/Ready card holds its drop slot with the pending spinner while Hermes
+applies the move, then takes Hermes' lane order (Hermes has no in-lane
+position); a failed move returns it to its original lane.
 A refused transition surfaces Hermes' reason in the error banner.
 Assignment is one step from the card's More and context menus ("Assign to"),
 listing Bot profiles with the current assignee checked plus Unassign. Like the
@@ -3080,6 +3085,8 @@ events, and main-agent tool activity.
 
 ### Pull requests and Issues metadata
 
+The pull request detail header is one toolbar row: tabs lead and actions trail, stacking only when narrow. In Changes, the branch line and diff tools share a single 38pt row so the diff keeps the space.
+
 Wide PR Summary layouts place a `dockBorderLight` vertical hairline midway through
 the existing gap between the reading column and details sidebar. Stacked layouts omit it.
 
@@ -3298,7 +3305,11 @@ render a single full-width source pane. Escape closes the expanded file review.
 
 Expanded review uses the existing workspace/modal treatment and restores the source
 conversation. Read-only code has native selection, Find, and line-number gutters;
-private revision notes are distinct from provider review comments. PR diffs expose
+private revision notes are distinct from provider review comments. Highlighting
+diff text (or "Add revision note" in the context menu) opens a note popover anchored
+under the selection's last line, matching the markdown/text annotator; click-away
+discards it. Saved notes tint their rows and draw an accent gutter bar; clicking an
+annotated row reopens its popover with Delete. PR diffs expose
 keyboard-accessible + actions in the line gutter. Selecting a line opens an in-file
 review editor with captured source and an old/new line label; it stays available
 in expanded file review. Saved comments remain private, editable drafts beside the
@@ -3351,12 +3362,13 @@ that export succeeded. Check compact and workspace widths across light, dark, Gl
 monochrome, and motion-free themes. Settings fixtures include an established preference
 row beside the new controls so alignment and control treatment can be compared directly.
 
-Private revision-note editors use a compact, content-sized Dock modal: file and
-line metadata, a flat numbered source excerpt, a labeled note input, then trailing
-Cancel and Add/Save actions. Changed-source notices use a warning icon with quiet
-supporting text. Review trays place the count and Send revision in their header;
-file metadata and Edit/Remove share a wrapping row, followed by readable-width note
-text and stale-source status. Explain why sending is unavailable beside the tray.
+Private revision-note popovers are 340pt wide: file and line metadata, a note well,
+then trailing Cancel and Add/Save (⌘↩) actions. Changed-source notices use a warning
+icon with quiet supporting text. Saved notes surface as a note icon with a solid
+accent count badge at the leading edge of the review toolbar (the PR code toolbar,
+or each file diff's toolbar when no header hosts it), shown only while notes exist.
+It opens a list popover with "Send to chat", per-note location, Remove, note text
+and stale-source status. Explain why sending is unavailable in the button's help.
 
 Terminal Previews uses a compact, surfaced globe/label/chevron control
 and a shared 320pt themed popover. Its header owns refresh feedback; rows separate
@@ -3978,7 +3990,7 @@ system and Kanban notices, errors, and empty streaming placeholders. A placehold
 becoming a reply counts once even when transcript row count stays the same. History
 prepends never count as new replies; reaching the tail clears the floating count.
 Kanban task Overview uses the available inspector width for its description; Activity retains its compact reading width.
-Kanban card drags use native pointer tracking, with brief source and destination transitions that respect Reduce Motion and motion-free skins.
+Kanban card drags track the pointer in-board; lift, gap, and settle transitions respect Reduce Motion and motion-free skins.
 
 # Pointer behavior
 

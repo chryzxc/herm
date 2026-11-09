@@ -737,7 +737,7 @@ of the extra panel. Settings can hide either section; hiding both hides GitHub.
 - The **Issues** page includes your authored and assigned issues, plus open issues in your GitHub repositories and local projects, including reports from others. Forks and their original repositories are excluded; incomplete results are reported. Repository scopes, open/closed/history views, metadata filters, sorting, and saved presentation preferences are also available.
 - Create or edit issues, manage assignment and metadata, comment, close as completed/not planned, and reopen with confirmation. Descriptions, comments, and editor previews use the same native Markdown pipeline as chat.
 - Development links navigate between Issues and Pull requests. Descriptions and selected discussion entries can be attached to Hermes chats.
-- Lists and selected details refresh every 60 seconds while the page is active; errors pause automatic retry. Last successful content and per-item comment drafts are retained.
+- Lists and selected details load when the page opens and refresh only from the refresh button, so reading code or a description is never interrupted. Last successful content and per-item comment drafts are retained.
 
 Issues uses the same themed overview and selection markers as Pull requests.
 Open issues use blue, closed issues violet, and assignments teal. List status icons
@@ -872,7 +872,9 @@ Timeline uses a single horizontal gutter and compact 36pt bot faces, and shows b
   Line comments stay private and can be edited beside the file or in **Reviews**;
   **Submit review** publishes them together with the summary after confirmation.
   The Reviews panel explains unavailable submission actions and links directly to Code.
-- Private revision-note editors show numbered captured source above the note field.
+- Highlight diff lines to open a revision-note popover beside the code. Annotated
+  lines stay tinted; click one to edit or delete its note. A note icon with a count
+  badge appears in the review toolbar once notes exist; open it to **Send to chat**.
   The tray keeps **Send revision** in its header and explains when an owning
   conversation is required.
 - **Generate review guide** requests analysis in a separate Hermes conversation. It
