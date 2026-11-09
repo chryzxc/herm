@@ -101,7 +101,7 @@ No databases. `WorkspaceStore` persists preferences/display state; transcripts a
 
 - Hermes is authoritative for sessions, agents, prompts, models, skills, profiles, MCP, cron; Herm stores references and display state only.
 - Capability-gated, fail-closed: unavailable RPC/CLI contracts render explicit unavailable/stale states — never inferred from version strings.
-- Credentials remain in dedicated authentication services and transient request buffers, outside conversation and presentation projections. Native Keychain access runs on a serial background queue and restricts legacy item access to Herm. Opt-in shared browser cookies are cached in memory and AES-GCM sealed on disk. Credential values never enter diagnostics or ordinary UI.
+- Credentials remain in dedicated authentication services and transient request buffers, outside conversation and presentation projections. Native Keychain access runs on a serial background queue and restricts legacy item access to Herm. Browser sign-ins stay in native stores scoped to each Hermes profile; only a nonsecret sign-out reset UUID is persisted by Herm. The browser never accesses Herm Keychain items. Credential values never enter diagnostics or ordinary UI.
 - Session isolation: streamed events must prove ownership of the open session; identity mismatch fails closed.
 - Documentation rule: every user-facing behavior change updates README in the same change set.
 
@@ -155,3 +155,5 @@ Herm are eligible for attachment cleanup.
 Automatic app updates require a complete GitHub asset SHA-256 digest and a Developer
 ID signature matching the installed Herm bundle's Apple-validated team. Both the
 mounted and staged bundles are verified; ad-hoc builds require manual updates.
+
+The composer reads the selected live session’s automation snapshot through `session.control.read` and projects `session.control.update` events. Hermes remains authoritative for goals, loops, and heartbeats.

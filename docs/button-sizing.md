@@ -45,7 +45,10 @@ large content tile inside a standard text-button style merely to obtain a border
 `make guard` and therefore `make check`/CI. It rejects outer label heights,
 vertical padding, and per-button size overrides on shared text actions, and
 requires concrete primary/secondary/modal styles to use the common metrics.
-There is no exception baseline to expand.
+There is no exception baseline to expand. It also rejects `.standard` and
+`.accessible` outside the reviewed per-file counts in `LARGE_SIZE_ALLOWED`:
+ordinary page actions, Settings included, stay `.compact`. Raise a count only
+for a modal form footer or a high-consequence decision, in the same review.
 The gate also rejects `.dockPress` on title-based actions, text labels, and
 inherited text-action groups. That legacy style is reserved for icon controls
 and content rows; it does not participate in text-action sizing.

@@ -1,5 +1,7 @@
 # Herm
 
+Session PRs and Issues tabs appear when the session's local working directory belongs to a Git repository or worktree.
+
 [![CI](https://github.com/chryzxc/herm/actions/workflows/ci.yml/badge.svg)](https://github.com/chryzxc/herm/actions/workflows/ci.yml)
 [![platform: macOS 14+](https://img.shields.io/badge/platform-macOS%2014%2B-1f6feb)](#requirements)
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138)](#development)
@@ -15,7 +17,9 @@ Glance at the notch to see what your agents are doing and how much provider allo
 
 In-chat approvals, questions, and input requests keep their actions compact; errors use the same clear callout treatment.
 
-Unread session badges and the floating “new messages” control count AI responses only. User messages, tools, activity, system notices, errors, and empty streaming placeholders do not increase the count. Opening a session marks it reviewed; scrolling to the latest reply clears the floating count.
+While browsing chat history, prepared messages appear in order as they become ready, keeping the current reading position stable.
+
+Unread session badges and the floating “new messages” control count AI responses only. User messages, tools, activity, system notices, errors, and empty streaming placeholders do not increase the count. Opening an unread session takes you to its first unread reply and marks the captured updates reviewed; a blue-tinted unread divider remains visible for that visit. The Bot picker counts unread sessions per Bot in a red badge, with a plus sign when the available session inventory is incomplete. Scrolling to the latest reply clears the floating count.
 
 [![Herm driving a shared browser with a live agent cursor](docs/media/browser-demo-poster.webp)](docs/media/browser-demo.mp4)
 
@@ -283,6 +287,7 @@ Bot mentions also request visual replies in the recipient's Bot Chat, even while
 | Input | Forms with text, number, choice, multiple-choice, and yes/no fields |
 | Connected records | Cards that open loaded pull requests and issues, Kanban tasks, Calendar items, usage reports, and the session Timeline in Herm's existing views |
 | Interactive HTML | Self-contained HTML apps that use your Herm theme colors |
+| Mermaid diagrams | Any ```` ```mermaid ```` block in a reply (flowcharts, sequence, class, state, Gantt, and more) renders as a diagram card with **Preview** / **Code**, **Copy**, and **Expand**. Rendering is offline with the bundled [Mermaid](https://mermaid.js.org) 11.17.2 (MIT); invalid diagrams show the reason and the code |
 
 Sections group related components, and metadata labels **Fictional data**, assumptions, source, and observation date when supplied. Generated status is the assistant's claim: a workflow step marked passed needs supplied evidence and is labelled a reported snapshot, never live state.
 
@@ -295,6 +300,8 @@ Sections group related components, and metadata labels **Fictional data**, assum
 
 **Safety and limits**
 
+- **Hermes inline widgets.** When the agent writes an HTML file and replies with `::preview{file="…html"}`, Herm shows the widget live in the reply, in the same offline sandbox, sized to its content. Buttons using `hermes.send` or `data-hermes-send` send their prompt as a message in that chat (one per second, 500 characters max). Other files show the usual attachment card.
+- **MCP Apps.** An MCP tool that ships its own view (the MCP Apps standard) shows an app card under the turn's activity. Click **Open** to run it in the same offline sandbox; it receives the tool's input and result and can open HTTPS links. Network access a view requests is listed but not granted, and views cannot call tools yet.
 - Interactive HTML runs only after you click **Open interactive view**, in an offline sandbox with no network, storage, files, credentials, tools, downloads, popups, or device access. Closing it, switching session or profile, or restarting Herm resets it; changing the theme reloads it.
 - A reply is limited to 1 MiB, 100 blocks, and 1,000 rows or points per block. Invalid or oversized replies show **Visual reply unavailable** with their readable text, the reason, and the source. While a reply streams, visual content waits until it finishes.
 
@@ -481,8 +488,9 @@ Workspace uses a colored folder icon, a project name and path, and labelled bran
 and latest-commit details.
 Changes reflects Git status for the session's worktree. Explorer and Source Control follow the folder
 confirmed by Hermes, including linked worktrees outside the original project. Chats sharing a worktree
-share its local edits. In the folder and branch menu under the composer, find the current worktree above a searchable list;
-choose another worktree to open a new chat there and carry over the unsent draft. **New task in worktree…** creates a new worktree
+share its local edits. The composer shows the folder and branch row for Git worktrees.
+In that menu, find the current worktree above a searchable list;
+choose another worktree to open a new chat there and carry over the unsent draft. **New worktree task** creates a new worktree
 and moves the draft to a new chat there. Existing terminal shells keep their folders and running commands.
 The icon has no background and highlights when the rail is open. Its floating
 cards sit over the same continuous conversation background, with the conversation's
@@ -618,7 +626,7 @@ The composer’s **@** picker shows each bot’s actual name, with its descripti
 - **Removable context tray** keeps attached PRs, browser pages, files, and conversation excerpts beside the draft. Inspect or remove a chip before sending; attaching context preserves your text.
 - **Steering during a turn**: guidance you type while Herm is working is added to the running turn at the next tool boundary.
 - **Queued messages**: when the current conversation has queued messages, every subsequent send joins the end of that queue, including plain text during a running turn. New submissions also wait behind a redirect still awaiting Hermes' reply. During a turn, text and attachments queue together. Submitting clears the composer immediately while preserving images, PDFs, context, and reply quotes with the message.
-- **Attachments**: files, pasted images, prompt snippets, several images at once, or a single PDF up to 25 MB. Drop Markdown, text, source, and other files into the composer as removable attachments (up to 8 MB each); uploads require Hermes protected file attachment support. **Files** and **Images** open a native attachment picker; **Folder** opens a directory picker and inserts its path into the draft.
+- **Attachments**: files, pasted images, prompt snippets, several images at once, or a single PDF up to 25 MB. PDFs are sent as original files for the agent to read, without requiring `pdftoppm`; sent images show previews and documents show file-type labels. Drop Markdown, text, source, and other files into the composer as removable attachments (up to 8 MB each); uploads require Hermes protected file attachment support. **Files** and **Images** open a native attachment picker; **Folder** opens a directory picker and inserts its path into the draft.
 - **Video replies** play inline with native playback, seeking, volume, and fullscreen controls. Playback starts when you press Play and stops when the attachment leaves the view. Open and Download remain available; formats or codecs macOS cannot play show an unavailable message.
 - **Model picker** grouped by provider, with search. **Edit available models… → Unselect All** hides every model except the active one; selections are saved locally.
 - Confirmed model switches appear inline in chat with the model, provider, and time. Notices come from Hermes session history and return when you reopen the chat.
@@ -633,6 +641,7 @@ The composer’s **@** picker shows each bot’s actual name, with its descripti
 ### Voice mode: continuous spoken conversation
 
 Voice mode is more than a microphone button for dictating a prompt. Speak with your agent, hear its replies, and continue the conversation without typing each turn.
+The voice stage keeps worktree details out of the conversation view.
 
 ![Herm full voice mode speaking a reply, with helper orbs and live captions](docs/media/voice-speaking.webp)
 
@@ -692,7 +701,7 @@ Selected pull request and issue cards use a themed fill and outline. Wide pull r
 - The Pull requests page loads its list first, then fetches branch, check, and review details as rows come into view.
 - Create draft pull requests and edit a pull request's title or body, with a confirmation step.
 - Shared metadata uses wrapping pills for assigned labels, assignees, milestones, and Development links. Labels, Milestone, assignees, and Development editors prepare changes locally and confirm before saving.
-- Readiness keeps state, check, review, and merge facts in the summary side column. The Merge toolbar dropdown opens requirements and landing controls; narrow panes stack the sections. Freshness stays in the header and conflict-recovery actions wrap below the facts. It keeps checks, reviews, drafts, and conflicts separate. PR status and metadata pills use regular-weight text consistently. Network actions show compact pending feedback, prevent duplicate submissions, and apply confirmed lifecycle changes immediately. Successful merges update shared PR state from GitHub’s write response and offer confirmed remote branch cleanup without changing local branches. **Analyze conflict files** appears only for open PRs with confirmed conflicts and known revisions, and uses an isolated temporary repository; **Prepare resolution in Hermes** fills chat context without submitting it.
+- Readiness keeps state, check, review, and merge facts in the summary side column. The Merge toolbar dropdown opens requirements and landing controls; narrow panes stack the sections. Freshness stays in the header and conflict-recovery actions wrap below the facts. It keeps checks, reviews, drafts, and conflicts separate. PR status and metadata pills use regular-weight text consistently. Network actions show compact pending feedback, prevent duplicate submissions, and apply confirmed lifecycle changes immediately. Merge actions refresh stale already-merged pull requests without submitting another merge. Successful merges update shared PR state from GitHub’s confirmed response and offer confirmed remote branch cleanup without changing local branches. **Analyze conflict files** appears only for open PRs with confirmed conflicts and known revisions, and uses an isolated temporary repository; **Prepare resolution in Hermes** fills chat context without submitting it.
 - Activity and discussion entries show the author’s GitHub avatar when available.
 - Pull request Activity shows a clickable short commit hash. Select it to review that commit’s changed files and diffs in Herm.
 - Commit identifiers use a shared code style. Check status appears only for verified current checks on the exact repository and revision; incomplete or unavailable results are never presented as a pass.
@@ -725,7 +734,7 @@ of the extra panel. Settings can hide either section; hiding both hides GitHub.
 - PRs and Issues use compact New, refresh, recovery, landing, and inline discussion actions.
 - Switching Open, Closed, or History shows an in-place loading spinner; Issues shows loading rows while a new scope loads, retaining prior results if it fails.
 - PRs and Issues share a compact view-options menu with checked sort choices and separate save/restore actions.
-- The **Issues** page has My work and explicit repository scopes, open/closed/history views, metadata filters, sorting, and saved presentation preferences. Authored and assigned lists load in parallel; pagination reports incomplete coverage.
+- The **Issues** page includes your authored and assigned issues, plus open issues in your GitHub repositories and local projects, including reports from others. Forks and their original repositories are excluded; incomplete results are reported. Repository scopes, open/closed/history views, metadata filters, sorting, and saved presentation preferences are also available.
 - Create or edit issues, manage assignment and metadata, comment, close as completed/not planned, and reopen with confirmation. Descriptions, comments, and editor previews use the same native Markdown pipeline as chat.
 - Development links navigate between Issues and Pull requests. Descriptions and selected discussion entries can be attached to Hermes chats.
 - Lists and selected details refresh every 60 seconds while the page is active; errors pause automatic retry. Last successful content and per-item comment drafts are retained.
@@ -913,7 +922,7 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 - **Page dialogs** (alerts, confirmations, prompts, "Leave this page?") appear as a card in the panel, so a page can't stay frozen waiting for an answer. If Hermes answers a dialog itself, the card closes.
 - **Annotate** (cursor icon): click any element, describe the change, and Herm sends the element's selector, styles, HTML and a screenshot to the chat. The popup uses your Herm theme.
 - **One browser per profile.** Each Hermes profile (and bot profile) runs one agent Chrome, matching Hermes' profile-wide browser connection. Its sessions share it and its sign-ins; each session returns to the tab it last showed, and switching sessions doesn't reconnect Hermes. Switching sessions or closing the inspector keeps live pages and form state without reloading. The browser quits once no session of that profile remains open.
-- **Share a sign-in.** Sessions of one Hermes profile share its browser and sign-ins. Other profiles (including bots) stay signed out until you share a site: on that site, More → **Share Sign-In for github.com** signs every profile's browser in, including ones already open, so Hermes can work there. More → **Shared Sign-Ins** lists the sites you share and stops sharing one; running browsers stay signed in until you sign out there. Shared cookies are encrypted at rest with a key kept in your Keychain, and browser profiles are readable only by you; deleting a session forgets its tab. More → **Sign Out of All Sites** signs every profile's browser out, including ones that were closed at the time. Regular web view tabs (extra tabs, or the Browser tab while the agent browser is offline) share one sign-in store per Hermes profile, like the agent browser; opening a site in one copies the agent browser's sign-in for that site first, and signing in or out there carries back to the agent browser after the page loads.
+- **Sign-ins stay within a profile.** Sessions of one Hermes profile share its browser and remembered sign-ins. Other profiles, including bots, keep separate sign-ins. Chromium and regular WebKit tabs retain their existing profile stores; opening an extra tab copies only that profile's sign-in for the destination site, and changes carry back to that profile's agent browser. Herm no longer exports shared cookies or requests a browser encryption key from Keychain, including in ad-hoc builds. Existing browser profiles keep their sign-ins after upgrading; the old encrypted shared-cookie file is ignored. More → **Sign Out of All Sites** clears running browser stores and saves a nonsecret reset identifier so closed Chromium profiles clear their cookies before their next handoff to Hermes. A failed reset reports an error and can be retried. Explicit sign-out also removes the obsolete shared-cookie file without unlocking its Keychain key.
 - **Typing and forms.** Dropdowns open as a native menu, the pointer changes over links and text, ⌘C, ⌘X, ⌘V, ⌘A, ⌘Z and ⌘⇧Z work in fields, and accents and input methods (⌥E E → é, Japanese, Chinese) compose in place.
 - **Downloads and permissions.** Files the agent browser downloads go to `~/Downloads/Herm`. Pages are refused location, notifications, camera, microphone, clipboard reading and similar permissions without a prompt.
 - **Links in chat** open their exact destination in that session's Browser, including while the browser is starting. A different URL opens an additional tab without replacing the current page; clicking an already-open exact URL selects its tab. Loaded browser tabs show the webpage name; untitled pages keep the Browser label rather than displaying the URL.
@@ -982,6 +991,9 @@ Centered bot dispatch pills have vertical spacing above and below to separate th
 Bot availability follows the Hermes roster API and honors an explicit `hermes-bots` disabled status from `plugins.manage`. Missing bot APIs fall back to the ordinary chat activity indicator. Custom avatars remain uploaded images and are never replaced by Populate avatars. Hermes Desktop currently stores its own Bots toggle in local storage; that desktop-only preference is not exposed to Herm by the gateway.
 
 ### Kanban
+
+Task Overview descriptions use the available inspector width.
+Dragging a card smoothly fades its source and highlights valid destination lanes, respecting motion preferences.
 
 - **Send to chat** in a card’s menu opens Chats with a new conversation and the task attached as a removable context chip, ready for your next message.
 - Reads and edits the **real Hermes board**: create, complete, block or unblock, archive, comment on, schedule, assign, promote, and reclaim tasks.
@@ -1307,7 +1319,7 @@ For more detail, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Herm doesn't yet support everything Hermes can do. Some features require additional frontend work or stable runtime support; others are deliberately left out for now:
 
-- Generated replies require supported `herm-ui` content. Generative UI ships enabled by default and can be disabled in Appearance. Connected native records are limited to registered readers and existing actions; full A2UI/MCP Apps compatibility and connected HTML apps are not included.
+- Generated replies require supported `herm-ui` content. Generative UI ships enabled by default and can be disabled in Appearance. Connected native records are limited to registered readers and existing actions; MCP App views run offline and cannot call tools or send messages; Hermes inline widgets run offline and can only send chat prompts; A2UI and connected HTML apps are not included.
 - Directly invoking arbitrary third-party MCP tools from Herm (catalog/setup, credentials, authorization, connection tests and removal are available through supported Hermes lifecycle methods)
 - Structured cron report contracts and more detailed diagnostics (recorded chat-backed run output can already be read)
 - A provider-independent, full-duplex realtime audio transport (continuous Voice mode is available through Hermes' transcription and speech pipeline)
@@ -1357,6 +1369,15 @@ a group keep matching heights, including pending and disabled states. The
 Gateway test/save/restart, connection sign-in, companion settings, bot editor,
 and quota sync actions also use these shared metrics, including legacy action
 groups that previously rendered smaller buttons.
+
+### Browser release acceptance
+
+At the next manual release test, reserve a quiet window with no active Herm agents.
+Launch two successive ad-hoc builds with `HERM_CODESIGN_IDENTITY=-`, checking
+existing sign-ins, reopening profiles, and switching between profiles on each build.
+Herm must not request its former browser Keychain item. Verify that Sign Out of All
+Sites clears open browsers and a profile reopened after sign-out. Gateway credential
+prompts and Gatekeeper remain separate from this browser check.
 
 ### Debug builds and macOS permission identity
 
@@ -1494,11 +1515,12 @@ reads are bounded before loading file data. Browser annotations require real inp
 page-generated clicks cannot attach content. Android diagnostics use the same SDK
 resolver as device discovery, including tools found on PATH.
 
-Gateway credentials and the shared browser encryption key use native Keychain access
-off the UI thread. The first access may request macOS consent to replace legacy
-helper authorization; ad-hoc rebuilds can require renewed consent. Shared-browser
-sign-out succeeds only after its cleared state is saved, and failures offer an
-explicit error instead of restoring old sign-ins silently.
+Gateway credentials use native Keychain access off the UI thread. The first access
+may request macOS consent to replace legacy helper authorization; ad-hoc rebuilds
+can require renewed consent. Browser sign-ins use the browser's native per-profile
+stores and never access Herm's former browser Keychain item. Browser sign-out saves
+only a reset identifier, waits for pending cookie transfers, and reports failures
+instead of claiming that uncleared sign-ins were removed.
 
 User-message bubbles follow the selected text size, including when it changes while a chat is open. Short prompts hug their text from the first layout, without briefly stretching across the chat.
 
@@ -1530,3 +1552,8 @@ local checks, and advancing the reviewed baseline after fixes and tests.
 GitHub navigation uses a compact toolbar switcher for pull requests, issues, and repositories, leaving more room for browsing and details.
 
 Settings → Models & tools groups model defaults, execution limits, skills, MCP servers, and command permissions into separate sections. Model controls follow the workspace density setting.
+# Pointer behavior
+
+Herm's browser reflects webpage cursors for links, controls, text, and editable fields. Markdown links use a pointing hand, and draggable provider and Kanban items use grab cursors.
+
+The chat composer shows read-only goal, loop, and heartbeat status when the connected Hermes session exposes it. Expand a row to inspect its details; unavailable or stale state is labeled.

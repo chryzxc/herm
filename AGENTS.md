@@ -14,11 +14,20 @@ and `GEMINI.md` are symlinks to it. Shared skills live in `.agents/skills/`;
 |---|---|
 | `ARCHITECTURE.md` | Repo map, module ownership, data flow, contracts |
 | `STANDARDS.md` | Naming, errors, testing, Definition of Done, commits |
-| `DESIGN.md` | Before touching any user-facing view (UI source of truth) |
+| `DESIGN.md` | Before touching any user-facing view (UI source of truth; see below) |
 | `CONTRIBUTING.md` | Full local loop and PR checklist |
 | `docs/adr/` | Recorded exceptions and decisions |
 
 If `graphify-out/` or `.codegraph/` exists locally, query it before grepping.
+
+`DESIGN.md` is about 4,000 lines; do not skim it whole. Before a UI change, run
+`grep -n '^##' DESIGN.md`, read the Design system and Layout and interaction
+rules entries for the components you use, then the `###` section of the surface
+you touch. Put new specs inside that surface section, never at the top or end
+of the file (`make guard` rejects both).
+
+A rule that is only written down is advisory. When a review catches the same
+mistake twice, add it to a `Scripts/check-*.py` contract instead of more prose.
 
 ## Commands
 
@@ -102,8 +111,9 @@ user-visible changes. Do not commit or push unless asked.
   treatment. Reuse shared `Dock*` components and color tokens.
 - Text actions use `.dockPrimary` for local priority and `.dockSecondary` for
   companions. Size belongs to their common container: `.dockButtonSize(.compact)`
-  (28pt default), `.standard` (36pt forms), or `.accessible` (44pt decisions).
-  `.dockCompact` is a compatibility alias, not an independent size. Never size
+  (28pt default, including Settings pages), `.standard` (36pt, modal form
+  footers only), or `.accessible` (44pt decisions); `make button-contract`
+  rejects new `.standard`/`.accessible` uses. `.dockCompact` is a compatibility alias, not an independent size. Never size
   individual action labels with height/vertical padding or use native
   `.controlSize` to size Herm actions. Modal footers supply standard size.
   Run `make button-contract`; see `docs/button-sizing.md` for rules and audit.
