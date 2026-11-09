@@ -7,8 +7,10 @@ struct GitHubRepositoryActivityView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
                     DockSectionHeader(title: "Activity", style: palette, isContentHeader: true)
+                    Text(status).dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                        .help(model.error ?? "Branch and user choices are discovered from loaded activity.")
                     Spacer(minLength: 0)
                     filterMenu(
                         title: model.filters.oldestFirst ? "Oldest first" : "Most recent first", icon: .arrowsDownUp,
@@ -35,11 +37,10 @@ struct GitHubRepositoryActivityView: View {
                         title: model.filters.period.title, icon: .clock, selection: $model.filters.period,
                         choices: GitHubActivityPeriod.allCases.map { ($0.title, $0) })
                 }
-                Text(status).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                    .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).lineLimit(2)
-                    .help(model.error ?? "Branch and user choices are discovered from loaded activity.")
             }
-            .dockButtonSize(.compact).dockPadding(.horizontal, 16).dockPadding(.vertical, 12)
+            .dockButtonSize(.compact)
+            .frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity, alignment: .center)
+            .dockPadding(.horizontal, 24).dockPadding(.vertical, 12)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -66,6 +67,11 @@ struct GitHubRepositoryActivityView: View {
                             .task(id: model.loading) { await model.loadSummary(item) }
                         Divider().overlay(Color.dockBorderLight)
                     }
+                    if model.items.count == 30 {
+                        Text("Showing the first 30 matching entries. Narrow filters to see more.")
+                            .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                            .frame(maxWidth: .infinity, alignment: .leading).dockPadding(.vertical, 12)
+                    }
                 }
                 .frame(maxWidth: 820, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -82,10 +88,9 @@ struct GitHubRepositoryActivityView: View {
         if model.loading { return "Loading activity…" }
         if model.error != nil {
             return model.items.isEmpty
-                ? "Couldn’t load activity. Retry to refresh." : "Refresh failed · Showing previous activity"
+                ? "Couldn’t load activity. Retry to refresh." : "Refresh failed. Showing previous activity"
         }
-        return model.items.count == 30
-            ? "Showing the first 30 matching entries. Narrow filters to see more." : "\(model.items.count) activities"
+        return model.items.count == 1 ? "1 activity" : "\(model.items.count) activities"
     }
 
     private func short(_ value: String) -> String { value.count > 25 ? String(value.prefix(22)) + "…" : value }
@@ -126,7 +131,7 @@ struct GitHubRepositoryActivityView: View {
                     if ["force_push", "pr_merge", "merge_queue_merge"].contains(item.type) { badge(item) }
                     Spacer(minLength: 0)
                     DockMenu {
-                        Button("View changes on GitHub") { InAppBrowser.open(url) }
+                        Button("View changes on GitHub") { ExternalOpen.open(url) }
                         DockCopyButton(
                             url.absoluteString, label: "Copy activity link", accessibilityLabel: "Copy activity link",
                             presentation: .text)
@@ -197,10 +202,10 @@ struct GitHubRepositoryActivityView: View {
             if let image = phase.image {
                 image.resizable().scaledToFill()
             } else {
-                DockIcon(.user, size: 14, color: .dockMetadataText).frame(width: 22, height: 22).background(
+                DockIcon(.user, size: 14, color: .dockMetadataText).frame(width: 24, height: 24).background(
                     Circle().fill(Color.dockSurface2))
             }
         }
-        .frame(width: 22, height: 22).clipShape(Circle()).accessibilityHidden(true)
+        .frame(width: 24, height: 24).clipShape(Circle()).accessibilityHidden(true)
     }
 }

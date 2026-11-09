@@ -39,18 +39,6 @@ private final class GitHubTokenResolverProbe: @unchecked Sendable {
 }
 
 struct RepositoryCodeWorkspaceTests {
-    @Test func repositoryShimmerTravelsOnlyLeadingToTrailingWithinEachCycle() {
-        let width: CGFloat = 600
-        let times = stride(from: 0.0, through: 1.5, by: 0.3)
-        let offsets = times.map { RepositoryShimmerMotion.offset(containerWidth: width, at: $0) }
-
-        #expect(zip(offsets, offsets.dropFirst()).allSatisfy { $0.0 < $0.1 })
-        #expect(offsets.first == -RepositoryShimmerMotion.bandWidth(for: width))
-        #expect(
-            RepositoryShimmerMotion.offset(containerWidth: width, at: RepositoryShimmerMotion.duration) == offsets.first
-        )
-    }
-
     @Test func sessionRepositoryScopeKeepsSessionsDistinctForOnePath() {
         let first = SessionRepositoryScope(sessionID: "session-a", repositoryPath: "/workspace/repo")
         let second = SessionRepositoryScope(sessionID: "session-b", repositoryPath: "/workspace/repo")

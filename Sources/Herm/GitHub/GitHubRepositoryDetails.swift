@@ -80,6 +80,13 @@ private struct GitHubRepositoryDetailsService: Sendable {
         } catch { return .unavailable(HermesDiagnosticsService.safeSummary(error.localizedDescription)) }
     }
 
+    /// GitHub's `open_issues_count` merges issues and pull requests, so count each kind separately.
+    func openCount(_ repository: GitHubRepositorySummary, pullRequests: Bool) async -> Int? {
+        let q = "repo:\(repository.id) is:\(pullRequests ? "pr" : "issue") is:open"
+        let body = try? await client.request("/search/issues", query: ["q": q, "per_page": "1"])
+        return (body as? [String: Any])?["total_count"] as? Int
+    }
+
     func release(_ repository: GitHubRepositorySummary) async -> GitHubRepositorySection<GitHubRepositoryRelease?> {
         do {
             guard
@@ -104,6 +111,8 @@ final class GitHubRepositoryDetailsModel: ObservableObject {
     @Published private(set) var releaseError: String?
     @Published private(set) var loading = false
     @Published private(set) var hasLoaded = false
+    @Published private(set) var openIssues: Int?
+    @Published private(set) var openPullRequests: Int?
 
     init(client: GitHubClient = GitHubClient()) { service = GitHubRepositoryDetailsService(client: client) }
 
@@ -114,8 +123,13 @@ final class GitHubRepositoryDetailsModel: ObservableObject {
         async let commitsResult = service.commits(repository)
         async let releaseResult = service.release(repository)
         async let eventsResult = service.events(repository)
+        async let issueCount = service.openCount(repository, pullRequests: false)
+        async let pullCount = service.openCount(repository, pullRequests: true)
         let (commits, release, events) = await (commitsResult, releaseResult, eventsResult)
+        let (issues, pulls) = await (issueCount, pullCount)
         guard !Task.isCancelled else { return }
+        openIssues = issues ?? openIssues
+        openPullRequests = pulls ?? openPullRequests
         switch commits {
         case .available(let rows):
             self.commits = rows

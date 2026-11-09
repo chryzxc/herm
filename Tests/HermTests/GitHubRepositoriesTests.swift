@@ -136,13 +136,8 @@ struct GitHubRepositoriesTests {
             DockThemeRuntime.revision &+= 1
             for width: CGFloat in [340, 470, 1100] {
                 for overview in [false, true] {
-                    let content: AnyView
-                    if overview, let repository = model.repositories.first {
-                        content = AnyView(
-                            GitHubRepositoriesView(model: model, selected: repository))
-                    } else {
-                        content = AnyView(GitHubRepositoriesView(model: model))
-                    }
+                    model.selectedID = overview ? model.repositories.first?.id : nil
+                    let content = AnyView(GitHubRepositoriesView(model: model))
                     let height: CGFloat = overview ? 1250 : 650
                     let host = NSHostingView(
                         rootView:

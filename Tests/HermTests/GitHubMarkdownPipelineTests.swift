@@ -121,6 +121,33 @@ struct PullRequestDescriptionTests {
             ])
     }
 
+    @Test func inlineHTMLBecomesMarkdownOutsideCodeFences() {
+        let source = """
+            <details>
+            <summary>Release notes</summary>
+            <p><em>Sourced from <a href="https://example.com/r">releases</a>.</em></p>
+            <h2>v2.11.7</h2>
+            <ul>
+            <li>
+            <p><strong>Fixed:</strong> crash &amp; <code>Incremental</code></p>
+            </li>
+            </ul>
+            <img src="https://example.com/a.png">
+            </details>
+            ```html
+            <p>literal</p>
+            ```
+            """
+        let markdown = PullRequestDescriptionContent.markdownFromHTML(source)
+        #expect(markdown.contains("**Release notes**"))
+        #expect(markdown.contains("*Sourced from [releases](https://example.com/r).*"))
+        #expect(markdown.contains("## v2.11.7"))
+        #expect(markdown.contains("- **Fixed:** crash & `Incremental`"))
+        #expect(markdown.contains("<img src=\"https://example.com/a.png\">"))
+        #expect(markdown.contains("```html\n<p>literal</p>\n```"))
+        #expect(!markdown.contains("<details>") && !markdown.contains("</li>"))
+    }
+
     @Test func unsupportedSourcesStayVisibleAsMarkdown() {
         let source = "![local](file:///tmp/image.png)\n![relative](image.png)"
         #expect(PullRequestDescriptionContent.parts(source) == [.markdown(source)])

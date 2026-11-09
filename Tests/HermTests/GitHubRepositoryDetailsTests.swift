@@ -20,6 +20,17 @@ actor RepositoryDetailsTransport: GitHubIssueTransport {
         for waiter in waiters { waiter.resume() }
         waiters.removeAll()
         if mode == .slow { try await Task.sleep(for: .seconds(30)) }
+        if request.url!.path == "/search/issues" {
+            let q =
+                URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+                .first { $0.name == "q" }?.value ?? ""
+            #expect(q.hasPrefix("repo:octocat/Herm is:"))
+            let total = q.contains("is:pr") ? 4 : 7
+            return (
+                try JSONSerialization.data(withJSONObject: ["total_count": total, "items": []]),
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            )
+        }
         let isCommits = request.url!.path.hasSuffix("/commits")
         let isEvents = request.url!.path.hasSuffix("/events")
         #expect(isCommits || isEvents || request.url!.path.hasSuffix("/releases"))
@@ -102,6 +113,8 @@ struct GitHubRepositoryDetailsTests {
         #expect(model.events?.map(\.id) == ["2", "1", "3"])
         #expect(model.events?.first?.summary == "octocat merged pull request #12")
         #expect(model.activityError == nil)
+        #expect(model.openIssues == 7)
+        #expect(model.openPullRequests == 4)
         await transport.setMode(.success)
         await model.refresh(repository)
         #expect(model.commits?.count == 2)

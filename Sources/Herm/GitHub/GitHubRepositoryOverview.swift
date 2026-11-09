@@ -52,6 +52,7 @@ struct GitHubRepositoryOverview: View {
     @State private var tab = "Overview"
     @State private var refreshID = 0
     @Environment(\.openGitHubRepository) private var openRepository
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
 
     init(repository: GitHubRepositorySummary, client: GitHubClient, close: @escaping () -> Void) {
         self.repository = repository
@@ -90,7 +91,7 @@ struct GitHubRepositoryOverview: View {
 
     private var overviewContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 20) {
                 hero
                 detailsCard
                 latestRelease
@@ -128,14 +129,19 @@ struct GitHubRepositoryOverview: View {
                 if repository.archived { DockMetadataPill(text: "Archived") }
             }
             DockChipFlow(spacing: 16) {
-                statistic(.star, value: repository.stars.formatted(), label: repository.stars == 1 ? "star" : "stars")
+                statistic(
+                    .star, value: repository.stars.formatted(), label: repository.stars == 1 ? "star" : "stars",
+                    color: .dockWarning)
                 statistic(
                     .gitFork, value: repository.forks?.formatted() ?? "—",
-                    label: repository.forks == 1 ? "fork" : "forks"
-                )
+                    label: repository.forks == 1 ? "fork" : "forks", color: .dockInfo)
                 statistic(
-                    .gitPullRequest, value: repository.openIssuesAndPullRequests?.formatted() ?? "—",
-                    label: "open issues & PRs")
+                    .record, value: details.openIssues?.formatted() ?? "—",
+                    label: details.openIssues == 1 ? "open issue" : "open issues", color: .dockSuccess)
+                statistic(
+                    .gitPullRequest, value: details.openPullRequests?.formatted() ?? "—",
+                    label: details.openPullRequests == 1 ? "open pull request" : "open pull requests",
+                    color: .dockMerged)
             }
             .dockFont(.body).dockPadding(.top, 2)
             ViewThatFits(in: .horizontal) {
@@ -157,9 +163,9 @@ struct GitHubRepositoryOverview: View {
         }
     }
 
-    private func statistic(_ icon: Ph, value: String, label: String) -> some View {
+    private func statistic(_ icon: Ph, value: String, label: String, color: Color) -> some View {
         HStack(spacing: 5) {
-            DockIcon(icon, size: 13, color: .dockMetadataText)
+            DockIcon(icon, size: 13, color: color)
             Text(value).fontWeight(.semibold).monospacedDigit()
             Text(label).foregroundStyle(Color.dockMetadataText)
         }
@@ -175,6 +181,7 @@ struct GitHubRepositoryOverview: View {
             repository.cloneURL, label: "Copy clone URL", accessibilityLabel: "Copy repository HTTPS clone URL"
         )
         .buttonStyle(.dockSecondary)
+        AttachToChatMenu(icon: true) { ChatContext(repository: repository) }
     }
 
     @ViewBuilder private var navigationLinks: some View {
@@ -188,7 +195,9 @@ struct GitHubRepositoryOverview: View {
             Button {
                 openRepository(repository.reference, kind)
             } label: {
-                DockIconLabel(title, icon: kind == .issue ? .record : .gitPullRequest)
+                DockIconLabel(
+                    title, icon: kind == .issue ? .record : .gitPullRequest,
+                    iconColor: kind == .issue ? .dockSuccess : .dockMerged)
             }
             .buttonStyle(.dockSecondary)
             .help("Browse \(title.lowercased()) in \(repository.id)")
@@ -242,12 +251,18 @@ struct GitHubRepositoryOverview: View {
 
     private var latestRelease: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Latest release")
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                sectionHeader("Latest release")
+                if details.release == nil, details.releaseError == nil {
+                    Text(details.hasLoaded ? "No releases published yet." : "Loading release…")
+                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                }
+            }
             if let error = details.releaseError { sectionError(error, retained: details.release != nil) }
             if let release = details.release {
                 Link(destination: release.url) {
                     HStack(alignment: .top, spacing: 10) {
-                        DockIcon(.tag, size: 14, color: .dockSecondaryText).dockPadding(.top, 1)
+                        DockIcon(.tag, size: 14, color: .dockSuccess).dockPadding(.top, 1)
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 8) {
                                 Text(release.name).dockFont(.body, weight: .semibold)
@@ -273,8 +288,6 @@ struct GitHubRepositoryOverview: View {
                 }
                 .buttonStyle(.dockHover)
                 .help("Open release notes on GitHub")
-            } else if details.releaseError == nil {
-                placeholder(details.hasLoaded ? "No releases published yet." : "Loading release…")
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -307,6 +320,9 @@ struct GitHubRepositoryOverview: View {
                                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                                     DockCommitIdentifier(revision: commit.sha)
                                         .foregroundStyle(Color.dockAccent)
+                                        .frame(
+                                            width: DockWorkspaceScale.points(64, scale: workspaceScale),
+                                            alignment: .leading)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(commit.title).dockFont(.body, weight: .medium)
                                             .foregroundStyle(Color.dockPrimaryText).lineLimit(1)

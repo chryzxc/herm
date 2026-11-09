@@ -179,6 +179,15 @@ struct GitHubIssueTests {
         #expect(page.items.first?.localPath == "/repo")
     }
 
+    @Test func workPageBatchesLocalRepositorySearchesToStayUnderSearchRateLimit() async throws {
+        let transport = IssueTestTransport(responses: ["/search/issues": ["items": []]])
+        let paths = Dictionary(uniqueKeysWithValues: (0..<11).map { ("owner/repo\($0)", "/repo\($0)") })
+        _ = try? await GitHubIssueCenterAPI(transport: transport).workPage(viewer: "ada", localPaths: paths)
+        let scoped = transport.searchQueries.filter { $0.contains("repo:") }
+        #expect(scoped.count == 2)
+        #expect(scoped.contains { $0.components(separatedBy: "repo:").count == 11 })
+    }
+
     @Test func workPageIncludesOwnedIssuesAndExcludesForks() async throws {
         let transport = IssueTestTransport(responses: [
             "/search/issues": [

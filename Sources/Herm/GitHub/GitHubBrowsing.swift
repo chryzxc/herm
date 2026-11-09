@@ -59,8 +59,6 @@ struct GitHubBrowseControls: View {
     @State private var editing = false
     @State private var filters = false
     @State private var draft = GitHubBrowseOptions()
-    @State private var saved: GitHubBrowseOptions?
-    private var key: String { "hermes.github.\(kind.rawValue).saved-view" }
     var body: some View {
         HStack(spacing: 6) {
             DockMenu {
@@ -122,21 +120,6 @@ struct GitHubBrowseControls: View {
                         }
                     }
                 }
-                Divider()
-                DockMenuSection("Saved view") {
-                    Button(saved == nil ? "Save current view" : "Update saved view", icon: .floppyDisk) {
-                        if let data = try? JSONEncoder().encode(options) {
-                            UserDefaults.standard.set(data, forKey: key)
-                            saved = options
-                        }
-                    }
-                    if let saved {
-                        Button("Restore saved view", icon: .arrowCounterClockwise) {
-                            options = saved
-                            refresh()
-                        }
-                    }
-                }
             } label: {
                 DockIcon(.sliders, size: 14, color: Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
@@ -144,16 +127,11 @@ struct GitHubBrowseControls: View {
                         DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(
                             Color.dockControlSurface.opacity(0.6)))
             }
-            .help("Sort and saved view")
-            .accessibilityLabel("Sort and saved view")
+            .help("Sort")
+            .accessibilityLabel("Sort")
             Button("New") { editing = true }.buttonStyle(.dockCompact).help(
                 kind == .issue ? "Create issue" : "Create draft pull request")
         }.dockFont(.body)
-            .task {
-                if let data = UserDefaults.standard.data(forKey: key) {
-                    saved = try? JSONDecoder().decode(GitHubBrowseOptions.self, from: data)
-                }
-            }
             .dockSheet(isPresented: $editing) {
                 GitHubItemEditor(
                     kind: kind, client: client, repositories: repositories,

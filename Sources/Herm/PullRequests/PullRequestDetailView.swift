@@ -697,6 +697,8 @@ struct PullRequestDetailView: View {
                         contextRouter.attachToCurrentChat(ChatContext(pullRequest: pr))
                     }.buttonStyle(.dockSecondary)
                 }
+            } else if !isInspector {
+                AttachToChatMenu(icon: true) { ChatContext(pullRequest: pr) }
             }
             if pr.isOpenForWork || pr.mergedAt != nil {
                 PullRequestLandingView(

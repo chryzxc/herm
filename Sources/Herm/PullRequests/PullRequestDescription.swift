@@ -35,10 +35,71 @@ enum PullRequestDescriptionContent {
         return result
     }
 
+    /// GitHub renders inline HTML (Dependabot release notes are almost all `<details>`, `<p>`, `<ul>`);
+    /// the Markdown view does not, so the common tags become Markdown and the rest are dropped.
+    /// `<img>` is kept for `parts`. Fenced code is left untouched.
+    /// ponytail: regex rewrite, no nesting (nested lists flatten, blockquotes lose their bar);
+    /// swap for a real HTML parser if bodies need tables or nested structure.
+    static func markdownFromHTML(_ source: String) -> String {
+        var output: [String] = []
+        var segment: [String] = []
+        var fence: MarkdownFence?
+        func convert() {
+            guard !segment.isEmpty else { return }
+            var text = segment.joined(separator: "\n")
+            segment.removeAll()
+            func replace(_ pattern: String, _ template: String) {
+                text = text.replacingOccurrences(
+                    of: pattern, with: template, options: [.regularExpression, .caseInsensitive])
+            }
+            replace(#"<pre[^>]*>\s*(?:<code[^>]*>)?([\s\S]*?)(?:</code>)?\s*</pre>"#, "\n```\n$1\n```\n")
+            replace(#"<summary[^>]*>([\s\S]*?)</summary>"#, "\n**$1**\n")
+            for level in 1...6 {
+                replace(
+                    #"<h\#(level)[^>]*>([\s\S]*?)</h\#(level)>"#, "\n" + String(repeating: "#", count: level) + " $1\n")
+            }
+            replace(#"<(strong|b)>([\s\S]*?)</\1>"#, "**$2**")
+            replace(#"<(em|i)>([\s\S]*?)</\1>"#, "*$2*")
+            replace(#"<code>([\s\S]*?)</code>"#, "`$1`")
+            replace(#"<a\b[^>]*?href=["']([^"']+)["'][^>]*>((?:(?!<img)[\s\S])*?)</a>"#, "[$2]($1)")
+            replace(#"<li[^>]*>\s*"#, "\n- ")
+            replace(#"<br\s*/?>"#, "  \n")
+            replace(#"<hr\s*/?>"#, "\n---\n")
+            replace(#"</p>"#, "\n\n")
+            replace(
+                #"</?(?:p|div|span|details|blockquote|ul|ol|li|table|thead|tbody|tr|td|th|sup|sub|picture|source|kbd)\b[^>]*>"#,
+                "")
+            for (entity, character) in [("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")]
+            {
+                text = text.replacingOccurrences(of: entity, with: character)
+            }
+            replace(#"\n[ \t]*\n(?:[ \t]*\n)+"#, "\n\n")
+            output.append(text)
+        }
+        for line in source.components(separatedBy: "\n") {
+            if let active = fence {
+                output.append(line)
+                if active.isClosed(by: line) { fence = nil }
+            } else if let opening = MarkdownFence(opening: line) {
+                convert()
+                fence = opening
+                output.append(line)
+            } else {
+                segment.append(line)
+            }
+        }
+        convert()
+        return output.joined(separator: "\n")
+    }
+
     static func parts(_ source: String) -> [Part] {
+        // Images anywhere in a line (badges, `<a><img></a>`, several per line), not only whole-line ones.
+        let url = #"<?(https?://[^\s)>]+)>?"#
+        let mdImage = #"!\[([^\]]*)\]\(\s*"# + url + #"(?:\s+\"[^\"]*\")?\s*\)"#
+        let htmlImage = #"<img\b[^>]*?\bsrc=[\"'](https?://[^\"']+)[\"'][^>]*?/?>"#
         let pattern =
-            #"^\s*(?:!\[([^\]]*)\]\(\s*<?(https?://[^\s)>]+)>?(?:\s+\"[^\"]*\")?\s*\)"#
-            + #"|<img\b[^>]*\bsrc=[\"'](https?://[^\"']+)[\"'][^>]*?/?>)\s*$"#
+            #"(?:\["# + mdImage + #"\]\([^)]*\)|<a\b[^>]*>\s*"# + htmlImage + #"\s*</a>|"# + mdImage + "|" + htmlImage
+            + ")"
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return [.markdown(source)]
         }
@@ -79,19 +140,41 @@ enum PullRequestDescriptionContent {
                 continue
             }
             let nsLine = line as NSString
-            guard let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: nsLine.length)) else {
+            let matches = regex.matches(in: line, range: NSRange(location: 0, length: nsLine.length))
+            var cursor = 0
+            var images: [(NSRange, URL, String)] = []
+            for match in matches {
+                // Groups: linked md (1,2) | linked html (3) | md (4,5) | html (6).
+                let groups = [(1, 2), (4, 5)].compactMap { alt, url -> (Int, Int)? in
+                    match.range(at: url).location == NSNotFound ? nil : (alt, url)
+                }
+                let urlRange: NSRange
+                var alt = "Image"
+                if let (altGroup, urlGroup) = groups.first {
+                    urlRange = match.range(at: urlGroup)
+                    let range = match.range(at: altGroup)
+                    if range.length > 0 { alt = nsLine.substring(with: range) }
+                } else {
+                    urlRange = match.range(at: match.range(at: 3).location == NSNotFound ? 6 : 3)
+                }
+                guard urlRange.location != NSNotFound, let url = URL(string: nsLine.substring(with: urlRange)),
+                    url.host != nil
+                else { continue }
+                images.append((match.range, url, alt))
+            }
+            if images.isEmpty {
                 text.append(line)
                 continue
             }
-            let urlRange = match.range(at: match.range(at: 2).location == NSNotFound ? 3 : 2)
-            guard let url = URL(string: nsLine.substring(with: urlRange)), url.host != nil else {
-                text.append(line)
-                continue
+            for (range, url, alt) in images {
+                let before = nsLine.substring(with: NSRange(location: cursor, length: range.location - cursor))
+                if !before.trimmingCharacters(in: .whitespaces).isEmpty { text.append(before) }
+                flush()
+                parts.append(.image(url, alt: alt))
+                cursor = range.location + range.length
             }
-            let altRange = match.range(at: 1)
-            let alt = altRange.location == NSNotFound ? "Image" : nsLine.substring(with: altRange)
-            flush()
-            parts.append(.image(url, alt: alt.isEmpty ? "Image" : alt))
+            let rest = nsLine.substring(from: cursor)
+            if !rest.trimmingCharacters(in: .whitespaces).isEmpty { text.append(rest) }
         }
         flush()
         return parts
@@ -107,7 +190,8 @@ struct PullRequestDescription: View {
             ForEach(
                 Array(
                     PullRequestDescriptionContent.parts(
-                        PullRequestDescriptionContent.resolvingImages(markdown, html: html)
+                        PullRequestDescriptionContent.markdownFromHTML(
+                            PullRequestDescriptionContent.resolvingImages(markdown, html: html))
                     ).enumerated()), id: \.offset
             ) { _, part in
                 switch part {

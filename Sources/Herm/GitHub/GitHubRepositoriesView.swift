@@ -2,7 +2,7 @@ import SwiftUI
 
 struct GitHubRepositoriesView: View {
     @ObservedObject var model: GitHubRepositoriesModel
-    @State var selected: GitHubRepositorySummary?
+    private var selected: GitHubRepositorySummary? { model.repositories.first { $0.id == model.selectedID } }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,14 +18,13 @@ struct GitHubRepositoriesView: View {
                 AdaptiveSplit(
                     primaryMinWidth: 340, primaryIdealWidth: 390, primaryMaxWidth: 460, secondaryMinWidth: 480,
                     alwaysSplitWhenWide: true,
-                    showsSecondary: selected != nil, onBack: { selected = nil }
+                    showsSecondary: selected != nil, onBack: { model.selectedID = nil }
                 ) {
                     repositoryList
                 } secondary: {
                     if let selected {
                         GitHubRepositoryOverview(
-                            repository: model.repositories.first { $0.id == selected.id } ?? selected,
-                            client: model.client, close: { self.selected = nil }
+                            repository: selected, client: model.client, close: { model.selectedID = nil }
                         ).id(selected.id)
                     } else {
                         VStack(spacing: 10) {
@@ -76,7 +75,7 @@ struct GitHubRepositoriesView: View {
     private func rows(_ repositories: [GitHubRepositorySummary]) -> some View {
         ForEach(repositories) { repository in
             Button {
-                selected = repository
+                model.selectedID = repository.id
             } label: {
                 GitHubRepositoryRow(
                     repository: repository, isSelected: selected?.id == repository.id,

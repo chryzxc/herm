@@ -54,8 +54,13 @@ struct GitHubIssueCenterAPI: Sendable {
         async let other = searchPageResult("is:issue is:open assignee:\(viewer)", localPaths: localPaths)
         async let owned = searchPageResult("is:issue is:open user:\(viewer)", localPaths: localPaths)
         let attached = localPaths.keys.sorted().filter { GitHubReferenceParser.repository($0) != nil }
-        async let scoped = Self.concurrentMap(attached) { [self] repository in
-            await searchPageResult("is:issue is:open repo:\(repository)", localPaths: localPaths)
+        // Search allows 30 requests/min; space-separated `repo:` qualifiers OR together, so one
+        // query covers a batch of repositories instead of one search per attached repository.
+        let batches = stride(from: 0, to: attached.count, by: 10).map {
+            attached[$0..<min($0 + 10, attached.count)].map { "repo:\($0)" }.joined(separator: " ")
+        }
+        async let scoped = Self.concurrentMap(batches) { [self] repositories in
+            await searchPageResult("is:issue is:open \(repositories)", localPaths: localPaths)
         }
         let (authoredResult, otherResult, ownedResult) = await (authored, other, owned)
         let a = try? authoredResult.get()

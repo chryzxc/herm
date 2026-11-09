@@ -128,7 +128,7 @@ struct IssueDetailView: View {
                 DockMenu {
                     Button(
                         PullRequestChatLinkStore().sessionID(for: displayedIssue.id) == nil
-                            ? "Prepare in Herm" : "Open linked Herm chat"
+                            ? "Start chat" : "Open chat"
                     ) { onOpenChat(displayedIssue) }
                 } label: {
                     DockIcon(.chatCircleText, size: 14, color: Color.dockSecondaryText).frame(width: 28, height: 28)

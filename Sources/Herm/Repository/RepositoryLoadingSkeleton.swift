@@ -1,25 +1,9 @@
 import SwiftUI
 
-enum RepositoryShimmerMotion {
-    static let duration: TimeInterval = 2.0
-
-    static func progress(at time: TimeInterval) -> CGFloat {
-        CGFloat(time.truncatingRemainder(dividingBy: duration) / duration)
-    }
-
-    static func bandWidth(for containerWidth: CGFloat) -> CGFloat {
-        min(120, max(36, containerWidth * 0.28))
-    }
-
-    static func offset(containerWidth: CGFloat, at time: TimeInterval) -> CGFloat {
-        let bandWidth = bandWidth(for: containerWidth)
-        return -bandWidth + (containerWidth + bandWidth * 2) * progress(at: time)
-    }
-}
-
-/// Shared placeholder used by GitHub repository detail surfaces while their
-/// canonical payload is loading. The highlight crosses the block once from
-/// leading to trailing per cycle and becomes static under Reduce Motion.
+/// Shared placeholder used by GitHub detail and list surfaces while their canonical
+/// payload is loading. It breathes with one slow opacity pulse that Core Animation
+/// drives, so dozens of blocks cost nothing on the main thread. It is static under
+/// Reduce Motion or when the host is hidden.
 struct RepositoryShimmerBlock: View {
     let width: CGFloat?
     let height: CGFloat
@@ -27,37 +11,18 @@ struct RepositoryShimmerBlock: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dockHostVisible) private var hostVisible
+    @State private var dim = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        shape
-            .fill(Color.dockSurface4.opacity(0.30))
+        let animates = DockMotion.isEnabled(reduceMotion: reduceMotion) && hostVisible
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color.dockSurface4.opacity(animates && dim ? 0.16 : 0.30))
             .frame(maxWidth: width ?? .infinity, alignment: .leading)
             .frame(height: height)
-            .overlay {
-                if DockMotion.isEnabled(reduceMotion: reduceMotion), hostVisible {
-                    TimelineView(.dockMotion(rate: 10)) { context in
-                        GeometryReader { geometry in
-                            let renderedWidth = geometry.size.width
-                            LinearGradient(
-                                colors: [.clear, Color.dockPrimaryText.opacity(0.05), .clear],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                            .frame(
-                                width: RepositoryShimmerMotion.bandWidth(for: renderedWidth),
-                                height: geometry.size.height
-                            )
-                            .offset(
-                                x: RepositoryShimmerMotion.offset(
-                                    containerWidth: renderedWidth,
-                                    at: context.date.timeIntervalSinceReferenceDate
-                                ))
-                        }
-                    }
-                }
-            }
-            .clipShape(shape)
+            .animation(
+                animates ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true) : nil, value: dim
+            )
+            .onAppear { dim = true }
             .accessibilityHidden(true)
     }
 }

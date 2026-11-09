@@ -53,6 +53,8 @@ final class GitHubRepositoriesModel: ObservableObject {
     @Published var owner = "All owners"
     var owners: [String] { Array(Set(repositories.map(\.owner))).sorted() }
     @Published var includesArchived = false
+    /// Owned here, not by the view, so window back/forward can restore it.
+    @Published var selectedID: String?
     @Published private(set) var repositories: [GitHubRepositorySummary] = []
     /// Lowercased `owner/name` of the viewer's GitHub profile pins, in profile order.
     @Published private(set) var pinned: [String] = []
