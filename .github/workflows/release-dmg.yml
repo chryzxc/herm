@@ -125,13 +125,10 @@ jobs:
           set -euo pipefail
           TITLE="Nightly $VERSION-dev (${SHA:0:8})"
           NOTES="Automatic build of main at ${SHA:0:8}: $(git log -1 --format=%s "$SHA"). Not a stable release; Herm's updater ignores it."
-          if gh release view nightly -R "$REPO" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/$REPO/git/refs/tags/nightly" -f sha="$SHA" -F force=true >/dev/null
-            gh release edit nightly -R "$REPO" --prerelease --latest=false --title "$TITLE" --notes "$NOTES"
-          else
-            gh release create nightly -R "$REPO" --target "$SHA" --prerelease --latest=false --title "$TITLE" --notes "$NOTES"
-          fi
-          gh release upload nightly -R "$REPO" dist/Herm.dmg --clobber
+          # Recreate rather than edit, so the release date, tag and commit track the newest build.
+          gh release delete nightly -R "$REPO" --yes --cleanup-tag 2>/dev/null || true
+          gh release create nightly -R "$REPO" --target "$SHA" --prerelease --latest=false \
+            --title "$TITLE" --notes "$NOTES" dist/Herm.dmg
 
       - name: Publish stable release
         if: steps.version.outputs.skip != 'true' && steps.version.outputs.tag != 'nightly'
