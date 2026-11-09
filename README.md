@@ -23,7 +23,7 @@ Unread session badges and the floating “new messages” control count AI respo
 
 *▶ [Play the recording](docs/media/browser-demo.mp4)*
 
-Screens and recordings in this README show fictional projects and conversations.
+Unless noted, screens and recordings in this README show fictional projects and conversations.
 
 > **Ask from anywhere → keep working → notice when needed → respond quickly → inspect the result.**
 
@@ -969,6 +969,12 @@ Recognized bot mentions show their avatar-and-name pill inside your sent message
 [![A Herm group chat with several bots replying](docs/media/bots-demo-poster.webp)](docs/media/bots-demo.mp4)
 
 *▶ [Play the recording](docs/media/bots-demo.mp4)*
+
+These screenshots show a real bot handoff; a project name has been redacted.
+
+![Herm conversation showing a bot handoff and work in progress](docs/media/bot-handoff.webp)
+
+![Herm conversation showing a planning handoff](docs/media/bot-planning.webp)
 
 Once sent, a mentioned bot keeps answering when you switch conversations. Return to see its replying bubble or completed reply with the same bot attribution; replies received while you are elsewhere are restored from saved activity. Mentions reuse the recipient’s persistent **Bot Chat**, which Hermes hides from the regular session list. Click the recipient on the **Bots** page to view that conversation; each mention does not create a separate session.
 
