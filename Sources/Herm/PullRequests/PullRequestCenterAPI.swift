@@ -15,7 +15,7 @@ protocol PullRequestMutationExecuting {
 struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
     let client: GitHubClient
 
-    init(transport: any GitHubIssueTransport = URLSession(configuration: .ephemeral)) {
+    init(transport: any GitHubIssueTransport = GitHubClient.sharedSession) {
         self.client = GitHubClient(transport: transport)
     }
 
@@ -58,6 +58,9 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
     func workPage(viewer: String, localPaths: [String: String]) async throws -> GitHubPage<PullRequestRecord> {
         async let authored = searchPageResult("is:pr is:open author:\(viewer)", localPaths: localPaths)
         async let other = searchPageResult("is:pr is:open review-requested:\(viewer)", localPaths: localPaths)
+        let since = Date.now.addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
+        async let mergedLookup = try? searchPage(
+            "is:pr is:merged involves:\(viewer) merged:>=\(since)", localPaths: localPaths)
         let (authoredResult, otherResult) = await (authored, other)
         let a = try? authoredResult.get()
         let b = try? otherResult.get()
@@ -76,10 +79,7 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         var coverage = GitHubCoverage(
             loaded: unique.count,
             partial: a == nil || b == nil || a?.coverage.partial == true || b?.coverage.partial == true)
-        let since = Date.now.addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
-        if let merged = try? await searchPage(
-            "is:pr is:merged involves:\(viewer) merged:>=\(since)", localPaths: localPaths)
-        {
+        if let merged = await mergedLookup {
             for row in merged.items where unique[row.id] == nil { unique[row.id] = row }
             coverage.partial = coverage.partial || merged.coverage.partial
         } else {
@@ -116,8 +116,10 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
 
     func detail(_ record: PullRequestRecord) async -> PullRequestRecord? {
         guard
-            var payload = try? await request(path: record.repository.apiRepositoryPath + "/pulls/\(record.number)")
-                as? [String: Any]
+            // `full+json` adds `body_html`; private attachments only load through the signed URLs it renders.
+            var payload = try? await client.request(
+                record.repository.apiRepositoryPath + "/pulls/\(record.number)",
+                accept: "application/vnd.github.full+json") as? [String: Any]
         else { return nil }
         var warning: [String] = []
         if let sha = (payload["head"] as? [String: Any])?["sha"] as? String {
@@ -416,6 +418,7 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
             reviews: reviews, mergedAt: date(row["merged_at"]))
         record.createdAt = (row["created_at"] as? String).flatMap { try? Date($0, strategy: .iso8601) }
         record.nodeID = row["node_id"] as? String
+        record.bodyHTML = row["body_html"] as? String
         record.state = row["state"] as? String ?? "open"
         record.headRevision = (row["head"] as? [String: Any])?["sha"] as? String
         record.baseRevision = (row["base"] as? [String: Any])?["sha"] as? String

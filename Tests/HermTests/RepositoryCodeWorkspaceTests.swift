@@ -58,6 +58,34 @@ struct RepositoryCodeWorkspaceTests {
         #expect(first.identity != second.identity)
     }
 
+    @Test func sessionGitHubTabsRequireGitInTheSelectedDirectory() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-tabs-\(UUID().uuidString)")
+        let repository = root.appendingPathComponent("repo")
+        let worktree = root.appendingPathComponent("worktree")
+        try FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let scope = SessionRepositoryScope(sessionID: "session", repositoryPath: repository.path)
+        #expect(!scope.containsGitRepository(await RepositoryService.inspect(path: repository.path)))
+        #expect(runGit(path: repository.path, arguments: ["init", "-q"]))
+        #expect(
+            runGit(
+                path: repository.path,
+                arguments: [
+                    "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm",
+                    "initial",
+                ]))
+        #expect(runGit(path: repository.path, arguments: ["worktree", "add", "-qb", "other", worktree.path]))
+
+        let repositorySnapshot = await RepositoryService.inspect(path: repository.path)
+        let worktreeSnapshot = await RepositoryService.inspect(path: worktree.path)
+        let worktreeScope = SessionRepositoryScope(sessionID: "session", repositoryPath: worktree.path)
+        #expect(scope.containsGitRepository(repositorySnapshot))
+        #expect(worktreeScope.containsGitRepository(worktreeSnapshot))
+        #expect(!scope.containsGitRepository(worktreeSnapshot))
+        #expect(!worktreeScope.containsGitRepository(repositorySnapshot))
+    }
+
     @MainActor
     @Test func pullRequestMutationRequestDoesNotCallExecutorUntilConfirmed() async {
         let fake = PullRequestMutationFake()

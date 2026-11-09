@@ -7,12 +7,7 @@ struct GitHubLinkButton: View {
 
     var body: some View {
         Link(destination: destination) {
-            DockIcon(.arrowSquareOut, size: 13, color: Color.dockSecondaryText)
-                .frame(width: 28, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
-                        .dockSurfaceFill(Color.dockControlSurface.opacity(0.6))
-                )
+            DockIconButtonLabel(icon: .arrowSquareOut)
         }
         .buttonStyle(.dockHover)
         .fixedSize()

@@ -17,7 +17,7 @@ enum GitHubWorkspaceSection: String, CaseIterable, Identifiable {
 
 /// Shared navigation around the existing PR and issue pages; their models retain browsing state and drafts.
 struct GitHubWorkspace<Content: View>: View {
-    @StateObject private var repositories = GitHubRepositoriesModel()
+    @ObservedObject var repositories: GitHubRepositoriesModel
     @Binding var selection: GitHubWorkspaceSection
     @ViewBuilder var content: () -> Content
 

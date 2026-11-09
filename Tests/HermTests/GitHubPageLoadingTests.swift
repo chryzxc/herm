@@ -119,6 +119,8 @@ struct GitHubPageLoadingTests {
         row["html_url"] = "https://github.com/owner/repo/issues/19"
         let transport = try GitHubPageTransport(responses: [
             "/user": ["login": "ada"],
+            "/user/repos": [],
+            "/repos/owner/repo": ["fork": false],
             "/search/issues?is:issue is:open repo:owner/repo": ["items": [row]],
             "/search/issues?is:pr is:open repo:owner/repo": ["items": [row]],
         ])
@@ -270,8 +272,11 @@ struct GitHubPageLoadingTests {
         assigned["assignees"] = [["login": "ada"]]
         let transport = try GitHubPageTransport(responses: [
             "/user": ["login": "ada"],
+            "/user/repos": [],
+            "/repos/owner/repo": ["fork": false],
             "/search/issues?is:issue is:open author:ada": ["items": [assigned]],
             "/search/issues?is:issue is:open assignee:ada": ["items": [assigned]],
+            "/search/issues?is:issue is:open user:ada": ["items": [assigned]],
             "/repos/owner/repo/issues/19": assigned,
         ])
         let center = IssueCenterModel(api: GitHubIssueCenterAPI(transport: transport))
@@ -280,7 +285,7 @@ struct GitHubPageLoadingTests {
         _ = await (first, duplicate)
 
         #expect(await transport.count("/user") == 1)
-        #expect(await transport.peakSearches == 2)
+        #expect(await transport.peakSearches == 3)
         #expect(center.records.count == 1)
         center.filter = .assigned
         #expect(center.visible.map(\.number) == [19])
@@ -308,5 +313,39 @@ struct GitHubPageLoadingTests {
         #expect(center.records.isEmpty)
         #expect(!center.isRefreshing)
         #expect(center.errorMessage == nil)
+    }
+}
+
+private actor GitHubLinkedPageTransport: GitHubIssueTransport {
+    private var active = 0
+    private(set) var peak = 0
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        let url = request.url!
+        let page =
+            Int(
+                URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+                    .first { $0.name == "page" }?.value ?? "1") ?? 1
+        active += 1
+        peak = max(peak, active)
+        defer { active -= 1 }
+        try await Task.sleep(for: .milliseconds(20))
+        let rows = (0..<(page == 4 ? 7 : 100)).map { ["id": page * 1_000 + $0] }
+        let link = "<https://api.github.com/user/repos?page=4&per_page=100>; rel=\"last\""
+        return (
+            try JSONSerialization.data(withJSONObject: rows),
+            HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Link": link])!
+        )
+    }
+}
+
+extension GitHubPageLoadingTests {
+    @Test func linkedPagesLoadConcurrentlyInOrder() async throws {
+        let transport = GitHubLinkedPageTransport()
+        let page = try await GitHubClient(transport: transport).pages("/user/repos")
+        #expect(page.rows.count == 307)
+        #expect(page.rows.map { $0["id"] as? Int } == page.rows.map { $0["id"] as? Int }.sorted { $0! < $1! })
+        #expect(!page.coverage.partial)
+        #expect(await transport.peak > 1)
     }
 }

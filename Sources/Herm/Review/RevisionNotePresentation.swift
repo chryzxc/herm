@@ -35,7 +35,7 @@ struct RevisionNoteExcerpt: View {
     private var lines: [DiffLine] { note.selection.lines.filter { $0.kind != .hunk } }
     var body: some View {
         GeometryReader { geometry in
-            ScrollView([.horizontal, .vertical]) {
+            ScrollView(.vertical) {
                 HStack(alignment: .top, spacing: DockSpacing.group) {
                     Text(lines.map { String($0.newLine ?? $0.oldLine ?? 0) }.joined(separator: "\n"))
                         .foregroundStyle(Color.dockMetadataText).textSelection(.disabled)
@@ -43,7 +43,7 @@ struct RevisionNoteExcerpt: View {
                     Text(note.selection.excerpt).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
                 }
                 .dockFont(.body, weight: .regular, design: .monospaced).fontDesign(.monospaced).lineSpacing(3)
-                .dockPadding(DockSpacing.group).frame(minWidth: geometry.size.width, alignment: .leading)
+                .dockPadding(DockSpacing.group).frame(width: geometry.size.width, alignment: .leading)
             }
         }
         .frame(height: min(132, max(44, CGFloat(lines.count) * 18 + 24)))

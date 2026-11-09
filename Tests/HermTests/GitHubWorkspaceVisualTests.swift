@@ -137,7 +137,7 @@ struct GitHubWorkspaceVisualTests {
             DockThemeRuntime.revision &+= 1
             for width: CGFloat in [440, 960, 1200] {
                 for section in [GitHubWorkspaceSection.pullRequests, .issues] {
-                    let root = GitHubWorkspace(selection: .constant(section)) {
+                    let root = GitHubWorkspace(repositories: GitHubRepositoriesModel(), selection: .constant(section)) {
                         if section == .pullRequests {
                             PullRequestWorkspace(center: pr, projects: [], onOpenChat: { _ in })
                         } else {

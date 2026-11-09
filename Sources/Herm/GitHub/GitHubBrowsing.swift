@@ -64,7 +64,7 @@ struct GitHubBrowseControls: View {
     var body: some View {
         HStack(spacing: 6) {
             DockMenu {
-                Button("My work") {
+                Button(kind == .issue ? "Your work and projects" : "My work") {
                     options.repository = ""
                     refresh()
                 }
@@ -160,7 +160,9 @@ struct GitHubBrowseControls: View {
                     initialRepository: GitHubReferenceParser.repository(options.repository), onSaved: onCreated)
             }
             .dockSheet(isPresented: $filters) {
-                DockModal(title: "GitHub filters", subtitle: "Leave repository blank for My work", width: 440) {
+                DockModal(
+                    title: "GitHub filters", subtitle: "Leave repository blank for your GitHub activity", width: 440
+                ) {
                     TextField("owner/repository", text: $draft.repository).textFieldStyle(.dockGlass)
                     TextField("Label", text: $draft.label).textFieldStyle(.dockGlass)
                     TextField("Milestone", text: $draft.milestone).textFieldStyle(.dockGlass)

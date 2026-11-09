@@ -4,7 +4,10 @@ import Testing
 @testable import Herm
 
 private actor WriteSafetyTransport: GitHubIssueTransport {
-    enum Mode { case denied, staleHead, queue, metadata, linking, unstable, blocked }
+    enum Mode {
+        case denied, staleHead, queue, metadata, linking, unstable, blocked, mergedChangedHead, mergedMissingHead,
+            alreadyMerged
+    }
     let mode: Mode
     let methods: [GitHubMergeMethod]
     var reads = 0
@@ -26,12 +29,16 @@ private actor WriteSafetyTransport: GitHubIssueTransport {
         } else if query.hasPrefix("mutation") {
             let input = variables["input"] as? [String: String] ?? [:]
             writes.append(input.merging(variables.compactMapValues { $0 as? String }, uniquingKeysWith: { a, _ in a }))
-            if mode == .unstable {
+            if mode == .unstable || mode == .mergedChangedHead || mode == .mergedMissingHead {
                 payload = [
                     "data": [
                         "mergePullRequest": [
                             "pullRequest": [
-                                "id": "PR", "headRefOid": String(repeating: "a", count: 40), "state": "MERGED",
+                                "id": "PR",
+                                "headRefOid": mode == .mergedMissingHead
+                                    ? NSNull()
+                                    : String(repeating: mode == .mergedChangedHead ? "b" : "a", count: 40) as Any,
+                                "state": "MERGED",
                                 "isDraft": false, "mergedAt": "2026-10-18T00:01:00Z",
                                 "updatedAt": "2026-10-18T00:01:00Z",
                                 "repository": [
@@ -46,14 +53,19 @@ private actor WriteSafetyTransport: GitHubIssueTransport {
             } else {
                 payload = ["data": ["accepted": ["clientMutationId": NSNull()]]]
             }
-        } else if mode == .staleHead || mode == .queue || mode == .unstable || mode == .blocked {
+        } else if mode == .staleHead || mode == .queue || mode == .unstable || mode == .blocked
+            || mode == .mergedChangedHead || mode == .mergedMissingHead || mode == .alreadyMerged
+        {
             reads += 1
             let head =
                 mode == .staleHead && reads > 1 ? String(repeating: "b", count: 40) : String(repeating: "a", count: 40)
             payload = [
                 "data": [
                     "node": [
-                        "id": "PR", "headRefOid": head, "state": "OPEN", "isDraft": false, "mergeable": "MERGEABLE",
+                        "id": "PR", "headRefOid": head,
+                        "state": mode == .alreadyMerged && reads > 1 ? "MERGED" : "OPEN",
+                        "mergedAt": mode == .alreadyMerged && reads > 1 ? "2026-10-18T00:01:00Z" : NSNull(),
+                        "isDraft": false, "mergeable": "MERGEABLE",
                         "mergeStateStatus": mode == .unstable ? "UNSTABLE" : (mode == .blocked ? "BLOCKED" : "CLEAN"),
                         "isMergeQueueEnabled": mode == .queue, "isInMergeQueue": !writes.isEmpty,
                         "repository": [
@@ -194,6 +206,29 @@ struct GitHubWriteSafetyTests {
         #expect(writes.count == 1)
         #expect(writes.first?["mergeMethod"] == method.rawValue)
         #expect(writes.first?["expectedHeadOid"] == pr.headRevision)
+    }
+
+    @Test(arguments: [false, true])
+    func successfulMergeAcceptsChangedOrMissingResponseHead(missing: Bool) async throws {
+        let transport = WriteSafetyTransport(missing ? .mergedMissingHead : .mergedChangedHead)
+        let service = GitHubLandingService(client: GitHubClient(transport: transport))
+        let pr = record()
+        let confirmed = try await service.snapshot(pr)
+        let merged = try await service.perform(.merge, method: .merge, record: pr, confirmed: confirmed)
+        #expect(merged.status == "Merged")
+        #expect(merged.head == (missing ? pr.headRevision : String(repeating: "b", count: 40)))
+        #expect(await transport.mutations().first?["expectedHeadOid"] == pr.headRevision)
+    }
+
+    @Test func alreadyMergedPullRequestRefreshesWithoutAnotherMutation() async throws {
+        let transport = WriteSafetyTransport(.alreadyMerged)
+        let service = GitHubLandingService(client: GitHubClient(transport: transport))
+        let pr = record()
+        let confirmed = try await service.snapshot(pr)
+        let merged = try await service.perform(.merge, method: .merge, record: pr, confirmed: confirmed)
+        #expect(merged.status == "Merged")
+        #expect(merged.mergedAt != nil)
+        #expect(await transport.mutations().isEmpty)
     }
 
     @Test func unavailableMergeMethodNeverWrites() async throws {

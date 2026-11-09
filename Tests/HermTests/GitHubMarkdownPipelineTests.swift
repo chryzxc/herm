@@ -101,6 +101,16 @@ struct PullRequestDescriptionTests {
             ])
     }
 
+    @Test func privateAttachmentsUseSignedURLsFromRenderedHTML() {
+        let source =
+            "![a](https://github.com/user-attachments/assets/1)\n| ![b](https://github.com/user-attachments/assets/2) |"
+        let html = "<p><img src=\"https://p.example/1?jwt=x&amp;y=1\"></p><img src=\"https://p.example/2\">"
+        #expect(
+            PullRequestDescriptionContent.resolvingImages(source, html: html)
+                == "![a](https://p.example/1?jwt=x&y=1)\n| ![b](https://p.example/2) |")
+        #expect(PullRequestDescriptionContent.resolvingImages(source, html: "<p>none</p>") == source)
+    }
+
     @Test func taskListsAndDividersRenderAsStructuredContent() {
         let source = "- [x] Done **now**\n- [ ] Later\n\n---\n\n```\n- [x] literal\n```"
         #expect(

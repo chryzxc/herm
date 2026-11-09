@@ -146,6 +146,7 @@ struct GitHubIssueTests {
             Set(transport.searchQueries) == [
                 "is:issue is:open author:ada",
                 "is:issue is:open assignee:ada",
+                "is:issue is:open user:ada",
             ])
         #expect(transport.searchQueries.contains("is:issue is:open") == false)
     }
@@ -156,6 +157,53 @@ struct GitHubIssueTests {
         #expect(model.records.isEmpty)
         #expect(model.hasLoaded == false)
         #expect(model.errorMessage?.contains("unavailable") == true)
+    }
+
+    @Test func workPageIncludesUnassignedIssuesFromLocalRepositories() async throws {
+        let transport = IssueTestTransport(responses: [
+            "/search/issues": [
+                "items": [
+                    [
+                        "number": 42, "title": "Reported by someone else", "state": "open",
+                        "repository": ["full_name": "owner/repo"], "user": ["login": "bob"],
+                    ]
+                ]
+            ]
+        ])
+        let page = try await GitHubIssueCenterAPI(transport: transport).workPage(
+            viewer: "ada", localPaths: ["owner/repo": "/repo"])
+        #expect(transport.searchQueries.contains("is:issue is:open repo:owner/repo"))
+        #expect(page.items.count == 1)
+        #expect(page.items.first?.author == "bob")
+        #expect(page.items.first?.assignee == nil)
+        #expect(page.items.first?.localPath == "/repo")
+    }
+
+    @Test func workPageIncludesOwnedIssuesAndExcludesForks() async throws {
+        let transport = IssueTestTransport(responses: [
+            "/search/issues": [
+                "items": [
+                    [
+                        "number": 1, "title": "Community issue", "state": "open",
+                        "repository": ["full_name": "ada/own"], "user": ["login": "bob"],
+                    ],
+                    [
+                        "number": 2, "title": "Fork issue", "state": "open",
+                        "repository": ["full_name": "ada/fork"], "user": ["login": "bob"],
+                    ],
+                    [
+                        "number": 3, "title": "Upstream issue", "state": "open",
+                        "repository": ["full_name": "upstream/project"], "user": ["login": "ada"],
+                    ],
+                ]
+            ],
+            "/repos/ada/own": ["fork": false],
+            "/repos/ada/fork": ["fork": true, "parent": ["full_name": "upstream/project"]],
+            "/user/repos": [["full_name": "ada/fork", "fork": true]],
+        ])
+        let page = try await GitHubIssueCenterAPI(transport: transport).workPage(viewer: "ada", localPaths: [:])
+        #expect(transport.searchQueries.contains("is:issue is:open user:ada"))
+        #expect(page.items.map(\.number) == [1])
     }
 
     @MainActor @Test func issueDetailFailureRetainsSelectedSummaryAndPublishesInlineError() async {
@@ -253,7 +301,15 @@ private final class IssueTestTransport: GitHubIssueTransport, @unchecked Sendabl
             lock.withLock { recordedQueries.append(query) }
         }
         if failing || failingPaths.contains(path) { throw GitHubCodeHostError.unavailable }
-        let payload = responses[request.url?.path ?? ""] ?? [String: Any]()
+        let fallback: Any
+        if path == "/user/repos" {
+            fallback = [[String: Any]]()
+        } else if path.hasPrefix("/repos/") {
+            fallback = ["fork": false]
+        } else {
+            fallback = [String: Any]()
+        }
+        let payload = responses[path] ?? fallback
         let data = try JSONSerialization.data(withJSONObject: payload)
         return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
     }

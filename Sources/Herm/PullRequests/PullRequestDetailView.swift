@@ -351,7 +351,7 @@ struct PullRequestDetailView: View {
             if pr.body.isEmpty {
                 Text("No description provided.").dockFont(.body).foregroundStyle(Color.dockMetadataText)
             } else {
-                PullRequestDescription(markdown: pr.body)
+                PullRequestDescription(markdown: pr.body, html: pr.bodyHTML)
                     .frame(maxWidth: 820, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

@@ -144,7 +144,9 @@ final class IssueCenterModel: ObservableObject {
         repositories = Array(Set(resolved.map { $0.1 } + records.map(\.repository))).sorted { $0.id < $1.id }
         if browsing.usesCustomQuery {
             do {
-                let page = try await api.searchPage(browsing.query(kind: .issue, viewer: viewer), localPaths: remotes)
+                let searched = try await api.searchPage(
+                    browsing.query(kind: .issue, viewer: viewer), localPaths: remotes)
+                let page = try await api.excludingForks(searched)
                 guard token == generation, !Task.isCancelled else { return }
                 records = page.items
                 detailNeedsRefresh.formUnion(detailByID.keys)

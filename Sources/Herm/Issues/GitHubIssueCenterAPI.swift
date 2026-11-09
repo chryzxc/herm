@@ -4,7 +4,7 @@ import SwiftUI
 struct GitHubIssueCenterAPI: Sendable {
     let client: GitHubClient
 
-    init(transport: any GitHubIssueTransport = URLSession(configuration: .ephemeral)) {
+    init(transport: any GitHubIssueTransport = GitHubClient.sharedSession) {
         self.client = GitHubClient(transport: transport)
     }
 
@@ -48,25 +48,124 @@ struct GitHubIssueCenterAPI: Sendable {
     }
 
     func workPage(viewer: String, localPaths: [String: String]) async throws -> GitHubPage<GitHubIssueRecord> {
+        // Fork exclusion and attached-repository searches overlap the account searches.
+        async let forks = forkExclusions()
         async let authored = searchPageResult("is:issue is:open author:\(viewer)", localPaths: localPaths)
         async let other = searchPageResult("is:issue is:open assignee:\(viewer)", localPaths: localPaths)
-        let (authoredResult, otherResult) = await (authored, other)
+        async let owned = searchPageResult("is:issue is:open user:\(viewer)", localPaths: localPaths)
+        let attached = localPaths.keys.sorted().filter { GitHubReferenceParser.repository($0) != nil }
+        async let scoped = Self.concurrentMap(attached) { [self] repository in
+            await searchPageResult("is:issue is:open repo:\(repository)", localPaths: localPaths)
+        }
+        let (authoredResult, otherResult, ownedResult) = await (authored, other, owned)
         let a = try? authoredResult.get()
         let b = try? otherResult.get()
+        let c = try? ownedResult.get()
         try Task.checkCancellation()
-        if a == nil && b == nil {
-            for result in [authoredResult, otherResult] {
+        if a == nil && b == nil && c == nil {
+            for result in [authoredResult, otherResult, ownedResult] {
                 if case .failure(let error) = result, GitHubAccessRequirement(error: error) != nil { throw error }
             }
             throw GitHubRequestError.unavailable
         }
         var unique = Dictionary((a?.items ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for row in b?.items ?? [] { unique[row.id] = row }
+        for row in c?.items ?? [] { unique[row.id] = row }
         var coverage = GitHubCoverage(
             loaded: unique.count,
-            partial: a == nil || b == nil || a?.coverage.partial == true || b?.coverage.partial == true)
+            partial: a == nil || b == nil || c == nil || a?.coverage.partial == true || b?.coverage.partial == true
+                || c?.coverage.partial == true)
+        for result in await scoped {
+            try Task.checkCancellation()
+            switch result {
+            case .success(let page):
+                for row in page.items { unique[row.id] = row }
+                coverage.partial = coverage.partial || page.coverage.partial
+            case .failure:
+                coverage.partial = true
+            }
+        }
         coverage.loaded = unique.count
-        return GitHubPage(items: Array(unique.values), coverage: coverage)
+        return try await excludingForks(
+            GitHubPage(items: Array(unique.values), coverage: coverage), forks: try await forks)
+    }
+
+    func excludingForks(_ page: GitHubPage<GitHubIssueRecord>) async throws -> GitHubPage<GitHubIssueRecord> {
+        try await excludingForks(page, forks: try await forkExclusions())
+    }
+
+    /// Lowercased ids of the viewer's forks and their parents; `partial` when any lookup failed.
+    private func forkExclusions() async throws -> (excluded: Set<String>, partial: Bool) {
+        do {
+            let repositories = try await client.pages("/user/repos", query: ["affiliation": "owner"])
+            var partial = repositories.coverage.partial
+            var forks: [GitHubRepositoryReference] = []
+            for row in repositories.rows where row["fork"] as? Bool == true {
+                guard let name = row["full_name"] as? String, let reference = GitHubReferenceParser.repository(name)
+                else {
+                    partial = true
+                    continue
+                }
+                forks.append(reference)
+            }
+            var excluded = Set(forks.map { $0.id.lowercased() })
+            let parents = await Self.concurrentMap(forks) { [client] reference -> String? in
+                guard let detail = try? await client.request(reference.apiRepositoryPath) as? [String: Any] else {
+                    return nil
+                }
+                return (detail["parent"] as? [String: Any])?["full_name"] as? String
+            }
+            try Task.checkCancellation()
+            for parent in parents {
+                if let parent { excluded.insert(parent.lowercased()) } else { partial = true }
+            }
+            return (excluded, partial)
+        } catch {
+            try Task.checkCancellation()
+            return ([], true)
+        }
+    }
+
+    private func excludingForks(
+        _ page: GitHubPage<GitHubIssueRecord>, forks: (excluded: Set<String>, partial: Bool)
+    ) async throws -> GitHubPage<GitHubIssueRecord> {
+        var coverage = page.coverage
+        coverage.partial = coverage.partial || forks.partial
+        let unique = Dictionary(page.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let candidates = Set(unique.values.map(\.repository)).filter { !forks.excluded.contains($0.id.lowercased()) }
+        // nil means the fork check failed; those issues are dropped rather than shown unverified.
+        let checks = await Self.concurrentMap(Array(candidates)) { [client] repository -> (String, Bool?) in
+            let data = try? await client.request(repository.apiRepositoryPath) as? [String: Any]
+            return (repository.id, data?["fork"] as? Bool)
+        }
+        try Task.checkCancellation()
+        var kept = Set<String>()
+        for (id, isFork) in checks {
+            if isFork == false { kept.insert(id) }
+            if isFork == nil { coverage.partial = true }
+        }
+        let items = unique.values.filter { kept.contains($0.repository.id) }
+        coverage.loaded = items.count
+        return GitHubPage(items: items, coverage: coverage)
+    }
+
+    /// Order-preserving map with at most six GitHub requests in flight.
+    private static func concurrentMap<T: Sendable, R: Sendable>(
+        _ items: [T], _ transform: @escaping @Sendable (T) async -> R
+    ) async -> [R] {
+        await withTaskGroup(of: (Int, R).self) { group in
+            var next = items.enumerated().makeIterator()
+            for _ in 0..<6 {
+                guard let (index, item) = next.next() else { break }
+                group.addTask { (index, await transform(item)) }
+            }
+            var results: [Int: R] = [:]
+            while let (index, result) = await group.next() {
+                results[index] = result
+                if let (index, item) = next.next() { group.addTask { (index, await transform(item)) } }
+            }
+            return items.indices.compactMap { results[$0] }
+        }
     }
 
     private func searchPageResult(_ query: String, localPaths: [String: String]) async -> Result<

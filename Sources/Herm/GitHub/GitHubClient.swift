@@ -52,11 +52,21 @@ private actor GitHubRateLimitGate {
 struct GitHubClient: Sendable {
     private let rateLimit = GitHubRateLimitGate()
     let transport: any GitHubIssueTransport
-    init(transport: any GitHubIssueTransport = URLSession(configuration: .ephemeral)) { self.transport = transport }
+    /// One session for every client so GitHub requests reuse warm TLS connections.
+    static let sharedSession = URLSession(configuration: .ephemeral)
+    init(transport: any GitHubIssueTransport = GitHubClient.sharedSession) { self.transport = transport }
 
-    func request(_ path: String, query: [String: String] = [:], method: String = "GET", body: [String: Any]? = nil)
-        async throws -> Any
-    {
+    func request(
+        _ path: String, query: [String: String] = [:], method: String = "GET", body: [String: Any]? = nil,
+        accept: String = "application/vnd.github+json"
+    ) async throws -> Any {
+        try await response(path, query: query, method: method, body: body, accept: accept).payload
+    }
+
+    private func response(
+        _ path: String, query: [String: String] = [:], method: String = "GET", body: [String: Any]? = nil,
+        accept: String = "application/vnd.github+json"
+    ) async throws -> (payload: Any, http: HTTPURLResponse) {
         try Task.checkCancellation()
         try await rateLimit.check()
         // Compare routes contain `...`; reject traversal segments rather than filename punctuation.
@@ -70,7 +80,7 @@ struct GitHubClient: Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = GitHubCodeHostService.requestTimeout
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue(accept, forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         if let token = await GitHubCodeHostService.localGitHubToken() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -104,9 +114,9 @@ struct GitHubClient: Sendable {
         case 409, 412: throw GitHubRequestError.changed
         default: throw GitHubRequestError.unavailable
         }
-        if data.isEmpty { return [String: Any]() }
+        if data.isEmpty { return ([String: Any](), http) }
         guard data.count <= 16 * 1_024 * 1_024 else { throw GitHubRequestError.malformed }
-        return try JSONSerialization.jsonObject(with: data)
+        return (try JSONSerialization.jsonObject(with: data), http)
     }
 
     func viewerLogin() async -> Result<String, GitHubRequestError> {
@@ -144,7 +154,7 @@ struct GitHubClient: Sendable {
         var rows: [[String: Any]] = []
         var coverage = GitHubCoverage()
         let limit = search ? 10 : 30
-        for page in 1...limit {
+        func parameters(page: Int) -> [String: String] {
             var parameters = query
             parameters["per_page"] = "100"
             parameters["page"] = String(page)
@@ -152,26 +162,91 @@ struct GitHubClient: Sendable {
                 parameters["sort"] = "updated"
                 parameters["order"] = "desc"
             }
-            do {
-                let raw = try await request(path, query: parameters)
-                let payload = raw as? [String: Any]
-                guard let batch = (key.flatMap { payload?[$0] } ?? raw) as? [[String: Any]] else {
-                    throw GitHubRequestError.malformed
+            return parameters
+        }
+        func batch(_ raw: Any) throws -> [[String: Any]] {
+            guard let batch = (key.flatMap { (raw as? [String: Any])?[$0] } ?? raw) as? [[String: Any]] else {
+                throw GitHubRequestError.malformed
+            }
+            return batch
+        }
+        /// Folds one page in; returns false once the listing is exhausted.
+        func append(_ raw: Any) throws -> Bool {
+            let rowsInPage = try batch(raw)
+            let payload = raw as? [String: Any]
+            rows += rowsInPage
+            coverage.loaded = rows.count
+            coverage.total = (payload?["total_count"] as? Int) ?? coverage.total
+            if payload?["incomplete_results"] as? Bool == true { coverage.partial = true }
+            return rowsInPage.count == 100
+        }
+        func keepPartial(after error: Error) throws -> GitHubRawPage {
+            if Task.isCancelled || error is CancellationError { throw CancellationError() }
+            guard !rows.isEmpty else { throw error }
+            coverage.partial = true
+            coverage.message = "Some results could not be loaded. \(error.localizedDescription)"
+            return GitHubRawPage(rows: rows, coverage: coverage)
+        }
+
+        let first = try await response(path, query: parameters(page: 1))
+        guard try append(first.payload) else { return GitHubRawPage(rows: rows, coverage: coverage) }
+        // Once page 1 states the page count, fetch the rest concurrently instead of one round trip at a time.
+        if let last = Self.lastPage(first.http, total: coverage.total, search: search), last > 1 {
+            let pageNumbers = Array(2...min(last, limit))
+            let fetch: @Sendable (Int, [String: String]) async -> PageResult = { [self] page, query in
+                do { return PageResult(page: page, result: .success(try await request(path, query: query))) } catch {
+                    return PageResult(page: page, result: .failure(error))
                 }
-                rows += batch
-                coverage.loaded = rows.count
-                coverage.total = (payload?["total_count"] as? Int) ?? coverage.total
-                if payload?["incomplete_results"] as? Bool == true { coverage.partial = true }
-                if batch.count < 100 { return GitHubRawPage(rows: rows, coverage: coverage) }
-            } catch {
-                if Task.isCancelled || error is CancellationError { throw CancellationError() }
-                guard !rows.isEmpty else { throw error }
-                coverage.partial = true
-                coverage.message = "Some results could not be loaded. \(error.localizedDescription)"
-                return GitHubRawPage(rows: rows, coverage: coverage)
+            }
+            let results = await withTaskGroup(of: PageResult.self) { group in
+                var next = pageNumbers.map { ($0, parameters(page: $0)) }.makeIterator()
+                for _ in 0..<6 {
+                    guard let (page, query) = next.next() else { break }
+                    group.addTask { await fetch(page, query) }
+                }
+                var results: [Int: Result<Any, Error>] = [:]
+                while let fetched = await group.next() {
+                    results[fetched.page] = fetched.result
+                    if let (page, query) = next.next() { group.addTask { await fetch(page, query) } }
+                }
+                return results
+            }
+            for page in pageNumbers {
+                do {
+                    guard try append(try results[page, default: .failure(GitHubRequestError.unavailable)].get()) else {
+                        return GitHubRawPage(rows: rows, coverage: coverage)
+                    }
+                } catch { return try keepPartial(after: error) }
+            }
+        } else {
+            for page in 2...limit {
+                do {
+                    guard try append(try await request(path, query: parameters(page: page))) else {
+                        return GitHubRawPage(rows: rows, coverage: coverage)
+                    }
+                } catch { return try keepPartial(after: error) }
             }
         }
         coverage.partial = coverage.partial || (coverage.total.map { $0 > rows.count } ?? true)
         return GitHubRawPage(rows: rows, coverage: coverage)
+    }
+
+    /// Freshly parsed JSON owned by one page fetch; it is never mutated after parsing.
+    private struct PageResult: @unchecked Sendable {
+        let page: Int
+        let result: Result<Any, Error>
+    }
+
+    /// The final page number from search `total_count` or the REST `Link: rel="last"` header, when known.
+    nonisolated static func lastPage(_ response: HTTPURLResponse, total: Int?, search: Bool) -> Int? {
+        if search, let total { return (total + 99) / 100 }
+        guard let link = response.value(forHTTPHeaderField: "Link") else { return nil }
+        for part in link.split(separator: ",") where part.contains("rel=\"last\"") {
+            guard let start = part.firstIndex(of: "<"), let end = part.firstIndex(of: ">"), start < end,
+                let components = URLComponents(string: String(part[part.index(after: start)..<end]))
+            else { return nil }
+            return components.queryItems?.first { $0.name == "page" }?.value.flatMap(Int.init)
+        }
+        return nil
     }
 }

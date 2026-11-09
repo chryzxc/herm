@@ -148,13 +148,17 @@ struct GitHubLandingService: Sendable {
         let data = try await client.graphQL(
             "query($id:ID!){node(id:$id){... on PullRequest{\(Self.fields)}}}", variables: ["id": id])
         guard let row = data["node"] as? [String: Any] else { throw GitHubRequestError.malformed }
-        return try decode(row, record: record)
+        let mergedHead = row["state"] as? String == "MERGED" ? record.headRevision : nil
+        return try decode(row, record: record, mergedHead: mergedHead)
     }
     private static let fields =
         "id headRefOid state isDraft mergedAt updatedAt mergeable mergeStateStatus reviewDecision viewerCanEnableAutoMerge viewerCanDisableAutoMerge isMergeQueueEnabled isInMergeQueue autoMergeRequest{enabledAt} repository{viewerPermission mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed}"
-    private func decode(_ row: [String: Any], record: PullRequestRecord) throws -> GitHubLandingSnapshot {
-        guard let id = record.nodeID, let head = row["headRefOid"] as? String, head == record.headRevision,
-            let repo = row["repository"] as? [String: Any]
+    private func decode(
+        _ row: [String: Any], record: PullRequestRecord, mergedHead: String? = nil
+    ) throws -> GitHubLandingSnapshot {
+        let head = (row["headRefOid"] as? String) ?? mergedHead
+        guard let id = record.nodeID, let head,
+            mergedHead != nil || head == record.headRevision, let repo = row["repository"] as? [String: Any]
         else { throw GitHubRequestError.changed }
         let methods = GitHubMergeMethod.allCases.filter { method in
             repo[
@@ -180,6 +184,7 @@ struct GitHubLandingService: Sendable {
         confirmed: GitHubLandingSnapshot
     ) async throws -> GitHubLandingSnapshot {
         let fresh = try await snapshot(record)
+        if action == .merge, fresh.state == "MERGED", fresh.mergedAt != nil { return fresh }
         guard fresh == confirmed else { throw GitHubRequestError.changed }
         guard fresh.state == "OPEN", !fresh.draft, fresh.head == record.headRevision else {
             throw GitHubRequestError.changed
@@ -219,8 +224,11 @@ struct GitHubLandingService: Sendable {
         if action == .merge {
             guard let payload = data[operation] as? [String: Any], let row = payload["pullRequest"] as? [String: Any]
             else { throw GitHubRequestError.malformed }
-            let updated = try decode(row, record: record)
-            guard updated.state != "MERGED" || updated.mergedAt != nil else { throw GitHubRequestError.malformed }
+            guard row["state"] as? String == "MERGED", row["mergedAt"] is String else {
+                throw GitHubRequestError.malformed
+            }
+            let updated = try decode(row, record: record, mergedHead: fresh.head)
+            guard updated.mergedAt != nil else { throw GitHubRequestError.malformed }
             return updated
         }
         return try await snapshot(record)

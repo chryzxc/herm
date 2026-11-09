@@ -22,10 +22,10 @@ struct PullRequestInlineReview: View {
                             .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                     }
                     if let source = activeTarget.source(in: document) {
-                        ScrollView(.horizontal) {
-                            Text(DiffDocument.source(source)).dockFont(.body, weight: .regular, design: .monospaced)
-                                .textSelection(.enabled).dockPadding(8)
-                        }.background(Color.dockSurface2)
+                        Text(DiffDocument.source(source)).dockFont(.body, weight: .regular, design: .monospaced)
+                            .textSelection(.enabled).dockPadding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.dockSurface2)
                     }
                     GitHubMarkdownDraft(
                         text: Binding(

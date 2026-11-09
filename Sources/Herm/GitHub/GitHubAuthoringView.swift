@@ -108,16 +108,7 @@ struct GitHubAuthoringMenu<AdditionalActions: View>: View {
                 NSPasteboard.general.setString(reference.webURL.absoluteString, forType: .string)
             }
         } label: {
-            Group {
-                if busy || loading || isAdditionalActionPending {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    DockIcon(.dotsThree, size: 14, color: Color.dockSecondaryText)
-                }
-            }.frame(width: 28, height: 28)
-                .background(
-                    DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).dockSurfaceFill(
-                        Color.dockControlSurface.opacity(0.6)))
+            DockIconButtonLabel(icon: .dotsThree, isBusy: busy || loading || isAdditionalActionPending)
         }
         .disabled(busy || loading)
         .help("GitHub item actions").accessibilityLabel(

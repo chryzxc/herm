@@ -296,6 +296,8 @@ struct PullRequestRecord: Identifiable, Equatable, Sendable {
     let number: Int
     var title: String
     var body: String
+    /// Server-rendered description; carries short-lived signed URLs for private attachments.
+    var bodyHTML: String?
     var author: String
     var authorAvatarURL: URL?
     var headBranch: String
