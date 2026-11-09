@@ -7,6 +7,46 @@ import WebKit
 
 @MainActor
 struct BrowserViewportTests {
+    @Test func mirroredPageCursorDistinguishesControlsTextAndWhitespace() async throws {
+        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        web.loadHTMLString(
+            """
+            <style>body { margin: 0 } p { width: 500px }</style>
+            <button id="button"><span>Button</span></button>
+            <a id="link" href="#"><span>Link</span></a>
+            <input id="input"><p id="text">Readable text</p>
+            <script>window.ready = true</script>
+            """, baseURL: nil)
+        for _ in 0..<200 {
+            if (try? await web.evaluateJavaScript("window.ready")) as? Bool == true { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        _ = try await web.evaluateJavaScript(
+            "window.hermPage = value => window.lastCursor = JSON.parse(value).cursor; void 0")
+        _ = try await web.evaluateJavaScript(AgentBrowser.worldScript)
+        _ = try await web.evaluateJavaScript("window.__hermPage.setUserInput(true)")
+        for (target, expected) in [
+            ("#button span", "default"), ("#link span", "pointer"), ("#input", "text"), ("#text", "text"),
+        ] {
+            let result =
+                try await web.evaluateJavaScript(
+                    """
+                    (() => { const el = document.querySelector('\(target)'); const r = el.getBoundingClientRect();
+                      el.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + 2, clientY: r.top + r.height / 2 }));
+                      return window.lastCursor; })()
+                    """) as? String
+            #expect(result == expected)
+        }
+        let whitespace =
+            try await web.evaluateJavaScript(
+                """
+                (() => { const el = document.querySelector('#text'); const r = el.getBoundingClientRect();
+                  el.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.right - 2, clientY: r.top + r.height / 2 }));
+                  return window.lastCursor; })()
+                """) as? String
+        #expect(whitespace == "default")
+    }
+
     @Test func fitPageReflowsOnEveryPanelResizeWithoutReloading() async throws {
         let web = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
         let host = NSHostingView(rootView: BrowserWebView(web: web))

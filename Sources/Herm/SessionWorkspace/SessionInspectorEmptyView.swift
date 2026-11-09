@@ -50,14 +50,8 @@ struct SessionInspectorEmptyView: View {
                             }
                             .foregroundStyle(Color.dockPrimaryText)
                             .multilineTextAlignment(.leading)
-                            .dockPadding(12)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            .background(Color.dockSurface)
-                            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: DockLayout.controlRadius)
-                                    .strokeBorder(Color.dockBorder, lineWidth: DockLayout.hairline)
-                            }
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            .dockCard(padding: 12)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.dockHover)

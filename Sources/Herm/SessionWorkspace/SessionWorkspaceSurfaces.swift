@@ -587,14 +587,15 @@ struct WorktreeChooserPanel: View {
                     Button {
                         onCreate()
                     } label: {
-                        SwiftUI.Label("New task in worktree…", icon: .plus)
+                        SwiftUI.Label("New worktree task", icon: .plus)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.dockSecondary)
-                    Spacer(minLength: 0)
+                    .help("Create a worktree and start a new chat")
                 }
-                .dockButtonSize(.compact)
+                .dockButtonSize(.standard)
                 .dockPadding(.horizontal, 12)
-                .dockPadding(.vertical, 8)
+                .dockPadding(.vertical, 10)
             }
         }
         .frame(width: 340, height: 440)

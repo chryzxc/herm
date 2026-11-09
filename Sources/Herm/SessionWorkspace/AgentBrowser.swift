@@ -15,7 +15,7 @@ final class AgentBrowser: ObservableObject {
     let profileID: String?
     private static var connectionTask: Task<Void, Never>?
     private static let world = "herm"
-    private static let worldScript =
+    static let worldScript =
         BrowserAnnotation.script + """
 
             (() => {
@@ -62,7 +62,23 @@ final class AgentBrowser: ObservableObject {
               addEventListener('pointermove', (e) => {
                 if (!userInput || !(e.target instanceof Element)) return;
                 let next = getComputedStyle(e.target).cursor.split(',').pop().trim();
-                if (next === 'auto') next = editable(e.target) || [...e.target.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) ? 'text' : 'default';
+                if (next === 'auto') {
+                  const control = e.target.closest('button, select, input, option, [role="button"], [role="link"]');
+                  const link = e.target.closest('a[href]');
+                  if (editable(e.target)) next = 'text';
+                  else if (control) next = 'default';
+                  else if (link) next = 'pointer';
+                  else {
+                    const caret = document.caretRangeFromPoint(e.clientX, e.clientY);
+                    if (caret?.startContainer.nodeType === Node.TEXT_NODE && caret.startContainer.length) {
+                      const offset = Math.min(caret.startOffset, caret.startContainer.length - 1);
+                      caret.setStart(caret.startContainer, offset);
+                      caret.setEnd(caret.startContainer, offset + 1);
+                      const r = caret.getBoundingClientRect();
+                      next = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom ? 'text' : 'default';
+                    } else next = 'default';
+                  }
+                }
                 if (next !== cursor) post({ type: 'cursor', cursor: (cursor = next) });
               }, true);
               addEventListener('focusin', (e) => { if (editable(e.target)) post({ type: 'field', rect: rect(e.target) }); }, true);
@@ -241,12 +257,7 @@ final class AgentBrowser: ObservableObject {
     private var themeCancellable: AnyCancellable?
     private var navigationRequestID = UUID()
     private var historyRequestID = UUID()
-    /// The cookies this Chrome last agreed on with the shared jar; nil until restored.
-    private var loginBaseline: BrowserCookieJar?
-    /// Bumped whenever the jar pushes into this Chrome, so an in-flight read can't undo it.
-    private var loginGeneration = 0
-    private var loginSyncTask: Task<Void, Never>?
-    private var loginsCancellable: AnyCancellable?
+    private let cookieTransfers = BrowserCookieTransfers()
 
     /// The Hermes session whose tab is on screen; each remembers the tab it last showed.
     private var shownSession: String?
@@ -268,10 +279,6 @@ final class AgentBrowser: ObservableObject {
                 guard let self, self.annotating else { return }
                 self.applyAnnotating()
             }
-        loginsCancellable = SharedBrowserLogins.shared.changes.sink { [weak self] origin, change in
-            guard let self, origin != ObjectIdentifier(self) else { return }
-            self.receiveLogins(change)
-        }
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -303,12 +310,7 @@ final class AgentBrowser: ObservableObject {
                     at: Self.downloadsFolder, withIntermediateDirectories: true)
                 cdp.fire(
                     "Browser.setDownloadBehavior", ["behavior": "allow", "downloadPath": Self.downloadsFolder.path])
-                // A Keychain prompt must never hold the page: unlocked later, `.prepared` restores sign-ins.
-                if SharedBrowserLogins.shared.isPrepared {
-                    await restoreLogins(cdp)
-                } else {
-                    Task { await SharedBrowserLogins.shared.prepare() }
-                }
+                try await applyPendingSignOut(cdp)
                 _ = try await cdp.send("Target.setDiscoverTargets", ["discover": true])
                 let infos = try await cdp.send("Target.getTargets")["targetInfos"] as? [[String: Any]] ?? []
                 try Task.checkCancellation()
@@ -389,9 +391,8 @@ final class AgentBrowser: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { cdp.close() }
         }
         cdp = nil
-        loginSyncTask?.cancel()
-        loginSyncTask = nil
-        loginBaseline = nil
+        cookieTransfers.invalidate()
+        webKitSignIns.removeAll()
         lastFrame = nil
         process?.terminate()
         process = nil
@@ -441,36 +442,6 @@ final class AgentBrowser: ObservableObject {
             let count = orphans.count
             Task { @MainActor in DebugLog.write("agent browser: reaped \(count) orphaned Chrome processes") }
         }
-        pruneStaleProfiles(psOutput: output)
-    }
-
-    /// Chrome rewrites a profile folder on every launch, so one untouched for a week belongs to a
-    /// removed Hermes profile or an older per-session layout. Shared sign-ins live in the root
-    /// (`SharedLogins.sealed`) and are pushed back into any profile that is recreated.
-    nonisolated static func pruneStaleProfiles(psOutput: String) {
-        let fm = FileManager.default
-        let root = profileRoot
-        let entries = ((try? fm.contentsOfDirectory(atPath: root.path)) ?? []).compactMap { name in
-            (try? fm.attributesOfItem(atPath: root.appendingPathComponent(name).path)[.modificationDate] as? Date)
-                .map { (name: name, modified: $0) }
-        }
-        let stale = staleProfiles(entries, psOutput: psOutput, profileRoot: root.path, now: Date())
-        for name in stale { try? fm.removeItem(at: root.appendingPathComponent(name, isDirectory: true)) }
-        if !stale.isEmpty {
-            let count = stale.count
-            Task { @MainActor in DebugLog.write("agent browser: pruned \(count) unused browser profiles") }
-        }
-    }
-
-    /// Profile folders (64-hex `browserDirectory` names) unused for 7 days and not open in a live Chrome.
-    nonisolated static func staleProfiles(
-        _ entries: [(name: String, modified: Date)], psOutput: String, profileRoot: String, now: Date
-    ) -> [String] {
-        entries.filter { entry in
-            entry.name.count == 64 && entry.name.allSatisfy(\.isHexDigit)
-                && now.timeIntervalSince(entry.modified) > 7 * 86_400
-                && !psOutput.contains("--user-data-dir=\(profileRoot)/\(entry.name)")
-        }.map(\.name)
     }
 
     /// Top-level Chromes (parent is launchd) on a Herm agent-browser profile. Helpers die with them.
@@ -780,7 +751,6 @@ final class AgentBrowser: ObservableObject {
                 pages[index].url = url
             }
             refreshHistory()
-            scheduleLoginSync()
         case "Page.javascriptDialogOpening":
             dialog = Dialog(
                 type: params["type"] as? String ?? "alert", message: params["message"] as? String ?? "",
@@ -860,61 +830,51 @@ final class AgentBrowser: ObservableObject {
         consoleErrors = Array((consoleErrors + [String(line.prefix(2000))]).suffix(50))
     }
 
-    // MARK: Shared logins
+    // MARK: Profile sign-ins
 
-    /// Sign Out of All Sites count this profile has applied; a closed profile catches up on reopen.
-    private var signOutsFile: URL {
-        Self.profileRoot.appendingPathComponent(profileDirectory, isDirectory: true)
-            .appendingPathComponent("HermSignOuts")
-    }
-
-    private func recordSignOuts(_ count: Int) {
-        try? Data("\(count)".utf8).write(to: signOutsFile, options: .atomic)
-    }
-
-    /// The jar is authoritative for shared sites: a Chrome reopened on an old profile picks up
-    /// their sign-ins and sign-outs since. This session's other sign-ins stay its own.
-    /// Pushes are fire-only, so later ones stay ordered after these.
-    private func restoreLogins(_ cdp: CDPConnection) async {
-        guard await SharedBrowserLogins.shared.prepare(), self.cdp === cdp, !Task.isCancelled else { return }
-        let jar = SharedBrowserLogins.shared.jar
-        let applied = (try? String(contentsOf: signOutsFile, encoding: .utf8)).flatMap { Int($0) } ?? 0
-        var current = BrowserCookieJar()
-        if applied < jar.signOuts {
-            cdp.fire("Storage.clearCookies")
-        } else {
-            let result = try? await cdp.send("Storage.getCookies")
-            guard self.cdp === cdp, !Task.isCancelled else { return }
-            current = BrowserCookieJar(
-                (result?["cookies"] as? [[String: Any]] ?? []).compactMap(BrowserCookie.init(cdp:)))
+    private func applyPendingSignOut(_ cdp: CDPConnection) async throws {
+        try await BrowserSignOutState.shared.apply(to: profileDirectory) {
+            _ = try await cdp.send("Storage.clearCookies")
         }
-        recordSignOuts(jar.signOuts)
-        // Read again: a change shared during the await was skipped while there was no baseline.
-        let latest = SharedBrowserLogins.shared.jar
-        let changes = BrowserCookieJar(current.cookies.values.filter(latest.shares)).changes(to: latest)
-        Self.push(changes, to: cdp)
-        current.apply(changes)
-        loginBaseline = current
+    }
+
+    func clearSignIns() async throws {
+        await cookieTransfers.invalidateAndDrain()
+        webKitSignIns.removeAll()
+        guard let cdp else { return }
+        try await applyPendingSignOut(cdp)
     }
 
     /// New tabs are WebKit with their own cookie store: carry this browser's sign-in for `url` over first.
     func copySignIns(for url: URL, into store: WKHTTPCookieStore) async {
-        guard let host = Self.signInHost(url), state == .running, let cdp,
-            let result = try? await cdp.send("Storage.getCookies")
+        guard !BrowserSignOutState.shared.isResetting,
+            let host = Self.signInHost(url), state == .running, let cdp
+        else { return }
+        let transfer = cookieTransfers.begin()
+        defer { cookieTransfers.finish(transfer) }
+        guard let result = try? await cdp.send("Storage.getCookies"),
+            cookieTransfers.isValid(transfer), self.cdp === cdp
         else { return }
         for cookie in (result["cookies"] as? [[String: Any]] ?? []).compactMap(BrowserCookie.init(cdp:))
         where cookie.matches(host: host) {
+            guard cookieTransfers.isValid(transfer), self.cdp === cdp else { return }
             if let http = cookie.httpCookie { await store.setCookie(http) }
         }
-        webKitSignIns[host] = await Self.cookies(for: host, in: store)
+        let current = await Self.cookies(for: host, in: store)
+        guard cookieTransfers.isValid(transfer), self.cdp === cdp else { return }
+        webKitSignIns[host] = current
     }
 
     /// The way back: what a new tab's page changed on its site (signing in or out) reaches this
     /// browser. Diffed against what the tab last had, so a cookie it never got is not a sign-out.
     func receiveSignIns(for url: URL, from store: WKHTTPCookieStore) async {
-        guard let host = Self.signInHost(url), state == .running, let cdp else { return }
+        guard !BrowserSignOutState.shared.isResetting,
+            let host = Self.signInHost(url), state == .running, let cdp
+        else { return }
+        let transfer = cookieTransfers.begin()
+        defer { cookieTransfers.finish(transfer) }
         let current = await Self.cookies(for: host, in: store)
-        guard self.cdp === cdp else { return }
+        guard cookieTransfers.isValid(transfer), self.cdp === cdp else { return }
         let changes = (webKitSignIns[host] ?? BrowserCookieJar()).changes(to: current)
         webKitSignIns[host] = current
         Self.push(changes, to: cdp)
@@ -931,63 +891,10 @@ final class AgentBrowser: ObservableObject {
         return BrowserCookieJar(cookies.filter { $0.matches(host: host) })
     }
 
-    /// Shares (or stops sharing) a site's sign-in with every session, from this browser's cookies.
-    func toggleSharing(_ site: String) {
-        let logins = SharedBrowserLogins.shared
-        guard !logins.jar.sites.contains(site) else { return logins.stopSharing(site) }
-        let origin = ObjectIdentifier(self)
-        guard let cdp else { return logins.share(site, cookies: [], from: origin) }
-        Task {
-            let result = try? await cdp.send("Storage.getCookies")
-            let cookies = (result?["cookies"] as? [[String: Any]] ?? []).compactMap(BrowserCookie.init(cdp:))
-            SharedBrowserLogins.shared.share(site, cookies: cookies, from: origin)
-        }
-    }
-
     /// One cookie per call: Chrome rejects a whole batch over a single bad cookie.
     private static func push(_ changes: BrowserCookieJar.Changes, to cdp: CDPConnection) {
         for param in changes.removed.map({ $0.cdpParam(expired: true) }) + changes.updated.map({ $0.cdpParam() }) {
             cdp.fire("Storage.setCookies", ["cookies": [param]])
-        }
-    }
-
-    private func receiveLogins(_ change: SharedBrowserLogins.Change) {
-        guard let cdp else { return }
-        if case .prepared = change {
-            guard loginBaseline == nil else { return }
-            Task { [weak self] in await self?.restoreLogins(cdp) }
-            return
-        }
-        loginGeneration += 1
-        switch change {
-        case .updated(let changes):
-            guard var baseline = loginBaseline else { return }
-            Self.push(changes, to: cdp)
-            baseline.apply(changes)
-            loginBaseline = baseline
-        case .cleared:
-            cdp.fire("Storage.clearCookies")
-            loginBaseline = BrowserCookieJar()
-            recordSignOuts(SharedBrowserLogins.shared.jar.signOuts)
-        case .prepared: break
-        }
-    }
-
-    /// After each top-level load, share what this page's sign-in (or sign-out) changed.
-    private func scheduleLoginSync() {
-        loginSyncTask?.cancel()
-        loginSyncTask = Task {
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled, let cdp, loginBaseline != nil else { return }
-            let generation = loginGeneration
-            guard let result = try? await cdp.send("Storage.getCookies"), !Task.isCancelled, self.cdp === cdp,
-                let baseline = loginBaseline
-            else { return }
-            guard loginGeneration == generation else { return scheduleLoginSync() }
-            let current = BrowserCookieJar(
-                (result["cookies"] as? [[String: Any]] ?? []).compactMap(BrowserCookie.init(cdp:)))
-            loginBaseline = current
-            SharedBrowserLogins.shared.record(baseline.changes(to: current), from: ObjectIdentifier(self))
         }
     }
 

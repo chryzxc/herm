@@ -5,7 +5,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SessionInspector: View {
-    @ObservedObject var model: DockModel
+    /// Not observed: activity ticks would redraw every tab at up to 10 Hz while
+    /// scrolling the chat. The inspector redraws for `inspectorPresentationChanges`.
+    let model: DockModel
+    @State private var modelRevision = 0
     @ObservedObject var botMode: BotModeModel
     @ObservedObject var control: ControlCenterModel
     @ObservedObject var workflow: DeveloperWorkflowModel
@@ -184,6 +187,8 @@ struct SessionInspector: View {
     }
 
     var body: some View {
+        let _ = HermPerformanceRecorder.countBody("SessionInspector")
+        let _ = modelRevision
         VStack(spacing: 0) {
             if showsHeader {
                 inspectorHeader
@@ -285,6 +290,7 @@ struct SessionInspector: View {
         } message: {
             Text("The foreground commands will stop. Other terminal groups stay open.")
         }
+        .onReceive(model.inspectorPresentationChanges) { _ in modelRevision &+= 1 }
         .task(id: WorkspaceIdentity.session(model)) {
             restoringPresentation = true
             let messageSelection = messageTabs.selection[WorkspaceIdentity.session(model)]

@@ -152,7 +152,7 @@ struct SessionBrowserView: View {
     @AppStorage("sessionInspector.browserViewport") private var viewportRaw = 0
     @ObservedObject private var browser: BrowserController
     @ObservedObject private var agent: AgentBrowser
-    @ObservedObject private var logins = SharedBrowserLogins.shared
+    @ObservedObject private var signOut = BrowserSignOutState.shared
     @State private var field = ""
     @State private var sendingPage = false
     @FocusState private var isEditingAddress: Bool
@@ -215,15 +215,13 @@ struct SessionBrowserView: View {
                     if navigation.isLoading { DockShimmerTrack(tone: .working, muted: true) }
                 }
 
-            if let error = navigation.error {
-                navigationFailure(error)
-            } else if isPrimary, case .failed(let message) = agent.state {
-                offlineNotice(message)
-            }
-
             pageContent
                 .overlay(alignment: .top) {
-                    if isPrimary, agent.handoffFailed {
+                    if let error = navigation.error {
+                        navigationFailure(error)
+                    } else if isPrimary, case .failed(let message) = agent.state {
+                        offlineNotice(message)
+                    } else if isPrimary, agent.handoffFailed {
                         HStack(spacing: 8) {
                             DockStatusDot(tone: .attention, size: 7)
                             Text("Hermes couldn't connect to this browser. Check the Hermes connection, then retry.")
@@ -239,7 +237,6 @@ struct SessionBrowserView: View {
                     }
                 }
         }
-        .task { await logins.prepare() }
         .background {
             Button("Focus browser address") { isEditingAddress = true }
                 .keyboardShortcut("l", modifiers: .command).hidden().accessibilityHidden(true)
@@ -431,26 +428,11 @@ struct SessionBrowserView: View {
                 sendConsole()
             }
             .disabled(consoleErrors.isEmpty)
-            if showsAgent, let site = BrowserCookieJar.site(of: pageURL) {
-                DockMenuCheckRow(title: "Share Sign-In for \(site)", isSelected: logins.jar.sites.contains(site)) {
-                    agent.toggleSharing(site)
-                }
-                .help("Let every session's agent browser use this site's sign-in")
-                .disabled(!logins.isPrepared)
+            Button("Sign Out of All Sites", icon: .signOut) {
+                Task { await SessionBrowserStore.shared.signOutAll() }
             }
-            if !logins.jar.sites.isEmpty {
-                DockMenu("Shared Sign-Ins", icon: .users) {
-                    ForEach(logins.jar.sites.sorted(), id: \.self) { site in
-                        Button("Stop Sharing \(site)", icon: .x) { logins.stopSharing(site) }
-                    }
-                }
-            }
-            if !logins.isPrepared {
-                Button("Retry Shared Sign-Ins", icon: .arrowClockwise) { Task { await logins.prepare() } }
-            }
-            Button("Sign Out of All Sites", icon: .signOut) { SharedBrowserLogins.shared.clear() }
-                .disabled(!logins.isPrepared)
-                .help("Clear the cookies every session's browser shares")
+            .disabled(signOut.isResetting)
+            .help("Clear sign-ins from every Herm browser profile")
             if showsAgent {
                 DockMenuSection("Agent Tabs") {
                     ForEach(agent.pages) { page in

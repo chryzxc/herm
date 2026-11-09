@@ -57,6 +57,17 @@ final class SessionBrowserWorkspace: ObservableObject {
         return store
     }
 
+    static func clearSignIns() async {
+        let identifiers = await WKWebsiteDataStore.allDataStoreIdentifiers
+        for id in identifiers where isDataStoreID(id) {
+            await WKWebsiteDataStore(forIdentifier: id).removeData(
+                ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+        }
+        for store in dataStores.values {
+            await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+        }
+    }
+
     init(key: SessionBrowserKey, agent: AgentBrowser? = nil) {
         self.key = key
         self.agent = agent ?? AgentBrowser(profileID: key.profileID)
@@ -147,6 +158,24 @@ final class SessionBrowserStore: ObservableObject {
     private var agents: [String?: AgentBrowser] = [:]
     private var subscriptions: [SessionBrowserKey: AnyCancellable] = [:]
     private var activeKey: SessionBrowserKey?
+
+    func signOutAll() async {
+        do {
+            try await BrowserSignOutState.shared.reset {
+                var failure: (any Error)?
+                for agent in Array(self.agents.values) {
+                    do { try await agent.clearSignIns() } catch { failure = failure ?? error }
+                }
+                await SessionBrowserWorkspace.clearSignIns()
+                if let failure { throw failure }
+            }
+        } catch {
+            DockActionErrorCenter.shared.report(
+                "Browser sign-out incomplete",
+                message: "Some sign-ins could not be cleared. Retry Sign Out of All Sites. "
+                    + HermesDiagnosticsService.safeSummary(error.localizedDescription))
+        }
+    }
 
     func workspace(for key: SessionBrowserKey) -> SessionBrowserWorkspace {
         if let existing = workspaces[key] { return existing }

@@ -133,22 +133,6 @@ struct SessionBrowserTests {
         #expect(AgentBrowser.orphanPIDs(psOutput: ps, profileRoot: root) == [3099])
     }
 
-    @Test func prunesOnlyWeekOldUnusedProfileFolders() {
-        let root = "/Users/me/Library/Application Support/Herm/AgentBrowser"
-        let now = Date()
-        let old = now.addingTimeInterval(-8 * 86_400)
-        let (stale, live, fresh) = (
-            String(repeating: "a", count: 64), String(repeating: "b", count: 64),
-            String(repeating: "c", count: 64)
-        )
-        let entries = [
-            (name: stale, modified: old), (name: live, modified: old), (name: fresh, modified: now),
-            (name: "SharedLogins.sealed", modified: old), (name: "Default", modified: old),
-        ]
-        let ps = "  3099     1 Google Chrome --user-data-dir=\(root)/\(live) --no-first-run"
-        #expect(AgentBrowser.staleProfiles(entries, psOutput: ps, profileRoot: root, now: now) == [stale])
-    }
-
     @Test func botProfilesHaveSeparateBrowserIdentities() {
         let a = SessionBrowserKey(profileID: "one", sessionID: "chat")
         let b = SessionBrowserKey(profileID: "two", sessionID: "chat")
