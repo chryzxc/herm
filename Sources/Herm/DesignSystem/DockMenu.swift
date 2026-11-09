@@ -284,7 +284,14 @@ struct DockMenuPanel<Content: View>: View {
         }
         .onPreferenceChange(DockMenuHeightKey.self) { contentHeight = $0 }
         .frame(height: contentHeight > 0 ? min(contentHeight, 440) : nil)
-        .background {
+        .dockMenuSurface()
+    }
+}
+
+extension View {
+    /// The raised popover surface `DockMenu` uses; content popovers beside menus share it.
+    func dockMenuSurface() -> some View {
+        background {
             if DockThemeStyle.current.material == .glass {
                 Color.clear.dockLiquidGlass(Rectangle(), elevated: true)
             } else {

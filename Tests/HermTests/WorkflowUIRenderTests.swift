@@ -104,7 +104,8 @@ struct WorkflowUIRenderTests {
             noteState.revisionNotes.register(path: noteDocument.path, identity: "refreshed-revision")
             noteState.note = "Trim whitespace before checking for an empty title."
             try await capture(
-                RevisionNoteEditor(state: noteState), root: root, name: "revision-note-\(raw)", width: 460, height: nil)
+                RevisionNotePopover(state: noteState, close: {}), root: root, name: "revision-note-\(raw)", width: 340,
+                height: nil)
             try await capture(
                 ReviewGuideView(
                     coordinator: ReviewGuideCoordinator(), model: model,

@@ -42,21 +42,28 @@ final class DiffReviewState: ObservableObject {
         notesSubscription = self.revisionNotes.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
     @Published private(set) var editingNoteID: UUID?
+    /// Bumped per begin/edit so a closing popover only discards the draft it opened.
+    private(set) var noteGeneration = 0
 
     func beginNote(selection: DiffSelection, documentID: String, path: String, comparison: DiffComparisonIdentity?) {
         guard selection.first != nil else {
             contextError = "Select a source line before adding a revision note."
             return
         }
+        noteGeneration += 1
         pendingNote = RevisionNote(
             documentID: documentID, path: path, selection: selection, text: "", comparison: comparison)
         note = ""
         editingNoteID = nil
     }
     func editNote(_ value: RevisionNote) {
+        noteGeneration += 1
         pendingNote = value
         editingNoteID = value.id
         note = value.text
+    }
+    func cancelNote(generation: Int) {
+        if generation == noteGeneration { cancelNote() }
     }
     func cancelNote() {
         pendingNote = nil
@@ -80,12 +87,16 @@ final class DiffReviewState: ObservableObject {
             notes[index].text = value.text
         } else {
             guard notes.count < 100 else {
-                noteError = "The review tray is full. Send or remove notes before adding another."
+                noteError = "You have 100 notes. Send or remove some before adding another."
                 return false
             }
             notes.append(value)
         }
         cancelNote()
         return true
+    }
+    func deleteEditingNote() {
+        if let editingNoteID { notes.removeAll { $0.id == editingNoteID } }
+        cancelNote()
     }
 }

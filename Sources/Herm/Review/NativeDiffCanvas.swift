@@ -12,13 +12,30 @@ struct NativeDiffCanvas: NSViewRepresentable {
     var viewport: DiffViewportState? = nil
     let onNote: ((DiffSelection) -> Void)?
     let onComment: ((DiffLine) -> Void)?
+    var noteMarks: [DiffNoteMark] = []
+    var onEditNote: ((UUID) -> Bool)? = nil
+    var noteEditor: ((@escaping () -> Void) -> DiffNoteEditor)? = nil
     func makeNSView(context: Context) -> DiffCanvasContainer { DiffCanvasContainer() }
     func updateNSView(_ view: DiffCanvasContainer, context: Context) {
         view.update(
             document, split: split, wraps: wraps, wordDiffs: wordDiffs, findRequest: findRequest, reveal: reveal,
             viewport: viewport,
-            onNote: onNote, onComment: onComment, textScale: workspaceScale)
+            onNote: onNote, onComment: onComment, noteMarks: noteMarks, onEditNote: onEditNote, noteEditor: noteEditor,
+            textScale: workspaceScale)
     }
+}
+
+/// A saved revision note drawn on the diff rows it captured.
+struct DiffNoteMark: Equatable {
+    let id: UUID
+    let lineIndexes: Set<Int>
+    let side: String?
+}
+
+/// Popover content plus what to do if it closes without saving (click-away, Esc).
+struct DiffNoteEditor {
+    let view: AnyView
+    let dismissed: () -> Void
 }
 
 final class DiffCanvasContainer: NSView {
@@ -124,7 +141,9 @@ final class DiffCanvasContainer: NSView {
     func update(
         _ document: DiffDocument, split: Bool, wraps: Bool, wordDiffs: Bool, findRequest: Int, reveal: DiffSearchMatch?,
         viewport: DiffViewportState?,
-        onNote: ((DiffSelection) -> Void)?, onComment: ((DiffLine) -> Void)?, textScale: CGFloat = 1
+        onNote: ((DiffSelection) -> Void)?, onComment: ((DiffLine) -> Void)?,
+        noteMarks: [DiffNoteMark] = [], onEditNote: ((UUID) -> Bool)? = nil,
+        noteEditor: ((@escaping () -> Void) -> DiffNoteEditor)? = nil, textScale: CGFloat = 1
     ) {
         self.textScale = textScale
         let split = split && document.supportsSplitView
@@ -135,6 +154,9 @@ final class DiffCanvasContainer: NSView {
             for case let scroll as NSScrollView in stack.arrangedSubviews {
                 guard let text = scroll.documentView as? DiffSelectableTextView else { continue }
                 text.onNote = onNote
+                text.noteEditor = noteEditor
+                text.onEditNote = onEditNote
+                text.noteMarks = noteMarks
                 text.onComment = onComment
                 if let ruler = scroll.verticalRulerView {
                     ruler.ruleThickness = onComment == nil ? 76 : 100
@@ -181,6 +203,9 @@ final class DiffCanvasContainer: NSView {
                 text.lines = column
                 text.side = split ? (columnIndex == 0 ? "LEFT" : "RIGHT") : nil
                 text.onNote = onNote
+                text.noteEditor = noteEditor
+                text.onEditNote = onEditNote
+                text.noteMarks = noteMarks
                 text.onComment = onComment
                 text.frame = NSRect(
                     x: 0, y: 0, width: max(100, bounds.width / CGFloat(columns.count) - 90), height: 100)
@@ -205,6 +230,7 @@ final class DiffCanvasContainer: NSView {
                 text.textStorage?.addAttributes(
                     codeAttributes,
                     range: NSRange(location: 0, length: (text.string as NSString).length))
+                text.applyNoteMarks()
                 let clip = DiffSyncedClipView()
                 clip.onScroll = { [weak viewport] point in viewport?.record(point, column: columnIndex) }
                 scroll.contentView = clip
@@ -282,6 +308,7 @@ final class DiffCanvasContainer: NSView {
                             offset += length + 1
                         }
                         text.sizeToFit()
+                        text.applyNoteMarks()
                     })
             }
         }
@@ -323,16 +350,96 @@ private final class DiffSelectableTextView: NSTextView {
     var onNote: ((DiffSelection) -> Void)?
     var onComment: ((DiffLine) -> Void)?
     private var captured = DiffSelection(lines: [])
+    var noteEditor: ((@escaping () -> Void) -> DiffNoteEditor)?
+    var onEditNote: ((UUID) -> Bool)?
+    var noteMarks: [DiffNoteMark] = [] { didSet { if noteMarks != oldValue { applyNoteMarks() } } }
+    private var notePopover: NSPopover?
+    private var noteDismissed: (() -> Void)?
+
+    func noteMark(atRow row: Int) -> DiffNoteMark? {
+        guard lines.indices.contains(row), let line = lines[row] else { return nil }
+        return noteMarks.first {
+            $0.lineIndexes.contains(line.index) && ($0.side == nil || side == nil || $0.side == side)
+        }
+    }
+    func characterRange(ofRow row: Int) -> NSRange {
+        let length = (string as NSString).length
+        let start = min(lineOffsets.starts[row], length)
+        let end = row + 1 < lineOffsets.starts.count ? lineOffsets.starts[row + 1] - 1 : length
+        return NSRange(location: start, length: max(0, min(end, length) - start))
+    }
+    /// Annotated rows carry the annotator's draft tint; temporary attributes sit above the diff tint.
+    func applyNoteMarks() {
+        guard let layoutManager else { return }
+        layoutManager.removeTemporaryAttribute(
+            .backgroundColor, forCharacterRange: NSRange(location: 0, length: (string as NSString).length))
+        let tint = NSColor(Color.dockAccent).withAlphaComponent(0.18)
+        for row in lines.indices where noteMark(atRow: row) != nil {
+            layoutManager.addTemporaryAttribute(
+                .backgroundColor, value: tint, forCharacterRange: characterRange(ofRow: row))
+        }
+        enclosingScrollView?.verticalRulerView?.needsDisplay = true
+    }
+
+    private func captureSelection() {
+        let rows = DiffTextSelection.rowRange(in: string, selection: selectedRange())
+        captured = DiffSelection(
+            lines: lines.enumerated().compactMap { index, line in rows.contains(index) ? line : nil }, side: side)
+    }
+    /// NSTextView tracks the whole drag inside `super.mouseDown`, so the selection is final once it
+    /// returns. Highlighting opens the note popover, matching the markdown/text annotator.
+    /// A plain click on an annotated row reopens its note.
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        let range = selectedRange()
+        if range.length > 0 {
+            if onNote != nil {
+                captureSelection()
+                addNote()
+            }
+            return
+        }
+        guard event.clickCount == 1, !lines.isEmpty else { return }
+        let row = lineOffsets.row(containing: range.location)
+        guard let mark = noteMark(atRow: row), onEditNote?(mark.id) == true else { return }
+        let last = lines.indices.last { noteMark(atRow: $0) == mark } ?? row
+        presentNotePopover(at: lineOffsets.starts[last])
+    }
+    private func presentNotePopover(at index: Int) {
+        // Detach first so closing the previous popover cannot discard the note this one edits.
+        let previous = notePopover
+        notePopover = nil
+        previous?.close()
+        let length = (string as NSString).length
+        guard let noteEditor, let layoutManager, length > 0, window != nil else { return }
+        let last = layoutManager.lineFragmentUsedRect(
+            forGlyphAt: layoutManager.glyphIndexForCharacter(at: min(max(0, index), length - 1)), effectiveRange: nil)
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        let editor = noteEditor { [weak popover] in popover?.close() }
+        noteDismissed = editor.dismissed
+        let hosting = NSHostingController(rootView: editor.view.dockPresentationSurface())
+        hosting.sizingOptions = .preferredContentSize
+        popover.contentViewController = hosting
+        popover.delegate = self
+        notePopover = popover
+        popover.show(
+            relativeTo: last.offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y), of: self,
+            preferredEdge: .maxY)
+    }
     override func menu(for event: NSEvent) -> NSMenu? {
+        // AppKit may re-select the word under the pointer; notes act on the highlighted code.
+        let highlighted = selectedRange()
         let menu = super.menu(for: event) ?? NSMenu()
-        if selectedRange().length == 0 {
+        if highlighted.length > 0 {
+            setSelectedRange(highlighted)
+        } else if selectedRange().length == 0 {
             setSelectedRange(
                 NSRange(location: characterIndexForInsertion(at: convert(event.locationInWindow, from: nil)), length: 0)
             )
         }
-        let rows = DiffTextSelection.rowRange(in: string, selection: selectedRange())
-        captured = DiffSelection(
-            lines: lines.enumerated().compactMap { index, line in rows.contains(index) ? line : nil }, side: side)
+        captureSelection()
         if onNote != nil {
             let item = NSMenuItem(title: "Add revision note", action: #selector(addNote), keyEquivalent: "")
             item.target = self
@@ -351,12 +458,30 @@ private final class DiffSelectableTextView: NSTextView {
         guard type == .string else { return super.writeSelection(to: pasteboard, type: type) }
         return pasteboard.setString(DiffTextSelection.source(lines: lines, range: selectedRange()), forType: .string)
     }
-    @objc private func addNote() { onNote?(captured) }
+    /// Uses the selection captured by the menu or `mouseDown`; the menu may move the caret before it fires.
+    @objc private func addNote() {
+        guard captured.first != nil else { return }
+        onNote?(captured)
+        // Anchor under the selection's last line; a right-click selection can be empty.
+        let range = selectedRange()
+        presentNotePopover(at: max(NSMaxRange(range) - 1, range.location))
+    }
     @objc private func commentOnLine() {
         if var first = captured.first {
             if side == "LEFT" { first.newLine = nil } else if side == "RIGHT" { first.oldLine = nil }
             onComment?(first)
         }
+    }
+}
+
+extension DiffSelectableTextView: NSPopoverDelegate {
+    /// Click-away or Esc discards the draft, like the annotator; the selection would sit on top of it.
+    func popoverDidClose(_ notification: Notification) {
+        guard (notification.object as? NSPopover) === notePopover else { return }
+        notePopover = nil
+        noteDismissed?()
+        noteDismissed = nil
+        setSelectedRange(NSRange(location: selectedRange().location, length: 0))
     }
 }
 
@@ -406,6 +531,13 @@ private final class DiffLineRuler: NSRulerView {
                         : "\(line?.oldLine.map(String.init) ?? "")  \(line?.newLine.map(String.init) ?? "")"
                 let label = "\(sign) \(numbers)" as NSString
                 label.draw(at: NSPoint(x: 4, y: y), withAttributes: attributes)
+                if text.noteMark(atRow: index) != nil {
+                    let glyphs = manager.glyphRange(
+                        forCharacterRange: text.characterRange(ofRow: index), actualCharacterRange: nil)
+                    let height = max(frame.height, manager.boundingRect(forGlyphRange: glyphs, in: container).height)
+                    NSColor(Color.dockAccent).setFill()
+                    NSRect(x: 0, y: y, width: 3, height: height).fill()
+                }
                 if let line, text.onComment != nil, line.oldLine != nil || line.newLine != nil {
                     visibleComments.insert(line.index)
                     let button = commentButtons[line.index] ?? DiffLineCommentButton()

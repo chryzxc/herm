@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Shared source identity for the editor and the private review tray.
+/// Shared source identity for the note popover and the notes list.
 struct RevisionNoteLocation: View {
     let note: RevisionNote
     var body: some View {
@@ -30,96 +30,105 @@ struct RevisionNoteStaleLabel: View {
     }
 }
 
-struct RevisionNoteExcerpt: View {
-    let note: RevisionNote
-    private var lines: [DiffLine] { note.selection.lines.filter { $0.kind != .hunk } }
+/// Toolbar entry for private revision notes: an icon with a count badge, shown only once a
+/// note exists. The list popover sends every note to chat as one attachment.
+struct RevisionNotesButton: View {
+    @ObservedObject var store: RevisionNoteStore
+    let canSend: Bool
+    let send: () -> Void
+    @State private var showingList = false
+    private var label: String { store.notes.count == 1 ? "1 revision note" : "\(store.notes.count) revision notes" }
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView(.vertical) {
-                HStack(alignment: .top, spacing: DockSpacing.group) {
-                    Text(lines.map { String($0.newLine ?? $0.oldLine ?? 0) }.joined(separator: "\n"))
-                        .foregroundStyle(Color.dockMetadataText).textSelection(.disabled)
-                        .frame(minWidth: 20, alignment: .trailing)
-                    Text(note.selection.excerpt).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
+        if !store.notes.isEmpty || store.error != nil {
+            Button {
+                showingList.toggle()
+            } label: {
+                PullRequestReviewToolbarIcon(name: .notePencil, accessibilityLabel: label, isSelected: showingList)
+                    .overlay(alignment: .topTrailing) {
+                        if !store.notes.isEmpty {
+                            Text("\(store.notes.count)")
+                                .dockFont(.compactStatus, weight: .semibold).monospacedDigit()
+                                .foregroundStyle(Color.dockOnAccentText)
+                                .frame(minWidth: 7).dockPill(tint: Color.dockAccent, solid: true, compact: true)
+                                .offset(x: 5, y: -4).allowsHitTesting(false)
+                        }
+                    }
+            }
+            .buttonStyle(.dockHover).fixedSize()
+            .dockPopover(isPresented: $showingList, arrowEdge: .bottom) {
+                RevisionNoteList(store: store, canSend: canSend) {
+                    send()
+                    showingList = false
                 }
-                .dockFont(.body, weight: .regular, design: .monospaced).fontDesign(.monospaced).lineSpacing(3)
-                .dockPadding(DockSpacing.group).frame(width: geometry.size.width, alignment: .leading)
             }
         }
-        .frame(height: min(132, max(44, CGFloat(lines.count) * 18 + 24)))
-        .dockPaneTint(Color.dockSurface)
-        .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
-        .accessibilityLabel("Captured source")
     }
 }
 
-struct RevisionNotesTray: View {
-    @ObservedObject var state: DiffReviewState
+struct RevisionNoteList: View {
+    @ObservedObject var store: RevisionNoteStore
     let canSend: Bool
     let send: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                HStack {
-                    title
-                    Spacer(minLength: DockSpacing.group)
-                    sendButton
-                }
-                VStack(alignment: .leading, spacing: DockSpacing.control) {
-                    title
-                    sendButton
-                }
+            HStack(spacing: DockSpacing.control) {
+                Text("Revision notes").dockFont(.body, weight: .semibold)
+                Spacer(minLength: DockSpacing.group)
+                Button("Send to chat", action: send).buttonStyle(.dockPrimary)
+                    .disabled(!canSend || store.notes.isEmpty)
+                    .help(
+                        canSend ? "Attach these notes to your chat draft" : "Open this review from a chat to send notes"
+                    )
             }.dockPadding(DockSpacing.group)
-            if let error = state.revisionNotes.error {
+            if let error = store.error {
                 Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
+                    .fixedSize(horizontal: false, vertical: true)
                     .dockPadding(.horizontal, DockSpacing.group).dockPadding(.bottom, DockSpacing.control)
             }
-            ForEach(state.notes) { note in
-                VStack(alignment: .leading, spacing: DockSpacing.control) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack {
-                            RevisionNoteLocation(note: note)
-                            Spacer()
-                            actions(note)
-                        }
-                        VStack(alignment: .leading, spacing: DockSpacing.control) {
-                            RevisionNoteLocation(note: note)
-                            actions(note)
-                        }
-                    }
-                    Text(note.text).dockFont(.body).textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 760, alignment: .leading)
-                    if state.revisionNotes.isStale(note) { RevisionNoteStaleLabel() }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(store.notes) { note in row(note) }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: 360).fixedSize(horizontal: false, vertical: true)
+            Text("Click highlighted lines in the diff to edit a note.")
+                .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                 .dockPadding(DockSpacing.group)
                 .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
-            }
-            Text(
-                canSend
-                    ? "Adds notes to your conversation draft." : "Open this review from a conversation to send notes."
-            )
-            .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
-            .dockPadding(.horizontal, DockSpacing.group).dockPadding(.bottom, DockSpacing.group)
         }
-        .foregroundStyle(Color.dockPrimaryText)
+        .frame(width: 360).foregroundStyle(Color.dockPrimaryText).dockMenuSurface()
+    }
+    private func row(_ note: RevisionNote) -> some View {
+        VStack(alignment: .leading, spacing: DockSpacing.tight) {
+            HStack(spacing: DockSpacing.control) {
+                RevisionNoteLocation(note: note)
+                Spacer(minLength: 0)
+                Button {
+                    store.notes.removeAll { $0.id == note.id }
+                } label: {
+                    DockIcon(.trash, size: 13, color: .dockSecondaryText)
+                        .frame(width: 26, height: 26).contentShape(Rectangle())
+                }
+                .buttonStyle(.dockHover).help("Remove note").accessibilityLabel("Remove note on \(note.locationLabel)")
+            }
+            Text(note.text).dockFont(.body).lineLimit(4).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            if store.isStale(note) { RevisionNoteStaleLabel() }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .dockPadding(.horizontal, DockSpacing.group).dockPadding(.vertical, DockSpacing.control)
         .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
-    private var title: some View {
-        HStack(spacing: DockSpacing.control) {
-            Text("Private revision notes").dockFont(.body, weight: .semibold)
-            Text("\(state.notes.count)").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
-        }
-    }
-    private var sendButton: some View {
-        Button("Send revision", action: send).buttonStyle(.dockPrimary).disabled(!canSend || state.notes.isEmpty)
-    }
-    private func actions(_ note: RevisionNote) -> some View {
-        HStack(spacing: DockSpacing.tight) {
-            Button("Edit") { state.editNote(note) }.buttonStyle(.dockCompact)
-            Button("Remove") { state.notes.removeAll { $0.id == note.id } }.buttonStyle(.dockCompact)
-        }.fixedSize()
+}
+
+/// Scopes a review's note button to a page header that already shows it, so file diffs omit theirs.
+private struct RevisionNotesInHeaderKey: EnvironmentKey {
+    static let defaultValue = false
+}
+extension EnvironmentValues {
+    var revisionNotesInHeader: Bool {
+        get { self[RevisionNotesInHeaderKey.self] }
+        set { self[RevisionNotesInHeaderKey.self] = newValue }
     }
 }

@@ -9,7 +9,6 @@ struct PullRequestWorkspace: View {
     @State private var refreshID = 0
     @State private var loadedBrowse = GitHubBrowseOptions()
     @Environment(\.openGitHubItem) private var openItem
-    @Environment(\.dockHostVisible) private var hostVisible
 
     private var header: some View {
         DockPageHeader(
@@ -52,21 +51,6 @@ struct PullRequestWorkspace: View {
                 if refreshID > 0 { center.cancelLoads() }
                 await refreshActiveWorkspace()
                 if !Task.isCancelled, center.errorMessage == nil { loadedBrowse = center.browsing }
-            }
-        }
-        .task(id: hostVisible) {
-            guard hostVisible else { return }
-            if center.hasLoaded && center.errorMessage == nil {
-                await center.refresh(projects: projects)
-                await center.refreshSelectedDetail()
-            }
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
-                guard !Task.isCancelled else { return }
-                if center.errorMessage == nil {
-                    await center.refresh(projects: projects)
-                    await center.refreshSelectedDetail()
-                }
             }
         }
         .onChange(of: center.browsing.repository, initial: true) { _, repository in

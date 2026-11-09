@@ -39,6 +39,14 @@ final class RevisionNoteStore: ObservableObject {
         notes.map { $0.context(currentIdentity: sources[$0.path] ?? "unverified").body }.joined(separator: "\n\n")
     }
 
+    /// One chat attachment for every note; the caller clears the notes once it is attached.
+    func chatContext(repository: String, projectPath: String?) -> ChatContext {
+        ChatContext(
+            id: UUID().uuidString, title: notes.count == 1 ? "1 revision note" : "\(notes.count) revision notes",
+            body: "Please revise the selected code using these review notes.\nRepository: \(repository)\n\n\(prompt)",
+            projectPath: projectPath)
+    }
+
     func flush() {
         pending?.cancel()
         pending = nil

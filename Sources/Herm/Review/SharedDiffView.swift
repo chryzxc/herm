@@ -45,6 +45,7 @@ struct SharedDiffView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.expandedReviewRouter) private var expandedRouter
     @Environment(\.chatContextRouter) private var router
+    @Environment(\.revisionNotesInHeader) private var notesInHeader
     private var sourceIdentity: String {
         let document = state.document(path: path, patch: patch)
         return comparison?.documentID(document) ?? document.identity
@@ -118,14 +119,6 @@ struct SharedDiffView: View {
             state.contextError = nil
         }
         .dockSheet(isPresented: $expanded) { expandedContent.modifier(ReviewSheetContext()) }
-        .dockSheet(
-            isPresented: Binding(
-                get: {
-                    state.pendingNote != nil && (expandedPresentation || (expandedRouter?.content == nil && !expanded))
-                }, set: { if !$0 { state.cancelNote() } })
-        ) {
-            RevisionNoteEditor(state: state)
-        }
     }
 
     private var review: some View {
@@ -163,7 +156,6 @@ struct SharedDiffView: View {
             if let contextError = state.contextError {
                 Text(contextError).dockFont(.body).foregroundStyle(Color.dockWarning).dockPadding(8)
             }
-            if !state.notes.isEmpty || state.revisionNotes.error != nil { noteTray }
         }
     }
 
@@ -181,10 +173,12 @@ struct SharedDiffView: View {
             HStack(spacing: 8) {
                 reviewControls
                 Spacer(minLength: 0)
+                noteButton
                 expandControl(isExpanded: isExpanded)
             }
             DockChipFlow(spacing: 8) {
                 reviewControls
+                noteButton
                 expandControl(isExpanded: isExpanded)
             }
         }.dockFont(.body)
@@ -256,7 +250,19 @@ struct SharedDiffView: View {
                 onNote: { selection in
                     state.beginNote(
                         selection: selection, documentID: sourceIdentity, path: path, comparison: comparison)
-                }, onComment: commentAction
+                }, onComment: commentAction,
+                noteMarks: noteMarks,
+                onEditNote: { id in
+                    guard let note = state.notes.first(where: { $0.id == id }) else { return false }
+                    state.editNote(note)
+                    return true
+                },
+                noteEditor: { close in
+                    let generation = state.noteGeneration
+                    return DiffNoteEditor(
+                        view: AnyView(RevisionNotePopover(state: state, close: close)),
+                        dismissed: { state.cancelNote(generation: generation) })
+                }
             ).clipped()
         }
     }
@@ -283,18 +289,24 @@ struct SharedDiffView: View {
         }
     }
 
-    private var noteTray: some View {
-        RevisionNotesTray(state: state, canSend: router?.model != nil) {
-            guard let router else { return }
-            let body = state.revisionNotes.prompt
-            router.attach(
-                ChatContext(
-                    id: UUID().uuidString, title: "Revision notes",
-                    body:
-                        "Please revise the selected code using these review notes.\nRepository: "
-                        + (comparison?.repository ?? projectPath ?? "Captured comparison") + "\n\n" + body,
-                    projectPath: projectPath), to: state.owner)
-            state.notes = []
+    /// Notes drawn on this file's lines. Expanded context renumbers rows, so marks wait for the captured patch.
+    private var noteMarks: [DiffNoteMark] {
+        guard state.contextPatch == nil else { return [] }
+        return state.notes.filter { $0.path == path && $0.documentID == sourceIdentity }.map {
+            DiffNoteMark(id: $0.id, lineIndexes: Set($0.selection.lines.map(\.index)), side: $0.selection.side)
+        }
+    }
+
+    @ViewBuilder private var noteButton: some View {
+        if !notesInHeader {
+            RevisionNotesButton(store: state.revisionNotes, canSend: router?.model != nil) {
+                guard let router else { return }
+                router.attach(
+                    state.revisionNotes.chatContext(
+                        repository: comparison?.repository ?? projectPath ?? "Captured comparison",
+                        projectPath: projectPath), to: state.owner)
+                state.notes = []
+            }
         }
     }
 }

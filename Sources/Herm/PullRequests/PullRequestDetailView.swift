@@ -238,48 +238,45 @@ struct PullRequestDetailView: View {
 
     private func detailHeader(_ pr: PullRequestRecord) -> some View {
         let fileIDs = Set((center.filesByID[pr.id] ?? []).map(\.id))
+        let inset: CGFloat = isInspector ? DockSpacing.inspectorInset : 16
         return VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                ViewThatFits(in: .horizontal) {
+            // One toolbar row: tabs lead, actions trail. Narrow widths stack the actions beneath.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
                     detailTabs(pr)
-                    detailTabs(pr, compact: true)
+                    Spacer(minLength: 0).background { if titleRow != nil { TitlebarDoubleClickArea() } }
+                    detailActions(pr, compact: true)
                 }
-                Spacer(minLength: 0)
-                    .background { if titleRow != nil { TitlebarDoubleClickArea() } }
+                HStack(spacing: 12) {
+                    detailTabs(pr, compact: true)
+                    Spacer(minLength: 0).background { if titleRow != nil { TitlebarDoubleClickArea() } }
+                    detailActions(pr, compact: true)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    detailTabs(pr, compact: true)
+                    detailActions(pr, compact: true, wraps: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
-            .dockPadding(.vertical, 12)
-            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
-
-            VStack(alignment: .leading, spacing: 6) {
-                DockSectionLabel(title: "Pull request actions")
-                detailActions(pr, compact: true, wraps: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
-            .dockPadding(.vertical, 10)
+            .dockPadding(.horizontal, inset).dockPadding(.vertical, 8)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
 
             if detailTab == 1 {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(pr.headBranch).lineLimit(1)
-                        if !center.filesAreCurrent(for: pr) {
-                            Text("Diff may be outdated · refresh to review")
-                                .dockFont(.metadata).foregroundStyle(Color.dockWarning)
-                                .lineLimit(1)
-                        }
+                HStack(spacing: 8) {
+                    Text(pr.headBranch).lineLimit(1).truncationMode(.middle)
+                    DockIcon(.arrowRight, size: 12, color: Color.dockMetadataText)
+                    Text(pr.baseBranch).lineLimit(1).layoutPriority(1)
+                    if !center.filesAreCurrent(for: pr) {
+                        Text("Diff may be outdated. Refresh to review.")
+                            .dockFont(.metadata).foregroundStyle(Color.dockWarning).lineLimit(1)
                     }
-                    DockIcon(.arrowRight, size: 14, color: Color.dockMetadataText)
-                    Text(pr.baseBranch)
-                        .lineLimit(1)
-                    Spacer(minLength: 16)
+                    Spacer(minLength: 12)
                     codeToolbar(fileIDs: fileIDs)
                 }
-                .dockFont(.navigation, weight: .medium)
+                .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockMetadataText)
-                .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16)
-                .frame(height: 62)
+                .dockPadding(.horizontal, inset)
+                .frame(height: 38)
                 .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
             }
         }
@@ -824,9 +821,24 @@ struct PullRequestDetailView: View {
         }
     }
 
+    /// One private note store per PR; the header button and every file diff share it.
+    private func revisionNotes(_ pr: PullRequestRecord) -> RevisionNoteStore {
+        ReviewDraftStore.shared.notes(
+            key: (contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? "global") + ":pr:" + pr.id)
+    }
+
     private func codeToolbar(fileIDs: Set<String>) -> some View {
         HStack(spacing: 4) {
             if let pr = center.selected {
+                RevisionNotesButton(store: revisionNotes(pr), canSend: contextRouter?.model != nil) {
+                    guard let contextRouter else { return }
+                    let store = revisionNotes(pr)
+                    contextRouter.attach(
+                        store.chatContext(
+                            repository: pr.repository.id, projectPath: pr.localPath.isEmpty ? nil : pr.localPath),
+                        to: contextRouter.model?.workflowSession)
+                    store.notes = []
+                }
                 DockMenu {
                     DockMenuSection("Pull request") {
                         Button(watches.contains(pr) ? "Stop watching" : "Watch pull request") { watches.toggle(pr) }
@@ -1110,10 +1122,7 @@ struct PullRequestDetailView: View {
                 else { throw GitHubRequestError.changed }
                 return value
             }, comparison: center.selected.map(DiffComparisonIdentity.pullRequest),
-            revisionNotes: center.selected.map { pr in
-                ReviewDraftStore.shared.notes(
-                    key: (contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? "global") + ":pr:" + pr.id)
-            },
+            revisionNotes: center.selected.map(revisionNotes),
             reviewAccessory: capturedRecord.map { pr in
                 AnyView(
                     PullRequestInlineReview(
@@ -1121,6 +1130,7 @@ struct PullRequestDetailView: View {
                         document: DiffDocument(path: file.path, patch: patch), target: $inlineTarget))
             }
         )
+        .environment(\.revisionNotesInHeader, true)
         .id(
             (contextRouter?.model.map { WorkspaceIdentity.session($0) } ?? "global") + ":" + (center.selected?.id ?? "")
                 + ":" + file.path)
