@@ -452,6 +452,13 @@ struct ConversationTranscriptIntegrationTests {
             try fixture.move(to: row.minY + 20)
             try await fixture.settle()
         }
+        // Slow runners keep mounting rows after a jump; baseline once body evaluations hold steady.
+        var stable = 0
+        for _ in 0..<20 where stable < 2 {
+            let count = fixture.evaluations.messageBodies
+            try await fixture.settle()
+            stable = fixture.evaluations.messageBodies == count ? stable + 1 : 0
+        }
         let streamingID = fixture.model.streamingMessageID
         let beforeRows = fixture.coordinator.rowViewports.filter { $0.target.messageID != streamingID }
         let beforeBodies = fixture.evaluations.messageBodies
