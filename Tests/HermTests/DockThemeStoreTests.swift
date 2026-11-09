@@ -399,8 +399,8 @@ struct DockThemeStoreTests {
             }
             let c = rgb!
             let luma = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
-            // Clean follows the approved reference's #E4E4E4 soft white; other skins retain their ceiling.
-            #expect(luma <= (id == .clean ? 0.90 : 0.86), "\(id) primary text too bright")
+            // Clean pairs #EDEDF1 text with its lifted #2A2B31 canvas; other skins retain their ceiling.
+            #expect(luma <= (id == .clean ? 0.94 : 0.86), "\(id) primary text too bright")
         }
     }
 
