@@ -23,6 +23,12 @@ class ButtonContractTests(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertTrue(buttons.violations(source))
 
+    def test_large_sizes_need_a_reviewed_allowance(self):
+        source = 'HStack { Button("Record") {}.buttonStyle(.dockPrimary) }.dockButtonSize(.standard)'
+        self.assertTrue(buttons.violations(source, 'Sources/Herm/Settings/New.swift'))
+        self.assertEqual(buttons.violations(source, 'Sources/Herm/DesignSystem/DockModal.swift'), [])
+        self.assertEqual(buttons.violations(source.replace('.standard', '.compact')), [])
+
     def test_press_style_allows_icon_controls_and_content_rows(self):
         for source in [
             'Button {} label: { DockIcon(.x).frame(width: 28, height: 28) }.buttonStyle(.dockPress)',

@@ -5,6 +5,17 @@ import sys
 
 STYLE = re.compile(r'\.buttonStyle\s*\(\s*(?:\.dock(?:Primary|Secondary|Compact)|Dock(?:Primary|Secondary|Modal)ButtonStyle\s*\([^)]*\))\s*\)')
 GEOMETRY = re.compile(r'\.(?:frame\s*\([^)]*\b(?:height|minHeight|maxHeight)\s*:|padding\s*\(\s*\.(?:vertical|all)\b|dockButtonSize\s*\()')
+LARGE_SIZE = re.compile(r'\.dockButtonSize\s*\(\s*\.(?:standard|accessible)\b')
+# Reviewed .standard/.accessible containers (form footers, substantial groups).
+# Ordinary page actions inherit .compact; do not raise a count to pass the check.
+LARGE_SIZE_ALLOWED = {
+    'Sources/Herm/DesignSystem/DockModal.swift': 1,
+    'Sources/Herm/ControlCenter/WorkspaceActivitySidebar+Kanban.swift': 1,
+    'Sources/Herm/Extensions/WorkflowIntegrationView.swift': 1,
+    'Sources/Herm/SessionWorkspace/SessionWorkspaceSurfaces.swift': 1,
+    'Sources/Herm/Gateway/MessagingWorkspaceView.swift': 1,
+    'Sources/Herm/Conversation/SessionNavQueue.swift': 1,
+}
 PRESS_STYLE = re.compile(r'\.buttonStyle\s*\(\s*(?:\.dockPress|DockPressButtonStyle\s*\(\s*\))\s*\)')
 
 
@@ -97,6 +108,11 @@ def violations(source, path='Fixture.swift'):
         if text_label or title_action or container_titles:
             line = source.count(chr(10), 0, style.start()) + 1
             result.append(f'{path}:{line}: error: text actions must use .dockPrimary or .dockSecondary, not .dockPress, which bypasses shared sizing.')
+    large = list(LARGE_SIZE.finditer(code))
+    if path.startswith("Sources/") and len(large) > LARGE_SIZE_ALLOWED.get(path, 0):
+        for match in large:
+            line = source.count(chr(10), 0, match.start()) + 1
+            result.append(f'{path}:{line}: error: .standard/.accessible are for form footers and decisions only; ordinary page actions use the default .compact (docs/button-sizing.md).')
     return result
 
 

@@ -25,6 +25,9 @@ def sources(root):
         relative = path.relative_to(root).as_posix()
         if path.suffix not in {".swift", ".js", ".css", ".html"} or relative in CENTRAL:
             continue
+        # Vendored third-party code ships with a sibling LICENSE (for example Resources/Mermaid.LICENSE).
+        if path.with_suffix(".LICENSE").exists():
+            continue
         # Preserve line numbers while ignoring standalone comments.
         text = "\n".join("" if line.lstrip().startswith(("//", "/*", "*")) else line
                          for line in path.read_text().splitlines())
