@@ -2627,8 +2627,9 @@ longest. New tabs open beside the selected tab, and **Open in Split View**
 opens its column beside the active column rather than at the far right; when
 three columns are open it adds a tab to the active column. The inspector's **Open a
 new tab** grid adds one **Conversation** card. It opens a small `DockMenu` with **Bot chat** and **Recent
-session**, each a submenu: Bots show their avatars, sessions show their short
-last-updated time. Picking one opens it in split view beside the active column.
+session**, each a submenu with a search field on top: Bots show their avatars,
+sessions show their short last-updated time (the 10 most recent until a search
+matches across every session, up to 30). Picking one opens it in split view beside the active column.
 Split tabs hug their titles (up to 220pt, then truncate); when a column is
 too narrow for its tabs, the strip scrolls sideways (keeping the selected tab in
 view) rather than squeezing titles, and they show a Bot's avatar

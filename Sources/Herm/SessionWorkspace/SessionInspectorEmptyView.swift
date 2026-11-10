@@ -6,7 +6,10 @@ struct SessionInspectorEmptyView: View {
     /// Conversations that can open in a split column beside this one.
     var bots: [BotSummary] = []
     var botAvatars: [String: Data] = [:]
+    /// Every pickable session; the menu shows the most recent until a search narrows it.
     var sessions: [HermesSession] = []
+    @State private var botQuery = ""
+    @State private var sessionQuery = ""
 
     private func detail(_ section: SessionInspector.Section) -> String {
         switch section {
@@ -93,7 +96,11 @@ struct SessionInspectorEmptyView: View {
 
     @ViewBuilder
     private var botRows: some View {
-        ForEach(bots) { bot in
+        DockSearchField(placeholder: "Search Bots", text: $botQuery).frame(width: 240).dockPadding(.bottom, 4)
+        let query = botQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matches = query.isEmpty ? bots : bots.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        if matches.isEmpty { noMatches }
+        ForEach(matches) { bot in
             if let item = SessionPaneDrag(bot: bot) {
                 Button {
                     SessionPaneStore.shared.open(item)
@@ -107,13 +114,19 @@ struct SessionInspectorEmptyView: View {
         }
     }
 
+    @ViewBuilder
     private var sessionRows: some View {
-        ForEach(sessions) { session in
+        DockSearchField(placeholder: "Search sessions", text: $sessionQuery).frame(width: 240)
+            .dockPadding(.bottom, 4)
+        let matches = SessionSidebarSearch.sessions(matching: sessionQuery, in: sessions, projects: [:])
+            .prefix(sessionQuery.isEmpty ? 10 : 30)
+        if matches.isEmpty { noMatches }
+        ForEach(Array(matches)) { session in
             Button {
                 SessionPaneStore.shared.open(SessionPaneDrag(session: session))
             } label: {
                 HStack(spacing: 8) {
-                    Text(session.title).lineLimit(1).frame(maxWidth: 280, alignment: .leading)
+                    Text(session.displayTitle).lineLimit(1).frame(maxWidth: 280, alignment: .leading)
                     if let date = session.lastUpdatedAt {
                         Spacer(minLength: 12)
                         Text(SidebarSessionTime.short(date))
@@ -122,5 +135,13 @@ struct SessionInspectorEmptyView: View {
                 }
             }
         }
+    }
+
+    private var noMatches: some View {
+        Text("No matches")
+            .dockFont(.body)
+            .foregroundStyle(Color.dockMetadataText)
+            .dockPadding(.horizontal, 8)
+            .dockPadding(.vertical, 6)
     }
 }

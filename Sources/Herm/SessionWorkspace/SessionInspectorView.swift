@@ -229,9 +229,7 @@ struct SessionInspector: View {
                             },
                             botAvatars: botMode.avatarImages,
                             sessions: model.sessions
-                                .filter { !$0.isHidden && $0.id != model.navigationSessionID }
-                                .sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
-                                .prefix(10).map { $0 })
+                                .filter { !$0.isHidden && $0.id != model.navigationSessionID })
                     }
                 }
                 .opacity(selectedExtraID == nil && selectedPreview == nil ? 1 : 0)
