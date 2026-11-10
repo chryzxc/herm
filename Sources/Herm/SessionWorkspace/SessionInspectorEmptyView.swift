@@ -10,6 +10,8 @@ struct SessionInspectorEmptyView: View {
     var sessions: [HermesSession] = []
     @State private var botQuery = ""
     @State private var sessionQuery = ""
+    @State private var sessionLimit = Self.sessionPage
+    private static let sessionPage = 20
 
     private func detail(_ section: SessionInspector.Section) -> String {
         switch section {
@@ -118,20 +120,28 @@ struct SessionInspectorEmptyView: View {
     private var sessionRows: some View {
         DockSearchField(placeholder: "Search sessions", text: $sessionQuery).frame(width: 240)
             .dockPadding(.bottom, 4)
-        let matches = SessionSidebarSearch.sessions(matching: sessionQuery, in: sessions, projects: [:])
-            .prefix(sessionQuery.isEmpty ? 10 : 30)
-        if matches.isEmpty { noMatches }
-        ForEach(Array(matches)) { session in
-            Button {
-                SessionPaneStore.shared.open(SessionPaneDrag(session: session))
-            } label: {
-                HStack(spacing: 8) {
-                    Text(session.displayTitle).lineLimit(1).frame(maxWidth: 280, alignment: .leading)
-                    if let date = session.lastUpdatedAt {
-                        Spacer(minLength: 12)
-                        Text(SidebarSessionTime.short(date))
-                            .foregroundStyle(Color.dockMetadataText).monospacedDigit()
+            .onChange(of: sessionQuery) { _, _ in sessionLimit = Self.sessionPage }
+        let all = SessionSidebarSearch.sessions(matching: sessionQuery, in: sessions, projects: [:])
+        let shown = all.prefix(sessionLimit)
+        if all.isEmpty { noMatches }
+        // Lazy, so a row's onAppear means it actually scrolled into view.
+        LazyVStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(shown)) { session in
+                Button {
+                    SessionPaneStore.shared.open(SessionPaneDrag(session: session))
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(session.displayTitle).lineLimit(1).frame(maxWidth: 280, alignment: .leading)
+                        if let date = session.lastUpdatedAt {
+                            Spacer(minLength: 12)
+                            Text(SidebarSessionTime.short(date))
+                                .foregroundStyle(Color.dockMetadataText).monospacedDigit()
+                        }
                     }
+                }
+                // Reaching the last shown row reveals the next page.
+                .onAppear {
+                    if session.id == shown.last?.id, sessionLimit < all.count { sessionLimit += Self.sessionPage }
                 }
             }
         }
