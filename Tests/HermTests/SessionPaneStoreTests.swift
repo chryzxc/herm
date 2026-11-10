@@ -4,39 +4,41 @@ import Testing
 @testable import Herm
 
 struct SessionPaneStoreTests {
-    @Test func dropTargetInsertsAtTheNearestColumnBoundary() {
-        // One primary column, 900pt wide: dropping anywhere opens the first side slot.
-        #expect(SessionPaneStore.dropTarget(x: 100, width: 900, sidePaneCount: 0) == .insert(0))
-        #expect(SessionPaneStore.dropTarget(x: 880, width: 900, sidePaneCount: 0) == .insert(0))
-        // Primary + one pane (450pt columns): the boundary nearest the cursor wins.
-        #expect(SessionPaneStore.dropTarget(x: 400, width: 900, sidePaneCount: 1) == .insert(0))
-        #expect(SessionPaneStore.dropTarget(x: 800, width: 900, sidePaneCount: 1) == .insert(1))
+    @Test func dropTargetOpensANewPanelWhileThereIsRoom() {
+        // Primary only: anywhere opens the first panel.
+        #expect(SessionPaneStore.dropTarget(x: 100, width: 900, panelCount: 0) == .newPanel(0))
+        #expect(SessionPaneStore.dropTarget(x: 880, width: 900, panelCount: 0) == .newPanel(0))
+        // Primary + one panel (450pt columns): the panel body adds a tab, its trailing edge opens a panel.
+        #expect(SessionPaneStore.dropTarget(x: 200, width: 900, panelCount: 1) == .newPanel(0))
+        #expect(SessionPaneStore.dropTarget(x: 600, width: 900, panelCount: 1) == .tab(0))
+        #expect(SessionPaneStore.dropTarget(x: 860, width: 900, panelCount: 1) == .newPanel(1))
     }
 
-    @Test func dropTargetReplacesTheHoveredPaneWhenFull() {
-        // 300pt columns: primary, pane 0, pane 1. Hovering the primary replaces the nearest pane.
-        #expect(SessionPaneStore.dropTarget(x: 100, width: 900, sidePaneCount: 2) == .replace(0))
-        #expect(SessionPaneStore.dropTarget(x: 450, width: 900, sidePaneCount: 2) == .replace(0))
-        #expect(SessionPaneStore.dropTarget(x: 850, width: 900, sidePaneCount: 2) == .replace(1))
+    @Test func dropTargetAddsTabsWhenFull() {
+        // 300pt columns: primary, panel 0, panel 1.
+        #expect(SessionPaneStore.dropTarget(x: 100, width: 900, panelCount: 2) == .tab(0))
+        #expect(SessionPaneStore.dropTarget(x: 450, width: 900, panelCount: 2) == .tab(0))
+        #expect(SessionPaneStore.dropTarget(x: 880, width: 900, panelCount: 2) == .tab(1))
     }
 
-    @Test func placementRejectsSessionsAlreadyOnScreen() {
-        #expect(SessionPaneStore.placement(sessionID: "a", primaryID: "a", openIDs: [], target: .insert(0)) == nil)
-        #expect(SessionPaneStore.placement(sessionID: "b", primaryID: "a", openIDs: ["b"], target: .insert(1)) == nil)
+    @Test func resolveRejectsThePrimaryAndSelectsAnOpenTab() {
+        #expect(SessionPaneStore.resolve(sessionID: "a", primaryID: "a", panelTabs: [], target: .newPanel(0)) == nil)
+        #expect(
+            SessionPaneStore.resolve(sessionID: "c", primaryID: "a", panelTabs: [["b"], ["d", "c"]], target: .tab(0))
+                == .select(panel: 1, tab: 1))
     }
 
-    @Test func placementClampsAndSwitchesToReplaceWhenFull() {
+    @Test func resolveClampsAndFallsBackToATabWhenFull() {
         #expect(
-            SessionPaneStore.placement(sessionID: "c", primaryID: "a", openIDs: ["b"], target: .insert(9)) == .insert(1)
-        )
+            SessionPaneStore.resolve(sessionID: "c", primaryID: "a", panelTabs: [["b"]], target: .newPanel(9))
+                == .newPanel(1))
         #expect(
-            SessionPaneStore.placement(sessionID: "d", primaryID: "a", openIDs: ["b", "c"], target: .insert(2))
-                == .replace(1))
+            SessionPaneStore.resolve(sessionID: "d", primaryID: "a", panelTabs: [["b"], ["c"]], target: .newPanel(2))
+                == .addTab(1))
         #expect(
-            SessionPaneStore.placement(sessionID: "d", primaryID: "a", openIDs: ["b", "c"], target: .replace(0))
-                == .replace(0))
+            SessionPaneStore.resolve(sessionID: "d", primaryID: "a", panelTabs: [["b"]], target: .tab(4)) == .addTab(0))
         #expect(
-            SessionPaneStore.placement(sessionID: "b", primaryID: "a", openIDs: [], target: .replace(3)) == .insert(0))
+            SessionPaneStore.resolve(sessionID: "b", primaryID: "a", panelTabs: [], target: .tab(3)) == .newPanel(0))
     }
 
     @Test func dragPayloadRoundTripsToADestination() throws {

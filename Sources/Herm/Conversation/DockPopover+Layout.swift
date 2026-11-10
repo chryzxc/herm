@@ -146,7 +146,7 @@ extension DockPopover {
                 handleSessionIDChange(oldValue: oldValue, newValue: newValue)
             }
             // A session opened as primary leaves its side pane so it never streams twice.
-            .onChange(of: model.navigationSessionID) { _, id in if let id { sessionPanes.close(id) } }
+            .onChange(of: model.navigationSessionID) { _, id in if let id { sessionPanes.remove(id) } }
             .onChange(of: model.sessionID) { _, _ in
                 isShowingMessagePins = false
                 pinnedMessageJumpID = nil
@@ -620,43 +620,53 @@ extension DockPopover {
                 }
                 .id(room.id)
             } else {
-                header
+                if sessionWorkspaceMode != .chat { header }
                 switch sessionWorkspaceMode {
                 case .chat:
-                    SessionPaneRow(store: sessionPanes, isEnabled: !isNarrowLayout) {
-                        GeometryReader { geometry in
-                            let railWidth =
-                                isSessionRailVisible
-                                ? ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: geometry.size.width) : 0
-                            chatConversationContent(railWidth: railWidth)
-                                .overlay(alignment: .trailing) {
-                                    if railWidth > 0 {
-                                        SessionPullRequestRail(
-                                            model: model, workflow: developerWorkflow, control: controlCenter,
-                                            repositoryPath: activeSessionRepositoryScope?.repositoryPath,
-                                            onViewAllChanges: { showSessionRailInspector(.changes) },
-                                            onViewPullRequest: viewSessionRailPullRequest,
-                                            onRefreshChanges: refreshSessionRailChanges,
-                                            onViewAllOutputs: { showSessionRailInspector(.artifacts) },
-                                            onViewTimeline: { showSessionRailInspector(.timeline) },
-                                            onRespondInChat: {
-                                                sessionRailReplyRequest &+= 1
-                                                model.requestComposerFocus()
-                                            },
-                                            onViewPin: { pin in
-                                                let identity = WorkspaceIdentity.session(model)
-                                                guard let id = await model.messageID(forPin: pin),
-                                                    identity == WorkspaceIdentity.session(model)
-                                                else { return false }
-                                                pinnedMessageJumpID = id
-                                                return true
-                                            }
-                                        )
-                                        .id(sessionWorkspaceIdentity)
-                                        .frame(width: railWidth - DockSpacing.section)
-                                        .dockPadding(.trailing, DockSpacing.section)
+                    // Each column owns its title row, so the primary header spans only its column.
+                    SessionPaneRow(
+                        store: sessionPanes, isEnabled: !isNarrowLayout,
+                        headerHeight: usesWindowChrome
+                            ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight,
+                        usesWindowChrome: usesWindowChrome
+                    ) {
+                        VStack(spacing: 0) {
+                            header
+                            GeometryReader { geometry in
+                                let railWidth =
+                                    isSessionRailVisible
+                                    ? ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: geometry.size.width)
+                                    : 0
+                                chatConversationContent(railWidth: railWidth)
+                                    .overlay(alignment: .trailing) {
+                                        if railWidth > 0 {
+                                            SessionPullRequestRail(
+                                                model: model, workflow: developerWorkflow, control: controlCenter,
+                                                repositoryPath: activeSessionRepositoryScope?.repositoryPath,
+                                                onViewAllChanges: { showSessionRailInspector(.changes) },
+                                                onViewPullRequest: viewSessionRailPullRequest,
+                                                onRefreshChanges: refreshSessionRailChanges,
+                                                onViewAllOutputs: { showSessionRailInspector(.artifacts) },
+                                                onViewTimeline: { showSessionRailInspector(.timeline) },
+                                                onRespondInChat: {
+                                                    sessionRailReplyRequest &+= 1
+                                                    model.requestComposerFocus()
+                                                },
+                                                onViewPin: { pin in
+                                                    let identity = WorkspaceIdentity.session(model)
+                                                    guard let id = await model.messageID(forPin: pin),
+                                                        identity == WorkspaceIdentity.session(model)
+                                                    else { return false }
+                                                    pinnedMessageJumpID = id
+                                                    return true
+                                                }
+                                            )
+                                            .id(sessionWorkspaceIdentity)
+                                            .frame(width: railWidth - DockSpacing.section)
+                                            .dockPadding(.trailing, DockSpacing.section)
+                                        }
                                     }
-                                }
+                            }
                         }
                     }
                 case .voice:
