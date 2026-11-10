@@ -12,8 +12,9 @@ test:
 build:
 	. Scripts/appintents.sh && reset_stale_metal_cache && swift build --disable-automatic-resolution
 
+# Same flags as Scripts/package-app.sh, so packaging reuses this build instead of recompiling.
 build-release:
-	. Scripts/appintents.sh && reset_stale_metal_cache && swift build -c release --disable-automatic-resolution
+	. Scripts/appintents.sh && swift_build_with_appintents -c release --disable-automatic-resolution
 
 run:
 	Scripts/run-debug-app.sh
