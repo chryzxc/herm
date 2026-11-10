@@ -460,8 +460,8 @@ conversation preserves the complete recent list without a manual refresh.
 
 The header shows compact labelled Chat, Talk, and repository PRs tabs in a quiet 28pt track with full-height click targets. A semibold label and the skin's selection treatment identify the active tab. Opening the inspector in the floating desktop panel keeps the conversation visible beside it. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
 
-Use the stacked-cards **Show session rail** button beside Conversation actions to
-keep pull requests beside the transcript and composer. The rail and its toggle hide
+The session rail shows beside the transcript and composer by default; use the
+stacked-cards **Hide session rail** button beside Conversation actions to hide it. The rail and its toggle hide
 when the conversation column is narrower than 800pt, including when opening or resizing
 the third panel leaves too little space. Widening the column restores the chosen visibility.
 The card is titled **Session overview** when no repository is selected.
