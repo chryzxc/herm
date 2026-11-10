@@ -41,6 +41,13 @@ struct SessionPaneStoreTests {
                 == .addTab(1))
     }
 
+    @Test func newTabsOpenBesideTheSelectedTab() {
+        let tabs = ["a", "b", "c"].map { QuickDestination(sessionID: $0) }
+        #expect(SessionPaneStore.tabInsertionIndex(tabs: tabs, selectedID: "a") == 1)
+        #expect(SessionPaneStore.tabInsertionIndex(tabs: tabs, selectedID: "c") == 3)
+        #expect(SessionPaneStore.tabInsertionIndex(tabs: tabs, selectedID: nil) == 3)
+    }
+
     @Test func dragPayloadRoundTripsToADestination() throws {
         let session = HermesSession(
             id: "s1", profileID: "work", title: "Fix CI", preview: "", startedAt: nil, messageCount: 0,

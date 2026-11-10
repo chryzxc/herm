@@ -651,18 +651,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         // rowFill already tracks hover; a second hover tracker doubled the work per row while scrolling.
         .onTapGesture { if !isEditingTitle { onSelect(session) } }
-        .draggable(SessionPaneDrag(session: session)) {
-            HStack(spacing: 8) {
-                DockIcon(.chatCircle, size: 14, weight: .fill, color: .dockPrimaryText)
-                Text(session.displayTitle)
-                    .dockFont(.navigation, weight: .semibold)
-                    .lineLimit(1)
-                    .frame(maxWidth: 260, alignment: .leading)
-            }
-            .dockCard(padding: 10, isActive: true)
-            .rotationEffect(.degrees(-2))
-        }
-        .modifier(DockDragCursor(isEnabled: !isEditingTitle, isDragging: false))
+        .sessionPaneDraggable(SessionPaneDrag(session: session), isEnabled: !isEditingTitle)
         .focusable(!isEditingTitle)
         .focusEffectDisabled()
         .focused($rowFocused)
@@ -863,12 +852,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         .disabled(isPinning)
         // Same as dragging the row into the chat area.
         Button("Open in Split View", icon: .columnsPlusRight) {
-            withAnimation(
-                DockMotion.animation(
-                    reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, duration: 0.28)
-            ) {
-                SessionPaneStore.shared.open(session)
-            }
+            SessionPaneStore.shared.open(SessionPaneDrag(session: session))
         }
         .disabled(isSelected)
         Button("Rename…", icon: .pencilSimple) {

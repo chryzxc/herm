@@ -13,13 +13,42 @@ struct SessionPaneDrag: Codable, Transferable {
         CodableRepresentation(contentType: UTType(exportedAs: pasteboardType.rawValue, conformingTo: .data))
     }
 
+    var destination: QuickDestination { QuickDestination(profileID: profileID, sessionID: sessionID, title: title) }
+}
+
+extension SessionPaneDrag {
     init(session: HermesSession) {
-        sessionID = session.id
-        profileID = session.profileID
-        title = session.displayTitle
+        self.init(sessionID: session.id, profileID: session.profileID, title: session.displayTitle)
     }
 
-    var destination: QuickDestination { QuickDestination(profileID: profileID, sessionID: sessionID, title: title) }
+    /// A Bot's canonical chat; nil until Hermes has created it (the roster then only knows its title).
+    init?(bot: BotSummary) {
+        guard let chat = bot.chat else { return nil }
+        self.init(sessionID: chat.sessionID, profileID: chat.profileID, title: bot.name)
+    }
+}
+
+extension View {
+    /// Lets a sidebar row be dragged into the chat area to open in split view.
+    @ViewBuilder
+    func sessionPaneDraggable(_ drag: SessionPaneDrag?, isEnabled: Bool = true) -> some View {
+        if let drag {
+            draggable(drag) {
+                HStack(spacing: 8) {
+                    DockIcon(.chatCircle, size: 14, weight: .fill, color: .dockPrimaryText)
+                    Text(drag.title)
+                        .dockFont(.navigation, weight: .semibold)
+                        .lineLimit(1)
+                        .frame(maxWidth: 260, alignment: .leading)
+                }
+                .dockCard(padding: 10, isActive: true)
+                .rotationEffect(.degrees(-2))
+            }
+            .modifier(DockDragCursor(isEnabled: isEnabled, isDragging: false))
+        } else {
+            self
+        }
+    }
 }
 
 /// Where a dropped session lands: a new column at a slot, or a tab in an existing column.
@@ -102,10 +131,19 @@ final class SessionPaneStore: ObservableObject {
         }
     }
 
-    func open(_ session: HermesSession) {
-        let count = max(panels.count, 1)
-        let target: SessionPaneTarget = count < Self.maxColumns ? .newPanel(count) : .tab(count - 1)
-        open(SessionPaneDrag(session: session).destination, target: target)
+    /// A new tab opens beside the tab it came from (the selected one), not at the far end.
+    nonisolated static func tabInsertionIndex(tabs: [QuickDestination], selectedID: String?) -> Int {
+        tabs.firstIndex { $0.sessionID == selectedID }.map { $0 + 1 } ?? tabs.count
+    }
+
+    /// The menu action opens beside the active column, not at the far right.
+    func open(_ drag: SessionPaneDrag) {
+        withAnimation(
+            DockMotion.animation(
+                reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, duration: 0.28)
+        ) {
+            open(drag.destination, target: .newPanel(activeIndex + 1))
+        }
     }
 
     func open(_ destination: QuickDestination, target: SessionPaneTarget) {
@@ -125,7 +163,8 @@ final class SessionPaneStore: ObservableObject {
             if index <= activeIndex { activeIndex += 1 }
             load(index)
         case .addTab(let index):
-            panels[index].tabs.append(destination)
+            panels[index].tabs.insert(
+                destination, at: Self.tabInsertionIndex(tabs: panels[index].tabs, selectedID: panels[index].selectedID))
             select(id, at: index)
         case .select(let panel, _):
             select(id, at: panel)

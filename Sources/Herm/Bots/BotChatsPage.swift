@@ -61,6 +61,7 @@ struct BotChatsPage: View, Equatable {
     @Binding var isCollapsed: Bool
     let onShowSessions: () -> Void
     let onOpen: (BotSummary) -> Void
+    @ObservedObject private var sessionPanes = SessionPaneStore.shared
     @State private var query = ""
     @State private var isShowingNewGroupChat = false
 
@@ -177,7 +178,11 @@ struct BotChatsPage: View, Equatable {
                     ForEach(items) { item in
                         switch item {
                         case .bot(let bot):
-                            row(bot, isSelected: selectedRoomID == nil && bot.id == activeBotID)
+                            // Bots shown in split columns are on screen too, so they highlight.
+                            row(
+                                bot,
+                                isSelected: selectedRoomID == nil && bot.id == activeBotID
+                                    || bot.chat.map { sessionPanes.shownSessionIDs.contains($0.sessionID) } == true)
                         case .room(let room, let date):
                             GroupChatSidebarRow(
                                 room: room, store: groups, botMode: bots, style: style,
@@ -243,6 +248,13 @@ struct BotChatsPage: View, Equatable {
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
+        .sessionPaneDraggable(SessionPaneDrag(bot: bot))
+        .contextMenu {
+            Button("Open in Split View", icon: .columnsPlusRight) {
+                if let drag = SessionPaneDrag(bot: bot) { sessionPanes.open(drag) }
+            }
+            .disabled(isSelected || bot.chat == nil)
+        }
         .accessibilityLabel(bot.name)
         .accessibilityHint("Open the main chat")
         .accessibilityAddTraits(isSelected ? .isSelected : [])

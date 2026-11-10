@@ -92,7 +92,19 @@ struct DockPopover: View {
     /// Read-only handle; `SessionPaneRow` observes the panes so this view does not re-render for them.
     var sessionPanes: SessionPaneStore { .shared }
     @State var isSessionMenuHovering = false
-    @State var isSessionRailVisible = true
+    @State var showsSessionRailInChats = true
+    @State var showsSessionRailInBots = false
+    /// Chats shows the session rail by default; Bots keeps it hidden until toggled.
+    var isSessionRailVisible: Bool {
+        get { fullscreenSurface == .bots ? showsSessionRailInBots : showsSessionRailInChats }
+        nonmutating set {
+            if fullscreenSurface == .bots {
+                showsSessionRailInBots = newValue
+            } else {
+                showsSessionRailInChats = newValue
+            }
+        }
+    }
     @State var isRenamingSession = false
     @State var renameDraft = ""
     @Environment(\.accessibilityReduceMotion) var reduceMotion

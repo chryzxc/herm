@@ -2623,7 +2623,13 @@ their selected tab. Selecting any tab makes it the active session, so the
 header moves to that column. The leftmost column carries the sidebar toggle and
 history controls when the chat list is hidden. Tab titles truncate with an
 ellipsis rather than collapsing to icons, and the selected tab keeps its title
-longest. Closing a column's last tab closes the column; a column that loses
+longest. New tabs open beside the selected tab, and **Open in Split View**
+opens its column beside the active column rather than at the far right; when
+three columns are open it adds a tab to the active column. The Bots page splits
+the same way: drag a Bot row (or use its **Open in Split View**) to open its main
+chat beside the active one. There, the session menu omits Pin, Rename and Hide,
+which apply to sessions rather than a Bot's main chat, and the session rail
+starts hidden (Chats shows it by default). Closing a column's last tab closes the column; a column that loses
 its last session tab while active hands the header to its neighbor.
 
 Drag a sidebar session row (open-hand cursor on hover, closed hand over the

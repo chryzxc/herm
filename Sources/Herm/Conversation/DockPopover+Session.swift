@@ -67,7 +67,8 @@ extension DockPopover {
                     Task { await model.refreshCurrentSession() }
                 }
             }
-            if let session = currentSession {
+            // Bots shows each Bot's main chat, which can't be pinned, renamed or hidden.
+            if fullscreenSurface != .bots, let session = currentSession {
                 let pinned = model.isSessionPinned(session.id)
                 Button(pinned ? "Unpin conversation" : "Pin conversation", icon: pinned ? .pushPinSlash : .pushPin) {
                     Task { await model.toggleSessionPinned(session) }
