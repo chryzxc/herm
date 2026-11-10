@@ -646,6 +646,12 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         // rowFill already tracks hover; a second hover tracker doubled the work per row while scrolling.
         .onTapGesture { if !isEditingTitle { onSelect(session) } }
+        .draggable(SessionPaneDrag(session: session)) {
+            Text(session.displayTitle)
+                .dockFont(.navigation, weight: .medium)
+                .lineLimit(1)
+                .dockPill()
+        }
         .focusable(!isEditingTitle)
         .focusEffectDisabled()
         .focused($rowFocused)
@@ -843,6 +849,10 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         Button(isPinned ? "Unpin" : "Pin", icon: isPinned ? .pushPinSlash : .pushPin) {
             onTogglePin(session)
         }
+        Button("Open in Split Pane", icon: .columnsPlusRight) {
+            SessionPaneStore.shared.open(session)
+        }
+        .disabled(isSelected)
         .disabled(isPinning)
         Button("Rename…", icon: .pencilSimple) {
             isEditingTitle = true

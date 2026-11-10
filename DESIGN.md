@@ -2611,6 +2611,25 @@ remains selectable and the draft editable, while session actions wait for a
 confirmed fresh transcript. Session replacement and refresh retain the transcript
 container and do not insert a status row above it.
 
+#### Split session panes
+
+Chat can show up to three live sessions side by side: the primary conversation
+plus two side panes. Drag a sidebar session row over the chat area, or choose
+**Open in Split Pane** from its menu. While dragging, a `.dockCard(isActive:)`
+placeholder opens at the column boundary nearest the cursor and the other
+columns ease apart to make room (0.28s `DockMotion`; cross-fade only under
+Reduce Motion or motion-free skins). With two side panes open, hovering a pane
+marks it **Drop to replace** instead of adding a column. Columns share the
+width equally, with a 320pt minimum for each side pane. The session rail hides
+when the primary column drops below its threshold.
+
+A side pane holds a title, **Make primary** (swaps it with the primary
+conversation in place), **Close pane**, the transcript and a composer. Loading
+and unavailable states stay inside the pane's card. A session is never shown
+twice. Selecting a session that is already in a side pane moves it to the
+primary column. Side panes are hidden in the narrow layout and outside Chat.
+They are disposable projections and are not restored after relaunch.
+
 The conversation workspace uses a stable cool-navy canvas in both fullscreen
 and compact layouts, independent of the sidebar concept selector. Its header
 is a single flat row.

@@ -89,6 +89,8 @@ struct DockPopover: View {
     @State var isSessionIdentityHovering = false
     @State var sessionPickerQuery = ""
     @ObservedObject var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
+    /// Read-only handle; `SessionPaneRow` observes the panes so this view does not re-render for them.
+    var sessionPanes: SessionPaneStore { .shared }
     @State var isSessionMenuHovering = false
     @State var isSessionRailVisible = true
     @State var isRenamingSession = false
@@ -295,7 +297,10 @@ struct DockPopover: View {
                 }
             }
             .onDisappear { model.presentationDemand.update(presentationHostID, visible: false) }
-            .onAppear { registerPerformanceSources() }
+            .onAppear {
+                registerPerformanceSources()
+                sessionPanes.runtime = model
+            }
             .environment(\.chatContextRouter, chatContextRouter)
             .environment(\.richHostActionRouter, richHostRouter)
             .environment(
