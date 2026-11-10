@@ -15,6 +15,9 @@ struct SessionPaneRow<Primary: View>: View {
     /// The active conversation; the flag says whether it is the leftmost column.
     @ViewBuilder let primary: (Bool) -> Primary
     @State private var target: SessionPaneTarget?
+    /// Resized column shares; ignored (equal columns) once the column count changes.
+    @State private var columnFractions: [CGFloat] = []
+    @State private var resizeStart: [CGFloat]?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Slot: Identifiable {
@@ -40,9 +43,10 @@ struct SessionPaneRow<Primary: View>: View {
     var body: some View {
         GeometryReader { geometry in
             let slots = slots
-            // Explicit equal widths: columns never overflow the window or clip a composer.
-            let columnWidth = max(
-                0, (geometry.size.width - CGFloat(slots.count - 1) * DockLayout.hairline) / CGFloat(slots.count))
+            // Explicit widths from the column shares: columns never overflow the window or clip a composer.
+            let available = max(0, geometry.size.width - CGFloat(slots.count - 1) * DockLayout.hairline)
+            let fractions = SessionPaneStore.fractions(columnFractions, count: slots.count)
+            let widths = fractions.map { $0 * available }
             // Columns keep their widths while a drag hovers: only the hints change, so the
             // transcripts never re-lay out mid-drag. The new column appears on drop.
             let zone = SessionPaneStore.newColumnZone(columnCount: store.panels.count)
@@ -50,9 +54,11 @@ struct SessionPaneRow<Primary: View>: View {
             HStack(spacing: 0) {
                 ForEach(Array(slots.enumerated()), id: \.element.id) { index, slot in
                     HStack(spacing: 0) {
-                        if index > 0 { Color.dockBorderLight.frame(width: DockLayout.hairline) }
+                        if index > 0 {
+                            divider(before: index, fractions: fractions, available: available).zIndex(1)
+                        }
                         column(slot, isLeading: index == 0)
-                            .frame(width: columnWidth)
+                            .frame(width: widths[index])
                             .clipped()
                             // The hovered column's chat clears below its header so the drop hint
                             // never sits over a visible transcript; the header stays put.
@@ -62,7 +68,7 @@ struct SessionPaneRow<Primary: View>: View {
                                     HStack(spacing: 0) {
                                         Rectangle().opacity(isTabTarget(slot) ? 0 : 1)
                                         if isNewColumnTarget, isLast(index) {
-                                            Color.clear.frame(width: columnWidth * zone)
+                                            Color.clear.frame(width: widths[index] * zone)
                                         }
                                     }
                                 }
@@ -75,7 +81,7 @@ struct SessionPaneRow<Primary: View>: View {
                                         title: "Add as tab", icon: .plus, isActive: isTabTarget(slot)
                                     )
                                     .dockPadding(.top, headerHeight)
-                                    .frame(width: columnWidth * (isLast(index) ? 1 - zone : 1))
+                                    .frame(width: widths[index] * (isLast(index) ? 1 - zone : 1))
                                 }
                             }
                     }
@@ -91,7 +97,7 @@ struct SessionPaneRow<Primary: View>: View {
                 if target != nil, zone > 0 {
                     SessionPaneDropHint(title: "New column", icon: .columnsPlusRight, isActive: isNewColumnTarget)
                         .dockPadding(.top, headerHeight)
-                        .frame(width: columnWidth * zone)
+                        .frame(width: (widths.last ?? 0) * zone)
                 }
             }
             .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.28), value: slots.map(\.id))
@@ -99,8 +105,39 @@ struct SessionPaneRow<Primary: View>: View {
             .onDrop(
                 of: isEnabled ? [SessionPaneDrag.pasteboardType.rawValue] : [],
                 delegate: SessionPaneDropDelegate(
-                    store: store, width: geometry.size.width, reduceMotion: reduceMotion, target: $target))
+                    store: store, width: geometry.size.width,
+                    fractions: fractions,
+                    reduceMotion: reduceMotion, target: $target))
         }
+    }
+
+    /// A hairline with a wider grab area: dragging trades width between its two
+    /// neighbors (each at least `minColumnWidth`); double-clicking evens the columns.
+    private func divider(before index: Int, fractions: [CGFloat], available: CGFloat) -> some View {
+        Color.dockBorderLight
+            .frame(width: DockLayout.hairline)
+            .overlay {
+                Color.clear
+                    .frame(width: 9)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .onChanged { value in
+                                guard available > 0 else { return }
+                                let start = resizeStart ?? fractions
+                                resizeStart = start
+                                columnFractions = SessionPaneStore.resized(
+                                    start, divider: index - 1, delta: value.translation.width / available,
+                                    minFraction: SessionPaneStore.minColumnWidth / available)
+                            }
+                            .onEnded { _ in resizeStart = nil }
+                    )
+                    .onTapGesture(count: 2) { columnFractions = [] }
+                    .accessibilityLabel("Resize columns")
+            }
     }
 
     @ViewBuilder

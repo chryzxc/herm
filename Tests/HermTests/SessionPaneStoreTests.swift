@@ -21,6 +21,25 @@ struct SessionPaneStoreTests {
         #expect(SessionPaneStore.dropTarget(x: 880, width: 900, columnCount: 3) == .tab(2))
     }
 
+    @Test func resizingTradesWidthBetweenNeighborsAboveTheMinimum() {
+        let even: [CGFloat] = [0.5, 0.5]
+        let close = { (lhs: [CGFloat], rhs: [CGFloat]) in zip(lhs, rhs).allSatisfy { abs($0 - $1) < 0.0001 } }
+        #expect(close(SessionPaneStore.resized(even, divider: 0, delta: 0.1, minFraction: 0.2), [0.6, 0.4]))
+        #expect(close(SessionPaneStore.resized(even, divider: 0, delta: 0.9, minFraction: 0.2), [0.8, 0.2]))
+        #expect(SessionPaneStore.resized(even, divider: 1, delta: 0.1, minFraction: 0.2) == even)
+        // A stale share list falls back to equal columns.
+        #expect(SessionPaneStore.fractions([0.7, 0.3], count: 3).count == 3)
+    }
+
+    @Test func dropTargetFollowsResizedColumns() {
+        // 900pt split 0.75 / 0.25: x = 600 is still the first column; the last quarter of
+        // the 225pt second column opens a new one.
+        let shares: [CGFloat] = [0.75, 0.25]
+        #expect(SessionPaneStore.dropTarget(x: 600, width: 900, columnCount: 2, fractions: shares) == .tab(0))
+        #expect(SessionPaneStore.dropTarget(x: 700, width: 900, columnCount: 2, fractions: shares) == .tab(1))
+        #expect(SessionPaneStore.dropTarget(x: 890, width: 900, columnCount: 2, fractions: shares) == .newPanel(2))
+    }
+
     @Test func resolveRejectsTheUnsplitPrimaryAndSelectsAnOpenTab() {
         #expect(SessionPaneStore.resolve(sessionID: "a", primaryID: "a", panelTabs: [], target: .newPanel(1)) == nil)
         #expect(

@@ -2652,7 +2652,11 @@ hovered zone covers its column with the solid canvas and a dashed outline, and
 its pill grows. Hovering never resizes columns (re-laying out every transcript
 on each frame of a back-and-forth drag stalls the app); the new column slides
 in once, on drop (0.28s `DockMotion`; cross-fade only under Reduce Motion). Column widths are computed, never
-intrinsic, so no column overflows the window.
+intrinsic, so no column overflows the window. Columns start equal; dragging the
+hairline between two columns (resize cursor, 9pt grab area) trades width between
+just those two, each kept at least 280pt, and double-clicking it evens the
+columns again. Drop zones follow the resized widths. Opening or closing a column
+returns to equal widths.
 
 Every session on screen in a column counts as active: the sidebar highlights
 all of them, and clicking one activates its column instead of moving it.

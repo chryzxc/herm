@@ -101,17 +101,48 @@ final class SessionPaneStore: ObservableObject {
         return count >= maxColumns ? 0 : count == 1 ? 0.5 : 0.25
     }
 
-    /// The column under the cursor; columns are equal width. The trailing zone of the
-    /// last column opens a new column while there is room; anywhere else adds a tab to
-    /// the column under the cursor, including the first.
-    nonisolated static func dropTarget(x: CGFloat, width: CGFloat, columnCount: Int) -> SessionPaneTarget {
+    /// The smallest a resized column may get.
+    nonisolated static let minColumnWidth: CGFloat = 280
+
+    /// Column shares of the row: the user's resized `fractions` when they match the
+    /// column count, otherwise equal shares.
+    nonisolated static func fractions(_ fractions: [CGFloat], count: Int) -> [CGFloat] {
+        let count = max(count, 1)
+        return fractions.count == count ? fractions : Array(repeating: 1 / CGFloat(count), count: count)
+    }
+
+    /// Drags the divider before column `divider + 1` by `delta` (a share of the row),
+    /// trading width only between its two neighbors, each kept at least `minFraction`.
+    nonisolated static func resized(
+        _ fractions: [CGFloat], divider: Int, delta: CGFloat, minFraction: CGFloat
+    ) -> [CGFloat] {
+        guard fractions.indices.contains(divider), fractions.indices.contains(divider + 1) else { return fractions }
+        var result = fractions
+        let pair = fractions[divider] + fractions[divider + 1]
+        let floor = min(minFraction, pair / 2)
+        result[divider] = min(max(fractions[divider] + delta, floor), pair - floor)
+        result[divider + 1] = pair - result[divider]
+        return result
+    }
+
+    /// The column under the cursor, using the row's column shares. The trailing zone of
+    /// the last column opens a new column while there is room; anywhere else adds a tab
+    /// to the column under the cursor, including the first.
+    nonisolated static func dropTarget(
+        x: CGFloat, width: CGFloat, columnCount: Int, fractions: [CGFloat] = []
+    ) -> SessionPaneTarget {
         let count = max(columnCount, 1)
-        let columnWidth = width / CGFloat(count)
-        guard columnWidth > 0 else { return .tab(0) }
-        let position = x / columnWidth
-        let column = min(max(Int(position.rounded(.down)), 0), count - 1)
+        guard width > 0 else { return .tab(0) }
+        let shares = Self.fractions(fractions, count: count)
+        var start: CGFloat = 0
+        var column = 0
+        while column < count - 1, x >= (start + shares[column]) * width {
+            start += shares[column]
+            column += 1
+        }
+        let position = min(max((x / width - start) / shares[column], 0), 1)
         let zone = newColumnZone(columnCount: count)
-        if zone > 0, column == count - 1, position - CGFloat(column) >= 1 - zone { return .newPanel(count) }
+        if zone > 0, column == count - 1, position >= 1 - zone { return .newPanel(count) }
         return .tab(column)
     }
 
@@ -306,6 +337,7 @@ final class SessionPaneStore: ObservableObject {
 struct SessionPaneDropDelegate: DropDelegate {
     let store: SessionPaneStore
     let width: CGFloat
+    let fractions: [CGFloat]
     let reduceMotion: Bool
     @Binding var target: SessionPaneTarget?
 
@@ -317,7 +349,8 @@ struct SessionPaneDropDelegate: DropDelegate {
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         NSCursor.closedHand.set()
-        let next = SessionPaneStore.dropTarget(x: info.location.x, width: width, columnCount: store.panels.count)
+        let next = SessionPaneStore.dropTarget(
+            x: info.location.x, width: width, columnCount: store.panels.count, fractions: fractions)
         if next != target { withAnimation(animation) { target = next } }
         return DropProposal(operation: .copy)
     }
