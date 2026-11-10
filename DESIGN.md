@@ -2628,7 +2628,9 @@ opens its column beside the active column rather than at the far right; when
 three columns are open it adds a tab to the active column. The inspector's **Open a
 new tab** grid adds one **Conversation** card whose popover lists Bot main chats
 and recent sessions; picking one opens it in split view beside the active column.
-Split tabs hug their titles (up to 220pt, then truncate) and show a Bot's avatar
+Split tabs hug their titles (up to 220pt, then truncate); when a column is
+too narrow for its tabs, the strip scrolls sideways (keeping the selected tab in
+view) rather than squeezing titles, and they show a Bot's avatar
 for its main chat. The Bots page splits
 the same way: drag a Bot row (or use its **Open in Split View**) to open its main
 chat beside the active one. There, the session menu omits Pin, Rename and Hide,
@@ -2645,9 +2647,9 @@ centered in each column (the first column included) and **New column** at the
 trailing edge while there is room (the trailing half of a single column, the
 last quarter otherwise). Hints never wash translucently over a transcript: the
 hovered zone covers its column with the solid canvas and a dashed outline, and
-its pill grows; hovering **New column**
-slides in a placeholder column as the others re-divide (0.28s `DockMotion`;
-cross-fade only under Reduce Motion). Column widths are computed, never
+its pill grows. Hovering never resizes columns (re-laying out every transcript
+on each frame of a back-and-forth drag stalls the app); the new column slides
+in once, on drop (0.28s `DockMotion`; cross-fade only under Reduce Motion). Column widths are computed, never
 intrinsic, so no column overflows the window.
 
 Every session on screen in a column counts as active: the sidebar highlights

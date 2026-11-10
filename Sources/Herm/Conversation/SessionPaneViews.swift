@@ -20,12 +20,10 @@ struct SessionPaneRow<Primary: View>: View {
     private enum Slot: Identifiable {
         case primary
         case panel(SessionPaneStore.Panel)
-        case placeholder
         var id: String {
             switch self {
             case .primary: SessionPaneStore.baseColumnID
             case .panel(let panel): panel.id
-            case .placeholder: "session-pane-placeholder"
             }
         }
     }
@@ -36,7 +34,6 @@ struct SessionPaneRow<Primary: View>: View {
             store.panels.isEmpty
             ? [.primary]
             : store.panels.enumerated().map { $0.offset == store.activeIndex ? .primary : .panel($0.element) }
-        if case .newPanel(let index) = target { slots.insert(.placeholder, at: min(max(index, 0), slots.count)) }
         return slots
     }
 
@@ -46,8 +43,10 @@ struct SessionPaneRow<Primary: View>: View {
             // Explicit equal widths: columns never overflow the window or clip a composer.
             let columnWidth = max(
                 0, (geometry.size.width - CGFloat(slots.count - 1) * DockLayout.hairline) / CGFloat(slots.count))
-            // The placeholder already shows the new column while that zone is hovered.
-            let zone = isNewColumnTarget ? 0 : SessionPaneStore.newColumnZone(columnCount: store.panels.count)
+            // Columns keep their widths while a drag hovers: only the hints change, so the
+            // transcripts never re-lay out mid-drag. The new column appears on drop.
+            let zone = SessionPaneStore.newColumnZone(columnCount: store.panels.count)
+            let isLast = { (index: Int) in index == slots.count - 1 }
             HStack(spacing: 0) {
                 ForEach(Array(slots.enumerated()), id: \.element.id) { index, slot in
                     HStack(spacing: 0) {
@@ -60,18 +59,23 @@ struct SessionPaneRow<Primary: View>: View {
                             .mask {
                                 VStack(spacing: 0) {
                                     Rectangle().frame(height: headerHeight)
-                                    Rectangle().opacity(isTabTarget(slot) ? 0 : 1)
+                                    HStack(spacing: 0) {
+                                        Rectangle().opacity(isTabTarget(slot) ? 0 : 1)
+                                        if isNewColumnTarget, isLast(index) {
+                                            Color.clear.frame(width: columnWidth * zone)
+                                        }
+                                    }
                                 }
                             }
                             .overlay(alignment: .leading) {
                                 // While a session is dragged over the row, every column shows it
                                 // takes a tab; the hovered one lights up.
-                                if target != nil, !isPlaceholder(slot) {
+                                if target != nil {
                                     SessionPaneDropHint(
                                         title: "Add as tab", icon: .plus, isActive: isTabTarget(slot)
                                     )
                                     .dockPadding(.top, headerHeight)
-                                    .frame(width: columnWidth * (index == slots.count - 1 ? 1 - zone : 1))
+                                    .frame(width: columnWidth * (isLast(index) ? 1 - zone : 1))
                                 }
                             }
                     }
@@ -85,7 +89,7 @@ struct SessionPaneRow<Primary: View>: View {
             }
             .overlay(alignment: .trailing) {
                 if target != nil, zone > 0 {
-                    SessionPaneDropHint(title: "New column", icon: .columnsPlusRight, isActive: false)
+                    SessionPaneDropHint(title: "New column", icon: .columnsPlusRight, isActive: isNewColumnTarget)
                         .dockPadding(.top, headerHeight)
                         .frame(width: columnWidth * zone)
                 }
@@ -106,11 +110,6 @@ struct SessionPaneRow<Primary: View>: View {
             primary(isLeading)
         case .panel(let panel):
             SessionPanelView(panel: panel, store: store) { header($0, isLeading: isLeading) }
-        case .placeholder:
-            VStack(spacing: 0) {
-                header(AnyView(EmptyView()), isLeading: isLeading)
-                SessionPaneDropHint(title: "Drop to open a new column", icon: .columnsPlusRight, isActive: true)
-            }
         }
     }
 
@@ -119,17 +118,11 @@ struct SessionPaneRow<Primary: View>: View {
         return false
     }
 
-    private func isPlaceholder(_ slot: Slot) -> Bool {
-        if case .placeholder = slot { return true }
-        return false
-    }
-
     private func isTabTarget(_ slot: Slot) -> Bool {
         guard case .tab(let index) = target else { return false }
         switch slot {
         case .primary: return index == (store.panels.isEmpty ? 0 : store.activeIndex)
         case .panel(let panel): return store.panels.firstIndex { $0.id == panel.id } == index
-        case .placeholder: return false
         }
     }
 
@@ -190,15 +183,30 @@ struct SessionPaneTabStrip: View {
     @Environment(\.chatContextRouter) private var router
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(tabs) { tab in
-                // A Bot's main chat shows the Bot's avatar instead of the chat glyph.
-                let bot = router?.bots?.bots.first { $0.chat?.sessionID == tab.id }
-                SessionPaneTab(tab: tab, bot: bot, avatar: bot.flatMap { router?.bots?.avatarImages[$0.id] })
-                    .layoutPriority(tab.isSelected ? 1 : 0)
+        // Tabs keep readable titles (up to 220pt each); a narrow column scrolls the strip
+        // sideways instead of squeezing every title to a letter.
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    ForEach(tabs) { tab in
+                        // A Bot's main chat shows the Bot's avatar instead of the chat glyph.
+                        let bot = router?.bots?.bots.first { $0.chat?.sessionID == tab.id }
+                        SessionPaneTab(tab: tab, bot: bot, avatar: bot.flatMap { router?.bots?.avatarImages[$0.id] })
+                            .id(tab.id)
+                    }
+                }
             }
+            .onAppear { scrollToSelected(proxy) }
+            .onChange(of: selectedID) { _, _ in scrollToSelected(proxy) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var selectedID: String? { tabs.first(where: \.isSelected)?.id }
+
+    private func scrollToSelected(_ proxy: ScrollViewProxy) {
+        guard let selectedID else { return }
+        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(selectedID) }
     }
 }
 
@@ -327,14 +335,13 @@ private struct SessionPanelView<Header: View>: View {
 
     @ViewBuilder
     private var content: some View {
-        if let conversation = chat.conversation, !chat.loadFailed {
+        // One loading state at a time: the transcript has its own, so the column never
+        // overlays a second one on top of it.
+        if let conversation = chat.conversation, !chat.loadFailed,
+            !(chat.isLoading && conversation.messages.isEmpty)
+        {
             SessionPaneChat(model: conversation)
                 .id(panel.selectedID)
-                .overlay {
-                    if chat.isLoading, conversation.messages.isEmpty {
-                        DockLoadingState(title: "Loading conversation…")
-                    }
-                }
         } else if chat.loadFailed {
             VStack(spacing: 6) {
                 Text("Conversation unavailable").dockFont(.body, weight: .semibold)
