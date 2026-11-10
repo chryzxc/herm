@@ -649,6 +649,9 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).fill(rowFill)
         )
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
+        // The rail stacks rows flush; 2pt each side keeps adjacent highlighted rows apart
+        // (4pt, matching the Bots list spacing).
+        .dockPadding(.vertical, 2)
         // rowFill already tracks hover; a second hover tracker doubled the work per row while scrolling.
         .onTapGesture { if !isEditingTitle { onSelect(session) } }
         .sessionPaneDraggable(SessionPaneDrag(session: session), isEnabled: !isEditingTitle)

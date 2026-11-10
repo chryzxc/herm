@@ -175,7 +175,7 @@ struct BotChatsPage: View, Equatable {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: 4) {
                     ForEach(items) { item in
                         switch item {
                         case .bot(let bot):
