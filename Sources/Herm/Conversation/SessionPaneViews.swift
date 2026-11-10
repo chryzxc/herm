@@ -54,6 +54,15 @@ struct SessionPaneRow<Primary: View>: View {
                         if index > 0 { Color.dockBorderLight.frame(width: DockLayout.hairline) }
                         column(slot, isLeading: index == 0)
                             .frame(width: columnWidth)
+                            .clipped()
+                            // The hovered column's chat clears below its header so the drop hint
+                            // never sits over a visible transcript; the header stays put.
+                            .mask {
+                                VStack(spacing: 0) {
+                                    Rectangle().frame(height: headerHeight)
+                                    Rectangle().opacity(isTabTarget(slot) ? 0 : 1)
+                                }
+                            }
                             .overlay(alignment: .leading) {
                                 // While a session is dragged over the row, every column shows it
                                 // takes a tab; the hovered one lights up.
@@ -177,49 +186,74 @@ struct SessionPaneTabStrip: View {
         }
     }
 
+    @Environment(\.chatContextRouter) private var router
+
     var body: some View {
         HStack(spacing: 2) {
             ForEach(tabs) { tab in
-                SessionPaneTab(tab: tab).layoutPriority(tab.isSelected ? 1 : 0)
+                // A Bot's main chat shows the Bot's avatar instead of the chat glyph.
+                let bot = router?.bots?.bots.first { $0.chat?.sessionID == tab.id }
+                SessionPaneTab(tab: tab, bot: bot, avatar: bot.flatMap { router?.bots?.avatarImages[$0.id] })
+                    .layoutPriority(tab.isSelected ? 1 : 0)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
+/// Hugs its content up to `maxWidth`, truncating past it; `.frame(maxWidth:)` would stretch to it.
+private struct SessionPaneTabWidth: Layout {
+    let maxWidth: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = min(proposal.width ?? maxWidth, maxWidth)
+        return subviews.first?.sizeThatFits(ProposedViewSize(width: width, height: proposal.height)) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+}
+
 private struct SessionPaneTab: View {
     let tab: SessionInspectorTabItem
+    let bot: BotSummary?
+    let avatar: Data?
     @State private var hovered = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            Button(action: tab.select) {
-                HStack(spacing: 6) {
-                    DockIcon(
-                        tab.icon, size: 12, weight: tab.isSelected ? .fill : .regular,
-                        color: tab.isSelected ? .dockPrimaryText : .dockSecondaryText)
-                    Text(tab.title).lineLimit(1).truncationMode(.tail)
-                }
-                .dockFont(.control)
-                .dockPadding(.leading, 10)
-                .dockPadding(.trailing, 4)
-                .frame(height: 32)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.dockHover)
-            .help(tab.title)
-            .accessibilityAddTraits(tab.isSelected ? .isSelected : [])
-            Button(action: tab.close) {
-                DockIcon(.x, size: 12, color: tab.isSelected ? .dockPrimaryText : .dockSecondaryText)
-                    .frame(width: 28, height: 32)
+        SessionPaneTabWidth(maxWidth: 220) {
+            HStack(spacing: 0) {
+                Button(action: tab.select) {
+                    HStack(spacing: 6) {
+                        if let bot {
+                            BotAvatarView(bot: bot, imageData: avatar, size: 16, animated: false)
+                        } else {
+                            DockIcon(
+                                tab.icon, size: 12, weight: tab.isSelected ? .fill : .regular,
+                                color: tab.isSelected ? .dockPrimaryText : .dockSecondaryText)
+                        }
+                        Text(tab.title).lineLimit(1).truncationMode(.tail)
+                    }
+                    .dockPadding(.leading, 8)
+                    .dockPadding(.trailing, 2)
+                    .frame(height: 26)
                     .contentShape(Rectangle())
+                }
+                .buttonStyle(.dockHover)
+                .help(tab.title)
+                .accessibilityAddTraits(tab.isSelected ? .isSelected : [])
+                Button(action: tab.close) {
+                    DockIcon(.x, size: 10, color: tab.isSelected ? .dockPrimaryText : .dockSecondaryText)
+                        .frame(width: 22, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.dockHover)
+                .accessibilityLabel("Close \(tab.title)")
             }
-            .buttonStyle(.dockHover)
-            .accessibilityLabel("Close \(tab.title)")
         }
-        .dockFont(.body, weight: .semibold)
+        .dockFont(.control, weight: .medium)
         .foregroundStyle(tab.isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
-        .frame(maxWidth: 240, alignment: .leading)
         .dockSelectionBackground(
             DockThemeShape(cornerRadius: DockLayout.controlRadius - 1), active: tab.isSelected,
             fill: DockThemePalette(theme: DockThemeRuntime.current).selectedFill, allowsInvert: false
@@ -231,8 +265,8 @@ private struct SessionPaneTab: View {
     }
 }
 
-/// A drop zone. Idle zones are a small solid pill over the content; the hovered zone
-/// covers its column with a solid surface, so the chat never shows through a wash.
+/// A drop zone. Idle zones are a small solid pill; the hovered zone is a dashed outline
+/// over its column, whose chat the row masks away while hovered.
 private struct SessionPaneDropHint: View {
     let title: String
     let icon: Ph
@@ -242,14 +276,9 @@ private struct SessionPaneDropHint: View {
     var body: some View {
         ZStack {
             if isActive {
-                Color.dockCanvas
-                    .overlay {
-                        DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
-                            .stroke(
-                                Color.dockBorderStrong, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
-                            )
-                            .dockPadding(12)
-                    }
+                DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
+                    .stroke(Color.dockBorderStrong, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                    .dockPadding(12)
                     .transition(.opacity)
             }
             HStack(spacing: 6) {

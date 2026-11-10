@@ -223,7 +223,13 @@ struct SessionInspector: View {
                         baseContent
                     } else {
                         SessionInspectorEmptyView(
-                            sections: visibleSections.filter { !openSections.contains($0) }, onOpen: reopen)
+                            sections: visibleSections.filter { !openSections.contains($0) }, onOpen: reopen,
+                            botChats: botMode.bots.filter { !$0.isHidden && $0.chat?.sessionID != model.sessionID }
+                                .compactMap(SessionPaneDrag.init(bot:)),
+                            sessions: model.sessions
+                                .filter { !$0.isHidden && $0.id != model.navigationSessionID }
+                                .sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
+                                .prefix(10).map(SessionPaneDrag.init(session:)))
                     }
                 }
                 .opacity(selectedExtraID == nil && selectedPreview == nil ? 1 : 0)

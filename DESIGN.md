@@ -2625,7 +2625,11 @@ history controls when the chat list is hidden. Tab titles truncate with an
 ellipsis rather than collapsing to icons, and the selected tab keeps its title
 longest. New tabs open beside the selected tab, and **Open in Split View**
 opens its column beside the active column rather than at the far right; when
-three columns are open it adds a tab to the active column. The Bots page splits
+three columns are open it adds a tab to the active column. The inspector's **Open a
+new tab** grid adds one **Conversation** card whose popover lists Bot main chats
+and recent sessions; picking one opens it in split view beside the active column.
+Split tabs hug their titles (up to 220pt, then truncate) and show a Bot's avatar
+for its main chat. The Bots page splits
 the same way: drag a Bot row (or use its **Open in Split View**) to open its main
 chat beside the active one. There, the session menu omits Pin, Rename and Hide,
 which apply to sessions rather than a Bot's main chat, and the session rail
