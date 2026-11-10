@@ -556,6 +556,10 @@ extension DockModel {
         let envelopeSessionID = params["session_id"] as? String
         let payloadSessionID = rawPayload["session_id"] as? String
         let eventSessionID = envelopeSessionID ?? payloadSessionID
+        if type == "message.reaction" {
+            applyMessageReaction(payload: rawPayload, owner: eventSessionID)
+            return
+        }
         // Hermes uses one gateway stream for every session. Once a session is
         // selected, reject events that do not prove ownership by that session
         // before projecting activities, tool calls, or conversation state. The
@@ -1800,6 +1804,7 @@ extension DockModel {
         let botProfileID = attribution?.profileID ?? activeBotProfileID
         let botDisplayName = attribution?.displayName ?? activeBotDisplayName
         closeTurnThinking()
+        let reactions = message.reactions
         messages[index] = ChatMessage(
             id: id,
             role: .hermes,
@@ -1818,6 +1823,7 @@ extension DockModel {
                 return call
             }
         )
+        messages[index].reactions = reactions
         streamingMessagePendingPresentationDelta = ""
         streamingText.retainCompletionPresentation(for: id)
         streamingText.clearLivePresentation()

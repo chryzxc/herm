@@ -423,7 +423,7 @@ extension DockModel {
                 activity = pendingActivity
                 pendingActivity = []
             }
-            let message = ChatMessage(
+            var message = ChatMessage(
                 role: role == "user" ? .user : .hermes,
                 text: attribution?.body ?? (role == "user" ? unwrappedSlashCommand(text) : text),
                 images: [],
@@ -434,6 +434,7 @@ extension DockModel {
                 botDisplayName: attribution?.displayName ?? defaultBotDisplayName,
                 activity: activity
             )
+            message.reactions = MessageReaction.parse(displayMetadata: row["display_metadata"])
             messages.append(message)
             if let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id") {
                 rowIDs[rowID] = message.id
