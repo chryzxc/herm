@@ -189,6 +189,7 @@ struct BotChatsPage: View, Equatable {
                                 room: room, store: groups, botMode: bots, style: style,
                                 isSelected: room.id == selectedRoomID, date: date
                             ) { openRoom(room.id) }
+                            .sessionPaneDraggable(SessionPaneDrag(room: room))
                         }
                     }
                 }

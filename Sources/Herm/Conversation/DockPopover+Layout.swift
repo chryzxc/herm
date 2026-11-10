@@ -532,7 +532,8 @@ extension DockPopover {
                     .environment(\.localPreviewDiscoveryVisible, isVisible && expandedReviewRouter.layers.isEmpty))
             // While chat is split, the inspector moves beside the active column instead of the window edge.
             let canSplit =
-                sessionWorkspaceMode == .chat && !isNarrowLayout
+                sessionWorkspaceMode.isColumnMode && !(sessionWorkspaceMode == .voice && isVoiceImmersive)
+                && !isNarrowLayout
                 && !(fullscreenSurface == .bots && openGroupRoom != nil)
             return AnyView(
                 SessionPaneSplitReader(store: sessionPanes) { isSplit in
@@ -632,9 +633,9 @@ extension DockPopover {
                 }
                 .id(room.id)
             } else {
-                if sessionWorkspaceMode != .chat { header }
-                switch sessionWorkspaceMode {
-                case .chat:
+                // Chat, Talk, PRs and Issues render per column; explorer and source control
+                // (and immersive Talk) still take the whole workspace.
+                if sessionWorkspaceMode.isColumnMode, !(sessionWorkspaceMode == .voice && isVoiceImmersive) {
                     // Each column owns its title row, so the primary header spans only its column.
                     SessionPaneRow(
                         store: sessionPanes, isEnabled: !isNarrowLayout,
@@ -646,7 +647,9 @@ extension DockPopover {
                                 HStack(spacing: 4) { toolbarLeadingControls }
                                     .environment(\.dockNavigationHistory, navigationHistoryControls)) : nil,
                         inspector: inspector,
-                        onOpenInspector: { if !inspectorPanelIsVisible { toggleInspectorPanel() } }
+                        onOpenInspector: { if !inspectorPanelIsVisible { toggleInspectorPanel() } },
+                        columnControls: splitColumnControls,
+                        metrics: conversationMetrics
                     ) { isLeading in
                         VStack(spacing: 0) {
                             conversationToolbar(
@@ -658,7 +661,8 @@ extension DockPopover {
                             GeometryReader { geometry in
                                 let railWidth =
                                     isSessionRailVisible
-                                    ? ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: geometry.size.width)
+                                    ? ConversationWorkspaceMetrics.sessionRailWidth(
+                                        availableWidth: geometry.size.width)
                                     : 0
                                 chatConversationContent(railWidth: railWidth)
                                     .overlay(alignment: .trailing) {
@@ -692,42 +696,36 @@ extension DockPopover {
                             }
                         }
                     }
-                case .voice:
-                    if isVoiceImmersive {
+                } else {
+                    if sessionWorkspaceMode != .voice { header }
+                    switch sessionWorkspaceMode {
+                    case .chat, .pullRequests, .issues:
+                        EmptyView()
+                    case .voice:
                         // Full voice mode renders the stage over the whole shell.
                         Color.clear
-                    } else {
-                        voiceMode
+                    case .explorer:
+                        SessionExplorerSurface(
+                            scope: activeSessionRepositoryScope,
+                            isCompact: isNarrowLayout,
+                            onRefresh: { await refreshSessionWorkflow() },
+                            onOpenFile: { scope, document in
+                                guard scope == activeSessionRepositoryScope else { return }
+                                explorerSelection = ScopedRepositoryDocument(scope: scope, document: document)
+                                if isNarrowLayout { isNarrowControlVisible = true }
+                            }
+                        )
+                    case .sourceControl:
+                        SessionSourceControlSurface(
+                            model: model,
+                            workflow: developerWorkflow,
+                            scope: activeSessionRepositoryScope,
+                            onRefresh: { await refreshSessionWorkflow() },
+                            onSelectFile: selectChangeFile,
+                            selectedFilePath: selectedChange?.scope == activeSessionRepositoryScope
+                                ? selectedChange?.file.path : nil
+                        )
                     }
-                case .explorer:
-                    SessionExplorerSurface(
-                        scope: activeSessionRepositoryScope,
-                        isCompact: isNarrowLayout,
-                        onRefresh: { await refreshSessionWorkflow() },
-                        onOpenFile: { scope, document in
-                            guard scope == activeSessionRepositoryScope else { return }
-                            explorerSelection = ScopedRepositoryDocument(scope: scope, document: document)
-                            if isNarrowLayout { isNarrowControlVisible = true }
-                        }
-                    )
-                case .sourceControl:
-                    SessionSourceControlSurface(
-                        model: model,
-                        workflow: developerWorkflow,
-                        scope: activeSessionRepositoryScope,
-                        onRefresh: { await refreshSessionWorkflow() },
-                        onSelectFile: selectChangeFile,
-                        selectedFilePath: selectedChange?.scope == activeSessionRepositoryScope
-                            ? selectedChange?.file.path : nil
-                    )
-                case .pullRequests:
-                    SessionPullRequestsSurface(
-                        center: sessionPullRequestCenter,
-                        repositoryPath: activeSessionRepositoryPath,
-                        onOpenChat: openPullRequestChat
-                    )
-                case .issues:
-                    SessionIssuesSurface(center: sessionIssueCenter, repositoryPath: activeSessionRepositoryPath)
                 }
             }
         }

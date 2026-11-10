@@ -179,6 +179,9 @@ struct DockPopover: View {
         case pullRequests
         case issues
 
+        /// Modes that render inside a split column; the rest take the whole workspace.
+        var isColumnMode: Bool { self == .chat || self == .voice || self == .pullRequests || self == .issues }
+
         var id: Self { self }
 
         var label: String {
@@ -312,6 +315,8 @@ struct DockPopover: View {
             .onAppear {
                 registerPerformanceSources()
                 sessionPanes.runtime = model
+                sessionPanes.tabStatus.bind(
+                    model: model, control: controlCenter, store: workspaceStore, panes: sessionPanes)
             }
             .environment(\.chatContextRouter, chatContextRouter)
             .environment(\.richHostActionRouter, richHostRouter)

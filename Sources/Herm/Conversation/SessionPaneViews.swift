@@ -16,6 +16,11 @@ struct SessionPaneRow<Primary: View>: View {
     var inspector: AnyView?
     /// Opens the inspector; inactive columns call it after taking over as the active column.
     var onOpenInspector: () -> Void = {}
+    /// Mode tabs and the actions menu for an inactive column's session; every action
+    /// first makes that column active.
+    var columnControls: ((_ sessionID: String, _ activate: @escaping () -> Void) -> AnyView)?
+    /// The main conversation's metrics, so every column's composer sits at the same height.
+    var metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: false)
     /// The active conversation; the flag says whether it is the leftmost column.
     @ViewBuilder let primary: (Bool) -> Primary
     @State private var target: SessionPaneTarget?
@@ -25,36 +30,44 @@ struct SessionPaneRow<Primary: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Slot: Identifiable {
-        case primary
+        /// The active column, keyed by its own panel id: a fixed id would collide with the
+        /// base column once another column is active, and SwiftUI would draw one view twice.
+        case primary(id: String)
         case panel(SessionPaneStore.Panel)
         var id: String {
             switch self {
-            case .primary: SessionPaneStore.baseColumnID
+            case .primary(let id): id
             case .panel(let panel): panel.id
             }
         }
     }
 
     private var slots: [Slot] {
-        guard isEnabled else { return [.primary] }
-        var slots: [Slot] =
-            store.panels.isEmpty
-            ? [.primary]
-            : store.panels.enumerated().map { $0.offset == store.activeIndex ? .primary : .panel($0.element) }
-        return slots
+        let base = Slot.primary(id: SessionPaneStore.baseColumnID)
+        guard isEnabled, !store.panels.isEmpty else { return [base] }
+        return store.panels.enumerated().map {
+            $0.offset == store.activeIndex ? .primary(id: $0.element.id) : .panel($0.element)
+        }
     }
 
     var body: some View {
         GeometryReader { geometry in
             let slots = slots
-            let inspector = slots.count > 1 ? inspector : nil
-            let inspectorWidth = inspector == nil ? 0 : Self.inspectorWidth + DockLayout.hairline
+            // The inspector follows the main conversation, which a room tab hides.
+            let inspector =
+                slots.count > 1 && store.activePanel?.selected?.groupRoomID == nil ? inspector : nil
+            // Beside the active column while every column keeps its minimum width; when that
+            // would crowd them, it floats over the neighbor instead of squeezing every column.
+            let fitsBeside =
+                (geometry.size.width - Self.inspectorWidth) / CGFloat(slots.count) >= SessionPaneStore.minColumnWidth
+            let docked = fitsBeside ? inspector : nil
+            let inspectorWidth = docked == nil ? 0 : Self.inspectorWidth + DockLayout.hairline
             // Explicit widths from the column shares: columns never overflow the window or clip a composer.
             let available = max(
                 0, geometry.size.width - inspectorWidth - CGFloat(slots.count - 1) * DockLayout.hairline)
             let fractions = SessionPaneStore.fractions(columnFractions, count: slots.count)
             let widths = fractions.map { $0 * available }
-            let activeSlot = slots.firstIndex { $0.id == SessionPaneStore.baseColumnID } ?? 0
+            let activeSlot = slots.firstIndex { if case .primary = $0 { true } else { false } } ?? 0
             let inspectorStart = widths.prefix(activeSlot + 1).reduce(0, +) + CGFloat(activeSlot) * DockLayout.hairline
             // Columns keep their widths while a drag hovers: only the hints change, so the
             // transcripts never re-lay out mid-drag. The new column appears on drop.
@@ -66,7 +79,7 @@ struct SessionPaneRow<Primary: View>: View {
                         if index > 0 {
                             divider(before: index, fractions: fractions, available: available).zIndex(1)
                         }
-                        column(slot, isLeading: index == 0)
+                        column(slot, isLeading: index == 0, width: widths[index])
                             .frame(width: widths[index])
                             .clipped()
                             // The hovered column's chat clears below its header so the drop hint
@@ -93,7 +106,7 @@ struct SessionPaneRow<Primary: View>: View {
                                     .frame(width: widths[index] * (isLast(index) ? 1 - zone : 1))
                                 }
                             }
-                        if index == activeSlot, let inspector {
+                        if index == activeSlot, let inspector = docked {
                             Color.dockBorderLight.frame(width: DockLayout.hairline)
                             inspector.frame(width: Self.inspectorWidth)
                         }
@@ -104,6 +117,23 @@ struct SessionPaneRow<Primary: View>: View {
                             : .asymmetric(
                                 insertion: .move(edge: .trailing).combined(with: .opacity),
                                 removal: .opacity))
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if let inspector, docked == nil {
+                    // After the active column, or before it when that would run off the window.
+                    let end = inspectorStart
+                    let x =
+                        end + Self.inspectorWidth <= geometry.size.width
+                        ? end : max(0, end - widths[activeSlot] - Self.inspectorWidth - DockLayout.hairline)
+                    HStack(spacing: 0) {
+                        Color.dockBorderLight.frame(width: DockLayout.hairline)
+                        inspector.frame(width: Self.inspectorWidth)
+                        Color.dockBorderLight.frame(width: DockLayout.hairline)
+                    }
+                    .frame(height: geometry.size.height)
+                    .background(Color.dockOpaqueCanvas)
+                    .offset(x: x)
                 }
             }
             .overlay(alignment: .trailing) {
@@ -135,12 +165,11 @@ struct SessionPaneRow<Primary: View>: View {
                 Color.clear
                     .frame(width: 9)
                     .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-                    }
+                    .modifier(ColumnResizeCursor())
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .global)
                             .onChanged { value in
+                                if #unavailable(macOS 15) { NSCursor.resizeLeftRight.set() }
                                 guard available > 0 else { return }
                                 let start = resizeStart ?? fractions
                                 resizeStart = start
@@ -156,12 +185,21 @@ struct SessionPaneRow<Primary: View>: View {
     }
 
     @ViewBuilder
-    private func column(_ slot: Slot, isLeading: Bool) -> some View {
+    private func column(_ slot: Slot, isLeading: Bool, width: CGFloat) -> some View {
         switch slot {
         case .primary:
-            primary(isLeading)
+            // A group chat tab in the active column shows the room, not the main conversation.
+            if let panel = store.activePanel, panel.selected?.groupRoomID != nil {
+                SessionPanelView(panel: panel, store: store, metrics: metrics) {
+                    header($0, panel: panel, isLeading: isLeading, width: width)
+                }
+            } else {
+                primary(isLeading)
+            }
         case .panel(let panel):
-            SessionPanelView(panel: panel, store: store) { header($0, panel: panel, isLeading: isLeading) }
+            SessionPanelView(panel: panel, store: store, metrics: metrics) {
+                header($0, panel: panel, isLeading: isLeading, width: width)
+            }
         }
     }
 
@@ -179,15 +217,21 @@ struct SessionPaneRow<Primary: View>: View {
     }
 
     /// An inactive column's title row, matching the primary header's height, fill and separator.
-    private func header(_ content: AnyView, panel: SessionPaneStore.Panel, isLeading: Bool) -> some View {
+    private func header(_ content: AnyView, panel: SessionPaneStore.Panel, isLeading: Bool, width: CGFloat)
+        -> some View
+    {
         let showsLeading = isLeading && leadingControls != nil
         return HStack(spacing: 4) {
             if showsLeading, let leadingControls { leadingControls }
             content
-            if let selectedID = panel.selectedID {
+            // A room column has no session to activate; its actions sit in the room's own bar.
+            if let selectedID = panel.selectedID, panel.selected?.groupRoomID == nil {
+                let activate = { store.activate(selectedID, in: panel.id) }
+                Spacer(minLength: 8)
+                columnControls?(selectedID, activate)
                 // The inspector follows the active column: opening it here makes this column active.
                 DockSidebarToggle(isCollapsed: true, edge: .trailing) {
-                    store.activate(selectedID, in: panel.id)
+                    activate()
                     onOpenInspector()
                 }
             }
@@ -242,13 +286,15 @@ struct SessionPaneTabStrip: View {
             guard let id = tab.sessionID else { return nil }
             let isSelected = id == panel.selectedID
             return SessionInspectorTabItem(
-                id: id, title: isSelected ? liveTitle ?? tab.title : tab.title, icon: .chatCircle,
+                id: id, title: isSelected ? liveTitle ?? tab.title : tab.title,
+                icon: tab.groupRoomID == nil ? .chatCircle : .usersThree,
                 isSelected: isSelected,
                 select: { store.select(id, in: panel.id) }, close: { store.closeTab(id, in: panel.id) })
         }
     }
 
     @Environment(\.chatContextRouter) private var router
+    @ObservedObject private var status = SessionPaneStore.shared.tabStatus
 
     var body: some View {
         // Tabs keep readable titles (up to 220pt each); a narrow column scrolls the strip
@@ -259,8 +305,11 @@ struct SessionPaneTabStrip: View {
                     ForEach(tabs) { tab in
                         // A Bot's main chat shows the Bot's avatar instead of the chat glyph.
                         let bot = router?.bots?.bots.first { $0.chat?.sessionID == tab.id }
-                        SessionPaneTab(tab: tab, bot: bot, avatar: bot.flatMap { router?.bots?.avatarImages[$0.id] })
-                            .id(tab.id)
+                        SessionPaneTab(
+                            tab: tab, bot: bot, avatar: bot.flatMap { router?.bots?.avatarImages[$0.id] },
+                            status: status.entries[tab.id]
+                        )
+                        .id(tab.id)
                     }
                 }
             }
@@ -268,6 +317,8 @@ struct SessionPaneTabStrip: View {
             .onChange(of: selectedID) { _, _ in scrollToSelected(proxy) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Wins width over the header's spacer, which would otherwise take half and clip the tabs.
+        .layoutPriority(1)
     }
 
     private var selectedID: String? { tabs.first(where: \.isSelected)?.id }
@@ -296,7 +347,11 @@ private struct SessionPaneTab: View {
     let tab: SessionInspectorTabItem
     let bot: BotSummary?
     let avatar: Data?
+    let status: SessionPaneTabStatusModel.Entry?
     @State private var hovered = false
+
+    /// A Bot's main chat carries Hermes' canonical "Bot Chat" title; the Bot's name identifies it.
+    private var title: String { bot?.name ?? tab.title }
 
     var body: some View {
         SessionPaneTabWidth(maxWidth: 220) {
@@ -310,7 +365,10 @@ private struct SessionPaneTab: View {
                                 tab.icon, size: 12, weight: tab.isSelected ? .fill : .regular,
                                 color: tab.isSelected ? .dockPrimaryText : .dockSecondaryText)
                         }
-                        Text(tab.title).lineLimit(1).truncationMode(.tail)
+                        Text(title).lineLimit(1).truncationMode(.tail)
+                        if let status {
+                            SidebarSessionStatusIndicator(session: status.session, status: status.status)
+                        }
                     }
                     .dockPadding(.leading, 8)
                     .dockPadding(.trailing, 2)
@@ -318,7 +376,7 @@ private struct SessionPaneTab: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.dockHover)
-                .help(tab.title)
+                .help(title)
                 .accessibilityAddTraits(tab.isSelected ? .isSelected : [])
                 Button(action: tab.close) {
                     DockIcon(.x, size: 10, color: tab.isSelected ? .dockPrimaryText : .dockSecondaryText)
@@ -326,7 +384,7 @@ private struct SessionPaneTab: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.dockHover)
-                .accessibilityLabel("Close \(tab.title)")
+                .accessibilityLabel("Close \(title)")
             }
         }
         .dockFont(.control, weight: .medium)
@@ -370,6 +428,8 @@ private struct SessionPaneDropHint: View {
             .scaleEffect(isActive ? 1.06 : 1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Mutes the transcript underneath so the drop choices read clearly.
+        .background(Color.dockOpaqueCanvas.opacity(isActive ? 0.92 : 0.8))
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18), value: isActive)
         .transition(.opacity)
         .allowsHitTesting(false)
@@ -380,12 +440,17 @@ private struct SessionPaneDropHint: View {
 private struct SessionPanelView<Header: View>: View {
     let panel: SessionPaneStore.Panel
     let store: SessionPaneStore
+    let metrics: ConversationWorkspaceMetrics
     let header: (AnyView) -> Header
     @ObservedObject private var chat: EdgeQuickConversationModel
 
-    init(panel: SessionPaneStore.Panel, store: SessionPaneStore, header: @escaping (AnyView) -> Header) {
+    init(
+        panel: SessionPaneStore.Panel, store: SessionPaneStore, metrics: ConversationWorkspaceMetrics,
+        header: @escaping (AnyView) -> Header
+    ) {
         self.panel = panel
         self.store = store
+        self.metrics = metrics
         self.header = header
         chat = panel.chat
     }
@@ -401,14 +466,42 @@ private struct SessionPanelView<Header: View>: View {
         }
     }
 
+    @Environment(\.chatContextRouter) private var router
+
     @ViewBuilder
     private var content: some View {
+        if let roomID = panel.selected?.groupRoomID {
+            if let bots = router?.bots {
+                GroupChatView(
+                    store: bots.groupChats, botMode: bots, roomID: roomID, metrics: metrics,
+                    // The tab names the room; its thread and room actions keep a slim bar.
+                    toolbar: { _, actions in
+                        AnyView(
+                            HStack {
+                                Spacer(minLength: 0)
+                                actions
+                            }
+                            .dockPadding(.horizontal, 8)
+                            .frame(height: 32))
+                    }
+                ) { store.closeTab(panel.selectedID ?? "", in: panel.id) }
+                .id(roomID)
+            } else {
+                DockLoadingState(title: "Loading group chat…")
+            }
+        } else {
+            sessionContent
+        }
+    }
+
+    @ViewBuilder
+    private var sessionContent: some View {
         // One loading state at a time: the transcript has its own, so the column never
         // overlays a second one on top of it.
         if let conversation = chat.conversation, !chat.loadFailed,
             !(chat.isLoading && conversation.messages.isEmpty)
         {
-            SessionPaneChat(model: conversation)
+            SessionPaneChat(model: conversation, metrics: metrics)
                 .id(panel.selectedID)
         } else if chat.loadFailed {
             VStack(spacing: 6) {
@@ -437,7 +530,7 @@ private struct SessionPaneChat: View {
     @State private var searching = false
     @State private var jumpID: UUID?
     @State private var image: ChatImagePreview?
-    private let metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: false)
+    let metrics: ConversationWorkspaceMetrics
     private var chatBots: BotModeModel { router?.bots ?? bots }
 
     var body: some View {
@@ -456,5 +549,20 @@ private struct SessionPaneChat: View {
         .task { control.bind(to: model) }
         .onChange(of: model.sessionID) { _, id in control.focus(sessionID: id) }
         .dockSheet(item: $image) { ChatImagePreviewModal(image: $0.image) }
+    }
+}
+
+/// The divider's resize cursor. A push/pop pair loses to the transcripts' text cursors and the
+/// app's cursor arbiter, which reset it the moment it shows; the native pointer style rides
+/// SwiftUI's own cursor updates, and the macOS 14 fallback re-asserts it on every move.
+private struct ColumnResizeCursor: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.pointerStyle(.columnResize)
+        } else {
+            content.onContinuousHover { phase in
+                if case .active = phase { NSCursor.resizeLeftRight.set() } else { NSCursor.arrow.set() }
+            }
+        }
     }
 }

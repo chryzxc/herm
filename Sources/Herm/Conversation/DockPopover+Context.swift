@@ -598,7 +598,10 @@ extension DockPopover {
                             onToggle: toggleInspectorPanel,
                             headerHeight: usesWindowChrome
                                 ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight,
-                            tabRequest: $sessionInspectorTabRequest
+                            tabRequest: $sessionInspectorTabRequest,
+                            workspaceSections: [.talk] + (sessionGitHubTabsAvailable ? [.pullRequests, .issues] : []),
+                            workspaceContent: inspectorWorkspaceTab,
+                            onWorkspaceSection: showInspectorWorkspaceSection
                         )
                     case .artifacts:
                         ArtifactsInspectorView(model: model, presentation: .inspector)
@@ -929,8 +932,6 @@ extension DockPopover {
                             .keyboardShortcut("f", modifiers: .command)
                             .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
                     }
-
-                    sessionModeSwitcher(style: style)
 
                     if sessionWorkspaceMode == .chat,
                         ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: geometry.size.width) > 0

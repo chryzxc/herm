@@ -77,4 +77,10 @@ struct SessionPaneStoreTests {
         #expect(drag.destination.profileID == "work")
         #expect(drag.destination.session?.id == "s1")
     }
+
+    @Test func roomTabsCarryTheirRoomID() {
+        let room = QuickDestination(sessionID: QuickDestination.groupRoomPrefix + "r1", title: "Team")
+        #expect(room.groupRoomID == "r1")
+        #expect(QuickDestination(sessionID: "s1").groupRoomID == nil)
+    }
 }

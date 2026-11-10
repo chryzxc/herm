@@ -218,3 +218,18 @@ struct SessionUnreadReplyBadge: View {
         }
     }
 }
+
+/// The sidebar row's status slot: a spinner or attention glyph while a turn needs
+/// watching, otherwise the unread reply count. Split tabs reuse it so both agree.
+struct SidebarSessionStatusIndicator: View {
+    let session: HermesSession
+    let status: SidebarSessionStatus
+
+    var body: some View {
+        if status == .unreadComplete || status == .none {
+            SessionUnreadReplyBadge(session: session, showUnavailable: status == .unreadComplete)
+        } else if let state = status.activityState {
+            DockActivityIndicator(state: state, size: 12, unreadDot: true)
+        }
+    }
+}

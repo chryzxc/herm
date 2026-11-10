@@ -798,11 +798,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     private var statusIndicator: some View {
         ZStack {
             Color.clear
-            if sessionStatus == .unreadComplete || sessionStatus == .none {
-                SessionUnreadReplyBadge(session: session, showUnavailable: sessionStatus == .unreadComplete)
-            } else if let state = sessionStatus.activityState {
-                DockActivityIndicator(state: state, size: 12, unreadDot: true)
-            }
+            SidebarSessionStatusIndicator(session: session, status: sessionStatus)
         }
         .frame(width: 20, height: 18, alignment: .trailing)
         // Shapes and spinners have no text baseline; center on the title's x-height so every state lines up.

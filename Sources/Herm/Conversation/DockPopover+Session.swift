@@ -50,14 +50,93 @@ extension DockPopover {
         }
     }
 
-    func sessionModeSwitcher(style: DockThemePalette) -> some View {
-        SessionModeTabStrip(
-            modes: sessionGitHubTabsAvailable ? [.chat, .voice, .pullRequests, .issues] : [.chat, .voice],
-            selectedMode: sessionWorkspaceMode,
-            style: style,
-            voiceEnabled: model.sessionActionsReady,
-            onSelect: selectSessionMode
-        )
+    /// Talk, PRs and Issues as inspector tabs, opened from its new-tab grid.
+    func inspectorWorkspaceTab(_ section: SessionInspector.Section) -> AnyView {
+        switch section {
+        case .talk:
+            return AnyView(voiceMode)
+        case .pullRequests:
+            return AnyView(
+                SessionListDetailTab(backLabel: "All pull requests") { open in
+                    SessionPullRequestsSurface(
+                        center: sessionPullRequestCenter, repositoryPath: activeSessionRepositoryPath,
+                        onOpenChat: openPullRequestChat, onSelect: open)
+                } detail: {
+                    PullRequestDetailView(
+                        center: sessionPullRequestCenter, onOpenChat: openPullRequestChat, isInspector: true)
+                })
+        case .issues:
+            return AnyView(
+                SessionListDetailTab(backLabel: "All issues") { open in
+                    SessionIssuesSurface(
+                        center: sessionIssueCenter, repositoryPath: activeSessionRepositoryPath, onSelect: open)
+                } detail: {
+                    IssueDetailView(center: sessionIssueCenter, onOpenChat: openIssueChat, isInspector: true)
+                })
+        default:
+            return AnyView(EmptyView())
+        }
+    }
+
+    /// Voice runs while the Talk tab shows; leaving the tab ends it.
+    func showInspectorWorkspaceSection(_ section: SessionInspector.Section?) {
+        if section == .talk {
+            if model.sessionActionsReady { selectSessionMode(.voice) }
+        } else if sessionWorkspaceMode == .voice {
+            selectSessionMode(.chat)
+        }
+    }
+
+    /// An inactive split column's header actions, matching the active header. Each
+    /// action activates the column first, so the result lands on that column's session.
+    func splitColumnControls(sessionID: String, activate: @escaping () -> Void) -> AnyView {
+        let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
+        // Bots shows each Bot's main chat, which can't be pinned, renamed or hidden.
+        let session = fullscreenSurface == .bots ? nil : model.sessions.first { $0.id == sessionID }
+        return AnyView(
+            HStack(spacing: 4) {
+                DockMenu {
+                    if let session {
+                        let pinned = model.isSessionPinned(session.id)
+                        Button(
+                            pinned ? "Unpin conversation" : "Pin conversation", icon: pinned ? .pushPinSlash : .pushPin
+                        ) {
+                            Task { await model.toggleSessionPinned(session) }
+                        }
+                        .disabled(!model.sessionActionsReady)
+                        Button("Rename…", icon: .pencilSimple) {
+                            activate()
+                            renameDraft = session.displayTitle
+                            isRenamingSession = true
+                        }
+                        .disabled(!model.sessionActionsReady)
+                        Button(
+                            session.isHidden ? "Show in list" : "Hide from list",
+                            icon: session.isHidden ? .eye : .eyeSlash
+                        ) {
+                            Task { @MainActor in
+                                if await model.setSessionHidden(session, hidden: !session.isHidden) {
+                                    controlCenter.refreshProjectNavigation()
+                                }
+                            }
+                        }
+                        .disabled(!model.sessionActionsReady)
+                        Divider()
+                    }
+                    Button("Find in conversation", icon: .magnifyingGlass) {
+                        activate()
+                        isShowingMessageSearch = true
+                    }
+                } label: {
+                    DockIcon(.dotsThree, size: DockLayout.toolbarIconSize, color: style.secondaryText)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .fixedSize()
+                .help("Conversation actions")
+                .accessibilityLabel("Conversation actions")
+            }
+            .fixedSize())
     }
 
     func sessionViewMenu(includesInspector: Bool, style: DockThemePalette) -> some View {

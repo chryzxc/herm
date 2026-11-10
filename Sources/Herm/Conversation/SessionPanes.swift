@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -21,10 +22,25 @@ extension SessionPaneDrag {
         self.init(sessionID: session.id, profileID: session.profileID, title: session.displayTitle)
     }
 
+    /// A group chat room. Rooms are not Hermes sessions; the tab id carries the room id.
+    init(room: GroupRoom) {
+        self.init(sessionID: QuickDestination.groupRoomPrefix + room.id, profileID: nil, title: room.name)
+    }
+
     /// A Bot's canonical chat; nil until Hermes has created it (the roster then only knows its title).
     init?(bot: BotSummary) {
         guard let chat = bot.chat else { return nil }
         self.init(sessionID: chat.sessionID, profileID: chat.profileID, title: bot.name)
+    }
+}
+
+extension QuickDestination {
+    // ponytail: rooms ride the session-keyed tab model behind an id prefix; give tabs a
+    // real kind if more non-session tab types appear.
+    static let groupRoomPrefix = "group-room:"
+    var groupRoomID: String? {
+        guard let id = sessionID, id.hasPrefix(Self.groupRoomPrefix) else { return nil }
+        return String(id.dropFirst(Self.groupRoomPrefix.count))
     }
 }
 
@@ -42,7 +58,9 @@ extension View {
                         .frame(maxWidth: 260, alignment: .leading)
                 }
                 .dockCard(padding: 10, isActive: true)
-                .rotationEffect(.degrees(-2))
+                // Upright, with room around it: the preview is rasterized to its own bounds, so a
+                // tilt or a flush border clips the card's corners and stroke.
+                .dockPadding(6)
             }
             .modifier(DockDragCursor(isEnabled: isEnabled, isDragging: false))
         } else {
@@ -87,6 +105,8 @@ final class SessionPaneStore: ObservableObject {
     @Published private(set) var panels: [Panel] = []
     @Published private(set) var activeIndex = 0
     weak var runtime: DockModel?
+    /// Sidebar status of every open tab; bound by the window shell.
+    let tabStatus = SessionPaneTabStatusModel()
     private var showsBotsLayout = false
     private var parkedLayouts: [Bool: (panels: [Panel], activeIndex: Int)] = [:]
 
@@ -234,8 +254,7 @@ final class SessionPaneStore: ObservableObject {
 
     /// Moves the main conversation (and its header, inspector and modes) to this column.
     private func activate(_ sessionID: String, at index: Int) {
-        guard let runtime, let session = panels[index].tabs.first(where: { $0.sessionID == sessionID })?.session
-        else { return }
+        guard let runtime, let tab = panels[index].tabs.first(where: { $0.sessionID == sessionID }) else { return }
         if index != activeIndex {
             let previous = activeIndex
             refreshActiveTitle()
@@ -251,7 +270,10 @@ final class SessionPaneStore: ObservableObject {
             }
         }
         panels[activeIndex].selectedID = sessionID
-        if runtime.navigationSessionID != sessionID { runtime.resumeSession(session, profileID: session.profileID) }
+        // A room renders from the group chat store; the main conversation stays where it was.
+        if tab.groupRoomID == nil, let session = tab.session, runtime.navigationSessionID != sessionID {
+            runtime.resumeSession(session, profileID: session.profileID)
+        }
         collapseIfUnsplit()
     }
 
@@ -277,7 +299,9 @@ final class SessionPaneStore: ObservableObject {
             // The active column emptied: the nearest column becomes active.
             panels.remove(at: index)
             activeIndex = max(0, min(index, panels.count - 1))
-            if panels.indices.contains(activeIndex), let session = panels[activeIndex].selected?.session {
+            if panels.indices.contains(activeIndex), panels[activeIndex].selected?.groupRoomID == nil,
+                let session = panels[activeIndex].selected?.session
+            {
                 panels[activeIndex].chat.shutdown()
                 runtime?.resumeSession(session, profileID: session.profileID)
             }
@@ -345,7 +369,9 @@ final class SessionPaneStore: ObservableObject {
     }
 
     private func collapseIfUnsplit() {
-        guard panels.count <= 1, (panels.first?.tabs.count ?? 0) <= 1 else { return }
+        // A lone room tab stays: unsplit, the workspace shows only the main conversation.
+        guard panels.count <= 1, (panels.first?.tabs.count ?? 0) <= 1, panels.first?.selected?.groupRoomID == nil
+        else { return }
         panels.first?.chat.shutdown()
         panels = []
         activeIndex = 0
@@ -353,6 +379,8 @@ final class SessionPaneStore: ObservableObject {
 
     private func load(_ index: Int) {
         guard let runtime, index != activeIndex, let destination = panels[index].selected else { return }
+        // A room renders from the group chat store; the column's session projection is idle.
+        if destination.groupRoomID != nil { return panels[index].chat.shutdown() }
         let chat = panels[index].chat
         Task { await chat.load(destination, runtime: runtime) }
     }
@@ -400,5 +428,56 @@ struct SessionPaneDropDelegate: DropDelegate {
         }
         withAnimation(animation) { target = nil }
         return true
+    }
+}
+
+/// Sidebar statuses for the sessions open as split tabs, projected from the same
+/// snapshot and resolver as the rail, so a tab never disagrees with its row.
+@MainActor
+final class SessionPaneTabStatusModel: ObservableObject {
+    struct Entry: Equatable {
+        let session: HermesSession
+        let status: SidebarSessionStatus
+    }
+
+    @Published private(set) var entries: [String: Entry] = [:]
+    private var sidebar: SessionNavSidebarModel?
+    private var cancellable: AnyCancellable?
+
+    /// Binds once; the window shell calls it on appear.
+    func bind(model: DockModel, control: ControlCenterModel, store: WorkspaceStore, panes: SessionPaneStore) {
+        guard sidebar == nil else { return }
+        let sidebar = SessionNavSidebarModel(model: model, control: control, store: store)
+        self.sidebar = sidebar
+        let seenStore = SidebarSessionSeenStore.shared
+        cancellable = Publishers.Merge3(
+            sidebar.$snapshot.map { _ in () },
+            seenStore.objectWillChange.map { _ in () },
+            panes.$panels.map { _ in () }
+        )
+        .receive(on: DispatchQueue.main)
+        .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main)
+        .sink { [weak self, weak panes] _ in
+            guard let self, let panes else { return }
+            let next = Self.project(sidebar.snapshot, panes: panes, seenStore: seenStore)
+            if next != self.entries { self.entries = next }
+        }
+    }
+
+    private static func project(
+        _ snapshot: SessionNavSidebarSnapshot, panes: SessionPaneStore, seenStore: SidebarSessionSeenStore
+    ) -> [String: Entry] {
+        let open = Set(panes.panels.flatMap { $0.tabs.compactMap(\.sessionID) })
+        guard !open.isEmpty else { return [:] }
+        let sessions = (snapshot.conversations + snapshot.inputs.pinnedSessions + snapshot.allBotConversations)
+            .filter { open.contains($0.id) }
+        let statuses = SidebarSessionStatusResolver.statuses(
+            for: sessions, snapshot: snapshot, seenStore: seenStore,
+            fallbackProfileID: snapshot.inputs.profileScopeID)
+        return Dictionary(
+            sessions.compactMap { session in
+                statuses[session.id].map { (session.id, Entry(session: session, status: $0)) }
+            },
+            uniquingKeysWith: { first, _ in first })
     }
 }
