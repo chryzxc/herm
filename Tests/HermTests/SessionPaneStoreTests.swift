@@ -4,9 +4,12 @@ import Testing
 @testable import Herm
 
 struct SessionPaneStoreTests {
-    @Test func dropTargetOpensASecondColumnWhenUnsplit() {
-        #expect(SessionPaneStore.dropTarget(x: 100, width: 900, columnCount: 0) == .newPanel(1))
-        #expect(SessionPaneStore.dropTarget(x: 880, width: 900, columnCount: 1) == .newPanel(1))
+    @Test func dropTargetSplitsASingleColumnBetweenTabAndNewColumn() {
+        // One column: the leading half adds a tab, the trailing half opens a second column.
+        #expect(SessionPaneStore.dropTarget(x: 100, width: 900, columnCount: 0) == .tab(0))
+        #expect(SessionPaneStore.dropTarget(x: 440, width: 900, columnCount: 1) == .tab(0))
+        #expect(SessionPaneStore.dropTarget(x: 460, width: 900, columnCount: 1) == .newPanel(1))
+        #expect(SessionPaneStore.newColumnZone(columnCount: 3) == 0)
     }
 
     @Test func dropTargetAddsTabsOrOpensAColumnAtTheTrailingEdge() {

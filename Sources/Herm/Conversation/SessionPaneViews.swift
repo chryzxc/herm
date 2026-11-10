@@ -46,17 +46,24 @@ struct SessionPaneRow<Primary: View>: View {
             // Explicit equal widths: columns never overflow the window or clip a composer.
             let columnWidth = max(
                 0, (geometry.size.width - CGFloat(slots.count - 1) * DockLayout.hairline) / CGFloat(slots.count))
+            // The placeholder already shows the new column while that zone is hovered.
+            let zone = isNewColumnTarget ? 0 : SessionPaneStore.newColumnZone(columnCount: store.panels.count)
             HStack(spacing: 0) {
                 ForEach(Array(slots.enumerated()), id: \.element.id) { index, slot in
                     HStack(spacing: 0) {
                         if index > 0 { Color.dockBorderLight.frame(width: DockLayout.hairline) }
                         column(slot, isLeading: index == 0)
                             .frame(width: columnWidth)
-                            .overlay {
-                                if isTabTarget(slot) {
-                                    SessionPaneDropHint(title: "Drop to add a tab")
-                                        .dockPadding(.top, headerHeight)
-                                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                            .overlay(alignment: .leading) {
+                                // While a session is dragged over the row, every column shows it
+                                // takes a tab; the hovered one lights up.
+                                if target != nil, !isPlaceholder(slot) {
+                                    SessionPaneDropHint(
+                                        title: "Add as tab", icon: .plus, isActive: isTabTarget(slot)
+                                    )
+                                    .dockPadding(.top, headerHeight)
+                                    .frame(width: columnWidth * (index == slots.count - 1 ? 1 - zone : 1))
+                                    .transition(.opacity)
                                 }
                             }
                     }
@@ -68,7 +75,16 @@ struct SessionPaneRow<Primary: View>: View {
                                 removal: .opacity))
                 }
             }
+            .overlay(alignment: .trailing) {
+                if target != nil, zone > 0 {
+                    SessionPaneDropHint(title: "New column", icon: .columnsPlusRight, isActive: false)
+                        .dockPadding(.top, headerHeight)
+                        .frame(width: columnWidth * zone)
+                        .transition(.opacity)
+                }
+            }
             .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.28), value: slots.map(\.id))
+            .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2), value: target)
             .onDrop(
                 of: isEnabled ? [SessionPaneDrag.pasteboardType.rawValue] : [],
                 delegate: SessionPaneDropDelegate(
@@ -86,9 +102,19 @@ struct SessionPaneRow<Primary: View>: View {
         case .placeholder:
             VStack(spacing: 0) {
                 header(AnyView(EmptyView()), isLeading: isLeading)
-                SessionPaneDropHint(title: "Drop to open a new column")
+                SessionPaneDropHint(title: "Drop to open a new column", icon: .columnsPlusRight, isActive: true)
             }
         }
+    }
+
+    private var isNewColumnTarget: Bool {
+        if case .newPanel = target { return true }
+        return false
+    }
+
+    private func isPlaceholder(_ slot: Slot) -> Bool {
+        if case .placeholder = slot { return true }
+        return false
     }
 
     private func isTabTarget(_ slot: Slot) -> Bool {
@@ -207,17 +233,24 @@ private struct SessionPaneTab: View {
     }
 }
 
+/// A drop zone; idle zones stay dim so the hovered one reads as the landing spot.
 private struct SessionPaneDropHint: View {
     let title: String
+    let icon: Ph
+    let isActive: Bool
 
     var body: some View {
         VStack(spacing: 6) {
-            DockIcon(.columnsPlusRight, size: 20, color: .dockSecondaryText)
+            DockIcon(icon, size: 20, color: isActive ? .dockPrimaryText : .dockSecondaryText)
             Text(title).dockFont(.body, weight: .semibold)
+                .foregroundStyle(isActive ? Color.dockPrimaryText : Color.dockSecondaryText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .dockCard(isActive: true)
+        .dockCard(isActive: isActive)
+        .opacity(isActive ? 1 : 0.55)
+        .scaleEffect(isActive ? 1 : 0.98)
         .dockPadding(12)
+        .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
     }
 }

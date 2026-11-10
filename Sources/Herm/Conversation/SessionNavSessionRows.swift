@@ -565,7 +565,12 @@ struct SessionNavSidebarSessionRow: View, Equatable {
 
     private static let rowHeight: CGFloat = 30
 
-    private var isSelected: Bool { session.id == selectedSessionID }
+    @ObservedObject private var sessionPanes = SessionPaneStore.shared
+
+    /// Split view shows several sessions at once; each one on screen reads as selected.
+    private var isSelected: Bool {
+        session.id == selectedSessionID || sessionPanes.shownSessionIDs.contains(session.id)
+    }
 
     private var pendingAction: ProjectSessionPendingAction? {
         if isDeleting { return .deletion }

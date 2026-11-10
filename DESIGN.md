@@ -2628,17 +2628,21 @@ its last session tab while active hands the header to its neighbor.
 
 Drag a sidebar session row (open-hand cursor on hover, closed hand over the
 drop area, a tilted card preview) over the conversation workspace, or choose
-**Open in Split View** from its menu. Unsplit, the drop opens a second column.
-Split, hovering a column shows **Drop to add a tab** over it, and the trailing
-quarter of the last column opens a new column while there is room: a
-`.dockCard(isActive:)` hint slides in and the columns re-divide (0.28s
-`DockMotion`; cross-fade only under Reduce Motion). Column widths are
-computed, never intrinsic, so no column overflows the window.
+**Open in Split View** from its menu. While a session is over the row, every
+drop zone shows at once: each column dims to an **Add as tab** zone (the first
+column included) and the trailing edge shows **New column** while there is
+room (the trailing half of a single column, the last quarter otherwise). The
+hovered zone lights up as a `.dockCard(isActive:)`; hovering **New column**
+slides in a placeholder column as the others re-divide (0.28s `DockMotion`;
+cross-fade only under Reduce Motion). Column widths are computed, never
+intrinsic, so no column overflows the window.
+
+Every session on screen in a column counts as active: the sidebar highlights
+all of them, and clicking one activates its column instead of moving it.
 
 Loading and unavailable states stay inside the column's content area. A
 session is never shown twice: dropping a session that is already a tab selects
-it, and opening a tabbed session from the sidebar removes it from inactive
-columns and replaces the active tab. Columns are hidden in the narrow layout and
+it, and a sidebar session that is not in any column replaces the active tab. Columns are hidden in the narrow layout and
 outside Chat. They are disposable projections and are not restored after
 relaunch.
 

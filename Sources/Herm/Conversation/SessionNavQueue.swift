@@ -15,6 +15,7 @@ struct SessionNavQueue: View, Equatable {
     @ObservedObject var agentUpdateService: HermesUpdateService
     @ObservedObject var navigationState: SessionNavigationState
     @ObservedObject var dockThemeStore: DockThemeStore
+    @ObservedObject private var sessionPanes = SessionPaneStore.shared
     @StateObject private var sidebar: SessionNavSidebarModel
     @Binding var sessionPendingDeletion: HermesSession?
     let activeSessionID: String?
@@ -1103,6 +1104,7 @@ struct SessionNavQueue: View, Equatable {
     private func isSessionSelected(_ session: HermesSession) -> Bool {
         guard activeGlobalTab == nil, !isArtifactsActive else { return false }
         return navigationState.selection.isSessionSelected(session.id)
+            || sessionPanes.shownSessionIDs.contains(session.id)
     }
 
     private func taskDisplayTitle(_ task: WorkspaceTask) -> String {

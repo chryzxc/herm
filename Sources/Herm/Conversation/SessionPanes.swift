@@ -61,17 +61,26 @@ final class SessionPaneStore: ObservableObject {
 
     var activePanel: Panel? { panels.indices.contains(activeIndex) ? panels[activeIndex] : nil }
 
-    /// The column under the cursor; columns are equal width. Unsplit, any drop opens a
-    /// second column. Split, the trailing quarter of the last column opens a new one
-    /// while there is room; anywhere else adds a tab to the column under the cursor.
+    /// Sessions on screen in any column; the sidebar highlights all of them.
+    var shownSessionIDs: Set<String> { Set(panels.compactMap(\.selectedID)) }
+
+    /// Share of the last column, at its trailing edge, that opens a new column; 0 when full.
+    nonisolated static func newColumnZone(columnCount: Int) -> CGFloat {
+        let count = max(columnCount, 1)
+        return count >= maxColumns ? 0 : count == 1 ? 0.5 : 0.25
+    }
+
+    /// The column under the cursor; columns are equal width. The trailing zone of the
+    /// last column opens a new column while there is room; anywhere else adds a tab to
+    /// the column under the cursor, including the first.
     nonisolated static func dropTarget(x: CGFloat, width: CGFloat, columnCount: Int) -> SessionPaneTarget {
         let count = max(columnCount, 1)
-        if count == 1 { return .newPanel(1) }
         let columnWidth = width / CGFloat(count)
         guard columnWidth > 0 else { return .tab(0) }
         let position = x / columnWidth
         let column = min(max(Int(position.rounded(.down)), 0), count - 1)
-        if count < maxColumns, column == count - 1, position - CGFloat(column) > 0.75 { return .newPanel(count) }
+        let zone = newColumnZone(columnCount: count)
+        if zone > 0, column == count - 1, position - CGFloat(column) >= 1 - zone { return .newPanel(count) }
         return .tab(column)
     }
 
@@ -180,16 +189,19 @@ final class SessionPaneStore: ObservableObject {
         collapseIfUnsplit()
     }
 
-    /// Keeps the active column in step with sidebar navigation: a session opened as
-    /// primary replaces the active tab (like navigating in a browser tab) and leaves
-    /// any other column so it never streams twice.
+    /// Keeps the active column in step with sidebar navigation: a session already in a
+    /// column activates it; any other session replaces the active tab (like navigating
+    /// in a browser tab).
     func syncPrimary(_ sessionID: String?) {
         guard let sessionID, let runtime, panels.indices.contains(activeIndex) else { return }
-        let activeID = panels[activeIndex].id
-        for panel in panels where panel.id != activeID && panel.tabs.contains(where: { $0.sessionID == sessionID }) {
-            closeTab(sessionID, in: panel.id)
+        // A session already in another column activates that column instead of moving.
+        if let column = panels.firstIndex(where: { $0.tabs.contains { $0.sessionID == sessionID } }),
+            column != activeIndex
+        {
+            select(sessionID, at: column)
+            return
         }
-        guard let index = panels.firstIndex(where: { $0.id == activeID }), index == activeIndex else { return }
+        let index = activeIndex
         if !panels[index].tabs.contains(where: { $0.sessionID == sessionID }) {
             let destination = QuickDestination(
                 profileID: runtime.sessionProfileID, sessionID: sessionID,
@@ -215,6 +227,7 @@ final class SessionPaneStore: ObservableObject {
 
     private func refreshActiveTitle() {
         guard let title = runtime?.currentSessionTitle, panels.indices.contains(activeIndex),
+            runtime?.navigationSessionID == panels[activeIndex].selectedID,
             let tab = panels[activeIndex].tabs.firstIndex(where: { $0.sessionID == panels[activeIndex].selectedID })
         else { return }
         panels[activeIndex].tabs[tab].title = title
