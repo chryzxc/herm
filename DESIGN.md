@@ -2635,10 +2635,12 @@ its last session tab while active hands the header to its neighbor.
 Drag a sidebar session row (open-hand cursor on hover, closed hand over the
 drop area, a tilted card preview) over the conversation workspace, or choose
 **Open in Split View** from its menu. While a session is over the row, every
-drop zone shows at once: each column dims to an **Add as tab** zone (the first
-column included) and the trailing edge shows **New column** while there is
-room (the trailing half of a single column, the last quarter otherwise). The
-hovered zone lights up as a `.dockCard(isActive:)`; hovering **New column**
+drop zone shows at once as a small solid `.dockHUDSurface` pill: **Add as tab**
+centered in each column (the first column included) and **New column** at the
+trailing edge while there is room (the trailing half of a single column, the
+last quarter otherwise). Hints never wash translucently over a transcript: the
+hovered zone covers its column with the solid canvas and a dashed outline, and
+its pill grows; hovering **New column**
 slides in a placeholder column as the others re-divide (0.28s `DockMotion`;
 cross-fade only under Reduce Motion). Column widths are computed, never
 intrinsic, so no column overflows the window.

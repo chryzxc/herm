@@ -64,6 +64,7 @@ struct BotChatsPage: View, Equatable {
     @ObservedObject private var sessionPanes = SessionPaneStore.shared
     @State private var query = ""
     @State private var isShowingNewGroupChat = false
+    @State private var hoveredBotID: String?
 
     /// The host re-renders on every DockModel publication; skip those. The
     /// observed bot and group stores still drive this page's own updates.
@@ -211,10 +212,9 @@ struct BotChatsPage: View, Equatable {
 
     private func closeRoom() { openRoomID = "" }
 
+    /// A tap gesture, not a Button: a Button's mouse tracking swallows the split-view drag.
     private func row(_ bot: BotSummary, isSelected: Bool) -> some View {
-        Button {
-            open(bot)
-        } label: {
+        Group {
             HStack(spacing: 10) {
                 BotAvatarView(
                     bot: bot, imageData: bots.avatarImages[bot.id], size: 42, orbits: bot.isMainChatWorking)
@@ -243,11 +243,14 @@ struct BotChatsPage: View, Equatable {
             .dockPadding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
-                    .fill(isSelected ? style.selectedFill : .clear)
+                    .fill(
+                        isSelected
+                            ? style.selectedFill : hoveredBotID == bot.id ? style.selectedFill.opacity(0.4) : .clear)
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.dockHover)
+        .onHover { hoveredBotID = $0 ? bot.id : (hoveredBotID == bot.id ? nil : hoveredBotID) }
+        .onTapGesture { open(bot) }
         .sessionPaneDraggable(SessionPaneDrag(bot: bot))
         .contextMenu {
             Button("Open in Split View", icon: .columnsPlusRight) {
@@ -255,6 +258,9 @@ struct BotChatsPage: View, Equatable {
             }
             .disabled(isSelected || bot.chat == nil)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { open(bot) }
         .accessibilityLabel(bot.name)
         .accessibilityHint("Open the main chat")
         .accessibilityAddTraits(isSelected ? .isSelected : [])

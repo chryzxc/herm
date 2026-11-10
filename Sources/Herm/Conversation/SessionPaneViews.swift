@@ -63,7 +63,6 @@ struct SessionPaneRow<Primary: View>: View {
                                     )
                                     .dockPadding(.top, headerHeight)
                                     .frame(width: columnWidth * (index == slots.count - 1 ? 1 - zone : 1))
-                                    .transition(.opacity)
                                 }
                             }
                     }
@@ -80,7 +79,6 @@ struct SessionPaneRow<Primary: View>: View {
                     SessionPaneDropHint(title: "New column", icon: .columnsPlusRight, isActive: false)
                         .dockPadding(.top, headerHeight)
                         .frame(width: columnWidth * zone)
-                        .transition(.opacity)
                 }
             }
             .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.28), value: slots.map(\.id))
@@ -233,23 +231,41 @@ private struct SessionPaneTab: View {
     }
 }
 
-/// A drop zone; idle zones stay dim so the hovered one reads as the landing spot.
+/// A drop zone. Idle zones are a small solid pill over the content; the hovered zone
+/// covers its column with a solid surface, so the chat never shows through a wash.
 private struct SessionPaneDropHint: View {
     let title: String
     let icon: Ph
     let isActive: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 6) {
-            DockIcon(icon, size: 20, color: isActive ? .dockPrimaryText : .dockSecondaryText)
-            Text(title).dockFont(.body, weight: .semibold)
-                .foregroundStyle(isActive ? Color.dockPrimaryText : Color.dockSecondaryText)
+        ZStack {
+            if isActive {
+                Color.dockCanvas
+                    .overlay {
+                        DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
+                            .stroke(
+                                Color.dockBorderStrong, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                            )
+                            .dockPadding(12)
+                    }
+                    .transition(.opacity)
+            }
+            HStack(spacing: 6) {
+                DockIcon(icon, size: isActive ? 16 : 13, color: isActive ? .dockPrimaryText : .dockSecondaryText)
+                Text(title).dockFont(.body, weight: .semibold)
+                    .foregroundStyle(isActive ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    .lineLimit(1)
+            }
+            .dockPadding(.horizontal, 12)
+            .dockPadding(.vertical, 7)
+            .dockHUDSurface(tint: .dockBorderStrong)
+            .scaleEffect(isActive ? 1.06 : 1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .dockCard(isActive: isActive)
-        .opacity(isActive ? 1 : 0.55)
-        .scaleEffect(isActive ? 1 : 0.98)
-        .dockPadding(12)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18), value: isActive)
+        .transition(.opacity)
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
     }
