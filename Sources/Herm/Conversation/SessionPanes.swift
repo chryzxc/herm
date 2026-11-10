@@ -87,6 +87,8 @@ final class SessionPaneStore: ObservableObject {
     @Published private(set) var panels: [Panel] = []
     @Published private(set) var activeIndex = 0
     weak var runtime: DockModel?
+    private var showsBotsLayout = false
+    private var parkedLayouts: [Bool: (panels: [Panel], activeIndex: Int)] = [:]
 
     var activePanel: Panel? { panels.indices.contains(activeIndex) ? panels[activeIndex] : nil }
 
@@ -252,6 +254,21 @@ final class SessionPaneStore: ObservableObject {
             }
         }
         panels[index].selectedID = sessionID
+    }
+
+    /// Sessions and Bots each keep their own columns. Leaving a page parks its columns
+    /// (projections shut down); returning restores them and resumes their active session.
+    func showLayout(bots: Bool) {
+        guard bots != showsBotsLayout else { return }
+        refreshActiveTitle()
+        for panel in panels { panel.chat.shutdown() }
+        parkedLayouts[showsBotsLayout] = (panels, activeIndex)
+        showsBotsLayout = bots
+        (panels, activeIndex) = parkedLayouts.removeValue(forKey: bots) ?? ([], 0)
+        for index in panels.indices { load(index) }
+        if let runtime, let session = activePanel?.selected?.session, runtime.navigationSessionID != session.id {
+            runtime.resumeSession(session, profileID: session.profileID)
+        }
     }
 
     func retry(_ panelID: String) {

@@ -159,7 +159,8 @@ struct SessionPaneActiveTabs<Fallback: View>: View {
     @ViewBuilder let fallback: Fallback
 
     var body: some View {
-        if let panel = store.activePanel, panel.tabs.count > 1 {
+        // While split, the active column keeps its tab strip too, so its close button is always reachable.
+        if let panel = store.activePanel, panel.tabs.count > 1 || store.panels.count > 1, panel.selected != nil {
             SessionPaneTabStrip(
                 tabs: SessionPaneTabStrip.items(panel: panel, store: store, liveTitle: runtime.currentSessionTitle))
         } else {

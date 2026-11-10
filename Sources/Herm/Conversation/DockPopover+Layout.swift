@@ -145,6 +145,10 @@ extension DockPopover {
                 filePreview.attachmentDiff = nil
                 handleSessionIDChange(oldValue: oldValue, newValue: newValue)
             }
+            // Sessions and Bots each keep their own split layout; other surfaces leave it alone.
+            .onChange(of: fullscreenSurface) { _, surface in
+                if surface == .bots || surface == .conversation { sessionPanes.showLayout(bots: surface == .bots) }
+            }
             // A session opened as primary leaves its side pane so it never streams twice.
             .onChange(of: model.navigationSessionID) { _, id in sessionPanes.syncPrimary(id) }
             .onChange(of: model.sessionID) { _, _ in

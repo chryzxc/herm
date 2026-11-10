@@ -2616,8 +2616,8 @@ container and do not insert a status row above it.
 Chat can split into up to three equal, flat columns separated by hairlines.
 Every column is a tab group of sessions, and exactly one column is active. The
 active column renders the main conversation with the full header (title,
-Chat/Talk, menu); once it holds more than one tab, its tab strip replaces the
-session title in that header. Inactive columns show only their tab strip in a
+Chat/Talk, menu); once it holds more than one tab, or whenever chat is split, its tab strip
+(with close buttons) replaces the session title in that header. Inactive columns show only their tab strip in a
 title row of the same height, fill and separator, over a live projection of
 their selected tab. Selecting any tab makes it the active session, so the
 header moves to that column. The leftmost column carries the sidebar toggle and
@@ -2633,7 +2633,8 @@ for its main chat. The Bots page splits
 the same way: drag a Bot row (or use its **Open in Split View**) to open its main
 chat beside the active one. There, the session menu omits Pin, Rename and Hide,
 which apply to sessions rather than a Bot's main chat, and the session rail
-starts hidden (Chats shows it by default). Closing a column's last tab closes the column; a column that loses
+starts hidden (Chats shows it by default). Chats and Bots each keep their own
+split layout, restored when you switch back. Closing a column's last tab closes the column; a column that loses
 its last session tab while active hands the header to its neighbor.
 
 Drag a sidebar session row (open-hand cursor on hover, closed hand over the
