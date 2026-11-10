@@ -4,9 +4,9 @@ struct SessionInspectorEmptyView: View {
     let sections: [SessionInspector.Section]
     let onOpen: (SessionInspector.Section) -> Void
     /// Conversations that can open in a split column beside this one.
-    var botChats: [SessionPaneDrag] = []
-    var sessions: [SessionPaneDrag] = []
-    @State private var isPickingConversation = false
+    var bots: [BotSummary] = []
+    var botAvatars: [String: Data] = [:]
+    var sessions: [HermesSession] = []
 
     private func detail(_ section: SessionInspector.Section) -> String {
         switch section {
@@ -44,17 +44,21 @@ struct SessionInspectorEmptyView: View {
                         .buttonStyle(.dockHover)
                         .accessibilityLabel("Open \(section.navigationTitle) tab")
                     }
-                    if !botChats.isEmpty || !sessions.isEmpty {
-                        Button {
-                            isPickingConversation = true
+                    if !bots.isEmpty || !sessions.isEmpty {
+                        // A small menu of sources; each opens its list in a side submenu.
+                        DockMenu {
+                            if !bots.isEmpty {
+                                DockMenu("Bot chat", icon: .robot) { botRows }
+                            }
+                            if !sessions.isEmpty {
+                                DockMenu("Recent session", icon: .chatCircle) { sessionRows }
+                            }
                         } label: {
                             card(
                                 title: "Conversation", detail: "Open a session or Bot chat in split view",
                                 icon: .columnsPlusRight)
                         }
-                        .buttonStyle(.dockHover)
                         .accessibilityLabel("Open a conversation in split view")
-                        .dockPopover(isPresented: $isPickingConversation, arrowEdge: .bottom) { conversationPicker }
                     }
                 }
             }
@@ -87,40 +91,35 @@ struct SessionInspectorEmptyView: View {
         .contentShape(Rectangle())
     }
 
-    private var conversationPicker: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-                if !botChats.isEmpty { pickerSection("Bot chats", botChats, icon: .robot) }
-                if !sessions.isEmpty { pickerSection("Recent sessions", sessions, icon: .chatCircle) }
-            }
-            .dockPadding(6)
-        }
-        .frame(width: 260)
-        .frame(maxHeight: 360)
-    }
-
-    private func pickerSection(_ title: String, _ items: [SessionPaneDrag], icon: Ph) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .dockFont(.metadata, weight: .semibold)
-                .foregroundStyle(Color.dockSecondaryText)
-                .dockPadding(.horizontal, 8)
-                .dockPadding(.top, 6)
-            ForEach(items, id: \.sessionID) { item in
+    @ViewBuilder
+    private var botRows: some View {
+        ForEach(bots) { bot in
+            if let item = SessionPaneDrag(bot: bot) {
                 Button {
-                    isPickingConversation = false
                     SessionPaneStore.shared.open(item)
                 } label: {
                     HStack(spacing: 8) {
-                        DockIcon(icon, size: 14, color: .dockSecondaryText)
-                        Text(item.title).dockFont(.body, weight: .medium).lineLimit(1)
-                        Spacer(minLength: 0)
+                        BotAvatarView(bot: bot, imageData: botAvatars[bot.id], size: 18, animated: false)
+                        Text(bot.name)
                     }
-                    .dockPadding(.horizontal, 8)
-                    .frame(height: 28)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.dockHover)
+            }
+        }
+    }
+
+    private var sessionRows: some View {
+        ForEach(sessions) { session in
+            Button {
+                SessionPaneStore.shared.open(SessionPaneDrag(session: session))
+            } label: {
+                HStack(spacing: 8) {
+                    Text(session.title).lineLimit(1).frame(maxWidth: 280, alignment: .leading)
+                    if let date = session.lastUpdatedAt {
+                        Spacer(minLength: 12)
+                        Text(SidebarSessionTime.short(date))
+                            .foregroundStyle(Color.dockMetadataText).monospacedDigit()
+                    }
+                }
             }
         }
     }

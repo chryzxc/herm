@@ -224,12 +224,14 @@ struct SessionInspector: View {
                     } else {
                         SessionInspectorEmptyView(
                             sections: visibleSections.filter { !openSections.contains($0) }, onOpen: reopen,
-                            botChats: botMode.bots.filter { !$0.isHidden && $0.chat?.sessionID != model.sessionID }
-                                .compactMap(SessionPaneDrag.init(bot:)),
+                            bots: botMode.bots.filter {
+                                !$0.isHidden && $0.chat != nil && $0.chat?.sessionID != model.sessionID
+                            },
+                            botAvatars: botMode.avatarImages,
                             sessions: model.sessions
                                 .filter { !$0.isHidden && $0.id != model.navigationSessionID }
                                 .sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
-                                .prefix(10).map(SessionPaneDrag.init(session:)))
+                                .prefix(10).map { $0 })
                     }
                 }
                 .opacity(selectedExtraID == nil && selectedPreview == nil ? 1 : 0)
