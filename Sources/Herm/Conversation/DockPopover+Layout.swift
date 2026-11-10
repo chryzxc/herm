@@ -313,6 +313,7 @@ extension DockPopover {
                         height: DockWindowChrome.titleRowHeight,
                         leadingClearance: DockWindowChrome.fullWidthTrafficLightClearance) : nil)
         )
+        .modifier(OptionalBuildBadge(enabled: usesWindowChrome))
         .dockSheet(item: $selectedChatImage) { preview in
             ChatImagePreviewModal(image: preview.image)
         }
@@ -740,5 +741,12 @@ extension DockPopover {
             }
             .dockPadding(.trailing, railWidth)
         }
+    }
+}
+
+private struct OptionalBuildBadge: ViewModifier {
+    let enabled: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled { content.dockBuildBadgeOverlay() } else { content }
     }
 }

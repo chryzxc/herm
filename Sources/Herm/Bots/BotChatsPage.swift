@@ -94,19 +94,16 @@ struct BotChatsPage: View, Equatable {
         VStack(spacing: 0) {
             // Same strip as the Sessions list: the sidebar toggle beside the traffic lights.
             HStack(spacing: 0) {
+                if usesWindowChrome {
+                    DockBuildBadgeSlot()
+                        .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 8)
+                }
                 DockSidebarToggle(isCollapsed: $isCollapsed)
                 DockHistoryButtons()
                 Spacer(minLength: 0)
                     .frame(maxHeight: .infinity)
                     .background { if usesWindowChrome { TitlebarDoubleClickArea() } }
-                Button(action: onShowSessions) {
-                    DockIcon(.chatsCircle, size: DockLayout.toolbarIconSize, color: style.secondaryText)
-                        .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.dockHover)
-                .help("Show sessions")
-                .accessibilityLabel("Show sessions")
+                DockChatsScopeSwitch(showsBots: true, onShowSessions: onShowSessions, onShowBots: {})
             }
             .dockPadding(.leading, usesWindowChrome ? DockWindowChrome.sidebarToggleLeading : 6)
             .dockPadding(.trailing, 8)
@@ -125,7 +122,7 @@ struct BotChatsPage: View, Equatable {
         }
         .dockShellPane()
         .dockSheet(isPresented: $isShowingNewGroupChat) {
-            NewGroupChatSheet(store: groups, bots: visibleBots, onCreated: openRoom)
+            NewGroupChatSheet(store: groups, botMode: bots, bots: visibleBots, onCreated: openRoom)
         }
         .task(id: hostVisible) {
             // ponytail: 15s room-list poll for unread dots and previews; Hermes has no room push events.

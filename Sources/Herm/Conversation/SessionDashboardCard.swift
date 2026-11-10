@@ -32,6 +32,9 @@ struct SessionDashboardCard: View {
 
     private var ids: [String] { [row.id] + runtimeIDs }
     private var engaged: Bool { hovered || replyFocused || !draft.isEmpty }
+    private var canSend: Bool {
+        replyUnavailableReason == nil && !sending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
     private var isWorking: Bool { isCurrent && row.status == .working }
     private var replyUnavailableReason: String? {
         if !isCurrent { return "Activity is not current. Refresh to retry." }
@@ -112,7 +115,7 @@ struct SessionDashboardCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 if row.status == .unreadComplete {
-                    SessionUnreadReplyBadge(session: row.session)
+                    SessionUnreadReplyBadge(session: row.session, showUnavailable: false)
                 } else if isCurrent, let state = row.status.activityState {
                     DockActivityIndicator(state: state, size: 12, unreadDot: true)
                 }
@@ -232,15 +235,13 @@ struct SessionDashboardCard: View {
                     .disabled(stopping)
                 } else {
                     DockIconButton(
-                        icon: .arrowUp, label: "Send reply to \(row.session.displayTitle)", isProminent: true,
+                        icon: .arrowUp, label: "Send reply to \(row.session.displayTitle)", isProminent: canSend,
                         isBusy: sending, size: 24, style: style, action: send
                     )
-                    .disabled(
-                        replyUnavailableReason != nil || sending
-                            || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    )
-                    // Same slot, so the field never resizes; idle send buttons are clutter.
-                    .opacity(engaged || sending ? 1 : 0.35)
+                    .disabled(!canSend)
+                    // Same slot, so the field never resizes. Accent fill only when sendable;
+                    // otherwise a quiet but legible neutral button.
+                    .opacity(canSend || sending ? 1 : engaged ? 0.9 : 0.75)
                 }
             }
             .dockPadding(.leading, 10)

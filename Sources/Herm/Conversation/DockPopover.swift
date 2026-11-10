@@ -90,7 +90,7 @@ struct DockPopover: View {
     @State var sessionPickerQuery = ""
     @ObservedObject var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
     @State var isSessionMenuHovering = false
-    @State var isSessionRailVisible = false
+    @State var isSessionRailVisible = true
     @State var isRenamingSession = false
     @State var renameDraft = ""
     @Environment(\.accessibilityReduceMotion) var reduceMotion

@@ -22,10 +22,10 @@ struct SessionModeTabStrip: View {
                     onSelect(mode)
                 } label: {
                     Text(mode == .pullRequests ? "PRs" : mode.label)
-                        .dockFont(.control, weight: isSelected ? .semibold : .medium)
+                        .dockFont(.metadata, weight: isSelected ? .semibold : .medium)
                         .foregroundStyle(isSelected ? selectedInk : style.secondaryText)
                         .dockPadding(.horizontal, 8)
-                        .frame(minWidth: DockControlMetrics.hitTarget, minHeight: DockControlMetrics.compactHeight - 4)
+                        .frame(minWidth: DockControlMetrics.hitTarget, minHeight: DockControlMetrics.compactHeight - 8)
                         .dockSelectionBackground(
                             segment, active: isSelected, fill: style.selectedFill, theme: style.theme,
                             namespace: selectionNamespace
@@ -43,7 +43,7 @@ struct SessionModeTabStrip: View {
         .dockPadding(.horizontal, 2)
         .background {
             shape.dockSurfaceFill(style.surface4.opacity(0.5))
-                .frame(height: DockControlMetrics.compactHeight)
+                .frame(height: DockControlMetrics.compactHeight - 4)
         }
         .fixedSize()
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.22), value: selectedMode)

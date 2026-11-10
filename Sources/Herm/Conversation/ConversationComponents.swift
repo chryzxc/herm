@@ -236,6 +236,24 @@ final class NativeMarkdownTextView: NSTextView {
         addMarkdownLinkCursorRects()
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        installMarkdownCursorTracking()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        // NSTextView's own handling sets an I-beam, so it only runs when the
+        // text (not a neighbouring button) is what the mouse is over.
+        guard claimsMarkdownCursor(for: event) else { return }
+        super.mouseMoved(with: event)
+        markdownCursor(for: event).set()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        DockPointerCursor.textExited(self)
+    }
+
     override var intrinsicContentSize: NSSize {
         guard bounds.width > 1 else { return NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
         guard let textContainer, let layoutManager else { return NSSize(width: NSView.noIntrinsicMetric, height: 0) }

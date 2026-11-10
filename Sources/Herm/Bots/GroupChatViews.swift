@@ -186,6 +186,7 @@ private struct GroupThreadChip: View {
 
 struct NewGroupChatSheet: View {
     @ObservedObject var store: GroupChatStore
+    @ObservedObject var botMode: BotModeModel
     let bots: [BotSummary]
     let onCreated: (String) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -271,7 +272,11 @@ struct NewGroupChatSheet: View {
                                 set: { if $0 { selected.insert(bot.id) } else { selected.remove(bot.id) } }
                             )
                         ) {
-                            Text(bot.name) + Text("  @\(bot.id)").foregroundColor(Color.dockMetadataText)
+                            HStack(spacing: 8) {
+                                BotAvatarView(
+                                    bot: bot, imageData: botMode.avatarImages[bot.id], size: 22, animated: false)
+                                Text(bot.name) + Text("  @\(bot.id)").foregroundColor(Color.dockMetadataText)
+                            }
                         }
                         .toggleStyle(.dockCheckbox)
                         .disabled(!selected.contains(bot.id) && memberCount >= GroupChatStore.memberLimits.upperBound)

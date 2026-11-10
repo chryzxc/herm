@@ -301,14 +301,7 @@ struct SessionNavQueue: View, Equatable {
     @ViewBuilder
     private func botsSwitchButton(style: DockThemePalette) -> some View {
         if let onShowBots {
-            Button(action: onShowBots) {
-                DockIcon(.robot, size: DockLayout.toolbarIconSize, color: style.secondaryText)
-                    .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.dockHover)
-            .help("Show each bot's main chat")
-            .accessibilityLabel("Show bots")
+            DockChatsScopeSwitch(showsBots: false, onShowSessions: {}, onShowBots: onShowBots)
         }
     }
 
@@ -332,15 +325,15 @@ struct SessionNavQueue: View, Equatable {
             // The session list owns its title strip beside the conversation and inspector.
             if isDockedWindow && showsWindowTitleRow {
                 HStack(spacing: 0) {
-                    DockBuildBadge()
+                    DockBuildBadgeSlot()
                         .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 8)
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
+                    tilesButton(style: style)
                     DockHistoryButtons()
                     Spacer(minLength: 0)
                         .frame(maxHeight: .infinity)
                         .background { TitlebarDoubleClickArea() }
                     botsSwitchButton(style: style)
-                    tilesButton(style: style)
                 }
                 .dockPadding(.leading, DockWindowChrome.sidebarToggleLeading)
                 .dockPadding(.trailing, 8)
@@ -351,11 +344,11 @@ struct SessionNavQueue: View, Equatable {
             HStack(spacing: 2) {
                 if !isDockedWindow {
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
+                    tilesButton(style: style)
                 }
                 profileHeader(style: style)
                 if !isDockedWindow {
                     botsSwitchButton(style: style)
-                    tilesButton(style: style)
                 }
             }
             .dockPadding(.horizontal, 6)

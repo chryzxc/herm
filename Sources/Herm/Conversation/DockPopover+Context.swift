@@ -888,7 +888,7 @@ extension DockPopover {
                 // Leading like a native toolbar title; actions sit at the trailing edge.
                 if hidesChatList {
                     if usesWindowChrome {
-                        DockBuildBadge()
+                        DockBuildBadgeSlot()
                             .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 4)
                     }
                     DockSidebarToggle(isCollapsed: chatListCollapsed)
