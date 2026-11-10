@@ -2613,28 +2613,34 @@ container and do not insert a status row above it.
 
 #### Split session panes
 
-Chat can show the primary conversation plus up to two side panels in equal,
-flat columns separated by hairlines. Every column owns its title row: the
-primary header spans only the primary column, and each side panel's title row
-(same height, fill and separator) holds a tab strip of sessions
-(`SessionInspectorTabStrip`) plus **Make primary**. A panel is a tab group:
-only its selected tab is loaded, tabs close individually and reorder by drag,
-and closing the last tab closes the panel.
+Chat can split into up to three equal, flat columns separated by hairlines.
+Every column is a tab group of sessions, and exactly one column is active. The
+active column renders the main conversation with the full header (title,
+Chat/Talk, menu); once it holds more than one tab, its tab strip replaces the
+session title in that header. Inactive columns show only their tab strip in a
+title row of the same height, fill and separator, over a live projection of
+their selected tab. Selecting any tab makes it the active session, so the
+header moves to that column. The leftmost column carries the sidebar toggle and
+history controls when the chat list is hidden. Tab titles truncate with an
+ellipsis rather than collapsing to icons, and the selected tab keeps its title
+longest. Closing a column's last tab closes the column; a column that loses
+its last session tab while active hands the header to its neighbor.
 
-Drag a sidebar session row over the conversation workspace, or choose **Open in
-Split Pane** from its menu. Hovering the primary column, or the trailing quarter
-of the last panel, opens a new panel slot while there is room: a
-`.dockCard(isActive:)` **Drop to open a new panel** hint slides in and the
-columns re-divide (0.28s `DockMotion`; cross-fade only under Reduce Motion).
-Hovering a panel's body shows **Drop to add a tab** over it. With two panels,
-every drop adds a tab. Column widths are computed, never intrinsic, so no
-column overflows the window.
+Drag a sidebar session row (open-hand cursor on hover, closed hand over the
+drop area, a tilted card preview) over the conversation workspace, or choose
+**Open in Split View** from its menu. Unsplit, the drop opens a second column.
+Split, hovering a column shows **Drop to add a tab** over it, and the trailing
+quarter of the last column opens a new column while there is room: a
+`.dockCard(isActive:)` hint slides in and the columns re-divide (0.28s
+`DockMotion`; cross-fade only under Reduce Motion). Column widths are
+computed, never intrinsic, so no column overflows the window.
 
-Loading and unavailable states stay inside the panel's content area. A session
-is never shown twice: dropping a session that is already a tab selects it, and
-opening a tabbed session as primary removes its tab. Panels are hidden in the
-narrow layout and outside Chat. They are disposable projections and are not
-restored after relaunch.
+Loading and unavailable states stay inside the column's content area. A
+session is never shown twice: dropping a session that is already a tab selects
+it, and opening a tabbed session from the sidebar removes it from inactive
+columns and replaces the active tab. Columns are hidden in the narrow layout and
+outside Chat. They are disposable projections and are not restored after
+relaunch.
 
 The conversation workspace uses a stable cool-navy canvas in both fullscreen
 and compact layouts, independent of the sidebar concept selector. Its header

@@ -22,7 +22,7 @@ struct SessionPaneDrag: Codable, Transferable {
     var destination: QuickDestination { QuickDestination(profileID: profileID, sessionID: sessionID, title: title) }
 }
 
-/// Where a dropped session lands: a new panel at a slot, or a tab in an existing panel.
+/// Where a dropped session lands: a new column at a slot, or a tab in an existing column.
 enum SessionPaneTarget: Hashable {
     case newPanel(Int)
     case tab(Int)
@@ -35,60 +35,67 @@ enum SessionPaneResolution: Equatable {
     case select(panel: Int, tab: Int)
 }
 
-/// Side panels beside the primary conversation. Each panel is a tab group of
-/// sessions; only its selected tab is loaded, into one disposable projection
-/// (`EdgeQuickConversationModel`). Hermes owns the history; panels are not persisted.
+/// Split chat columns. Every column is a tab group of sessions; exactly one column is
+/// active and shows its selected tab through the main `DockModel` (with the full header).
+/// The other columns load their selected tab into a disposable projection
+/// (`EdgeQuickConversationModel`). Hermes owns the history; columns are not persisted.
 @MainActor
 final class SessionPaneStore: ObservableObject {
     static let shared = SessionPaneStore()
-    nonisolated static let maxPanels = 2
+    nonisolated static let maxColumns = 3
+    /// The unsplit primary column keeps this id once split, so it never re-animates in.
+    nonisolated static let baseColumnID = "session-pane-base"
 
     @MainActor struct Panel: Identifiable {
-        let id = UUID().uuidString
+        var id = UUID().uuidString
         var tabs: [QuickDestination]
-        var selectedID: String
+        var selectedID: String?
         let chat = EdgeQuickConversationModel()
         var selected: QuickDestination? { tabs.first { $0.sessionID == selectedID } }
     }
 
+    /// Empty while unsplit; otherwise 2...3 columns, or 1 column holding several tabs.
     @Published private(set) var panels: [Panel] = []
+    @Published private(set) var activeIndex = 0
     weak var runtime: DockModel?
 
-    /// The column under the cursor. Columns are equal width, so only the drop x, the
-    /// row width and the panel count matter; the placeholder never feeds back into it.
-    /// The primary column and the trailing quarter of the last panel open a new panel
-    /// while there is room; anywhere else adds a tab to the panel under the cursor.
-    nonisolated static func dropTarget(x: CGFloat, width: CGFloat, panelCount: Int) -> SessionPaneTarget {
-        let columnWidth = width / CGFloat(panelCount + 1)
-        guard columnWidth > 0 else { return panelCount < maxPanels ? .newPanel(panelCount) : .tab(0) }
+    var activePanel: Panel? { panels.indices.contains(activeIndex) ? panels[activeIndex] : nil }
+
+    /// The column under the cursor; columns are equal width. Unsplit, any drop opens a
+    /// second column. Split, the trailing quarter of the last column opens a new one
+    /// while there is room; anywhere else adds a tab to the column under the cursor.
+    nonisolated static func dropTarget(x: CGFloat, width: CGFloat, columnCount: Int) -> SessionPaneTarget {
+        let count = max(columnCount, 1)
+        if count == 1 { return .newPanel(1) }
+        let columnWidth = width / CGFloat(count)
+        guard columnWidth > 0 else { return .tab(0) }
         let position = x / columnWidth
-        let column = min(max(Int(position.rounded(.down)), 0), panelCount)
-        let hasRoom = panelCount < maxPanels
-        if column == 0 { return hasRoom ? .newPanel(0) : .tab(0) }
-        if hasRoom, column == panelCount, position - CGFloat(column) > 0.75 { return .newPanel(panelCount) }
-        return .tab(column - 1)
+        let column = min(max(Int(position.rounded(.down)), 0), count - 1)
+        if count < maxColumns, column == count - 1, position - CGFloat(column) > 0.75 { return .newPanel(count) }
+        return .tab(column)
     }
 
-    /// Nil when the session is already the primary conversation. A session already in
-    /// a panel is selected there instead of opening twice.
+    /// A session already in a column is selected there instead of opening twice; the
+    /// unsplit primary session resolves to nil.
     nonisolated static func resolve(
         sessionID: String, primaryID: String?, panelTabs: [[String]], target: SessionPaneTarget
     ) -> SessionPaneResolution? {
-        guard sessionID != primaryID else { return nil }
         for (panel, tabs) in panelTabs.enumerated() {
             if let tab = tabs.firstIndex(of: sessionID) { return .select(panel: panel, tab: tab) }
         }
-        let count = panelTabs.count
+        guard sessionID != primaryID else { return nil }
+        let count = max(panelTabs.count, 1)
         switch target {
-        case .newPanel(let index) where count < maxPanels:
+        case .newPanel(let index) where count < maxColumns:
             return .newPanel(min(max(index, 0), count))
         case .newPanel(let index), .tab(let index):
-            return count == 0 ? .newPanel(0) : .addTab(min(max(index, 0), count - 1))
+            return .addTab(min(max(index, 0), count - 1))
         }
     }
 
     func open(_ session: HermesSession) {
-        let target: SessionPaneTarget = panels.count < Self.maxPanels ? .newPanel(panels.count) : .tab(panels.count - 1)
+        let count = max(panels.count, 1)
+        let target: SessionPaneTarget = count < Self.maxColumns ? .newPanel(count) : .tab(count - 1)
         open(SessionPaneDrag(session: session).destination, target: target)
     }
 
@@ -98,83 +105,130 @@ final class SessionPaneStore: ObservableObject {
                 sessionID: id, primaryID: runtime.navigationSessionID,
                 panelTabs: panels.map { $0.tabs.compactMap(\.sessionID) }, target: target)
         else { return }
+        if panels.isEmpty {
+            let primary = runtime.navigationSessionID.map { primaryDestination($0) }
+            panels = [Panel(id: Self.baseColumnID, tabs: primary.map { [$0] } ?? [], selectedID: primary?.sessionID)]
+            activeIndex = 0
+        }
         switch resolution {
         case .newPanel(let index):
             panels.insert(Panel(tabs: [destination], selectedID: id), at: index)
+            if index <= activeIndex { activeIndex += 1 }
             load(index)
         case .addTab(let index):
             panels[index].tabs.append(destination)
-            select(id, in: panels[index].id)
+            select(id, at: index)
         case .select(let panel, _):
-            select(id, in: panels[panel].id)
+            select(id, at: panel)
         }
     }
 
     func select(_ sessionID: String, in panelID: String) {
-        guard let index = panels.firstIndex(where: { $0.id == panelID }) else { return }
-        guard panels[index].selectedID != sessionID else { return }
-        panels[index].selectedID = sessionID
-        load(index)
+        if let index = panels.firstIndex(where: { $0.id == panelID }) { select(sessionID, at: index) }
     }
 
-    func retry(_ panelID: String) {
-        if let index = panels.firstIndex(where: { $0.id == panelID }) { load(index) }
+    /// Selecting a tab makes it the active session; the header moves to its column.
+    private func select(_ sessionID: String, at index: Int) {
+        guard let runtime, let session = panels[index].tabs.first(where: { $0.sessionID == sessionID })?.session
+        else { return }
+        if index != activeIndex {
+            let previous = activeIndex
+            refreshActiveTitle()
+            panels[index].chat.shutdown()
+            activeIndex = index
+            // The old active column now projects its session; an unsaved new chat has none.
+            if panels[previous].selected == nil { panels[previous].selectedID = panels[previous].tabs.first?.sessionID }
+            if panels[previous].selected == nil {
+                panels.remove(at: previous)
+                if previous < activeIndex { activeIndex -= 1 }
+            } else {
+                load(previous)
+            }
+        }
+        panels[activeIndex].selectedID = sessionID
+        if runtime.navigationSessionID != sessionID { runtime.resumeSession(session, profileID: session.profileID) }
+        collapseIfUnsplit()
     }
 
     func closeTab(_ sessionID: String, in panelID: String) {
         guard let index = panels.firstIndex(where: { $0.id == panelID }),
             let tab = panels[index].tabs.firstIndex(where: { $0.sessionID == sessionID })
         else { return }
+        let wasSelected = panels[index].selectedID == sessionID
         panels[index].tabs.remove(at: tab)
-        if panels[index].tabs.isEmpty {
+        if !panels[index].tabs.isEmpty {
+            if wasSelected, let next = panels[index].tabs[min(tab, panels[index].tabs.count - 1)].sessionID {
+                if index == activeIndex {
+                    select(next, at: index)
+                } else {
+                    panels[index].selectedID = next
+                    load(index)
+                }
+            }
+        } else if index != activeIndex {
             panels.remove(at: index).chat.shutdown()
-        } else if panels[index].selectedID == sessionID {
-            let next = panels[index].tabs[min(tab, panels[index].tabs.count - 1)]
-            panels[index].selectedID = next.sessionID ?? ""
-            load(index)
+            if index < activeIndex { activeIndex -= 1 }
+        } else {
+            // The active column emptied: the nearest column becomes active.
+            panels.remove(at: index)
+            activeIndex = max(0, min(index, panels.count - 1))
+            if panels.indices.contains(activeIndex), let session = panels[activeIndex].selected?.session {
+                panels[activeIndex].chat.shutdown()
+                runtime?.resumeSession(session, profileID: session.profileID)
+            }
         }
+        collapseIfUnsplit()
     }
 
-    /// A session opened as the primary conversation leaves the panels so it never streams twice.
-    func remove(_ sessionID: String) {
-        for panel in panels where panel.tabs.contains(where: { $0.sessionID == sessionID }) {
+    /// Keeps the active column in step with sidebar navigation: a session opened as
+    /// primary replaces the active tab (like navigating in a browser tab) and leaves
+    /// any other column so it never streams twice.
+    func syncPrimary(_ sessionID: String?) {
+        guard let sessionID, let runtime, panels.indices.contains(activeIndex) else { return }
+        let activeID = panels[activeIndex].id
+        for panel in panels where panel.id != activeID && panel.tabs.contains(where: { $0.sessionID == sessionID }) {
             closeTab(sessionID, in: panel.id)
         }
-    }
-
-    @discardableResult
-    func moveTab(_ sessionID: String, before targetID: String, in panelID: String) -> Bool {
-        guard let index = panels.firstIndex(where: { $0.id == panelID }), sessionID != targetID,
-            let from = panels[index].tabs.firstIndex(where: { $0.sessionID == sessionID }),
-            let to = panels[index].tabs.firstIndex(where: { $0.sessionID == targetID })
-        else { return false }
-        panels[index].tabs.insert(panels[index].tabs.remove(at: from), at: to)
-        return true
-    }
-
-    /// Swaps a panel's selected tab with the primary conversation, keeping tab order.
-    func promote(_ panelID: String) {
-        guard let runtime, let index = panels.firstIndex(where: { $0.id == panelID }),
-            let tab = panels[index].tabs.firstIndex(where: { $0.sessionID == panels[index].selectedID }),
-            let session = panels[index].tabs[tab].session
-        else { return }
-        guard let previousID = runtime.navigationSessionID else {
-            panels[index].chat.shutdown()
-            runtime.resumeSession(session, profileID: session.profileID)
-            closeTab(panels[index].selectedID, in: panelID)
-            return
+        guard let index = panels.firstIndex(where: { $0.id == activeID }), index == activeIndex else { return }
+        if !panels[index].tabs.contains(where: { $0.sessionID == sessionID }) {
+            let destination = QuickDestination(
+                profileID: runtime.sessionProfileID, sessionID: sessionID,
+                title: runtime.currentSessionTitle ?? "Session")
+            if let selected = panels[index].tabs.firstIndex(where: { $0.sessionID == panels[index].selectedID }) {
+                panels[index].tabs[selected] = destination
+            } else {
+                panels[index].tabs.append(destination)
+            }
         }
-        panels[index].tabs[tab] = QuickDestination(
-            profileID: runtime.sessionProfileID, sessionID: previousID,
-            title: runtime.currentSessionTitle ?? "Session")
-        panels[index].selectedID = previousID
-        panels[index].chat.shutdown()
-        runtime.resumeSession(session, profileID: session.profileID)
-        load(index)
+        panels[index].selectedID = sessionID
+    }
+
+    func retry(_ panelID: String) {
+        if let index = panels.firstIndex(where: { $0.id == panelID }) { load(index) }
+    }
+
+    private func primaryDestination(_ sessionID: String) -> QuickDestination {
+        QuickDestination(
+            profileID: runtime?.sessionProfileID, sessionID: sessionID,
+            title: runtime?.currentSessionTitle ?? "Session")
+    }
+
+    private func refreshActiveTitle() {
+        guard let title = runtime?.currentSessionTitle, panels.indices.contains(activeIndex),
+            let tab = panels[activeIndex].tabs.firstIndex(where: { $0.sessionID == panels[activeIndex].selectedID })
+        else { return }
+        panels[activeIndex].tabs[tab].title = title
+    }
+
+    private func collapseIfUnsplit() {
+        guard panels.count <= 1, (panels.first?.tabs.count ?? 0) <= 1 else { return }
+        panels.first?.chat.shutdown()
+        panels = []
+        activeIndex = 0
     }
 
     private func load(_ index: Int) {
-        guard let runtime, let destination = panels[index].selected else { return }
+        guard let runtime, index != activeIndex, let destination = panels[index].selected else { return }
         let chat = panels[index].chat
         Task { await chat.load(destination, runtime: runtime) }
     }
@@ -193,7 +247,8 @@ struct SessionPaneDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        let next = SessionPaneStore.dropTarget(x: info.location.x, width: width, panelCount: store.panels.count)
+        NSCursor.closedHand.set()
+        let next = SessionPaneStore.dropTarget(x: info.location.x, width: width, columnCount: store.panels.count)
         if next != target { withAnimation(animation) { target = next } }
         return DropProposal(operation: .copy)
     }

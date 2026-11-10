@@ -4,41 +4,38 @@ import Testing
 @testable import Herm
 
 struct SessionPaneStoreTests {
-    @Test func dropTargetOpensANewPanelWhileThereIsRoom() {
-        // Primary only: anywhere opens the first panel.
-        #expect(SessionPaneStore.dropTarget(x: 100, width: 900, panelCount: 0) == .newPanel(0))
-        #expect(SessionPaneStore.dropTarget(x: 880, width: 900, panelCount: 0) == .newPanel(0))
-        // Primary + one panel (450pt columns): the panel body adds a tab, its trailing edge opens a panel.
-        #expect(SessionPaneStore.dropTarget(x: 200, width: 900, panelCount: 1) == .newPanel(0))
-        #expect(SessionPaneStore.dropTarget(x: 600, width: 900, panelCount: 1) == .tab(0))
-        #expect(SessionPaneStore.dropTarget(x: 860, width: 900, panelCount: 1) == .newPanel(1))
+    @Test func dropTargetOpensASecondColumnWhenUnsplit() {
+        #expect(SessionPaneStore.dropTarget(x: 100, width: 900, columnCount: 0) == .newPanel(1))
+        #expect(SessionPaneStore.dropTarget(x: 880, width: 900, columnCount: 1) == .newPanel(1))
     }
 
-    @Test func dropTargetAddsTabsWhenFull() {
-        // 300pt columns: primary, panel 0, panel 1.
-        #expect(SessionPaneStore.dropTarget(x: 100, width: 900, panelCount: 2) == .tab(0))
-        #expect(SessionPaneStore.dropTarget(x: 450, width: 900, panelCount: 2) == .tab(0))
-        #expect(SessionPaneStore.dropTarget(x: 880, width: 900, panelCount: 2) == .tab(1))
+    @Test func dropTargetAddsTabsOrOpensAColumnAtTheTrailingEdge() {
+        // Two 450pt columns: the body of either column adds a tab, the last quarter opens a column.
+        #expect(SessionPaneStore.dropTarget(x: 200, width: 900, columnCount: 2) == .tab(0))
+        #expect(SessionPaneStore.dropTarget(x: 600, width: 900, columnCount: 2) == .tab(1))
+        #expect(SessionPaneStore.dropTarget(x: 860, width: 900, columnCount: 2) == .newPanel(2))
+        // Three columns is full: every drop adds a tab.
+        #expect(SessionPaneStore.dropTarget(x: 880, width: 900, columnCount: 3) == .tab(2))
     }
 
-    @Test func resolveRejectsThePrimaryAndSelectsAnOpenTab() {
-        #expect(SessionPaneStore.resolve(sessionID: "a", primaryID: "a", panelTabs: [], target: .newPanel(0)) == nil)
+    @Test func resolveRejectsTheUnsplitPrimaryAndSelectsAnOpenTab() {
+        #expect(SessionPaneStore.resolve(sessionID: "a", primaryID: "a", panelTabs: [], target: .newPanel(1)) == nil)
         #expect(
-            SessionPaneStore.resolve(sessionID: "c", primaryID: "a", panelTabs: [["b"], ["d", "c"]], target: .tab(0))
-                == .select(panel: 1, tab: 1))
+            SessionPaneStore.resolve(sessionID: "a", primaryID: "a", panelTabs: [["b"], ["a"]], target: .tab(0))
+                == .select(panel: 1, tab: 0))
     }
 
     @Test func resolveClampsAndFallsBackToATabWhenFull() {
         #expect(
-            SessionPaneStore.resolve(sessionID: "c", primaryID: "a", panelTabs: [["b"]], target: .newPanel(9))
+            SessionPaneStore.resolve(sessionID: "c", primaryID: "a", panelTabs: [], target: .newPanel(9))
                 == .newPanel(1))
         #expect(
-            SessionPaneStore.resolve(sessionID: "d", primaryID: "a", panelTabs: [["b"], ["c"]], target: .newPanel(2))
+            SessionPaneStore.resolve(
+                sessionID: "d", primaryID: "a", panelTabs: [["a"], ["b"], ["c"]], target: .newPanel(3))
+                == .addTab(2))
+        #expect(
+            SessionPaneStore.resolve(sessionID: "d", primaryID: "a", panelTabs: [["a"], ["b"]], target: .tab(7))
                 == .addTab(1))
-        #expect(
-            SessionPaneStore.resolve(sessionID: "d", primaryID: "a", panelTabs: [["b"]], target: .tab(4)) == .addTab(0))
-        #expect(
-            SessionPaneStore.resolve(sessionID: "b", primaryID: "a", panelTabs: [], target: .tab(3)) == .newPanel(0))
     }
 
     @Test func dragPayloadRoundTripsToADestination() throws {

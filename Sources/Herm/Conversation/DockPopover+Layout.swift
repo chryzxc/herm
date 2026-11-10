@@ -146,7 +146,7 @@ extension DockPopover {
                 handleSessionIDChange(oldValue: oldValue, newValue: newValue)
             }
             // A session opened as primary leaves its side pane so it never streams twice.
-            .onChange(of: model.navigationSessionID) { _, id in if let id { sessionPanes.remove(id) } }
+            .onChange(of: model.navigationSessionID) { _, id in sessionPanes.syncPrimary(id) }
             .onChange(of: model.sessionID) { _, _ in
                 isShowingMessagePins = false
                 pinnedMessageJumpID = nil
@@ -628,10 +628,19 @@ extension DockPopover {
                         store: sessionPanes, isEnabled: !isNarrowLayout,
                         headerHeight: usesWindowChrome
                             ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight,
-                        usesWindowChrome: usesWindowChrome
-                    ) {
+                        usesWindowChrome: usesWindowChrome,
+                        leadingControls: hidesChatList
+                            ? AnyView(
+                                HStack(spacing: 4) { toolbarLeadingControls }
+                                    .environment(\.dockNavigationHistory, navigationHistoryControls)) : nil
+                    ) { isLeading in
                         VStack(spacing: 0) {
-                            header
+                            conversationToolbar(
+                                identity: AnyView(
+                                    SessionPaneActiveTabs(store: sessionPanes, runtime: model) {
+                                        toolbarIdentity(style: DockThemePalette(theme: dockThemeStore.selectedThemeID))
+                                    }),
+                                groupActions: nil, showsLeadingControls: isLeading)
                             GeometryReader { geometry in
                                 let railWidth =
                                     isSessionRailVisible
