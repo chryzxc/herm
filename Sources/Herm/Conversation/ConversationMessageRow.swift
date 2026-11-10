@@ -151,6 +151,7 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.message.systemEvent == rhs.message.systemEvent
             && lhs.message.kanbanNotice == rhs.message.kanbanNotice
             && lhs.message.isBotHandoffReply == rhs.message.isBotHandoffReply
+            && lhs.message.reactions == rhs.message.reactions
             && lhs.message.isSteering == rhs.message.isSteering
             && lhs.message.steeringStatus == rhs.message.steeringStatus
             && lhs.message.isError == rhs.message.isError
@@ -291,6 +292,10 @@ struct ConversationMessageRow: View, Equatable {
                     }
                     .dockPadding(.horizontal, 4)
                     .dockPadding(.top, 2)
+                }
+                .overlay(alignment: .topLeading) {
+                    // Hangs 11pt above the bubble, inside the row's 12pt top padding.
+                    MessageReactionBadge(reactions: message.reactions).offset(x: -8, y: -11)
                 }
                 .onHover { hoverPresentation.isHovering = $0 }
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
@@ -511,6 +516,8 @@ struct ConversationMessageRow: View, Equatable {
 
     private var messageActions: some View {
         HStack(spacing: 0) {
+            MessageReactionBadge(reactions: message.reactions)
+                .dockPadding(.trailing, message.reactions.isEmpty ? 0 : 6)
             actionButton(.copy, action: onCopy)
             actionButton(.branch, action: onBranch, isAvailable: areSessionActionsAvailable)
             actionButton(.reply, action: onReply, isAvailable: areSessionActionsAvailable)

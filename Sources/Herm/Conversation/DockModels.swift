@@ -505,6 +505,8 @@ struct ChatMessage: Identifiable, Equatable {
     let systemEvent: SystemEvent?
     /// A Bot's answer to a DM another Bot sent from this session.
     let isBotHandoffReply: Bool
+    /// Emoji reactions Hermes stored on this message; set after init from history or `message.reaction`.
+    var reactions: [MessageReaction] = []
 
     init(
         id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [],
@@ -550,7 +552,7 @@ struct ChatMessage: Identifiable, Equatable {
     }
 
     func attachingImages(_ added: [NSImage]) -> ChatMessage {
-        ChatMessage(
+        var copy = ChatMessage(
             id: id,
             role: role,
             text: text,
@@ -570,6 +572,8 @@ struct ChatMessage: Identifiable, Equatable {
             systemEvent: systemEvent,
             botMentions: botMentions
         )
+        copy.reactions = reactions
+        return copy
     }
 
     enum Role { case user, hermes }

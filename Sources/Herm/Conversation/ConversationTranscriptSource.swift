@@ -19,7 +19,7 @@ struct ConversationTranscriptSnapshot: Equatable {
                 && a.botProfileID == b.botProfileID && a.botDisplayName == b.botDisplayName
                 && a.botMentions == b.botMentions
                 && a.activity == b.activity && a.kanbanNotice == b.kanbanNotice && a.systemEvent == b.systemEvent
-                && a.isBotHandoffReply == b.isBotHandoffReply
+                && a.isBotHandoffReply == b.isBotHandoffReply && a.reactions == b.reactions
         }
     }
 

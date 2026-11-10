@@ -55,8 +55,12 @@ extension WorkspaceActivitySidebar {
                         .dockPadding(.vertical, -8)
                 }
                 SettingsSection(title: "Replies", subtitle: "Visual content", tint: .dockAccent) {
-                    GenerativeUISettings()
-                        .dockPadding(.vertical, -8)
+                    VStack(alignment: .leading, spacing: 0) {
+                        GenerativeUISettings()
+                        Divider().overlay(Color.dockBorderLight)
+                        MessageReactionsSettings(model: model)
+                    }
+                    .dockPadding(.vertical, -8)
                 }
                 SettingsSection(title: "Simulators", subtitle: "Device launch", tint: .dockAccent) {
                     SimulatorSettings()
