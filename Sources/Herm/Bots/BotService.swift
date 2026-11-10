@@ -653,6 +653,8 @@ final class BotModeModel: ObservableObject {
             BotMentions.update(bots: inventory.bots, avatars: avatarImages)
         }
     }
+    /// Bots whose avatar Hermes did not serve; they draw their face instead of waiting.
+    @Published private(set) var unavailableAvatarIDs: Set<String> = []
     private var service: BotService?
     let groupChats = GroupChatStore()
     private var capabilityAvailable = false
@@ -910,8 +912,16 @@ final class BotModeModel: ObservableObject {
                 inventory.availability == .ready, botsByID[bot.id]?.hasAvatar == true
             {
                 avatarImages[bot.id] = data
+                unavailableAvatarIDs.remove(bot.id)
+            } else {
+                unavailableAvatarIDs.insert(bot.id)
             }
         }
+    }
+
+    /// The Bot has an avatar Hermes has not served yet, so a stand-in face would be wrong.
+    func isAvatarPending(_ bot: BotSummary) -> Bool {
+        bot.hasAvatar && avatarImages[bot.id] == nil && !unavailableAvatarIDs.contains(bot.id)
     }
 
     /// Fills missing avatars, or with `all` re-renders every Bot's Herm face
