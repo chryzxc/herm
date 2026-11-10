@@ -499,8 +499,8 @@ The session mode switch uses a borderless 28pt track, 24pt visible segments,
 12pt control labels, and 44pt-high click targets. Selection follows the skin's
 shared fill or marker treatment without an additional underline.
 
-**Session rail.** Chat has a stacked-cards Show/Hide session rail icon immediately before
-Conversation actions. The summary card includes Needs attention (current approvals,
+**Session rail.** The rail is shown by default whenever the column fits it. Chat has a
+stacked-cards Show/Hide session rail icon immediately before Conversation actions. The summary card includes Needs attention (current approvals,
 questions, and value prompts), Tasks (the selected session's Hermes todo plan),
 Subagents (this session's delegated workers, live state overriding history, with
 View in timeline), Checkpoints (`rollback.list` for the session workspace; Show diff

@@ -31,3 +31,20 @@ struct DockBuildBadge: View {
         }
     }
 }
+
+/// Reserves the badge's space in a title row. The real badge is drawn once by `dockBuildBadgeOverlay`, so no page places it.
+struct DockBuildBadgeSlot: View {
+    var body: some View { DockBuildBadge().hidden().accessibilityHidden(true) }
+}
+
+extension View {
+    /// Draws the build badge once at the window's leading title row, above every page.
+    func dockBuildBadgeOverlay() -> some View {
+        overlay(alignment: .topLeading) {
+            DockBuildBadge()
+                .frame(height: DockWindowChrome.titleRowHeight)
+                .padding(.leading, 52 + DockWindowChrome.sidebarToggleLeading)  // rail + toggle inset
+                .allowsHitTesting(false)
+        }
+    }
+}

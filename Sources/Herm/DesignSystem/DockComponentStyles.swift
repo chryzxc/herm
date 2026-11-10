@@ -665,6 +665,7 @@ struct DockPressButtonStyle: ButtonStyle {
             .animation(reduceMotion ? nil : .dockFeedback(configuration.isPressed), value: configuration.isPressed)
             .animation(reduceMotion ? nil : .dockFeedback(isHovering), value: isHovering)
             .onHover { isHovering = $0 }
+            .dockPointerCursor(isEnabled)
     }
 }
 
@@ -691,6 +692,7 @@ struct DockHoverModifier: ViewModifier {
             }
             .animation(reduceMotion ? nil : .dockFeedback(isHovering, duration: 0.12), value: isHovering)
             .onHover { isHovering = $0 }
+            .dockPointerCursor(isEnabled)
     }
 }
 
@@ -725,12 +727,80 @@ struct DockHoverButtonStyle: ButtonStyle {
             )
             .animation(reduceMotion ? nil : .dockFeedback(isHovering, duration: 0.12), value: isHovering)
             .onHover { isHovering = $0 }
+            .dockPointerCursor(isEnabled)
     }
 }
 
 extension View {
     func dockHoverable(cornerRadius: CGFloat = DockLayout.controlRadius - 1) -> some View {
         modifier(DockHoverModifier(cornerRadius: cornerRadius))
+    }
+
+    /// Pointing hand over clickable chrome. Set on every move (not via cursor
+    /// rects) so it also wins in the non-activating panel and popovers, where
+    /// AppKit never resets an I-beam left behind by a text view.
+    func dockPointerCursor(_ isActive: Bool = true) -> some View {
+        modifier(DockPointerCursorModifier(isActive: isActive))
+    }
+}
+
+private struct DockPointerCursorModifier: ViewModifier {
+    let isActive: Bool
+    @State private var id = UUID()
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            // Native pointer styles ride SwiftUI's own cursor updates, so they
+            // never race the hosting view's reset on hover-region entry.
+            content.pointerStyle(isActive ? .link : nil)
+        } else {
+            legacy(content)
+        }
+    }
+
+    private func legacy(_ content: Content) -> some View {
+        content
+            .onContinuousHover { phase in
+                switch phase {
+                case .active: DockPointerCursor.hover(id, pointer: isActive)
+                case .ended: DockPointerCursor.leave(id)
+                }
+            }
+            .onDisappear { DockPointerCursor.leave(id) }
+    }
+}
+
+/// One arbiter for the app's cursor, so nested hover regions (an icon button
+/// inside a hoverable row) and read-only text views never fight on the same
+/// mouse move and make the cursor flicker.
+@MainActor
+enum DockPointerCursor {
+    private static var regions = Set<UUID>()
+    /// A text view under the mouse owns the cursor (I-beam or link hand).
+    private static weak var textOwner: NSView?
+
+    static func hover(_ id: UUID, pointer: Bool) {
+        if pointer { regions.insert(id) } else { regions.remove(id) }
+        apply()
+    }
+
+    static func leave(_ id: UUID) {
+        guard regions.remove(id) != nil else { return }
+        // Defer so a parent or sibling entered by the same move registers first.
+        DispatchQueue.main.async { apply() }
+    }
+
+    static func textEntered(_ view: NSView) { textOwner = view }
+
+    static func textExited(_ view: NSView) {
+        guard textOwner === view else { return }
+        textOwner = nil
+        apply()
+    }
+
+    private static func apply() {
+        guard textOwner?.window == nil else { return }
+        (regions.isEmpty ? NSCursor.arrow : NSCursor.pointingHand).set()
     }
 }
 
@@ -805,6 +875,7 @@ struct DockPrimaryButtonStyle: ButtonStyle {
             .animation(reduceMotion ? nil : .dockFeedback(configuration.isPressed), value: configuration.isPressed)
             .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: highlighted)
             .onHover { isHovering = $0 }
+            .dockPointerCursor(isEnabled)
     }
 }
 
@@ -855,6 +926,7 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .animation(reduceMotion ? nil : .dockFeedback(configuration.isPressed), value: configuration.isPressed)
             .animation(reduceMotion ? nil : .dockFeedback(isHovering), value: isHovering)
             .onHover { isHovering = $0 }
+            .dockPointerCursor(isEnabled)
     }
 }
 
@@ -1046,7 +1118,7 @@ struct DockPageHeader<Trailing: View>: View {
             HStack(spacing: 0) {
                 // Only the leftmost title row; GitHub's detail header sits beside its own navigation.
                 if row.leadingClearance > 0 {
-                    DockBuildBadge()
+                    DockBuildBadgeSlot()
                         .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 8)
                 }
                 sidebarToggle
@@ -1548,6 +1620,7 @@ struct DockLinkButtonStyle: ButtonStyle {
             .animation(reduceMotion ? nil : .dockFeedback(isHovering), value: isHovering)
             .animation(reduceMotion ? nil : .dockFeedback(configuration.isPressed), value: configuration.isPressed)
             .onHover { isHovering = $0 }
+            .dockPointerCursor(isEnabled)
     }
 }
 
@@ -1815,6 +1888,33 @@ struct DockTabButton: View {
         .contentShape(shape)
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18), value: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// Sessions / Bots chooser shown in the same toolbar slot on both chat lists:
+/// the label names the open list, the menu switches to the other.
+struct DockChatsScopeSwitch: View {
+    let showsBots: Bool
+    let onShowSessions: () -> Void
+    let onShowBots: () -> Void
+
+    var body: some View {
+        DockMenu {
+            DockMenuCheckRow(title: "Sessions", isSelected: !showsBots, action: onShowSessions)
+            DockMenuCheckRow(title: "Bots", isSelected: showsBots, action: onShowBots)
+        } label: {
+            HStack(spacing: 4) {
+                Text(showsBots ? "Bots" : "Sessions")
+                    .dockFont(.metadata, weight: .medium)
+                    .foregroundStyle(Color.dockPrimaryText)
+                DockIcon(.caretUpDown, size: 10, color: Color.dockMetadataText)
+            }
+            .dockPadding(.horizontal, 8)
+            .frame(height: 24)
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .help("Switch between sessions and each bot's main chat")
     }
 }
 

@@ -346,6 +346,7 @@ private struct DockMenuRowButton: View {
         ) { configuration.label }
         .opacity(isEnabled ? 1 : 0.4)
         .onHover { isHovered = $0 }
+        .dockPointerCursor(isEnabled)
         // A gesture on the label competes with the Button's own click and can
         // swallow its action, so dismiss from the pressed -> released
         // transition instead, a turn later so the action has already run.

@@ -1217,6 +1217,43 @@ extension NSTextView {
             }
         }
     }
+
+    /// Cursor rects only run in the key window, and Herm's panel is
+    /// non-activating, so read-only markdown also tracks the mouse directly:
+    /// hand over links, I-beam over text, arrow again on exit.
+    func installMarkdownCursorTracking() {
+        guard !trackingAreas.contains(where: { $0.owner === self && $0.options.contains(.activeAlways) }) else {
+            return
+        }
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+                owner: self))
+    }
+
+    /// Claims the cursor only when this view is what the mouse is actually
+    /// over; neighbouring SwiftUI buttons inside its tracking rect keep theirs.
+    func claimsMarkdownCursor(for event: NSEvent) -> Bool {
+        guard let hit = window?.contentView?.hitTest(event.locationInWindow), hit === self || hit.isDescendant(of: self)
+        else {
+            DockPointerCursor.textExited(self)
+            return false
+        }
+        DockPointerCursor.textEntered(self)
+        return true
+    }
+
+    func markdownCursor(for event: NSEvent) -> NSCursor {
+        guard let layoutManager, let textContainer, let storage = textStorage, storage.length > 0 else { return .arrow }
+        let local = convert(event.locationInWindow, from: nil)
+        let point = NSPoint(x: local.x - textContainerOrigin.x, y: local.y - textContainerOrigin.y)
+        let glyph = layoutManager.glyphIndex(for: point, in: textContainer)
+        let rect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+        guard rect.contains(point) else { return .iBeam }
+        let index = layoutManager.characterIndexForGlyph(at: glyph)
+        guard index < storage.length else { return .iBeam }
+        return storage.attribute(.link, at: index, effectiveRange: nil) != nil ? .pointingHand : .iBeam
+    }
 }
 
 final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableSection {
@@ -1334,6 +1371,25 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         super.resetCursorRects()
         addMarkdownLinkCursorRects()
     }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        installMarkdownCursorTracking()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        // NSTextView's own handling sets an I-beam, so it only runs when the
+        // text (not a neighbouring button) is what the mouse is over.
+        guard claimsMarkdownCursor(for: event) else { return }
+        super.mouseMoved(with: event)
+        markdownCursor(for: event).set()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        DockPointerCursor.textExited(self)
+    }
+
     func measuredHeight(forWidth width: CGFloat) -> CGFloat {
         if let cached = heights.height(forWidth: width) { return cached }
         guard let textContainer, let layoutManager, (textStorage?.length ?? 0) > 0 else {

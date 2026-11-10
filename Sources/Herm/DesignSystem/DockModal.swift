@@ -208,5 +208,6 @@ struct DockModalButtonStyle: ButtonStyle {
             }
             .contentShape(shape)
             .opacity(isEnabled ? 1 : 0.42)
+            .dockPointerCursor(isEnabled)
     }
 }
