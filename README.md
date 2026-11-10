@@ -859,6 +859,10 @@ Timeline uses a single horizontal gutter and compact 36pt bot faces, and shows b
 
 ![A split diff in Herm review](docs/media/pr-split.webp)
 
+Source control alongside a real Herm conversation:
+
+![Herm source control showing changed files, a stash, and commit graph beside a chat](docs/media/source-control.webp)
+
 - Source Control uses matching outlined **Review comparisons** and **Actions** controls with leading icons and a dropdown chevron for Actions. Section icons and count badges use a consistent neutral tint; file statuses and graph lanes retain their semantic colors.
 - Source Control's **Review comparisons** opens staged, working-tree, branch, and
   commit comparisons from local Git, without fetching. Search covers loaded files;
