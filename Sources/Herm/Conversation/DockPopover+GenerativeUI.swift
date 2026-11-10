@@ -53,7 +53,7 @@ extension DockPopover {
                     return .init(title: record.title, detail: "Last loaded pull request · \(record.state)") {
                         guard isCurrent() else { return }
                         sessionPullRequestCenter.selectedID = record.id
-                        selectSessionMode(.pullRequests)
+                        showSessionRailInspector(.pullRequests)
                     }
                 },
                 .init(kind: .issue, ids: { [weak issues] in issues?.records.map(\.id) ?? [] }) { id in
@@ -63,7 +63,7 @@ extension DockPopover {
                     return .init(title: record.title, detail: "Last loaded issue · \(record.state)") {
                         guard isCurrent() else { return }
                         sessionIssueCenter.selectedIssueID = record.id
-                        selectSessionMode(.issues)
+                        showSessionRailInspector(.issues)
                     }
                 },
                 .init(

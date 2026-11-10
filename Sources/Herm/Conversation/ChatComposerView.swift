@@ -666,6 +666,9 @@ struct ChatComposerView: View {
                     Color.clear.dockWell(.sunken, radius: skin.composerRadius, role: .pane, stroke: .dockBorderLight)
                 }
             }
+            // Without a folder bar, keep its 32pt (28 + 2×2) so the input sits at the same height
+            // either way, e.g. across split columns. The stack's 6pt spacing makes up the rest.
+            if worktreeBar == nil { Color.clear.frame(height: 22).dockPadding(.vertical, 2).accessibilityHidden(true) }
         }
         .dockPadding(.horizontal, metrics.composerInset)
         .dockPadding(.top, metrics.composerTopInset)

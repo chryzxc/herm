@@ -15,6 +15,7 @@ struct SessionNavQueue: View, Equatable {
     @ObservedObject var agentUpdateService: HermesUpdateService
     @ObservedObject var navigationState: SessionNavigationState
     @ObservedObject var dockThemeStore: DockThemeStore
+    @ObservedObject private var sessionPanes = SessionPaneStore.shared
     @StateObject private var sidebar: SessionNavSidebarModel
     @Binding var sessionPendingDeletion: HermesSession?
     let activeSessionID: String?
@@ -410,7 +411,11 @@ struct SessionNavQueue: View, Equatable {
         let label = subtitle.map { "\(name) — \($0)" } ?? name
         let isSwitchable = visibleBots.count > 1
         let identity = HStack(spacing: 9) {
-            if let bot {
+            if let bot, botMode.isAvatarPending(bot) {
+                // Startup: the avatar is still loading, so hold its slot instead of a stand-in face.
+                ProgressView().controlSize(.small).frame(width: 28, height: 28)
+                    .accessibilityLabel("Loading \(bot.name)'s avatar")
+            } else if let bot {
                 BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 28)
             } else {
                 ZStack {
@@ -1103,6 +1108,7 @@ struct SessionNavQueue: View, Equatable {
     private func isSessionSelected(_ session: HermesSession) -> Bool {
         guard activeGlobalTab == nil, !isArtifactsActive else { return false }
         return navigationState.selection.isSessionSelected(session.id)
+            || sessionPanes.shownSessionIDs.contains(session.id)
     }
 
     private func taskDisplayTitle(_ task: WorkspaceTask) -> String {

@@ -420,7 +420,7 @@ Ordinary IDs, branches, and drafts keep neutral ink. PR readiness is colored sep
 Category colors distinguish calendar sources, automation, and file changes;
 orange is reserved for attention rather than normal draft or modified state.
 
-Shared tabs and Chat/Talk/PR modes carry their selection highlight between choices. Navigation glyphs respond to selection, floating-skin controls lift gently on hover, and retained disclosures ease open and closed while preserving nested inputs.
+Shared tabs carry their selection highlight between choices. Navigation glyphs respond to selection, floating-skin controls lift gently on hover, and retained disclosures ease open and closed while preserving nested inputs.
 
 Shared interface motion includes smoothly updating progress meters and section counts, in-place pending-action spinners, short tab and navigation selection transitions, rotating disclosures, and subtle page/modal content reveals. Effects follow the active skin and respect Reduce Motion; controls remain immediately usable and content keeps its layout footprint.
 
@@ -441,7 +441,7 @@ status marks, timestamps, inline project pills, previews, and session actions.
 
 Workspace pages share Calendar’s top titlebar treatment, with sidebar toggles aligned
 beside the traffic lights. Chat uses three full-height panes: the session list,
-conversation, and inspector. The session title and Chat/Talk controls stay inside
+conversation, and inspector. The session title and actions stay inside
 the conversation pane; the inspector's tabs extend to the top of its own pane.
 The session sidebar places **New chat** above Pinned. Navigation distinguishes Chats (speech bubbles), Integrations (puzzle piece), and
 Artifacts (stacked files), while keeping the Bots ghost icon. Chats shows a small
@@ -458,7 +458,7 @@ One Hermes request loads recent chats for all bots.
 Startup restoration shares the sidebar's session load, so reopening the latest
 conversation preserves the complete recent list without a manual refresh.
 
-The header shows compact labelled Chat, Talk, and repository PRs tabs in a quiet 28pt track with full-height click targets. A semibold label and the skin's selection treatment identify the active tab. Opening the inspector in the floating desktop panel keeps the conversation visible beside it. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
+Talk, Pull requests and Issues open as inspector tabs from its **Open a new tab** grid; voice runs while the Talk tab shows. Opening the inspector in the floating desktop panel keeps the conversation visible beside it. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
 
 The session rail shows beside the transcript and composer by default; use the
 stacked-cards **Hide session rail** button beside Conversation actions to hide it. The rail and its toggle hide
@@ -550,6 +550,7 @@ unavailable items, and links to anchors or subpages retain the browser fallback.
 - **Pinned messages**: pin or unpin saved user and assistant messages, then use **… → Pinned messages** to jump to them. Bubble actions refresh their session target when a conversation resumes under a new runtime ID. Accepted pins survive transcript-view replacement and remain scoped to the selected conversation. Pins live in Hermes and survive compression. They bookmark messages for navigation; they do not keep them in model context or protect them from deletion or rewind. Profiles and new branches have independent pin lists. Requires the message-pins backend patch in [docs/message-pins.md](docs/message-pins.md); stock runtimes show an unavailable notice.
   Message pin updates open the pinned list after verification. Errors remain visible across refreshes until another attempt or conversation reset; an unavailable or mismatched reread leaves the saved state uncertain.
 - **Dangerous-command approvals**: *Deny*, *Allow once*, or *Always allow*. *Always allow* is saved to the Hermes allowlist.
+- **Split session panes**: drag a session from the sidebar into the chat area, or use **Open in Split View**, to work in up to three columns side by side. Each column is a tab group with its own transcript and composer. Click any tab to make it the active session; the header and session menu move to its column, and the inspector opens beside it. Drop onto a column to add a tab, or at the trailing edge to open a new column. New tabs and columns open beside the session you came from. Bot main chats split the same way from the Bots page. Columns last for the current app run.
 
 ### Chat views
 

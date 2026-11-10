@@ -61,8 +61,10 @@ struct BotChatsPage: View, Equatable {
     @Binding var isCollapsed: Bool
     let onShowSessions: () -> Void
     let onOpen: (BotSummary) -> Void
+    @ObservedObject private var sessionPanes = SessionPaneStore.shared
     @State private var query = ""
     @State private var isShowingNewGroupChat = false
+    @State private var hoveredBotID: String?
 
     /// The host re-renders on every DockModel publication; skip those. The
     /// observed bot and group stores still drive this page's own updates.
@@ -173,16 +175,21 @@ struct BotChatsPage: View, Equatable {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: 4) {
                     ForEach(items) { item in
                         switch item {
                         case .bot(let bot):
-                            row(bot, isSelected: selectedRoomID == nil && bot.id == activeBotID)
+                            // Bots shown in split columns are on screen too, so they highlight.
+                            row(
+                                bot,
+                                isSelected: selectedRoomID == nil && bot.id == activeBotID
+                                    || bot.chat.map { sessionPanes.shownSessionIDs.contains($0.sessionID) } == true)
                         case .room(let room, let date):
                             GroupChatSidebarRow(
                                 room: room, store: groups, botMode: bots, style: style,
                                 isSelected: room.id == selectedRoomID, date: date
                             ) { openRoom(room.id) }
+                            .sessionPaneDraggable(SessionPaneDrag(room: room))
                         }
                     }
                 }
@@ -206,10 +213,9 @@ struct BotChatsPage: View, Equatable {
 
     private func closeRoom() { openRoomID = "" }
 
+    /// A tap gesture, not a Button: a Button's mouse tracking swallows the split-view drag.
     private func row(_ bot: BotSummary, isSelected: Bool) -> some View {
-        Button {
-            open(bot)
-        } label: {
+        Group {
             HStack(spacing: 10) {
                 BotAvatarView(
                     bot: bot, imageData: bots.avatarImages[bot.id], size: 42, orbits: bot.isMainChatWorking)
@@ -238,11 +244,24 @@ struct BotChatsPage: View, Equatable {
             .dockPadding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
-                    .fill(isSelected ? style.selectedFill : .clear)
+                    .fill(
+                        isSelected
+                            ? style.selectedFill : hoveredBotID == bot.id ? style.selectedFill.opacity(0.4) : .clear)
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.dockHover)
+        .onHover { hoveredBotID = $0 ? bot.id : (hoveredBotID == bot.id ? nil : hoveredBotID) }
+        .onTapGesture { open(bot) }
+        .sessionPaneDraggable(SessionPaneDrag(bot: bot))
+        .contextMenu {
+            Button("Open in Split View", icon: .columnsPlusRight) {
+                if let drag = SessionPaneDrag(bot: bot) { sessionPanes.open(drag) }
+            }
+            .disabled(isSelected || bot.chat == nil)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { open(bot) }
         .accessibilityLabel(bot.name)
         .accessibilityHint("Open the main chat")
         .accessibilityAddTraits(isSelected ? .isSelected : [])

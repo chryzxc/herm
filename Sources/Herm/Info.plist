@@ -30,6 +30,16 @@
                 <string>public.data</string>
             </array>
         </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>io.github.chryzxc.Herm.session-pane</string>
+            <key>UTTypeDescription</key>
+            <string>Herm session</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+        </dict>
     </array>
     <key>NSCalendarsFullAccessUsageDescription</key>
     <string>Herm shows your events beside Hermes' scheduled runs and can attach them to a chat. It never changes your calendar.</string>

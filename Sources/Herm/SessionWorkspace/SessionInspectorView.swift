@@ -24,6 +24,11 @@ struct SessionInspector: View {
     /// Matches the chat header beside it so both rows share one baseline and separator.
     var headerHeight: CGFloat = 44
     @Binding var tabRequest: TabRequest?
+    /// Talk, PRs and Issues offered in the new-tab grid, rendered by the host.
+    var workspaceSections: [Section] = []
+    var workspaceContent: (Section) -> AnyView = { _ in AnyView(EmptyView()) }
+    /// The workspace tab now showing, or nil when none is.
+    var onWorkspaceSection: (Section?) -> Void = { _ in }
 
     struct TabRequest: Equatable {
         let session: String
@@ -119,13 +124,21 @@ struct SessionInspector: View {
         case github = "GitHub"
         case iosSimulator = "iOS Simulator"
         case androidEmulator = "Android Emulator"
+        case talk = "Talk"
+        case pullRequests = "Pull Requests"
+        case issues = "Issues"
+
+        /// Opened only from the new-tab grid, never by default.
+        var isOnDemand: Bool { self == .iosSimulator || self == .androidEmulator || isWorkspace }
+        /// Session surfaces the host renders (Talk, PRs, Issues).
+        var isWorkspace: Bool { self == .talk || self == .pullRequests || self == .issues }
 
         static func open(
             visible: [Self], closed: String, browserOpen: Bool, simulators: [String]
         ) -> [Self] {
             let closed = Set(closed.split(separator: "|").map(String.init))
             return visible.filter {
-                if $0 == .iosSimulator || $0 == .androidEmulator { return simulators.contains($0.rawValue) }
+                if $0.isOnDemand { return simulators.contains($0.rawValue) }
                 return $0 == .browser ? browserOpen : !closed.contains($0.rawValue)
             }
         }
@@ -168,7 +181,8 @@ struct SessionInspector: View {
             case .diff: "Diff"
             case .browser: "Browser"
             case .github: "GitHub"
-            case .iosSimulator, .androidEmulator: rawValue
+            case .iosSimulator, .androidEmulator, .talk, .issues: rawValue
+            case .pullRequests: "Pull requests"
             }
         }
         var icon: Ph {
@@ -182,6 +196,9 @@ struct SessionInspector: View {
             case .browser: .globe
             case .github: .gitPullRequest
             case .iosSimulator, .androidEmulator: .deviceMobile
+            case .talk: .waveform
+            case .pullRequests: .gitPullRequest
+            case .issues: .circleDashed
             }
         }
     }
@@ -196,7 +213,7 @@ struct SessionInspector: View {
             sessionModePicker
 
             if selectedSection != .timeline, selectedSection != .github, selectedSection != .artifacts,
-                selectedSection != .iosSimulator, selectedSection != .androidEmulator,
+                !selectedSection.isOnDemand,
                 let workflowError = workflow.error,
                 filePreview.attachmentDiff == nil
             {
@@ -223,7 +240,14 @@ struct SessionInspector: View {
                         baseContent
                     } else {
                         SessionInspectorEmptyView(
-                            sections: visibleSections.filter { !openSections.contains($0) }, onOpen: reopen)
+                            sections: visibleSections.filter { !openSections.contains($0) }, onOpen: reopen,
+                            bots: botMode.bots.filter {
+                                !$0.isHidden && $0.chat != nil && $0.chat?.sessionID != model.sessionID
+                            },
+                            botAvatars: botMode.avatarImages,
+                            sessions: model.sessions
+                                .filter { !$0.isHidden && $0.id != model.navigationSessionID },
+                            onDismiss: { onToggle?() })
                     }
                 }
                 .opacity(selectedExtraID == nil && selectedPreview == nil ? 1 : 0)
@@ -347,15 +371,14 @@ struct SessionInspector: View {
             } else if selectedSection == .diff {
                 selectedSection = .changes
             }
-            if selectedSection == .iosSimulator || selectedSection == .androidEmulator,
-                !simulatorSections.contains(selectedSection.rawValue)
-            {
+            if selectedSection.isOnDemand, !simulatorSections.contains(selectedSection.rawValue) {
                 selectedSection = .timeline
             }
             messageTabs.select(messageSelection, in: WorkspaceIdentity.session(model))
             restoringPresentation = false
             consumeTabRequest()
         }
+        .onChange(of: shownWorkspaceSection, initial: true) { _, section in onWorkspaceSection(section) }
         .onChange(of: tabRequest) { _, _ in
             if !restoringPresentation { consumeTabRequest() }
         }
@@ -400,7 +423,7 @@ struct SessionInspector: View {
     private var baseContent: some View {
         if selectedSection == .github || selectedSection == .timeline || selectedSection == .terminal
             || selectedSection == .files || selectedSection == .browser || selectedSection == .diff
-            || selectedSection == .artifacts || selectedSection == .iosSimulator || selectedSection == .androidEmulator
+            || selectedSection == .artifacts || selectedSection.isOnDemand
         {
             inspectorContent
                 .dockPadding(
@@ -525,8 +548,16 @@ struct SessionInspector: View {
     // Keep Source Control reachable while its repository snapshot loads or refreshes.
     private var visibleSections: [Section] {
         [.timeline, .terminal, .files, .artifacts, .changes, .browser, .iosSimulator, .androidEmulator]
+            + workspaceSections
             + (filePreview.attachmentDiff == nil ? [] : [.diff])
             + (gitHub.item(for: WorkspaceIdentity.session(model))?.reference == nil ? [] : [.github])
+    }
+
+    private var shownWorkspaceSection: Section? {
+        let shown =
+            hostVisible && selectedSection.isWorkspace && openSections.contains(selectedSection)
+            && selectedExtraID == nil && selectedPreview == nil
+        return shown ? selectedSection : nil
     }
 
     private var browserSessions: [String] { browserSessionsRaw.split(separator: "|").map(String.init) }
@@ -567,7 +598,7 @@ struct SessionInspector: View {
                 },
                 selectedExtra: selectedExtraID,
                 selectedBrowser: browserWorkspace?.extras.firstIndex(where: { $0.id == selectedExtraID }),
-                simulatorSections: simulatorSections),
+                simulatorSections: simulatorSections.filter { $0 != Section.talk.rawValue }),
             identity: WorkspaceIdentity.session(model))
     }
 
@@ -607,7 +638,7 @@ struct SessionInspector: View {
 
     private func reopen(_ section: Section) {
         messageTabs.select(nil, in: WorkspaceIdentity.session(model))
-        if section == .iosSimulator || section == .androidEmulator, !simulatorSections.contains(section.rawValue) {
+        if section.isOnDemand, !simulatorSections.contains(section.rawValue) {
             simulatorSections.append(section.rawValue)
         }
         if section == .browser { setBrowserOpenHere(true) }
@@ -821,6 +852,8 @@ struct SessionInspector: View {
     @ViewBuilder
     private var inspectorContent: some View {
         switch selectedSection {
+        case .talk, .pullRequests, .issues:
+            workspaceContent(selectedSection)
         case .iosSimulator, .androidEmulator:
             SessionSimulatorView(
                 platform: selectedSection == .iosSimulator ? .ios : .android,

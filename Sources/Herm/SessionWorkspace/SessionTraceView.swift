@@ -147,6 +147,7 @@ struct SessionTraceReplay: Equatable {
 /// Value-only surface: fixture rendering exercises the same layout as live sessions.
 struct SessionTraceCanvas: View {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
+    @Environment(\.chatContextRouter) private var router
     #if DEBUG
         @Environment(\.conversationRowEvaluation) private var evaluation
     #endif
@@ -795,7 +796,7 @@ struct SessionTraceCanvas: View {
                     if row.active {
                         ProgressView().controlSize(.mini).accessibilityLabel("Running")
                     }
-                    Text(row.title)
+                    Text(title(row))
                         .dockFont(.body, weight: hasChildren ? .semibold : .regular)
                         .foregroundStyle(
                             row.kind == .model ? Color.dockSecondaryText : Color.dockPrimaryText
@@ -998,7 +999,7 @@ struct SessionTraceCanvas: View {
                     .frame(width: 24, height: 24)
                     .background(tile(row), in: RoundedRectangle(cornerRadius: 6))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(row.title).dockFont(.body, weight: .semibold).lineLimit(2)
+                    Text(title(row)).dockFont(.body, weight: .semibold).lineLimit(2)
                     if let subtitle = detailSubtitle(row, turn: turn) {
                         Text(subtitle).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(1).truncationMode(.middle).help(subtitle)
@@ -1316,8 +1317,17 @@ struct SessionTraceCanvas: View {
         value == value.rounded() ? String(format: "%.0f×", value) : String(format: "%.1f×", value)
     }
     /// Same glyphs as the chat's activity list, file tools included.
+    /// The dispatched Bot, when the row names one Herm knows.
+    private func bot(_ row: SessionTraceRow) -> BotSummary? {
+        guard row.kind == .agent, let id = row.crewProfileID else { return nil }
+        return router?.bots?.bots.first { $0.id == id }
+    }
+    /// Transcript fallbacks such as "Bot Chat" give way to the Bot's real name.
+    private func title(_ row: SessionTraceRow) -> String { bot(row)?.name ?? row.title }
     @ViewBuilder private func stepIcon(_ row: SessionTraceRow) -> some View {
-        if !row.failed, let name = row.toolName, TurnActivityView.isFileTool(name),
+        if !row.failed, let bot = bot(row) {
+            BotAvatarView(bot: bot, imageData: router?.bots?.avatarImages[bot.id], size: 18, animated: false)
+        } else if !row.failed, let name = row.toolName, TurnActivityView.isFileTool(name),
             let path = row.context,
             let image = ArtifactFileIcon.inlineImage(forPath: path, size: 14)
         {

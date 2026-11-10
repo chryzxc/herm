@@ -598,7 +598,10 @@ extension DockPopover {
                             onToggle: toggleInspectorPanel,
                             headerHeight: usesWindowChrome
                                 ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight,
-                            tabRequest: $sessionInspectorTabRequest
+                            tabRequest: $sessionInspectorTabRequest,
+                            workspaceSections: [.talk] + (sessionGitHubTabsAvailable ? [.pullRequests, .issues] : []),
+                            workspaceContent: inspectorWorkspaceTab,
+                            onWorkspaceSection: showInspectorWorkspaceSection
                         )
                     case .artifacts:
                         ArtifactsInspectorView(model: model, presentation: .inspector)
@@ -880,20 +883,27 @@ extension DockPopover {
     var header: some View { conversationToolbar(identity: nil, groupActions: nil) }
 
     /// The conversation toolbar; a group room swaps the name and the session controls for its own.
-    func conversationToolbar(identity: AnyView?, groupActions: AnyView?) -> some View {
+    /// Sidebar toggle and history shown by the leftmost title row while the chat list is hidden.
+    @ViewBuilder var toolbarLeadingControls: some View {
+        if usesWindowChrome {
+            DockBuildBadgeSlot()
+                .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 4)
+        }
+        DockSidebarToggle(isCollapsed: chatListCollapsed)
+        DockHistoryButtons()
+    }
+
+    /// `showsLeadingControls` is false when split columns put this header right of another column.
+    func conversationToolbar(
+        identity: AnyView?, groupActions: AnyView?, showsLeadingControls: Bool = true
+    ) -> some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
+        let showsLeading = hidesChatList && showsLeadingControls
         return GeometryReader { geometry in
             let showsInspector = geometry.size.width >= 440
             HStack(spacing: 4) {
                 // Leading like a native toolbar title; actions sit at the trailing edge.
-                if hidesChatList {
-                    if usesWindowChrome {
-                        DockBuildBadgeSlot()
-                            .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 4)
-                    }
-                    DockSidebarToggle(isCollapsed: chatListCollapsed)
-                    DockHistoryButtons()
-                }
+                if showsLeading { toolbarLeadingControls }
                 if let identity { identity } else { toolbarIdentity(style: style) }
                 Spacer(minLength: 12)
                     .frame(maxHeight: .infinity)
@@ -922,8 +932,6 @@ extension DockPopover {
                             .keyboardShortcut("f", modifiers: .command)
                             .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
                     }
-
-                    sessionModeSwitcher(style: style)
 
                     if sessionWorkspaceMode == .chat,
                         ConversationWorkspaceMetrics.sessionRailWidth(availableWidth: geometry.size.width) > 0
@@ -956,7 +964,7 @@ extension DockPopover {
                         isCollapsed: !inspectorPanelIsVisible, edge: .trailing, action: toggleInspectorPanel)
                 }
             }
-            .dockPadding(.leading, hidesChatList && usesWindowChrome ? DockWindowChrome.sidebarToggleLeading : 12)
+            .dockPadding(.leading, showsLeading && usesWindowChrome ? DockWindowChrome.sidebarToggleLeading : 12)
             .dockPadding(.trailing, 12)
             .frame(width: geometry.size.width, height: geometry.size.height)
         }

@@ -565,7 +565,12 @@ struct SessionNavSidebarSessionRow: View, Equatable {
 
     private static let rowHeight: CGFloat = 30
 
-    private var isSelected: Bool { session.id == selectedSessionID }
+    @ObservedObject private var sessionPanes = SessionPaneStore.shared
+
+    /// Split view shows several sessions at once; each one on screen reads as selected.
+    private var isSelected: Bool {
+        session.id == selectedSessionID || sessionPanes.shownSessionIDs.contains(session.id)
+    }
 
     private var pendingAction: ProjectSessionPendingAction? {
         if isDeleting { return .deletion }
@@ -644,8 +649,12 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).fill(rowFill)
         )
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
+        // The rail stacks rows flush; 2pt each side keeps adjacent highlighted rows apart
+        // (4pt, matching the Bots list spacing).
+        .dockPadding(.vertical, 2)
         // rowFill already tracks hover; a second hover tracker doubled the work per row while scrolling.
         .onTapGesture { if !isEditingTitle { onSelect(session) } }
+        .sessionPaneDraggable(SessionPaneDrag(session: session), isEnabled: !isEditingTitle)
         .focusable(!isEditingTitle)
         .focusEffectDisabled()
         .focused($rowFocused)
@@ -789,11 +798,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     private var statusIndicator: some View {
         ZStack {
             Color.clear
-            if sessionStatus == .unreadComplete || sessionStatus == .none {
-                SessionUnreadReplyBadge(session: session, showUnavailable: sessionStatus == .unreadComplete)
-            } else if let state = sessionStatus.activityState {
-                DockActivityIndicator(state: state, size: 12, unreadDot: true)
-            }
+            SidebarSessionStatusIndicator(session: session, status: sessionStatus)
         }
         .frame(width: 20, height: 18, alignment: .trailing)
         // Shapes and spinners have no text baseline; center on the title's x-height so every state lines up.
@@ -844,6 +849,11 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             onTogglePin(session)
         }
         .disabled(isPinning)
+        // Same as dragging the row into the chat area.
+        Button("Open in Split View", icon: .columnsPlusRight) {
+            SessionPaneStore.shared.open(SessionPaneDrag(session: session))
+        }
+        .disabled(isSelected)
         Button("Rename…", icon: .pencilSimple) {
             isEditingTitle = true
         }

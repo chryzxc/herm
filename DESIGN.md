@@ -374,7 +374,7 @@ material. Reserve leading selection markers for navigation, never decoration.
 
 ### Motion
 
-Shared tab tracks and Chat/Talk/PR modes carry their themed selection artwork
+Shared tab tracks carry their themed selection artwork
 between choices with matched geometry (0.22s). Only artwork moves; text, hit targets,
 and destination views retain identity. Navigation glyphs grow by 8% on selection;
 icon-only rail destinations retain the shared selected surface. Shared hover controls
@@ -483,7 +483,7 @@ leading sidebar toggles use the same 16pt gutter after traffic-light clearance.
 Keep the title row above split panes when a page's list collapses. Chat uses
 three full-height panes with independent title rows: the session list owns the
 traffic-light clearance and sidebar toggle, the conversation owns its session
-identity and Chat/Talk actions, and the inspector's tabs reach the top of its
+identity and actions, and the inspector's tabs reach the top of its
 pane. When the chat list is collapsed, its restore toggle moves into the
 conversation header with traffic-light clearance.
 
@@ -1784,7 +1784,9 @@ fullscreen). Expanding the inspector must not replace the conversation.
 Only the narrow single-workspace layout switches between those panes.
 
 The 56pt header bar holds the Bot switcher (avatar, name over role,
-chevrons-up-down when more than one Bot is visible). A labeled New chat button
+chevrons-up-down when more than one Bot is visible). While a Bot's saved avatar is
+still loading, the avatar slot shows a small spinner instead of a stand-in face; a
+Bot whose avatar Hermes cannot serve shows its face. A labeled New chat button
 sits above Pinned in the session list. Top-level
 destinations (Today, Inbox, Kanban, the Tools group, and the Quota and
 Settings footer) are `DockNavRow`s. Settings shows the "Update" pill when a
@@ -2192,7 +2194,9 @@ and Errors (destructive tint only when nonzero). Step labels stay fixed beside a
 horizontally scrolling timeline with a shared ruler; one vertical scroll keeps the
 tree and bars aligned. Ruler ticks use readable minute-and-second labels (for example,
 `2 mins 43 secs`), omitting zero seconds at whole minutes and leaving room between labels.
-Delegates disclose their tool calls.
+Delegates disclose their tool calls. A step for a known Bot shows its avatar
+and current name in place of the delegate glyph and transcript label (such as
+"Bot Chat"); unknown delegates keep the glyph.
 Bars outside the horizontal viewport show a compact directional timing button at
 the corresponding edge. Selecting a step pauses Live and reveals its bar without
 changing the time scale; Fit resets the native horizontal offset. Row drawing is
@@ -2611,17 +2615,90 @@ remains selectable and the draft editable, while session actions wait for a
 confirmed fresh transcript. Session replacement and refresh retain the transcript
 container and do not insert a status row above it.
 
+#### Split session panes
+
+Chat can split into up to three equal, flat columns separated by hairlines.
+Every column is a tab group of sessions, and exactly one column is active. The
+active column renders the main conversation with the full header (title and
+menu); once it holds more than one tab, or whenever chat is split, its tab strip
+(with close buttons) replaces the session title in that header. Inactive columns show only their tab strip in a
+title row of the same height, fill and separator, over a live projection of
+their selected tab, plus a "…" menu (Pin, Rename, Hide, Find) and a trailing
+inspector toggle; each of those first makes
+the column active. Tab strips take the header's spare width before its spacer,
+so titles are not clipped. Selecting a tab switches
+only that column; clicking a column's inspector toggle (or a sidebar session
+already in it) makes it the active column, so the header moves there. While
+split, the inspector (one at a time, 360pt) sits directly beside the active
+column instead of at the window's trailing edge, and follows the active column
+when it changes. When the columns would drop below 280pt with the inspector
+beside them, it floats over the columns next to the active one instead, so
+columns keep their widths. The leftmost column carries the sidebar toggle and
+history controls when the chat list is hidden. Tab titles truncate with an
+ellipsis rather than collapsing to icons, and the selected tab keeps its title
+longest. New tabs open beside the selected tab, and **Open in Split View**
+opens its column beside the active column rather than at the far right; when
+three columns are open it adds a tab to the active column. The inspector's **Open a
+new tab** grid adds one **Conversation** card. It opens a small `DockMenu` with **Bot chat**, **Group chat** and **Recent
+session**; Bot chat and Recent session are submenus with a search field on top: Bots show their avatars,
+sessions show their short last-updated time (20 at a time, most recent first;
+scrolling to the end reveals the next 20, and search matches every session). Picking one opens it in split view beside the active column and collapses the inspector, so the grid does not linger; the inspector toggle brings it back.
+Split tabs hug their titles (up to 220pt, then truncate); when a column is
+too narrow for its tabs, the strip scrolls sideways (keeping the selected tab in
+view) rather than squeezing titles, and they show a Bot's avatar and name
+for its main chat (never Hermes' canonical "Bot Chat" title). After the title,
+each session tab shows the sidebar row's own status (`SidebarSessionStatusIndicator`,
+resolved by `SidebarSessionStatusResolver` from the same snapshot): a spinner while
+working, the approval, clarification or failure glyph, or the unread reply count.
+A group chat (dragged from the Bots page or picked from **Group chat**) opens as a
+tab with the group glyph and renders the room's own `GroupChatView` with a slim bar
+for its thread and room actions. It joins any column, the active one included: a
+selected room tab there shows the room under the column's tab strip while the main
+conversation waits unchanged behind its own tab, and the inspector hides until a
+session tab is selected again. Room columns have no session menu or inspector
+toggle, and a lone room tab keeps its column instead of collapsing the split. The Bots page splits
+the same way: drag a Bot row (or use its **Open in Split View**) to open its main
+chat beside the active one. There, the session menu omits Pin, Rename and Hide,
+which apply to sessions rather than a Bot's main chat, and the session rail
+starts hidden (Chats shows it by default). Chats and Bots each keep their own
+split layout, restored when you switch back. Closing a column's last tab closes the column; a column that loses
+its last session tab while active hands the header to its neighbor.
+
+Drag a sidebar session row (open-hand cursor on hover, closed hand over the
+drop area, an upright card preview inset from its bounds so its corners never clip) over the conversation workspace, or choose
+**Open in Split View** from its menu. While a session is over the row, every
+drop zone shows at once as a small solid `.dockHUDSurface` pill: **Add as tab**
+centered in each column (the first column included) and **New column** at the
+trailing edge while there is room (the trailing half of a single column, the
+last quarter otherwise). Every zone mutes the transcript beneath it with the
+opaque canvas at 80% (92% for the hovered zone, which also gets a dashed outline
+and a larger pill), so the drop choices read clearly over any content. Hovering never resizes columns (re-laying out every transcript
+on each frame of a back-and-forth drag stalls the app); the new column slides
+in once, on drop (0.28s `DockMotion`; cross-fade only under Reduce Motion). Column widths are computed, never
+intrinsic, so no column overflows the window. Columns start equal; dragging the
+hairline between two columns (resize cursor, 9pt grab area) trades width between
+just those two, each kept at least 280pt, and double-clicking it evens the
+columns again. Drop zones follow the resized widths. Opening or closing a column
+returns to equal widths.
+
+Every session on screen in a column counts as active: the sidebar highlights
+all of them, and clicking one activates its column instead of moving it.
+
+Loading and unavailable states stay inside the column's content area. A
+session is never shown twice: dropping a session that is already a tab selects
+it, and a sidebar session that is not in any column replaces the active tab. Columns are hidden in the narrow layout and
+outside Chat. They are disposable projections and are not restored after
+relaunch.
+
 The conversation workspace uses a stable cool-navy canvas in both fullscreen
 and compact layouts, independent of the sidebar concept selector. Its header
 is a single flat row.
 The session identity gets the flexible header width and may wrap to two lines.
-Chat, Talk, and repository PRs use visible 12pt text labels in one compact
-32pt outlined track. The selected segment is 28pt high inside a 44pt click
-target; hit-target size must not inflate the visible tab. Unselected tabs have
-no individual button surfaces. Selection uses the skin’s treatment, a semibold
-label, and a persistent underline, including in monochrome and without hover.
-The actions menu holds session actions. Voice is directly
-available from 520pt chat width; the inspector toggle remains direct from
+The header has no mode tabs: Talk, Pull requests and Issues open as inspector
+tabs (see Empty session inspector). The actions menu holds session actions.
+The composer reserves the worktree bar's full 32pt when no bar shows, and split
+columns use the main conversation's metrics, so every column's input sits at the
+same height whether or not it has a folder bar (Bot chats have none). The inspector toggle remains direct from
 340pt and moves into the view menu below that. All destinations remain available
 at every width. Controls retain 44pt targets and resizing does not animate.
 The transcript mounts a bounded window of messages and pages earlier or later
@@ -3280,7 +3357,15 @@ Session PRs and Issues tabs appear only after Git is verified for the session's 
 The third panel allows closing every tab, including the final tab. No closed section
 is rendered or forced back into the strip. With no tabs open, show a compact
 “Open a new tab” heading and actionable cards for Browser, Terminal, Explorer,
-Artifacts, Source Control, and Timeline. Cards use existing section icons, theme
+Artifacts, Source Control, and Timeline, plus Talk and, when the session has a
+GitHub repository, Pull requests and Issues. Talk renders the voice stage and
+runs voice only while its tab shows; leaving or collapsing the tab ends it, and
+Talk never reopens on its own after relaunch. Pull requests and Issues show the
+repository list; picking a row shows its detail over the list with an **All pull
+requests** / **All issues** link back. Cards are ordered by use: Talk,
+Conversation, Terminal, Browser, Explorer, Source Control, Pull requests, Issues,
+Diff, GitHub, Artifacts, Timeline, then the simulators. Every card reserves two
+detail lines so the grid's rows share one height. Cards use existing section icons, theme
 surfaces, and 12pt title/detail text; they adapt to one column in narrow panes.
 The tab strip, + menu, and panel toggle keep their positions. Cards reuse the
 existing section-opening actions; terminal foreground-job confirmation and

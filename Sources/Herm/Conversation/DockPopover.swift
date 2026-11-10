@@ -89,8 +89,22 @@ struct DockPopover: View {
     @State var isSessionIdentityHovering = false
     @State var sessionPickerQuery = ""
     @ObservedObject var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
+    /// Read-only handle; `SessionPaneRow` observes the panes so this view does not re-render for them.
+    var sessionPanes: SessionPaneStore { .shared }
     @State var isSessionMenuHovering = false
-    @State var isSessionRailVisible = true
+    @State var showsSessionRailInChats = true
+    @State var showsSessionRailInBots = false
+    /// Chats shows the session rail by default; Bots keeps it hidden until toggled.
+    var isSessionRailVisible: Bool {
+        get { fullscreenSurface == .bots ? showsSessionRailInBots : showsSessionRailInChats }
+        nonmutating set {
+            if fullscreenSurface == .bots {
+                showsSessionRailInBots = newValue
+            } else {
+                showsSessionRailInChats = newValue
+            }
+        }
+    }
     @State var isRenamingSession = false
     @State var renameDraft = ""
     @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -164,6 +178,9 @@ struct DockPopover: View {
         case sourceControl
         case pullRequests
         case issues
+
+        /// Modes that render inside a split column; the rest take the whole workspace.
+        var isColumnMode: Bool { self == .chat || self == .voice || self == .pullRequests || self == .issues }
 
         var id: Self { self }
 
@@ -295,7 +312,12 @@ struct DockPopover: View {
                 }
             }
             .onDisappear { model.presentationDemand.update(presentationHostID, visible: false) }
-            .onAppear { registerPerformanceSources() }
+            .onAppear {
+                registerPerformanceSources()
+                sessionPanes.runtime = model
+                sessionPanes.tabStatus.bind(
+                    model: model, control: controlCenter, store: workspaceStore, panes: sessionPanes)
+            }
             .environment(\.chatContextRouter, chatContextRouter)
             .environment(\.richHostActionRouter, richHostRouter)
             .environment(

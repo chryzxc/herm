@@ -59,6 +59,7 @@ struct SessionPullRequestsSurface: View {
     @ObservedObject var center: PullRequestCenterModel
     let repositoryPath: String?
     let onOpenChat: (PullRequestRecord) -> Void
+    var onSelect: () -> Void = {}
 
     var body: some View {
         Group {
@@ -103,6 +104,7 @@ struct SessionPullRequestsSurface: View {
                         ForEach(center.visible) { pullRequest in
                             Button {
                                 center.selectedID = pullRequest.id
+                                onSelect()
                             } label: {
                                 PullRequestRowView(
                                     pullRequest: pullRequest,
@@ -155,6 +157,7 @@ struct SessionPullRequestsSurface: View {
 struct SessionIssuesSurface: View {
     @ObservedObject var center: IssueCenterModel
     let repositoryPath: String?
+    var onSelect: () -> Void = {}
 
     var body: some View {
         Group {
@@ -185,6 +188,7 @@ struct SessionIssuesSurface: View {
                                 ForEach(center.visible) { issue in
                                     Button {
                                         center.selectedIssueID = issue.id
+                                        onSelect()
                                     } label: {
                                         IssueRowView(
                                             issue: issue, isSelected: center.selectedIssueID == issue.id,
@@ -640,5 +644,41 @@ struct WorktreeChooserPanel: View {
     static func branchLabel(_ tree: RepositoryWorktreeSummary?) -> String {
         guard let tree else { return "" }
         return tree.branch ?? tree.headRevision.map { "Detached · \($0)" } ?? "Detached"
+    }
+}
+
+/// A pull request or issue list in an inspector tab. Picking a row shows its detail over the
+/// list, which stays mounted so its loads and scroll position survive the round trip.
+struct SessionListDetailTab<ListContent: View, Detail: View>: View {
+    let backLabel: String
+    @ViewBuilder let list: (_ open: @escaping () -> Void) -> ListContent
+    @ViewBuilder let detail: () -> Detail
+    @State private var isShowingDetail = false
+
+    var body: some View {
+        list { isShowingDetail = true }
+            .opacity(isShowingDetail ? 0 : 1)
+            .allowsHitTesting(!isShowingDetail)
+            .overlay {
+                if isShowingDetail {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Button {
+                                isShowingDetail = false
+                            } label: {
+                                DockIconLabel(backLabel, icon: .arrowLeft)
+                            }
+                            .buttonStyle(.dockLink)
+                            Spacer(minLength: 0)
+                        }
+                        .dockFont(.body)
+                        .dockPadding(.horizontal, DockSpacing.section)
+                        .dockPadding(.vertical, 8)
+                        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+                        detail()
+                    }
+                    .background(Color.dockCanvas)
+                }
+            }
     }
 }
