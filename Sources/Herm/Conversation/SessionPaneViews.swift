@@ -12,6 +12,10 @@ struct SessionPaneRow<Primary: View>: View {
     let usesWindowChrome: Bool
     /// Sidebar toggle and history, shown by whichever column is leftmost when the chat list is hidden.
     let leadingControls: AnyView?
+    /// The inspector, drawn right after the active column while split (one at a time).
+    var inspector: AnyView?
+    /// Opens the inspector; inactive columns call it after taking over as the active column.
+    var onOpenInspector: () -> Void = {}
     /// The active conversation; the flag says whether it is the leftmost column.
     @ViewBuilder let primary: (Bool) -> Primary
     @State private var target: SessionPaneTarget?
@@ -43,10 +47,15 @@ struct SessionPaneRow<Primary: View>: View {
     var body: some View {
         GeometryReader { geometry in
             let slots = slots
+            let inspector = slots.count > 1 ? inspector : nil
+            let inspectorWidth = inspector == nil ? 0 : Self.inspectorWidth + DockLayout.hairline
             // Explicit widths from the column shares: columns never overflow the window or clip a composer.
-            let available = max(0, geometry.size.width - CGFloat(slots.count - 1) * DockLayout.hairline)
+            let available = max(
+                0, geometry.size.width - inspectorWidth - CGFloat(slots.count - 1) * DockLayout.hairline)
             let fractions = SessionPaneStore.fractions(columnFractions, count: slots.count)
             let widths = fractions.map { $0 * available }
+            let activeSlot = slots.firstIndex { $0.id == SessionPaneStore.baseColumnID } ?? 0
+            let inspectorStart = widths.prefix(activeSlot + 1).reduce(0, +) + CGFloat(activeSlot) * DockLayout.hairline
             // Columns keep their widths while a drag hovers: only the hints change, so the
             // transcripts never re-lay out mid-drag. The new column appears on drop.
             let zone = SessionPaneStore.newColumnZone(columnCount: store.panels.count)
@@ -84,6 +93,10 @@ struct SessionPaneRow<Primary: View>: View {
                                     .frame(width: widths[index] * (isLast(index) ? 1 - zone : 1))
                                 }
                             }
+                        if index == activeSlot, let inspector {
+                            Color.dockBorderLight.frame(width: DockLayout.hairline)
+                            inspector.frame(width: Self.inspectorWidth)
+                        }
                     }
                     .transition(
                         reduceMotion
@@ -106,10 +119,12 @@ struct SessionPaneRow<Primary: View>: View {
                 of: isEnabled ? [SessionPaneDrag.pasteboardType.rawValue] : [],
                 delegate: SessionPaneDropDelegate(
                     store: store, width: geometry.size.width,
-                    fractions: fractions,
+                    fractions: fractions, inspectorStart: inspectorStart, inspectorWidth: inspectorWidth,
                     reduceMotion: reduceMotion, target: $target))
         }
     }
+
+    static var inspectorWidth: CGFloat { 360 }
 
     /// A hairline with a wider grab area: dragging trades width between its two
     /// neighbors (each at least `minColumnWidth`); double-clicking evens the columns.
@@ -146,7 +161,7 @@ struct SessionPaneRow<Primary: View>: View {
         case .primary:
             primary(isLeading)
         case .panel(let panel):
-            SessionPanelView(panel: panel, store: store) { header($0, isLeading: isLeading) }
+            SessionPanelView(panel: panel, store: store) { header($0, panel: panel, isLeading: isLeading) }
         }
     }
 
@@ -164,11 +179,18 @@ struct SessionPaneRow<Primary: View>: View {
     }
 
     /// An inactive column's title row, matching the primary header's height, fill and separator.
-    private func header(_ content: AnyView, isLeading: Bool) -> some View {
+    private func header(_ content: AnyView, panel: SessionPaneStore.Panel, isLeading: Bool) -> some View {
         let showsLeading = isLeading && leadingControls != nil
         return HStack(spacing: 4) {
             if showsLeading, let leadingControls { leadingControls }
             content
+            if let selectedID = panel.selectedID {
+                // The inspector follows the active column: opening it here makes this column active.
+                DockSidebarToggle(isCollapsed: true, edge: .trailing) {
+                    store.activate(selectedID, in: panel.id)
+                    onOpenInspector()
+                }
+            }
         }
         .dockPadding(.leading, showsLeading && usesWindowChrome ? DockWindowChrome.sidebarToggleLeading : 8)
         .dockPadding(.trailing, 8)
@@ -179,6 +201,15 @@ struct SessionPaneRow<Primary: View>: View {
         .background(usesWindowChrome ? Color.clear : Color.dockCanvas)
         .overlay(alignment: .bottom) { if usesWindowChrome { DockWindowChrome.titleRowSeparator } }
     }
+}
+
+/// Re-renders only its content when the column count changes, so the window shell can
+/// move the inspector beside the active column without observing every pane update.
+struct SessionPaneSplitReader<Content: View>: View {
+    @ObservedObject var store: SessionPaneStore
+    @ViewBuilder let content: (Bool) -> Content
+
+    var body: some View { content(store.panels.count > 1) }
 }
 
 /// Tabs of the active column, shown in the main header in place of the session title

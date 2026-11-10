@@ -526,30 +526,38 @@ extension DockPopover {
             // trailing pane is only hidden) so tabs, open files and terminals
             // keep their state across collapse/expand.
             let isVisible = isInspectorVisibleForDesktopWorkspace
+            let inspector = AnyView(
+                contextPanel
+                    .environment(\.dockHostVisible, hostPresentation.isVisible && isVisible)
+                    .environment(\.localPreviewDiscoveryVisible, isVisible && expandedReviewRouter.layers.isEmpty))
+            // While chat is split, the inspector moves beside the active column instead of the window edge.
+            let canSplit =
+                sessionWorkspaceMode == .chat && !isNarrowLayout
+                && !(fullscreenSurface == .bots && openGroupRoom != nil)
             return AnyView(
-                FullscreenPanelSplitView(
-                    leading: conversationColumn,
-                    trailing:
-                        contextPanel
-                        .environment(\.dockHostVisible, hostPresentation.isVisible && isVisible)
-                        .environment(\.localPreviewDiscoveryVisible, isVisible && expandedReviewRouter.layers.isEmpty),
-                    // Fraction of the *remaining* space after the outer
-                    // queue split, chosen so the three visible columns land
-                    // at the DesktopWorkspaceFractions targets (queue /
-                    // conversation / inspector) rather than an even split.
-                    leadingFraction: sessionWorkspaceMode == .explorer
-                        ? nil : DesktopWorkspaceFractions.conversationOfRemainder,
-                    initialLeadingWidth: sessionWorkspaceMode == .explorer ? explorerNavigatorWidth : nil,
-                    minimumLeadingWidth: sessionWorkspaceMode == .explorer
-                        ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : desktopConversationMinimumWidth,
-                    maximumLeadingWidth: sessionWorkspaceMode == .explorer
-                        ? ExplorerWorkspaceMetrics.maximumNavigatorWidth : nil,
-                    minimumTrailingWidth: sessionWorkspaceMode == .explorer
-                        ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
-                    leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil,
-                    isTrailingCollapsed: !isVisible,
-                    isLeadingCollapsed: isNarrowLayout && isVisible
-                )
+                SessionPaneSplitReader(store: sessionPanes) { isSplit in
+                    let besideColumn = isSplit && canSplit
+                    FullscreenPanelSplitView(
+                        leading: conversationColumn(inspector: besideColumn && isVisible ? inspector : nil),
+                        trailing: besideColumn ? AnyView(EmptyView()) : inspector,
+                        // Fraction of the *remaining* space after the outer
+                        // queue split, chosen so the three visible columns land
+                        // at the DesktopWorkspaceFractions targets (queue /
+                        // conversation / inspector) rather than an even split.
+                        leadingFraction: sessionWorkspaceMode == .explorer
+                            ? nil : DesktopWorkspaceFractions.conversationOfRemainder,
+                        initialLeadingWidth: sessionWorkspaceMode == .explorer ? explorerNavigatorWidth : nil,
+                        minimumLeadingWidth: sessionWorkspaceMode == .explorer
+                            ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : desktopConversationMinimumWidth,
+                        maximumLeadingWidth: sessionWorkspaceMode == .explorer
+                            ? ExplorerWorkspaceMetrics.maximumNavigatorWidth : nil,
+                        minimumTrailingWidth: sessionWorkspaceMode == .explorer
+                            ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
+                        leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil,
+                        isTrailingCollapsed: !isVisible || besideColumn,
+                        isLeadingCollapsed: isNarrowLayout && isVisible
+                    )
+                }
             )
         }
     }
@@ -611,7 +619,7 @@ extension DockPopover {
         .resolve(isFullscreen: isFullscreen)
     }
 
-    var conversationColumn: some View {
+    func conversationColumn(inspector: AnyView?) -> some View {
         VStack(spacing: 0) {
             if fullscreenSurface == .bots, let room = openGroupRoom {
                 GroupChatView(
@@ -636,7 +644,9 @@ extension DockPopover {
                         leadingControls: hidesChatList
                             ? AnyView(
                                 HStack(spacing: 4) { toolbarLeadingControls }
-                                    .environment(\.dockNavigationHistory, navigationHistoryControls)) : nil
+                                    .environment(\.dockNavigationHistory, navigationHistoryControls)) : nil,
+                        inspector: inspector,
+                        onOpenInspector: { if !inspectorPanelIsVisible { toggleInspectorPanel() } }
                     ) { isLeading in
                         VStack(spacing: 0) {
                             conversationToolbar(

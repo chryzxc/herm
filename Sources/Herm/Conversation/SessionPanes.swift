@@ -208,8 +208,32 @@ final class SessionPaneStore: ObservableObject {
         if let index = panels.firstIndex(where: { $0.id == panelID }) { select(sessionID, at: index) }
     }
 
-    /// Selecting a tab makes it the active session; the header moves to its column.
+    /// Makes a column's session the main one (inspector, sidebar and modes follow it).
+    func activate(_ sessionID: String, in panelID: String) {
+        if let index = panels.firstIndex(where: { $0.id == panelID }) { activate(sessionID, at: index) }
+    }
+
+    /// Every column is its own session: picking a tab switches only that column. The
+    /// main column's tabs drive the main conversation; other columns load theirs.
     private func select(_ sessionID: String, at index: Int) {
+        guard index != activeIndex else { return activate(sessionID, at: index) }
+        guard panels[index].tabs.contains(where: { $0.sessionID == sessionID }) else { return }
+        guard panels[index].selectedID != sessionID else { return }
+        panels[index].selectedID = sessionID
+        load(index)
+    }
+
+    /// Keeps a tab's title in step after a rename from its column's menu.
+    func retitle(_ sessionID: String, to title: String) {
+        for index in panels.indices {
+            for tab in panels[index].tabs.indices where panels[index].tabs[tab].sessionID == sessionID {
+                panels[index].tabs[tab].title = title
+            }
+        }
+    }
+
+    /// Moves the main conversation (and its header, inspector and modes) to this column.
+    private func activate(_ sessionID: String, at index: Int) {
         guard let runtime, let session = panels[index].tabs.first(where: { $0.sessionID == sessionID })?.session
         else { return }
         if index != activeIndex {
@@ -240,7 +264,7 @@ final class SessionPaneStore: ObservableObject {
         if !panels[index].tabs.isEmpty {
             if wasSelected, let next = panels[index].tabs[min(tab, panels[index].tabs.count - 1)].sessionID {
                 if index == activeIndex {
-                    select(next, at: index)
+                    activate(next, at: index)
                 } else {
                     panels[index].selectedID = next
                     load(index)
@@ -270,7 +294,7 @@ final class SessionPaneStore: ObservableObject {
         if let column = panels.firstIndex(where: { $0.tabs.contains { $0.sessionID == sessionID } }),
             column != activeIndex
         {
-            select(sessionID, at: column)
+            activate(sessionID, at: column)
             return
         }
         let index = activeIndex
@@ -338,6 +362,9 @@ struct SessionPaneDropDelegate: DropDelegate {
     let store: SessionPaneStore
     let width: CGFloat
     let fractions: [CGFloat]
+    /// The inspector's span beside the active column; drops map past it onto the columns.
+    var inspectorStart: CGFloat = 0
+    var inspectorWidth: CGFloat = 0
     let reduceMotion: Bool
     @Binding var target: SessionPaneTarget?
 
@@ -349,8 +376,10 @@ struct SessionPaneDropDelegate: DropDelegate {
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         NSCursor.closedHand.set()
+        let x = info.location.x
         let next = SessionPaneStore.dropTarget(
-            x: info.location.x, width: width, columnCount: store.panels.count, fractions: fractions)
+            x: x > inspectorStart ? max(inspectorStart, x - inspectorWidth) : x,
+            width: width - inspectorWidth, columnCount: store.panels.count, fractions: fractions)
         if next != target { withAnimation(animation) { target = next } }
         return DropProposal(operation: .copy)
     }

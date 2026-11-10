@@ -2619,8 +2619,12 @@ active column renders the main conversation with the full header (title,
 Chat/Talk, menu); once it holds more than one tab, or whenever chat is split, its tab strip
 (with close buttons) replaces the session title in that header. Inactive columns show only their tab strip in a
 title row of the same height, fill and separator, over a live projection of
-their selected tab. Selecting any tab makes it the active session, so the
-header moves to that column. The leftmost column carries the sidebar toggle and
+their selected tab, plus a trailing inspector toggle. Selecting a tab switches
+only that column; clicking a column's inspector toggle (or a sidebar session
+already in it) makes it the active column, so the header moves there. While
+split, the inspector (one at a time, 360pt) sits directly beside the active
+column instead of at the window's trailing edge, and follows the active column
+when it changes. The leftmost column carries the sidebar toggle and
 history controls when the chat list is hidden. Tab titles truncate with an
 ellipsis rather than collapsing to icons, and the selected tab keeps its title
 longest. New tabs open beside the selected tab, and **Open in Split View**
