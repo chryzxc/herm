@@ -75,6 +75,30 @@ enum DockSpacing {
     static let page: CGFloat = 20
 }
 
+/// Spacing for the sidebar's chat rows. The Recents session list and the Bots list both use
+/// it, so a session, a bot and a group chat sit with the same insets and the same gaps.
+enum DockSidebarListMetrics {
+    /// Space between the list's edge and its rows.
+    static let listInset: CGFloat = 6
+    /// Breathing room above and below each row's highlight; adjacent rows sit `2 × rowGap` apart.
+    static let rowGap: CGFloat = 2
+    /// The Recents `List` adds this above and below each row on top of `rowGap`.
+    static let listRowInset: CGFloat = 1
+    /// What separates two row highlights in the Recents list; the Bots list stacks rows by this.
+    static let rowSpacing: CGFloat = 2 * (rowGap + listRowInset)
+    /// Inside the highlight, above and below the content.
+    static let rowVertical: CGFloat = 5
+    /// Gap between a row's title line and its last-message preview.
+    static let titleToPreview: CGFloat = 2
+    /// Inside the highlight before a row's leading mark. A session's status indicator
+    /// brings its own space, so it starts closer to the edge than an avatar does.
+    static let rowLeading: CGFloat = 2
+    static let rowLeadingWithAvatar: CGFloat = 6
+    static let rowTrailing: CGFloat = 4
+    /// A session row's least height.
+    static let sessionRowHeight: CGFloat = 30
+}
+
 enum DockControlMetrics {
     static let compactHeight: CGFloat = 28
     static let standardHeight: CGFloat = 36
@@ -573,18 +597,23 @@ struct DockSectionHeader<Actions: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
+    private func toggle() {
+        withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18)) {
+            isExpanded?.wrappedValue.toggle()
+        }
+    }
+
     var body: some View {
         HStack(spacing: 2) {
             if let isExpanded {
-                Button {
-                    withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18)) {
-                        isExpanded.wrappedValue.toggle()
-                    }
-                } label: {
-                    label(isExpanded: isExpanded.wrappedValue)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(isExpanded.wrappedValue ? "Collapse" : "Expand") \(title)")
+                // A tap gesture, not a Button: a Button swallows the mouse-down and blocks a drag on the header.
+                label(isExpanded: isExpanded.wrappedValue)
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: toggle)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction(.default, toggle)
+                    .accessibilityLabel("\(isExpanded.wrappedValue ? "Collapse" : "Expand") \(title)")
             } else {
                 label(isExpanded: nil)
             }

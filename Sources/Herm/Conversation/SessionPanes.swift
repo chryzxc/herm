@@ -51,7 +51,14 @@ extension View {
         if let drag {
             draggable(drag) {
                 HStack(spacing: 8) {
-                    DockIcon(.chatCircle, size: 14, weight: .fill, color: .dockPrimaryText)
+                    // A bot always shows its avatar beside its name; a group chat its group mark.
+                    if let (bot, avatar) = BotMentions.mainChatBot(drag.sessionID) {
+                        BotAvatarView(bot: bot, imageData: avatar, size: 22, animated: false, mood: .happy)
+                    } else {
+                        DockIcon(
+                            drag.destination.groupRoomID == nil ? .chatCircle : .usersThree, size: 14,
+                            weight: .fill, color: .dockPrimaryText)
+                    }
                     Text(drag.title)
                         .dockFont(.navigation, weight: .semibold)
                         .lineLimit(1)
@@ -395,6 +402,8 @@ struct SessionPaneDropDelegate: DropDelegate {
     var inspectorWidth: CGFloat = 0
     let reduceMotion: Bool
     @Binding var target: SessionPaneTarget?
+    /// Runs just before the dropped session opens, e.g. to seat a view that has no column yet.
+    var prepare: (@MainActor () -> Void)?
 
     private var animation: Animation? { DockMotion.animation(reduceMotion: reduceMotion, duration: 0.28) }
 
@@ -422,9 +431,15 @@ struct SessionPaneDropDelegate: DropDelegate {
         else { return false }
         let store = store
         let animation = animation
+        let prepare = prepare
         _ = provider.loadTransferable(type: SessionPaneDrag.self) { result in
             guard case .success(let payload) = result else { return }
-            Task { @MainActor in withAnimation(animation) { store.open(payload.destination, target: dropped) } }
+            Task { @MainActor in
+                withAnimation(animation) {
+                    prepare?()
+                    store.open(payload.destination, target: dropped)
+                }
+            }
         }
         withAnimation(animation) { target = nil }
         return true

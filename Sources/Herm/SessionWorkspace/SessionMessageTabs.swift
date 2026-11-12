@@ -48,6 +48,8 @@ struct SessionPreviewTab: Identifiable {
 enum SessionPreviewContent {
     case message(ChatMessage)
     case bot(BotSummary)
+    /// The bot's profile editor (Settings › Bots' editor) as a tab.
+    case botSettings(BotSummary)
     case dispatch(BotActivityRecord)
     case tool(ActiveToolCall)
     case activity(ChatMessage, [ActiveToolCall])
@@ -59,6 +61,7 @@ enum SessionPreviewContent {
         switch self {
         case .message(let value): "message:" + value.id.uuidString
         case .bot(let value): "bot:" + value.id
+        case .botSettings(let value): "botSettings:" + value.id
         case .dispatch(let value): "dispatch:" + value.id
         case .tool(let value): "tool:" + value.id
         case .activity(let message, _): "activity:" + message.id.uuidString
@@ -72,6 +75,7 @@ enum SessionPreviewContent {
         switch self {
         case .message(let message): String(message.text.split(separator: "\n").first ?? "Message")
         case .bot(let bot): bot.name
+        case .botSettings(let bot): bot.name + " settings"
         case .dispatch(let record): record.botName + " · Task"
         case .tool(let call): AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context)
         case .activity: "Activity"
@@ -85,6 +89,7 @@ enum SessionPreviewContent {
         switch self {
         case .message: .chatText
         case .bot: .robot
+        case .botSettings: .gear
         case .dispatch: .paperPlaneTilt
         case .tool(let call): TurnActivityView.icon(for: call.name)
         case .activity: .chartBarHorizontal

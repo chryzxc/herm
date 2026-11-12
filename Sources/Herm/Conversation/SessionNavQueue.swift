@@ -329,18 +329,20 @@ struct SessionNavQueue: View, Equatable {
                     DockBuildBadgeSlot()
                         .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 8)
                     DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
-                    tilesButton(style: style)
                     DockHistoryButtons()
                     Spacer(minLength: 0)
                         .frame(maxHeight: .infinity)
                         .background { TitlebarDoubleClickArea() }
-                    botsSwitchButton(style: style)
+                    tilesButton(style: style)
                 }
                 .dockPadding(.leading, DockWindowChrome.sidebarToggleLeading)
                 .dockPadding(.trailing, 8)
                 .frame(height: DockWindowChrome.titleRowHeight)
                 .dockShellChrome()
             }
+            botsSwitchButton(style: style)
+                .dockPadding(.horizontal, 12)
+                .dockPadding(.top, 8)
             // Header: identity. Window chrome lives in the footer.
             HStack(spacing: 2) {
                 if !isDockedWindow {
@@ -348,9 +350,6 @@ struct SessionNavQueue: View, Equatable {
                     tilesButton(style: style)
                 }
                 profileHeader(style: style)
-                if !isDockedWindow {
-                    botsSwitchButton(style: style)
-                }
             }
             .dockPadding(.horizontal, 6)
             .frame(height: 56)
@@ -365,15 +364,18 @@ struct SessionNavQueue: View, Equatable {
             .animation(.easeInOut(duration: 0.25), value: botMode.activityBanner)
             .zIndex(1)
 
-            sessionSearchField
-                .dockPadding(.horizontal, 12)
-                .dockPadding(.bottom, 8)
+            HStack(spacing: 6) {
+                sessionSearchField
+                DockIconButton(icon: .notePencil, label: "New chat", style: style, action: onNewConversation)
+            }
+            .dockPadding(.horizontal, 12)
+            .dockPadding(.bottom, 2)
 
             HoverPausingScrollView {
                 globalRailBar(style: style)
                     .dockButtonSize(.standard)
                     .dockPadding(.horizontal, 6)
-                    .dockPadding(.vertical, 8)
+                    .dockPadding(.bottom, 8)
             }
         }
         .dockShellPane()
@@ -590,77 +592,23 @@ struct SessionNavQueue: View, Equatable {
         // children. Nested lazy stacks inside eager VStacks are not lazy, so
         // every conversation and project row was built on each layout pass.
         return LazyVStack(alignment: .leading, spacing: 0) {
-            Button(action: onNewConversation) {
-                HStack(spacing: 8) {
-                    DockIcon(.notePencil, size: 14)
-                    Text("New chat")
-                    Spacer(minLength: 0)
-                }
-                .dockPadding(.leading, 6)  // aligns with DockSectionHeader's 8pt inset
-                .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
-            }
-            .buttonStyle(.dockHover)
-
             if isSearchingSessions {
                 sessionSearchResults(statuses: statuses, style: style)
             } else {
-                let pinned = pinnedSessionPresentation
-                if pinned.status != .empty || !pinned.sessions.isEmpty {
-                    pinnedOutline(pinned, statuses: statuses, style: style)
+                ForEach(navigationState.sectionOrder, id: \.self) { section in
+                    switch section {
+                    case .pinned:
+                        let pinned = pinnedSessionPresentation
+                        if pinned.status != .empty || !pinned.sessions.isEmpty {
+                            pinnedOutline(pinned, statuses: statuses, style: style)
+                        }
+                    case .recents:
+                        conversationOutline(allConversations, statuses: statuses, style: style)
+                    case .projects:
+                        projectsOutline(projects, statuses: statuses, style: style)
+                    }
                 }
-
-                conversationOutline(allConversations, statuses: statuses, style: style)
-
-                if showsProjectsForSelectedBot {
-                    SessionNavProjectList(
-                        groups: projects,
-                        selectedSessionID: navigationState.selectedProjectSessionID,
-                        activeSessionID: sidebarSnapshot.inputs.activeSessionID,
-                        attentionDots: sidebarSnapshot.attentionDots,
-                        sessionStatuses: statuses,
-                        isLoadingProjects: sidebarSnapshot.inputs.isLoadingProjects,
-                        isRefreshing: sidebarSnapshot.inputs.isRefreshingProjectNavigation,
-                        isCreatingChat: sidebarSnapshot.inputs.isCreatingSession,
-                        style: style,
-                        isPinned: isPinned,
-                        onTogglePin: togglePin,
-                        onRename: { session, title in
-                            let succeeded = await model.renameSession(session, title: title)
-                            if succeeded { controlCenter.refreshProjectNavigation() }
-                            return succeeded
-                        },
-                        onToggleHidden: { session, hidden in
-                            let succeeded = await model.setSessionHidden(session, hidden: hidden)
-                            if succeeded {
-                                controlCenter.refreshProjectNavigation()
-                            }
-                            return succeeded
-                        },
-                        onRequestDelete: { session in sessionPendingDeletion = session },
-                        deletingSessionID: sidebarSnapshot.inputs.deletingSessionID,
-                        updatingSessionVisibilityID: sidebarSnapshot.inputs.updatingSessionVisibilityID,
-                        renamingSessionID: sidebarSnapshot.inputs.renamingSessionID,
-                        creatingProjectPath: creatingProjectPath,
-                        onSelectSession: { session in
-                            navigationState.selectSession(session.id)
-                            onSelectSession(session)
-                        },
-                        onRefresh: {
-                            controlCenter.refreshProjectNavigation()
-                        },
-                        onAddProject: { isShowingProjectSheet = true },
-                        onArchiveProject: { id in
-                            guard let project = controlCenter.projects.first(where: { $0.id == id }) else { return }
-                            Task { _ = await controlCenter.archiveProject(project) }
-                        },
-                        onAddSourceFolder: { id, folder in
-                            guard let project = controlCenter.projects.first(where: { $0.id == id }) else { return }
-                            Task { _ = await controlCenter.addProjectFolder(project, folder: folder) }
-                        },
-                        onNewChatInProject: startNewChat(inProject:),
-                        pinningSessionID: sidebarSnapshot.inputs.pinningSessionID
-                    )
-                }
+                SessionRailEndDropZone(state: navigationState)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -691,6 +639,63 @@ struct SessionNavQueue: View, Equatable {
                     return created
                 },
                 failureReason: { controlCenter.lastError }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func projectsOutline(
+        _ projects: [SessionNavConversationGroup], statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
+        if showsProjectsForSelectedBot {
+            SessionNavProjectList(
+                groups: projects,
+                selectedSessionID: navigationState.selectedProjectSessionID,
+                activeSessionID: sidebarSnapshot.inputs.activeSessionID,
+                attentionDots: sidebarSnapshot.attentionDots,
+                sessionStatuses: statuses,
+                isLoadingProjects: sidebarSnapshot.inputs.isLoadingProjects,
+                isRefreshing: sidebarSnapshot.inputs.isRefreshingProjectNavigation,
+                isCreatingChat: sidebarSnapshot.inputs.isCreatingSession,
+                style: style,
+                isPinned: isPinned,
+                onTogglePin: togglePin,
+                onRename: { session, title in
+                    let succeeded = await model.renameSession(session, title: title)
+                    if succeeded { controlCenter.refreshProjectNavigation() }
+                    return succeeded
+                },
+                onToggleHidden: { session, hidden in
+                    let succeeded = await model.setSessionHidden(session, hidden: hidden)
+                    if succeeded {
+                        controlCenter.refreshProjectNavigation()
+                    }
+                    return succeeded
+                },
+                onRequestDelete: { session in sessionPendingDeletion = session },
+                deletingSessionID: sidebarSnapshot.inputs.deletingSessionID,
+                updatingSessionVisibilityID: sidebarSnapshot.inputs.updatingSessionVisibilityID,
+                renamingSessionID: sidebarSnapshot.inputs.renamingSessionID,
+                creatingProjectPath: creatingProjectPath,
+                onSelectSession: { session in
+                    navigationState.selectSession(session.id)
+                    onSelectSession(session)
+                },
+                onRefresh: {
+                    controlCenter.refreshProjectNavigation()
+                },
+                navigationState: navigationState,
+                onAddProject: { isShowingProjectSheet = true },
+                onArchiveProject: { id in
+                    guard let project = controlCenter.projects.first(where: { $0.id == id }) else { return }
+                    Task { _ = await controlCenter.archiveProject(project) }
+                },
+                onAddSourceFolder: { id, folder in
+                    guard let project = controlCenter.projects.first(where: { $0.id == id }) else { return }
+                    Task { _ = await controlCenter.addProjectFolder(project, folder: folder) }
+                },
+                onNewChatInProject: startNewChat(inProject:),
+                pinningSessionID: sidebarSnapshot.inputs.pinningSessionID
             )
         }
     }
@@ -902,6 +907,7 @@ struct SessionNavQueue: View, Equatable {
             isExpanded: $navigationState.arePinnedExpanded,
             style: style
         )
+        .sessionRailReorder(.pinned, state: navigationState)
         .dockPadding(.top, style.sectionSpacing)
         .dockPadding(.bottom, navigationState.arePinnedExpanded ? 2 : 0)
 
@@ -993,6 +999,7 @@ struct SessionNavQueue: View, Equatable {
                 controlCenter.refreshProjectNavigation()
             }
         }
+        .sessionRailReorder(.recents, state: navigationState)
         .dockPadding(.top, style.sectionSpacing)
         .dockPadding(.bottom, navigationState.areConversationsExpanded ? 2 : 0)
         .contextMenu {

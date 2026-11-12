@@ -91,12 +91,23 @@ final class SessionNavigationState: ObservableObject {
     @Published var selectedSessionID: String?
     @Published var areConversationsExpanded = true
     @Published var arePinnedExpanded = true
+    /// User-chosen order of the rail's sections; a local preference.
+    @Published private(set) var sectionOrder: [SessionRailSection] = SessionRailSection.stored()
     @Published private(set) var selectedGitHubSection: GitHubWorkspaceSection = .pullRequests
     var hasRequestedSessionIndex = false
 
     var selectedProjectSessionID: String? {
         guard case .session = selection.selection else { return nil }
         return selectedSessionID
+    }
+
+    func moveSection(_ section: SessionRailSection, before target: SessionRailSection?) {
+        guard section != target, let from = sectionOrder.firstIndex(of: section) else { return }
+        var order = sectionOrder
+        order.remove(at: from)
+        order.insert(section, at: target.flatMap { order.firstIndex(of: $0) } ?? order.endIndex)
+        sectionOrder = order
+        UserDefaults.standard.set(order.map(\.rawValue), forKey: SessionRailSection.storageKey)
     }
 
     func selectSession(_ id: String) {
@@ -197,5 +208,109 @@ final class SessionNavigationState: ObservableObject {
         selection.selectIssues()
         selectedTaskID = nil
         selectedSessionID = nil
+    }
+}
+
+/// A rail section whose header can be dragged to swap places with another.
+enum SessionRailSection: String, CaseIterable, Codable, Transferable {
+    case pinned, recents, projects
+
+    static let storageKey = "herm.sessions.sectionOrder"
+    static let pasteboardType = NSPasteboard.PasteboardType("io.github.chryzxc.Herm.session-rail-section")
+
+    static func stored(_ defaults: UserDefaults = .standard) -> [SessionRailSection] {
+        let saved = (defaults.stringArray(forKey: storageKey) ?? []).compactMap(SessionRailSection.init)
+        return saved + allCases.filter { !saved.contains($0) }
+    }
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: UTType(exportedAs: pasteboardType.rawValue, conformingTo: .data))
+    }
+}
+
+/// Makes a section header draggable and a drop target that reorders the rail.
+struct SessionRailSectionReorder: ViewModifier {
+    let section: SessionRailSection
+    @ObservedObject var state: SessionNavigationState
+    @State private var isTargeted = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .draggable(section) { Text(section.rawValue.capitalized).dockPill().dockPadding(6) }
+            // The hovered section slides down and leaves a slot for the dragged one.
+            .dockPadding(.top, isTargeted ? 30 : 0)
+            .overlay(alignment: .top) {
+                if isTargeted {
+                    RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
+                        .fill(Color.dockAccent.opacity(0.18))
+                        .frame(height: 26)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .bottom)))
+                }
+            }
+            // Last, so the drop area grows with the gap; inside it the header would slide out from under the cursor and flicker.
+            .onDrop(
+                of: [SessionRailSection.pasteboardType.rawValue],
+                delegate: SessionRailSectionDropDelegate(section: section, state: state, isTargeted: $isTargeted)
+            )
+            .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.85), value: isTargeted)
+    }
+}
+
+extension View {
+    func sessionRailReorder(_ section: SessionRailSection, state: SessionNavigationState) -> some View {
+        modifier(SessionRailSectionReorder(section: section, state: state))
+    }
+}
+
+struct SessionRailSectionDropDelegate: DropDelegate {
+    let section: SessionRailSection?
+    let state: SessionNavigationState
+    @Binding var isTargeted: Bool
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [SessionRailSection.pasteboardType.rawValue])
+    }
+    func dropEntered(info: DropInfo) { isTargeted = true }
+    func dropExited(info: DropInfo) { isTargeted = false }
+    /// `.copy`: a SwiftUI `.draggable` source offers only copy, so a move proposal is refused.
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .copy) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        isTargeted = false
+        guard let provider = info.itemProviders(for: [SessionRailSection.pasteboardType.rawValue]).first else {
+            return false
+        }
+        let target = section
+        let state = state
+        _ = provider.loadTransferable(type: SessionRailSection.self) { result in
+            guard case .success(let dragged) = result else { return }
+            Task { @MainActor in
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                    state.moveSection(dragged, before: target)
+                }
+            }
+        }
+        return true
+    }
+}
+
+/// A zone after the last section: dropping a header here moves it to the end.
+struct SessionRailEndDropZone: View {
+    let state: SessionNavigationState
+    @State private var isTargeted = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
+            .fill(isTargeted ? Color.dockAccent.opacity(0.18) : .clear)
+            .frame(height: isTargeted ? 30 : 44)
+            .dockPadding(.top, 4)
+            .contentShape(Rectangle())
+            .onDrop(
+                of: [SessionRailSection.pasteboardType.rawValue],
+                delegate: SessionRailSectionDropDelegate(section: nil, state: state, isTargeted: $isTargeted)
+            )
+            .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.85), value: isTargeted)
     }
 }

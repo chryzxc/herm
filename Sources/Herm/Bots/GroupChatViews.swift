@@ -10,9 +10,10 @@ struct GroupChatSidebarRow: View {
     let isSelected: Bool
     let date: Date
     let onOpen: () -> Void
+    /// Opens another room, e.g. the new group an edit with changed members creates.
+    var onOpenRoom: (String) -> Void = { _ in }
     @State private var isHovered = false
-    @State private var renameText = ""
-    @State private var isRenaming = false
+    @State private var isEditing = false
     @State private var isConfirmingDisband = false
 
     private var isWorking: Bool { store.workingRooms.contains(room.id) }
@@ -23,9 +24,9 @@ struct GroupChatSidebarRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 8) {
             avatars
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DockSidebarListMetrics.titleToPreview) {
                 HStack(spacing: 6) {
                     Text(room.name)
                         .dockFont(.navigation, weight: isSelected || isUnread ? .medium : .regular)
@@ -66,8 +67,9 @@ struct GroupChatSidebarRow: View {
                     .truncationMode(.tail)
             }
         }
-        .dockPadding(.horizontal, 6)
-        .dockPadding(.vertical, 5)
+        .dockPadding(.leading, DockSidebarListMetrics.rowLeadingWithAvatar)
+        .dockPadding(.trailing, DockSidebarListMetrics.rowTrailing)
+        .dockPadding(.vertical, DockSidebarListMetrics.rowVertical)
         .background(
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
                 .dockSelectionFill(
@@ -80,10 +82,8 @@ struct GroupChatSidebarRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .dockContextMenu { actions }
-        .alert("Rename group", isPresented: $isRenaming) {
-            DockTextField("Name", text: $renameText)
-            Button("Cancel", role: .cancel) {}
-            Button("Rename") { Task { await store.rename(room.id, to: renameText) } }
+        .sheet(isPresented: $isEditing) {
+            EditGroupChatSheet(store: store, botMode: botMode, room: room, onCreated: onOpenRoom)
         }
         .confirmationDialog("Disband \(room.name)?", isPresented: $isConfirmingDisband) {
             Button("Disband", role: .destructive) { Task { await store.disband(room.id) } }
@@ -95,10 +95,7 @@ struct GroupChatSidebarRow: View {
     /// Hermes rooms support rename, stop and disband; there is no archive.
     @ViewBuilder
     private var actions: some View {
-        Button("Rename…", icon: .pencilSimple) {
-            renameText = room.name
-            isRenaming = true
-        }
+        Button("Edit Group…", icon: .pencilSimple) { isEditing = true }
         if isWorking {
             Button("Stop All Turns", icon: .stop) { Task { await store.stop(room.id) } }
         }
@@ -109,6 +106,7 @@ struct GroupChatSidebarRow: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(room.id, forType: .string)
         }
+        BotFolderMoveMenu(itemID: BotChatsItem.room(room, date).id)
         Divider()
         Button("Disband…", icon: .trash, role: .destructive) { isConfirmingDisband = true }
     }
@@ -119,17 +117,17 @@ struct GroupChatSidebarRow: View {
         let slots = room.members.count > 4 ? 3 : 4
         let shown = Array(room.members.prefix(slots))
         let extra = room.members.count - shown.count
-        let tile = RoundedRectangle(cornerRadius: 20 * 0.28, style: .continuous)
-        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(20), spacing: 2), count: 2), spacing: 2) {
+        let tile = RoundedRectangle(cornerRadius: 16 * 0.28, style: .continuous)
+        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(16), spacing: 2), count: 2), spacing: 2) {
             ForEach(shown, id: \.memberID) { member in
                 Group {
                     if let bot = botMode.botsByID[member.profile] {
-                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 20, orbits: isWorking)
+                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 16, orbits: isWorking)
                     } else {
                         Text(member.displayName.prefix(1).uppercased())
                             .dockFont(.metadata, weight: .semibold)
                             .foregroundStyle(Color.dockSecondaryText)
-                            .frame(width: 20, height: 20)
+                            .frame(width: 16, height: 16)
                             .background(tile.fill(Color.dockSurface2))
                     }
                 }
@@ -139,7 +137,7 @@ struct GroupChatSidebarRow: View {
                 Text("+\(extra)")
                     .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 16, height: 16)
                     .background(tile.fill(Color.dockSurface2))
                     .help(room.members.dropFirst(slots).map(\.displayName).joined(separator: ", "))
             }
@@ -181,6 +179,126 @@ private struct GroupThreadChip: View {
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
         .onHover { isHovered = $0 }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: isHovered)
+    }
+}
+
+/// The bot checklist for a group's members, shared by New Group Chat and Edit Group.
+struct GroupMemberPicker: View {
+    let bots: [BotSummary]
+    let avatarImages: [String: Data]
+    @Binding var selected: Set<String>
+    /// Seats taken outside this list, e.g. bots from another Mac.
+    var extraCount = 0
+
+    var body: some View {
+        Text("Members (\(GroupChatStore.memberLimits.lowerBound)–\(GroupChatStore.memberLimits.upperBound))")
+            .dockFont(.body, weight: .semibold)
+            .foregroundStyle(Color.dockPrimaryText)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(bots) { bot in
+                    Toggle(
+                        isOn: Binding(
+                            get: { selected.contains(bot.id) },
+                            set: { if $0 { selected.insert(bot.id) } else { selected.remove(bot.id) } }
+                        )
+                    ) {
+                        HStack(spacing: 8) {
+                            BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 22, animated: false)
+                            Text(bot.name) + Text("  @\(bot.id)").foregroundColor(Color.dockMetadataText)
+                        }
+                    }
+                    .toggleStyle(.dockCheckbox)
+                    .disabled(
+                        !selected.contains(bot.id)
+                            && selected.count + extraCount >= GroupChatStore.memberLimits.upperBound)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: 220)
+    }
+}
+
+/// Renames a group and changes its members. Hermes fixes a room's members when it is
+/// created, so a changed roster starts a new group; this one and its history stay.
+struct EditGroupChatSheet: View {
+    @ObservedObject var store: GroupChatStore
+    @ObservedObject var botMode: BotModeModel
+    let room: GroupRoom
+    let onCreated: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    @State private var selected: Set<String>
+    @State private var isSaving = false
+
+    init(store: GroupChatStore, botMode: BotModeModel, room: GroupRoom, onCreated: @escaping (String) -> Void) {
+        self.store = store
+        self.botMode = botMode
+        self.room = room
+        self.onCreated = onCreated
+        _name = State(initialValue: room.name)
+        _selected = State(initialValue: Self.localMembers(room))
+    }
+
+    private static func localMembers(_ room: GroupRoom) -> Set<String> {
+        Set(room.members.filter { !$0.isRemote }.map(\.profile))
+    }
+
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var hasRemoteMembers: Bool { room.members.contains(where: \.isRemote) }
+    private var membersChanged: Bool { selected != Self.localMembers(room) }
+    /// Current members stay listed even if hidden from the Bots page.
+    private var bots: [BotSummary] {
+        botMode.inventory.bots.filter { !$0.isHidden || Self.localMembers(room).contains($0.id) }
+    }
+    private var canSave: Bool {
+        guard !trimmedName.isEmpty, !isSaving else { return false }
+        return membersChanged ? GroupChatStore.memberLimits.contains(selected.count) : trimmedName != room.name
+    }
+
+    var body: some View {
+        DockModal(title: "Edit Group", subtitle: room.name, width: 440) {
+            VStack(alignment: .leading, spacing: 14) {
+                labeledField("Name") { DockTextField("Group name", text: $name).textFieldStyle(.dockGlass) }
+                GroupMemberPicker(bots: bots, avatarImages: botMode.avatarImages, selected: $selected)
+                    .disabled(hasRemoteMembers)
+                if hasRemoteMembers {
+                    ModalNote(
+                        text: "This group has bots from another Mac, so its members can't be changed here.",
+                        icon: .info)
+                } else if membersChanged {
+                    ModalNote(
+                        text:
+                            "Hermes can't change an existing group's members. Saving starts a new group with these members; this group and its history stay.",
+                        icon: .info)
+                }
+            }
+            if let message = store.errorMessage { ModalNote(text: message, icon: .warning, tone: .dockDestructive) }
+        } footer: {
+            modalActions(
+                primaryTitle: membersChanged ? "Create New Group" : "Save",
+                pendingTitle: "Saving…", isDisabled: !canSave, isPending: isSaving,
+                onCancel: { dismiss() }, onPrimary: save)
+        }
+    }
+
+    private func save() {
+        isSaving = true
+        Task {
+            defer { isSaving = false }
+            if membersChanged {
+                guard
+                    let created = await store.create(
+                        name: trimmedName, bots: bots.filter { selected.contains($0.id) })
+                else { return }
+                onCreated(created)
+            } else {
+                await store.rename(room.id, to: trimmedName)
+                guard store.errorMessage == nil else { return }
+            }
+            dismiss()
+        }
     }
 }
 
@@ -260,31 +378,8 @@ struct NewGroupChatSheet: View {
     private var createForm: some View {
         VStack(alignment: .leading, spacing: 14) {
             labeledField("Name") { DockTextField("Group name", text: $name).textFieldStyle(.dockGlass) }
-            Text("Members (\(GroupChatStore.memberLimits.lowerBound)–\(GroupChatStore.memberLimits.upperBound))")
-                .dockFont(.body, weight: .semibold)
-                .foregroundStyle(Color.dockPrimaryText)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(bots) { bot in
-                        Toggle(
-                            isOn: Binding(
-                                get: { selected.contains(bot.id) },
-                                set: { if $0 { selected.insert(bot.id) } else { selected.remove(bot.id) } }
-                            )
-                        ) {
-                            HStack(spacing: 8) {
-                                BotAvatarView(
-                                    bot: bot, imageData: botMode.avatarImages[bot.id], size: 22, animated: false)
-                                Text(bot.name) + Text("  @\(bot.id)").foregroundColor(Color.dockMetadataText)
-                            }
-                        }
-                        .toggleStyle(.dockCheckbox)
-                        .disabled(!selected.contains(bot.id) && memberCount >= GroupChatStore.memberLimits.upperBound)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 220)
+            GroupMemberPicker(
+                bots: bots, avatarImages: botMode.avatarImages, selected: $selected, extraCount: remote.count)
             if store.isRoomLinkEnabled, let installID = store.installID {
                 ForEach($remote) { $seat in remoteSeat($seat, installID: installID) }
                 Button {
@@ -393,6 +488,8 @@ struct GroupChatView: View {
     var metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: true)
     let toolbar: (AnyView, AnyView) -> AnyView
     let onDisbanded: () -> Void
+    /// Opens another room, e.g. the new group an edit with changed members creates.
+    var onOpenRoom: (String) -> Void = { _ in }
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     @StateObject private var voiceOutput = VoiceOutput()
     @State private var speakingEventID: String?
@@ -409,8 +506,7 @@ struct GroupChatView: View {
     }
     @State private var editorHeight = ComposerLayout.minHeight
     @State private var isEditorFocused = true
-    @State private var renameText = ""
-    @State private var isRenaming = false
+    @State private var isEditing = false
     @State private var isConfirmingDisband = false
     @State private var thread = GroupChatStore.mainThreadID
     @State private var newThreads: [String] = []
@@ -506,10 +602,8 @@ struct GroupChatView: View {
                 try? await Task.sleep(for: .seconds(store.workingRooms.contains(roomID) ? 1.5 : 5))
             }
         }
-        .alert("Rename group", isPresented: $isRenaming) {
-            DockTextField("Name", text: $renameText)
-            Button("Cancel", role: .cancel) {}
-            Button("Rename") { Task { await store.rename(roomID, to: renameText) } }
+        .sheet(isPresented: $isEditing) {
+            if let room { EditGroupChatSheet(store: store, botMode: botMode, room: room, onCreated: onOpenRoom) }
         }
         .confirmationDialog("Disband \(room?.name ?? "this group")?", isPresented: $isConfirmingDisband) {
             Button("Disband", role: .destructive) {
@@ -563,10 +657,7 @@ struct GroupChatView: View {
                         }
                     }
                 }
-                Button("Rename…") {
-                    renameText = room?.name ?? ""
-                    isRenaming = true
-                }
+                Button("Edit Group…") { isEditing = true }
                 Button("Disband…", role: .destructive) { isConfirmingDisband = true }
             } label: {
                 DockIcon(.dotsThree, size: DockLayout.toolbarIconSize, color: Color.dockSecondaryText)
@@ -712,14 +803,18 @@ struct GroupChatView: View {
                 let split = ReplyQuote.split(GenerativeUIIntegration.displayUserText(event.text))
                 VStack(alignment: .leading, spacing: 6) {
                     if let quote = split?.quote { ReplyQuoteChip(quote: quote) }
+                    // Same type as the main chat's bubble, so it follows the text-size setting.
                     Text.withFileIcons(
                         AttributedString(split?.body ?? GenerativeUIIntegration.displayUserText(event.text)),
-                        iconSize: 13
+                        iconSize: DockWorkspaceScale.points(13, scale: workspaceScale)
                     )
+                    .dockFont(.conversation)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .textSelection(.enabled)
                 }
+                .fixedSize(horizontal: false, vertical: true)
                 .dockPadding(.horizontal, 14)
-                .dockPadding(.vertical, 9)
+                .dockPadding(.vertical, 10)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.dockAccentMuted))
             }
         case .member(let memberID):
@@ -829,9 +924,9 @@ struct GroupChatView: View {
     @ViewBuilder
     private func avatar(for member: GroupRoom.Member?, working: Bool = false) -> some View {
         if let member, let bot = botMode.botsByID[member.profile] {
-            BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 28, orbits: working)
+            BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 32, orbits: working)
         } else {
-            let side = DockWorkspaceScale.points(28, scale: workspaceScale)
+            let side = DockWorkspaceScale.points(32, scale: workspaceScale)
             Circle().fill(Color.dockSurface4).frame(width: side, height: side)
         }
     }
@@ -911,7 +1006,7 @@ struct GroupChatView: View {
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 6) {
             if let token = mentionToken, !mentionItems.isEmpty {
                 ComposerCompletionPopover(
                     trigger: .mention(token),
@@ -921,122 +1016,113 @@ struct GroupChatView: View {
                     onSelect: acceptMention
                 )
             }
-            // Same native editor and card as the main chat composer; rooms are text-only, so no
+            // The main chat's editor, card, tray and column; rooms are text-only, so no
             // attachment, model or voice controls.
-            if let quote = replyQuote {
-                ReplyQuoteChip(quote: quote) { replyQuote = nil }
-                    .dockPadding(.horizontal, 12)
-            }
-            VStack(spacing: 6) {
-                ZStack(alignment: .topLeading) {
-                    ComposerInputEditor(
-                        text: $draft,
-                        isFocused: isEditorFocused,
-                        onSubmit: send,
-                        onCompletionKey: handleMentionKey,
-                        onFocusChanged: { isEditorFocused = $0 },
-                        onCaretMoved: { _, _ in },
-                        takePendingCaret: {
-                            defer { pendingCaret = nil }
-                            return pendingCaret
-                        },
-                        onTextChanged: { _, _ in mentionIndex = 0 },
-                        onContentHeightChanged: { editorHeight = ComposerLayout.height(for: $0) }
-                    )
-                    .frame(height: max(1, editorHeight - 4))
-                    if draft.isEmpty {
-                        Text("Message the group — @ to mention a member")
-                            .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .dockPadding(.leading, 16)
-                            .allowsHitTesting(false)
-                    }
+            VStack(spacing: 0) {
+                if let quote = replyQuote {
+                    ReplyQuoteChip(quote: quote) { replyQuote = nil }
+                        .dockPadding(.horizontal, 12)
+                        .dockPadding(.vertical, 6)
                 }
-                .dockPadding(.top, 4)
-                .frame(height: draft.isEmpty ? ComposerLayout.minHeight : editorHeight)
-                .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
-
-                HStack(spacing: 8) {
-                    Button {
-                        showingInsertPopover = true
-                    } label: {
-                        DockIcon(.plus, size: 14, color: Color.dockSecondaryText)
-                            .frame(width: 28, height: 28)
-                            .background(
-                                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                    .fill(DockSkinPresentation.current.composerControlFill))
-                    }
-                    .buttonStyle(.dockHover)
-                    .help("Insert a snippet")
-                    .dockPopover(isPresented: $showingInsertPopover, arrowEdge: .bottom) {
-                        AttachmentPopover(
-                            pasteImageAvailable: false,
-                            onSelect: { _ in },
-                            onSelectSnippet: {
-                                draft = AttachmentPopoverPresentation.insertingSnippet($0, into: draft)
-                                showingInsertPopover = false
+                VStack(spacing: 6) {
+                    ZStack(alignment: .topLeading) {
+                        ComposerInputEditor(
+                            text: $draft,
+                            isFocused: isEditorFocused,
+                            onSubmit: send,
+                            onCompletionKey: handleMentionKey,
+                            onFocusChanged: { isEditorFocused = $0 },
+                            onCaretMoved: { _, _ in },
+                            takePendingCaret: {
+                                defer { pendingCaret = nil }
+                                return pendingCaret
                             },
-                            actions: [.promptSnippets]
+                            onTextChanged: { _, _ in mentionIndex = 0 },
+                            onContentHeightChanged: { editorHeight = ComposerLayout.height(for: $0) }
                         )
-                    }
-                    Button {
-                        draft += (draft.isEmpty || draft.hasSuffix(" ") ? "@" : " @")
-                        pendingCaret = (draft as NSString).length
-                        isEditorFocused = true
-                    } label: {
-                        DockIcon(.at, size: 14, color: Color.dockSecondaryText)
-                            .frame(width: 28, height: 28)
-                            .background(
-                                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                    .fill(DockSkinPresentation.current.composerControlFill))
-                    }
-                    .buttonStyle(.dockHover)
-                    .help("Mention a member")
-                    Spacer()
-                    Button(action: isWorking ? { Task { await store.stop(roomID) } } : send) {
-                        ZStack {
-                            Circle()
-                                .fill(isWorking ? Color.dockSurface6 : canSend ? Color.dockAccent : Color.dockSurface6)
-                                .frame(width: 32, height: 32)
-                            if store.pendingRooms.contains(roomID) {
-                                ProgressView().controlSize(.small)
-                            } else if isWorking && !canSend {
-                                DockIcon(.stop, weight: .fill)
-                                    .dockFont(.compactStatus, weight: .bold)
-                                    .foregroundStyle(Color.dockDestructive)
-                            } else {
-                                DockIcon(.arrowUp)
-                                    .dockFont(.body, weight: .semibold)
-                                    .foregroundStyle(
-                                        canSend ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
-                            }
+                        .frame(height: max(1, editorHeight - 4))
+                        if draft.isEmpty {
+                            Text("Message the group — @ to mention a member")
+                                .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .dockPadding(.leading, 16)
+                                .allowsHitTesting(false)
                         }
                     }
-                    .buttonStyle(.dockHover)
-                    .disabled(store.pendingRooms.contains(roomID) || (!isWorking && !canSend))
-                    .help(isWorking && !canSend ? "Stop the room" : "Send")
+                    .dockPadding(.top, 4)
+                    .frame(height: draft.isEmpty ? ComposerLayout.minHeight : editorHeight)
+                    .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
+                    composerControls
                 }
-                .frame(height: 44)
+                .composerCard(isFocused: isEditorFocused)
             }
-            .dockPadding(.leading, 6)
-            .dockPadding(.trailing, 8)
-            .dockPadding(.top, 6)
-            .background {
-                let shape = DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane)
-                shape
-                    .dockInputFill()
-                    .overlay {
-                        shape.stroke(
-                            isEditorFocused ? Color.dockAccent.opacity(0.42) : Color.dockBorder,
-                            lineWidth: DockLayout.hairline)
-                    }
+            .composerTray()
+            ComposerFolderBarSlot()
+        }
+        .composerColumn(metrics)
+    }
+
+    private var composerControls: some View {
+        HStack(alignment: .center, spacing: 8) {
+            HStack(alignment: .center, spacing: 6) { insertControls }
+            Spacer()
+            sendButton
+        }
+    }
+
+    private var insertControls: some View {
+        Group {
+            Button {
+                showingInsertPopover = true
+            } label: {
+                ComposerControlLabel(icon: .plus)
+            }
+            .buttonStyle(.dockHover)
+            .help("Insert a snippet")
+            .dockPopover(isPresented: $showingInsertPopover, arrowEdge: .bottom) {
+                AttachmentPopover(
+                    pasteImageAvailable: false,
+                    onSelect: { _ in },
+                    onSelectSnippet: {
+                        draft = AttachmentPopoverPresentation.insertingSnippet($0, into: draft)
+                        showingInsertPopover = false
+                    },
+                    actions: [.promptSnippets]
+                )
+            }
+            Button {
+                draft += (draft.isEmpty || draft.hasSuffix(" ") ? "@" : " @")
+                pendingCaret = (draft as NSString).length
+                isEditorFocused = true
+            } label: {
+                ComposerControlLabel(icon: .at)
+            }
+            .buttonStyle(.dockHover)
+            .help("Mention a member")
+        }
+    }
+
+    private var sendButton: some View {
+        Button(action: isWorking ? { Task { await store.stop(roomID) } } : send) {
+            ComposerSubmitLabel(isEnabled: !isWorking && canSend, isFullscreen: metrics == .resolve(isFullscreen: true))
+            {
+                if store.pendingRooms.contains(roomID) {
+                    ProgressView().controlSize(.small)
+                } else if isWorking && !canSend {
+                    DockIcon(.stop, weight: .fill)
+                        .dockFont(.compactStatus, weight: .bold)
+                        .foregroundStyle(Color.dockDestructive)
+                } else {
+                    DockIcon(.arrowUp)
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(canSend ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
+                }
             }
         }
-        .dockPadding(.horizontal, metrics.composerInset)
-        .dockPadding(.top, metrics.composerTopInset)
-        .dockPadding(.bottom, metrics.composerBottomInset)
-        .frame(maxWidth: metrics.composerMaxWidth)
-        .frame(maxWidth: .infinity)
+        .buttonStyle(.dockHover)
+        .frame(width: 32, height: 32)
+        .disabled(store.pendingRooms.contains(roomID) || (!isWorking && !canSend))
+        .help(isWorking && !canSend ? "Stop the room" : "Send")
     }
 
     private func send() {

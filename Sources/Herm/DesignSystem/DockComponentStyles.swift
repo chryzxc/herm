@@ -1850,6 +1850,9 @@ struct DockTabButton: View {
     let isSelected: Bool
     var showsSelectionMark = false
     var selectionNamespace: Namespace.ID? = nil
+    /// Shares a track's width equally with its siblings.
+    var fillsWidth = false
+    var height: CGFloat = 30
     let action: () -> Void
 
     var body: some View {
@@ -1870,7 +1873,8 @@ struct DockTabButton: View {
                     : Color.dockSecondaryText
             )
             .dockPadding(.horizontal, showsSelectionMark ? 6 : 10)
-            .frame(height: 30)
+            .frame(maxWidth: fillsWidth ? .infinity : nil)
+            .frame(height: height)
             .dockSelectionBackground(
                 shape, active: isSelected,
                 fill: DockThemeStyle.current.material == .glass
@@ -1891,29 +1895,25 @@ struct DockTabButton: View {
     }
 }
 
-/// Sessions / Bots chooser shown in the same toolbar slot on both chat lists:
-/// the label names the open list, the menu switches to the other.
+/// Bots / Sessions tabs shown above the search field on both chat lists.
 struct DockChatsScopeSwitch: View {
+    @Namespace private var selectionNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let showsBots: Bool
     let onShowSessions: () -> Void
     let onShowBots: () -> Void
 
     var body: some View {
-        DockMenu {
-            DockMenuCheckRow(title: "Sessions", isSelected: !showsBots, action: onShowSessions)
-            DockMenuCheckRow(title: "Bots", isSelected: showsBots, action: onShowBots)
-        } label: {
-            HStack(spacing: 4) {
-                Text(showsBots ? "Bots" : "Sessions")
-                    .dockFont(.metadata, weight: .medium)
-                    .foregroundStyle(Color.dockPrimaryText)
-                DockIcon(.caretUpDown, size: 10, color: Color.dockMetadataText)
-            }
-            .dockPadding(.horizontal, 8)
-            .frame(height: 24)
+        HStack(spacing: 2) {
+            DockTabButton(
+                title: "Bots", isSelected: showsBots, selectionNamespace: selectionNamespace, fillsWidth: true,
+                height: 24, action: onShowBots)
+            DockTabButton(
+                title: "Sessions", isSelected: !showsBots, selectionNamespace: selectionNamespace, fillsWidth: true,
+                height: 24, action: onShowSessions)
         }
-        .lineLimit(1)
-        .fixedSize()
+        .dockTabTrack()
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.22), value: showsBots)
         .help("Switch between sessions and each bot's main chat")
     }
 }

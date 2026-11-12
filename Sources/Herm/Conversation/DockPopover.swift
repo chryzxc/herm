@@ -369,6 +369,7 @@ struct DockPopover: View {
     @AppStorage("herm.chatListCollapsed") var isChatListCollapsed = false
     /// The group room open on the Bots page; empty means the selected bot's chat.
     @AppStorage(BotChatsOrdering.lastRoomKey) var openGroupRoomID = ""
+    @State var isCreatingBot = false
     @State var workspaceGeometry = WorkspaceGeometry()
     @State var workspaceLayoutRevision = 0
     var workspaceLayoutWidth: CGFloat { workspaceGeometry.width }

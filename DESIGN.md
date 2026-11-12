@@ -1835,6 +1835,7 @@ narrow sidebar widths. The Pinned section remains a separate presentation.
 The sidebar always shows the bot header and the stacked Pinned,
 Recents, and Projects sections for the selected bot. Recents read every bot's
 chats from one all-profile sidebar read merged with the selected bot's fresher
+Drag a section header (Pinned, Recents, Projects) onto another to swap their order; the order is a local preference, and the drop target shows an accent line above the header. Bot folders reorder the same way on the Bots list.
 list. Other bots' history is baselined once from that read so first use shows no
 unread flood.
 
@@ -2498,18 +2499,61 @@ The Bots destination is a Messenger-style page: the icon rail, a 360pt bot
 list, and the open chat: a bot's main chat (its canonical Bot Chat) with bot
 mode on, or a group room. It has no session sections and no inspector. The
 header shows only the title; a search field above the list filters bots and
-rooms by name without changing the open chat. A + button beside the search
-starts a group chat when Hermes exposes its room driver. Group rooms share the
+rooms by name without changing the open chat. A + menu beside the search
+offers New Bot (when Hermes can create profiles), New Group Chat (when Hermes
+exposes its room driver; it stays a modal) and New Folder. New Bot replaces the
+chat area with a centered form under a "New Bot" toolbar title: a 96pt live face
+preview that follows the name, Name (slugged into the Hermes profile id, shown
+as "Profile: …" when it differs), an optional Role (the profile title) and
+"What should this bot help with?" (the description), the shared model card and
+an Advanced disclosure (Clone from, Start without bundled skills). The model card
+(`BotModelCard`) is one `.dockCard` used by New Bot and Edit Bot alike: a Primary
+row whose single menu lists every model grouped under provider headers ("Hermes
+default" leaves the profile's model unset when creating), then numbered Fallbacks
+tried in order, each with a remove button, and an Add Fallback menu that hides
+models already used. Edit Bot adds its reasoning and context limits as a footer
+row of the same card and words its fields Role and "What should this bot help
+with?" like New Bot. A picked model and fallbacks are applied after creation; an
+expensive model asks Keep Default / Use This Model first, and if only those steps
+fail, Create retries just them. Create opens the new bot's main chat; Cancel, Escape, or
+opening any row closes the form. Settings › Bots' New Bot modal uses the same
+fields in a scrolling body capped at 400pt so the header and footer never clip. Group rooms share the
 list with bots and keep the group row (member avatars, unread, approval and
 working marks, the more-actions menu); the whole list sorts by last activity,
-newest first. Each row shows a 42pt avatar
-that orbits while the bot works, the name, the shared activity glyph, the
-main chat's last-message time, and a one-line preview ("No messages yet" when
-empty). Rows sort by main-chat activity, newest first; idle bots keep roster
+newest first.
+
+Folders are local Herm organization (a preference, never sent to Hermes) and
+hold bots and group rooms. They list above the top-level rows in the user's
+order. Each is a flat sidebar group, not a card: a 12pt semibold name header
+with a folder mark at the trailing edge (open while expanded; the count follows
+the name when collapsed) that a more menu (Rename, New Folder, Delete Folder)
+replaces on hover. Its rows sit unindented under the header.
+Sections are 12pt apart, and once a folder exists the unfiled rows get an
+"Other" header in the same style so they never read as the last folder's. Clicking the header
+collapses it; New Folder starts an inline rename. Drag a row onto a folder to file it,
+onto the top-level area to take it out, and drag a folder header onto another
+to place it before that one (or onto the top-level area to move it last). Rows
+and folder headers show the grab cursor, and the drag card shows the bot's
+avatar beside its name. Under a drag the target folder takes a selection
+tint and lifts 2%, its icon opens and hops, and an empty one shows "Drop to
+add"; a collapsed folder springs
+open after 0.65s. A drop squashes the folder and lets it bounce back, the count
+ticks, the row grows in from the header and flashes once. Reduce Motion keeps
+only the tint. Moves, collapses and reorders use one 0.32s spring. Row menus offer Move to Folder and Remove
+from Folder for keyboard users and bots without a main chat. Search flattens
+folders so no match hides in a collapsed one. Deleting a folder returns its
+items to the top level.
+
+Rows are compact. Each bot row shows a 34pt avatar whose face animates while the main chat
+works (no spinner), the name, a small pill in 10pt medium type with the bot's role (its Hermes
+title; no pill without one), the main chat's last-message time, and a one-line
+preview ("No messages yet" when empty). The avatar carries the Sessions list's
+unread-reply count badge at its bottom-trailing corner while the row is not on
+screen; opening the chat marks it read. Rows sort by main-chat activity, newest first; idle bots keep roster
 order. The open bot takes the selected fill. On open, the page reopens the
 room last opened here if it still exists, else keeps the open bot's chat, else
 reopens the bot last opened on this page (a local
-preference), else the default bot. Bot rows show no unread marks.
+preference), else the default bot.
 Working marks here follow only the main chat's live state. The Chats bot
 switcher's working and done badges follow only the bot's other sessions and
 workers, so main-chat work never appears there. Main chats themselves are
@@ -2528,8 +2572,8 @@ occupy a stable secondary line. Selected profiles use an accent outline and a
 Selected badge, distinct from live Working status, without tinting the whole card.
 The More menu stays visible at rest and accessible by keyboard. New Bot is the
 primary header action; avatar generation is secondary.
-In the profile editor, primary and fallback model rows keep 8pt of vertical
-padding around the complete row, including actions, clear of borders and dividers.
+In the profile editor, model card rows keep 10pt of vertical padding around the
+complete row, including actions, clear of borders and dividers.
 Tabs, search, activity, and visibility filters share a
 responsive toolbar that wraps at narrower widths. The full card opens the
 canonical Bot Chat; profile editing, duplication, activity history, and
@@ -2545,6 +2589,15 @@ is independent of the sidebar brand-concept preference. Groups, sections,
 cross-machine routing and richer routine actions require
 additional Hermes gateway contracts and are not presented as available Herm
 controls yet.
+
+On a bot's main chat, the toolbar ⋯ menu starts with Bot settings. It opens the Settings › Bots profile editor as a tab (the same component,
+without modal chrome), with Save Changes in a footer bar that reloads the
+profile after saving.
+
+In conversations, the author header beside a bot reply uses a 32pt avatar (group
+rooms too) and the Bots toolbar identity a 30pt one; mention avatars inside
+bubbles stay 16pt. A bot's name never appears without its avatar: rows, drag
+cards, and bot choices in menus and pickers (18pt) all show it.
 
 The composer’s bot picker shows display names, such as Nexus, while retaining
 canonical profile IDs for selection and delivery.
@@ -2604,7 +2657,7 @@ only on Glass and Clay; every other skin, and the saved PNG, is matte. Only movi
 idle face; Regenerate All re-renders it for every Bot. Glossy Herm faces saved by older builds are recognized alongside the matte
 PNG. The legacy blob renderer stays only to recognize older saves. Group chat stacks place faces
 side by side with no cut-out border.
-Group chat action errors use toast notifications without an inline error row above the composer.
+Group chat action errors use toast notifications without an inline error row above the composer. The group composer reuses the main chat composer chrome (`composerCard`, `composerTray`, `composerColumn`, `ComposerFolderBarSlot`, `ComposerControlLabel`, `ComposerSubmitLabel`), so its input sits at the same position and size as a session composer. Group actions (thread, Edit Group…, Disband…) sit at the trailing edge of the toolbar, including in a tab column where the tab row carries them. Edit Group renames the room in place and edits members with the New Group Chat checklist (`GroupMemberPicker`); Hermes fixes a room's members at creation, so a changed roster says so and creates a new group (the old one and its history stay). Groups with bots from another Mac keep their members read-only. A group chat opened from Bots accepts a dropped session like any chat: the room becomes the first column's tab and the session opens as a tab or new column beside it. Bot, group and session rows in the sidebar take their insets and gaps from `DockSidebarListMetrics`, so the Bots list spaces rows exactly like Recents, including the shared `titleToPreview` gap between a row title and its last message. The Bots | Sessions switch is a full-width tab track (`DockChatsScopeSwitch`) at the top of each list: above the bot picker in Sessions, above the search field in Bots, not in the title strip. In Sessions, New chat is an icon button (tooltip "New chat") to the right of the search field, mirroring the Bots + menu.
 
 ### Conversation workspace
 

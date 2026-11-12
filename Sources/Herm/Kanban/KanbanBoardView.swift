@@ -577,10 +577,10 @@ private struct KanbanTaskCard: View, Equatable {
                     Button {
                         onAssign(task, bot.id)
                     } label: {
-                        if isAssigned(to: bot) {
-                            Label(bot.name, icon: .check)
-                        } else {
+                        HStack(spacing: 8) {
+                            BotMenuAvatar(bot: bot)
                             Text(bot.name)
+                            if isAssigned(to: bot) { DockIcon(.check, size: 12, color: Color.dockPrimaryText) }
                         }
                     }
                     .disabled(isAssigned(to: bot))

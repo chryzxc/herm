@@ -552,104 +552,231 @@ struct BotRosterPage: View {
     }
 }
 
-/// New Agent quick path from the Hermes Bot Mode docs: Name, Title,
-/// Description. The name becomes a new Hermes profile; Hermes remains the
-/// authority for creation outcomes and error reporting.
+/// One New Bot form for Settings' modal and the Bots page: the Hermes
+/// `profiles.create` quick path (name, title, description, clone/skip skills)
+/// plus an optional model pinned right after through `profiles.configure`.
+@MainActor
+final class BotCreationDraft: ObservableObject {
+    @Published var name = ""
+    @Published var role = ""
+    @Published var purpose = ""
+    @Published var cloneFrom = ""
+    @Published var skipsSkills = false
+    /// Nil keeps Hermes' launch default.
+    @Published var primary: BotRuntimeConfig.ModelRef?
+    @Published var fallbacks: [BotRuntimeConfig.ModelRef] = []
+    @Published private(set) var modelChoices: [(provider: String, models: [String])] = []
+    @Published var modelConfirmation: String?
+    @Published private(set) var modelError: String?
+    @Published private(set) var isSettingModel = false
+    /// Set once the bot exists and its model is settled; views open or dismiss on it.
+    @Published private(set) var finished: BotSummary?
+    /// A bot whose model step failed; Create retries only that step.
+    private var created: BotSummary?
+
+    var slug: String { BotCreationSheet.profileSlug(from: name) }
+
+    func isTaken(in model: BotModeModel) -> Bool { created == nil && model.bots.contains { $0.id == slug } }
+
+    func canCreate(in model: BotModeModel) -> Bool {
+        BotCreationSheet.isValidProfileName(slug) && !isTaken(in: model) && !model.isCreatingBot && !isSettingModel
+    }
+
+    func loadModels(_ model: BotModeModel) async {
+        modelChoices = await model.newBotModelOptions(cloneFrom: cloneFrom)
+        let offered = { (ref: BotRuntimeConfig.ModelRef) in
+            self.modelChoices.contains { $0.provider == ref.provider && $0.models.contains(ref.model) }
+        }
+        if let primary, !offered(primary) { self.primary = nil }
+        fallbacks.removeAll { !offered($0) }
+    }
+
+    func create(_ model: BotModeModel) async {
+        guard canCreate(in: model) else { return }
+        if created == nil {
+            let id = slug
+            guard
+                await model.createBot(
+                    name: id, title: role, description: purpose, cloneFrom: cloneFrom.isEmpty ? nil : cloneFrom,
+                    skipsSkills: skipsSkills),
+                let bot = model.bots.first(where: { $0.id == id })
+            else { return }
+            created = bot
+        }
+        await applyModel(model, confirm: false)
+    }
+
+    func applyModel(_ model: BotModeModel, confirm: Bool) async {
+        guard let bot = created else { return }
+        isSettingModel = true
+        defer { isSettingModel = false }
+        if let primary {
+            switch await model.setModel(
+                profileID: bot.id, provider: primary.provider, model: primary.model, confirm: confirm)
+            {
+            case .applied: break
+            case .needsConfirmation(let message):
+                modelConfirmation = message
+                return
+            case .failed(let message):
+                modelError = "Created \(bot.id), but its model was not set. \(message)"
+                return
+            }
+        }
+        await applyFallbacks(model, to: bot)
+    }
+
+    /// Declining an expensive model keeps the new bot on the default.
+    func keepDefaultModel(_ model: BotModeModel) async {
+        guard let bot = created else { return }
+        primary = nil
+        await applyFallbacks(model, to: bot)
+    }
+
+    private func applyFallbacks(_ model: BotModeModel, to bot: BotSummary) async {
+        if !fallbacks.isEmpty, let message = await model.setFallbacks(fallbacks, for: bot) {
+            modelError = "Created \(bot.id), but its fallbacks were not set. \(message)"
+            return
+        }
+        finished = model.bots.first { $0.id == bot.id } ?? bot
+    }
+}
+
+/// The New Bot fields, shared by `BotCreationSheet` and `BotCreationPage`.
+struct BotCreationFields: View {
+    @ObservedObject var draft: BotCreationDraft
+    @ObservedObject var model: BotModeModel
+    @State private var showsAdvanced = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            labeledField("Name", hint: draft.slug.isEmpty || draft.slug == draft.name ? nil : "Profile \(draft.slug)") {
+                DockTextField("e.g. Trip Planner", text: $draft.name)
+                    .textFieldStyle(.dockGlass)
+            }
+            if draft.isTaken(in: model) {
+                ModalNote(text: "A bot named \(draft.slug) already exists.", icon: .warning, tone: .dockWarning)
+            } else if !draft.name.isEmpty && draft.slug.isEmpty {
+                ModalNote(text: "Use at least one letter or number.", icon: .warning, tone: .dockWarning)
+            }
+            BotIdentityFields(role: $draft.role, purpose: $draft.purpose)
+            labeledField("Model") {
+                BotModelCard(
+                    choices: draft.modelChoices, primary: $draft.primary, unsetTitle: "Hermes default",
+                    fallbacks: $draft.fallbacks)
+            }
+            DisclosureGroup(isExpanded: $showsAdvanced) {
+                VStack(alignment: .leading, spacing: 10) {
+                    DockMenuPicker(
+                        "Clone from", title: model.bots.first { $0.id == draft.cloneFrom }?.name ?? "Fresh profile",
+                        selection: $draft.cloneFrom
+                    ) {
+                        DockMenuOption("Fresh profile", value: "")
+                        ForEach(model.bots.filter { !$0.isDefault }) { DockMenuOption(bot: $0) }
+                    }
+                    Toggle("Start without bundled skills", isOn: $draft.skipsSkills)
+                        .toggleStyle(.dockCheckbox)
+                }
+                .dockPadding(.top, 8)
+            } label: {
+                Text("Advanced")
+                    .dockFont(.body, weight: .semibold)
+                    .foregroundStyle(Color.dockSecondaryText)
+            }
+            .disclosureGroupStyle(DockDisclosureGroupStyle())
+            if let error = draft.modelError ?? model.botCreationError {
+                ModalNote(text: error, icon: .warning, tone: .dockWarning)
+            }
+        }
+        .task(id: draft.cloneFrom) { await draft.loadModels(model) }
+        .onDisappear { model.botCreationError = nil }
+        .alert(
+            "Confirm Model",
+            isPresented: Binding(
+                get: { draft.modelConfirmation != nil }, set: { if !$0 { draft.modelConfirmation = nil } })
+        ) {
+            Button("Keep Default", role: .cancel) { Task { await draft.keepDefaultModel(model) } }
+            Button("Use This Model") { Task { await draft.applyModel(model, confirm: true) } }
+        } message: {
+            Text(draft.modelConfirmation ?? "")
+        }
+    }
+}
+
+/// Settings › Bots' New Bot modal. The body scrolls so the header and footer
+/// stay on screen in a short window.
 struct BotCreationSheet: View {
     @ObservedObject var model: BotModeModel
     let roster: [BotSummary]
     @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var title = ""
-    @State private var descriptionText = ""
-    @State private var showsAdvanced = false
-    @State private var cloneFrom = ""
-    @State private var skipsSkills = false
-
-    private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var isValidName: Bool { BotCreationSheet.isValidProfileName(trimmedName) }
+    @StateObject private var draft = BotCreationDraft()
 
     static func isValidProfileName(_ value: String) -> Bool {
         !value.isEmpty && value.count <= 64
             && value.allSatisfy { ($0.isLetter && $0.isLowercase) || $0.isNumber || "-_".contains($0) }
     }
 
-    var body: some View {
-        DockModal(
-            title: "New Bot", subtitle: "Create a Hermes profile with its own identity and skills.",
-            width: 420
-        ) {
-            modalSection("IDENTITY") {
-                labeledField("Name", hint: "Lowercase letters, numbers, dashes, or underscores") {
-                    DockTextField("e.g. researcher", text: $name)
-                        .textFieldStyle(.dockGlass)
-                }
-                if !trimmedName.isEmpty && !isValidName {
-                    ModalNote(
-                        text: "Use lowercase letters, numbers, dashes, or underscores.", icon: .warning,
-                        tone: .dockWarning)
-                }
-                labeledField("Title", hint: "Optional role label") {
-                    DockTextField("e.g. Research Analyst", text: $title)
-                        .textFieldStyle(.dockGlass)
-                }
-                labeledField("Description", hint: "Optional one-line responsibility") {
-                    DockTextField("What this Bot is responsible for", text: $descriptionText)
-                        .textFieldStyle(.dockGlass)
-                }
-            }
-
-            advancedSection
-            if let error = model.botCreationError {
-                ModalNote(text: error, icon: .warning, tone: .dockWarning)
-            }
-        } footer: {
-            modalActions(
-                primaryTitle: "Create Bot", pendingTitle: "Creating…", isDisabled: !isValidName || model.isCreatingBot,
-                isPending: model.isCreatingBot, onCancel: { dismiss() }
-            ) {
-                guard isValidName else { return }
-                Task {
-                    if await model.createBot(
-                        name: trimmedName, title: title, description: descriptionText,
-                        cloneFrom: cloneFrom.isEmpty ? nil : cloneFrom,
-                        skipsSkills: skipsSkills
-                    ) {
-                        dismiss()
-                    }
-                }
-            }
-        }
-        .onDisappear { model.botCreationError = nil }
+    /// A Hermes profile id from a display name: "Trip Planner!" → "trip-planner".
+    static func profileSlug(from name: String) -> String {
+        let words = name.lowercased().split { !($0.isASCII && ($0.isLetter || $0.isNumber || "_".contains($0))) }
+        return String(words.joined(separator: "-").prefix(64))
     }
 
-    /// The docs' Advanced disclosure: clone an existing profile's config,
-    /// skills, SOUL, and memory — or start empty without bundled skills.
-    @ViewBuilder
-    private var advancedSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation { showsAdvanced.toggle() }
-            } label: {
-                DockIconLabel(showsAdvanced ? "Hide Advanced" : "Advanced", icon: showsAdvanced ? .caretUp : .caretDown)
-                    .dockFont(.metadata, weight: .semibold)
-                    .foregroundStyle(Color.dockSecondaryText)
+    var body: some View {
+        DockModal(
+            badge: AnyView(BotFaceMark(id: draft.slug.isEmpty ? "new-bot" : draft.slug, size: 32, animated: true)),
+            title: "New Bot", subtitle: "A Hermes profile with its own identity and skills.", width: 460,
+            contentPadding: 0
+        ) {
+            ScrollView {
+                BotCreationFields(draft: draft, model: model).dockPadding(20)
             }
-            .buttonStyle(.dockSecondary)
-            if showsAdvanced {
-                DockMenuPicker(
-                    "Clone from", title: roster.first { $0.id == cloneFrom }?.name ?? "Fresh profile",
-                    selection: $cloneFrom
-                ) {
-                    DockMenuOption("Fresh profile", value: "")
-                    ForEach(roster.filter { !$0.isDefault }) { bot in
-                        DockMenuOption(bot.name, value: bot.id)
-                    }
-                }
-                Toggle("Create empty (skip bundled skills)", isOn: $skipsSkills)
-                    .controlSize(.small)
+            .frame(minHeight: 160, idealHeight: 400, maxHeight: 400)
+        } footer: {
+            modalActions(
+                primaryTitle: "Create Bot", pendingTitle: "Creating…", isDisabled: !draft.canCreate(in: model),
+                isPending: model.isCreatingBot || draft.isSettingModel, onCancel: { dismiss() }
+            ) {
+                Task { await draft.create(model) }
             }
         }
+        .onChange(of: draft.finished?.id) { _, id in if id != nil { dismiss() } }
+    }
+}
+
+/// New Bot in the Bots page's chat area: a live face preview over the shared form.
+struct BotCreationPage: View {
+    @ObservedObject var model: BotModeModel
+    let onCreated: (BotSummary) -> Void
+    let onCancel: () -> Void
+    @StateObject private var draft = BotCreationDraft()
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                BotFaceMark(id: draft.slug.isEmpty ? "new-bot" : draft.slug, size: 96, animated: true)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: draft.slug)
+                BotCreationFields(draft: draft, model: model)
+                HStack(spacing: 8) {
+                    Spacer()
+                    Button("Cancel", action: onCancel)
+                        .buttonStyle(.dockSecondary)
+                        .keyboardShortcut(.cancelAction)
+                    Button(model.isCreatingBot || draft.isSettingModel ? "Creating…" : "Create Bot") {
+                        Task { await draft.create(model) }
+                    }
+                    .buttonStyle(.dockPrimary)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!draft.canCreate(in: model))
+                }
+                .dockButtonSize(.compact)
+            }
+            .frame(maxWidth: 440)
+            .dockPadding(.horizontal, 24)
+            .dockPadding(.vertical, 40)
+            .frame(maxWidth: .infinity)
+        }
+        .onChange(of: draft.finished?.id) { _, _ in if let bot = draft.finished { onCreated(bot) } }
     }
 }
 

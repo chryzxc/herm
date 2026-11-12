@@ -343,6 +343,20 @@ final class BotService {
         return .applied
     }
 
+    /// Pins only the model; `profiles.configure` leaves the sections it is not sent untouched.
+    func setModel(profileID: String, provider: String, model: String, confirmExpensiveModel: Bool) async throws
+        -> BotProfileEditOutcome
+    {
+        var params: [String: Any] = ["name": profileID, "provider": provider, "model": model]
+        if confirmExpensiveModel { params["confirm_expensive_model"] = true }
+        let result = try await client.request(HermesFeatureIDs.ID.profilesConfigure.rawValue, params: params)
+        if (result["confirm_required"] as? Bool) == true, let message = result["confirm_message"] as? String {
+            return .needsConfirmation(message)
+        }
+        if (result["ok"] as? Bool) == false { throw ParseError.sectionsFailed(["model"]) }
+        return .applied
+    }
+
     func duplicate(profileID: String, newName: String, title: String?) async throws {
         _ = try await client.request(
             HermesFeatureIDs.ID.profilesCreate.rawValue, params: ["name": newName, "clone_from": profileID])
@@ -1128,6 +1142,30 @@ final class BotModeModel: ObservableObject {
     func modelOptions(for bot: BotSummary) async -> [(provider: String, models: [String])] {
         guard capabilityAvailable, let service else { return [] }
         return (try? await service.modelOptions(profileID: bot.id)) ?? []
+    }
+
+    /// Models a new bot can start on: the clone source's, else the default profile's.
+    func newBotModelOptions(cloneFrom: String) async -> [(provider: String, models: [String])] {
+        guard capabilityAvailable, let service else { return [] }
+        let source = cloneFrom.isEmpty ? (bots.first(where: \.isDefault)?.id ?? "default") : cloneFrom
+        return (try? await service.modelOptions(profileID: source)) ?? []
+    }
+
+    func setModel(profileID: String, provider: String, model: String, confirm: Bool) async -> ProfileEditResult {
+        guard capabilityAvailable, let service else { return .failed("Bot Mode is unavailable.") }
+        do {
+            switch try await service.setModel(
+                profileID: profileID, provider: provider, model: model, confirmExpensiveModel: confirm)
+            {
+            case .applied:
+                await refreshNow()
+                return .applied
+            case .needsConfirmation(let message):
+                return .needsConfirmation(message)
+            }
+        } catch {
+            return .failed(Self.mutationDiagnostic(for: error, noun: "set the model"))
+        }
     }
 
     /// `failed` must never be presented to the user as a model confirmation.

@@ -177,6 +177,7 @@ struct SessionNavProjectList: View {
     let creatingProjectPath: String?
     let onSelectSession: (HermesSession) -> Void
     let onRefresh: () -> Void
+    let navigationState: SessionNavigationState
     let onAddProject: () -> Void
     let onArchiveProject: (String) -> Void
     let onAddSourceFolder: (String, String) -> Void
@@ -206,6 +207,7 @@ struct SessionNavProjectList: View {
                 action: onRefresh
             )
         }
+        .sessionRailReorder(.projects, state: navigationState)
         .dockPadding(.top, style.sectionSpacing)
         .dockPadding(.bottom, isExpanded ? 2 : 0)
 
@@ -491,7 +493,7 @@ struct SessionNavBotSessionRow: View, Equatable {
             }
             .frame(width: 20, height: 18)
             BotAvatarView(bot: bot, imageData: imageData, size: 30, mood: mood, orbits: session.isWorking)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DockSidebarListMetrics.titleToPreview) {
                 HStack(spacing: 6) {
                     Text(bot.name)
                         .dockFont(.navigation)
@@ -563,7 +565,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     @FocusState private var titleFieldFocused: Bool
     @FocusState private var rowFocused: Bool
 
-    private static let rowHeight: CGFloat = 30
+    private static let rowHeight = DockSidebarListMetrics.sessionRowHeight
 
     @ObservedObject private var sessionPanes = SessionPaneStore.shared
 
@@ -610,7 +612,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
             statusIndicator
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DockSidebarListMetrics.titleToPreview) {
                 titleLine
                 if !isEditingTitle, session.sourceBadgeTitle != nil || repository != nil || preview != nil {
                     HStack(spacing: 6) {
@@ -641,17 +643,17 @@ struct SessionNavSidebarSessionRow: View, Equatable {
                 }
             }
         }
-        .dockPadding(.leading, 2)
-        .dockPadding(.trailing, 4)
-        .dockPadding(.vertical, 5)
+        .dockPadding(.leading, DockSidebarListMetrics.rowLeading)
+        .dockPadding(.trailing, DockSidebarListMetrics.rowTrailing)
+        .dockPadding(.vertical, DockSidebarListMetrics.rowVertical)
         .frame(minHeight: Self.rowHeight)
         .background(
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).fill(rowFill)
         )
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
-        // The rail stacks rows flush; 2pt each side keeps adjacent highlighted rows apart
-        // (4pt, matching the Bots list spacing).
-        .dockPadding(.vertical, 2)
+        // The rail stacks rows flush; the gap keeps adjacent highlighted rows apart,
+        // the same spacing the Bots list uses (`DockSidebarListMetrics`).
+        .dockPadding(.vertical, DockSidebarListMetrics.rowGap)
         // rowFill already tracks hover; a second hover tracker doubled the work per row while scrolling.
         .onTapGesture { if !isEditingTitle { onSelect(session) } }
         .sessionPaneDraggable(SessionPaneDrag(session: session), isEnabled: !isEditingTitle)

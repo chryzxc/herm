@@ -146,6 +146,16 @@ extension DockPopover {
                     Task { await model.refreshCurrentSession() }
                 }
             }
+            // A bot's main chat edits the bot instead: its profile editor opens as a workspace tab.
+            if fullscreenSurface == .bots, openGroupRoom == nil,
+                let bot = botMode.botsByID[model.activeBotProfileID ?? ""]
+            {
+                Button("Bot settings", icon: .gear) {
+                    SessionMessageTabs.shared.open(.botSettings(bot), in: WorkspaceIdentity.session(model))
+                    if !inspectorPanelIsVisible { toggleInspectorPanel() }
+                }
+                Divider()
+            }
             // Bots shows each Bot's main chat, which can't be pinned, renamed or hidden.
             if fullscreenSurface != .bots, let session = currentSession {
                 let pinned = model.isSessionPinned(session.id)
@@ -582,7 +592,11 @@ extension DockPopover {
                         )
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: DockSidebarListMetrics.listRowInset, leading: DockSidebarListMetrics.listInset,
+                                bottom: DockSidebarListMetrics.listRowInset,
+                                trailing: DockSidebarListMetrics.listInset))
                     }
                 }
                 .listStyle(.plain)

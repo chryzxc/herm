@@ -305,17 +305,17 @@ struct ConversationMessageRow: View, Equatable {
                         SessionBotParticipants.authorID(message, activeProfileID: activeBotProfileID)
                     if let botProfileID = attributedBotID {
                         let bot = botsByID[botProfileID]
-                        HStack(spacing: 7) {
+                        HStack(spacing: 9) {
                             if let bot {
                                 BotAvatarView(
                                     bot: bot,
                                     imageData: avatarImages[bot.id],
-                                    size: 24,
+                                    size: 32,
                                     mood: isStreamingMessage ? streamingMood : nil,
                                     orbits: isStreamingMessage
                                 )
                             } else {
-                                BotFaceMark(id: botProfileID, size: 24, animated: true)
+                                BotFaceMark(id: botProfileID, size: 32, animated: true)
                             }
                             let requester =
                                 message.isBotHandoffReply
