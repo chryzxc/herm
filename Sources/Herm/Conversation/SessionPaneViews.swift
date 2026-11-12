@@ -400,6 +400,55 @@ private struct SessionPaneTab: View {
     }
 }
 
+/// A group chat opened from Bots has no columns yet. Dropping a session on it makes the room
+/// the first column's tab and opens the session as a tab or new column beside it, like any chat.
+struct SessionPaneRoomDrop: ViewModifier {
+    let store: SessionPaneStore
+    let room: GroupRoom
+    let headerHeight: CGFloat
+    /// The room now lives in the columns; the caller stops showing it on its own.
+    let onAdopted: () -> Void
+    @State private var target: SessionPaneTarget?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        GeometryReader { geometry in
+            let zone = SessionPaneStore.newColumnZone(columnCount: 1)
+            content
+                .overlay {
+                    if let target {
+                        HStack(spacing: 0) {
+                            SessionPaneDropHint(title: "Add as tab", icon: .plus, isActive: target == .tab(0))
+                                .frame(width: geometry.size.width * (1 - zone))
+                            SessionPaneDropHint(
+                                title: "New column", icon: .columnsPlusRight, isActive: target != .tab(0)
+                            )
+                            .frame(width: geometry.size.width * zone)
+                        }
+                        .dockPadding(.top, headerHeight)
+                    }
+                }
+                .onDrop(
+                    of: [SessionPaneDrag.pasteboardType.rawValue],
+                    delegate: SessionPaneDropDelegate(
+                        store: store, width: geometry.size.width, fractions: [], reduceMotion: reduceMotion,
+                        target: $target,
+                        prepare: {
+                            store.open(SessionPaneDrag(room: room).destination, target: .tab(0))
+                            onAdopted()
+                        }))
+        }
+    }
+}
+
+extension View {
+    func sessionPaneRoomDrop(
+        store: SessionPaneStore, room: GroupRoom, headerHeight: CGFloat, onAdopted: @escaping () -> Void
+    ) -> some View {
+        modifier(SessionPaneRoomDrop(store: store, room: room, headerHeight: headerHeight, onAdopted: onAdopted))
+    }
+}
+
 /// A drop zone. Idle zones are a small solid pill; the hovered zone is a dashed outline
 /// over its column, whose chat the row masks away while hovered.
 private struct SessionPaneDropHint: View {
@@ -455,44 +504,54 @@ private struct SessionPanelView<Header: View>: View {
         chat = panel.chat
     }
 
+    private var tabStrip: some View {
+        SessionPaneTabStrip(
+            tabs: SessionPaneTabStrip.items(
+                panel: panel, store: store, liveTitle: chat.conversation?.currentSessionTitle))
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            header(
-                AnyView(
-                    SessionPaneTabStrip(
-                        tabs: SessionPaneTabStrip.items(
-                            panel: panel, store: store, liveTitle: chat.conversation?.currentSessionTitle))))
-            content.frame(maxHeight: .infinity)
+        if let roomID = panel.selected?.groupRoomID, let bots = router?.bots {
+            // The tab names the room; its thread and room actions sit at the tab row's trailing
+            // edge, where a bot chat keeps its menu.
+            GroupChatView(
+                store: bots.groupChats, botMode: bots, roomID: roomID, metrics: metrics,
+                toolbar: { _, actions in
+                    AnyView(
+                        header(
+                            AnyView(
+                                HStack(spacing: 4) {
+                                    tabStrip
+                                    Spacer(minLength: 8)
+                                    actions
+                                })))
+                }
+            ) {
+                store.closeTab(panel.selectedID ?? "", in: panel.id)
+            } onOpenRoom: { id in
+                // A group edited into a new one opens as a tab beside this room.
+                guard let room = bots.groupChats.rooms.first(where: { $0.id == id }),
+                    let index = store.panels.firstIndex(where: { $0.id == panel.id })
+                else { return }
+                store.open(SessionPaneDrag(room: room).destination, target: .tab(index))
+            }
+            .id(roomID)
+        } else {
+            VStack(spacing: 0) {
+                header(AnyView(tabStrip))
+                Group {
+                    if panel.selected?.groupRoomID != nil {
+                        DockLoadingState(title: "Loading group chat…")
+                    } else {
+                        sessionContent
+                    }
+                }
+                .frame(maxHeight: .infinity)
+            }
         }
     }
 
     @Environment(\.chatContextRouter) private var router
-
-    @ViewBuilder
-    private var content: some View {
-        if let roomID = panel.selected?.groupRoomID {
-            if let bots = router?.bots {
-                GroupChatView(
-                    store: bots.groupChats, botMode: bots, roomID: roomID, metrics: metrics,
-                    // The tab names the room; its thread and room actions keep a slim bar.
-                    toolbar: { _, actions in
-                        AnyView(
-                            HStack {
-                                Spacer(minLength: 0)
-                                actions
-                            }
-                            .dockPadding(.horizontal, 8)
-                            .frame(height: 32))
-                    }
-                ) { store.closeTab(panel.selectedID ?? "", in: panel.id) }
-                .id(roomID)
-            } else {
-                DockLoadingState(title: "Loading group chat…")
-            }
-        } else {
-            sessionContent
-        }
-    }
 
     @ViewBuilder
     private var sessionContent: some View {

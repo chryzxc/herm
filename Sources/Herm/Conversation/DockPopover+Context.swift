@@ -407,6 +407,7 @@ extension DockPopover {
             style: DockThemePalette(theme: dockThemeStore.selectedThemeID),
             usesWindowChrome: usesWindowChrome,
             openRoomID: $openGroupRoomID,
+            isCreatingBot: $isCreatingBot,
             isCollapsed: chatListCollapsed,
             onShowSessions: startNewConversation,
             // Stays on Bots: the rail keeps Bots selected while the chat changes.
@@ -420,7 +421,7 @@ extension DockPopover {
     func toolbarIdentity(style: DockThemePalette) -> some View {
         if fullscreenSurface == .bots, let bot = botMode.botsByID[model.activeBotProfileID ?? ""] {
             HStack(spacing: 8) {
-                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 24)
+                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 30)
                 Text(bot.name)
                     .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(style.primaryText)
@@ -441,6 +442,7 @@ extension DockPopover {
         if let bot {
             UserDefaults.standard.set(bot.id, forKey: BotChatsOrdering.lastBotKey)
             openGroupRoomID = ""
+            isCreatingBot = false
             model.resumeBotChat(bot)
         }
     }

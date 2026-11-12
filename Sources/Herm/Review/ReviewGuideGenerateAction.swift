@@ -35,7 +35,14 @@ private struct ReviewGuideReviewerMenu: View {
                 DockMenuSection("Reviewer · new conversation") {
                     Button("Default bot") { generate(nil) }
                     ForEach(bots.bots.filter { !$0.isHidden && !$0.isDefault }) { bot in
-                        Button(bot.name) { generate(bot.id) }
+                        Button {
+                            generate(bot.id)
+                        } label: {
+                            HStack(spacing: 8) {
+                                BotMenuAvatar(bot: bot)
+                                Text(bot.name)
+                            }
+                        }
                     }
                 }
             } label: {

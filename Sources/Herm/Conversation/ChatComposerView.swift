@@ -649,32 +649,15 @@ struct ChatComposerView: View {
                             .dockPadding(.top, 2)
                     }
                 }
-                .dockPadding(.leading, 6)
-                .dockPadding(.trailing, 8)
-                .dockPadding(.top, 6)
-                .dockPadding(.bottom, 6)
-                .modifier(
-                    ComposerInputSurface(
-                        isFocused: isComposerFocused, isRecording: speechInput.isRecording, isPulsing: isComposerPulsing
-                    ))
+                .composerCard(
+                    isFocused: isComposerFocused, isRecording: speechInput.isRecording, isPulsing: isComposerPulsing)
 
                 if let worktreeBar { worktreeBar.dockPadding(.vertical, 2) }
             }
-            .background {
-                let skin = DockSkinPresentation.current
-                if skin.composer != .line {
-                    Color.clear.dockWell(.sunken, radius: skin.composerRadius, role: .pane, stroke: .dockBorderLight)
-                }
-            }
-            // Without a folder bar, keep its 32pt (28 + 2×2) so the input sits at the same height
-            // either way, e.g. across split columns. The stack's 6pt spacing makes up the rest.
-            if worktreeBar == nil { Color.clear.frame(height: 22).dockPadding(.vertical, 2).accessibilityHidden(true) }
+            .composerTray()
+            if worktreeBar == nil { ComposerFolderBarSlot() }
         }
-        .dockPadding(.horizontal, metrics.composerInset)
-        .dockPadding(.top, metrics.composerTopInset)
-        .dockPadding(.bottom, metrics.composerBottomInset)
-        .frame(maxWidth: metrics.composerMaxWidth)
-        .frame(maxWidth: .infinity)
+        .composerColumn(metrics)
     }
 
     private var composerModelPicker: some View {

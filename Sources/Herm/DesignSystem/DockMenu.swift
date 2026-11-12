@@ -113,12 +113,15 @@ struct DockMenuSection<Content: View>: View {
 struct DockMenuCheckRow: View {
     let title: String
     let isSelected: Bool
+    /// Sits between the check column and the title, e.g. a bot's avatar.
+    var leading: AnyView?
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 DockIcon(.check, size: 12, color: Color.dockPrimaryText).opacity(isSelected ? 1 : 0).frame(width: 14)
+                leading
                 Text(title).lineLimit(1)
             }
         }
@@ -129,15 +132,19 @@ struct DockMenuCheckRow: View {
 struct DockMenuOption<Value: Hashable>: View {
     let title: String
     let value: Value
+    let leading: AnyView?
     @Environment(\.dockMenuSelection) private var selection
 
-    init(_ title: String, value: Value) {
+    init(_ title: String, value: Value, leading: AnyView? = nil) {
         self.title = title
         self.value = value
+        self.leading = leading
     }
 
     var body: some View {
-        DockMenuCheckRow(title: title, isSelected: selection?.isSelected(AnyHashable(value)) ?? false) {
+        DockMenuCheckRow(
+            title: title, isSelected: selection?.isSelected(AnyHashable(value)) ?? false, leading: leading
+        ) {
             selection?.select(AnyHashable(value))
         }
     }

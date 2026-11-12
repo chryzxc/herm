@@ -622,7 +622,19 @@ extension DockPopover {
 
     func conversationColumn(inspector: AnyView?) -> some View {
         VStack(spacing: 0) {
-            if fullscreenSurface == .bots, let room = openGroupRoom {
+            if fullscreenSurface == .bots, isCreatingBot {
+                conversationToolbar(
+                    identity: AnyView(
+                        Text("New Bot")
+                            .dockFont(.navigation, weight: .semibold)
+                            .dockPadding(.horizontal, 8)),
+                    groupActions: nil)
+                BotCreationPage(model: botMode) { bot in
+                    openBotsPage(with: bot)
+                } onCancel: {
+                    isCreatingBot = false
+                }
+            } else if fullscreenSurface == .bots, let room = openGroupRoom {
                 GroupChatView(
                     store: botMode.groupChats, botMode: botMode, roomID: room.id, metrics: conversationMetrics,
                     toolbar: { identity, actions in
@@ -630,8 +642,14 @@ extension DockPopover {
                     }
                 ) {
                     openGroupRoomID = ""
+                } onOpenRoom: {
+                    openGroupRoomID = $0
                 }
                 .id(room.id)
+                .sessionPaneRoomDrop(
+                    store: sessionPanes, room: room,
+                    headerHeight: usesWindowChrome ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight
+                ) { openGroupRoomID = "" }
             } else {
                 // Chat, Talk, PRs and Issues render per column; explorer and source control
                 // (and immersive Talk) still take the whole workspace.

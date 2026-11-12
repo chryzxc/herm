@@ -1410,7 +1410,7 @@ private struct AutomationCreationSheet: View {
                                 DockMenuPicker(
                                     title: bots.first { $0.id == botID }?.name ?? "Choose…", selection: $botID
                                 ) {
-                                    ForEach(bots) { bot in DockMenuOption(bot.name, value: bot.id) }
+                                    ForEach(bots) { DockMenuOption(bot: $0) }
                                 }
                             }
                         }

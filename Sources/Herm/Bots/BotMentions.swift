@@ -36,6 +36,17 @@ enum BotMentions {
         revision &+= 1
     }
 
+    /// The cached avatar upload for a bot id, for views that only hold a `BotSummary`.
+    static func avatar(_ botID: String) -> Data? { avatars[botID] }
+
+    /// The bot whose main chat `sessionID` is, with its avatar, for previews that only carry a session.
+    static func mainChatBot(_ sessionID: String) -> (bot: BotSummary, avatar: Data?)? {
+        guard mainChatSessionIDs.contains(sessionID),
+            let bot = botsByID.values.first(where: { $0.chat?.sessionID == sessionID })
+        else { return nil }
+        return (bot, avatars[bot.id])
+    }
+
     private static func index(_ bots: [BotSummary]) -> [String: BotSummary] {
         var index: [String: BotSummary] = [:]
         for bot in bots { index[bot.name.lowercased()] = bot }
@@ -147,5 +158,21 @@ extension Text {
             value.startIndex,
             offsetBy: plain.distance(from: plain.startIndex, to: String.Index(utf16Offset: cursor, in: plain)))
         return text + Text(AttributedString(value[tail...]))
+    }
+}
+
+/// A bot's avatar sized for a menu row: wherever a bot's name is listed, its face sits beside it.
+struct BotMenuAvatar: View {
+    let bot: BotSummary
+
+    var body: some View {
+        BotAvatarView(bot: bot, imageData: BotMentions.avatar(bot.id), size: 18, animated: false)
+    }
+}
+
+extension DockMenuOption where Value == String {
+    /// A bot choice, keyed by profile id, with its avatar beside its name.
+    init(bot: BotSummary) {
+        self.init(bot.name, value: bot.id, leading: AnyView(BotMenuAvatar(bot: bot)))
     }
 }

@@ -13,6 +13,16 @@ struct SessionDataPreviewView: View {
                 SessionMessageTabView(message: message, model: model)
             } else if case .file(let url) = content {
                 FilePreviewPane(url: url, model: model)
+            } else if case .botSettings(let captured) = content {
+                BotProfileEditorSheet(
+                    model: botMode, bot: botMode.botsByID[captured.id] ?? captured,
+                    onDone: {
+                        Task {
+                            await botMode.refreshNow(force: true)
+                            await botMode.loadAvatars()
+                            await botMode.loadRuntimeConfigs(force: true)
+                        }
+                    }, isEmbedded: true)
             } else if case .pullRequest(let reference) = content {
                 SessionPullRequestPreview(reference: reference, onOpenChat: onOpenPullRequestChat)
             } else {
@@ -31,7 +41,7 @@ struct SessionDataPreviewView: View {
 
     @ViewBuilder private var previewContent: some View {
         switch content {
-        case .message, .file, .pullRequest: EmptyView()
+        case .message, .file, .pullRequest, .botSettings: EmptyView()
         case .bot(let captured):
             let bot = botMode.botsByID[captured.id] ?? captured
             header(bot.name, subtitle: bot.title ?? "Bot profile", icon: .robot, bot: bot)

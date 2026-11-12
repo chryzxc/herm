@@ -71,3 +71,43 @@ struct ComposerInputSurface: ViewModifier {
         }
     }
 }
+
+/// Composer chrome shared by the main chat and group chats so both inputs sit
+/// in the same spot with the same card, tray and column insets.
+extension View {
+    /// The input card: its insets and themed surface.
+    func composerCard(isFocused: Bool, isRecording: Bool = false, isPulsing: Bool = false) -> some View {
+        dockPadding(.leading, 6)
+            .dockPadding(.trailing, 8)
+            .dockPadding(.top, 6)
+            .dockPadding(.bottom, 6)
+            .modifier(ComposerInputSurface(isFocused: isFocused, isRecording: isRecording, isPulsing: isPulsing))
+    }
+
+    /// The sunken tray that joins strips (plan, queue, quote, folder bar) to the card.
+    func composerTray() -> some View {
+        background {
+            let skin = DockSkinPresentation.current
+            if skin.composer != .line {
+                Color.clear.dockWell(.sunken, radius: skin.composerRadius, role: .pane, stroke: .dockBorderLight)
+            }
+        }
+    }
+
+    /// The composer's place in the conversation column.
+    func composerColumn(_ metrics: ConversationWorkspaceMetrics) -> some View {
+        dockPadding(.horizontal, metrics.composerInset)
+            .dockPadding(.top, metrics.composerTopInset)
+            .dockPadding(.bottom, metrics.composerBottomInset)
+            .frame(maxWidth: metrics.composerMaxWidth)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+/// Holds the folder bar's 32pt (28 + 2×2) when there is none, so the input sits
+/// at the same height everywhere, e.g. across split columns and group chats.
+struct ComposerFolderBarSlot: View {
+    var body: some View {
+        Color.clear.frame(height: 22).dockPadding(.vertical, 2).accessibilityHidden(true)
+    }
+}

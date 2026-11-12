@@ -8,6 +8,9 @@ struct BotProfileEditorSheet: View {
     @ObservedObject var model: BotModeModel
     let bot: BotSummary
     let onDone: () -> Void
+    /// A session inspector tab instead of a sheet: no modal chrome, and saving
+    /// reloads the profile rather than dismissing.
+    var isEmbedded = false
     @Environment(\.dismiss) private var dismiss
 
     @State private var detail: BotProfileDetail?
@@ -20,8 +23,6 @@ struct BotProfileEditorSheet: View {
     @State private var fallbackDraft: [BotRuntimeConfig.ModelRef]?
     /// Edited reasoning/context/compress values; seeded from `runtime` on load.
     @State private var limits: BotRuntimeConfig?
-    @State private var fallbackProvider = ""
-    @State private var fallbackModel = ""
     @State private var isSaving = false
     @State private var editError: String?
     @State private var pendingConfirmMessage: String?
@@ -36,6 +37,51 @@ struct BotProfileEditorSheet: View {
     @State private var showsIntegrationSetup = false
 
     var body: some View {
+        Group {
+            if isEmbedded { embedded } else { modal }
+        }
+        .task { await load() }
+        .dockSheet(isPresented: $showsIntegrationSetup) {
+            if let client = model.integrationClient {
+                WorkflowIntegrationView(destination: IntegrationDestination(profileID: bot.id), client: client)
+            }
+        }
+        .alert(
+            "Confirm Model",
+            isPresented: Binding(get: { pendingConfirmMessage != nil }, set: { if !$0 { pendingConfirmMessage = nil } })
+        ) {
+            Button("Cancel", role: .cancel) { pendingConfirmMessage = nil }
+            Button("Use This Model") { Task { await save(confirm: true) } }
+        } message: {
+            Text(pendingConfirmMessage ?? "")
+        }
+    }
+
+    private var embedded: some View {
+        VStack(spacing: 0) {
+            if detail == nil {
+                BotEditorLoadingState().dockPadding(20)
+                Spacer(minLength: 0)
+            } else {
+                editorForm
+            }
+            Divider()
+            HStack {
+                Text("Changes apply to Hermes profile \(bot.id)")
+                    .dockFont(.metadata)
+                    .foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Button(isSaving ? "Saving…" : "Save Changes") { Task { await save(confirm: false) } }
+                    .buttonStyle(.dockPrimary)
+                    .disabled(detail == nil || isSaving)
+            }
+            .dockButtonSize(.compact)
+            .dockPadding(12)
+        }
+    }
+
+    private var modal: some View {
         DockModal(
             badge: AnyView(BotAvatarView(bot: bot, imageData: avatarPreview ?? model.avatarImages[bot.id], size: 32)),
             title: "Edit \(bot.name)",
@@ -57,21 +103,6 @@ struct BotProfileEditorSheet: View {
             }
         }
         .frame(minHeight: 480)
-        .task { await load() }
-        .dockSheet(isPresented: $showsIntegrationSetup) {
-            if let client = model.integrationClient {
-                WorkflowIntegrationView(destination: IntegrationDestination(profileID: bot.id), client: client)
-            }
-        }
-        .alert(
-            "Confirm Model",
-            isPresented: Binding(get: { pendingConfirmMessage != nil }, set: { if !$0 { pendingConfirmMessage = nil } })
-        ) {
-            Button("Cancel", role: .cancel) { pendingConfirmMessage = nil }
-            Button("Use This Model") { Task { await save(confirm: true) } }
-        } message: {
-            Text(pendingConfirmMessage ?? "")
-        }
     }
 
     private var editorForm: some View {
@@ -79,21 +110,9 @@ struct BotProfileEditorSheet: View {
             VStack(alignment: .leading, spacing: 20) {
                 modalSection("IDENTITY") {
                     avatarRow
-                    labeledField("Title") {
-                        DockTextField(
-                            "Roster title", text: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 })
-                        )
-                        .textFieldStyle(.dockGlass)
-                    }
-                    labeledField("Description") {
-                        DockTextField(
-                            "What this Bot does",
-                            text: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }),
-                            axis: .vertical
-                        )
-                        .lineLimit(2...5)
-                        .textFieldStyle(.dockGlass)
-                    }
+                    BotIdentityFields(
+                        role: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 }),
+                        purpose: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }))
                 }
                 modalSection("MODELS") { modelCard }
                 modalSection("PERSONA") { soulRow }
@@ -205,43 +224,23 @@ struct BotProfileEditorSheet: View {
         }
     }
 
-    /// Primary pin (editable) plus the profile's read-only runtime facts.
+    /// The shared model card, plus this profile's reasoning and context limits.
     private var modelCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                factRow("Primary") {
-                    if let pinned = detail?.model, !pinned.isEmpty {
-                        modelText(pinned, provider: detail?.provider)
-                    } else {
-                        Text("Inherited from launch profile").foregroundStyle(Color.dockSecondaryText)
-                    }
-                }
-                Button(isChangingModel ? "Keep" : "Change") { withAnimation { isChangingModel.toggle() } }
-                    .buttonStyle(.dockSecondary)
-                    .controlSize(.small)
-            }
-            .dockPadding(.vertical, 8)
-            if isChangingModel {
-                HStack(spacing: 8) {
-                    DockMenuPicker(
-                        title: selectedProvider.isEmpty ? "Provider…" : selectedProvider,
-                        selection: clearingModel($selectedProvider, $selectedModel)
-                    ) {
-                        DockMenuOption("Provider…", value: "")
-                        ForEach(modelChoices, id: \.provider) { choice in
-                            DockMenuOption(choice.provider, value: choice.provider)
-                        }
-                    }
-                    DockMenuPicker(title: selectedModel.isEmpty ? "Model…" : selectedModel, selection: $selectedModel) {
-                        DockMenuOption("Model…", value: "")
-                        ForEach(availableModels, id: \.self) { DockMenuOption($0, value: $0) }
-                    }
-                }
-                .labelsHidden()
-                .dockPadding(.bottom, 8)
-            }
-            Divider()
-            fallbackSection
+        BotModelCard(
+            choices: modelChoices,
+            primary: Binding(
+                get: {
+                    selectedModel.isEmpty ? nil : .init(provider: selectedProvider, model: selectedModel)
+                },
+                set: {
+                    selectedProvider = $0?.provider ?? ""
+                    selectedModel = $0?.model ?? ""
+                    isChangingModel = true
+                }),
+            unsetTitle: "Launch profile default", offersUnset: false,
+            fallbacks: Binding(get: { fallbacks }, set: { fallbackDraft = $0 }),
+            fallbacksEditable: runtime != nil
+        ) {
             Divider()
             HStack(spacing: 0) {
                 factRow("Reasoning") {
@@ -269,19 +268,8 @@ struct BotProfileEditorSheet: View {
                             Self.compressPresets, current: limits?.compressionThreshold, zero: "Default"))
                 }
             }
+            .dockPadding(.horizontal, 12)
         }
-        .dockPadding(.horizontal, 12)
-        .background(cardBackground)
-    }
-
-    /// A model belongs to its provider, so switching provider drops the old pick.
-    private func clearingModel(_ provider: Binding<String>, _ model: Binding<String>) -> Binding<String> {
-        Binding(
-            get: { provider.wrappedValue },
-            set: {
-                if $0 != provider.wrappedValue { model.wrappedValue = "" }
-                provider.wrappedValue = $0
-            })
     }
 
     private static let reasoningLevels = ["", "minimal", "low", "medium", "high", "xhigh"]
@@ -307,72 +295,6 @@ struct BotProfileEditorSheet: View {
 
     private var fallbacks: [BotRuntimeConfig.ModelRef] { fallbackDraft ?? runtime?.fallbacks ?? [] }
 
-    private var fallbackSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                factRow("Fallback") {
-                    if fallbacks.isEmpty {
-                        Text(runtime == nil ? "—" : "None").foregroundStyle(Color.dockMetadataText)
-                    } else {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(Array(fallbacks.enumerated()), id: \.offset) { index, ref in
-                                HStack(spacing: 6) {
-                                    Text("\(index + 1).").dockFont(
-                                        .compactStatus, weight: .regular, design: .monospaced
-                                    ).foregroundStyle(Color.dockMetadataText)
-                                    modelText(ref.model, provider: ref.provider)
-                                    Spacer()
-                                    if fallbackDraft != nil {
-                                        Button("Remove", role: .destructive) { fallbackDraft?.remove(at: index) }
-                                            .buttonStyle(.dockSecondary)
-                                            .controlSize(.mini)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if fallbackDraft == nil {
-                    Button("Edit") { withAnimation { fallbackDraft = runtime?.fallbacks ?? [] } }
-                        .buttonStyle(.dockSecondary)
-                        .controlSize(.small)
-                        .disabled(runtime == nil)
-                }
-            }
-            .dockPadding(.vertical, 8)
-            if fallbackDraft != nil {
-                HStack(spacing: 8) {
-                    DockMenuPicker(
-                        title: fallbackProvider.isEmpty ? "Provider…" : fallbackProvider,
-                        selection: clearingModel($fallbackProvider, $fallbackModel)
-                    ) {
-                        DockMenuOption("Provider…", value: "")
-                        ForEach(modelChoices, id: \.provider) { DockMenuOption($0.provider, value: $0.provider) }
-                    }
-                    DockMenuPicker(title: fallbackModel.isEmpty ? "Model…" : fallbackModel, selection: $fallbackModel) {
-                        DockMenuOption("Model…", value: "")
-                        ForEach(modelChoices.first { $0.provider == fallbackProvider }?.models ?? [], id: \.self) {
-                            DockMenuOption($0, value: $0)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                    Button("Add") {
-                        let ref = BotRuntimeConfig.ModelRef(provider: fallbackProvider, model: fallbackModel)
-                        if !fallbacks.contains(where: { $0.provider == ref.provider && $0.model == ref.model }) {
-                            fallbackDraft?.append(ref)
-                        }
-                        fallbackModel = ""
-                    }
-                    .buttonStyle(.dockSecondary)
-                    .controlSize(.small)
-                    .disabled(fallbackProvider.isEmpty || fallbackModel.isEmpty)
-                }
-                .labelsHidden()
-                .dockPadding(.bottom, 8)
-            }
-        }
-    }
-
     private func factRow<Value: View>(_ label: String, @ViewBuilder value: () -> Value) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label).dockFont(.compactStatus, weight: .medium).foregroundStyle(Color.dockMetadataText)
@@ -380,16 +302,6 @@ struct BotProfileEditorSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .dockPadding(.vertical, 9)
-    }
-
-    private func modelText(_ model: String, provider: String?) -> some View {
-        HStack(spacing: 6) {
-            Text(model).dockFont(.body, weight: .semibold, design: .monospaced)
-            if let provider, !provider.isEmpty {
-                Text(provider).dockFont(.compactStatus, weight: .regular).foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1).truncationMode(.middle)
-            }
-        }
     }
 
     static func tokens(_ count: Int) -> String {
@@ -436,10 +348,6 @@ struct BotProfileEditorSheet: View {
     }
     private var mcpBinding: Binding<[BotToggleItem]> {
         Binding(get: { detail?.mcpServers ?? [] }, set: { detail?.mcpServers = $0 })
-    }
-
-    private var availableModels: [String] {
-        modelChoices.first { $0.provider == selectedProvider }?.models ?? []
     }
 
     private func toggleSection(items: Binding<[BotToggleItem]>) -> some View {
@@ -535,7 +443,7 @@ struct BotProfileEditorSheet: View {
             current.model = nil
         } else {
             guard !selectedProvider.isEmpty, !selectedModel.isEmpty else {
-                editError = "Choose both a provider and a model, or tap Keep."
+                editError = "Choose a primary model."
                 return
             }
             current.provider = selectedProvider.isEmpty ? nil : selectedProvider
@@ -593,7 +501,16 @@ struct BotProfileEditorSheet: View {
         }
 
         onDone()
-        dismiss()
+        if isEmbedded {
+            pendingAvatarData = nil
+            clearsAvatar = false
+            isChangingModel = false
+            fallbackDraft = nil
+            editError = nil
+            await load()
+        } else {
+            dismiss()
+        }
     }
 }
 
@@ -684,7 +601,7 @@ struct BotRoutineFormSheet: View {
                     DockMenuPicker(
                         title: bots.first { $0.id == selectedProfile }?.name ?? "Choose…", selection: $selectedProfile
                     ) {
-                        ForEach(bots) { bot in DockMenuOption(bot.name, value: bot.id) }
+                        ForEach(bots) { DockMenuOption(bot: $0) }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .dockPadding(.horizontal, 10)

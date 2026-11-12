@@ -19,9 +19,7 @@ struct HermesVaultSettings: View {
             ) {
                 DockMenuPicker(title: scope, selection: Binding(get: { scope }, set: { selectedProfile = $0 })) {
                     DockMenuOption(scope, value: scope)
-                    ForEach(bots.filter { $0.id != scope }) { bot in
-                        DockMenuOption(bot.name, value: bot.id)
-                    }
+                    ForEach(bots.filter { $0.id != scope }) { DockMenuOption(bot: $0) }
                 }
             }
             HermesVaultPage(service: rpc?.vault(profileID: scope), profile: scope)
