@@ -37,8 +37,9 @@ struct LocalTerminalSessionTests {
         // Send actual keystrokes, including backspace and Return, through the PTY.
         terminal.sendInput(Array("printf inspector-test > result.txX\u{7f}t\r".utf8)[...])
         let result = directory.appendingPathComponent("result.txt")
+        // The shell creates the file on redirect before printf writes, so wait for the content.
         for _ in 0..<100 {
-            if FileManager.default.fileExists(atPath: result.path) { break }
+            if (try? String(contentsOf: result, encoding: .utf8)) == "inspector-test" { break }
             try await Task.sleep(for: .milliseconds(50))
         }
         #expect(try String(contentsOf: result, encoding: .utf8) == "inspector-test")
