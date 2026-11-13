@@ -24,7 +24,16 @@ extension ControlCenterModel {
     func quotaReading(for provider: String?) -> (
         snapshot: ProviderQuotaSnapshot, window: ProviderQuotaWindow, remaining: Double
     )? {
-        QuotaWorkspacePresentation.reading(providerQuotas, for: provider)
+        let quotaID = QuotaWorkspacePresentation.quotaProviderID(for: provider)
+        let pooled = providerQuotas.filter {
+            guard let credential = $0.hermesCredential, let quotaID else { return false }
+            return QuotaWorkspacePresentation.quotaProviderID(for: credential.provider) == quotaID
+        }
+        if !pooled.isEmpty {
+            let active = pooled.filter { $0.hermesCredential.map(isHermesActiveCredential) == true }
+            return QuotaWorkspacePresentation.reading(active, for: provider)
+        }
+        return QuotaWorkspacePresentation.reading(providerQuotas, for: provider)
     }
 
     /// Presentation-only invalidation for the left navigation rail. The

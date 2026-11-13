@@ -555,9 +555,8 @@ enum ChatQuotaSettingsKey {
     static let dropBanner = "hermes.chat.shows-quota-drop-banner"
 }
 
-/// The provider closest to its limit, beside the composer's context ring.
-/// Each bot may spend a different provider, so this tracks the lowest of all;
-/// clicking lists every provider.
+/// The selected provider's limiting window, beside the composer's context ring.
+/// Clicking lists every provider.
 struct ChatQuotaChip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var control: ControlCenterModel
