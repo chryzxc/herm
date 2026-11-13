@@ -86,7 +86,7 @@ struct SessionPullRequestsSurface: View {
                 Text(error)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
-                    .dockPadding(.horizontal, DockSpacing.section)
+                    .dockPadding(.horizontal, DockSpacing.tight)
                     .dockPadding(.vertical, DockSpacing.control)
             }
             ScrollView {
@@ -115,7 +115,7 @@ struct SessionPullRequestsSurface: View {
                         }
                     }
                 }
-                .dockPadding(.horizontal, 10)
+                .dockPadding(.horizontal, DockSpacing.tight)
                 .dockPadding(.vertical, 6)
             }
         }
@@ -131,7 +131,7 @@ struct SessionPullRequestsSurface: View {
             }
         }
         .dockFont(.body)
-        .dockPadding(.horizontal, DockSpacing.section)
+        .dockPadding(.horizontal, DockSpacing.tight)
         .dockPadding(.vertical, 10)
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
@@ -170,7 +170,7 @@ struct SessionIssuesSurface: View {
                         Text(error)
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockWarning)
-                            .dockPadding(.horizontal, DockSpacing.section)
+                            .dockPadding(.horizontal, DockSpacing.tight)
                             .dockPadding(.vertical, DockSpacing.control)
                     }
                     ScrollView {
@@ -198,7 +198,7 @@ struct SessionIssuesSurface: View {
                                 }
                             }
                         }
-                        .dockPadding(.horizontal, 10)
+                        .dockPadding(.horizontal, DockSpacing.tight)
                         .dockPadding(.vertical, 6)
                     }
                 }
@@ -232,7 +232,7 @@ struct SessionIssuesSurface: View {
             }
         }
         .dockFont(.body)
-        .dockPadding(.horizontal, DockSpacing.section)
+        .dockPadding(.horizontal, DockSpacing.tight)
         .dockPadding(.vertical, 10)
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
@@ -396,13 +396,16 @@ struct SessionSurfacePreviewPlaceholder: View {
     }
 }
 
-/// The composer shows the session workspace and opens other worktrees in new chats.
+/// The composer shows the session workspace and moves this chat, or a new one, to another worktree.
 struct WorktreePicker: View {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     let worktrees: [RepositoryWorktreeSummary]
     let selection: String?
     var worktreesUnavailable = false
     var onOpenWorktree: ((String) async -> Void)? = nil
+    /// Nil when the chat has no session yet; choosing a worktree then just starts there.
+    var onMoveChat: ((String) async -> Void)? = nil
+    var canMoveChat = true
     var newTask: (() async -> Void)? = nil
     @State private var isOpen = false
     @State private var isConfirmingNewTask = false
@@ -438,19 +441,13 @@ struct WorktreePicker: View {
                     WorktreeChooserPanel(
                         worktrees: worktrees, selection: selection, unavailable: worktreesUnavailable,
                         canStartTask: canStartTask,
-                        onSelect: { path in
-                            guard let onOpenWorktree else { return }
-                            isOpen = false
-                            isCreatingTask = true
-                            Task {
-                                await onOpenWorktree(path)
-                                isCreatingTask = false
-                            }
-                        },
+                        onSelect: { path in run(onOpenWorktree, path) },
                         onCreate: {
                             isOpen = false
                             DispatchQueue.main.async { isConfirmingNewTask = true }
-                        }
+                        },
+                        onMove: onMoveChat.map { _ in { path in run(onMoveChat, path) } },
+                        canMove: canMoveChat
                     )
                 }
             } else if current != nil {
@@ -474,6 +471,16 @@ struct WorktreePicker: View {
                 + (current?.headRevision.map { DockCommitPresentation.text($0, length: nil, scale: workspaceScale) }
                     ?? Text("HEAD"))
                 + Text(" in its own folder. Your draft moves to a new chat there; this chat keeps its folder.")
+        }
+    }
+
+    private func run(_ action: ((String) async -> Void)?, _ path: String) {
+        guard let action else { return }
+        isOpen = false
+        isCreatingTask = true
+        Task {
+            await action(path)
+            isCreatingTask = false
         }
     }
 
@@ -509,7 +516,12 @@ struct WorktreeChooserPanel: View {
     let canStartTask: Bool
     let onSelect: (String) -> Void
     let onCreate: () -> Void
+    /// Present when the chat has a session that can move; a row then asks
+    /// whether to move this chat or open a new one.
+    var onMove: ((String) -> Void)? = nil
+    var canMove = true
     @State private var query = ""
+    @State private var chosen: RepositoryWorktreeSummary?
 
     private var current: RepositoryWorktreeSummary? { worktrees.first { $0.path == selection } }
     private var others: [RepositoryWorktreeSummary] {
@@ -523,10 +535,24 @@ struct WorktreeChooserPanel: View {
     }
 
     var body: some View {
+        Group {
+            if let chosen {
+                WorktreeChatChoice(
+                    tree: chosen, currentName: current?.displayName, canMove: canMove,
+                    onBack: { self.chosen = nil }, onMove: { onMove?(chosen.path) },
+                    onNewChat: { onSelect(chosen.path) })
+            } else {
+                list
+            }
+        }
+        .frame(width: 340, height: 440)
+    }
+
+    private var list: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Worktrees").dockFont(.rowTitle, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                Text("Choose a worktree to start a new chat.")
+                Text(onMove == nil ? "Choose a worktree for this chat." : "Move this chat or start a new one.")
                     .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
             }
             .dockPadding(.horizontal, 14)
@@ -536,7 +562,7 @@ struct WorktreeChooserPanel: View {
             if let current {
                 HStack(alignment: .center, spacing: 8) {
                     DockIcon(.check, size: 12, color: .dockSecondaryText).frame(width: 16)
-                    worktreeDetails(current)
+                    Self.worktreeDetails(current)
                     Spacer(minLength: 8)
                     Text("Current").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
                 }
@@ -570,7 +596,7 @@ struct WorktreeChooserPanel: View {
                     } else {
                         ForEach(others) { tree in
                             Button {
-                                onSelect(tree.path)
+                                if onMove == nil { onSelect(tree.path) } else { chosen = tree }
                             } label: {
                                 row(tree)
                             }
@@ -602,7 +628,6 @@ struct WorktreeChooserPanel: View {
                 .dockPadding(.vertical, 10)
             }
         }
-        .frame(width: 340, height: 440)
     }
 
     private func message(_ text: String) -> some View {
@@ -610,7 +635,7 @@ struct WorktreeChooserPanel: View {
             .dockPadding(.horizontal, 8).dockPadding(.vertical, 10)
     }
 
-    private func worktreeDetails(_ tree: RepositoryWorktreeSummary) -> some View {
+    static func worktreeDetails(_ tree: RepositoryWorktreeSummary) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(tree.displayName).dockFont(.body, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText).lineLimit(1).truncationMode(.middle)
@@ -627,7 +652,7 @@ struct WorktreeChooserPanel: View {
             ? "Unavailable" : (changed > 0 ? "\(changed) changed" : "")
         return HStack(spacing: 8) {
             DockIcon(tree.isLocked ? .lock : .gitBranch, size: 12, color: .dockMetadataText).frame(width: 16)
-            worktreeDetails(tree)
+            Self.worktreeDetails(tree)
             if !status.isEmpty {
                 Text(status).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
             }
@@ -680,5 +705,83 @@ struct SessionListDetailTab<ListContent: View, Detail: View>: View {
                     .background(Color.dockCanvas)
                 }
             }
+    }
+}
+
+/// Second step for a chat with a session: keep this conversation or start a new one.
+struct WorktreeChatChoice: View {
+    let tree: RepositoryWorktreeSummary
+    let currentName: String?
+    let canMove: Bool
+    let onBack: () -> Void
+    let onMove: () -> Void
+    let onNewChat: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onBack) {
+                HStack(spacing: 4) {
+                    DockIcon(.caretLeft, size: 10, color: .dockMetadataText)
+                    Text("Worktrees").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                }
+                .dockPadding(.horizontal, 4)
+                .frame(height: 24)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.dockHover)
+            .help("Back to worktrees")
+            .dockPadding(.horizontal, 10)
+            .dockPadding(.top, 8)
+
+            HStack(spacing: 8) {
+                DockIcon(tree.isLocked ? .lock : .gitBranch, size: 12, color: .dockMetadataText).frame(width: 16)
+                WorktreeChooserPanel.worktreeDetails(tree)
+            }
+            .dockPadding(.horizontal, 14)
+            .dockPadding(.top, 6)
+            .dockPadding(.bottom, 12)
+            .help(tree.path)
+            .accessibilityElement(children: .combine)
+
+            Color.dockBorderLight.frame(height: DockLayout.hairline)
+            VStack(alignment: .leading, spacing: 1) {
+                option(
+                    icon: .arrowsLeftRight, title: "Move this chat here",
+                    detail: canMove
+                        ? "Keeps this conversation. The agent works here from your next message."
+                        : DockModel.sessionWorkspaceBusyMessage,
+                    action: onMove
+                )
+                .disabled(!canMove)
+                option(
+                    icon: .notePencil, title: "Start a new chat here",
+                    detail: "Your draft moves to the new chat. This chat stays in \(currentName ?? "its folder").",
+                    action: onNewChat
+                )
+            }
+            .dockPadding(.horizontal, 6)
+            .dockPadding(.vertical, 5)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func option(icon: Ph, title: String, detail: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 8) {
+                DockIcon(icon, size: 12, color: .dockMetadataText).frame(width: 16).dockPadding(.top, 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                    Text(detail).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                DockIcon(.caretRight, size: 10, color: .dockMetadataText).dockPadding(.top, 3)
+            }
+            .dockPadding(.horizontal, 8)
+            .dockPadding(.vertical, 8)
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+        }
+        .buttonStyle(.dockHover)
     }
 }

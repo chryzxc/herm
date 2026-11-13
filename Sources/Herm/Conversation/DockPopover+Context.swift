@@ -600,6 +600,7 @@ extension DockPopover {
                             onToggle: toggleInspectorPanel,
                             headerHeight: usesWindowChrome
                                 ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight,
+                            usesWindowChrome: usesWindowChrome,
                             tabRequest: $sessionInspectorTabRequest,
                             workspaceSections: [.talk] + (sessionGitHubTabsAvailable ? [.pullRequests, .issues] : []),
                             workspaceContent: inspectorWorkspaceTab,
@@ -769,9 +770,21 @@ extension DockPopover {
         activeSessionRepositoryScope?.containsGitRepository(developerWorkflow.repository) == true
     }
 
-    /// A worktree choice opens a separate session; it never changes this session's cwd.
-    func selectWorktree(_ path: String) async {
-        guard let scope = activeSessionRepositoryScope else { return }
+    /// Opens the worktree in a new chat carrying the draft; this chat keeps its folder.
+    func openWorktreeInNewChat(_ path: String) async {
+        guard await isSelectableWorktree(path) else { return }
+        model.newChatMovingDraft(projectPath: path)
+    }
+
+    /// Moves this chat to the worktree through Hermes, keeping its conversation.
+    func moveChatToWorktree(_ path: String) async {
+        guard await isSelectableWorktree(path) else { return }
+        await model.moveSessionWorkspace(to: path)
+    }
+
+    /// Re-reads the registered worktrees so a stale picker row cannot act.
+    private func isSelectableWorktree(_ path: String) async -> Bool {
+        guard let scope = activeSessionRepositoryScope else { return false }
         let owner = sessionWorkspaceIdentity
         guard let trees = await RepositoryService.worktrees(path: scope.repositoryPath),
             owner == sessionWorkspaceIdentity, activeSessionRepositoryScope == scope,
@@ -781,10 +794,9 @@ extension DockPopover {
             if owner == sessionWorkspaceIdentity, activeSessionRepositoryScope == scope {
                 model.reportAttachmentError("The worktree is unavailable. Refresh and try again.")
             }
-            return
+            return false
         }
-        guard path != scope.repositoryPath else { return }
-        model.newChatMovingDraft(projectPath: path)
+        return path != scope.repositoryPath
     }
 
     /// Branches the shown worktree into a fresh one and moves the draft to a
@@ -906,7 +918,10 @@ extension DockPopover {
             HStack(spacing: 4) {
                 // Leading like a native toolbar title; actions sit at the trailing edge.
                 if showsLeading { toolbarLeadingControls }
-                if let identity { identity } else { toolbarIdentity(style: style) }
+                Group {
+                    if let identity { identity } else { toolbarIdentity(style: style) }
+                }
+                .layoutPriority(1)
                 Spacer(minLength: 12)
                     .frame(maxHeight: .infinity)
                     .background { if usesWindowChrome { TitlebarDoubleClickArea() } }
