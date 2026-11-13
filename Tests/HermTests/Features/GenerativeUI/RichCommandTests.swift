@@ -112,6 +112,27 @@ struct RichCommandTests {
         #expect(received == [command.command])
     }
 
+    @Test func legacyShellsMoveToIndependentWorkspacesWithoutStopping() {
+        let store = TerminalWorkspaceStore()
+        let key = "migration-\(UUID())"
+        let original = store.workspace(key: key)
+        original.add(directory: FileManager.default.homeDirectoryForCurrentUser.path)
+        original.add(directory: FileManager.default.homeDirectoryForCurrentUser.path)
+        let selected = original.selected
+        let moved = original.sessions.filter { $0.id != selected.id }
+        let ids = store.separateShells(key: key) { key + ":" + $0.uuidString }
+        defer { store.shutdown() }
+        #expect(original.sessions.count == 1)
+        #expect(original.selected === selected)
+        #expect(ids.count == moved.count)
+        for (id, session) in zip(ids, moved) {
+            let destination = store.workspace(key: key + ":" + id.uuidString)
+            #expect(destination.sessions.count == 1)
+            #expect(destination.selected === session)
+        }
+        #expect(store.separateShells(key: key) { key + ":" + $0.uuidString }.isEmpty)
+    }
+
     @Test func commandsUseFreshShellsInTheChosenDirectory() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

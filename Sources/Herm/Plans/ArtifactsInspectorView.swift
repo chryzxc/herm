@@ -254,13 +254,28 @@ struct ArtifactsInspectorView: View {
 
     private var pageBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DockPageHeader(
-                title: "Artifacts",
-                subtitle: pageSummaryText,
-                onRefresh: { refreshID += 1 },
-                isRefreshing: isLoading,
-                horizontalPadding: contentHorizontalPadding
-            )
+            if sessionScope == nil {
+                DockPageHeader(
+                    title: "Artifacts",
+                    subtitle: pageSummaryText,
+                    onRefresh: { refreshID += 1 },
+                    isRefreshing: isLoading,
+                    horizontalPadding: contentHorizontalPadding
+                )
+            } else {
+                HStack(spacing: 8) {
+                    Text(pageSummaryText)
+                        .dockFont(.metadata)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    DockIconButton(
+                        icon: .arrowsClockwise, label: "Refresh artifacts", isBusy: isLoading, hasBackground: false,
+                        style: DockThemePalette(theme: DockThemeRuntime.current), action: { refreshID += 1 })
+                }
+                .dockPadding(.horizontal, contentHorizontalPadding)
+                .dockPadding(.vertical, 8)
+            }
             pageToolbar
             pageContent
         }
@@ -276,6 +291,11 @@ struct ArtifactsInspectorView: View {
                 Spacer(minLength: 0)
             }
             .frame(minWidth: 560)
+            HStack(spacing: 8) {
+                searchField
+                compactFilterMenu
+            }
+            .frame(minWidth: 340)
             VStack(alignment: .leading, spacing: 8) {
                 searchField
                 ViewThatFits(in: .horizontal) {
@@ -789,6 +809,10 @@ struct ArtifactsInspectorView: View {
         if failedSessionCount > 0 { return "\(failedSessionCount) sessions could not be read. Refresh to retry." }
         if isLoading && records.isEmpty { return "Indexing Hermes sessions…" }
         let count = records.count
+        if sessionScope != nil {
+            let summary = "\(count) \(count == 1 ? "output" : "outputs")"
+            return isLoading ? "Indexing… · \(summary)" : summary
+        }
         let sessions = Set(records.map(\.scopedSessionID)).count
         let summary =
             "\(count) \(count == 1 ? "output" : "outputs") across \(sessions) session\(sessions == 1 ? "" : "s")"

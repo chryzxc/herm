@@ -6,6 +6,18 @@ import Testing
 
 @MainActor
 struct SessionSimulatorVisualTests {
+    @Test func recoveryDetailDoesNotRepeatTitle() {
+        #expect(SessionSimulatorView.distinctRecoveryDetail("Starting device…", title: "Starting device…") == nil)
+        #expect(
+            SessionSimulatorView.distinctRecoveryDetail("Connecting to device…", title: "Connecting to device…") == nil)
+        #expect(
+            SessionSimulatorView.distinctRecoveryDetail("Finding devices…", title: "Connecting to device…")
+                == "Finding devices…")
+        #expect(
+            SessionSimulatorView.distinctRecoveryDetail("Check the bridge and retry.", title: "Connection unavailable")
+                == "Check the bridge and retry.")
+    }
+
     @Test func renderDirectTabReference() throws {
         guard let framePath = ProcessInfo.processInfo.environment["HERM_SIMULATOR_PREVIEW_IMAGE"] else { return }
         let frame: Data

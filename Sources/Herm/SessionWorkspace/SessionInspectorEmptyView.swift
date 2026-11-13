@@ -135,7 +135,7 @@ struct SessionInspectorEmptyView: View {
 
     @ViewBuilder
     private var botRows: some View {
-        DockSearchField(placeholder: "Search Bots", text: $botQuery).frame(width: 240).dockPadding(.bottom, 4)
+        DockSearchField(placeholder: "Search Bots", text: $botQuery).frame(maxWidth: .infinity).dockPadding(.bottom, 4)
         let query = botQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         let matches = query.isEmpty ? bots : bots.filter { $0.name.localizedCaseInsensitiveContains(query) }
         if matches.isEmpty { noMatches }
@@ -156,7 +156,7 @@ struct SessionInspectorEmptyView: View {
 
     @ViewBuilder
     private var sessionRows: some View {
-        DockSearchField(placeholder: "Search sessions", text: $sessionQuery).frame(width: 240)
+        DockSearchField(placeholder: "Search sessions", text: $sessionQuery).frame(maxWidth: .infinity)
             .dockPadding(.bottom, 4)
             .onChange(of: sessionQuery) { _, _ in sessionLimit = Self.sessionPage }
         let all = SessionSidebarSearch.sessions(matching: sessionQuery, in: sessions, projects: [:])

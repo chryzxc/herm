@@ -159,8 +159,7 @@ private struct RepositoryStashRow: View {
                             Text("No textual changes in this stash.").dockFont(.body).foregroundStyle(
                                 Color.dockMetadataText)
                         } else {
-                            SharedDiffView(patch: patch, path: stash.reference)
-                                .frame(maxHeight: 360)
+                            RepositoryStashDiff(patch: patch, reference: stash.reference)
                         }
                         if isTruncated {
                             Text("Diff truncated for safe display.").dockFont(.metadata).foregroundStyle(
@@ -182,5 +181,14 @@ private struct RepositoryStashRow: View {
             isTruncated = result?.isTruncated ?? false
             isLoading = false
         }
+    }
+}
+
+struct RepositoryStashDiff: View {
+    let patch: String
+    let reference: String
+
+    var body: some View {
+        SharedDiffView(patch: patch, path: reference)
     }
 }
