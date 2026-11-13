@@ -88,6 +88,7 @@ struct SessionNavQueue: View, Equatable {
         botUnreadIncomplete = result.incomplete
     }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.dockHostVisible) private var hostVisible
 
     init(
@@ -352,7 +353,7 @@ struct SessionNavQueue: View, Equatable {
                 profileHeader(style: style)
             }
             .dockPadding(.horizontal, 6)
-            .frame(height: 56)
+            .frame(height: DockWorkspaceScale.spacing(56, scale: workspaceScale))
             .overlay(alignment: .bottomLeading) {
                 if !botMode.activityBanner.isEmpty {
                     BotActivityBanner(events: botMode.activityBanner)
@@ -377,6 +378,7 @@ struct SessionNavQueue: View, Equatable {
                     .dockPadding(.horizontal, 6)
                     .dockPadding(.bottom, 8)
             }
+            .coordinateSpace(name: SessionSidebarStickyBackground.coordinateSpace)
         }
         .dockShellPane()
         .frame(maxWidth: .infinity)
@@ -588,10 +590,8 @@ struct SessionNavQueue: View, Equatable {
         // Built once per pass; rows previously rebuilt it per row (O(n²)).
         let statuses = sidebarSessionStatuses
 
-        // One flat LazyVStack: sections below emit their rows as direct
-        // children. Nested lazy stacks inside eager VStacks are not lazy, so
-        // every conversation and project row was built on each layout pass.
-        return LazyVStack(alignment: .leading, spacing: 0) {
+        // Native sections keep headers visible without geometry tracking or eager row containers.
+        return LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
             if isSearchingSessions {
                 sessionSearchResults(statuses: statuses, style: style)
             } else {
@@ -747,6 +747,12 @@ struct SessionNavQueue: View, Equatable {
             creatingProjectPath = nil
             if let createdID = model.sessionID {
                 navigationState.beginProjectChat(sessionID: createdID)
+                // Group the chat under its project now; the session index and
+                // project tree only report it after a round-trip.
+                if let stableID = model.navigationSessionID {
+                    workspaceStore.attachProject(at: projectPath, toSessionID: stableID)
+                    model.touchSession(sessionID: stableID, at: Date())
+                }
             }
             model.loadSessions()
             controlCenter.refreshProjectNavigation()
@@ -896,23 +902,31 @@ struct SessionNavQueue: View, Equatable {
         .equatable()
     }
 
-    /// Emits header and rows as siblings so the rail's LazyVStack owns them.
+    /// Section rows remain lazy; only the header is pinned by the rail.
     @ViewBuilder
     private func pinnedOutline(
         _ pinned: PinnedSessionPresentation, statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        DockSectionHeader(
-            title: "Pinned",
-            count: pinned.count,
-            isExpanded: $navigationState.arePinnedExpanded,
-            style: style
-        )
-        .sessionRailReorder(.pinned, state: navigationState)
-        .dockPadding(.top, style.sectionSpacing)
-        .dockPadding(.bottom, navigationState.arePinnedExpanded ? 2 : 0)
-
-        if navigationState.arePinnedExpanded {
-            pinnedRows(pinned, statuses: statuses, style: style)
+        Section {
+            Group {
+                if navigationState.arePinnedExpanded {
+                    pinnedRows(pinned, statuses: statuses, style: style)
+                }
+            }
+            .sessionSidebarFadesUnderStickyHeader()
+        } header: {
+            DockSectionHeader(
+                title: "Pinned",
+                count: pinned.count,
+                isExpanded: $navigationState.arePinnedExpanded,
+                style: style
+            )
+            .sessionRailReorder(.pinned, state: navigationState)
+            .frame(maxWidth: .infinity)
+            .dockPadding(.top, style.sectionSpacing)
+            .dockPadding(.bottom, navigationState.arePinnedExpanded ? 2 : 0)
+            .sessionSidebarStickyBackground()
+            .accessibilityAddTraits(.isHeader)
         }
     }
 
@@ -972,43 +986,57 @@ struct SessionNavQueue: View, Equatable {
         .equatable()
     }
 
-    /// Emits header and rows as siblings so the rail's LazyVStack owns them.
+    /// Section rows remain lazy; only the header is pinned by the rail.
     @ViewBuilder
     private func conversationOutline(
         _ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        DockSectionHeader(
-            title: "Recents",
-            count: conversations.count,
-            isExpanded: $navigationState.areConversationsExpanded,
-            style: style
-        ) {
-            if hasUnread(conversations, statuses) {
-                DockIconButton(icon: .checks, label: "Mark all as read", size: 24, style: style) {
-                    markAllSessionsRead(conversations)
-                }
-            }
-            DockIconButton(
-                icon: .arrowsClockwise,
-                label: sidebarSnapshot.inputs.isLoadingSessions ? "Refreshing conversations…" : "Refresh conversations",
-                isBusy: sidebarSnapshot.inputs.isLoadingSessions,
-                size: 24,
+        Section {
+            conversationRows(conversations, statuses: statuses, style: style)
+                .sessionSidebarFadesUnderStickyHeader()
+        } header: {
+            DockSectionHeader(
+                title: "Recents",
+                count: conversations.count,
+                isExpanded: $navigationState.areConversationsExpanded,
                 style: style
             ) {
-                model.loadSessions()
-                controlCenter.refreshProjectNavigation()
+                if hasUnread(conversations, statuses) {
+                    DockIconButton(icon: .checks, label: "Mark all as read", size: 24, style: style) {
+                        markAllSessionsRead(conversations)
+                    }
+                }
+                DockIconButton(
+                    icon: .arrowsClockwise,
+                    label: sidebarSnapshot.inputs.isLoadingSessions
+                        ? "Refreshing conversations…" : "Refresh conversations",
+                    isBusy: sidebarSnapshot.inputs.isLoadingSessions,
+                    size: 24,
+                    style: style
+                ) {
+                    model.loadSessions()
+                    controlCenter.refreshProjectNavigation()
+                }
             }
-        }
-        .sessionRailReorder(.recents, state: navigationState)
-        .dockPadding(.top, style.sectionSpacing)
-        .dockPadding(.bottom, navigationState.areConversationsExpanded ? 2 : 0)
-        .contextMenu {
-            Button("Mark all as read") {
-                markAllSessionsRead(conversations)
+            .sessionRailReorder(.recents, state: navigationState)
+            .frame(maxWidth: .infinity)
+            .dockPadding(.top, style.sectionSpacing)
+            .dockPadding(.bottom, navigationState.areConversationsExpanded ? 2 : 0)
+            .contextMenu {
+                Button("Mark all as read") {
+                    markAllSessionsRead(conversations)
+                }
+                .disabled(!hasUnread(conversations, statuses))
             }
-            .disabled(!hasUnread(conversations, statuses))
+            .sessionSidebarStickyBackground()
+            .accessibilityAddTraits(.isHeader)
         }
+    }
 
+    @ViewBuilder
+    private func conversationRows(
+        _ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
         if navigationState.areConversationsExpanded {
             if conversations.isEmpty {
                 queueEmpty(

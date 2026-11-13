@@ -143,6 +143,9 @@ final class PinnedSessionTests: XCTestCase {
         client.rows = [
             ["id": "discord", "source": " Discord ", "pinned": true],
             ["id": "slack", "source": "slack", "pinned": true],
+            ["id": "whatsapp", "source": "whatsapp", "pinned": true],
+            ["id": "cloud", "source": "whatsapp_cloud", "pinned": true],
+            ["id": "telegram", "source": "telegram", "pinned": true],
             ["id": "local", "source": "herm", "pinned": true],
             ["id": "legacy", "pinned": true],
             ["id": "other", "source": "custom_channel", "pinned": true],
@@ -152,10 +155,13 @@ final class PinnedSessionTests: XCTestCase {
         let index = try await DockModel.fetchSessionIndex(client: client, profileID: nil)
         let labels = Dictionary(uniqueKeysWithValues: index.pinned.map { ($0.id, $0.sourceBadgeTitle) })
         XCTAssertEqual(labels["discord"]!, "Discord")
-        XCTAssertNil(labels["slack"]!)
+        XCTAssertEqual(labels["slack"]!, "Slack")
+        XCTAssertEqual(labels["whatsapp"]!, "WhatsApp")
+        XCTAssertEqual(labels["cloud"]!, "WhatsApp")
+        XCTAssertEqual(labels["telegram"]!, "Telegram")
         XCTAssertNil(labels["local"]!)
         XCTAssertNil(labels["legacy"]!)
-        XCTAssertNil(labels["other"]!)
+        XCTAssertEqual(labels["other"]!, "Custom Channel")
         XCTAssertNil(labels["conversation"]!)
         XCTAssertNil(labels["project"]!)
     }

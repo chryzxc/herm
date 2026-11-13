@@ -867,7 +867,19 @@ struct HermesSession: Identifiable, Equatable {
     /// Origin comes only from Hermes metadata, never from a title or preview.
     var sourceBadgeTitle: String? {
         let value = source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return value == "discord" ? "Discord" : nil
+        switch value {
+        case "", "herm", "hermes", "local", "cli", "tui", "desktop", "web", "api", "conversation",
+            "project", "projects", "branch", "cron", "cron_output", "unknown", "subagent", "bot_room":
+            return nil
+        case "whatsapp", "whatsapp_cloud": return "WhatsApp"
+        case "bluebubbles": return "BlueBubbles"
+        case "google_chat": return "Google Chat"
+        case "teams", "msteams": return "Microsoft Teams"
+        case "sms": return "SMS"
+        default:
+            return value.replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: "-", with: " ").capitalized
+        }
     }
 
     var scopedID: ProfileScopedID { ProfileScopedID(profileID: profileID, resourceID: id) }

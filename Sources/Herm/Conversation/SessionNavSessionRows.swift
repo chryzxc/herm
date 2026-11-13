@@ -191,32 +191,39 @@ struct SessionNavProjectList: View {
 
     private let sessionLimit = 10
 
-    /// No container: header, project headers and session rows flatten into
-    /// the rail's LazyVStack so only on-screen rows are built.
+    /// Native section headers pin without wrapping the lazy project rows in a stack.
     @ViewBuilder
     var body: some View {
-        DockSectionHeader(title: "Projects", count: groups.count, isExpanded: $isExpanded, style: style) {
-            DockIconButton(
-                icon: .plus, label: "New project or add folder", size: 24, style: style, action: onAddProject)
-            DockIconButton(
-                icon: .arrowsClockwise,
-                label: isRefreshing ? "Refreshing projects…" : "Refresh projects",
-                isBusy: isRefreshing,
-                size: 24,
-                style: style,
-                action: onRefresh
-            )
-        }
-        .sessionRailReorder(.projects, state: navigationState)
-        .dockPadding(.top, style.sectionSpacing)
-        .dockPadding(.bottom, isExpanded ? 2 : 0)
-
-        if isExpanded {
-            if groups.isEmpty {
-                projectStatusRow(isLoadingProjects ? "Loading projects…" : "No projects")
-            } else {
-                ForEach(groups) { group in projectGroup(group) }
+        Section {
+            Group {
+                if isExpanded {
+                    if groups.isEmpty {
+                        projectStatusRow(isLoadingProjects ? "Loading projects…" : "No projects")
+                    } else {
+                        ForEach(groups) { group in projectGroup(group) }
+                    }
+                }
             }
+            .sessionSidebarFadesUnderStickyHeader()
+        } header: {
+            DockSectionHeader(title: "Projects", count: groups.count, isExpanded: $isExpanded, style: style) {
+                DockIconButton(
+                    icon: .plus, label: "New project or add folder", size: 24, style: style, action: onAddProject)
+                DockIconButton(
+                    icon: .arrowsClockwise,
+                    label: isRefreshing ? "Refreshing projects…" : "Refresh projects",
+                    isBusy: isRefreshing,
+                    size: 24,
+                    style: style,
+                    action: onRefresh
+                )
+            }
+            .sessionRailReorder(.projects, state: navigationState)
+            .frame(maxWidth: .infinity)
+            .dockPadding(.top, style.sectionSpacing)
+            .dockPadding(.bottom, isExpanded ? 2 : 0)
+            .sessionSidebarStickyBackground()
+            .accessibilityAddTraits(.isHeader)
         }
     }
 
@@ -617,18 +624,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
                 if !isEditingTitle, session.sourceBadgeTitle != nil || repository != nil || preview != nil {
                     HStack(spacing: 6) {
                         if let source = session.sourceBadgeTitle {
-                            HStack(spacing: 4) {
-                                DockIcon(.discordLogo, size: 12)
-                                Text(source)
-                                    .dockFont(.metadata, weight: .medium)
-                            }
-                            .foregroundStyle(Color.dockDiscord)
-                            .dockPadding(.horizontal, 6)
-                            .dockPadding(.vertical, 1)
-                            .background(Capsule().fill(Color.dockDiscord.opacity(0.16)))
-                            .fixedSize()
-                            .accessibilityLabel("Source: \(source)")
-                            .help("Session from \(source)")
+                            SessionSourcePill(title: source)
                         }
                         if let repository { repositoryPill(repository) }
                         if let preview {
