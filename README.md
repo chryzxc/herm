@@ -15,6 +15,8 @@ Glance at the notch to see what your agents are doing and how much provider allo
 
 In-chat approvals, questions, and input requests keep their actions compact; errors use the same clear callout treatment.
 
+When Hermes supplies edit previews, completed replies show a changes card with expandable file diffs. These previews can omit files or lines and are not a complete working-tree diff.
+
 While browsing chat history, prepared messages appear in order as they become ready, keeping the current reading position stable.
 
 Unread session badges and the floating “new messages” control count AI responses only. User messages, tools, activity, system notices, errors, and empty streaming placeholders do not increase the count. Opening an unread session takes you to its first unread reply and marks the captured updates reviewed; a blue-tinted unread divider remains visible for that visit. The Bot picker counts unread sessions per Bot in a red badge, with a plus sign when the available session inventory is incomplete. Scrolling to the latest reply clears the floating count.
@@ -182,7 +184,9 @@ Snooze includes approvals and failures, keeps in-app attention visible, survives
 expiry, and does not replay missed banners. Quiet periods below still apply independently.
 Use **Send test alert** and **System Settings** to check macOS permission, sound, and Focus settings.
 
-Choose **Quiet** in the Tasks header for 30 minutes, 60 minutes, or until you end it. Completions, ordinary quota changes, and informational updates enter a digest. Approvals, questions, and failures that stop work can still interrupt. The same policy controls notch announcements, pet announcement reactions, and opted-in system notifications. **Review digest** returns to the recorded sources; it stores references rather than response bodies.
+Choose the bell icon in the Tasks header for a quiet period of 30 minutes, 60 minutes, or until you end it. Hover for the current quiet status. Completions, ordinary quota changes, and informational updates enter a digest. Approvals, questions, and failures that stop work can still interrupt. The same policy controls notch announcements, pet announcement reactions, and opted-in system notifications. **Review digest** returns to the recorded sources; it stores references rather than response bodies.
+
+In the chat composer, dictation shows a live microphone waveform with controls to cancel, stop and edit, or send. Cancel preserves the draft from before dictation.
 
 Quick approval and clarification answers stay tied to their original request, session, and profile. A pending answer blocks repeated clicks. A confirmed refusal offers **Retry**; an uncertain acknowledgment offers **Check request**, which enables another answer only after Hermes confirms that request is still pending. These answers preserve the workspace draft and attachments.
 
@@ -354,8 +358,9 @@ disabled, and a blocked saved route is shown honestly. Route edits preserve addi
 Existing direct-endpoint defaults remain intact and can be edited in Hermes Agent Desktop.
 
 Herm uses one shared workspace design across every custom skin: consistent navigation,
-content hierarchy, spacing, and actions. Skins apply their colors, typography,
-geometry, materials, and motion on top. Liquid Glass is the default presentation.
+content hierarchy, spacing, actions, and macOS system font. Skins apply their colors,
+geometry, materials, and motion on top. Liquid Glass is the default presentation;
+its light appearance lets more of the backdrop show through while retaining readable text.
 See [the design specification](DESIGN.md) and [UI refinement audit](docs/ui-foundation-audit.md).
 
 Shared settings groups and integration icons now follow each skin's material and
@@ -392,7 +397,7 @@ surface reveals follow each skin’s motion style. Reduce Motion disables these
 effects, and Retro, Pixel, and E-Ink remain still.
 
 Choose from the skin gallery in **Settings → Appearance**. Every tile previews
-its own typography, material, geometry, and selection treatment. Switching skins
+its own material, geometry, and selection treatment. Switching skins
 keeps the Appearance page selected while the new skin applies immediately. The gallery
 reflows into fewer columns in narrow windows, keeping previews inside their cards. The 21 skins
 range from Hermes' desktop look (Nous blue with the etched backdrop from Hermes
@@ -428,6 +433,11 @@ Shared interface motion includes smoothly updating progress meters and section c
 
 Saved conversation images are restored from Hermes history when reopening a session, including images stored within message content.
 Reopened messages omit Hermes' appended memory recall context and reconcile confirmed sends with saved history.
+Sending means submission is in flight. Accepted means Hermes accepted the input, not that storage is confirmed;
+Queued reflects an explicit queued acknowledgment. A proven row receipt or conservative history match clears
+the status. Delivery unconfirmed offers a read-only, bounded Check status action, never automatic resend;
+a row missing from that window is inconclusive. Status appears in user-message metadata, not assistant content,
+and there is no permanent stored badge or read receipt.
 
 Recently viewed conversations can show their last loaded messages immediately while
 Herm refreshes them from Hermes. The title shows when the conversation is refreshing
@@ -441,8 +451,8 @@ status marks, timestamps, inline project pills, previews, and session actions.
 
 Workspace pages share Calendar’s top titlebar treatment, with sidebar toggles aligned
 beside the traffic lights. Chat uses three full-height panes: the session list,
-conversation, and inspector. The session title and actions stay inside
-the conversation pane; the inspector's tabs extend to the top of its own pane.
+conversation, and inspector. The session title uses the available header space,
+with actions inside the conversation pane; the inspector's tabs extend to the top of its own pane.
 The session sidebar places **New chat** above Pinned. Navigation distinguishes Chats (speech bubbles), Integrations (puzzle piece), and
 Artifacts (stacked files), while keeping the Bots ghost icon. Chats shows a small
 spinner for running sessions and a count of completed chats with unread updates
@@ -453,12 +463,18 @@ bot’s loaded Recents, including conversations under Show more. Badge calculati
 cached independently of transcript updates; status polling pauses while the
 workspace is hidden or Hermes is disconnected.
 The sidebar stacks Pinned, Recents, and Projects for the selected
-bot under its bot header.
+bot under its bot header. Each section header stays at the top of the scrolling
+list until the next section replaces it; rows remain lazily rendered.
+Background polls and runtime notifications refresh the latest history page,
+reusing older loaded sessions for up to a minute. Explicit refreshes and profile
+changes reconcile the full saved history immediately.
 One Hermes request loads recent chats for all bots.
 Startup restoration shares the sidebar's session load, so reopening the latest
 conversation preserves the complete recent list without a manual refresh.
 
-Talk, Pull requests and Issues open as inspector tabs from its **Open a new tab** grid; voice runs while the Talk tab shows. Opening the inspector in the floating desktop panel keeps the conversation visible beside it. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
+Talk, Pull requests and Issues open as inspector tabs from its **Open a new tab** grid; voice runs while the Talk tab shows. Opening the inspector in the floating desktop panel keeps the conversation visible beside it, with the inspector tab row matching the chat header. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
+
+Each Terminal inspector tab owns one shell; open another Terminal tab for a separate shell. Terminal options use a vertical-dots menu beside Previews.
 
 The session rail shows beside the transcript and composer by default; use the
 stacked-cards **Hide session rail** button beside Conversation actions to hide it. The rail and its toggle hide
@@ -488,7 +504,9 @@ Changes reflects Git status for the session's worktree. Explorer and Source Cont
 confirmed by Hermes, including linked worktrees outside the original project. Chats sharing a worktree
 share its local edits. The composer shows the folder and branch row for Git worktrees.
 In that menu, find the current worktree above a searchable list;
-choose another worktree to open a new chat there and carry over the unsent draft. **New worktree task** creates a new worktree
+choose another worktree, then **Move this chat here** to keep the conversation in that worktree, or **Start a new chat here**
+to carry the unsent draft into a new chat. Moving waits until the current turn ends, and the chat then stays in the chosen
+worktree even if the agent works in another one. A chat that has not sent anything simply starts there. **New worktree task** creates a new worktree
 and moves the draft to a new chat there. Existing terminal shells keep their folders and running commands.
 The icon has no background and highlights when the rail is open. Its floating
 cards sit over the same continuous conversation background, with the conversation's
@@ -510,7 +528,7 @@ its full width.
 
 Session list spinners follow Hermes’ live execution state and refresh every ten seconds while the sidebar is visible, including unopened sessions for the selected bot. Recent writes alone do not indicate running work; the next live refresh clears missed completion events.
 
-The empty chat centers the orb, introductory text, and composer together. Once a message appears, the welcome fades and the composer moves to the bottom. Transitions respect Reduce Motion and motion-free skins.
+The empty chat centers the orb, introductory text, and composer together. Once a message appears, the welcome fades in place and the composer glides to the bottom. Transitions respect Reduce Motion and motion-free skins.
 
 Every third-panel tab can be closed, including the last one. With no tabs open, launch cards open Browser, Terminal, Explorer, Artifacts, Source Control, or Timeline; the **+** menu and **Command-Shift-T** remain available.
 
@@ -518,11 +536,12 @@ Tab close buttons have full-height click targets. Hover a tab’s icon or name t
 
 Inspector tab hover expansion uses a leading-aligned row without width animation. Drag previews carry the whole tab, including its icon, title, background, and close action.
 
-Session workspace tabs share a centralized 16pt horizontal inset. Artifacts avoids
-stacked header and filter padding; Browser keeps its toolbar inset while rendered
+Session workspace tabs share a centralized 16pt horizontal inset. Artifacts uses the
+tab title and a compact status, search, and filter toolbar; Browser keeps its toolbar inset while rendered
 webpages fill the available tab width, including additional browser tabs.
+Pull request, issue, and simulator tabs avoid a second outer gutter around their content.
 
-Discord sessions show a compact tinted pill with the Discord icon beside the preview. Other session sources omit the origin pill.
+Messaging sessions show a compact source pill beside the preview, including Discord, WhatsApp, Telegram, Slack, and other reported integrations. Unknown integrations use a generic icon; local sessions omit the pill.
 
 Markdown GitHub pull request and issue overview links open the shared PR or issue detail view in chat’s Pull Request or Issue inspector tab
 when that page is enabled in Settings and GitHub resolves the item. Each chat keeps
@@ -988,12 +1007,12 @@ The replying area shows the mentioned bot’s latest reported activity, includin
 The forward-message composer keeps the insertion point with newly typed text when a delayed completion update arrives.
 
 - A **Bots page** that lists every bot's main chat and group room, Messenger-style: avatar (animating while the bot works, with an unread-reply count), name, role pill, last message and time, newest first. Click a bot to open its main chat beside the list. The page reopens the bot you last opened there, else the default bot. Main chats live only here; the Chats page lists a bot's other sessions.
-- **Folders** on the Bots page group bots and group chats: drag rows in and out (folders open under a drag, spring open when collapsed and bounce as a row lands), drag folders to reorder, collapse, rename or delete them (local to Herm). The **+** menu creates a bot, a group chat or a folder; **New Bot** opens a form in the chat area with a live face preview and a model picker.
-- On a bot's chat, **Bot settings** in the toolbar ⋯ menu opens the bot's profile editor (the one in Settings › Bots) as a tab.
+- **Folders** on the Bots page group bots and group chats: use the disclosure arrow or folder header to expand or collapse, drag rows in and out (folders open under a drag, spring open when collapsed and bounce as a row lands), drag folders to reorder, and use their menu to rename or delete them. Folders are Hermes Agent Desktop's bot sections: a bot's folder is saved on its profile and syncs with Hermes Agent Desktop and other clients, while folder order, collapse state and group-chat placement stay on this Mac. The **+** menu creates a bot, a group chat or a folder; **New Bot** opens a form in the chat area with a live face preview and a model picker. If a created bot's role cannot be confirmed, retrying finishes the role rather than creating another profile. If creation itself cannot be confirmed, check the Hermes roster before starting a new request.
+- On a bot's chat, **Bot settings** in the toolbar ⋯ menu opens the bot's profile editor (the one in Settings › Bots) as a tab, with a full-height scrolling form and a compact save footer.
 - **Settings → Bots** manages the roster without a second workspace toolbar: avatar-led cards, readable activity previews, quiet model and capability details, and always-visible action menus. Selected profiles are distinct from live working status; hover the model for provider and fallback details.
 - Create, clone, edit, duplicate, hide, and permanently delete bots. **Delete Bot…** in More or the context menu confirms removal of the profile and its data; the default bot is protected. Deletion requires Hermes CLI support. Editable fields include avatar, title, model, `SOUL.md`, skills, toolsets, and MCP servers.
 - The bot editor keeps vertical space around model actions so Keep and Edit sit clear of the card border and dividers.
-- **Group chats** bring selected bots into a shared room, with member replies, tool activity, unread indicators, and pending approvals. Errors appear as toast notifications. They live on the Bots page beside the bots' main chats; start one with **+** next to the search field. Rooms and their history stay in Hermes; group chat appears only when the runtime exposes its room driver.
+- **Group chats** bring selected bots into a shared room, with member replies, tool activity, unread indicators, and pending approvals. Attach files with **+**, by dragging them onto the composer, or by pasting copied files, when the gateway supports room attachments (up to 15 MB each). The composer offers Stop while a send is pending or turns are running; Hermes decides whether it can stop the work. Errors appear as toast notifications. They live on the Bots page beside the bots' main chats; start one with **+** next to the search field. Rooms and their history stay in Hermes; group chat appears only when the runtime exposes its room driver.
 - **Routines** for each bot, backed by Hermes cron jobs.
 - The welcome screen shares the voice orb’s animated Herm face and pointer reactions for the selected Bot, only when Hermes reports the `hermes-bots` plugin enabled. Disabled or unconfirmed plugin status keeps the plain orb.
 - **Herm Faces**: Bots without uploaded art get a client-side face seeded from their profile ID (body shape, colors, eyes, lean). The face shows what Hermes reports: thinking, running a tool, replying, done, failed, stopped, waiting on you, needs your approval, needs your answer, compressing context, queued, and voice listening. Existing faces update immediately when you switch skins. It follows your skin: hued on most skins, gray on E-Ink and Monochrome, accent-tinted on Terminal and HUD, with ink outlines on Cartoon, Brutalist and E-Ink. Older glossy faces and pre-Herm Faces blobs saved to Hermes are recognized and drawn live; Regenerate All re-saves every Bot's face.
@@ -1245,7 +1264,7 @@ Herm uses Apple's on-device language model (the Foundation Models framework) for
 Confirmed automation runs show Starting immediately, then Running only when Hermes reports an active execution. The selected automation refreshes its status and history automatically; uncertain submissions require review before another run.
 
 - **Automations**: view, create, edit, pause, resume, run, and remove Hermes cron jobs. A searchable schedule rail, inset run summary, and outcome-labelled history keep recurring work easy to scan. Violet schedule accents complement green successes, amber warnings, and red failures, with theme-aware colors in every skin. Creation and editing include delivery, working directory, and model/provider overrides. Run history uses Hermes-recorded session identities; agent reports and script-only output previews stay attached to their owning job and profile. Failed reads and rejected changes remain visible.
-- The Quota page, chat composer, and notch Quota tab share one quota inventory, including provider names, readings, reset times, and the tightest remaining window. Session model responses do not supply a separate quota reading.
+- The Quota page, chat composer, and notch Quota tab share one quota inventory, including provider names, readings, reset times, and the tightest remaining window. For pooled accounts, compact session readings use the account marked Active by Hermes; if its reading is unavailable, they do not substitute another account. Session model responses do not supply a separate quota reading.
 - **Quota**: remaining allowance for Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity. Its toolbar highlights Add account, groups automatic refresh and peak-hour sync, and keeps the last update time above the controls. Controls stack in narrow windows. The Add account dialog keeps provider names readable, shows readable sign-in instructions in a stable layout, and offers Done after Hermes confirms success.
 - **Herm updates**: the installed app checks [GitHub Releases](https://github.com/chryzxc/herm/releases) every few hours, downloads and verifies the new DMG, and installs it once no turn is running, rolling back if the swap or relaunch fails. **Settings → Updates** shows the status with **Check for updates** and **Restart now**. Automatic installation requires a Developer ID signed build and an update signed by the same team, plus a valid SHA-256 checksum. Ad-hoc/development builds and copies Herm cannot write to require manual updates. The top toolbar shows a violet **Dev** pill for development builds or a blue **Nightly** pill for nightly builds; stable releases show no build pill. Settings uses the same label and includes the short commit when supplied. Nightly builds from the `nightly` pre-release never receive other nightlies, only the next stable release.
 - **Hermes updates**: runs `hermes update` only after you confirm. Settings shows the current activity and elapsed time; expand Output to inspect the streamed log. It never updates automatically.
@@ -1508,7 +1527,7 @@ HTML artwork with explicitly authored styles may override defaults; theme variab
 remain the supported way to match Herm. Switching skins reloads an open HTML preview
 and resets its interactive inputs.
 
-Settings → Density offers Default and Compact. Compact applies across Herm: text, icons, bot avatars, controls, and every margin and padding shrink in chat and session lists, workspace pages, previews, generated content, and native code, diff, and terminal text. Window and floating presentations use the same preference. Previously saved Small scales open as Compact; Large and Larger open as Default.
+Settings → Density offers Default and Compact. Compact tightens supported margins and padding and slightly reduces text, icons, avatars, and controls across workspace and floating presentations. Previously saved Small scales open as Compact; Large and Larger open as Default.
 
 Expand/collapse keeps the current workspace mounted: chat-list and inspector
 switches, shared list/detail layouts, and shared disclosure sections preserve
