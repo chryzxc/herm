@@ -11,7 +11,9 @@ private final class SessionStartupRPCClient: HermesRPCClientProtocol {
         ["id": "older", "title": "Older", "last_activity_at": 100, "pinned": true],
     ]
     var holdsList = false
+    var storedRows: [[String: Any]]?
     private(set) var listLimits: [Int] = []
+    private(set) var sessionPageReads = 0
     private var listStarted: CheckedContinuation<Void, Never>?
     private var listResponse: CheckedContinuation<Void, Never>?
     private var connectionCount = 0
@@ -51,6 +53,13 @@ private final class SessionStartupRPCClient: HermesRPCClientProtocol {
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         guard path.hasPrefix("/api/sessions?") else { throw HermesGateway.GatewayError.malformedResponse }
+        sessionPageReads += 1
+        if let storedRows {
+            let items = URLComponents(string: path)?.queryItems
+            let offset = Int(items?.first(where: { $0.name == "offset" })?.value ?? "0") ?? 0
+            let limit = Int(items?.first(where: { $0.name == "limit" })?.value ?? "100") ?? 100
+            return ["sessions": Array(storedRows.dropFirst(offset).prefix(limit)), "total": storedRows.count]
+        }
         return ["sessions": rows]
     }
 
@@ -96,6 +105,82 @@ struct SessionStartupTests {
             #expect(model.sessionProjectionState == .ready(model.sessions))
             #expect(model.sessionID == "latest")
             #expect(model.pinnedSessions.map(\.id) == ["older"])
+        }
+    }
+
+    @Test func savedSessionsBeyondFirstPageRemainAvailableWhenLiveListIsShort() async throws {
+        try await withModel { model, client in
+            client.rows = [["id": "live", "title": "Live"]]
+            client.storedRows = (0..<151).map { ["id": "saved-\($0)", "title": "Saved \($0)"] }
+            await model.loadSessions()?.value
+            #expect(model.sessions.contains { $0.id == "saved-150" })
+            #expect(model.sessions.contains { $0.id == "live" })
+        }
+    }
+
+    @Test func quietRefreshReadsOnePageAndKeepsOlderHistory() async throws {
+        try await withModel { model, client in
+            client.rows = []
+            client.storedRows = (0..<1501).map { ["id": "saved-\($0)", "title": "Saved \($0)"] }
+            await model.loadSessions()?.value
+            let initialReads = client.sessionPageReads
+            client.storedRows?[0]["title"] = "Updated title"
+            await model.loadSessions(quiet: true)?.value
+            #expect(client.sessionPageReads - initialReads == 1)
+            #expect(model.sessions.count == 1501)
+            #expect(model.sessions.first?.title == "Updated title")
+            #expect(model.sessions.contains { $0.id == "saved-1500" })
+
+            // An explicit refresh must still reconcile removals from older pages.
+            client.storedRows?.removeLast()
+            await model.loadSessions()?.value
+            #expect(!model.sessions.contains { $0.id == "saved-1500" })
+        }
+    }
+
+    @Test func historyCacheExpiresAndDoesNotCrossProfiles() async throws {
+        try await withModel { model, client in
+            client.rows = []
+            client.storedRows = (0..<151).map { ["id": "saved-\($0)"] }
+            await model.loadSessions()?.value
+            client.storedRows?.removeLast()
+            model.sessionHistoryLoadedAt = (nil, Date().addingTimeInterval(-61))
+            let beforeExpiry = client.sessionPageReads
+            await model.loadSessions(quiet: true)?.value
+            #expect(client.sessionPageReads - beforeExpiry == 2)
+            #expect(!model.sessions.contains { $0.id == "saved-150" })
+
+            // A scope mismatch cannot append cached rows from another bot.
+            model.profileScopeID = "other-bot"
+            client.storedRows = [["id": "other-session"]]
+            await model.loadSessions(quiet: true)?.value
+            #expect(model.sessions.map(\.id) == ["other-session"])
+            #expect(model.sessions.allSatisfy { $0.profileID == "other-bot" })
+        }
+    }
+
+    @Test func completionAndDatabaseChangeRefreshesReuseHistoryUntilItExpires() async throws {
+        try await withModel { model, client in
+            client.rows = []
+            client.storedRows = (0..<151).map { ["id": "saved-\($0)"] }
+            await model.loadSessions()?.value
+            let initialReads = client.sessionPageReads
+            model.refreshSessionIndexAfterActivity()
+            await model.sessionLoadTask?.value
+            #expect(client.sessionPageReads - initialReads == 1)
+            #expect(model.sessions.count == 151)
+
+            client.storedRows?.removeLast()
+            model.receiveGatewayEvent("sessions.changed", params: [:])
+            await model.sessionLoadTask?.value
+            #expect(client.sessionPageReads - initialReads == 2)
+            #expect(model.sessions.count == 151)
+
+            // Database writes are frequent; reconcile older external deletions on expiry.
+            model.sessionHistoryLoadedAt = (nil, Date().addingTimeInterval(-61))
+            model.receiveGatewayEvent("sessions.changed", params: [:])
+            await model.sessionLoadTask?.value
+            #expect(!model.sessions.contains { $0.id == "saved-150" })
         }
     }
 

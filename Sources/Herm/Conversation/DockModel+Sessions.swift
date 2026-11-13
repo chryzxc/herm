@@ -29,6 +29,7 @@ extension DockModel {
         } else {
             defaults.removeObject(forKey: profileScopeKey)
         }
+        sessionHistoryLoadedAt = nil
         sessionLoadGeneration &+= 1
         sessionLoadTask?.cancel()
         sessionLoadTask = nil
@@ -94,7 +95,7 @@ extension DockModel {
     }
 
     @discardableResult
-    func loadSessions(profileID: String? = nil, quiet: Bool = false) -> Task<Void, Never>? {
+    func loadSessions(profileID: String? = nil, quiet: Bool = false, reuseHistory: Bool = false) -> Task<Void, Never>? {
         let scope = profileID ?? profileScopeID
         if profileScopeUnavailable, scope == nil {
             sessions = []
@@ -128,13 +129,28 @@ extension DockModel {
                 }
                 await migrateLegacyLocalPins()
                 let activityGeneration = sessionActivityGeneration
-                let index = try? await Self.fetchSessionIndex(client: sessionRPCClient, profileID: scope)
+                // ponytail: reuse older rows for at most a minute; explicit refresh always reconciles history.
+                let reuseStoredHistory =
+                    (quiet || reuseHistory)
+                    && sessionHistoryLoadedAt.map {
+                        $0.profileID == scope && Date().timeIntervalSince($0.date) < 60
+                    } == true
+                let index = try? await Self.fetchSessionIndex(
+                    client: sessionRPCClient, profileID: scope, includeHistory: !reuseStoredHistory)
                 guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
+                if !reuseStoredHistory, let index, !index.stored.isEmpty {
+                    sessionHistoryLoadedAt = (scope, Date())
+                }
                 // session.list rows carry only `started_at`; take recency from
                 // the `/api/sessions` rows so a cold start does not show (and
                 // sort by) when an old chat began.
+                let stored = index?.stored ?? []
+                guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
                 let feedIDs = index?.feedIDs ?? []
-                let loaded = rawSessions.compactMap { Self.parseSession($0, profileID: scope) }
+                var seen = Set<String>()
+                let refreshed = (rawSessions + stored).compactMap { Self.parseSession($0, profileID: scope) }
+                let loaded = (refreshed + (reuseStoredHistory ? sessions : []))
+                    .filter { seen.insert($0.id).inserted }
                     .filter { !feedIDs.contains($0.id) || $0.id == self.navigationSessionID }
                     .map { Self.withRecency($0, from: index?.lastActive ?? [:]) }
                 // Events delivered during the read are newer than its snapshot.
@@ -293,8 +309,40 @@ extension DockModel {
         return ((row["model"] as? String) ?? "").isEmpty
     }
 
-    static func fetchSessionIndex(client: HermesRPCClientProtocol, profileID: String?) async throws -> (
-        pinned: [HermesSession], lastActive: [String: Date], feedIDs: Set<String>, working: Set<String>?
+    /// The canonical session.list defaults to live sessions; persisted history
+    /// comes from the same paginated index used by Hermes Desktop.
+    static func fetchStoredSessions(
+        client: HermesRPCClientProtocol, profileID: String?, firstPage: [String: Any]
+    ) async throws -> [[String: Any]] {
+        var rows: [[String: Any]] = []
+        var offset = 0
+        var page = firstPage
+        while true {
+            try Task.checkCancellation()
+            guard let sessions = page["sessions"] as? [[String: Any]] else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            // Older transports without pagination metadata retain their existing live projection.
+            guard let total = page["total"] as? Int, total >= 0 else { return [] }
+            rows.append(contentsOf: sessions.filter { !isModellessFeed($0) })
+            offset += min(100, sessions.count)  // Pinned rows can be appended beyond the page.
+            if offset >= total { return rows }
+            guard !sessions.isEmpty else { throw HermesGateway.GatewayError.malformedResponse }
+            var path = "/api/sessions?limit=100&offset=\(offset)&order=recent"
+            if let profileID, !profileID.isEmpty,
+                let encoded = profileID.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
+            {
+                path += "&profile=\(encoded)"
+            }
+            page = try await client.fetchHTTP(path)
+        }
+    }
+
+    static func fetchSessionIndex(
+        client: HermesRPCClientProtocol, profileID: String?, includeHistory: Bool = true
+    ) async throws -> (
+        pinned: [HermesSession], lastActive: [String: Date], feedIDs: Set<String>, working: Set<String>?,
+        stored: [[String: Any]]
     ) {
         var path = "/api/sessions?limit=100&order=recent"
         if let profileID, !profileID.isEmpty,
@@ -302,9 +350,14 @@ extension DockModel {
         {
             path += "&profile=\(encoded)"
         }
-        guard let rows = try await client.fetchHTTP(path)["sessions"] as? [[String: Any]] else {
+        let firstPage = try await client.fetchHTTP(path)
+        guard let rows = firstPage["sessions"] as? [[String: Any]] else {
             throw HermesGateway.GatewayError.malformedResponse
         }
+        let stored =
+            includeHistory
+            ? try await fetchStoredSessions(client: client, profileID: profileID, firstPage: firstPage)
+            : rows.filter { !isModellessFeed($0) }
         let lastActive = Dictionary(
             rows.compactMap { row in
                 parseSession(row, profileID: profileID).flatMap { session in session.updatedAt.map { (session.id, $0) }
@@ -342,7 +395,7 @@ extension DockModel {
                     source: session.source, isHidden: session.isHidden, isWorking: true,
                     hasUnreadUpdate: session.hasUnreadUpdate)
             }
-        return (pinned, lastActive, feedIDs, working)
+        return (pinned, lastActive, feedIDs, working, stored)
     }
 
     static func withRecency(_ session: HermesSession, from lastActive: [String: Date]) -> HermesSession {
@@ -905,8 +958,8 @@ extension DockModel {
                 .map { Self.missingUserMessages($0, from: restored.messages) } ?? []
             messages = freshMessages + [liveRow].compactMap { $0 }
             let pendingSends = reconcilePendingSends(
-                for: composerDraftKey, restored: restored.messages, rowIDs: restored.rowIDs)
-            messages.append(contentsOf: pendingSends)
+                for: composerDraftKey, restored: restored.messages, rowIDs: restored.rowIDs, replacingTranscript: true)
+            messages.append(contentsOf: pendingSends.unmatchedMessages)
             if let stop = sessionStopAttempts[composerDraftKey] {
                 if stop.outcome == .accepted, stop.tailPending {
                     isDiscardingStoppedTurn = true
