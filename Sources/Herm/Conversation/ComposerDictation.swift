@@ -23,4 +23,9 @@ struct ComposerDictation {
     }
 
     func owns(_ text: String) -> Bool { owner != nil && text == rendered }
+
+    func cancel(text: String, owner: String) -> String? {
+        guard self.owner == owner, owns(text) else { return nil }
+        return prefix
+    }
 }

@@ -5,6 +5,7 @@ import Testing
 @testable import Herm
 
 @MainActor
+@Suite(.serialized)
 struct WorkspaceFoundationRenderTests {
     @Test func shortDraftDoesNotExpandComposer() async throws {
         _ = NSApplication.shared
@@ -47,6 +48,174 @@ struct WorkspaceFoundationRenderTests {
         host.layoutSubtreeIfNeeded()
         #expect(abs(scroll.frame.height - initialHeight) < 1)
     }
+    @Test func multilineComposerKeepsLastLineVisible() async throws {
+        _ = NSApplication.shared
+        let oldTheme = DockThemeRuntime.current
+        DockThemeRuntime.current = .notebook
+        DockThemeRuntime.revision &+= 1
+        defer {
+            DockThemeRuntime.current = oldTheme
+            DockThemeRuntime.revision &+= 1
+        }
+        let name = "ComposerMultiline.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(name),
+            defaults: defaults, initialSessionID: "sizing-fixture", rpcClient: FoundationFixtureRPC())
+        defer { model.shutdown() }
+        let widths: [CGFloat] = [420, 790]
+        let variants = widths.flatMap { width in
+            [DockWorkspaceScale.defaultTextSize, DockWorkspaceScale.compactTextSize].map { (width, $0) }
+        }
+        for (width, scale) in variants {
+            model.draft = ""
+            let composer = ChatComposerView(
+                model: model, composer: model.composer, speechInput: SpeechInput(), botMode: BotModeModel(), onStop: {})
+            let host = NSHostingView(
+                rootView: VStack {
+                    Spacer()
+                    composer
+                }
+                .frame(width: width, height: 500)
+                .environment(\.dockWorkspaceScale, CGFloat(scale))
+                .background(Color.dockOpaqueCanvas).dockThemedRoot())
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: width, height: 500),
+                styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer { window.orderOut(nil) }
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(200))
+            func find(_ view: NSView) -> ComposerInputTextView? {
+                if let text = view as? ComposerInputTextView { return text }
+                return view.subviews.lazy.compactMap(find).first
+            }
+            let text = try #require(find(host))
+            let scroll = try #require(text.enclosingScrollView)
+            window.makeFirstResponder(text)
+            text.insertText(
+                "/cpipe safely port the changes here of this PR to IC. This is a PR from CRX: climate/feat/ "
+                    + "program-receipt-ai. Branch out from origin IC-develop and",
+                replacementRange: NSRange(location: NSNotFound, length: 0))
+            try await Task.sleep(for: .milliseconds(500))
+            host.layoutSubtreeIfNeeded()
+            expectRectangularEditorAncestors(text, host: host)
+            let layout = try #require(text.layoutManager)
+            let container = try #require(text.textContainer)
+            layout.ensureLayout(for: container)
+            let glyphs = layout.glyphRange(
+                forCharacterRange: NSRange(location: text.string.utf16.count - 1, length: 1),
+                actualCharacterRange: nil)
+            var lineRange = NSRange()
+            _ = layout.lineFragmentUsedRect(forGlyphAt: glyphs.location, effectiveRange: &lineRange)
+            let last = layout.boundingRect(forGlyphRange: lineRange, in: container)
+                .offsetBy(dx: text.textContainerOrigin.x, dy: text.textContainerOrigin.y)
+            #expect(
+                scroll.documentVisibleRect.contains(last),
+                "Last line is clipped at width \(width), scale \(scale)")
+            #expect(
+                scroll.documentVisibleRect.maxY >= layout.usedRect(for: container).maxY + 2,
+                "Last line needs room for descenders")
+            if let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] {
+                try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let png = try #require(bitmap.representation(using: .png, properties: [:]))
+                try png.write(
+                    to: URL(fileURLWithPath: directory)
+                        .appendingPathComponent("composer-\(Int(width))-\(scale).png"))
+            }
+        }
+    }
+
+    @Test func groupComposerShowsWholeLastLine() async throws {
+        _ = NSApplication.shared
+        let oldTheme = DockThemeRuntime.current
+        DockThemeRuntime.current = .notebook
+        DockThemeRuntime.revision &+= 1
+        defer {
+            DockThemeRuntime.current = oldTheme
+            DockThemeRuntime.revision &+= 1
+        }
+        let name = "GroupComposerClipping.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = GroupChatStore(defaults: defaults)
+        let view = GroupChatView(
+            store: store, botMode: BotModeModel(), roomID: "composer-clipping-fixture",
+            toolbar: { title, _ in title }, onDisbanded: {}
+        )
+        .environment(\.dockHostVisible, false)
+        .environment(\.dockWorkspaceScale, CGFloat(DockWorkspaceScale.compactTextSize))
+        .frame(width: 420, height: 500)
+        .dockThemedRoot()
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 500),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(200))
+        func find(_ view: NSView) -> ComposerInputTextView? {
+            if let text = view as? ComposerInputTextView { return text }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        let text = try #require(find(host))
+        let scroll = try #require(text.enclosingScrollView)
+        window.makeFirstResponder(text)
+        text.insertText(
+            "/cpipe safely port the changes here of this PR to IC. This is a PR from CRX: climate/feat/ "
+                + "program-receipt-ai. Branch out from origin IC-develop and",
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        try await Task.sleep(for: .milliseconds(700))
+        host.layoutSubtreeIfNeeded()
+        expectRectangularEditorAncestors(text, host: host)
+        let layout = try #require(text.layoutManager)
+        let container = try #require(text.textContainer)
+        layout.ensureLayout(for: container)
+        let glyphs = layout.glyphRange(
+            forCharacterRange: NSRange(location: text.string.utf16.count - 1, length: 1),
+            actualCharacterRange: nil)
+        var lineRange = NSRange()
+        _ = layout.lineFragmentUsedRect(forGlyphAt: glyphs.location, effectiveRange: &lineRange)
+        let line = layout.boundingRect(forGlyphRange: lineRange, in: container)
+            .offsetBy(dx: text.textContainerOrigin.x, dy: text.textContainerOrigin.y)
+        #expect(scroll.documentVisibleRect.contains(line))
+        text.insertText(
+            String(repeating: "\nLong line with gypqj descenders", count: 16) + "\n",
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        try await Task.sleep(for: .milliseconds(700))
+        host.layoutSubtreeIfNeeded()
+        text.scrollRangeToVisible(NSRange(location: text.string.utf16.count, length: 0))
+        layout.ensureLayout(for: container)
+        let caretLine = layout.extraLineFragmentUsedRect.offsetBy(
+            dx: text.textContainerOrigin.x, dy: text.textContainerOrigin.y)
+        #expect(scroll.contentView.bounds.height >= ComposerLayout.maxHeight - 1)
+        #expect(scroll.contentView.bounds.height <= ComposerLayout.maxHeight)
+        #expect(caretLine.height > 0)
+        #expect(caretLine.minY >= scroll.documentVisibleRect.minY)
+        #expect(caretLine.maxY <= scroll.documentVisibleRect.maxY)
+        if let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] {
+            try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let png = try #require(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("group-notebook-420-compact.png"))
+        }
+    }
+
+    private func expectRectangularEditorAncestors(_ text: NSTextView, host: NSView) {
+        var view: NSView? = text
+        while let current = view, current !== host {
+            #expect(current.layer?.mask == nil, "Editor ancestor has a nonrectangular layer mask")
+            view = current.superview
+        }
+    }
+
     @Test func preferenceRowsSupportEmptyConditionalAndMultipleControls() {
         for width: CGFloat in [300, 700] {
             for visible in [false, true] {

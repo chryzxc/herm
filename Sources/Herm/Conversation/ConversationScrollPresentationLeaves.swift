@@ -31,7 +31,7 @@ struct ConversationLatestMessageControl: View {
                             .overlay(Capsule().stroke(Color.dockBorder, lineWidth: DockLayout.outline))
                     )
                     .overlay {
-                        if unread > 0 || isWorking {
+                        if isWorking {
                             DockLayerMotion(
                                 kind: .capsuleRim(period: 2.4, lineWidth: 1),
                                 color: .dockAccent, glow: Color.dockAccent.opacity(0.45)
