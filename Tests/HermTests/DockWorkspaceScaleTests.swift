@@ -7,8 +7,15 @@ import Testing
 @MainActor
 struct DockWorkspaceScaleTests {
     @Test func savedSizesResolveToDefaultOrCompact() {
-        for value in [0.9, 1.0] { #expect(DockWorkspaceScale.supportedTextSize(value) == 0.9) }
+        for value in [0.9, 0.96, 1.0] { #expect(DockWorkspaceScale.supportedTextSize(value) == 0.96) }
         for value in [1.1, 1.2, 1.3] { #expect(DockWorkspaceScale.supportedTextSize(value) == 1.1) }
+    }
+
+    @Test func compactKeepsBodyTextReadableWhileTighteningLayout() {
+        let scale = CGFloat(DockWorkspaceScale.compactTextSize)
+        #expect(DockTypography.size(.body, scale: scale) == 12)
+        #expect(DockTypography.size(.conversation, scale: scale) == 13)
+        #expect(DockWorkspaceScale.spacing(20, scale: scale) == 16)
     }
 
     @Test func compactTightensSpacingAndDefaultLeavesItAlone() {
@@ -97,7 +104,7 @@ struct DockWorkspaceScaleTests {
                 for label in ["Top left", "Top right", "Bottom left", "Bottom right"] {
                     let marker = try #require(
                         descendants(workspace).compactMap { $0 as? MarkerView }.first { $0.label == label })
-                    #expect(marker.workspaceScale == 0.9)
+                    #expect(marker.workspaceScale == CGFloat(DockWorkspaceScale.compactTextSize))
                     let rect = marker.convert(marker.bounds, to: nil)
                     let point = NSPoint(x: rect.midX, y: rect.midY)
                     let before = recorder.labels.count

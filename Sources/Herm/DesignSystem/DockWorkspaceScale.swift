@@ -6,7 +6,7 @@ enum DockWorkspaceScale {
     static let preferenceKey = "herm.textSize"
     static let defaultTextSize = 1.1
     /// Density "Compact": smaller text and icons, plus tighter padding via `spacing`.
-    static let compactTextSize = 0.9
+    static let compactTextSize = 0.96
     static let compactSpacing: CGFloat = 0.8
 
     static func supportedTextSize(_ value: Double) -> Double {

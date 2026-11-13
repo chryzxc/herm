@@ -125,7 +125,7 @@ struct SessionTraceRenderTests {
                 id: "missing-duration", kind: .tool, title: "Tool without duration",
                 start: start.addingTimeInterval(7_790), timing: .unavailable),
         ]
-        for theme: DockThemeID in [.clean, .island, .glass, .mono, .eInk] {
+        for theme: DockThemeID in [.clean, .island, .glass, .mono, .eInk, .notebook] {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
             for width in [380.0, 760.0] {

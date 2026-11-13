@@ -1523,13 +1523,8 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
             ofSize: NativeMarkdownPalette(bodySize: bodySize).fontSize(DockTypography.size(.machineMetadata)),
             weight: .regular)
     }
-    private var copyFont: NSFont {
-        DockSkinPresentation.nativeFont(
-            size: NativeMarkdownPalette(bodySize: bodySize).fontSize(DockTypography.size(.control)), weight: .medium)
-    }
-
     private let languageLabel = NSTextField(labelWithString: "")
-    private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
+    private var copyButton = NSView()
     private let headerDivider = NSView()
     private let scrollView = NativeMarkdownHorizontalScrollView()
     private let textView = NativeMarkdownTextSectionView()
@@ -1563,13 +1558,13 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         layer?.masksToBounds = true
         languageLabel.font = labelFont
         languageLabel.lineBreakMode = .byTruncatingTail
-        copyButton.isBordered = false
-        copyButton.bezelStyle = .inline
-        copyButton.font = copyFont
-        copyButton.target = self
-        copyButton.action = #selector(copyCode(_:))
-        copyButton.toolTip = "Copy code"
-        copyButton.setAccessibilityLabel("Copy code")
+        // The shared copy control: icon swaps to a drawn check on click.
+        copyButton = NSHostingView(
+            rootView: DockCopyButton(
+                label: "Copy", accessibilityLabel: "Copy code", presentation: .icon, iconSize: 13,
+                color: Color(nsColor: NativeMarkdownPalette().secondary)
+            ) { [weak self] in self?.copyCode(nil) }
+            .buttonStyle(.plain))
         headerDivider.wantsLayer = true
         scrollView.drawsBackground = false
         scrollView.hasHorizontalScroller = true
@@ -1618,8 +1613,7 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         super.layout()
         let header = headerHeight
         if opensBlock {
-            let buttonSize = copyButton.intrinsicContentSize
-            let buttonWidth = ceil(buttonSize.width) + 12
+            let buttonWidth: CGFloat = 28
             copyButton.frame = NSRect(
                 x: max(0, bounds.width - buttonWidth - 4),
                 y: 0,
@@ -1658,28 +1652,18 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         return trimmed.allSatisfy { $0 == marker }
     }
 
-    @objc private func copyCode(_ sender: Any?) {
+    private func copyCode(_ sender: Any?) {
         // A streamed block can span several sections; copy the whole block.
         let text = (superview as? NativeMarkdownDocumentContainerView)?.codeBlockText(startingAt: self) ?? codeBody
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        setCopyTitle("Copied")
         copyResetTask?.cancel()
         copyResetTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled else { return }
-            self?.setCopyTitle("Copy")
             self?.copyResetTask = nil
             self?.onInteractionEnded?()
         }
-    }
-
-    private func setCopyTitle(_ title: String) {
-        copyButton.attributedTitle = NSAttributedString(
-            string: title,
-            attributes: [.font: copyFont, .foregroundColor: NativeMarkdownPalette().secondary]
-        )
-        needsLayout = true
     }
 
     func update(
@@ -1690,7 +1674,6 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         self.bodySize = bodySize
         languageLabel.font = labelFont
         let themeRevision = DockThemeRuntime.revision
-        copyButton.font = copyFont
         layer?.cornerRadius = DockLayout.controlRadius
         guard
             sizeChanged || renderedCode != code || renderedLanguage != language
@@ -1704,7 +1687,6 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         layer?.borderColor = palette.border.cgColor
         headerDivider.layer?.backgroundColor = palette.border.cgColor
         languageLabel.textColor = palette.metadata
-        setCopyTitle("Copy")
         let (body, opensBlock) = Self.parsedCode(code)
         self.opensBlock = opensBlock
         codeBody = body

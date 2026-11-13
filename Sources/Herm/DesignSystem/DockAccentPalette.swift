@@ -47,10 +47,19 @@ enum DockAccentColor: Int, CaseIterable {
     }
 
     /// Keep the reference hue, adjusting only as far as compact text contrast needs.
-    func hex(on roles: DockThemePalette.Roles) -> String {
+    /// `vivid` (Light Glass) boosts saturation before darkening: plain darkened inks
+    /// read gray and muddy against the bright, colorful glass backdrop.
+    func hex(on roles: DockThemePalette.Roles, vivid: Bool = false) -> String {
         let surfaces = [roles.bg, roles.surface, roles.surface2]
         let target: CGFloat = DockThemePalette.onAccentHex(forAccent: roles.bg) == "#111111" ? 0 : 1
-        let base = NSColor(hex: hex).usingColorSpace(.sRGB)!
+        var base = NSColor(hex: hex).usingColorSpace(.sRGB)!
+        if vivid, target == 0 {
+            base =
+                NSColor(
+                    hue: base.hueComponent, saturation: min(1, base.saturationComponent * 1.25),
+                    brightness: base.brightnessComponent, alpha: 1
+                ).usingColorSpace(.sRGB)!
+        }
         for step in 0...50 {
             let amount = CGFloat(step) / 50
             let channels = [base.redComponent, base.greenComponent, base.blueComponent]

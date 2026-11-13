@@ -262,12 +262,12 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.glass.style.material == .glass && DockThemeID.glass.usesNativeMaterial)
         #expect(DockThemeID.eInk.style.selection == .invert && !DockThemeID.eInk.style.animates)
         #expect(DockThemeID.swiss.style.chrome == .open && DockThemeID.swiss.presentation.composer == .line)
-        #expect(DockThemeID.terminal.appearance == .dark && DockThemeID.terminal.style.fontDesign == .monospaced)
+        #expect(DockThemeID.terminal.appearance == .dark)
         #expect(
             DockThemeID.glass.appearance == .system
                 && DockThemeID.brutalist.style.outlineWidth > DockThemeID.cartoon.style.outlineWidth)
         #expect(DockThemeID.cartoon.appearance == .light)
-        #expect(DockThemeID.cartoon.style.stickerShadow > 0 && DockThemeID.cartoon.style.fontDesign == .rounded)
+        #expect(DockThemeID.cartoon.style.stickerShadow > 0)
         #expect(DockThemeID.origami.appearance == .light && DockThemeID.origami.style.geometry == .folded)
         #expect(DockThemeID.origami.style.outlineWidth == 1 && DockThemeID.origami.style.pressScale == 0.98)
         #expect(DockThemeID.slate.style.backdrop == .grid)
@@ -298,7 +298,7 @@ struct DockThemeStoreTests {
             return view.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
         }
         let originalFont = apply(.clean)
-        #expect(apply(.terminal)?.isFixedPitch == true)
+        #expect(apply(.terminal) == originalFont)
         let desktopFont = apply(.eInk)
         #expect(desktopFont == originalFont)
         #expect(desktopFont?.isFixedPitch == false)
@@ -442,6 +442,25 @@ struct DockThemeStoreTests {
             #expect(lightPath == shape.path(in: rect), "\(theme) specimen changed with the active skin")
             #expect(!lightPath.isEmpty)
             #expect(lightPath.contains(CGPoint(x: 60, y: 30)))
+        }
+    }
+
+    @Test func skinsUseTheSystemFont() {
+        for theme in DockThemeID.allCases {
+            #expect(theme.style.fontDesign == .default, "\(theme) changes the app font")
+        }
+    }
+
+    @Test func notebookOutlineStaysWithinItsBounds() {
+        for width in stride(from: 28, through: 500, by: 7) {
+            for height in [28, 34, 60, 200, 400] {
+                let rect = CGRect(x: 0, y: 0, width: width, height: height)
+                let shape = DockThemeShape(cornerRadius: 8, role: .pane, geometry: .sketch)
+                let stroke = shape.path(in: rect).cgPath.copy(
+                    strokingWithWidth: DockThemeID.notebook.style.outlineWidth,
+                    lineCap: .butt, lineJoin: .round, miterLimit: 10)
+                #expect(rect.contains(stroke.boundingBoxOfPath), "outline extends outside \(rect)")
+            }
         }
     }
 }
