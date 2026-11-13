@@ -149,6 +149,10 @@ struct SessionNavRail: View {
     @ObservedObject var dockThemeStore: DockThemeStore
     @AppStorage(DockRailDestination.pinsKey) private var pinnedDestinations = DockRailDestination.defaultPins
     @State private var showsDestinations = false
+    @State private var showsViewMenu = false
+    @State private var showsSkinMenu = false
+    @State private var showsDensityMenu = false
+    @AppStorage(DockWorkspaceScale.preferenceKey) private var textSize = DockWorkspaceScale.defaultTextSize
     @State private var dragOrder: [DockRailDestination]?
     @State private var draggingItem: DockRailDestination?
     @State private var dragOffset: CGFloat = 0
@@ -183,7 +187,7 @@ struct SessionNavRail: View {
                         let isDragging = draggingItem == item
                         destination(
                             item.title, icon: item.icon, isSelected: isSelected(item),
-                            showsUpdateBadge: hasUpdate(item), style: style
+                            style: style
                         ) { open(item) }
                         .contextMenu {
                             Button("Unpin \(item.title) from sidebar", icon: .pushPinSlash) { togglePin(item) }
@@ -197,7 +201,7 @@ struct SessionNavRail: View {
                     destination(
                         "More destinations", icon: .dotsThree,
                         isSelected: DockRailDestination.allCases.contains { !pins.contains($0) && isSelected($0) },
-                        showsUpdateBadge: !pins.contains(.settings) && hasUpdate(.settings), style: style
+                        style: style
                     ) { showsDestinations.toggle() }
                     .dockPopover(isPresented: $showsDestinations, arrowEdge: .trailing) {
                         destinationMenu
@@ -213,12 +217,14 @@ struct SessionNavRail: View {
                     version: GatewayConnectionStore.isLocalBackend
                         ? agentUpdateService.installed.map { "Hermes \($0.displayVersion)" } : nil,
                     service: controlCenter.gatewayService, style: style, onReconnect: onReconnect)
-                if let onOpenWindow {
-                    destination(
-                        isDockedWindow ? "Switch to floating" : "Switch to window",
-                        icon: isDockedWindow ? .pictureInPicture : .appWindow, isSelected: false, style: style,
-                        action: onOpenWindow)
+                destination(
+                    "Settings and appearance", icon: .gear,
+                    isSelected: navigationState.selection.isGlobalSelected(.core),
+                    showsUpdateBadge: agentUpdateService.phase == .updateAvailable, style: style
+                ) {
+                    showsViewMenu.toggle()
                 }
+                .dockPopover(isPresented: $showsViewMenu, arrowEdge: .trailing) { viewMenu }
             }
         }
         .dockPadding(.horizontal, 7)
@@ -288,10 +294,6 @@ struct SessionNavRail: View {
         }
     }
 
-    private func hasUpdate(_ item: DockRailDestination) -> Bool {
-        item == .settings && agentUpdateService.phase == .updateAvailable
-    }
-
     private func togglePin(_ item: DockRailDestination) {
         pinnedDestinations = DockRailDestination.toggling(item, in: pinnedDestinations)
     }
@@ -309,6 +311,99 @@ struct SessionNavRail: View {
         }
     }
 
+    /// Settings, quick skin switch and window mode.
+    private var viewMenu: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            viewMenuRow("Settings", selected: navigationState.selection.isGlobalSelected(.core)) {
+                showsViewMenu = false
+                onOpenGlobal(.core)
+            }
+            viewMenuRow("Skins", selected: false, hasSubmenu: true) { showsSkinMenu.toggle() }
+                .dockPopover(isPresented: $showsSkinMenu, arrowEdge: .trailing) { skinMenu }
+            viewMenuRow("Density", selected: false, hasSubmenu: true) { showsDensityMenu.toggle() }
+                .dockPopover(isPresented: $showsDensityMenu, arrowEdge: .trailing) { densityMenu }
+            if let onOpenWindow {
+                Color.dockBorderLight.frame(height: 0.5).dockPadding(.vertical, 4)
+                viewMenuRow(isDockedWindow ? "Switch to floating" : "Switch to window", selected: false) {
+                    showsViewMenu = false
+                    onOpenWindow()
+                }
+            }
+        }
+        .dockPadding(6)
+        .frame(width: 220)
+    }
+
+    private var skinMenu: some View {
+        ScrollView {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                ForEach(DockThemeID.allCases) { theme in
+                    let selected = dockThemeStore.selectedThemeID == theme
+                    Button {
+                        withAnimation(.dockEase(duration: 0.16)) { dockThemeStore.selectedThemeID = theme }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            DockSkinSpecimen(theme: theme)
+                            HStack(spacing: 4) {
+                                Text(theme.title).dockFont(.body, weight: .semibold).lineLimit(1)
+                                Spacer(minLength: 0)
+                                if selected { DockIcon(.check, color: .dockAccent) }
+                            }
+                        }
+                        .dockPadding(6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.dockHover)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+            .dockPadding(8)
+        }
+        .frame(width: 560, height: 460)
+    }
+
+    private var densityMenu: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(
+                [(DockWorkspaceScale.defaultTextSize, "Default"), (DockWorkspaceScale.compactTextSize, "Compact")],
+                id: \.1
+            ) { size, title in
+                let selected = DockWorkspaceScale.supportedTextSize(textSize) == size
+                Button {
+                    textSize = size
+                } label: {
+                    HStack(spacing: 8) {
+                        DockIcon(.check, size: 12, color: .dockPrimaryText).opacity(selected ? 1 : 0)
+                        Text(title).dockFont(.body)
+                        Spacer(minLength: 0)
+                    }
+                    .dockPadding(8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.dockHover)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .dockPadding(6)
+        .frame(width: 160)
+    }
+
+    private func viewMenuRow(
+        _ title: String, selected: Bool, hasSubmenu: Bool = false, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Text(title).dockFont(.body)
+                Spacer(minLength: 0)
+                if hasSubmenu { DockIcon(.caretRight, size: 10, color: Color.dockMetadataText) }
+            }
+            .dockPadding(8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockHover)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
     private var destinationMenu: some View {
         ScrollView {
             VStack(spacing: 2) {
@@ -323,9 +418,6 @@ struct SessionNavRail: View {
                                     color: isSelected(item) ? .dockPrimaryText : .dockSecondaryText)
                                 Text(item.title).dockFont(.body)
                                 Spacer(minLength: 8)
-                                if hasUpdate(item) {
-                                    DockIcon(.arrowCircleUp, size: 14, color: .dockWarning)
-                                }
                             }
                             .dockPadding(8)
                             .contentShape(Rectangle())
