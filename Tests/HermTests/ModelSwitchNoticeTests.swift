@@ -50,7 +50,7 @@ struct ModelSwitchNoticeTests {
         _ = NSApplication.shared
         for scheme in [ColorScheme.light, .dark] {
             var heights: [CGFloat] = []
-            for width: CGFloat in [280, 680] {
+            for width: CGFloat in [160, 680] {
                 let host = NSHostingView(
                     rootView: SystemEventCard(
                         event: SystemEvent(label: "Model switch", isModelSwitch: true),
