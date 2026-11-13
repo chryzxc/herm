@@ -541,7 +541,7 @@ extension DockModel {
         return nil
     }
 
-    static func normalizedDiff(_ raw: String?, requireMarkers: Bool) -> String? {
+    nonisolated static func normalizedDiff(_ raw: String?, requireMarkers: Bool) -> String? {
         guard let raw else { return nil }
         let clean = HermesRuntimeInspector.stripANSI(raw)
             .trimmingCharacters(in: .whitespacesAndNewlines)

@@ -32,6 +32,7 @@ struct TranscriptHistoryPrepend: Equatable {
     let generation: Int
     let count: Int
     let resultingCount: Int
+    var removedCount: Int = 0
 }
 
 enum TranscriptHistoryPaging {
@@ -159,6 +160,7 @@ enum TranscriptHistoryPaging {
                     "role": "tool", "name": (row["tool_name"] ?? row["name"]) as? String ?? "tool",
                 ]
                 for key in ["tool_call_id", "timestamp"] { tool[key] = row[key] }
+                tool["display_metadata"] = row["display_metadata"]
                 // The result feeds delivered-file cards, diffs and error states, as live.
                 let result = storedText(row["content"])
                 if !result.isEmpty { tool["content"] = result }
