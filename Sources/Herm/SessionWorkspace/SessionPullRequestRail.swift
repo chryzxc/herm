@@ -302,7 +302,7 @@ struct SessionRailCard: View {
                     VStack(alignment: .leading, spacing: 8) {
                         if let repositoryPath {
                             SessionRailExpandedContent {
-                                VStack(alignment: .leading, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 6) {
                                     ForEach(changes.files) { file in
                                         SessionRailFileQuickView(path: repositoryPath, file: file)
                                     }
@@ -418,13 +418,55 @@ private struct SessionRailFileQuickView: View {
             else { return }
             SessionMessageTabs.shared.open(.file(url), in: previewWorkspace)
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(file.path).dockFont(.body).foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(2).truncationMode(.middle)
-                Text("\(file.isStaged ? "Staged" : "Working tree") · \(file.status.rawValue.capitalized)")
-                    .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+            HStack(spacing: 8) {
+                Group {
+                    if let image = ArtifactFileIcon.image(for: name) {
+                        Image(nsImage: image).renderingMode(.original)
+                            .resizable().interpolation(.high).scaledToFit()
+                    } else {
+                        DockIcon(.file, size: 14, color: .dockSecondaryText)
+                    }
+                }
+                .frame(width: 16, height: 16)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).dockFont(.body).foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(1).truncationMode(.middle)
+                    if !directory.isEmpty {
+                        Text(directory).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                            .lineLimit(1).truncationMode(.head)
+                    }
+                }
+                Spacer(minLength: 4)
+                Text(statusLetter).dockFont(.metadata, weight: .semibold).foregroundStyle(statusColor)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.dockLink)
+        .buttonStyle(.dockHover)
+        .help("\(file.path) · \(file.isStaged ? "Staged" : "Working tree") · \(file.status.rawValue.capitalized)")
+        .accessibilityLabel("\(file.path), \(file.status.rawValue)\(file.isStaged ? ", staged" : "")")
+    }
+
+    private var name: String { (file.path as NSString).lastPathComponent }
+    private var directory: String { (file.path as NSString).deletingLastPathComponent }
+
+    private var statusLetter: String {
+        switch file.status {
+        case .modified: "M"
+        case .added: "A"
+        case .deleted: "D"
+        case .renamed: "R"
+        case .untracked: "U"
+        case .conflicted: "!"
+        case .unknown: "?"
+        }
+    }
+
+    private var statusColor: Color {
+        switch file.status {
+        case .added, .untracked: .dockSuccess
+        case .deleted, .conflicted: .dockDestructive
+        case .modified, .renamed: .dockWarning
+        case .unknown: .dockSecondaryText
+        }
     }
 }

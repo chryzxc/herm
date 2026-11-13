@@ -208,6 +208,10 @@ extension WorkspaceActivitySidebar {
         Task { @MainActor in
             await model.startNewChat(in: path)
             if let sessionID = model.sessionID {
+                if let stableID = model.navigationSessionID {
+                    store.attachProject(at: path, toSessionID: stableID)
+                    model.touchSession(sessionID: stableID, at: Date())
+                }
                 control.selectProject(forPath: path)
                 control.focus(sessionID: sessionID)
             }

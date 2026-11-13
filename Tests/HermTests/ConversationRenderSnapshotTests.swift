@@ -8,6 +8,183 @@ import Testing
 /// `CHAT_SNAPSHOT_DIR` to a writable directory.
 @MainActor
 struct ConversationRenderSnapshotTests {
+    @Test func renderDeliveryMetadata() async throws {
+        guard let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        let oldTheme = DockThemeRuntime.current
+        defer {
+            DockThemeRuntime.current = oldTheme
+            DockThemeRuntime.revision &+= 1
+        }
+        let states: [MessageDeliveryStatus?] = [.sending, .accepted, .queued, nil, .unconfirmed]
+        var count = 0
+        for theme: DockThemeID in [.warmLight, .island, .glass, .mono, .notebook] {
+            DockThemeRuntime.current = theme
+            DockThemeRuntime.revision &+= 1
+            let sizes: [CGFloat] = [420, 980]
+            let variants = sizes.flatMap { width in
+                [DockWorkspaceScale.defaultTextSize, DockWorkspaceScale.compactTextSize].map { (width, $0) }
+            }
+            for (width, scale) in variants {
+                let view = VStack(alignment: .trailing, spacing: 4) {
+                    ForEach(states.indices, id: \.self) { index in
+                        ConversationMessageRow(
+                            message: ChatMessage(
+                                role: .user,
+                                text: String(repeating: "A longer message with delivery metadata. ", count: 3)),
+                            isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+                            botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in },
+                            delivery: states[index], deliveryCheckAvailable: true)
+                    }
+                    ConversationMessageRow(
+                        message: ChatMessage(role: .user, text: "Checking status"),
+                        isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+                        botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in },
+                        delivery: .unconfirmed, deliveryChecking: true,
+                        deliveryCheckNote: String(repeating: "Status unavailable. ", count: 5),
+                        deliveryCheckAvailable: true)
+                }
+                .frame(width: width, height: 1000, alignment: .top)
+                .background(Color.dockCanvas)
+                .dockThemedRoot()
+                .environment(\.dockWorkspaceScale, CGFloat(scale))
+
+                let host = NSHostingView(rootView: view)
+                host.frame = NSRect(x: 0, y: 0, width: width, height: 1000)
+                let window = NSWindow(
+                    contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                window.contentView = host
+                window.orderFrontRegardless()
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+                let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: rep)
+                let png = try #require(rep.representation(using: .png, properties: [:]))
+                try png.write(
+                    to: URL(fileURLWithPath: directory)
+                        .appendingPathComponent("delivery-\(theme.rawValue)-\(Int(width))-\(scale).png"))
+                window.orderOut(nil)
+                count += 1
+            }
+        }
+        print("Emitted \(count) delivery images")
+        #expect(count == 20)
+    }
+
+    @Test func hoveredDeliveryTimestampHasVisibleGap() async throws {
+        let app = NSApplication.shared
+        let old = app.value(forKey: "accessibilityEnhancedUserInterface")
+        let oldTheme = DockThemeRuntime.current
+        app.setValue(true, forKey: "accessibilityEnhancedUserInterface")
+        defer {
+            app.setValue(old, forKey: "accessibilityEnhancedUserInterface")
+            DockThemeRuntime.current = oldTheme
+            DockThemeRuntime.revision &+= 1
+        }
+        func elements(_ element: AnyObject) -> [AnyObject] {
+            [element] + (element.accessibilityChildren?() ?? []).flatMap { elements($0 as AnyObject) }
+        }
+        let themes: [DockThemeID] = [.warmLight, .notebook]
+        let variants = themes.flatMap { theme in
+            [DockWorkspaceScale.defaultTextSize, DockWorkspaceScale.compactTextSize].flatMap { scale in
+                [true, false].map { (theme, scale, $0) }
+            }
+        }
+        var timestampPositions: [String: CGFloat] = [:]
+        for (theme, scale, hasStatus) in variants {
+            DockThemeRuntime.current = theme
+            DockThemeRuntime.revision &+= 1
+            let hover = ConversationRowHoverPresentation()
+            hover.isHovering = true
+            let message = ChatMessage(
+                role: .user, text: "Hover metadata", timestamp: Date(timeIntervalSince1970: 1_700_000_000))
+            let view = ConversationMessageRow(
+                message: message, isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+                botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in },
+                delivery: hasStatus ? .queued : nil, hoverPresentation: hover
+            )
+            .frame(width: 980, height: 200)
+            .environment(\.dockWorkspaceScale, CGFloat(scale))
+            .background(Color.dockCanvas)
+            .dockThemedRoot()
+            let host = NSHostingView(rootView: view)
+            host.frame = NSRect(x: 0, y: 0, width: 980, height: 200)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer { window.orderOut(nil) }
+            for _ in 0..<5 {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(30))
+            }
+            let labels = elements(host).filter { $0.accessibilityRole?() == .staticText }
+            #expect(labels.count == (hasStatus ? 2 : 1))
+            let timeFrame = try #require(labels.last?.accessibilityFrame?())
+            let key = "\(theme.rawValue)-\(scale)"
+            if hasStatus {
+                let statusFrame = try #require(labels.first?.accessibilityFrame?())
+                #expect(timeFrame.minX - statusFrame.maxX >= 3)
+                timestampPositions[key] = timeFrame.minX
+            } else {
+                #expect(timeFrame.minX == timestampPositions[key])
+            }
+            if let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] {
+                try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+                let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: rep)
+                let png = try #require(rep.representation(using: .png, properties: [:]))
+                try png.write(
+                    to: URL(fileURLWithPath: directory)
+                        .appendingPathComponent("hover-\(key)-\(hasStatus).png"))
+            }
+        }
+    }
+
+    @Test func deliveryRecoveryAccessibility() async throws {
+        let app = NSApplication.shared
+        let old = app.value(forKey: "accessibilityEnhancedUserInterface")
+        app.setValue(true, forKey: "accessibilityEnhancedUserInterface")
+        defer { app.setValue(old, forKey: "accessibilityEnhancedUserInterface") }
+        var activations = 0
+        let message = ChatMessage(role: .user, text: String(repeating: "A longer message. ", count: 5))
+        let view = VStack {
+            ConversationMessageRow(
+                message: message, isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+                botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in },
+                delivery: .unconfirmed, deliveryCheckNote: String(repeating: "Status unavailable. ", count: 5),
+                deliveryCheckAvailable: true, onCheckDelivery: { activations += 1 })
+            ConversationMessageRow(
+                message: message, isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+                botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in },
+                delivery: .unconfirmed, deliveryChecking: true, deliveryCheckAvailable: true,
+                onCheckDelivery: { activations += 1 })
+        }.frame(width: 420, height: 400).dockThemedRoot()
+        let host = NSHostingView(rootView: view)
+        host.frame = NSRect(x: 0, y: 0, width: 420, height: 400)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        func elements(_ element: AnyObject) -> [AnyObject] {
+            [element] + (element.accessibilityChildren?() ?? []).flatMap { elements($0 as AnyObject) }
+        }
+        for _ in 0..<5 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        let buttons = elements(host).filter { $0.accessibilityRole?() == .button }
+        let check = try #require(buttons.first { ($0.accessibilityLabel?() ?? "").contains("Check status") })
+        #expect(check.isAccessibilityEnabled?() == true)
+        #expect(check.accessibilityPerformPress?() == true)
+        #expect(activations == 1)
+        let checking = try #require(buttons.first { ($0.accessibilityLabel?() ?? "").contains("Checking") })
+        #expect(checking.isAccessibilityEnabled?() == false)
+        #expect(activations == 1)
+        let frame = try #require(check.accessibilityFrame?())
+        let bounds = window.convertToScreen(window.contentRect(forFrameRect: window.frame))
+        #expect(bounds.contains(frame))
+    }
+
     @Test func renderMentionActivity() async throws {
         guard let directory = ProcessInfo.processInfo.environment["HERM_BOT_ACTIVITY_SNAPSHOT_DIR"] else { return }
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)

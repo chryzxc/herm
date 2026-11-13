@@ -50,7 +50,10 @@ final class DockModel: ObservableObject {
 
     let composer = ComposerText()
     var composerDrafts: [SessionComposerDraft.Key: SessionComposerDraft] = [:]
-    var pendingSessionSends: [SessionPendingSend] = []
+    @Published var pendingSessionSends: [SessionPendingSend] = []
+    var deliveryRowClaims: [SessionComposerDraft.Key: [Int: UUID]] = [:]
+    @Published var deliveryChecksInFlight: Set<SessionComposerDraft.Key> = []
+    @Published var deliveryCheckNotes: [SessionComposerDraft.Key: String] = [:]
     var sessionStopAttempts: [SessionComposerDraft.Key: SessionStopAttempt] = [:]
     let streamingText = StreamingText()
     /// Unflushed-to-step reasoning, observed only by an open live thought row.
@@ -74,7 +77,7 @@ final class DockModel: ObservableObject {
     @Published var messagePinError: String?
     @Published var messagePinMutationFeedback: MessagePinMutationFeedback?
     @Published var storedMessageReferences: [UUID: StoredMessageReference] = [:]
-    var submittedMessageIDForPin: UUID?
+
     @Published var pendingImages: [ImageAttachment] = []
     /// Context chips prepended to the next prompt (Kanban cards, PRs, issues).
     @Published var attachedContexts: [ChatContext] = []
@@ -158,6 +161,8 @@ final class DockModel: ObservableObject {
     /// Background polls stay unpublished: flipping `isLoadingSessions` rebuilt
     /// the whole sidebar rail twice per poll and stuttered its scrolling.
     var isPollingSessions = false
+    /// Older rows are reused by background polls between full history reads.
+    var sessionHistoryLoadedAt: (profileID: String?, date: Date)?
     /// A live event can arrive while the initial session index is loading.
     /// Retain one follow-up refresh so the navigation list cannot get stuck on
     /// the snapshot that predated that event.

@@ -121,6 +121,23 @@ struct DockThemeContrastTests {
         return out
     }
 
+    @Test func glassWindowTintPreservesBackdropVisibilityInLightMode() {
+        let palette = DockThemePalette(theme: .glass)
+        #expect(resolve(palette.windowBackground, dark: false, opaque: false).alphaComponent <= 0.70)
+        #expect(abs(resolve(palette.windowBackground, dark: true, opaque: false).alphaComponent - 0.12) < 0.001)
+    }
+
+    @Test @available(macOS 26.0, *) func nativeGlassUsesClearStyleInLightAppearance() {
+        #expect(NativeLiquidGlassBackground.style(for: .light) == .clear)
+        #expect(NativeLiquidGlassBackground.style(for: .dark) == .regular)
+    }
+
+    @Test func lightGlassUsesPartialFrostAndDarkGlassKeepsFullFrost() {
+        #expect(DockWindowBackground.frostOpacity(for: .light) >= 0.60)
+        #expect(DockWindowBackground.frostOpacity(for: .light) < 1)
+        #expect(DockWindowBackground.frostOpacity(for: .dark) == 1)
+    }
+
     @Test func lightGlassKeepsContrastOverBrightAndDarkBackdrops() {
         let saved = DockThemeRuntime.current
         DockThemeRuntime.current = .glass
@@ -161,9 +178,12 @@ struct DockThemeContrastTests {
         }
         let glass = DockThemePalette(theme: .glass)
         // Light glass lets the desktop through, but bodies stay mostly white.
-        for surface in [glass.surface, glass.surface2, glass.surface4, Color.dockLightGlassLift] {
+        for surface in [glass.surface, glass.surface2, glass.surface4] {
             #expect(resolve(surface, dark: false, opaque: false).alphaComponent >= 0.6)
         }
+        let lift = resolve(Color.dockLightGlassLift, dark: false, opaque: false)
+        #expect(lift.alphaComponent <= 0.40)
+        #expect(resolve(Color.dockLightGlassLift, dark: true, opaque: false).alphaComponent == 0)
     }
 
     @Test func activeIconsHaveDistinctFilledArtwork() throws {

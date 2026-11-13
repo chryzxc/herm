@@ -97,11 +97,13 @@ struct ChatRailButton: View {
                     .foregroundStyle(Color.dockSuccess)
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
         .dockPadding(.horizontal, 3)
         .frame(minWidth: 14, minHeight: 14)
         .background(Capsule().fill(style.sidebarBackground))
         .overlay(Capsule().strokeBorder(style.secondaryText.opacity(0.3), lineWidth: 0.5))
         .dockPadding(1)
+        .offset(x: 9, y: -4)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

@@ -55,6 +55,10 @@ struct BotSummary: Identifiable, Equatable, Sendable {
     let hasAvatar: Bool
     let hasCustomAvatar: Bool
     let isDefault: Bool
+    /// Hermes Agent Desktop's user section, from `ui_meta['hermes-bots']`
+    /// (`sectionId`/`sectionName`); shared by every client of the profile.
+    var sectionID: String?
+    var sectionName: String?
     /// Exact busy flag from the gateway's live session list (`working`/`waiting`
     /// vs `idle`). nil when none of the bot's sessions is live in that process
     /// (kanban or cron workers), where the heartbeat heuristic still applies.

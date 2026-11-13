@@ -258,70 +258,85 @@ struct ChatComposerView: View {
 
                 VStack(spacing: 6) {
 
-                    // Main multi-line text input area at top of card container.
-                    ZStack(alignment: .topLeading) {
-                        ComposerInputEditor(
-                            text: $composer.text,
-                            isFocused: isComposerFocused,
-                            onSubmit: submitComposerInput,
-                            onCompletionKey: completions.handleKey,
-                            onDropFiles: stageAttachmentFiles,
-                            onPaste: {
-                                if !NSEvent.modifierFlags.contains(.shift), model.stageLargePaste() { return true }
-                                return model.pasteImageFromPasteboard()
-                            },
-                            onFocusChanged: { focused in
-                                isComposerFocused = focused
-                                model.isComposerEditing = focused
-                            },
-                            onCaretMoved: { text, caret in
-                                contextCaret = caret
-                                // Moving the caret retargets or closes an open popover; only typing opens one.
-                                completions.caretMoved(text: text, caret: caret)
-                            },
-                            takePendingCaret: {
-                                defer { composer.pendingCaret = nil }
-                                return composer.pendingCaret
-                            },
-                            onTextChanged: { text, caret in
-                                contextCaret = caret
-                                model.removeDeletedInlineContexts()
-                                completions.update(for: text, caret: caret)
-                            },
-                            onTextReplaced: { composer.noteEdit(range: $0, replacement: $1) },
-                            onContentHeightChanged: { contentHeight in
-                                composerHeight = ComposerLayout.height(for: contentHeight)
-                            },
-                            contexts: model.attachedContexts,
-                            onInspectContext: {
-                                contextPreviewOwner = WorkspaceIdentity.session(model)
-                                inspectingContext = $0
+                    if dictation.isRecording {
+                        ComposerDictationRecordingBar(
+                            reading: dictation.reading,
+                            canSend: canSubmit && !model.isRestoringSession && model.sessionActionsReady
+                                && !model.isUpdatingSessionModel && !model.isUpdatingSessionFast
+                                && (isSteeringTurn || !model.isSending),
+                            cancel: cancelDictation,
+                            stop: stopDictation,
+                            send: {
+                                updateDictation()
+                                submitComposerInput()
                             }
                         )
-                        // The native scroll view remains bounded while its document
-                        // grows, so wheel and trackpad scrolling stay inside the
-                        // editor after the composer reaches its maximum height.
-                        .frame(height: effectiveComposerHeight)
-                        .frame(maxWidth: .infinity)
-                        .disabled(model.isRestoringSession)
+                    } else {
+                        // Main multi-line text input area at top of card container.
+                        ZStack(alignment: .topLeading) {
+                            ComposerInputEditor(
+                                text: $composer.text,
+                                isFocused: isComposerFocused,
+                                onSubmit: submitComposerInput,
+                                onCompletionKey: completions.handleKey,
+                                onDropFiles: stageAttachmentFiles,
+                                onPaste: {
+                                    if !NSEvent.modifierFlags.contains(.shift), model.stageLargePaste() { return true }
+                                    return model.pasteImageFromPasteboard()
+                                },
+                                onFocusChanged: { focused in
+                                    isComposerFocused = focused
+                                    model.isComposerEditing = focused
+                                },
+                                onCaretMoved: { text, caret in
+                                    contextCaret = caret
+                                    // Moving the caret retargets or closes an open popover; only typing opens one.
+                                    completions.caretMoved(text: text, caret: caret)
+                                },
+                                takePendingCaret: {
+                                    defer { composer.pendingCaret = nil }
+                                    return composer.pendingCaret
+                                },
+                                onTextChanged: { text, caret in
+                                    contextCaret = caret
+                                    model.removeDeletedInlineContexts()
+                                    completions.update(for: text, caret: caret)
+                                },
+                                onTextReplaced: { composer.noteEdit(range: $0, replacement: $1) },
+                                onContentHeightChanged: { contentHeight in
+                                    composerHeight = ComposerLayout.height(for: contentHeight)
+                                },
+                                contexts: model.attachedContexts,
+                                onInspectContext: {
+                                    contextPreviewOwner = WorkspaceIdentity.session(model)
+                                    inspectingContext = $0
+                                }
+                            )
+                            // The native scroll view remains bounded while its document
+                            // grows, so wheel and trackpad scrolling stay inside the
+                            // editor after the composer reaches its maximum height.
+                            .frame(height: effectiveComposerHeight)
+                            .frame(maxWidth: .infinity)
+                            .disabled(model.isRestoringSession)
 
-                        // Placeholder text shares the editor's single visual gutter.
-                        if composer.text.isEmpty {
-                            Text(placeholderText)
-                                .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
-                                .foregroundStyle(Color.dockSecondaryText)
-                                .dockPadding(.leading, textContentInset)
-                                .allowsHitTesting(false)
+                            // Placeholder text shares the editor's single visual gutter.
+                            if composer.text.isEmpty {
+                                Text(placeholderText)
+                                    .dockFont(
+                                        .conversation, weight: .regular, design: DockThemeStyle.current.fontDesign
+                                    )
+                                    .foregroundStyle(Color.dockSecondaryText)
+                                    .dockPadding(.leading, textContentInset)
+                                    .allowsHitTesting(false)
+                            }
                         }
+                        // Move the native editor and the placeholder together; applying
+                        // padding to only the placeholder would reintroduce caret drift.
+                        .dockPadding(.top, textTopPadding)
+                        .frame(maxWidth: .infinity)
+                        // Keep native text in its rectangular viewport; the outer card owns the decorative shape.
+                        .clipped()
                     }
-                    // Move the native editor and the placeholder together; applying
-                    // padding to only the placeholder would reintroduce caret drift.
-                    .dockPadding(.top, textTopPadding)
-                    .frame(maxWidth: .infinity)
-                    // NSTextView is AppKit-backed and may ignore a SwiftUI clipping
-                    // proposal while its intrinsic text height changes. Mask the
-                    // complete input surface as a final paint boundary.
-                    .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
 
                     // Image Attachment Previews (if any images are pending)
                     if !model.pendingImages.isEmpty {
@@ -455,162 +470,167 @@ struct ChatComposerView: View {
                         }
                     }
 
-                    // Integrated Bottom Toolbar Row
-                    HStack(alignment: .center, spacing: 8) {
-                        // Left Toolbar Group: Paperclip attachment button & Model selector dropdown menu
-                        HStack(alignment: .center, spacing: 6) {
-                            // Attachment popover keeps secondary actions discoverable
-                            // without changing the composer's stable footprint.
-                            Button {
-                                showingAttachmentPopover = true
-                            } label: {
-                                ComposerControlLabel(icon: .plus)
-                            }
-                            .buttonStyle(.dockHover)
-                            .help("Attach or insert content")
-                            .accessibilityLabel("Attach")
-                            .dockPopover(isPresented: $showingAttachmentPopover, arrowEdge: .bottom) {
-                                AttachmentPopover(
-                                    pasteImageAvailable: pasteImageAvailable,
-                                    onSelect: handleAttachmentAction,
-                                    onSelectSnippet: insertSnippet
-                                )
-                            }
-
-                            composerModelPicker
-                        }
-                        .layoutPriority(-1)
-
-                        Spacer(minLength: 4)
-
-                        // Right Toolbar Group: Thinking depth selector menu & circular submit button
+                    if !dictation.isRecording {
+                        // Integrated Bottom Toolbar Row
                         HStack(alignment: .center, spacing: 8) {
-                            if let controlCenter {
-                                ChatQuotaChip(
-                                    control: controlCenter, openQuota: openQuota,
-                                    selectedProvider: selectedModelOptionID?.components(separatedBy: "|").first)
-                            }
-                            SessionContextRing(model: model)
-
-                            if !speechInput.isRecording {
+                            // Left Toolbar Group: Paperclip attachment button & Model selector dropdown menu
+                            HStack(alignment: .center, spacing: 6) {
+                                // Attachment popover keeps secondary actions discoverable
+                                // without changing the composer's stable footprint.
                                 Button {
-                                    if dictation.isRecording { dictation.stop() } else { beginDictation() }
+                                    showingAttachmentPopover = true
                                 } label: {
-                                    DockIcon(
-                                        dictation.isRecording ? .stop : .microphone, size: 14,
-                                        color: dictation.isRecording ? Color.dockDestructive : Color.dockSecondaryText
-                                    )
-                                    .frame(width: 28, height: 28)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                            .fill(
-                                                dictation.isRecording
-                                                    ? Color.dockDestructiveFill.opacity(0.14)
-                                                    : DockSkinPresentation.current.composerControlFill)
-                                    )
-                                    .frame(width: 32, height: 32)
-                                    .contentShape(Rectangle())
+                                    ComposerControlLabel(icon: .plus)
                                 }
                                 .buttonStyle(.dockHover)
-                                .disabled(model.isRestoringSession || dictation.isStarting)
-                                .help(dictation.isRecording ? "Stop dictation" : "Dictate")
-                                .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate")
-                            }
+                                .help("Attach or insert content")
+                                .accessibilityLabel("Attach")
+                                .dockPopover(isPresented: $showingAttachmentPopover, arrowEdge: .bottom) {
+                                    AttachmentPopover(
+                                        pasteImageAvailable: pasteImageAvailable,
+                                        onSelect: handleAttachmentAction,
+                                        onSelectSnippet: insertSnippet
+                                    )
+                                }
 
-                            if showsInterruptControl {
-                                Button(action: { onStop() }) {
-                                    DockIcon(.stop, weight: .fill)
-                                        .dockFont(.compactStatus, weight: .bold)
-                                        .foregroundStyle(Color.dockDestructive)
-                                        .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
-                                        .background(Circle().fill(Color.dockDestructiveFill.opacity(0.14)))
+                                composerModelPicker
+                            }
+                            .layoutPriority(-1)
+
+                            Spacer(minLength: 4)
+
+                            // Right Toolbar Group: Thinking depth selector menu & circular submit button
+                            HStack(alignment: .center, spacing: 8) {
+                                if let controlCenter {
+                                    ChatQuotaChip(
+                                        control: controlCenter, openQuota: openQuota,
+                                        selectedProvider: selectedModelOptionID?.components(separatedBy: "|").first)
+                                }
+                                SessionContextRing(model: model)
+
+                                if !speechInput.isRecording {
+                                    Button {
+                                        if dictation.isRecording { dictation.stop() } else { beginDictation() }
+                                    } label: {
+                                        DockIcon(
+                                            dictation.isRecording ? .stop : .microphone, size: 14,
+                                            color: dictation.isRecording
+                                                ? Color.dockDestructive : Color.dockSecondaryText
+                                        )
+                                        .frame(width: 28, height: 28)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                                .fill(
+                                                    dictation.isRecording
+                                                        ? Color.dockDestructiveFill.opacity(0.14)
+                                                        : DockSkinPresentation.current.composerControlFill)
+                                        )
+                                        .frame(width: 32, height: 32)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.dockHover)
+                                    .disabled(model.isRestoringSession || dictation.isStarting)
+                                    .help(dictation.isRecording ? "Stop dictation" : "Dictate")
+                                    .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate")
+                                }
+
+                                if showsInterruptControl {
+                                    Button(action: { onStop() }) {
+                                        DockIcon(.stop, weight: .fill)
+                                            .dockFont(.compactStatus, weight: .bold)
+                                            .foregroundStyle(Color.dockDestructive)
+                                            .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
+                                            .background(Circle().fill(Color.dockDestructiveFill.opacity(0.14)))
+                                    }
+                                    .buttonStyle(.dockHover)
+                                    .help(
+                                        model.status == .needsClarification
+                                            ? "Dismiss the question and interrupt Hermes"
+                                            : "Stop Herm response"
+                                    )
+                                    .accessibilityLabel(
+                                        model.status == .needsClarification
+                                            ? "Dismiss clarification" : "Stop Herm response")
+                                }
+
+                                // Submit and stop share one action, styled by the composer role.
+                                Button(action: {
+                                    if speechInput.isRecording {
+                                        speechInput.stop()
+                                        prepareRequiredContext()
+                                        submitComposerInput()
+                                    } else if showStop {
+                                        onStop()
+                                    } else {
+                                        submitComposerInput()
+                                    }
+                                }) {
+                                    ComposerSubmitLabel(
+                                        isEnabled: canSubmit && !model.isRestoringSession, isFullscreen: isFullscreen
+                                    ) {
+                                        Group {
+                                            if speechInput.isRecording {
+                                                DockIcon(.stop, weight: .fill)
+                                                    .dockFont(.compactStatus, weight: .bold)
+                                                    .foregroundStyle(Color.dockPrimaryText)
+                                            } else if showStop {
+                                                DockIcon(.stop, weight: .fill)
+                                                    .dockFont(.compactStatus, weight: .bold)
+                                                    .foregroundStyle(Color.dockDestructive)
+                                                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+                                            } else {
+                                                DockIcon(.arrowUp)
+                                                    .dockFont(.body, weight: .semibold)
+                                                    // Use soft dockPrimaryText instead of stark white to prevent eye strain
+                                                    .foregroundStyle(
+                                                        canSubmit
+                                                            ? Color.dockOnAccentText
+                                                            : Color.dockSecondaryText.opacity(0.5)
+                                                    )
+                                                    // Send: the arrow launches up and drops back in.
+                                                    .keyframeAnimator(initialValue: CGFloat(0), trigger: sendKick) {
+                                                        view, y in
+                                                        view.offset(y: y).opacity(1 - Double(abs(y)) / 14)
+                                                    } keyframes: { _ in
+                                                        KeyframeTrack {
+                                                            CubicKeyframe(-12, duration: 0.14)
+                                                            MoveKeyframe(10)
+                                                            SpringKeyframe(0, duration: 0.3, spring: .bouncy)
+                                                        }
+                                                    }
+                                                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+                                            }
+                                        }
+                                        .animation(
+                                            reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.65),
+                                            value: showStop)
+                                    }
                                 }
                                 .buttonStyle(.dockHover)
-                                .help(
-                                    model.status == .needsClarification
-                                        ? "Dismiss the question and interrupt Hermes"
-                                        : "Stop Herm response"
+                                .frame(width: 32, height: 32)
+                                .disabled(
+                                    model.isRestoringSession || !model.sessionActionsReady
+                                        || model.isUpdatingSessionModel
+                                        || (!speechInput.isRecording && !showStop
+                                            && (!canSubmit || model.isUpdatingSessionFast
+                                                || (!isSteeringTurn && model.isSending)))
                                 )
                                 .accessibilityLabel(
-                                    model.status == .needsClarification
-                                        ? "Dismiss clarification" : "Stop Herm response")
+                                    speechInput.isRecording
+                                        ? "Send voice prompt" : showStop ? "Stop Herm response" : submitLabel
+                                )
+                                .keyboardShortcut(.return, modifiers: [.command])
+                                .help(
+                                    speechInput.isRecording
+                                        ? "Send voice prompt"
+                                        : (showStop
+                                            ? "Stop Herm response"
+                                            : "\(submitLabel) (↩; ⇧↩ for newline)")
+                                )
                             }
-
-                            // Submit and stop share one action, styled by the composer role.
-                            Button(action: {
-                                if speechInput.isRecording {
-                                    speechInput.stop()
-                                    prepareRequiredContext()
-                                    submitComposerInput()
-                                } else if showStop {
-                                    onStop()
-                                } else {
-                                    submitComposerInput()
-                                }
-                            }) {
-                                ComposerSubmitLabel(
-                                    isEnabled: canSubmit && !model.isRestoringSession, isFullscreen: isFullscreen
-                                ) {
-                                    Group {
-                                        if speechInput.isRecording {
-                                            DockIcon(.stop, weight: .fill)
-                                                .dockFont(.compactStatus, weight: .bold)
-                                                .foregroundStyle(Color.dockPrimaryText)
-                                        } else if showStop {
-                                            DockIcon(.stop, weight: .fill)
-                                                .dockFont(.compactStatus, weight: .bold)
-                                                .foregroundStyle(Color.dockDestructive)
-                                                .transition(.scale(scale: 0.3).combined(with: .opacity))
-                                        } else {
-                                            DockIcon(.arrowUp)
-                                                .dockFont(.body, weight: .semibold)
-                                                // Use soft dockPrimaryText instead of stark white to prevent eye strain
-                                                .foregroundStyle(
-                                                    canSubmit
-                                                        ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5)
-                                                )
-                                                // Send: the arrow launches up and drops back in.
-                                                .keyframeAnimator(initialValue: CGFloat(0), trigger: sendKick) {
-                                                    view, y in
-                                                    view.offset(y: y).opacity(1 - Double(abs(y)) / 14)
-                                                } keyframes: { _ in
-                                                    KeyframeTrack {
-                                                        CubicKeyframe(-12, duration: 0.14)
-                                                        MoveKeyframe(10)
-                                                        SpringKeyframe(0, duration: 0.3, spring: .bouncy)
-                                                    }
-                                                }
-                                                .transition(.scale(scale: 0.3).combined(with: .opacity))
-                                        }
-                                    }
-                                    .animation(
-                                        reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.65),
-                                        value: showStop)
-                                }
-                            }
-                            .buttonStyle(.dockHover)
-                            .frame(width: 32, height: 32)
-                            .disabled(
-                                model.isRestoringSession || !model.sessionActionsReady || model.isUpdatingSessionModel
-                                    || (!speechInput.isRecording && !showStop
-                                        && (!canSubmit || model.isUpdatingSessionFast
-                                            || (!isSteeringTurn && model.isSending)))
-                            )
-                            .accessibilityLabel(
-                                speechInput.isRecording
-                                    ? "Send voice prompt" : showStop ? "Stop Herm response" : submitLabel
-                            )
-                            .keyboardShortcut(.return, modifiers: [.command])
-                            .help(
-                                speechInput.isRecording
-                                    ? "Send voice prompt"
-                                    : (showStop
-                                        ? "Stop Herm response"
-                                        : "\(submitLabel) (↩; ⇧↩ for newline)")
-                            )
                         }
+                        .dockPadding(.top, 0)
                     }
-                    .dockPadding(.top, 0)
 
                     // Voice Recording & Steering Status Messages
                     if let error = speechInput.errorMessage ?? dictation.errorMessage {
@@ -690,6 +710,19 @@ struct ChatComposerView: View {
         speechInput.dismissError()
         liveDictation.begin(owner: WorkspaceIdentity.session(model), text: composer.text)
         dictation.startListening()
+    }
+
+    private func stopDictation() {
+        updateDictation()
+        dictation.stop()
+    }
+
+    private func cancelDictation() {
+        let original = liveDictation.cancel(text: composer.text, owner: WorkspaceIdentity.session(model))
+        liveDictation = ComposerDictation()
+        dictation.stop()
+        if let original { composer.text = original }
+        isComposerFocused = true
     }
 
     private func updateDictation() {

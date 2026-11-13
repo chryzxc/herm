@@ -89,10 +89,8 @@ private struct PullRequestSessionChatView: View {
         }
         .clipShape(DockThemeShape(cornerRadius: DockLayout.paneRadius))
         .overlay {
-            if expanded {
-                DockThemeShape(cornerRadius: DockLayout.paneRadius).stroke(
-                    Color.dockBorder, lineWidth: DockLayout.hairline)
-            }
+            DockThemeShape(cornerRadius: DockLayout.paneRadius).stroke(
+                Color.dockBorder, lineWidth: DockLayout.hairline)
         }
         .shadow(color: Color.dockPrimaryText.opacity(0.08), radius: 16, y: 4)
         .animation(reduceMotion ? nil : .dockEase(duration: 0.2), value: expanded)

@@ -776,7 +776,10 @@ extension DockPopover {
                         selection: scope.repositoryPath,
                         worktreesUnavailable: developerWorkflow.repository.isGitRepository
                             && developerWorkflow.worktreesUnavailable,
-                        onOpenWorktree: { await selectWorktree($0) },
+                        onOpenWorktree: { await openWorktreeInNewChat($0) },
+                        // A chat with no session yet simply starts in the chosen worktree.
+                        onMoveChat: model.sessionID == nil ? nil : { await moveChatToWorktree($0) },
+                        canMoveChat: model.canMoveSessionWorkspace,
                         newTask: { await startWorktreeTask(from: scope.repositoryPath) }
                     )
                 }

@@ -296,11 +296,11 @@ struct BotServiceTests {
     }
 
     @Test func createPersistsRosterTitleThroughConfigure() async throws {
-        let client = BotFixtureClient(result: ["ok": true, "name": "writer", "mirrored": ["env": true]])
+        let client = CreationMetadataClient()
         let details = try await BotService(client: client).create(name: "writer", title: "Writer", description: "Words")
-        #expect(client.methods == ["profiles.create", "profiles.configure"])
-        #expect(client.paramsList.first?["description"] as? String == "Words")
-        let configureParams = client.paramsList.last
+        #expect(client.methods == ["profiles.create", "profiles.list", "profiles.configure", "profiles.list"])
+        #expect(client.createParams?["description"] as? String == "Words")
+        let configureParams = client.configureParams
         #expect(configureParams?["name"] as? String == "writer")
         let uiMeta = configureParams?["ui_meta"] as? [String: Any]
         let botsMeta = uiMeta?["hermes-bots"] as? [String: Any]
@@ -308,11 +308,78 @@ struct BotServiceTests {
         #expect(details.title == "Writer")
     }
 
-    @Test func createKeepsResultWhenTitlePersistenceFails() async throws {
+    @Test func createPreservesExistingMetadata() async throws {
+        let client = CreationMetadataClient()
+        _ = try await BotService(client: client).create(name: "writer", title: "Writer", description: nil)
+        #expect(client.meta["title"] as? String == "Writer")
+        #expect(client.meta["sectionId"] as? String == "team")
+    }
+
+    @Test func createReportsPartialWhenTitlePersistenceFails() async throws {
         let client = BotFailingConfigureClient(createResult: ["ok": true, "name": "writer"])
-        let details = try await BotService(client: client).create(name: "writer", title: "Writer", description: nil)
-        #expect(details.id == "writer")
-        #expect(details.title == "Writer")
+        do {
+            _ = try await BotService(client: client).create(name: "writer", title: "Writer", description: nil)
+            Issue.record("Expected a partial creation outcome")
+        } catch let partial as BotCreationPartialError {
+            #expect(partial.profileID == "writer")
+        }
+    }
+
+    @Test func creationDoesNotClaimRoleWhenReadbackDisagrees() async {
+        let client = CreationMetadataClient()
+        client.ignoreMetadataWrite = true
+        do {
+            _ = try await BotService(client: client).create(name: "writer", title: "Writer", description: nil)
+            Issue.record("Expected an unconfirmed role")
+        } catch let partial as BotCreationPartialError {
+            #expect(partial.profileID == "writer")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test func draftRetriesRoleWithoutCreatingAnotherProfile() async {
+        let client = CreationMetadataClient()
+        client.failConfigureOnce = true
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+        await model.refreshNow(force: true)
+        let draft = BotCreationDraft()
+        draft.name = "writer"
+        draft.role = "Writer"
+        await draft.create(model)
+        #expect(model.partialCreatedBotID == "writer")
+        await draft.create(model)
+        #expect(client.methods.filter { $0 == "profiles.create" }.count == 1)
+        #expect(draft.finished?.id == "writer")
+    }
+
+    @Test func draftDoesNotRecreateWhenRosterReadbackIsMissing() async {
+        let client = CreationMetadataClient()
+        client.hideCreatedRoster = true
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+        await model.refreshNow(force: true)
+        let draft = BotCreationDraft()
+        draft.name = "writer"
+        await draft.create(model)
+        await draft.create(model)
+        #expect(client.methods.filter { $0 == "profiles.create" }.count == 1)
+        #expect(draft.finished == nil)
+    }
+
+    @Test func draftDoesNotRecreateAfterUnknownAdmission() async {
+        let client = CreationMetadataClient()
+        client.failCreateAfterAdmission = true
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+        await model.refreshNow(force: true)
+        let draft = BotCreationDraft()
+        draft.name = "writer"
+        await draft.create(model)
+        await draft.create(model)
+        #expect(client.methods.filter { $0 == "profiles.create" }.count == 1)
+        #expect(model.botCreationError?.contains("could not be confirmed") == true)
     }
 
     @Test func createFailsClosedWhenHermesRejects() async {
@@ -374,7 +441,11 @@ struct BotServiceTests {
                 [
                     "name": "research",
                     "canonical_session": NSNull(),
-                    "ui_meta": ["hermes-bots": ["title": "Paper Finder", "hidden": true]],
+                    "ui_meta": [
+                        "hermes-bots": [
+                            "title": "Paper Finder", "hidden": true, "sectionId": "sec-1", "sectionName": " Clients ",
+                        ]
+                    ],
                     "has_avatar": true, "is_default": false,
                     "worker_session": ["id": "w1", "last_active": now - 10],
                 ]
@@ -389,6 +460,8 @@ struct BotServiceTests {
         #expect(bot?.isRecentlyActive == true)
         #expect(bot?.isWorkingNow == true)
         #expect(bot?.worker?.sessionID == "w1")
+        #expect(bot?.sectionID == "sec-1")
+        #expect(bot?.sectionName == "Clients")
     }
 
     @Test func staleWorkerSessionDoesNotKeepBotWorkingForever() async throws {
@@ -424,14 +497,70 @@ struct BotServiceTests {
     }
 
     @Test func rosterMetaWriteSendsCompleteBotModeBlock() async throws {
-        let client = BotFixtureClient(result: [:])
+        let client = BotFixtureClient(result: ["profiles": [["name": "research"]]])
         _ = try await BotService(client: client).setRosterMeta(
             profileID: "research", title: "Paper Finder", hidden: false)
-        let params = client.paramsList.first
+        let params = client.paramsList.last
         #expect(params?["name"] as? String == "research")
         let meta = (params?["ui_meta"] as? [String: Any])?["hermes-bots"] as? [String: Any]
         #expect(meta?["title"] as? String == "Paper Finder")
         #expect(meta?["hidden"] as? Bool == false)
+    }
+
+    @Test func rosterMetadataPreservesOtherClientsFieldsAndUsesRevision() async throws {
+        let client = MetadataFixtureClient()
+        try await BotService(client: client).setRosterMeta(profileID: "research", title: nil, hidden: true)
+        let params = try #require(client.configured)
+        let meta = try #require((params["ui_meta"] as? [String: Any])?["hermes-bots"] as? [String: Any])
+        #expect(meta["title"] as? String == "Research")
+        #expect(meta["sectionId"] as? String == "team")
+        #expect(meta["sectionName"] as? String == "Team")
+        #expect(meta["hidden"] as? Bool == true)
+        #expect((params["ui_meta_expected_revisions"] as? [String: Int])?["hermes-bots"] == 4)
+    }
+
+    @Test func rosterSectionWriteKeepsOtherFieldsAndClears() async throws {
+        let client = MetadataFixtureClient()
+        try await BotService(client: client).setRosterSection(profileID: "research", id: "sec-2", name: "Clients")
+        var meta = try #require(
+            ((client.configured?["ui_meta"] as? [String: Any])?["hermes-bots"]) as? [String: Any])
+        #expect(meta["sectionId"] as? String == "sec-2")
+        #expect(meta["sectionName"] as? String == "Clients")
+        #expect(meta["title"] as? String == "Research")
+
+        try await BotService(client: client).setRosterSection(profileID: "research", id: nil, name: nil)
+        meta = try #require(((client.configured?["ui_meta"] as? [String: Any])?["hermes-bots"]) as? [String: Any])
+        #expect(meta["sectionId"] == nil && meta["sectionName"] == nil)
+        #expect(meta["title"] as? String == "Research")
+    }
+
+    @Test func concurrentMetadataWritesPreserveBothChanges() async throws {
+        let client = ConcurrentMetadataClient()
+        let service = BotService(client: client)
+        let first = Task { try await service.setRosterMeta(profileID: "research", title: "New", hidden: nil) }
+        for await _ in client.firstWriteStarted { break }
+        let (started, signal) = AsyncStream<Void>.makeStream()
+        let second = Task {
+            signal.yield(())
+            try await service.setRosterMeta(profileID: "research", title: nil, hidden: true)
+        }
+        for await _ in started { break }
+        client.releaseFirst.yield(())
+        client.releaseFirst.finish()
+        try await first.value
+        try await second.value
+        #expect(client.meta["title"] as? String == "New")
+        #expect(client.meta["hidden"] as? Bool == true)
+    }
+
+    @Test func profileEditReportsFailureWhenRoleCannotBeSaved() async {
+        let client = BotFixtureClient(result: ["ok": true])
+        do {
+            _ = try await BotService(client: client).applyProfileEdit(
+                profileID: "research", title: "New", description: "D", soul: "S", provider: nil, model: nil,
+                disabledSkills: [], enabledToolsets: nil, enabledMCPServers: [], confirmExpensiveModel: false)
+            Issue.record("Expected a role persistence failure")
+        } catch {}
     }
 
     @Test func profileEditSurfacesGuardedModelConfirmation() async throws {
@@ -488,6 +617,19 @@ struct BotServiceTests {
         #expect(BotService.encodeDataURL(Data([0xFF, 0xD8, 0xFF, 0xE0]))?.hasPrefix("data:image/jpeg;base64,") == true)
         #expect(BotService.encodeDataURL(Data("RIFF1234WEBPVP8 ".utf8))?.hasPrefix("data:image/webp;base64,") == true)
         #expect(BotService.encodeDataURL(Data("not an image".utf8)) == nil)
+    }
+
+    @Test func duplicateReportsPartialWhenRoleCannotBeSaved() async {
+        let client = CreationMetadataClient()
+        client.failConfigureOnce = true
+        do {
+            try await BotService(client: client).duplicate(profileID: "original", newName: "writer", title: "Writer")
+            Issue.record("Expected partial duplication")
+        } catch let partial as BotCreationPartialError {
+            #expect(partial.profileID == "writer")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
     }
 
     @Test func duplicateSendsCloneFrom() async throws {
@@ -676,6 +818,108 @@ struct BotServiceTests {
         #expect(!BotAvatarView.matchesHermFace(legacy, id: "cypher"))
         #expect(!BotAvatarView.matchesHermFace(Data("not an image".utf8), id: "nexus"))
     }
+}
+
+@MainActor
+private final class CreationMetadataClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    var meta: [String: Any] = ["sectionId": "team"]
+    var failConfigureOnce = false
+    var hideCreatedRoster = false
+    var failCreateAfterAdmission = false
+    var ignoreMetadataWrite = false
+    private var created = false
+    private(set) var methods: [String] = []
+    private(set) var createParams: [String: Any]?
+    private(set) var configureParams: [String: Any]?
+    func connect() async throws {}
+    func close() {}
+    func fetchHTTP(_ path: String) async throws -> [String: Any] { [:] }
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        methods.append(method)
+        switch method {
+        case "profiles.create":
+            createParams = params
+            created = true
+            if failCreateAfterAdmission { throw URLError(.timedOut) }
+            return ["ok": true, "name": "writer"]
+        case "profiles.list":
+            return [
+                "profiles": created && !hideCreatedRoster ? [["name": "writer", "ui_meta": ["hermes-bots": meta]]] : []
+            ]
+        case "profiles.configure":
+            configureParams = params
+            if failConfigureOnce {
+                failConfigureOnce = false
+                throw URLError(.timedOut)
+            }
+            if !ignoreMetadataWrite {
+                meta = (params["ui_meta"] as? [String: Any])?["hermes-bots"] as? [String: Any] ?? [:]
+            }
+            return ["ok": true]
+        default: return [:]
+        }
+    }
+}
+
+@MainActor
+private final class ConcurrentMetadataClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    private let firstWrite = AsyncStream<Void>.makeStream()
+    private let firstStarted = AsyncStream<Void>.makeStream()
+    var firstWriteStarted: AsyncStream<Void> { firstStarted.stream }
+    var releaseFirst: AsyncStream<Void>.Continuation { firstWrite.continuation }
+    var meta: [String: Any] = ["title": "Old", "hidden": false]
+    private var writes = 0
+    func connect() async throws {}
+    func close() {}
+    func fetchHTTP(_ path: String) async throws -> [String: Any] { [:] }
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == "profiles.list" {
+            return ["profiles": [["name": "research", "ui_meta": ["hermes-bots": meta]]]]
+        }
+        if method == "profiles.configure" {
+            writes += 1
+            let update = (params["ui_meta"] as? [String: Any])?["hermes-bots"] as? [String: Any] ?? [:]
+            if writes == 1 {
+                firstStarted.continuation.yield(())
+                for await _ in firstWrite.stream { break }
+            }
+            meta = update
+            return ["ok": true]
+        }
+        return [:]
+    }
+}
+
+@MainActor
+private final class MetadataFixtureClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    private(set) var configured: [String: Any]?
+    func connect() async throws {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == "profiles.list" {
+            return [
+                "profiles": [
+                    [
+                        "name": "research",
+                        "ui_meta": [
+                            "hermes-bots": [
+                                "title": "Research", "sectionId": "team", "sectionName": "Team", "hidden": false,
+                            ]
+                        ], "ui_meta_revisions": ["hermes-bots": 4],
+                    ]
+                ]
+            ]
+        }
+        if method == "profiles.configure" {
+            configured = params
+            return ["ok": true]
+        }
+        return [:]
+    }
+    func fetchHTTP(_ path: String) async throws -> [String: Any] { [:] }
+    func close() {}
 }
 
 @MainActor

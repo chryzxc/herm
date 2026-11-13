@@ -28,9 +28,6 @@ struct WorkflowUIRenderTests {
         defer { model.shutdown() }
         let terminalKey = "ui-review-" + UUID().uuidString
         let terminalStore = TerminalWorkspaceStore.shared.workspace(key: terminalKey + ":/tmp")
-        for _ in 0..<3 { terminalStore.add(directory: "/tmp") }
-        terminalStore.splitIDs = terminalStore.sessions.map(\.id)
-        terminalStore.splitAxis = 0
         for (index, session) in terminalStore.sessions.enumerated() {
             session.emulator.view.feed(text: "\r\nFixture shell \(index + 1) · ready for input\r\n")
         }
@@ -116,8 +113,7 @@ struct WorkflowUIRenderTests {
                     SessionTerminalView(
                         projectPath: "/tmp", recipes: [], repositoryID: nil,
                         repositoryFingerprint: nil, workspaceKey: terminalKey, discoveryActive: false), root: root,
-                    name: "terminal-splits-\(raw)-\(Int(width))", width: width, height: 640)
-                #expect(terminalStore.splitAxis == 0)
+                    name: "terminal-\(raw)-\(Int(width))", width: width, height: 640)
             }
         }
     }
@@ -145,8 +141,8 @@ struct WorkflowUIRenderTests {
             (view as? ContextTerminalView).map { [$0] } ?? view.subviews.flatMap(terminals)
         }
         let panes = terminals(host)
-        if name.hasPrefix("terminal-splits") {
-            #expect(panes.count == 4)
+        if name.hasPrefix("terminal-") {
+            #expect(panes.count == 1)
             for pane in panes {
                 #expect(pane.bounds.width >= 150)
                 #expect(pane.bounds.height >= 90)

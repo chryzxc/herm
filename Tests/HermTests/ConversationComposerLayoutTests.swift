@@ -6,6 +6,38 @@ import Testing
 
 @MainActor
 struct ConversationComposerLayoutTests {
+    @Test func welcomeIsCenteredWhenItsIdealWidthIsNarrowerThanTheCanvas() async throws {
+        _ = NSApplication.shared
+        let welcome = NSTextField(labelWithString: "Welcome")
+        let host = NSHostingView(
+            rootView: ConversationComposerPlacement(progress: 0) {
+                ComposerProbe(field: welcome).frame(width: 120, height: 50)
+                Color.clear
+                Color.clear.frame(height: 100)
+            })
+        host.sizingOptions = []
+        host.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.orderOut(nil) }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        host.layoutSubtreeIfNeeded()
+        #expect(abs(welcome.convert(welcome.bounds, to: host).midX - host.bounds.midX) < 1)
+    }
+
+    @Test func composerPositionInterpolatesBetweenCenterAndBottom() {
+        let start = ConversationComposerPlacement.composerY(
+            height: 700, contentHeight: 200, composerHeight: 100, progress: 0)
+        let middle = ConversationComposerPlacement.composerY(
+            height: 700, contentHeight: 200, composerHeight: 100, progress: 0.5)
+        let end = ConversationComposerPlacement.composerY(
+            height: 700, contentHeight: 200, composerHeight: 100, progress: 1)
+        #expect(start == 400)
+        #expect(middle == 500)
+        #expect(end == 600)
+    }
+
     private struct ComposerProbe: NSViewRepresentable {
         let field: NSTextField
         func makeNSView(context: Context) -> NSTextField { field }

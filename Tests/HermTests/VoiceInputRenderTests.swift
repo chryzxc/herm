@@ -7,6 +7,34 @@ import Testing
 /// Opt-in native fixtures, without starting recognition, audio, or Hermes.
 @MainActor
 struct VoiceInputRenderTests {
+    @Test func dictationRecordingBarSnapshots() async throws {
+        guard let path = ProcessInfo.processInfo.environment["VOICE_SNAPSHOT_DIR"] else { return }
+        for width: CGFloat in [280, 760] {
+            let reading = VoiceMeterReading()
+            reading.level = 0.5
+            let content = ComposerDictationRecordingBar(
+                reading: reading, canSend: true, cancel: {}, stop: {}, send: {}
+            )
+            .composerCard(isFocused: false)
+            .padding(12)
+            .frame(width: width, height: 80)
+            .background(Color.dockCanvas)
+            .dockThemedRoot()
+            let host = NSHostingView(rootView: content)
+            host.frame = NSRect(x: 0, y: 0, width: width, height: 80)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            window.orderFrontRegardless()
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(250))
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let png = try #require(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: URL(fileURLWithPath: path).appendingPathComponent("dictation-\(Int(width)).png"))
+            window.orderOut(nil)
+        }
+    }
+
     @Test func warningActionsAndSpokenCaptions() async throws {
         guard let path = ProcessInfo.processInfo.environment["VOICE_SNAPSHOT_DIR"] else { return }
         let savedTheme = DockThemeRuntime.current

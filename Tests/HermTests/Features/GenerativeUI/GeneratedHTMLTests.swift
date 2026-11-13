@@ -14,8 +14,7 @@ struct GeneratedHTMLTests {
                 #expect(css.contains("color-scheme:" + (dark ? "dark" : "light")))
                 #expect(css.contains("--herm-control-radius:\(theme.style.controlRadius)px"))
                 #expect(css.contains("@media(prefers-reduced-motion:reduce)"))
-                if theme.style.fontDesign == .monospaced { #expect(css.contains("ui-monospace")) }
-                if theme.style.fontDesign == .serif { #expect(css.contains("ui-serif")) }
+                #expect(css.contains("--herm-font:-apple-system,BlinkMacSystemFont,sans-serif"))
                 if !theme.style.animates { #expect(css.hasSuffix("scroll-behavior:auto!important;}")) }
             }
         }

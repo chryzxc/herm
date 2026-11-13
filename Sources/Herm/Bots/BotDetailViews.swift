@@ -155,7 +155,7 @@ struct BotProfileEditorSheet: View {
             }
             .dockPadding(20)
         }
-        .frame(maxHeight: 560)
+        .frame(maxHeight: isEmbedded ? .infinity : 560)
     }
 
     private var cardBackground: some View {
@@ -550,6 +550,8 @@ struct BotDuplicateSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var newName = ""
     @State private var isDuplicating = false
+    @State private var partialID: String?
+    @State private var admissionUnconfirmed = false
 
     var body: some View {
         DockModal(
@@ -566,12 +568,19 @@ struct BotDuplicateSheet: View {
         } footer: {
             modalActions(
                 primaryTitle: "Duplicate", pendingTitle: "Duplicating…",
-                isDisabled: !BotCreationSheet.isValidProfileName(trimmedName) || isDuplicating,
+                isDisabled: admissionUnconfirmed || !BotCreationSheet.isValidProfileName(trimmedName) || isDuplicating,
                 isPending: isDuplicating, onCancel: { dismiss() }
             ) {
                 Task {
                     isDuplicating = true
-                    if await model.duplicateBot(bot, newName: trimmedName) { dismiss() }
+                    if let partialID {
+                        if await model.finishBotRole(profileID: partialID, title: bot.title ?? "") { dismiss() }
+                    } else if await model.duplicateBot(bot, newName: trimmedName) {
+                        dismiss()
+                    } else {
+                        partialID = model.partialCreatedBotID
+                        admissionUnconfirmed = model.creationAdmissionUnconfirmed
+                    }
                     isDuplicating = false
                 }
             }

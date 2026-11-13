@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct StartupAssistantView: View {
     var hermFaceID: String?
+    var isActive = true
     @State private var appeared = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -12,7 +13,7 @@ struct StartupAssistantView: View {
         VStack(spacing: 6) {
             Spacer(minLength: 0)
             // The voice orb at rest, scaled down: chat and voice share one visual language.
-            VoiceOrbView(mode: .idle, audioLevel: 0, hermFaceID: hermFaceID)
+            VoiceOrbView(mode: .idle, audioLevel: 0, hermFaceID: hermFaceID, isActive: isActive)
                 .frame(width: 300, height: 300)
                 .scaleEffect(0.5)
                 .frame(width: 150, height: 150)
@@ -113,11 +114,12 @@ struct VoiceOrbView: View {
     /// `BotAvatarView.showsHermFace`). The live face then replaces the core
     /// sphere; uploaded or generated art keeps the plain orb.
     var hermFaceID: String?
+    var isActive = true
     @State private var motion = VoiceOrbMotion()
     @State private var isHovering = false
 
     var body: some View {
-        if reduceMotion {
+        if reduceMotion || !isActive {
             orb(VoiceOrbMotion.target(mode: mode, level: Double(audioLevel), time: 0), time: 0)
         } else {
             // Idle keeps a slow breathing cadence unless the pointer is engaging it.

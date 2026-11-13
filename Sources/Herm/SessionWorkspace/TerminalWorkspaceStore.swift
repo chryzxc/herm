@@ -18,6 +18,17 @@ final class TerminalWorkspaceStore {
         }
     }
     func closeWorkspace(key: String) { workspaces.removeValue(forKey: key)?.closeAll() }
+
+    /// Move legacy nested shells into independently owned inspector workspaces without stopping them.
+    func separateShells(key: String, makeKey: (UUID) -> String) -> [UUID] {
+        let source = workspace(key: key)
+        return source.takeUnselectedSessions().map { session in
+            let id = UUID()
+            let targetKey = makeKey(id)
+            workspaces[targetKey] = TerminalTabStore(session: session, persistenceKey: targetKey)
+            return id
+        }
+    }
     func shutdown() {
         for workspace in workspaces.values { workspace.closeAll() }
         workspaces = [:]
@@ -53,6 +64,27 @@ final class TerminalTabStore: ObservableObject {
         }
         splitAxis = layout?.axis == 1 ? 1 : 0
         sessions.forEach(observe)
+    }
+    init(session: LocalTerminalSession, persistenceKey: String) {
+        self.persistenceKey =
+            "herm.terminal-layout."
+            + SHA256.hash(data: Data(persistenceKey.utf8)).map { String(format: "%02x", $0) }.joined()
+        sessions = [session]
+        selectedID = session.id
+        observe(session)
+        persistLayout()
+    }
+
+    func takeUnselectedSessions() -> [LocalTerminalSession] {
+        let kept = selected
+        let moved = sessions.filter { $0.id != kept.id }
+        guard !moved.isEmpty || !splitIDs.isEmpty else { return [] }
+        sessions = [kept]
+        subscriptions.removeAll()
+        observe(kept)
+        splitIDs = []
+        persistLayout()
+        return moved
     }
     private struct TerminalLayout: Codable {
         let count: Int

@@ -61,6 +61,10 @@ struct ConversationTranscriptSnapshot: Equatable {
         let speakingID: UUID?
         let historyLoading: Bool
         let latestRequest: Int
+        let deliveryStates: [UUID: MessageDeliveryStatus]
+        let deliveryChecking: Bool
+        let deliveryCheckNote: String?
+        let deliveryCheckAvailable: Bool
     }
 
     let sessionID: String?
@@ -143,6 +147,9 @@ final class ConversationTranscriptSource: ObservableObject {
             self.coordinator.retryPreparedPage()
         }
         observe(model.$messages)
+        observe(model.$pendingSessionSends)
+        observe(model.$deliveryChecksInFlight)
+        observe(model.$deliveryCheckNotes)
         observe(model.$sessionTranscriptPreview)
         observe(model.$sessionTranscriptLoadState)
         observe(model.$unreadDividerMessageID)
@@ -333,7 +340,25 @@ final class ConversationTranscriptSource: ObservableObject {
                 storedReferences: preview?.references ?? model.storedMessageReferences,
                 updatingPin: model.updatingMessagePinRowID,
                 pendingActions: actions.pendingActions, speakingID: voice.speakingMessageID,
-                historyLoading: model.isLoadingTranscriptHistory, latestRequest: model.scrollToLatestMessageRequest
+                historyLoading: model.isLoadingTranscriptHistory, latestRequest: model.scrollToLatestMessageRequest,
+                deliveryStates: Dictionary(
+                    model.pendingSessionSends.filter { $0.owner == model.composerDraftKey && $0.phase != .notSent }
+                        .map { pending in
+                            let label: MessageDeliveryStatus
+                            if pending.phase == .preparing || pending.phase == .submitting {
+                                label = .sending
+                            } else if pending.phase == .uncertain {
+                                label = .unconfirmed
+                            } else if pending.acceptedStatus == "queued" {
+                                label = .queued
+                            } else {
+                                label = .accepted
+                            }
+                            return (pending.visibleMessageID ?? pending.message.id, label)
+                        }, uniquingKeysWith: { first, _ in first }),
+                deliveryChecking: model.deliveryChecksInFlight.contains(model.composerDraftKey),
+                deliveryCheckNote: model.deliveryCheckNotes[model.composerDraftKey],
+                deliveryCheckAvailable: model.sessionStorageID != nil
             ), prepend: model.lastTranscriptPrepend, navigator: preview?.navigator ?? model.messageNavigatorSnapshot
         )
     }

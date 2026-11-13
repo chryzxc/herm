@@ -4,51 +4,46 @@ struct EdgeQuietMenu: View {
     @ObservedObject var coordinator: HermInterruptionCoordinator
     let showDigest: () -> Void
     var body: some View {
-        // The label width changes with the countdown, so pin the popover to the trailing edge.
-        DockMenu(anchor: .point(.bottomTrailing)) {
-            if coordinator.quiet {
-                Button {
-                    coordinator.end()
-                } label: {
-                    Label("End quiet period", icon: .bellRinging)
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            DockMenu(anchor: .point(.bottomTrailing)) {
+                if coordinator.quiet {
+                    Button {
+                        coordinator.end()
+                    } label: {
+                        Label("End quiet period", icon: .bellRinging)
+                    }
+                } else {
+                    Button {
+                        coordinator.start(minutes: 30)
+                    } label: {
+                        Label("Quiet for 30 minutes", icon: .timer)
+                    }
+                    Button {
+                        coordinator.start()
+                    } label: {
+                        Label("Quiet for 60 minutes", icon: .clockCountdown)
+                    }
+                    Button {
+                        coordinator.start(minutes: nil)
+                    } label: {
+                        Label("Quiet until I end it", icon: .infinity)
+                    }
                 }
-            } else {
-                Button {
-                    coordinator.start(minutes: 30)
-                } label: {
-                    Label("Quiet for 30 minutes", icon: .timer)
+                if !coordinator.entries.isEmpty || coordinator.overflow > 0 {
+                    Divider()
+                    Button(action: showDigest) {
+                        Label("Review digest (\(coordinator.entries.count))", icon: .tray)
+                    }
                 }
-                Button {
-                    coordinator.start()
-                } label: {
-                    Label("Quiet for 60 minutes", icon: .clockCountdown)
-                }
-                Button {
-                    coordinator.start(minutes: nil)
-                } label: {
-                    Label("Quiet until I end it", icon: .infinity)
-                }
+            } label: {
+                DockIcon(coordinator.quiet ? .bellSimpleSlash : .bellSimple, size: 13)
+                    .foregroundStyle(coordinator.quiet ? Color.dockPrimaryText : Color.dockSecondaryText)
             }
-            if !coordinator.entries.isEmpty || coordinator.overflow > 0 {
-                Divider()
-                Button(action: showDigest) {
-                    Label("Review digest (\(coordinator.entries.count))", icon: .tray)
-                }
-            }
-        } label: {
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                HStack(spacing: 4) {
-                    DockIcon(coordinator.quiet ? .bellSimpleSlash : .bellSimple, size: 13)
-                    Text(Self.title(quiet: coordinator.quiet, expiry: coordinator.expiry, now: context.date))
-                        .dockFont(.metadata, weight: .medium)
-                        .monospacedDigit()
-                }
-                .foregroundStyle(coordinator.quiet ? Color.dockPrimaryText : Color.dockSecondaryText)
-            }
+            .fixedSize()
+            .help(Self.title(quiet: coordinator.quiet, expiry: coordinator.expiry, now: context.date))
+            .accessibilityLabel(
+                coordinator.quiet ? "Quiet period active. Manage interruptions" : "Start a quiet period")
         }
-        .fixedSize()
-        .accessibilityLabel(
-            coordinator.quiet ? "Quiet period active. Manage interruptions" : "Start a quiet period")
     }
 
     /// "Quiet", "Quiet · 42m", or "Quiet · On" for an open-ended period.

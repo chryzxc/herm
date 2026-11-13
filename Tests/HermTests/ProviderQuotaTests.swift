@@ -318,6 +318,24 @@ struct ProviderQuotaTests {
         #expect(QuotaWorkspacePresentation.reading([antigravity], for: "antigravity")?.remaining == 0)
     }
 
+    @MainActor @Test func compactQuotaUsesHermesActivePooledAccount() {
+        func account(_ id: String, _ remaining: Double?) -> ProviderQuotaSnapshot {
+            var result = snapshot("codex-hermes-\(id)", [("Weekly", remaining, nil)])
+            result.hermesCredential = HermesPooledCredential(
+                provider: "openai-codex", id: id, label: id, position: 1)
+            return result
+        }
+        let control = ControlCenterModel()
+        control.providerQuotas = [account("exhausted", 0), account("active", 36)]
+        control.hermesActiveCredentialKeys = ["openai-codex/active"]
+        #expect(control.quotaReading(for: "openai-codex")?.remaining == 36)
+        control.hermesActiveCredentialKeys = []
+        #expect(control.quotaReading(for: "openai-codex") == nil)
+        control.hermesActiveCredentialKeys = ["openai-codex/active"]
+        control.providerQuotas = [account("exhausted", 0), account("active", nil)]
+        #expect(control.quotaReading(for: "openai-codex") == nil)
+    }
+
     @Test func quotaCompactDurationFormatsCountdowns() {
         let now = Date(timeIntervalSince1970: 0)
         #expect(QuotaWorkspacePresentation.compactDuration(from: now, to: now.addingTimeInterval(30)) == "<1m")

@@ -867,6 +867,11 @@ extension DockModel {
                 applyMessagePinReceipt(
                     payload["persisted_turn"] as? [String: Any],
                     assistantMessageID: completedMessageIDForPin ?? messages.last?.id)
+                let deliveryOwner = composerDraftKey
+                let deliveryGeneration = sessionResumeGeneration
+                if pendingSessionSends.contains(where: { $0.owner == deliveryOwner && $0.phase == .acknowledged }) {
+                    Task { await checkDeliveryStatus(owner: deliveryOwner, generation: deliveryGeneration) }
+                }
                 Task { await refreshMessagePins() }
                 let result = messages.last(where: { $0.role == .hermes })?.text
                 updateInFlightBotActivity(

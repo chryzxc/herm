@@ -75,18 +75,18 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .hermesClassic:
             "The Hermes desktop look: clean chrome, Nous blue, square controls, and a faint etched backdrop. Follows macOS appearance."
         case .ares: "Oxblood panels, bronze contours, crisp corners, and hard offset shadows."
-        case .mono: "Graphite surfaces, monospaced lettering, and inverted silver selection."
+        case .mono: "Graphite surfaces and inverted silver selection."
         case .slate: "Steel-blue panels, a fine blueprint grid, and precise blue selection bars."
-        case .warmLight: "Cream paper, brown ink, serif lettering, and gently pressed surfaces."
+        case .warmLight: "Cream paper, brown ink, and gently pressed surfaces."
         case .cartoon: "Cream canvas, white stickers, chunky ink outlines, and springy rounded controls."
-        case .terminal: "Green-black surfaces, fine scanlines, monospaced lettering, and inverted selection."
+        case .terminal: "Green-black surfaces, fine scanlines, and inverted selection."
         case .brutalist: "White stock, a dotted print grid, cobalt actions, and heavy black offset outlines."
         case .origami: "Ivory paper, indigo ink, clipped folds, and softly layered panels."
         case .dusk: "Plum-black surfaces, lavender accents, soft depth, and generous corners."
         case .retro: "Silver panels, blue selection, and raised and sunken desktop bevels. No motion."
         case .eInk: "Crisp paper, black rules, square controls, and inverted selection. No motion."
         case .swiss: "Open typographic layout, a clear canvas, red underlines, and a single-rule composer."
-        case .clay: "Warm porcelain, terracotta accents, rounded lettering, and softly molded controls."
+        case .clay: "Warm porcelain, terracotta accents, and softly molded controls."
         case .pixel: "Indigo panels, magenta accents, stepped corners, and pixel-grid shadows. No motion."
         case .notebook: "Ruled cream paper, blue accents, pencil outlines, and highlighter selection."
         case .hud: "Cyan instruments, crosshair grid, chamfered panels, and fine corner brackets."
@@ -112,7 +112,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
                 cardFill: 1, tintedSidebar: true, flatShell: true)
         case .warmLight:
             DockThemeStyle(
-                controlRadius: 12, paneRadius: 16, outlineWidth: 0.5, fontDesign: .serif, selection: .fill,
+                controlRadius: 12, paneRadius: 16, outlineWidth: 0.5, selection: .fill,
                 cardShadow: 6, emboss: 3, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
         case .ares:
             DockThemeStyle(
@@ -120,25 +120,25 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
                 accentGradient: true, motion: .mechanical, pressScale: 0.97, cardFill: 1, tintedSidebar: true)
         case .mono:
             DockThemeStyle(
-                controlRadius: 2, paneRadius: 4, outlineWidth: 0.5, fontDesign: .monospaced, selection: .invert,
+                controlRadius: 2, paneRadius: 4, outlineWidth: 0.5, selection: .invert,
                 motion: .mechanical, pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
         case .clay:
             DockThemeStyle(
-                controlRadius: 16, paneRadius: 22, outlineWidth: 0, fontDesign: .rounded, cardShadow: 5,
+                controlRadius: 16, paneRadius: 22, outlineWidth: 0, cardShadow: 5,
                 accentGradient: true, emboss: 4, motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
         case .pixel:
             DockThemeStyle(
                 controlRadius: 0, paneRadius: 0, outlineWidth: 3, stickerShadow: 4, geometry: .pixel,
-                fontDesign: .monospaced, selection: .invert, animates: false, backdrop: .grid, pressScale: 1,
+                selection: .invert, animates: false, backdrop: .grid, pressScale: 1,
                 cardFill: 1, tintedSidebar: true)
         case .notebook:
             DockThemeStyle(
-                controlRadius: 6, paneRadius: 8, outlineWidth: 1.5, geometry: .sketch, fontDesign: .serif,
+                controlRadius: 6, paneRadius: 8, outlineWidth: 1.5, geometry: .sketch,
                 selection: .highlight, backdrop: .ruled, pressScale: 0.97, cardFill: 1, neutralUserBubble: true,
                 tintedSidebar: true)
         case .hud:
             DockThemeStyle(
-                controlRadius: 2, paneRadius: 4, outlineWidth: 1, geometry: .chamfered, fontDesign: .monospaced,
+                controlRadius: 2, paneRadius: 4, outlineWidth: 1, geometry: .chamfered,
                 selection: .bar, glow: 5, backdrop: .crosshairs, motion: .mechanical, pressScale: 0.98, cardFill: 0.8,
                 tintedSidebar: true)
         case .storm:
@@ -148,7 +148,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
                 tintedSidebar: true)
         case .cartoon:
             DockThemeStyle(
-                controlRadius: 14, paneRadius: 18, outlineWidth: 2.5, stickerShadow: 4, fontDesign: .rounded,
+                controlRadius: 14, paneRadius: 18, outlineWidth: 2.5, stickerShadow: 4,
                 motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
         case .retro:
             DockThemeStyle(
@@ -156,7 +156,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
                 pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
         case .terminal:
             DockThemeStyle(
-                controlRadius: 2, paneRadius: 2, outlineWidth: 1, fontDesign: .monospaced, selection: .invert, glow: 3,
+                controlRadius: 2, paneRadius: 2, outlineWidth: 1, selection: .invert, glow: 3,
                 backdrop: .scanlines, motion: .mechanical, pressScale: 1, cardFill: 0.85, tintedSidebar: true)
         case .brutalist:
             DockThemeStyle(
@@ -355,9 +355,9 @@ struct DockThemePalette {
     fileprivate static func roles(_ theme: DockThemeID, dark isDark: Bool) -> Roles {
         var roles = baseRoles(theme, dark: isDark)
         // Interaction and selection belong to the skin, never the status palette.
-        roles.success = DockAccentColor.green.hex(on: roles)
-        roles.warning = DockAccentColor.orange.hex(on: roles)
-        roles.destructive = DockAccentColor.coral.hex(on: roles)
+        roles.success = DockAccentColor.green.hex(on: roles, vivid: theme == .glass)
+        roles.warning = DockAccentColor.orange.hex(on: roles, vivid: theme == .glass)
+        roles.destructive = DockAccentColor.coral.hex(on: roles, vivid: theme == .glass)
         return roles
     }
 
@@ -478,8 +478,8 @@ struct DockThemePalette {
                     "#48484A", "#30D158", "#FF9F0A", "#FF453A"
                 )
                 : (
-                    "#F4F5F7", "#FFFFFF", "#E9EBEF", "#DEE1E6", "#171A1F", "#3E454F", "#424955", "#535557", "#DADCE0",
-                    "#7F8691", "#248A3D", "#C93400", "#D70015"
+                    "#F4F5F7", "#FFFFFF", "#E9EBEF", "#DEE1E6", "#090B0E", "#30343B", "#30343B", "#535557", "#DADCE0",
+                    "#6D747E", "#248A3D", "#C93400", "#D70015"
                 )
         case .clean:
             return isDark
@@ -592,15 +592,14 @@ private struct Tokens {
         }
         accents = DockAccentColor.allCases.map { accent in
             color { roles in
-                accent.hex(on: roles)
+                accent.hex(on: roles, vivid: theme == .glass)
             }
         }
         info = accents[DockAccentColor.blue.rawValue]
         merged = accents[DockAccentColor.violet.rawValue]
         review = accents[DockAccentColor.teal.rawValue]
-        // Light glass lets the desktop through; 80% is the floor that keeps
-        // body text and dividers readable over a black desktop.
-        windowBackground = color({ $0.bg }, nativeAlpha: 0.12, nativeLightAlpha: 0.80)
+        // The darker light-mode ink keeps the more transparent glass readable.
+        windowBackground = color({ $0.bg }, nativeAlpha: 0.12, nativeLightAlpha: 0.70)
         opaqueBackground = color { $0.bg }
         // Clear so nested page canvases never stack into darker panes; the
         // window tint above is the only layer over the glass.
@@ -628,12 +627,12 @@ extension Color {
     /// canvas while the desktop still reads through, like macOS Light glass.
     static let dockLightGlassLift = Color(
         nsColor: NSColor(name: nil) {
-            $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor.white.withAlphaComponent(0.6) : .clear
+            $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor.white.withAlphaComponent(0.4) : .clear
         })
     static let dockLightGlassEdge = Color(
         nsColor: NSColor(name: nil) {
             $0.bestMatch(from: [.darkAqua, .aqua]) == .aqua
-                ? NSColor.black.withAlphaComponent(0.24) : NSColor.white.withAlphaComponent(0.22)
+                ? NSColor.black.withAlphaComponent(0.10) : NSColor.white.withAlphaComponent(0.22)
         })
     static let dockGlassHighlight = Color(
         nsColor: NSColor(name: nil) {

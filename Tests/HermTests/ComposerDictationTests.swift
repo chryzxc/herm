@@ -3,6 +3,15 @@ import Testing
 @testable import Herm
 
 struct ComposerDictationTests {
+    @Test func cancelRestoresOnlyTheOwnedDraft() {
+        var dictation = ComposerDictation()
+        dictation.begin(owner: "chat-a", text: "Draft")
+        #expect(dictation.update("hello", text: "Draft", owner: "chat-a") == "Draft hello")
+        #expect(dictation.cancel(text: "Draft hello", owner: "chat-a") == "Draft")
+        #expect(dictation.cancel(text: "Edited draft", owner: "chat-a") == nil)
+        #expect(dictation.cancel(text: "Draft hello", owner: "chat-b") == nil)
+    }
+
     @Test func partialWordsAppearImmediatelyAndCorrectionsReplaceThePreviousHypothesis() {
         var dictation = ComposerDictation()
         dictation.begin(owner: "chat-a", text: "Please")

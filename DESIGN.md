@@ -68,7 +68,7 @@ The design has two layers:
 1. **Shared foundation:** information hierarchy, navigation, component anatomy,
    spacing roles, action placement, focus behavior, and stable layouts. These rules
    apply to every skin, including the default.
-2. **Skin presentation:** semantic colors, font design, shape, radius, outline,
+2. **Skin presentation:** semantic colors, shape, radius, outline,
    material, selection treatment, texture, and motion. Resolve them through the
    shared Dock components, `DockThemeStyle`, and palette. A skin is applied to the
    foundation; it does not replace the navigation or change what an action does.
@@ -226,8 +226,8 @@ standard point sizes into feature views or renderer defaults. The explicit-size
 modifier is reserved for artwork and specialized presentation sizes.
 
 
-The interface scale preference (its Settings row is temporarily hidden) supplies one inherited native sizing value across window and
-floating chat presentations, with no separate compact font mode, including the session list, conversation, activity,
+The Density preference supplies one inherited native sizing value across window and
+floating chat presentations, including the session list, conversation, activity,
 and composer, as well as other workspace pages and independent preview panels.
 Code, diffs, terminal text, and chart labels resolve the same scale at their native
 rendering boundary. Human-readable metadata uses the 11pt role rather than ad hoc
@@ -238,6 +238,8 @@ hierarchy. `dockFont` and native Markdown resolve that value exactly once.
 Never magnify the workspace with a render transform or scaled AppKit bounds:
 drawing, pointer events, and text selection must share native coordinates.
 Display resolution and pixel alignment remain system-owned.
+Compact uses 96% native sizing and 80% density-aware spacing, prioritizing
+readability while reducing insets; existing saved Compact selections are retained.
 
 Session and group-chat list titles use scaled 13pt text, previews use the 12pt
 body role, and timestamps use 11pt metadata. Inline session renaming matches
@@ -707,9 +709,9 @@ Informational tooltip windows never prevent normal notch/workspace dismissal.
 **The foundation is shared; skins supply its expression.** Liquid Glass is the
 default presentation, not a mandatory material for other skins. All skins share
 navigation, content order, component anatomy, action placement, and spacing roles.
-They may vary color, type design, shape, outline, shadow, texture, selection, and
-motion through the central style and palette. Text may reflow with a skin's font;
-controls must remain usable without hiding content or changing their meaning.
+They may vary color, shape, outline, shadow, texture, selection, and motion through
+the central style and palette. Skins share the macOS system font; code and other
+explicitly monospaced content retain their semantic typography.
 
 The native unified title row remains 52pt with title-bar clearance. Keep workspace
 identity, current context, and contextual actions in one header hierarchy. Use
@@ -756,8 +758,10 @@ lists every place to fill in. Then:
 
 Herm has one global theme preference stored under
 `hermes.dock.theme.v1`. Glass is the default and follows the system
-Light/Dark setting. It composites translucent graphite role colors over
-AppKit's popover material and uses macOS label, accent, and status hues; the
+Light/Dark setting. On macOS 26 and later, its light appearance uses clear native
+glass with a restrained frost layer, a translucent window tint, and
+darker text and dividers to retain contrast over dark backdrops. It composites
+graphite role colors over the native material; the
 other themes keep opaque authored canvases. Hermes palettes map stable skin IDs (`default`, `ares`,
 `mono`, `slate`, `daylight`, `warm-lightmode`, `poseidon`, `sisyphus`, and
 `charizard`) to semantic Herm roles. Daylight and Warm Light force light
@@ -1495,11 +1499,10 @@ opens macOS notification controls. Native banners and sounds remain subject to m
 
 **Quiet periods.** Quiet is explicitly started from the existing Tasks header;
 60 minutes is the default, with 30 minutes and Until I end it alternatives.
-The trigger pairs a bell with its label: a quiet bell reading "Quiet" when off;
-a slashed bell in primary text reading the remaining time ("Quiet · 42m",
-"Quiet · 1h 30m") or "Quiet · On" for an open-ended period. Menu items carry
-timer, countdown, infinity, ringing-bell and tray icons; the popover anchors
-to the trigger's trailing edge so the changing label width never moves it.
+The icon-only trigger shows a bell when off and a slashed bell in primary text
+when active. Its tooltip shows the remaining time ("Quiet · 42m", "Quiet · 1h 30m")
+or "Quiet · On" for an open-ended period. Menu items carry timer, countdown,
+infinity, ringing-bell and tray icons; the popover anchors to the trigger's trailing edge.
 One app-boundary coordinator classifies existing notices. Approval, clarification
 and authoritative stopping failures may interrupt; ordinary completion, quota
 and informational notices enter a digest. This policy applies before notch
@@ -1778,6 +1781,16 @@ priority in smaller windows; dividers remain adjustable.
 The desktop conversation list keeps its 300pt minimum while resizing; the
 workspace takes the remaining width when both pane minimums cannot fit.
 Section headings stay on one line and truncate rather than wrapping vertically.
+Pinned, Recents, and Projects use native pinned section headers in the sidebar's
+single lazy stack. The current section header stays below the fixed search bar
+until the next section pushes it away. Headers are transparent in the list;
+at the scroll viewport edge they use the matching canvas or native window
+material to cover scrolling rows. Retain disclosure, actions, and section reordering.
+Routine session polls and runtime notifications reuse older loaded history
+for up to 60 seconds while fetching the recent page and current pins/activity.
+Manual refreshes and profile switches bypass that reuse; older sessions remain
+searchable between full-history reads. External changes to older rows reconcile
+on the first refresh after expiry, or immediately through manual refresh.
 The floating desktop shell keeps the conversation and inspector side by side
 when the inspector opens, using a 360pt conversation minimum (520pt in
 fullscreen). Expanding the inspector must not replace the conversation.
@@ -1831,6 +1844,9 @@ second line may combine relative time, an inline repository identity, and a
 single-line preview; missing values do not leave separators behind. Repository
 identity is inline metadata rather than a capsule so the list remains calm at
 narrow sidebar widths. The Pinned section remains a separate presentation.
+Messaging origins reported by Hermes use the shared compact source pill beside
+the preview. Known services use their icon; other reported sources use a generic
+message icon. Local and unspecified sources do not show a pill.
 
 The sidebar always shows the bot header and the stacked Pinned,
 Recents, and Projects sections for the selected bot. Recents read every bot's
@@ -2095,6 +2111,8 @@ it never inserts a label or close button into the strip. Labeled tabs keep their
 separate close target; compact tabs retain Close in the context menu. Native tracking
 areas provide hover feedback without changing the tab footprint.
 The drag preview captures the complete rendered tab, including its background and close action.
+In the floating panel, the inspector tab row shares the adjacent chat header's canvas;
+the window presentation retains the shared title-row chrome.
 
 Tab name/icon pointer input is owned by a native drag surface that refuses window
 dragging and starts a tab move after a short drag threshold. A click still selects;
@@ -2515,16 +2533,24 @@ models already used. Edit Bot adds its reasoning and context limits as a footer
 row of the same card and words its fields Role and "What should this bot help
 with?" like New Bot. A picked model and fallbacks are applied after creation; an
 expensive model asks Keep Default / Use This Model first, and if only those steps
-fail, Create retries just them. Create opens the new bot's main chat; Cancel, Escape, or
+fail, Create retries just them. A created profile whose role could not be confirmed
+keeps the form open and retries only the role. An unconfirmed creation admission
+cannot be submitted again from that draft; the user checks the roster first.
+Create opens the new bot's main chat; Cancel, Escape, or
 opening any row closes the form. Settings › Bots' New Bot modal uses the same
 fields in a scrolling body capped at 400pt so the header and footer never clip. Group rooms share the
 list with bots and keep the group row (member avatars, unread, approval and
 working marks, the more-actions menu); the whole list sorts by last activity,
-newest first.
+newest first. The group composer keeps Stop accessible while a send is awaiting
+admission or the room is working; Hermes remains authoritative about the outcome.
 
-Folders are local Herm organization (a preference, never sent to Hermes) and
-hold bots and group rooms. They list above the top-level rows in the user's
-order. Each is a flat sidebar group, not a card: a 12pt semibold name header
+Folders are Hermes Agent Desktop's bot sections and hold bots and group rooms.
+A bot's folder is written to its profile (`ui_meta['hermes-bots']` `sectionId`
+and `sectionName`), so it matches Hermes Agent Desktop and other clients; a
+section first seen on a bot appears as a folder here. Folder order, collapse
+state and group-room placement stay local, as they do in Hermes Agent Desktop.
+A move shows at once and drops back with a toast if Hermes rejects the write. They list above the top-level rows in the user's
+order. Each is a flat sidebar group, not a card: a disclosure button and 12pt semibold name header
 with a folder mark at the trailing edge (open while expanded; the count follows
 the name when collapsed) that a more menu (Rename, New Folder, Delete Folder)
 replaces on hover. Its rows sit unindented under the header.
@@ -2592,7 +2618,8 @@ controls yet.
 
 On a bot's main chat, the toolbar ⋯ menu starts with Bot settings. It opens the Settings › Bots profile editor as a tab (the same component,
 without modal chrome), with Save Changes in a footer bar that reloads the
-profile after saving.
+profile after saving. The editor fills the available tab height, with its form
+scrolling above the compact footer; the modal retains its bounded form height.
 
 In conversations, the author header beside a bot reply uses a 32pt avatar (group
 rooms too) and the Bots toolbar identity a 30pt one; mention avatars inside
@@ -2657,9 +2684,36 @@ only on Glass and Clay; every other skin, and the saved PNG, is matte. Only movi
 idle face; Regenerate All re-renders it for every Bot. Glossy Herm faces saved by older builds are recognized alongside the matte
 PNG. The legacy blob renderer stays only to recognize older saves. Group chat stacks place faces
 side by side with no cut-out border.
-Group chat action errors use toast notifications without an inline error row above the composer. The group composer reuses the main chat composer chrome (`composerCard`, `composerTray`, `composerColumn`, `ComposerFolderBarSlot`, `ComposerControlLabel`, `ComposerSubmitLabel`), so its input sits at the same position and size as a session composer. Group actions (thread, Edit Group…, Disband…) sit at the trailing edge of the toolbar, including in a tab column where the tab row carries them. Edit Group renames the room in place and edits members with the New Group Chat checklist (`GroupMemberPicker`); Hermes fixes a room's members at creation, so a changed roster says so and creates a new group (the old one and its history stay). Groups with bots from another Mac keep their members read-only. A group chat opened from Bots accepts a dropped session like any chat: the room becomes the first column's tab and the session opens as a tab or new column beside it. Bot, group and session rows in the sidebar take their insets and gaps from `DockSidebarListMetrics`, so the Bots list spaces rows exactly like Recents, including the shared `titleToPreview` gap between a row title and its last message. The Bots | Sessions switch is a full-width tab track (`DockChatsScopeSwitch`) at the top of each list: above the bot picker in Sessions, above the search field in Bots, not in the title strip. In Sessions, New chat is an icon button (tooltip "New chat") to the right of the search field, mirroring the Bots + menu.
+Group chat action errors use toast notifications without an inline error row above the composer. The group composer reuses the main chat composer chrome (`composerCard`, `composerTray`, `composerColumn`, `ComposerFolderBarSlot`, `ComposerControlLabel`, `ComposerSubmitLabel`), so its input sits at the same position and size as a session composer. When `groups.capabilities` lists `groups.attachment.upload`, the **+** popover adds Files and Images, and files dropped or pasted onto the editor upload through the same `ComposerInputEditor(onDropFiles:)` path as sessions; uploaded files show as removable chips above the controls (Send waits for uploads), and sent messages use the main chat's user-message chrome (`UserMessageImages`, `UserMessageAttachmentRow`, `.userMessageBubble()`): images read back with `groups.attachment.download` sit above the bubble and open the image preview, other files (and images Hermes refuses) are named rows inside it, and a timestamp and copy action sit underneath. Group actions (thread, Edit Group…, Disband…) sit at the trailing edge of the toolbar, including in a tab column where the tab row carries them. Edit Group renames the room in place and edits members with the New Group Chat checklist (`GroupMemberPicker`); Hermes fixes a room's members at creation, so a changed roster says so and creates a new group (the old one and its history stay). Groups with bots from another Mac keep their members read-only. A group chat opened from Bots accepts a dropped session like any chat: the room becomes the first column's tab and the session opens as a tab or new column beside it. Bot, group and session rows in the sidebar take their insets and gaps from `DockSidebarListMetrics`, so the Bots list spaces rows exactly like Recents, including the shared `titleToPreview` gap between a row title and its last message. The Bots | Sessions switch is a full-width tab track (`DockChatsScopeSwitch`) at the top of each list: above the bot picker in Sessions, above the search field in Bots, not in the title strip. In Sessions, New chat is an icon button (tooltip "New chat") to the right of the search field, mirroring the Bots + menu.
 
 ### Conversation workspace
+
+The composer quota indicator uses the selected provider's limiting window and,
+for Hermes-pooled accounts, the account marked Active on the Quota page. An
+unavailable active-account reading is not replaced with another account's quota.
+
+Unresolved user sends show status in their own metadata, not assistant content. Sending is in flight;
+Accepted is not proof of storage; Queued is an explicit acknowledgment. A proven row receipt or conservative
+history match clears status without a permanent stored badge or read receipt. Delivery unconfirmed offers a
+bounded, read-only Check status action, never automatic resend; a missing row in that window is inconclusive.
+
+Completed replies show a compact, headerless changes card when Hermes provides edit diff
+previews. File rows carry type icons, filenames, preview line counts and disclosure
+chevrons, and expand to the supplied preview; previews may omit changes,
+so the card does not present their counts as complete working-tree totals.
+
+The first message replaces the welcome with the transcript while the same composer
+glides from its centered position to the bottom, decelerating into place. The welcome
+fades in place rather than following it. Reduce Motion and motion-free skins skip motion.
+
+The session title uses the available header width before the flexible spacer;
+toolbar actions remain visible and the title truncates when space is limited.
+
+While composer dictation is recording, the input and toolbar give way to a compact
+row with Cancel, a live microphone-level waveform, Stop, and Send. Cancel discards
+only the current dictation and preserves the prior draft; Stop keeps the transcript
+for editing; Send submits through the normal composer. The waveform reflects actual
+input levels and the controls retain accessible labels and the active skin.
 
 On a return to a recently viewed conversation, show its cached transcript while
 Hermes refreshes it. The session title uses its existing slot for “Refreshing…”
@@ -2960,7 +3014,11 @@ opens an anchored worktree popover above the composer. Its fixed header shows th
 scrolling list make other worktrees easy to find. The new-task action remains
 visible below the list as a full-width standard-sized action. Explorer and Source Control follow the workspace confirmed
 by Hermes. Rows show registered worktrees, including paths outside the project,
-with folder, branch and changed-file count. Choosing another worktree moves the draft to a new chat there. When the
+with folder, branch and changed-file count. In a chat with a Hermes session, choosing another worktree switches the
+same fixed-size popover to a choice step: a back link, the chosen worktree, then **Move this chat here** (moves the
+session with `session.cwd.set`, disabled with its reason while a turn runs) and **Start a new chat here** (moves the
+draft to a new chat). A folder chosen this way is pinned by Hermes, so later agent worktree moves do not follow it.
+A chat without a session starts in the chosen worktree directly. When the
 session worktree has a committed HEAD, **New task in worktree…** creates a new
 worktree and moves the draft to a new chat there. Existing shells keep running in
 their original directories.
@@ -2998,6 +3056,8 @@ header and toolbar keep search, type scope, counts, and refresh visible while a
 lazy newest-first results list drives a selected detail pane. Images use an
 explicitly bounded, clipped thumbnail in each browser row. When the type segments
 cannot fit, a checked type menu retains every filter and count below search.
+In a session workspace tab, the tab supplies the title; a compact status and refresh
+row sits above search and type controls, which share a row when space allows.
 Detail images use an
 aspect-fit preview; files and links use semantic previews with selectable
 paths or URLs. Open, Copy, optional Reveal in Finder, and source-session
@@ -3076,7 +3136,8 @@ events, and main-agent tool activity.
   and moves untracked files to the Trash; conflicted and staged rows offer none.
 - A collapsible Stash section uses the same header and 12pt content inset. Its
   add action opens a message field and Include untracked files toggle (on by
-  default; ignored files stay untouched). Rows disclose a read-only diff and
+  default; ignored files stay untouched). Expanded rows reserve the full bounded
+  diff height so its toolbar and canvas do not overlap neighboring sections. Rows disclose a read-only diff and
   Apply, Pop, and Delete actions. Apply/Pop restore the index and worktree; Pop
   removes the selected stash only after successful restoration. Failures retain
   the stash and show an actionable error. All three actions confirm their scope;
@@ -3117,10 +3178,11 @@ events, and main-agent tool activity.
 - Session Terminal is an interactive local PTY with a native SwiftTerm canvas.
   Typing occurs at the shell cursor; there is no separate command field.
   It starts in the session project or the user's home directory without
-  requiring verification recipes. Tabs and directory context remain visible;
+  requiring verification recipes. The inspector tab and directory context remain visible;
   the terminal owns selection, scrollback, completion, and keyboard history.
-  Its grid resizes with the panel. Clear, interrupt, and
-  restart live in its options menu. Failed and closed shells offer recovery.
+  Each Terminal inspector tab owns one shell; use the inspector's new-tab control
+  for another. Clear, interrupt, and restart are in the options menu immediately
+  after Previews. Its grid resizes with the panel; failed and closed shells offer recovery.
   User-entered commands never create verification evidence.
 - Verification recipes are presented only when repository facts produce an
   allow-listed command. A missing project root or unsupported command is shown
@@ -3152,8 +3214,8 @@ events, and main-agent tool activity.
   invalidate stale presentation, and suggest Hermes actions, but it never
   submits prompts, verification, or mutations automatically. System notices
   contain only a repository display name and aggregate count.
-- Worktree fleet views are read-only local Git projections. The composer opens
-  another worktree as a new chat; the active session workspace follows Hermes.
+- Worktree fleet views are read-only local Git projections. The composer moves
+  this chat or opens a new one in another worktree; the active session workspace follows Hermes.
 
 #### Verification Center
 
@@ -3266,7 +3328,8 @@ session. Missing or unavailable history uses the standard session recovery behav
 a failed resume never silently replaces the linked session.
 
 Session PR inspector tabs, including expanded code review, omit the floating chat
-panel. Their toolbar offers Attach to chat, staging current PR
+panel. Pull request and issue tabs own their scrolling without an extra enclosing
+gutter. Their toolbar offers Attach to chat, staging current PR
 context in the existing session composer without sending or replacing the draft.
 Reattaching updates the existing chip. Compact toolbars use a labelled icon action.
 The standalone Pull Requests page and the repository overview offer an icon-only Attach to chat
@@ -3508,7 +3571,8 @@ or each file diff's toolbar when no header hosts it), shown only while notes exi
 It opens a list popover with "Send to chat", per-note location, Remove, note text
 and stale-source status. Explain why sending is unavailable in the button's help.
 
-Terminal Previews uses a compact, surfaced globe/label/chevron control
+Terminal Previews uses a compact, surfaced globe/label/chevron control with a
+closely adjacent vertical-dots terminal options button
 and a shared 320pt themed popover. Its header owns refresh feedback; rows separate
 process names from monospaced loopback addresses and include an open arrow. Empty,
 checking, and failed discovery occupy one stable slot. Failed refreshes retain
@@ -3936,6 +4000,8 @@ use direct device display/input; window mirroring and permission prompts are abs
 The toolbar selects running device IDs, not desktop windows. A sole running device
 can be selected automatically; multiple devices require a choice. A validated chat
 launch receipt selects its exact device ID in the owning session.
+The toolbar and recovery content use the shared workspace inset without a second
+outer gutter, leaving the device display the full available width.
 
 The display fits available space with aspect ratio preserved. Click to focus;
 click/drag sends touch events and typing sends device key events. Home and Power

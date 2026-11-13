@@ -108,7 +108,10 @@ struct ConversationTranscriptView: View, Equatable {
                                         if message.id == snapshot.unreadDividerMessageID {
                                             unreadDivider
                                         }
-                                        messageRow(message, dispatches: dispatches, defaultBot: defaultBot)
+                                        messageRow(
+                                            message, index: descriptor.index, dispatches: dispatches,
+                                            defaultBot: defaultBot)
+
                                     }
                                     .opacity(spotlightMessageID == nil || spotlightMessageID == message.id ? 1 : 0.3)
                                     .background {
@@ -367,7 +370,7 @@ struct ConversationTranscriptView: View, Equatable {
 
     @ViewBuilder
     func messageRow(
-        _ message: ChatMessage, dispatches: [String: BotActivityRecord], defaultBot: BotSummary?
+        _ message: ChatMessage, index: Int, dispatches: [String: BotActivityRecord], defaultBot: BotSummary?
     ) -> some View {
         let target = MessageNavigatorTarget(sessionID: model.sessionID ?? "", messageID: message.id)
         let isStreaming = message.id == model.streamingMessageIDForPresentation
@@ -408,6 +411,8 @@ struct ConversationTranscriptView: View, Equatable {
         if message.role == .hermes && !message.hasBodyText && message.images.isEmpty && !isStreaming {
             EmptyView()
         } else {
+            let owner = model.composerDraftKey
+            let generation = model.sessionResumeGeneration
             ConversationMessageRow(
                 message: message,
                 isStreamingMessage: message.id == model.streamingMessageIDForPresentation,
@@ -433,6 +438,13 @@ struct ConversationTranscriptView: View, Equatable {
                 isSpeaking: voiceOutput.speakingMessageID == message.id,
                 metrics: conversationMetrics,
                 actionTarget: target,
+                delivery: source.snapshot.context.deliveryStates[message.id],
+                deliveryChecking: source.snapshot.context.deliveryChecking,
+                deliveryCheckNote: source.snapshot.context.deliveryCheckNote,
+                deliveryCheckAvailable: source.snapshot.context.deliveryCheckAvailable,
+                onCheckDelivery: {
+                    Task { await model.checkDeliveryStatus(owner: owner, generation: generation) }
+                },
                 onCopy: { source.perform(.copy, target: target) },
                 onBranch: { source.perform(.branch, target: target) },
                 onReadAloud: { source.perform(.readAloud, target: target) },
@@ -464,6 +476,13 @@ struct ConversationTranscriptView: View, Equatable {
             )
             .equatable()
             .generativeUIMessage(model: model, message: message)
+        }
+        let files = ConversationChangeSummary.turnFiles(
+            messages: source.snapshot.messages, at: index, streamingID: source.snapshot.context.streamingID)
+        if !files.isEmpty {
+            ConversationChangesCard(files: files)
+                .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
+                .dockPadding(.bottom, 8)
         }
     }
 

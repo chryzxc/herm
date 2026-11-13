@@ -7,7 +7,7 @@ struct DensitySettings: View {
         SettingsPreferenceRow(
             title: "Density",
             detail:
-                "Compact shrinks text, icons, avatars, controls, and margins across Herm, including floating panels."
+                "Compact reduces spacing and slightly reduces text and controls across Herm, including floating panels."
         ) {
             DockSegmentedPicker(
                 selection: Binding(

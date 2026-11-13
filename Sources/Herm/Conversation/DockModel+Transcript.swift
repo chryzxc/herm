@@ -271,19 +271,37 @@ extension DockModel {
             defaultBotDisplayName: activeBotDisplayName
         )
         guard !restored.messages.isEmpty else { return }
-        transcriptMessageIDsByRowID.merge(restored.rowIDs) { current, _ in current }
-        storedMessageReferences.merge(StoredMessageReference.references(rows: rows, rowIDs: restored.rowIDs)) {
+        let reconciliation = reconcilePendingSends(
+            for: composerDraftKey, restored: restored.messages, rowIDs: restored.rowIDs, visibleHistory: true)
+        var previous = transcriptMessageIDsByRowID
+        for match in reconciliation.resolved where previous[match.rowID] == nil {
+            previous[match.rowID] = match.messageID
+        }
+        let stable = Self.keepingMessageIDs(restored, previous: previous)
+        let renamed = Dictionary(
+            restored.rowIDs.compactMap { row, id in stable.rowIDs[row].map { (id, $0) } },
+            uniquingKeysWith: { first, _ in first })
+        let superseded = Set(reconciliation.resolved.map(\.messageID))
+        let existing = Set(messages.map(\.id)).subtracting(superseded)
+        let inserted = stable.messages.filter { !existing.contains($0.id) }
+        let retained = messages.filter { !superseded.contains($0.id) }
+        transcriptMessageIDsByRowID.merge(stable.rowIDs) { current, _ in current }
+        storedMessageReferences.merge(StoredMessageReference.references(rows: rows, rowIDs: stable.rowIDs)) {
             current, _ in current
         }
         transcriptPrependGeneration &+= 1
         lastTranscriptPrepend = TranscriptHistoryPrepend(
             generation: transcriptPrependGeneration,
-            count: restored.messages.count,
-            resultingCount: messages.count + restored.messages.count
+            count: inserted.count,
+            resultingCount: retained.count + inserted.count,
+            removedCount: messages.count - retained.count
         )
-        messages.insert(contentsOf: restored.messages, at: 0)
+        messages = inserted + retained
         if let sessionID {
-            rehydratePendingTranscriptImages(restored.pendingImages, requestedSessionID: sessionID)
+            rehydratePendingTranscriptImages(
+                restored.pendingImages.map {
+                    .init(messageID: renamed[$0.messageID] ?? $0.messageID, fileURLs: $0.fileURLs)
+                }, requestedSessionID: sessionID)
         }
         DebugLog.write("model: loaded \(restored.messages.count) earlier messages (offset \(cursor.nextOffset))")
     }

@@ -573,13 +573,28 @@ final class BotCreationDraft: ObservableObject {
     @Published private(set) var finished: BotSummary?
     /// A bot whose model step failed; Create retries only that step.
     private var created: BotSummary?
+    private var pendingRoleProfileID: String?
+    private var acceptedProfileID: String?
+    private var creationClientID: ObjectIdentifier?
+    private var admissionUnconfirmed = false
 
     var slug: String { BotCreationSheet.profileSlug(from: name) }
 
     func isTaken(in model: BotModeModel) -> Bool { created == nil && model.bots.contains { $0.id == slug } }
 
     func canCreate(in model: BotModeModel) -> Bool {
-        BotCreationSheet.isValidProfileName(slug) && !isTaken(in: model) && !model.isCreatingBot && !isSettingModel
+        guard !admissionUnconfirmed else { return false }
+        if let creationClientID {
+            guard let client = model.integrationClient, ObjectIdentifier(client) == creationClientID else {
+                return false
+            }
+        }
+        if let pendingRoleProfileID {
+            return model.partialCreatedBotID == pendingRoleProfileID && !model.isCreatingBot && !isSettingModel
+        }
+        if acceptedProfileID != nil { return !model.isCreatingBot && !isSettingModel }
+        return BotCreationSheet.isValidProfileName(slug) && !isTaken(in: model) && !model.isCreatingBot
+            && !isSettingModel
     }
 
     func loadModels(_ model: BotModeModel) async {
@@ -594,13 +609,31 @@ final class BotCreationDraft: ObservableObject {
     func create(_ model: BotModeModel) async {
         guard canCreate(in: model) else { return }
         if created == nil {
-            let id = slug
-            guard
-                await model.createBot(
+            let id = pendingRoleProfileID ?? acceptedProfileID ?? slug
+            if pendingRoleProfileID != nil {
+                guard await model.finishBotRole(profileID: id, title: role) else { return }
+                pendingRoleProfileID = nil
+                acceptedProfileID = id
+            } else if acceptedProfileID != nil {
+                await model.refreshNow(force: true)
+            } else {
+                creationClientID = model.integrationClient.map(ObjectIdentifier.init)
+                let accepted = await model.createBot(
                     name: id, title: role, description: purpose, cloneFrom: cloneFrom.isEmpty ? nil : cloneFrom,
-                    skipsSkills: skipsSkills),
-                let bot = model.bots.first(where: { $0.id == id })
-            else { return }
+                    skipsSkills: skipsSkills)
+                if !accepted {
+                    pendingRoleProfileID = model.partialCreatedBotID
+                    admissionUnconfirmed = model.creationAdmissionUnconfirmed
+                    return
+                }
+                acceptedProfileID = id
+            }
+            guard let bot = model.bots.first(where: { $0.id == id }) else {
+                model.botCreationError =
+                    "Created \(id), but the roster could not confirm it. Retry to refresh the roster."
+                return
+            }
+            model.botCreationError = nil
             created = bot
         }
         await applyModel(model, confirm: false)

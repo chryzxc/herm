@@ -23,6 +23,7 @@ struct SessionInspector: View {
     var onToggle: (() -> Void)?
     /// Matches the chat header beside it so both rows share one baseline and separator.
     var headerHeight: CGFloat = 44
+    var usesWindowChrome = false
     @Binding var tabRequest: TabRequest?
     /// Talk, PRs and Issues offered in the new-tab grid, rendered by the host.
     var workspaceSections: [Section] = []
@@ -34,6 +35,7 @@ struct SessionInspector: View {
         let session: String
         let section: Section
         var browserTabID: UUID? = nil
+        var terminalTabID: UUID? = nil
     }
     // Persisted so collapsing and reopening the panel keeps the open tab.
     @AppStorage("sessionInspector.selectedSection") private var selectedSection = Section.timeline
@@ -374,11 +376,21 @@ struct SessionInspector: View {
             if selectedSection.isOnDemand, !simulatorSections.contains(selectedSection.rawValue) {
                 selectedSection = .timeline
             }
+            if model.navigationSessionID != nil, !sessionFolderUnavailable {
+                migrateNestedShells()
+            }
             messageTabs.select(messageSelection, in: WorkspaceIdentity.session(model))
             restoringPresentation = false
+            savePresentation()
             consumeTabRequest()
         }
         .onChange(of: shownWorkspaceSection, initial: true) { _, section in onWorkspaceSection(section) }
+        .onChange(of: sessionRepositoryPath) { _, _ in
+            if !restoringPresentation, model.navigationSessionID != nil, !sessionFolderUnavailable {
+                migrateNestedShells()
+                savePresentation()
+            }
+        }
         .onChange(of: tabRequest) { _, _ in
             if !restoringPresentation { consumeTabRequest() }
         }
@@ -423,12 +435,15 @@ struct SessionInspector: View {
     private var baseContent: some View {
         if selectedSection == .github || selectedSection == .timeline || selectedSection == .terminal
             || selectedSection == .files || selectedSection == .browser || selectedSection == .diff
-            || selectedSection == .artifacts || selectedSection.isOnDemand
+            || selectedSection == .artifacts || selectedSection == .pullRequests || selectedSection == .issues
+            || selectedSection.isOnDemand
         {
             inspectorContent
                 .dockPadding(
                     .horizontal,
                     selectedSection == .github || selectedSection == .browser || selectedSection == .timeline
+                        || selectedSection == .pullRequests || selectedSection == .issues
+                        || selectedSection == .iosSimulator || selectedSection == .androidEmulator
                         ? 0 : DockSpacing.inspectorInset
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -485,6 +500,22 @@ struct SessionInspector: View {
     }
     private var baseTerminalKey: String {
         WorkspaceIdentity.session(model) + ":" + (sessionTerminalPath ?? sessionRepositoryPath ?? "home")
+    }
+    private func migrateNestedShells() {
+        let identity = WorkspaceIdentity.session(model)
+        let path = sessionTerminalPath ?? sessionRepositoryPath ?? "home"
+        let keys = [baseTerminalKey] + terminalExtras.filter(isVisible).map(extraTerminalKey)
+        for key in keys {
+            let ids = TerminalWorkspaceStore.shared.separateShells(key: key) {
+                identity + ":extra:" + $0.uuidString + ":" + path
+            }
+            for id in ids {
+                terminalExtras.append(
+                    ExtraTab(
+                        id: id, kind: .terminal, number: terminalExtras.filter(isVisible).count + 2,
+                        sessionID: model.navigationSessionID))
+            }
+        }
     }
     private func hasRunningCommand(_ key: String) -> Bool {
         TerminalWorkspaceStore.shared.workspace(key: key).sessions.contains {
@@ -652,6 +683,16 @@ struct SessionInspector: View {
         tabRequest = nil
         guard request.session == WorkspaceIdentity.session(model) else { return }
         reopen(request.section)
+        if request.section == .terminal, let id = request.terminalTabID {
+            if !terminalExtras.contains(where: { $0.id == id }) {
+                terminalExtras.append(
+                    ExtraTab(
+                        id: id, kind: .terminal, number: terminalExtras.filter(isVisible).count + 2,
+                        sessionID: model.navigationSessionID))
+            }
+            selectedExtraID = id
+            savePresentation()
+        }
         if request.section == .browser,
             let id = request.browserTabID, browserWorkspace?.extras.contains(where: { $0.id == id }) == true
         {
@@ -742,8 +783,7 @@ struct SessionInspector: View {
         }
         .frame(height: headerHeight)
         // In the unified window title row, match the conversation header's toolbar color.
-        .dockShellChrome(headerHeight == DockWindowChrome.titleRowHeight)
-        .dockPaneTint(headerHeight == DockWindowChrome.titleRowHeight ? .clear : Color.dockSurface2.opacity(0.58))
+        .dockShellChrome(usesWindowChrome)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 

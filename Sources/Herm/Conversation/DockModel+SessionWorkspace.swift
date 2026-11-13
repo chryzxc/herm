@@ -8,6 +8,50 @@ struct HermesSessionWorkspace: Equatable {
 }
 
 extension DockModel {
+    static let sessionWorkspaceBusyMessage = "Stop the current turn before moving this chat."
+
+    /// Hermes refuses to move a session while its turn runs.
+    var canMoveSessionWorkspace: Bool {
+        sessionID != nil && !isSending && status != .working && status != .needsClarification
+    }
+
+    /// Moves this chat to `path` with `session.cwd.set`. Hermes pins a folder
+    /// chosen this way, so the agent's own worktree moves stop following it.
+    @discardableResult
+    func moveSessionWorkspace(to path: String) async -> Bool {
+        guard let owner = sessionID else { return false }
+        guard canMoveSessionWorkspace else {
+            reportAttachmentError(Self.sessionWorkspaceBusyMessage)
+            return false
+        }
+        var params: [String: Any] = ["session_id": owner, "cwd": path]
+        if let profileID = sessionProfileID ?? profileScopeID, !profileID.isEmpty { params["profile"] = profileID }
+        do {
+            let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionCwdSet.rawValue, params: params)
+            guard sessionID == owner else { return false }
+            applySessionWorkspace(result, owner: owner, force: true)
+            // The chosen path is a verified worktree root; keep the folder row
+            // mounted instead of waiting for the asynchronous root probe.
+            let target = URL(fileURLWithPath: path).standardizedFileURL.path
+            if var workspace = sessionWorkspace, workspace.cwd == target, workspace.repositoryPath == nil,
+                GatewayConnectionStore.isLocalBackend,
+                workspace.terminalBackend == nil || workspace.terminalBackend == "local"
+            {
+                workspace.repositoryPath = target
+                sessionWorkspace = workspace
+            }
+            return true
+        } catch {
+            guard sessionID == owner else { return false }
+            let code = ((error as NSError).userInfo["HermesRPCCode"] as? NSNumber)?.intValue
+            reportAttachmentError(
+                code == 4009
+                    ? Self.sessionWorkspaceBusyMessage
+                    : HermesDiagnosticsService.safeSummary(error.localizedDescription))
+            return false
+        }
+    }
+
     /// Projects only directory facts belonging to the selected Hermes session.
     func retrySessionWorkspace() {
         guard let workspace = sessionWorkspace, let sessionID else { return }

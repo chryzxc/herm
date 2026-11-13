@@ -49,15 +49,18 @@ struct ComposerInputSurface: ViewModifier {
                     .frame(height: isFocused ? 2 : 1)
                     .frame(maxHeight: .infinity, alignment: .bottom)
             } else {
+                // Glass already draws its own rim, so only state strokes (focus, recording) go on top.
+                let isGlass = DockThemeStyle.current.material == .glass
+                let showsNeutralOutline = DockLayout.outline > 0 && !isGlass
                 shape.dockInputFill()
                     .overlay {
                         shape.stroke(
                             isRecording
                                 ? Color.dockDestructive.opacity(isPulsing ? 0.65 : 0.28)
-                                : (isFocused ? Color.dockAccent.opacity(0.42) : Color.dockBorder),
+                                : (isFocused ? Color.dockAccent.opacity(isGlass ? 0.2 : 0.42) : Color.dockBorder),
                             lineWidth: isFocused || isRecording ? max(1, DockLayout.outline) : DockLayout.outline
                         )
-                        .opacity(DockLayout.outline > 0 || isFocused || isRecording ? 1 : 0)
+                        .opacity(showsNeutralOutline || isFocused || isRecording ? 1 : 0)
                     }
                     .dockStickerShadow(shape)
                     .dockFoldCrease()

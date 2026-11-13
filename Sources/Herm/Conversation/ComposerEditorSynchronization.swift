@@ -108,7 +108,8 @@ final class ComposerEditorSynchronization: NSObject, @preconcurrency NSTextStora
         measuredInset = textView.textContainerInset
         measuredFont = textView.font
         let height = max(
-            ComposerLayout.minHeight, layout.usedRect(for: container).height + textView.textContainerInset.height * 2)
+            ComposerLayout.minHeight,
+            layout.usedRect(for: container).height + textView.textContainerInset.height * 2 + 4)
         if publishedHeight != height {
             publishedHeight = height
             publishHeight(height)

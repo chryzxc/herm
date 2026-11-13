@@ -41,6 +41,44 @@ struct ConversationMessageRowTests {
         #expect(first == second)
     }
 
+    @Test func deliveryPresentationParticipatesInRowEquality() {
+        let message = ChatMessage(role: .user, text: "hello")
+        func row(
+            _ status: MessageDeliveryStatus?, checking: Bool = false, note: String? = nil, available: Bool = false
+        ) -> ConversationMessageRow {
+            ConversationMessageRow(
+                message: message, isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+                botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in },
+                delivery: status, deliveryChecking: checking, deliveryCheckNote: note,
+                deliveryCheckAvailable: available)
+        }
+        let base = row(nil)
+        for status: MessageDeliveryStatus in [.sending, .accepted, .queued, .unconfirmed] {
+            #expect(base != row(status))
+        }
+        #expect(row(.unconfirmed) != row(.unconfirmed, checking: true))
+        #expect(row(.unconfirmed) != row(.unconfirmed, note: "Unavailable"))
+        #expect(row(.unconfirmed) != row(.unconfirmed, available: true))
+    }
+
+    @Test func deliveryMetadataKeepsHeightAtNarrowWidth() {
+        let message = ChatMessage(role: .user, text: "A message with delivery metadata")
+        let statuses: [MessageDeliveryStatus?] = [.sending, .accepted, .queued, nil, .unconfirmed]
+        let heights = statuses.map { status in
+            let view =
+                ConversationMessageRow(
+                    message: message, isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+                    botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in },
+                    delivery: status, deliveryCheckAvailable: true
+                )
+                .frame(width: 420)
+                .environment(\.dockWorkspaceScale, CGFloat(DockWorkspaceScale.compactTextSize))
+            let host = NSHostingView(rootView: view)
+            return host.fittingSize.height
+        }
+        #expect((heights.max() ?? 0) - (heights.min() ?? 0) < 1)
+    }
+
     @Test func sessionChangesRefreshMessageActionClosures() {
         let message = ChatMessage(role: .hermes, text: "saved reply")
         let original = MessageNavigatorTarget(sessionID: "original", messageID: message.id)

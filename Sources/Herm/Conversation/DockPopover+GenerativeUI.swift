@@ -27,7 +27,7 @@ extension DockPopover {
         let projectPath = activeSessionRepositoryScope?.repositoryPath ?? activeSessionRepositoryPath
         let directory =
             model.sessionWorkspace?.cwd ?? projectPath ?? FileManager.default.homeDirectoryForCurrentUser.path
-        let workspaceKey = WorkspaceIdentity.session(model) + ":" + (projectPath == nil ? "home" : directory)
+        let identity = WorkspaceIdentity.session(model)
         return RichHostActionRouter(
             scope: scope, openSource: openRichSource,
             terminal: scope == nil || (model.sessionWorkspace != nil && projectPath == nil)
@@ -42,9 +42,18 @@ extension DockPopover {
                         throw QuickDraftError.message(
                             "The session or working directory changed. Review the command again.")
                     }
-                    try TerminalWorkspaceStore.shared.workspace(key: workspaceKey)
-                        .runInNewShell(command, directory: directory)
-                    showSessionRailInspector(.terminal)
+                    let id = UUID()
+                    let key = identity + ":extra:" + id.uuidString + ":" + (projectPath == nil ? "home" : directory)
+                    do {
+                        try TerminalWorkspaceStore.shared.workspace(key: key)
+                            .runInNewShell(command, directory: directory)
+                    } catch {
+                        TerminalWorkspaceStore.shared.closeWorkspace(key: key)
+                        throw error
+                    }
+                    inspectorScope = .session
+                    sessionInspectorTabRequest = .init(session: identity, section: .terminal, terminalTabID: id)
+                    ensureInspectorPanelVisible()
                 },
             features: [
                 .init(kind: .pullRequest, ids: { [weak prs] in prs?.records.map(\.id) ?? [] }) { id in

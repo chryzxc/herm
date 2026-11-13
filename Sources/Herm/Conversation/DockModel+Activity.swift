@@ -189,7 +189,7 @@ extension DockModel {
             pendingSessionIndexRefresh = true
             return
         }
-        guard let refresh = loadSessions() else { return }
+        guard let refresh = loadSessions(reuseHistory: true) else { return }
         Task { @MainActor [weak self] in
             await refresh.value
             guard let self, self.pendingSessionIndexRefresh else { return }

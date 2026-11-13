@@ -54,6 +54,11 @@ struct ConversationMessageRow: View, Equatable {
     let isSpeaking: Bool
     let metrics: ConversationWorkspaceMetrics
     let actionTarget: MessageNavigatorTarget?
+    let delivery: MessageDeliveryStatus?
+    let deliveryChecking: Bool
+    let deliveryCheckNote: String?
+    let deliveryCheckAvailable: Bool
+    let onCheckDelivery: () -> Void
     let onCopy: () -> Void
     let onBranch: () -> Void
     let onReadAloud: () -> Void
@@ -93,6 +98,11 @@ struct ConversationMessageRow: View, Equatable {
         isSpeaking: Bool = false,
         metrics: ConversationWorkspaceMetrics = .resolve(isFullscreen: false),
         actionTarget: MessageNavigatorTarget? = nil,
+        delivery: MessageDeliveryStatus? = nil,
+        deliveryChecking: Bool = false,
+        deliveryCheckNote: String? = nil,
+        deliveryCheckAvailable: Bool = false,
+        onCheckDelivery: @escaping () -> Void = {},
         onCopy: @escaping () -> Void = {},
         onBranch: @escaping () -> Void = {},
         onReadAloud: @escaping () -> Void = {},
@@ -123,6 +133,11 @@ struct ConversationMessageRow: View, Equatable {
         self.isSpeaking = isSpeaking
         self.metrics = metrics
         self.actionTarget = actionTarget
+        self.delivery = delivery
+        self.deliveryChecking = deliveryChecking
+        self.deliveryCheckNote = deliveryCheckNote
+        self.deliveryCheckAvailable = deliveryCheckAvailable
+        self.onCheckDelivery = onCheckDelivery
         self.onCopy = onCopy
         self.onBranch = onBranch
         self.onReadAloud = onReadAloud
@@ -174,25 +189,9 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.showsOpenInTabAction == rhs.showsOpenInTabAction
             && lhs.metrics == rhs.metrics
             && lhs.actionTarget == rhs.actionTarget
-    }
-
-    private func imageThumbnail(at index: Int, @ViewBuilder layout: (Image) -> some View) -> some View {
-        let image = message.images[index]
-        let thumbnailKey = ConversationThumbnailCache.key(
-            messageID: message.id,
-            index: index,
-            imageCount: message.images.count,
-            contentRevision: message.contentRevision
-        )
-        return Button {
-            onImagePreview(image)
-        } label: {
-            layout(Image(nsImage: ConversationThumbnailCache.image(image, key: thumbnailKey)).resizable())
-                .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
-        }
-        .buttonStyle(.dockHover)
-        .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
-        .help("Open image preview")
+            && lhs.delivery == rhs.delivery && lhs.deliveryChecking == rhs.deliveryChecking
+            && lhs.deliveryCheckNote == rhs.deliveryCheckNote
+            && lhs.deliveryCheckAvailable == rhs.deliveryCheckAvailable
     }
 
     var body: some View {
@@ -210,39 +209,19 @@ struct ConversationMessageRow: View, Equatable {
                 VStack(alignment: .trailing, spacing: 4) {
                     // Attachments sit above the text surface instead of inside
                     // the bubble, keeping media visually distinct from copy.
-                    // A single image keeps its aspect ratio; several become a
-                    // grid of square tiles instead of a tall stack.
-                    if message.images.count == 1 {
-                        // Size the frame to the fitted image so wide shots don't
-                        // sit centered in a 220pt square with a gap below.
-                        let size = message.images[0].size
-                        let scale = min(220 / max(size.width, 1), 220 / max(size.height, 1), 1)
-                        imageThumbnail(at: 0) {
-                            $0.scaledToFit().frame(width: size.width * scale, height: size.height * scale)
-                        }
-                    } else if message.images.count > 1 {
-                        let tile: CGFloat = 104
-                        LazyVGrid(
-                            columns: Array(
-                                repeating: GridItem(.fixed(tile), spacing: 6), count: min(message.images.count, 3)),
-                            alignment: .trailing,
-                            spacing: 6
-                        ) {
-                            ForEach(message.images.indices, id: \.self) { index in
-                                imageThumbnail(at: index) { $0.scaledToFill().frame(width: tile, height: tile) }
-                            }
-                        }
-                        .fixedSize()
-                    }
+                    UserMessageImages(
+                        images: message.images,
+                        cacheKey: { index in
+                            ConversationThumbnailCache.key(
+                                messageID: message.id, index: index, imageCount: message.images.count,
+                                contentRevision: message.contentRevision)
+                        },
+                        onPreview: onImagePreview
+                    )
                     if !userText.isEmpty || !attachments.names.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(Array(attachments.names.enumerated()), id: \.offset) { _, name in
-                                HStack(spacing: 8) {
-                                    FileTypeIcon(fileName: name)
-                                    Text(name).dockFont(.body, weight: .medium).lineLimit(2)
-                                }
-                                .accessibilityElement(children: .combine)
-                                .accessibilityLabel("Attachment: " + name)
+                                UserMessageAttachmentRow(name: name)
                             }
                             if let quote = replySplit?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }
                             if !userText.isEmpty {
@@ -253,36 +232,38 @@ struct ConversationMessageRow: View, Equatable {
                                     themeRevision: themeRevision)
                             }
                         }
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .dockPadding(.horizontal, 14)
-                        .dockPadding(.vertical, 10)
-                        .background(
-                            Self.userBubbleShape.fill(
-                                DockSkinPresentation.current.transcript == .document
-                                    ? Color.dockSurface : Color.dockUserMessageBubble)
-                        )
-                        .messageSpotlight(isSpotlit, shape: Self.userBubbleShape, reduceMotion: reduceMotion)
-                        .overlay {
-                            Self.userBubbleShape
-                                .stroke(
-                                    message.isSteering
-                                        ? Color.dockAccent.opacity(0.45)
-                                        : DockSkinPresentation.current.transcript == .document
-                                            ? .clear : Color.dockBorderStrong,
-                                    lineWidth: 0.5
-                                )
-                                .allowsHitTesting(false)
-                        }
+                        .userMessageBubble(
+                            isSteering: message.isSteering, isSpotlit: isSpotlit, reduceMotion: reduceMotion)
                     }
 
                     HStack(spacing: 0) {
-                        if message.isSteering {
+                        if message.isSteering && delivery == nil {
                             Text(steeringLabel)
                                 .dockFont(.metadata, weight: .medium)
                                 .foregroundStyle(Color.dockAccent)
                         }
+                        if let delivery {
+                            HStack(spacing: 4) {
+                                if delivery == .sending || deliveryChecking {
+                                    ProgressView().controlSize(.small)
+                                } else if delivery == .unconfirmed {
+                                    Image(systemName: "exclamationmark.triangle").accessibilityHidden(true)
+                                }
+                                Text(delivery.label)
+                                if delivery == .unconfirmed {
+                                    Button(deliveryChecking ? "Checking…" : "Check status", action: onCheckDelivery)
+                                        .buttonStyle(.dockLink)
+                                        .disabled(deliveryChecking || !deliveryCheckAvailable)
+                                        .help(deliveryCheckNote ?? "Check the conversation before sending again.")
+                                }
+                            }
+                            .fixedSize(horizontal: true, vertical: false)
+                            .dockFont(.metadata)
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .help(delivery == .accepted ? "Storage unconfirmed" : delivery.label)
+                        }
                         ConversationRowHoverTimestamp(text: message.timeLabel, hover: hoverPresentation)
+                            .padding(.leading, delivery == nil ? 0 : 4)
                             .dockFont(.machineMetadata)
                             .foregroundStyle(Color.dockMetadataText)
                         HStack(spacing: 0) {
@@ -290,6 +271,7 @@ struct ConversationMessageRow: View, Equatable {
                             if showsPinAction { actionButton(.pin, action: onPin, isAvailable: isPinAvailable) }
                         }
                     }
+                    .frame(minHeight: 20)
                     .dockPadding(.horizontal, 4)
                     .dockPadding(.top, 2)
                 }
@@ -303,7 +285,8 @@ struct ConversationMessageRow: View, Equatable {
                 VStack(alignment: .leading, spacing: 4) {
                     let attributedBotID =
                         SessionBotParticipants.authorID(message, activeProfileID: activeBotProfileID)
-                    if let botProfileID = attributedBotID {
+                    // While streaming, the live activity row above already shows this Bot.
+                    if let botProfileID = attributedBotID, !isStreamingMessage {
                         let bot = botsByID[botProfileID]
                         HStack(spacing: 9) {
                             if let bot {
@@ -418,22 +401,6 @@ struct ConversationMessageRow: View, Equatable {
         .dockPadding(.horizontal, metrics.contentInset)
         .dockPadding(.vertical, message.systemEvent != nil || message.kanbanNotice != nil ? 1 : 8)
         .dockPadding(.top, message.role == .user ? 12 : 0)
-    }
-
-    /// The tail corner points toward the sender edge so consecutive prompts
-    /// read as one side of the exchange without an avatar.
-    private static var userBubbleShape: AnyShape {
-        if DockSkinPresentation.current.transcript == .document {
-            return AnyShape(DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane))
-        }
-        return AnyShape(
-            UnevenRoundedRectangle(
-                topLeadingRadius: 14,
-                bottomLeadingRadius: 14,
-                bottomTrailingRadius: 4,
-                topTrailingRadius: 14,
-                style: .continuous
-            ))
     }
 
     private var steeringLabel: String {
@@ -696,15 +663,18 @@ struct SystemEventCard: View {
                 Text(SystemEvent.modelSwitchSummary(text))
                     .foregroundStyle(Color.dockSecondaryText)
                     .textSelection(.enabled)
+                    .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: DockSpacing.control)
-                Text(timeLabel).foregroundStyle(Color.dockMetadataText).fixedSize()
             }
             .dockFont(.metadata)
-            .dockPadding(.horizontal, 8)
+            .dockPadding(.horizontal, 6)
+            .dockPadding(.vertical, 4)
+            .dockPill()
+            .frame(maxWidth: .infinity, alignment: .center)
             .dockPadding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .help("\(SystemEvent.modelSwitchSummary(text))\n\(timeLabel)")
             .accessibilityElement(children: .combine)
+            .accessibilityHint(timeLabel)
         } else {
             let firstLine = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? text
             let canExpand = firstLine != text || text.count > 90

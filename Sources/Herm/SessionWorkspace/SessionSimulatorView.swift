@@ -58,7 +58,7 @@ struct SessionSimulatorView: View {
     var presentation: some View {
         VStack(spacing: 0) {
             deviceToolbar
-                .dockPadding(.horizontal, 10)
+                .dockPadding(.horizontal, DockSpacing.inspectorInset)
                 .dockPadding(.vertical, 6)
                 .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             GeometryReader { geometry in
@@ -70,7 +70,7 @@ struct SessionSimulatorView: View {
                     ScrollView {
                         recoveryContent
                             .frame(maxWidth: 480, alignment: .leading)
-                            .dockPadding(.horizontal, 16)
+                            .dockPadding(.horizontal, DockSpacing.inspectorInset)
                             .dockPadding(.top, 20)
                             .dockPadding(.bottom, 20)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -205,9 +205,11 @@ struct SessionSimulatorView: View {
                 DockIcon(capture.connectionFailed ? .plugs : .deviceMobile, size: 22, color: Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(recoveryTitle).dockFont(.body, weight: .semibold)
-                    Text(recoveryDetail)
-                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let detail = Self.distinctRecoveryDetail(recoveryDetail, title: recoveryTitle) {
+                        Text(detail)
+                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             if !capture.devices.isEmpty && !capture.setupRequired {
@@ -262,6 +264,10 @@ struct SessionSimulatorView: View {
             return "Choose a device below. Running devices connect immediately; stopped devices can be started here."
         }
         return capture.message
+    }
+
+    static func distinctRecoveryDetail(_ detail: String, title: String) -> String? {
+        detail.isEmpty || detail == title ? nil : detail
     }
 
     @ViewBuilder private var recoveryActions: some View {

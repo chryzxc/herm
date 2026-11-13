@@ -66,39 +66,43 @@ struct LocalPreviewsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DockSpacing.group) {
-                VStack(alignment: .leading, spacing: DockSpacing.micro) {
-                    Text("Local previews").dockFont(.body, weight: .semibold)
-                    Text(
-                        error != nil && !servers.isEmpty
-                            ? "Previous results · refresh failed" : "From this session’s terminals"
-                    )
-                    .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                Text("Local previews").dockFont(.body, weight: .semibold)
+                if error != nil && !servers.isEmpty {
+                    Text("Refresh failed").dockPill(tint: .dockWarning)
+                        .dockFont(.metadata).foregroundStyle(Color.dockWarning)
                 }
                 Spacer(minLength: 0)
                 DockIconButton(
                     icon: .arrowsClockwise, label: "Refresh local previews", isBusy: isRefreshing, size: 24,
                     style: DockThemePalette(theme: DockThemeRuntime.current), action: refresh)
-            }.dockPadding(DockSpacing.group)
+            }
+            .dockPadding(.horizontal, DockSpacing.group).dockPadding(.vertical, DockSpacing.control)
             Color.dockBorderLight.frame(height: DockLayout.hairline)
             if servers.isEmpty {
-                VStack(alignment: .leading, spacing: DockSpacing.control) {
-                    Text(
-                        error != nil
-                            ? "Couldn’t find previews"
-                            : isRefreshing ? "Looking for local previews…" : "No local previews"
-                    )
-                    .dockFont(.body, weight: .semibold)
-                    Text(
-                        error
-                            ?? (isRefreshing
-                                ? "Checking local listeners in these terminals."
-                                : "Start a development server in a Herm terminal, then refresh.")
-                    )
-                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .top, spacing: DockSpacing.group) {
+                    DockIcon(error != nil ? .warning : .globe, size: 16)
+                        .foregroundStyle(error != nil ? Color.dockWarning : Color.dockSecondaryText)
+                        .frame(width: 32, height: 32)
+                        .dockWell(.sunken)
+                    VStack(alignment: .leading, spacing: DockSpacing.micro) {
+                        Text(
+                            error != nil
+                                ? "Couldn’t check for previews"
+                                : isRefreshing ? "Looking for servers…" : "No servers running"
+                        )
+                        .dockFont(.body, weight: .semibold)
+                        Text(
+                            error
+                                ?? (isRefreshing
+                                    ? "Checking ports opened by this session’s terminals."
+                                    : "Start a dev server in a Herm terminal and it appears here.")
+                        )
+                        .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading).dockPadding(
-                    .horizontal, DockSpacing.group)
+                .dockPadding(DockSpacing.group)
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
@@ -119,6 +123,9 @@ struct LocalPreviewsPanel: View {
                                         .foregroundStyle(Color.dockSecondaryText).lineLimit(1)
                                     }
                                     Spacer(minLength: 0)
+                                    Text(verbatim: ":\(server.port)")
+                                        .dockFont(.metadata, weight: .regular, design: .monospaced)
+                                        .foregroundStyle(Color.dockSecondaryText).dockPill()
                                     DockIcon(.arrowUpRight).foregroundStyle(Color.dockSecondaryText)
                                 }
                                 .dockPadding(DockSpacing.group).frame(maxWidth: .infinity, alignment: .leading)
@@ -135,9 +142,12 @@ struct LocalPreviewsPanel: View {
                         .dockPadding(.horizontal, DockSpacing.group).dockPadding(.bottom, DockSpacing.control)
                 }
             }
-            Color.dockBorderLight.frame(height: DockLayout.hairline)
-            Text("Opens in the session browser. Nothing starts automatically.")
-                .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).dockPadding(DockSpacing.group)
+            if !servers.isEmpty {
+                Color.dockBorderLight.frame(height: DockLayout.hairline)
+                Text("Opens in the session browser.")
+                    .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                    .dockPadding(.horizontal, DockSpacing.group).dockPadding(.vertical, DockSpacing.control)
+            }
         }
         .frame(width: 320).foregroundStyle(Color.dockPrimaryText)
         .background(Color.dockCanvas).dockThemedRoot()

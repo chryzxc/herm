@@ -349,8 +349,11 @@ extension DockModel {
             if role == "tool" {
                 let id = (row["tool_call_id"] as? String) ?? (row["tool_use_id"] as? String) ?? UUID().uuidString
                 let result = messageText(row["content"])
+                let metadata = row["display_metadata"] as? [String: Any]
+                let diff = (metadata?["tool_result_metadata"] as? [String: Any])?["inline_diff"] as? String
                 if let index = pendingActivity.firstIndex(where: { $0.id == id }) {
                     if !result.isEmpty { pendingActivity[index].result = truncatedForPersistence(result) }
+                    pendingActivity[index].diffPreview = normalizedDiff(diff, requireMarkers: false)
                     pendingActivity[index].app = MCPApp.receiptID(tool: pendingActivity[index].name, result: result)
                     if pendingActivity[index].traceTiming == .runtime, let rowTimestamp,
                         rowTimestamp >= pendingActivity[index].startedAt
@@ -366,6 +369,7 @@ extension DockModel {
                             startedAt: rowTimestamp ?? Date(),
                             result: result.isEmpty ? nil : truncatedForPersistence(result),
                             isComplete: true, completedAt: rowTimestamp,
+                            diffPreview: normalizedDiff(diff, requireMarkers: false),
                             // Hermes stamps only the result row: the finish is exact, the start unknown.
                             traceTiming: rowTimestamp == nil ? .unavailable : .runtime,
                             app: MCPApp.receiptID(tool: name, result: result)

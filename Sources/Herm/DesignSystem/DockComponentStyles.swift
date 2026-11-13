@@ -181,8 +181,11 @@ extension DockThemeShape {
 
     /// A smoothed closed curve through jittered edge points. The jitter is a
     /// pure function of the rect size, so a shape never shimmers on redraw.
-    private func sketchPath(in r: CGRect) -> Path {
-        let inset = max(cornerRadius, 6)
+    private func sketchPath(in rect: CGRect) -> Path {
+        // Reserve room for the jitter and Notebook's centered pencil stroke.
+        let margin = min(2.1, min(rect.width, rect.height) / 4)
+        let r = rect.insetBy(dx: margin, dy: margin)
+        let inset = min(max(cornerRadius, 6), min(r.width, r.height) / 2)
         let amp: CGFloat = 1.3
         func jitter(_ i: Int) -> CGFloat {
             let v = sin(Double(i) * 12.9898 + Double(Int(r.width)) * 0.37 + Double(Int(r.height)) * 0.71) * 43758.5453
@@ -581,21 +584,34 @@ struct NativePopoverBackground: NSViewRepresentable {
 /// way system panels do, without an extra blur material graying it out.
 @available(macOS 26.0, *)
 struct NativeLiquidGlassBackground: NSViewRepresentable {
+    @Environment(\.colorScheme) private var colorScheme
+
+    static func style(for colorScheme: ColorScheme) -> NSGlassEffectView.Style {
+        colorScheme == .light ? .clear : .regular
+    }
+
     func makeNSView(context: Context) -> NSGlassEffectView {
         let view = NSGlassEffectView()
-        view.style = .regular
+        view.style = Self.style(for: colorScheme)
         return view
     }
 
-    func updateNSView(_ nsView: NSGlassEffectView, context: Context) {}
+    func updateNSView(_ nsView: NSGlassEffectView, context: Context) {
+        nsView.style = Self.style(for: colorScheme)
+    }
 }
 
 /// The workspace's base layer. Native macOS uses the real system popover
 /// material under the shared palette; authored Herm themes keep their solid
 /// canvas so selecting a theme never changes its intended color treatment.
 struct DockWindowBackground: View {
+    static func frostOpacity(for colorScheme: ColorScheme) -> Double {
+        colorScheme == .light ? 0.60 : 1
+    }
+
     // Observed so the canvas repaints on theme switch; it has no other inputs.
     @ObservedObject private var themeStore = DockThemeStore.shared
+    @Environment(\.colorScheme) private var colorScheme
     /// Clip the native material to the panel silhouette, including attached notches.
     var shape = AnyShape(Rectangle())
 
@@ -604,8 +620,11 @@ struct DockWindowBackground: View {
     @ViewBuilder private var glassOrPopover: some View {
         if DockThemeRuntime.current == .glass, #available(macOS 26.0, *) {
             NativeLiquidGlassBackground()
-                // NSGlassEffectView's blur isn't tunable; a blur material beneath it frosts the backdrop further.
-                .background(NativePopoverBackground(material: .underWindowBackground))
+                // Blend in less frost in light mode so the desktop remains visible.
+                .background {
+                    NativePopoverBackground(material: .underWindowBackground)
+                        .opacity(Self.frostOpacity(for: colorScheme))
+                }
                 // A second full-window glass effect adds a broad specular reflection over the transcript.
                 .clipShape(shape)
         } else {
@@ -1815,9 +1834,23 @@ extension View {
     }
 
     /// Compact label capsule: neutral by default, or washed with `tint` for status and identity.
+    /// On Glass a wash reads as a muddy stain over the translucent canvas, so pills
+    /// become frosted chips: white lift, light wash, and a tinted (or neutral) rim.
+    @MainActor
     func dockPill(tint: Color? = nil, solid: Bool = false, compact: Bool = false) -> some View {
-        dockPadding(.horizontal, compact ? 4 : 6).dockPadding(.vertical, compact ? 1 : 2)
-            .background(Capsule().fill(tint.map { solid ? $0 : $0.opacity(0.14) } ?? Color.dockSurface4))
+        let glassChip = !solid && DockThemeRuntime.current.usesNativeMaterial
+        return dockPadding(.horizontal, compact ? 4 : 6).dockPadding(.vertical, compact ? 1 : 2)
+            .background {
+                if glassChip {
+                    // Neutral pills share the chip so tinted and neutral pills match side by side.
+                    let rim = tint ?? Color.dockSecondaryText
+                    Capsule().fill(Color.dockLightGlassLift)
+                        .overlay(Capsule().fill(rim.opacity(tint == nil ? 0.05 : 0.10)))
+                        .overlay(Capsule().strokeBorder(rim.opacity(tint == nil ? 0.16 : 0.22), lineWidth: 0.75))
+                } else {
+                    Capsule().fill(tint.map { solid ? $0 : $0.opacity(0.14) } ?? Color.dockSurface4)
+                }
+            }
     }
 
     /// Floating tinted surface for the voice HUD and its activity pills.
