@@ -468,8 +468,8 @@ extension View {
         return background {
             if depth > 0 {
                 shape.fill(DockThemePalette(theme: theme).background)
-                    .shadow(color: .white.opacity(0.85), radius: depth, x: -depth / 2, y: -depth / 2)
-                    .shadow(color: .black.opacity(0.16), radius: depth, x: depth / 2, y: depth / 2)
+                    .shadow(color: .white.opacity(0.6), radius: depth * 0.7, x: -depth / 3, y: -depth / 3)
+                    .shadow(color: .black.opacity(0.08), radius: depth * 0.7, x: depth / 3, y: depth / 3)
             }
         }
     }
@@ -1835,8 +1835,8 @@ extension View {
     func dockCardDepth() -> some View {
         let style = DockThemeStyle.current
         return shadow(
-            color: Color.black.opacity(style.cardShadow > 0 ? 0.14 : 0), radius: style.cardShadow,
-            y: style.cardShadow / 3
+            color: Color.black.opacity(style.cardShadow > 0 ? 0.07 : 0), radius: style.cardShadow * 0.6,
+            y: style.cardShadow / 5
         )
         .shadow(color: Color.dockAccent.opacity(style.glow > 0 ? 0.22 : 0), radius: style.glow)
     }
