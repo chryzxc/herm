@@ -49,7 +49,7 @@ enum BotChatsOrdering {
 }
 
 /// The Bots page's left panel: every bot's main chat and every group room in
-/// one list, grouped into local folders. The chat, toolbar and workspace beside
+/// one list, grouped into folders (Hermes Agent Desktop's bot sections). The chat, toolbar and workspace beside
 /// it are the Sessions layout's.
 struct BotChatsPage: View, Equatable {
     @Environment(\.dockHostVisible) private var hostVisible
@@ -68,19 +68,19 @@ struct BotChatsPage: View, Equatable {
     @State private var query = ""
     @State private var isShowingNewGroupChat = false
     @State private var hoveredBotID: String?
-    @State private var hoveredFolderID: UUID?
+    @State private var hoveredFolderID: String?
     /// The folder header (by id) or "loose" area a drag is over.
     @State private var dropTarget: String?
     /// The folder a dragged folder is hovering; it opens a gap so the dragged one lands there.
-    @State private var folderGapID: UUID?
+    @State private var folderGapID: String?
     /// A dragged folder is over the area below the folders, so it would land last.
     @State private var endGap = false
     /// The row that just landed in a folder, flashed once so the eye follows it.
     @State private var landedItemID: String?
     /// Per-folder drop count: each drop replays the folder's squash-and-bounce.
-    @State private var folderDrops: [UUID: Int] = [:]
+    @State private var folderDrops: [String: Int] = [:]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var renamingFolderID: UUID?
+    @State private var renamingFolderID: String?
     @State private var folderName = ""
     @FocusState private var isRenameFocused: Bool
     @State private var renameClickMonitor: Any?
@@ -164,6 +164,23 @@ struct BotChatsPage: View, Equatable {
                 open(bot)
             }
         }
+        .task(id: hostVisible) {
+            // ponytail: 10s roster poll while the page is on screen, as on the Sessions rail; Hermes has
+            // no roster push event. Unchanged rosters do not republish, so a quiet poll costs one RPC.
+            guard hostVisible else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { return }
+                await bots.refreshNow()
+            }
+        }
+        // Coming back from another client (e.g. Hermes Agent Desktop) shows its changes at once.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard hostVisible else { return }
+            Task { await bots.refreshNow() }
+        }
+        // Bot folder membership is read from the roster's profile metadata.
+        .onChange(of: bots.bots, initial: true) { _, roster in folders.sync(roster, model: bots) }
     }
 
     /// New Bot opens in the chat area; a group chat keeps its modal.
@@ -216,7 +233,8 @@ struct BotChatsPage: View, Equatable {
                 .foregroundStyle(style.metadataText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            let sections = BotChatsOrdering.sections(items, folders: folders.folders, isSearching: isSearching)
+            let sections = BotChatsOrdering.sections(
+                items, folders: folders.folders, botSections: folders.botSections, isSearching: isSearching)
             ScrollView {
                 // ponytail: eager VStack so folder moves animate; a LazyVStack cross-fades them. Fine for a roster.
                 // Sections sit apart so a folder's last row never reads as part of the next group.
@@ -310,7 +328,7 @@ struct BotChatsPage: View, Equatable {
     private func folderSection(_ section: BotFolderSection, selectedRoomID: String?) -> some View {
         let folder = section.folder
         let hasGap = folderGapID == folder.id
-        let isTarget = dropTarget == folder.id.uuidString && !hasGap
+        let isTarget = dropTarget == folder.id && !hasGap
         return VStack(spacing: DockSidebarListMetrics.rowSpacing) {
             folderHeader(folder, count: section.items.count)
             if !folder.isCollapsed {
@@ -360,7 +378,7 @@ struct BotChatsPage: View, Equatable {
         .onDrop(
             of: [SessionPaneDrag.pasteboardType.rawValue, BotFolderDrag.pasteboardType.rawValue],
             delegate: BotListDropDelegate(
-                isTargeted: dropBinding(folder.id.uuidString),
+                isTargeted: dropBinding(folder.id),
                 onItem: { moveItem($0, to: folder.id) },
                 onFolder: { folders.moveFolder($0.folderID, before: folder.id) },
                 onFolderHover: { folderGapID = $0 ? folder.id : (folderGapID == folder.id ? nil : folderGapID) }))
@@ -383,6 +401,16 @@ struct BotChatsPage: View, Equatable {
     /// on the right (open while expanded) that the more menu replaces on hover.
     private func folderHeader(_ folder: BotFolder, count: Int) -> some View {
         HStack(spacing: 6) {
+            Button {
+                withAnimation(reduceMotion ? nil : BotFolderMotion.spring) { folders.toggleCollapsed(folder.id) }
+            } label: {
+                DockIcon(folder.isCollapsed ? .caretRight : .caretDown, size: 10, color: style.metadataText)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.dockHover)
+            .help(folder.isCollapsed ? "Expand folder" : "Collapse folder")
+            .accessibilityLabel("\(folder.isCollapsed ? "Expand" : "Collapse") \(folder.name)")
             if renamingFolderID == folder.id {
                 TextField("Folder name", text: $folderName)
                     .textFieldStyle(.plain)
@@ -409,7 +437,7 @@ struct BotChatsPage: View, Equatable {
             let showsMenu = hoveredFolderID == folder.id && renamingFolderID != folder.id
             ZStack {
                 // Under a drag the folder opens and hops up to take the row.
-                let isTarget = dropTarget == folder.id.uuidString && !reduceMotion
+                let isTarget = dropTarget == folder.id && !reduceMotion
                 (isTarget || !folder.isCollapsed ? Ph.folderOpen : Ph.folderSimple)
                     .image(size: 14, color: NSColor(isTarget ? Color.dockPrimaryText : Color.dockMetadataText))
                     .scaleEffect(isTarget ? 1.25 : 1)
@@ -439,17 +467,13 @@ struct BotChatsPage: View, Equatable {
         .onHover { hoveredFolderID = $0 ? folder.id : (hoveredFolderID == folder.id ? nil : hoveredFolderID) }
         .onTapGesture {
             guard renamingFolderID != folder.id else { return }
-            withAnimation(BotFolderMotion.spring) { folders.toggleCollapsed(folder.id) }
+            withAnimation(reduceMotion ? nil : BotFolderMotion.spring) { folders.toggleCollapsed(folder.id) }
         }
         .draggable(BotFolderDrag(folderID: folder.id)) {
             Label(folder.name, icon: .folderSimple).dockPill().dockPadding(6)
         }
         .modifier(DockDragCursor(isEnabled: renamingFolderID != folder.id, isDragging: false))
         .dockContextMenu { folderActions(folder) }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("\(folder.name), \(count) chats")
-        .accessibilityValue(folder.isCollapsed ? "Collapsed" : "Expanded")
     }
 
     @ViewBuilder
@@ -468,7 +492,7 @@ struct BotChatsPage: View, Equatable {
             set: { dropTarget = $0 ? key : (dropTarget == key ? nil : dropTarget) })
     }
 
-    private func moveItem(_ drag: SessionPaneDrag, to folderID: UUID?) {
+    private func moveItem(_ drag: SessionPaneDrag, to folderID: String?) {
         guard let id = BotChatsOrdering.itemID(for: drag, bots: visibleBots),
             folders.folderID(containing: id) != folderID
         else { return }
@@ -485,7 +509,7 @@ struct BotChatsPage: View, Equatable {
     /// Hovering a drag over a collapsed folder opens it after a beat, like Finder.
     private func springLoadTargetFolder() async {
         guard let key = dropTarget,
-            let folder = folders.folders.first(where: { $0.id.uuidString == key }), folder.isCollapsed
+            let folder = folders.folders.first(where: { $0.id == key }), folder.isCollapsed
         else { return }
         try? await Task.sleep(for: BotFolderMotion.springLoadDelay)
         guard !Task.isCancelled, dropTarget == key else { return }
@@ -493,14 +517,14 @@ struct BotChatsPage: View, Equatable {
     }
 
     private func newFolder(containing itemID: String? = nil) {
-        var id = UUID()
+        var id = ""
         withAnimation(BotFolderMotion.spring) { id = folders.create(containing: itemID) }
         startRename(id: id, name: "New Folder")
     }
 
     private func startRename(_ folder: BotFolder) { startRename(id: folder.id, name: folder.name) }
 
-    private func startRename(id: UUID, name: String) {
+    private func startRename(id: String, name: String) {
         folderName = name
         renamingFolderID = id
         isRenameFocused = true
@@ -597,7 +621,10 @@ struct BotChatsPage: View, Equatable {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { open(bot) }
-        .accessibilityLabel(bot.name)
+        .accessibilityLabel(
+            [bot.name, bot.title?.trimmingCharacters(in: .whitespacesAndNewlines)]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        )
         .accessibilityHint("Open the main chat")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

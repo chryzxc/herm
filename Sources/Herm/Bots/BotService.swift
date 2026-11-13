@@ -2,6 +2,11 @@ import AppKit
 import Foundation
 import SwiftUI
 
+struct BotCreationPartialError: LocalizedError {
+    let profileID: String
+    var errorDescription: String? { "Created \(profileID), but its role could not be confirmed." }
+}
+
 /// Hermes-owned profile integration. This adapter accepts only the structured
 /// profile fields documented by Hermes; it never reads ~/.hermes directly.
 @MainActor
@@ -12,6 +17,8 @@ final class BotService {
     static let canonicalBotChatTitle = "Bot Chat"
 
     private let client: HermesRPCClientProtocol
+    private var metadataWriters: Set<String> = []
+    private var metadataWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     init(client: HermesRPCClientProtocol) { self.client = client }
     var integrationClient: HermesRPCClientProtocol { client }
@@ -114,10 +121,11 @@ final class BotService {
         let result = try await client.request(HermesFeatureIDs.ID.profilesCreate.rawValue, params: params)
         let details = try Self.parseCreateResult(result)
         if let title, !title.isEmpty {
-            _ = try? await client.request(
-                HermesFeatureIDs.ID.profilesConfigure.rawValue,
-                params: ["name": name, "ui_meta": ["hermes-bots": ["title": title]]]
-            )
+            do {
+                try await setAndConfirmRosterTitle(profileID: details.id, title: title)
+            } catch {
+                throw BotCreationPartialError(profileID: details.id)
+            }
         }
         return title.flatMap { details.withTitle($0) } ?? details
     }
@@ -223,13 +231,82 @@ final class BotService {
     /// Hermes replaces the whole `hermes-bots` ui_meta key on write, so the
     /// full desired metadata block must always be sent together.
     func setRosterMeta(profileID: String, title: String?, hidden: Bool?) async throws {
+        try await updateRosterMeta(profileID: profileID) { meta in
+            if let title {
+                if title.isEmpty { meta.removeValue(forKey: "title") } else { meta["title"] = title }
+            }
+            if let hidden { meta["hidden"] = hidden }
+        }
+    }
+
+    /// Files the bot into a Hermes Agent Desktop section (`nil` = unassigned).
+    /// The name rides along so other clients can rebuild a section they never made.
+    func setRosterSection(profileID: String, id: String?, name: String?) async throws {
+        try await updateRosterMeta(profileID: profileID) { meta in
+            if let id, let name {
+                meta["sectionId"] = id
+                meta["sectionName"] = name
+            } else {
+                meta.removeValue(forKey: "sectionId")
+                meta.removeValue(forKey: "sectionName")
+            }
+        }
+    }
+
+    private func updateRosterMeta(profileID: String, _ mutate: (inout [String: Any]) -> Void) async throws {
+        if !metadataWriters.insert(profileID).inserted {
+            await withCheckedContinuation { continuation in
+                metadataWaiters[profileID, default: []].append(continuation)
+            }
+        }
+        defer {
+            if var waiters = metadataWaiters[profileID], !waiters.isEmpty {
+                let next = waiters.removeFirst()
+                metadataWaiters[profileID] = waiters.isEmpty ? nil : waiters
+                next.resume()
+            } else {
+                metadataWriters.remove(profileID)
+            }
+        }
+        try Task.checkCancellation()
+        let roster = try await client.request(HermesFeatureIDs.ID.profilesList.rawValue, params: [:])
+        guard let rows = roster["profiles"] as? [[String: Any]],
+            let row = rows.first(where: { ($0["name"] as? String) == profileID })
+        else { throw ParseError.invalid }
         var meta: [String: Any] = [:]
-        if let title, !title.isEmpty { meta["title"] = title }
-        if let hidden { meta["hidden"] = hidden }
-        _ = try await client.request(
+        if let raw = row["ui_meta"] {
+            guard let uiMeta = raw as? [String: Any] else { throw ParseError.invalid }
+            if let bots = uiMeta["hermes-bots"] {
+                guard let existing = bots as? [String: Any] else { throw ParseError.invalid }
+                meta = existing
+            }
+        }
+        mutate(&meta)
+        var params: [String: Any] = ["name": profileID, "ui_meta": ["hermes-bots": meta]]
+        if let raw = row["ui_meta_revisions"] {
+            guard let revisions = raw as? [String: Int], revisions.values.allSatisfy({ $0 >= 0 }) else {
+                throw ParseError.invalid
+            }
+            params["ui_meta_expected_revisions"] = ["hermes-bots": revisions["hermes-bots"] ?? 0]
+        }
+        let result = try await client.request(
             HermesFeatureIDs.ID.profilesConfigure.rawValue,
-            params: ["name": profileID, "ui_meta": ["hermes-bots": meta]]
+            params: params
         )
+        if (result["ok"] as? Bool) == false || (result["applied"] as? [String: Any])?["ui_meta"] as? Bool == false {
+            throw ParseError.sectionsFailed(["ui_meta"])
+        }
+    }
+
+    func setAndConfirmRosterTitle(profileID: String, title: String) async throws {
+        try await setRosterMeta(profileID: profileID, title: title, hidden: nil)
+        let result = try await client.request(HermesFeatureIDs.ID.profilesList.rawValue, params: [:])
+        guard let rows = result["profiles"] as? [[String: Any]],
+            let row = rows.first(where: { $0["name"] as? String == profileID }),
+            let uiMeta = row["ui_meta"] as? [String: Any],
+            let botMeta = uiMeta["hermes-bots"] as? [String: Any],
+            (botMeta["title"] as? String) == (title.isEmpty ? nil : title)
+        else { throw ParseError.invalid }
     }
 
     func profileDetail(profileID: String) async throws -> BotProfileDetail {
@@ -339,7 +416,7 @@ final class BotService {
             let failed = ((result["applied"] as? [String: Bool]) ?? [:]).filter { !$0.value }.keys.sorted()
             throw ParseError.sectionsFailed(failed)
         }
-        try? await setRosterMeta(profileID: profileID, title: title, hidden: nil)
+        try await setAndConfirmRosterTitle(profileID: profileID, title: title)
         return .applied
     }
 
@@ -358,11 +435,7 @@ final class BotService {
     }
 
     func duplicate(profileID: String, newName: String, title: String?) async throws {
-        _ = try await client.request(
-            HermesFeatureIDs.ID.profilesCreate.rawValue, params: ["name": newName, "clone_from": profileID])
-        if let title, !title.isEmpty {
-            try? await setRosterMeta(profileID: newName, title: title, hidden: nil)
-        }
+        _ = try await create(name: newName, title: title, description: nil, cloneFrom: profileID)
     }
 
     /// Profile-scoped so a bot only offers providers it holds credentials for.
@@ -474,7 +547,7 @@ final class BotService {
         let workerLastActive = worker?.lastActive
         let lastActive = [chat?.lastActive, fallbackChat?.lastActive, workerLastActive].compactMap { $0 }.max()
         let botsMeta = rosterMeta(raw)
-        return BotSummary(
+        var summary = BotSummary(
             id: id, name: name, title: title, description: description, model: model, provider: provider,
             isActive: isActive, chat: chat, recentSession: fallbackChat, worker: worker, avatarURL: avatarURL(raw),
             preview: preview,
@@ -483,6 +556,9 @@ final class BotService {
             hasCustomAvatar: botsMeta?.custom == true,
             isDefault: (raw["is_default"] as? Bool) == true
         )
+        summary.sectionID = botsMeta?.sectionID
+        summary.sectionName = botsMeta?.sectionName
+        return summary
     }
 
     private static func parseWorker(_ value: Any?) throws -> BotWorkerReference? {
@@ -505,6 +581,8 @@ final class BotService {
         var title: String?
         var hidden: Bool?
         var custom: Bool?
+        var sectionID: String?
+        var sectionName: String?
     }
 
     /// Bot Mode keeps its roster display metadata (title, hidden) in the
@@ -516,7 +594,13 @@ final class BotService {
         let title = (bots["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let hidden = (bots["hidden"] as? Bool)
         let custom = (bots["custom"] as? Bool) ?? false
-        return RosterMeta(title: (title?.count ?? 0) <= 512 ? title : nil, hidden: hidden, custom: custom)
+        let sectionID = (bots["sectionId"] as? String).flatMap { $0.isEmpty || $0.count > 128 ? nil : $0 }
+        let sectionName = (bots["sectionName"] as? String)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty || $0.count > 512 ? nil : $0 }
+        return RosterMeta(
+            title: (title?.count ?? 0) <= 512 ? title : nil, hidden: hidden, custom: custom,
+            sectionID: sectionID, sectionName: sectionName)
     }
 
     private static func rosterTitle(_ raw: [String: Any]) -> String? { rosterMeta(raw)?.title }
@@ -657,6 +741,8 @@ final class BotModeModel: ObservableObject {
     @Published private(set) var isCreatingBot = false
     @Published var searchText = ""
     @Published var botCreationError: String?
+    @Published private(set) var partialCreatedBotID: String?
+    @Published private(set) var creationAdmissionUnconfirmed = false
     @Published private(set) var supportsBotDeletion = false
     @Published private(set) var deletingBotID: String?
     @Published var botDeletionError: String?
@@ -757,6 +843,7 @@ final class BotModeModel: ObservableObject {
 
     func bind(to client: HermesRPCClientProtocol, capabilityAvailable: Bool) {
         supportsBotDeletion = false
+        partialCreatedBotID = nil
         service = BotService(client: client)
         self.capabilityAvailable = capabilityAvailable
         groupChats.bind(to: client)
@@ -869,16 +956,41 @@ final class BotModeModel: ObservableObject {
         }
         guard isCreatingBot == false else { return false }
         isCreatingBot = true
+        creationAdmissionUnconfirmed = false
         defer { isCreatingBot = false }
         do {
             _ = try await service.create(
                 name: name, title: title.isEmpty ? nil : title, description: description.isEmpty ? nil : description,
                 cloneFrom: cloneFrom, skipsSkills: skipsSkills)
             botCreationError = nil
+            partialCreatedBotID = nil
+            await refreshNow()
+            return true
+        } catch let partial as BotCreationPartialError {
+            partialCreatedBotID = partial.profileID
+            botCreationError = "Created \(partial.profileID), but its role could not be saved. Retry to finish setup."
+            await refreshNow()
+            return false
+        } catch {
+            creationAdmissionUnconfirmed = true
+            botCreationError =
+                "Creation could not be confirmed. Check the Hermes roster before starting another request."
+            return false
+        }
+    }
+
+    func finishBotRole(profileID: String, title: String) async -> Bool {
+        guard partialCreatedBotID == profileID, let service, !isCreatingBot else { return false }
+        isCreatingBot = true
+        defer { isCreatingBot = false }
+        do {
+            try await service.setAndConfirmRosterTitle(profileID: profileID, title: title)
+            partialCreatedBotID = nil
+            botCreationError = nil
             await refreshNow()
             return true
         } catch {
-            botCreationError = Self.mutationDiagnostic(for: error, noun: "create the Bot")
+            botCreationError = "Created \(profileID), but its role could not be saved. Retry to finish setup."
             return false
         }
     }
@@ -1053,21 +1165,37 @@ final class BotModeModel: ObservableObject {
     func setHidden(_ hidden: Bool, for bot: BotSummary) async {
         guard capabilityAvailable, let service else { return }
         do {
-            try await service.setRosterMeta(profileID: bot.id, title: bot.title, hidden: hidden)
+            try await service.setRosterMeta(profileID: bot.id, title: nil, hidden: hidden)
         } catch {
             DockActionErrorCenter.shared.report("Could not update Bot visibility", error: error)
         }
         await refreshNow()
     }
 
+    /// Throws so the caller can roll back its optimistic placement.
+    func setSection(id: String?, name: String?, for botID: String) async throws {
+        guard capabilityAvailable, let service else { throw CocoaError(.featureUnsupported) }
+        try await service.setRosterSection(profileID: botID, id: id, name: name)
+    }
+
     func duplicateBot(_ bot: BotSummary, newName: String) async -> Bool {
         guard capabilityAvailable, let service else { return false }
+        creationAdmissionUnconfirmed = false
+        partialCreatedBotID = nil
         do {
             try await service.duplicate(profileID: bot.id, newName: newName, title: bot.title)
+            partialCreatedBotID = nil
             await refreshNow()
             return true
+        } catch let partial as BotCreationPartialError {
+            partialCreatedBotID = partial.profileID
+            botCreationError = "Created \(partial.profileID), but its role could not be saved. Retry to finish setup."
+            await refreshNow()
+            return false
         } catch {
-            botCreationError = Self.mutationDiagnostic(for: error, noun: "duplicate the Bot")
+            creationAdmissionUnconfirmed = true
+            botCreationError =
+                "Duplication could not be confirmed. Check the Hermes roster before starting another request."
             return false
         }
     }
