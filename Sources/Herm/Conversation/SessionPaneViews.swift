@@ -289,7 +289,8 @@ struct SessionPaneTabStrip: View {
                 id: id, title: isSelected ? liveTitle ?? tab.title : tab.title,
                 icon: tab.groupRoomID == nil ? .chatCircle : .usersThree,
                 isSelected: isSelected,
-                select: { store.select(id, in: panel.id) }, close: { store.closeTab(id, in: panel.id) })
+                select: { store.select(id, in: panel.id) }, close: { store.closeTab(id, in: panel.id) },
+                groupRoomID: tab.groupRoomID)
         }
     }
 
@@ -305,8 +306,16 @@ struct SessionPaneTabStrip: View {
                     ForEach(tabs) { tab in
                         // A Bot's main chat shows the Bot's avatar instead of the chat glyph.
                         let bot = router?.bots?.bots.first { $0.chat?.sessionID == tab.id }
+                        // A group chat shows its members' avatars instead of the group glyph.
+                        let members: [BotSummary] =
+                            tab.groupRoomID.flatMap { roomID in
+                                router?.bots?.groupChats.rooms.first { $0.id == roomID }?.members.compactMap {
+                                    router?.bots?.botsByID[$0.profile]
+                                }
+                            } ?? []
                         SessionPaneTab(
                             tab: tab, bot: bot, avatar: bot.flatMap { router?.bots?.avatarImages[$0.id] },
+                            members: members, avatarImages: router?.bots?.avatarImages ?? [:],
                             status: status.entries[tab.id]
                         )
                         .id(tab.id)
@@ -347,6 +356,8 @@ private struct SessionPaneTab: View {
     let tab: SessionInspectorTabItem
     let bot: BotSummary?
     let avatar: Data?
+    var members: [BotSummary] = []
+    var avatarImages: [String: Data] = [:]
     let status: SessionPaneTabStatusModel.Entry?
     @State private var hovered = false
 
@@ -360,6 +371,15 @@ private struct SessionPaneTab: View {
                     HStack(spacing: 6) {
                         if let bot {
                             BotAvatarView(bot: bot, imageData: avatar, size: 16, animated: false)
+                        } else if !members.isEmpty {
+                            HStack(spacing: -5) {
+                                ForEach(members.prefix(3)) { member in
+                                    BotAvatarView(
+                                        bot: member, imageData: avatarImages[member.id], size: 16, animated: false
+                                    )
+                                    .overlay(Circle().stroke(Color.dockCanvas, lineWidth: 1))
+                                }
+                            }
                         } else {
                             DockIcon(
                                 tab.icon, size: 12, weight: tab.isSelected ? .fill : .regular,

@@ -407,11 +407,20 @@ struct SessionPaneDropDelegate: DropDelegate {
 
     private var animation: Animation? { DockMotion.animation(reduceMotion: reduceMotion, duration: 0.28) }
 
-    func validateDrop(info: DropInfo) -> Bool {
+    /// The pane type is not declared in the bundle, so its conformance check also matches
+    /// Finder files and text drags; those belong to the composer, never the tab/column hints.
+    static func isSessionPaneDrag(_ info: DropInfo) -> Bool {
         info.hasItemsConforming(to: [SessionPaneDrag.pasteboardType.rawValue])
+            && !info.hasItemsConforming(to: [.fileURL, .url, .plainText, .image])
     }
 
+    func validateDrop(info: DropInfo) -> Bool { Self.isSessionPaneDrag(info) }
+
     func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard Self.isSessionPaneDrag(info) else {
+            if target != nil { target = nil }
+            return DropProposal(operation: .cancel)
+        }
         NSCursor.closedHand.set()
         let x = info.location.x
         let next = SessionPaneStore.dropTarget(
