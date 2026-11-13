@@ -2,16 +2,17 @@ import SwiftUI
 
 /// Size belongs to the action group, never to its visual priority or native controlSize.
 enum DockButtonSize: CaseIterable {
-    case compact, standard, accessible
+    case inline, compact, standard, accessible
 
     var height: CGFloat {
         switch self {
+        case .inline: 24
         case .compact: DockControlMetrics.compactHeight
         case .standard: DockControlMetrics.standardHeight
         case .accessible: DockControlMetrics.hitTarget
         }
     }
-    var horizontalPadding: CGFloat { self == .compact ? 10 : 12 }
+    var horizontalPadding: CGFloat { self == .inline ? 7 : self == .compact ? 10 : 12 }
 }
 
 extension EnvironmentValues {

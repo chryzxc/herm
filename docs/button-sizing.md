@@ -10,6 +10,7 @@ and workspace-scaled minimum height. Choose size once on the common container:
 
 | Context | Size | Minimum height at 100% scale |
 | --- | --- | --- |
+| Dense inline file-row actions | `.inline` | 24 pt |
 | Toolbars, inspectors, inline recovery, ordinary page actions | Default `.compact` | 28 pt |
 | Form footers and substantial action groups | `.standard` | 36 pt |
 | Approval/clarification decisions and large-target groups | `.accessible` | 44 pt |

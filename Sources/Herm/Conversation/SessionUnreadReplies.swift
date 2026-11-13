@@ -139,6 +139,20 @@ extension EnvironmentValues {
     }
 }
 
+/// Red count pill shared by session rows and the chats rail button.
+struct UnreadCountPill: View {
+    let label: String
+
+    var body: some View {
+        Text(label)
+            .dockFont(.compactStatus, weight: .semibold)
+            .monospacedDigit()
+            .foregroundStyle(DockAccentColor.unreadBadgeText)
+            .dockPill(tint: DockAccentColor.unreadBadgeFill, solid: true, compact: true)
+            .fixedSize()
+    }
+}
+
 struct SessionUnreadReplyBadge: View {
     let session: HermesSession
     var showUnavailable = true
@@ -177,12 +191,7 @@ struct SessionUnreadReplyBadge: View {
         return Group {
             switch result {
             case .loaded(let count) where count > 0:
-                Text(count > 99 ? "99+" : "\(count)")
-                    .dockFont(.compactStatus, weight: .semibold)
-                    .monospacedDigit()
-                    .foregroundStyle(DockAccentColor.unreadBadgeText)
-                    .dockPill(tint: DockAccentColor.unreadBadgeFill, solid: true, compact: true)
-                    .fixedSize()
+                UnreadCountPill(label: count > 99 ? "99+" : "\(count)")
                     .accessibilityLabel("\(count) unread AI \(count == 1 ? "response" : "responses")")
             case .unavailable where showUnavailable:
                 Text("?")

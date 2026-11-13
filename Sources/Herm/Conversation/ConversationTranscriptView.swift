@@ -415,6 +415,8 @@ struct ConversationTranscriptView: View, Equatable {
             let generation = model.sessionResumeGeneration
             ConversationMessageRow(
                 message: message,
+                changes: ConversationChangeSummary.turnFiles(
+                    messages: source.snapshot.messages, at: index, streamingID: source.snapshot.context.streamingID),
                 isStreamingMessage: message.id == model.streamingMessageIDForPresentation,
                 streamingMood: message.id == model.streamingMessageIDForPresentation
                     ? BotMood(
@@ -477,13 +479,7 @@ struct ConversationTranscriptView: View, Equatable {
             .equatable()
             .generativeUIMessage(model: model, message: message)
         }
-        let files = ConversationChangeSummary.turnFiles(
-            messages: source.snapshot.messages, at: index, streamingID: source.snapshot.context.streamingID)
-        if !files.isEmpty {
-            ConversationChangesCard(files: files)
-                .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
-                .dockPadding(.bottom, 8)
-        }
+
     }
 
 }

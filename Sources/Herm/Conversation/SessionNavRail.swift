@@ -207,6 +207,7 @@ struct SessionNavRail: View {
                         destinationMenu
                     }
                 }
+                .padding(.top, 6)  // room for the chat badge above its icon
             }
             // Global window chrome: applies to the whole workspace, not one chat.
             VStack(spacing: 4) {

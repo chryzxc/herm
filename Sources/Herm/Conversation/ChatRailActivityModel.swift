@@ -89,21 +89,16 @@ struct ChatRailButton: View {
         HStack(spacing: 2) {
             if chatActivity.isWorking {
                 DockActivityIndicator(state: .running, size: 9, animates: isVisible && style.theme.style.animates)
+                    .dockPadding(.horizontal, 3)
+                    .frame(minWidth: 14, minHeight: 14)
+                    .background(Capsule().fill(style.sidebarBackground))
+                    .overlay(Capsule().strokeBorder(style.secondaryText.opacity(0.3), lineWidth: 0.5))
             }
-            if chatActivity.unreadCount > 0 {
-                Text(chatActivity.unreadBadgeLabel)
-                    .dockFont(.compactStatus, weight: .semibold)
-                    .monospacedDigit()
-                    .foregroundStyle(Color.dockSuccess)
-            }
+            if chatActivity.unreadCount > 0 { UnreadCountPill(label: chatActivity.unreadBadgeLabel) }
         }
         .fixedSize(horizontal: true, vertical: false)
-        .dockPadding(.horizontal, 3)
-        .frame(minWidth: 14, minHeight: 14)
-        .background(Capsule().fill(style.sidebarBackground))
-        .overlay(Capsule().strokeBorder(style.secondaryText.opacity(0.3), lineWidth: 0.5))
         .dockPadding(1)
-        .offset(x: 9, y: -4)
+        .offset(x: 0, y: -6)  // sits above the icon; the rail reserves this room
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

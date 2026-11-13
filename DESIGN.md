@@ -2697,9 +2697,11 @@ Accepted is not proof of storage; Queued is an explicit acknowledgment. A proven
 history match clears status without a permanent stored badge or read receipt. Delivery unconfirmed offers a
 bounded, read-only Check status action, never automatic resend; a missing row in that window is inconclusive.
 
-Completed replies show a compact, headerless changes card when Hermes provides edit diff
-previews. File rows carry type icons, filenames, preview line counts and disclosure
-chevrons, and expand to the supplied preview; previews may omit changes,
+Completed replies group delivered files and edit diff previews into one compact,
+headerless file list. Exact matching paths share a row; uncertain matches remain
+separate. Rows show type icons and filenames, delivered files offer Open and
+Download, and preview line counts and disclosure chevrons open the supplied diff.
+Previews may omit changes,
 so the card does not present their counts as complete working-tree totals.
 
 The first message replaces the welcome with the transcript while the same composer

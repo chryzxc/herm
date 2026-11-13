@@ -8,6 +8,25 @@ enum ConversationChangeSummary {
         var id: String { path }
     }
 
+    struct Row: Identifiable, Equatable {
+        let path: String
+        var previews: [String]
+        var delivery: String?
+        var id: String { path }
+    }
+
+    static func merge(files: [File], delivered: [String]) -> [Row] {
+        var rows = files.map { Row(path: $0.path, previews: $0.previews, delivery: nil) }
+        for path in delivered {
+            if let index = rows.firstIndex(where: { $0.path == path && $0.delivery == nil }) {
+                rows[index].delivery = path
+            } else if !rows.contains(where: { $0.delivery == path }) {
+                rows.append(Row(path: path, previews: [], delivery: path))
+            }
+        }
+        return rows
+    }
+
     static func turnFiles(messages: [ChatMessage], at index: Int, streamingID: UUID?) -> [File] {
         guard messages.indices.contains(index), messages[index].role == .hermes,
             messages[index].systemEvent == nil, messages[index].kanbanNotice == nil,

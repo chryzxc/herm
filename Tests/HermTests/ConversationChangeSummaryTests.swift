@@ -4,6 +4,22 @@ import Testing
 @testable import Herm
 
 struct ConversationChangeSummaryTests {
+    @Test func mergesOnlyMatchingAbsolutePaths() {
+        let files = [
+            ConversationChangeSummary.File(path: "/work/a/test.py", previews: ["+a"]),
+            ConversationChangeSummary.File(path: "/work/b/test.py", previews: ["+b"]),
+        ]
+        let rows = ConversationChangeSummary.merge(files: files, delivered: ["/work/a/test.py", "/work/c/test.py"])
+        #expect(rows.count == 3)
+        #expect(rows[0].delivery == "/work/a/test.py")
+        #expect(rows[1].delivery == nil)
+        #expect(rows[2].delivery == "/work/c/test.py")
+        #expect(
+            ConversationChangeSummary.merge(
+                files: [.init(path: "a/test.py", previews: ["+a"])],
+                delivered: ["/work/a/test.py"]
+            ).count == 2)
+    }
     private func call(_ id: String, diff: String?, complete: Bool = true) -> ActiveToolCall {
         ActiveToolCall(
             id: id, name: "patch", input: "", context: "", startedAt: .now,

@@ -39,6 +39,7 @@ enum ConversationMessageActionKind: String, CaseIterable, Identifiable {
 /// skips this body entirely and never touches the Markdown render cache.
 struct ConversationMessageRow: View, Equatable {
     let message: ChatMessage
+    let changes: [ConversationChangeSummary.File]
     let isStreamingMessage: Bool
     /// The live turn's ask (approval, clarify, compressing); nil keeps the busy face.
     let streamingMood: BotMood?
@@ -84,6 +85,7 @@ struct ConversationMessageRow: View, Equatable {
     let loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)?
     init(
         message: ChatMessage,
+        changes: [ConversationChangeSummary.File] = [],
         isStreamingMessage: Bool,
         streamingMood: BotMood? = nil,
         streamingText: StreamingText?,
@@ -119,6 +121,7 @@ struct ConversationMessageRow: View, Equatable {
         hoverPresentation: ConversationRowHoverPresentation = ConversationRowHoverPresentation()
     ) {
         self.message = message
+        self.changes = changes
         self.isStreamingMessage = isStreamingMessage
         self.streamingMood = streamingMood
         self.streamingText = streamingText
@@ -157,6 +160,7 @@ struct ConversationMessageRow: View, Equatable {
 
     nonisolated static func == (lhs: ConversationMessageRow, rhs: ConversationMessageRow) -> Bool {
         lhs.message.id == rhs.message.id
+            && lhs.changes == rhs.changes
             && lhs.message.contentRevision == rhs.message.contentRevision
             && lhs.message.role == rhs.message.role
             && lhs.message.images.elementsEqual(rhs.message.images, by: { $0 === $1 })
@@ -420,7 +424,10 @@ struct ConversationMessageRow: View, Equatable {
         for segment in segments {
             switch segment {
             case .markdown(let text): blocks.append(.markdown(text))
-            case .media(let path) where ArtifactService.kind(for: path) == .image: blocks.append(.image(path))
+            case .media(let path)
+            where ArtifactService.kind(for: path) == .image
+                || (ArtifactOpener.url(path).map { ChatVideoPreview.supports($0) } ?? false):
+                blocks.append(.image(path))
             case .media(let path):
                 if case .files(let paths)? = blocks.last {
                     blocks[blocks.count - 1] = .files(paths + [path])
@@ -435,13 +442,23 @@ struct ConversationMessageRow: View, Equatable {
     @ViewBuilder
     private var assistantBody: some View {
         GenerativeUIIntegration.renderReply(message.text) { standardAssistantBody }
+        if RichDocument.mentionsSurface(message.text), !changes.isEmpty {
+            ConversationChangesCard(files: ConversationChangeSummary.merge(files: changes, delivered: []))
+        }
     }
 
     @ViewBuilder
     private var standardAssistantBody: some View {
         let segments = ChatMediaSegment.split(
             message.text, delivered: ArtifactService.deliveredFiles(in: message.activity))
-        if segments == [.markdown(message.text)] {
+        let delivered = segments.compactMap { segment -> String? in
+            guard case .media(let path) = segment, ArtifactService.kind(for: path) != .image,
+                !(ArtifactOpener.url(path).map { ChatVideoPreview.supports($0) } ?? false)
+            else { return nil }
+            return path
+        }
+        let files = ConversationChangeSummary.merge(files: changes, delivered: delivered)
+        if segments == [.markdown(message.text)] && files.isEmpty {
             messageMarkdownView(message.text)
         } else {
             VStack(alignment: .leading, spacing: 10) {
@@ -451,16 +468,11 @@ struct ConversationMessageRow: View, Equatable {
                         messageMarkdownView(text)
                     case .image(let path):
                         ChatMediaAttachmentCard(path: path)
-                    case .files(let paths):
-                        VStack(spacing: 0) {
-                            ForEach(Array(paths.enumerated()), id: \.offset) { index, path in
-                                if index > 0 { Divider().overlay(Color.dockBorderLight) }
-                                ChatMediaAttachmentCard(path: path, grouped: true)
-                            }
-                        }
-                        .dockWell()
+                    case .files:
+                        EmptyView()
                     }
                 }
+                if !files.isEmpty { ConversationChangesCard(files: files) }
             }
         }
     }
