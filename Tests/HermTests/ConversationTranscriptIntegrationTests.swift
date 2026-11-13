@@ -249,6 +249,40 @@ struct ConversationTranscriptIntegrationTests {
         try await checkProductionPaging()
     }
 
+    @Test func prependResolutionPreservesVisibleAnchor() async throws {
+        let pending = ChatMessage(role: .user, text: "Pending prompt")
+        let rows = (0..<30).map { ChatMessage(role: .hermes, text: "Stored reply \($0)") }
+        let fixture = Fixture(messages: rows + [pending])
+        defer { fixture.window.orderOut(nil) }
+        let model = fixture.model
+        model.pendingSessionSends.append(
+            SessionPendingSend(
+                id: UUID(), owner: model.composerDraftKey,
+                snapshot: SessionComposerDraft(
+                    text: pending.text, images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+                    attachmentError: nil, pdfError: nil), message: pending, baselineRowID: 10))
+        try await fixture.settle()
+        let geometry = try #require(fixture.controller.geometry)
+        try fixture.move(to: max(0, geometry.visibleTop - 200))
+        fixture.coordinator.presentation.isAtBottom = false
+        try await fixture.settle()
+        let before = try #require(fixture.controller.geometry)
+        let anchor = try #require(
+            fixture.coordinator.rowViewports.first {
+                $0.maxY > before.visibleTop && $0.minY < before.visibleTop + before.visibleHeight
+            })
+        let offset = anchor.minY - before.visibleTop
+        model.prependEarlierTranscript(
+            [["row_id": 11, "role": "user", "content": pending.text]],
+            cursor: TranscriptHistoryCursor(storageSessionID: "stored", profileID: nil))
+        try await fixture.settle()
+        let after = try #require(fixture.coordinator.rowViewports.first { $0.target == anchor.target })
+        #expect(abs(after.minY - (try #require(fixture.controller.geometry)).visibleTop - offset) < 1)
+        #expect(model.pendingSessionSends.isEmpty)
+        #expect(model.messages.filter { $0.id == pending.id }.count == 1)
+        #expect(model.lastTranscriptPrepend?.resultingCount == model.messages.count)
+    }
+
     @Test func cachedTranscriptPromotesToFreshRowsWithoutChangingTheirIdentity() async throws {
         let fixture = Fixture(
             messages: (0..<36).map {

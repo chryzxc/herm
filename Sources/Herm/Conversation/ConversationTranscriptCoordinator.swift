@@ -366,6 +366,12 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         }
         if sessionID != presentationID {
             reset(sessionID: presentationID, totalCount: count, bubbleCount: responses)
+        } else if let prepend = model.lastTranscriptPrepend,
+            prepend.generation != consumedPrependGeneration, prepend.removedCount > 0,
+            prepend.resultingCount == count, !presentation.isAtBottom
+        {
+            consumedPrependGeneration = prepend.generation
+            promotePreview(model: model)
         } else {
             messagesChanged(
                 oldCount: totalCount, newCount: count, bubbleCount: responses,
@@ -434,10 +440,17 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     }
 
     func jumpToLatest(animated: Bool = false, reduceMotion: Bool = false) {
+        let tail = ConversationMessageWindow.tailRange(totalCount: totalCount)
+        let tailAlreadyMounted = mountedRange == tail && pendingPage == nil
         invalidate()
         presentation.isAtBottom = true
         presentation.unseenMessageCount = 0
-        setRange(ConversationMessageWindow.tailRange(totalCount: totalCount))
+        // Publish even an unchanged range so row geometry carries the new generation.
+        setRange(tail)
+        if tailAlreadyMounted {
+            followTail(animated: animated && !reduceMotion)
+            return
+        }
         navigationAfterLayout = { [weak self] in self?.followTail(animated: animated && !reduceMotion) }
         if totalCount == 0 {
             navigationAfterLayout?()

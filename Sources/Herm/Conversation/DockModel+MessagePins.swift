@@ -25,7 +25,7 @@ extension DockModel {
         messagePinError = nil
         messagePinMutationFeedback = nil
         storedMessageReferences = [:]
-        submittedMessageIDForPin = nil
+
     }
 
     /// Pins live in Herm's own store as references; Hermes has no pin feature to ask.
@@ -91,14 +91,7 @@ extension DockModel {
     }
 
     func applyMessagePinReceipt(_ receipt: [String: Any]?, assistantMessageID: UUID?) {
-        defer { submittedMessageIDForPin = nil }
         guard let receipt, receipt["complete"] as? Bool == true else { return }
-        if let id = submittedMessageIDForPin, let rowID = TranscriptHistoryPaging.rowID(receipt, key: "user_row_id"),
-            rowID > 0
-        {
-            storedMessageReferences[id] = StoredMessageReference(rowID: rowID, uid: nil)
-            transcriptMessageIDsByRowID[rowID] = id
-        }
         if let id = assistantMessageID,
             let rowID = TranscriptHistoryPaging.rowID(receipt, key: "final_assistant_row_id"), rowID > 0
         {

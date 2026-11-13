@@ -5,6 +5,31 @@ import Testing
 
 @MainActor
 struct ConversationTranscriptSourceTests {
+    @Test func deliveryStatusProjectionUpdatesAndIsScopedToOwner() {
+        let model = DockModel(initialSessionID: "owner")
+        defer { model.delegationMonitoringTask?.cancel() }
+        let message = ChatMessage(role: .user, text: "hello")
+        model.messages = [message]
+        let snapshot = SessionComposerDraft(
+            text: "hello", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            attachmentError: nil, pdfError: nil)
+        model.pendingSessionSends.append(
+            SessionPendingSend(
+                id: UUID(), owner: model.composerDraftKey, snapshot: snapshot, message: message,
+                baselineRowID: 0, phase: .submitting))
+        let source = ConversationTranscriptSource(
+            model: model, bots: BotModeModel(), actions: ConversationMessageActionState(),
+            voice: VoiceOutput(), coordinator: ConversationTranscriptCoordinator())
+        #expect(source.snapshot.context.deliveryStates[message.id] == .sending)
+        model.pendingSessionSends[0].phase = .uncertain
+        source.refresh()
+        #expect(source.snapshot.context.deliveryStates[message.id] == .unconfirmed)
+        model.sessionID = "other"
+        model.sessionStorageID = "other"
+        source.refresh()
+        #expect(source.snapshot.context.deliveryStates.isEmpty)
+    }
+
     @Test func navigatorReusesLongHistoryAndUpdatesOffscreenSearchContent() {
         let model = DockModel(initialSessionID: "navigator-owner")
         model.messages = (0..<5_000).map { ChatMessage(role: .hermes, text: "Message \($0)") }

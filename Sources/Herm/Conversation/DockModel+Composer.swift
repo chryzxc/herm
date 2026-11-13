@@ -116,7 +116,7 @@ extension DockModel {
             SessionPendingSend(
                 id: sendID, owner: sendOwner, snapshot: snapshot, message: sentMessage,
                 baselineRowID: transcriptMessageIDsByRowID.keys.max() ?? 0))
-        submittedMessageIDForPin = messages.last?.id
+
         status = .working
         isSending = true
         if let sessionID { turnStartedAtBySession[sessionID] = Date() }
@@ -289,6 +289,9 @@ extension DockModel {
                     || acknowledgment["voice_stopped"] as? Bool == true
                 if let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }) {
                     pendingSessionSends[index].phase = accepted ? .acknowledged : .uncertain
+                    pendingSessionSends[index].acceptedStatus = acknowledgment["status"] as? String
+                    let owner = pendingSessionSends[index].owner
+                    confirmPendingSend(sendID, owner: owner, receipt: acknowledgment)
                 }
                 if accepted { cleanupImageAttachments(attachedImages) }
                 submissionReported = true
@@ -297,12 +300,7 @@ extension DockModel {
                 guard self.sessionResumeGeneration == sendGeneration,
                     self.sessionID == promptSessionID
                 else { return }
-                if !accepted {
-                    messages.append(
-                        ChatMessage(
-                            role: .hermes,
-                            text: "Herm could not confirm submission. Check the conversation before retrying."))
-                }
+
                 if acknowledgment["voice_stopped"] as? Bool == true { finishVoiceStopSubmission() }
                 DebugLog.write("model: prompt submitted")
             } catch {
@@ -347,7 +345,9 @@ extension DockModel {
                     transportFailure
                     ? "I couldn’t connect to Hermes: \(Self.safeUserDiagnostic(error.localizedDescription))"
                     : "Hermes couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))"
-                messages.append(ChatMessage(role: .hermes, text: message, modelName: currentModelName))
+                if !pendingSessionSends.contains(where: { $0.id == sendID && $0.phase == .uncertain }) {
+                    messages.append(ChatMessage(role: .hermes, text: message, modelName: currentModelName))
+                }
                 if let botActivityID {
                     markBotActivityFailed(id: botActivityID, result: message)
                 }
