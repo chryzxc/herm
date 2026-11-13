@@ -230,10 +230,26 @@ struct ComposerCompletionPopover: View {
                 if let bot = item.bot {
                     BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 18, orbits: false)
                 }
-                Text(item.display)
-                    .dockFont(.body, weight: .medium, design: .monospaced)
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
+                // Bot rows read "Name [Role]: Description".
+                HStack(spacing: 6) {
+                    Text(item.display)
+                        .dockFont(.body, weight: .medium, design: .monospaced)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(1)
+                    if let role = item.bot?.title?.trimmingCharacters(in: .whitespacesAndNewlines), !role.isEmpty {
+                        Text(role)
+                            .dockFont(.compactStatus, weight: .semibold)
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .lineLimit(1)
+                            .dockPill(compact: true)
+                    }
+                    if item.bot != nil, !item.meta.isEmpty {
+                        Text(":")
+                            .dockFont(.body, weight: .medium, design: .monospaced)
+                            .foregroundStyle(Color.dockPrimaryText)
+                    }
+                }
+                .fixedSize()
                 if !item.meta.isEmpty {
                     Text(item.meta)
                         .dockFont(.metadata)

@@ -513,6 +513,11 @@ struct GroupChatView: View {
     /// Threads hidden from the bar; their messages stay in the room. Cleared when the room changes.
     @State private var closedThreads: Set<String> = []
     @State private var showingInsertPopover = false
+    @State private var attachments: [GroupRoomAttachment] = []
+    @State private var uploadingCount = 0
+    @State private var showingFilePicker = false
+    @State private var attachmentPicker: AttachmentPopoverFilePicker = .files
+    @State private var previewImage: ChatImagePreview?
 
     private var room: GroupRoom? { store.rooms.first { $0.id == roomID } }
     private var allEvents: [GroupRoomEvent] { store.events[roomID] ?? [] }
@@ -570,13 +575,13 @@ struct GroupChatView: View {
             ForEach(store.approvals[roomID] ?? [], id: \.requestID) { approval in
                 approvalBanner(approval)
             }
-            ForEach(store.retries[roomID] ?? [], id: \.self) { taskID in
+            ForEach(store.retries[roomID] ?? [], id: \.self) { action in
                 banner(
                     icon: .warning,
                     text:
                         "A member's turn was interrupted and its result is unknown. Retrying may repeat work it already did."
                 ) {
-                    DockAsyncButton("Retry") { await store.retry(taskID, in: roomID) }
+                    DockAsyncButton("Retry") { await store.retry(action, in: roomID) }
                         .buttonStyle(.dockPrimary)
                 }
             }
@@ -597,11 +602,12 @@ struct GroupChatView: View {
         .task(id: "\(roomID):\(hostVisible)") {
             guard hostVisible else { return }
             while !Task.isCancelled {
-                await store.poll(roomID)
+                await store.poll(roomID, markRead: true)
                 // ponytail: fixed-interval polling; Hermes has no room push events.
                 try? await Task.sleep(for: .seconds(store.workingRooms.contains(roomID) ? 1.5 : 5))
             }
         }
+        .dockSheet(item: $previewImage) { ChatImagePreviewModal(image: $0.image) }
         .sheet(isPresented: $isEditing) {
             if let room { EditGroupChatSheet(store: store, botMode: botMode, room: room, onCreated: onOpenRoom) }
         }
@@ -682,26 +688,22 @@ struct GroupChatView: View {
     /// Stacked member chips under the title; hover names the member, a working member gets an accent ring.
     private var memberAvatars: some View {
         let thinking = Set(thinkingMembers.map(\.memberID))
-        return HStack(spacing: -7) {
+        return HStack(spacing: -4) {
             ForEach(room?.members ?? [], id: \.memberID) { member in
-                ZStack {
-                    Circle().fill(Color.dockSurface)
+                Group {
                     if let bot = botMode.botsByID[member.profile] {
                         BotAvatarView(
-                            bot: bot, imageData: botMode.avatarImages[bot.id], size: 22,
+                            bot: bot, imageData: botMode.avatarImages[bot.id], size: 24,
                             orbits: thinking.contains(member.memberID))
                     } else {
                         Text(member.displayName.prefix(1).uppercased())
                             .dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockSecondaryText)
+                            .frame(width: 24, height: 24)
+                            .background(Circle().fill(Color.dockSurface4))
                     }
                 }
                 .frame(width: 26, height: 26)
-                .overlay(
-                    Circle().stroke(
-                        thinking.contains(member.memberID) ? Color.dockAccent : Color.dockBorderLight, lineWidth: 1)
-                )
-                .background(Circle().stroke(Color.dockCanvas, lineWidth: 3))
                 .help("\(member.displayName) · @\(member.handle)")
             }
         }
@@ -799,23 +801,52 @@ struct GroupChatView: View {
         switch event.kind {
         case .user:
             HStack {
-                Spacer(minLength: 80)
+                Spacer(minLength: 40)
                 let split = ReplyQuote.split(GenerativeUIIntegration.displayUserText(event.text))
-                VStack(alignment: .leading, spacing: 6) {
-                    if let quote = split?.quote { ReplyQuoteChip(quote: quote) }
-                    // Same type as the main chat's bubble, so it follows the text-size setting.
-                    Text.withFileIcons(
-                        AttributedString(split?.body ?? GenerativeUIIntegration.displayUserText(event.text)),
-                        iconSize: DockWorkspaceScale.points(13, scale: workspaceScale)
+                // Loaded images sit above the bubble like the main chat; the rest stay named rows.
+                let images = event.attachments.compactMap { store.attachmentImages[$0.id] }
+                let files = event.attachments.filter { store.attachmentImages[$0.id] == nil }
+                VStack(alignment: .trailing, spacing: 4) {
+                    UserMessageImages(
+                        images: images,
+                        cacheKey: { "group:\(event.id):\($0):\(images.count)" },
+                        onPreview: { previewImage = ChatImagePreview(image: $0) }
                     )
-                    .dockFont(.conversation)
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .textSelection(.enabled)
+                    if !event.text.isEmpty || !files.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(files) { UserMessageAttachmentRow(name: $0.name) }
+                            if let quote = split?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }
+                            // Same type as the main chat's bubble, so it follows the text-size setting.
+                            if !event.text.isEmpty {
+                                let body = split?.body ?? GenerativeUIIntegration.displayUserText(event.text)
+                                Text.withFileIcons(
+                                    AttributedString(body),
+                                    iconSize: DockWorkspaceScale.points(13, scale: workspaceScale)
+                                )
+                                .dockFont(.conversation)
+                                .textSelection(.enabled)
+                            }
+                        }
+                        .userMessageBubble()
+                    }
+                    HStack(spacing: 0) {
+                        Text(event.createdAt.formatted(date: .abbreviated, time: .shortened))
+                            .dockFont(.machineMetadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                        DockCopyButton(
+                            GenerativeUIIntegration.displayUserText(event.text), accessibilityLabel: "Copy message",
+                            presentation: .icon, iconSize: 12
+                        )
+                        .buttonStyle(DockPressButtonStyle())
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                    }
+                    .dockPadding(.horizontal, 4)
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                .dockPadding(.horizontal, 14)
-                .dockPadding(.vertical, 10)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.dockAccentMuted))
+                .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
+                .task(id: event.id) {
+                    for file in event.attachments { await store.loadImage(file, event: event.id, in: roomID) }
+                }
             }
         case .member(let memberID):
             let member = room?.member(memberID)
@@ -917,8 +948,10 @@ struct GroupChatView: View {
         }
         .dockPadding(12)
         .dockWell(radius: 10)
-        .dockPadding(.horizontal, 20)
+        .dockPadding(.horizontal, metrics.composerInset)
         .dockPadding(.top, 8)
+        .frame(maxWidth: metrics.composerMaxWidth)
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -952,8 +985,10 @@ struct GroupChatView: View {
         }
         .dockPadding(12)
         .dockWell(radius: 10)
-        .dockPadding(.horizontal, 20)
+        .dockPadding(.horizontal, metrics.composerInset)
         .dockPadding(.top, 8)
+        .frame(maxWidth: metrics.composerMaxWidth)
+        .frame(maxWidth: .infinity)
     }
 
     private var mentionToken: String? { ComposerMentionPresentation.activeToken(in: draft) }
@@ -1003,7 +1038,9 @@ struct GroupChatView: View {
         return true
     }
 
-    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canSend: Bool {
+        uploadingCount == 0 && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty)
+    }
 
     private var composer: some View {
         VStack(spacing: 6) {
@@ -1016,8 +1053,7 @@ struct GroupChatView: View {
                     onSelect: acceptMention
                 )
             }
-            // The main chat's editor, card, tray and column; rooms are text-only, so no
-            // attachment, model or voice controls.
+            // The main chat's editor, card, tray and column; rooms have no model or voice controls.
             VStack(spacing: 0) {
                 if let quote = replyQuote {
                     ReplyQuoteChip(quote: quote) { replyQuote = nil }
@@ -1031,6 +1067,8 @@ struct GroupChatView: View {
                             isFocused: isEditorFocused,
                             onSubmit: send,
                             onCompletionKey: handleMentionKey,
+                            // Dropped or pasted file URLs upload like the picker's.
+                            onDropFiles: store.supportsAttachments ? { upload($0) } : nil,
                             onFocusChanged: { isEditorFocused = $0 },
                             onCaretMoved: { _, _ in },
                             takePendingCaret: {
@@ -1040,7 +1078,7 @@ struct GroupChatView: View {
                             onTextChanged: { _, _ in mentionIndex = 0 },
                             onContentHeightChanged: { editorHeight = ComposerLayout.height(for: $0) }
                         )
-                        .frame(height: max(1, editorHeight - 4))
+                        .frame(height: editorHeight)
                         if draft.isEmpty {
                             Text("Message the group — @ to mention a member")
                                 .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
@@ -1050,8 +1088,9 @@ struct GroupChatView: View {
                         }
                     }
                     .dockPadding(.top, 4)
-                    .frame(height: draft.isEmpty ? ComposerLayout.minHeight : editorHeight)
-                    .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
+                    .frame(height: draft.isEmpty ? ComposerLayout.minHeight : editorHeight + 4)
+                    .clipped()
+                    if !attachments.isEmpty || uploadingCount > 0 { attachmentChips }
                     composerControls
                 }
                 .composerCard(isFocused: isEditorFocused)
@@ -1060,6 +1099,67 @@ struct GroupChatView: View {
             ComposerFolderBarSlot()
         }
         .composerColumn(metrics)
+        .fileImporter(
+            isPresented: $showingFilePicker,
+            allowedContentTypes: attachmentPicker.allowedContentTypes,
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case .success(let urls): upload(urls)
+            case .failure(let error): store.errorMessage = AttachmentPopoverPresentation.importerErrorMessage(error)
+            }
+        }
+    }
+
+    private var attachmentChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(attachments) { file in
+                    HStack(spacing: 7) {
+                        DockIcon(file.kind == "image" ? .image : .fileText)
+                            .foregroundStyle(Color.dockAccent)
+                        Text(file.name)
+                            .dockFont(.metadata, weight: .medium)
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .lineLimit(1)
+                        Button {
+                            attachments.removeAll { $0.id == file.id }
+                        } label: {
+                            DockIcon(.x)
+                                .dockFont(.compactStatus, weight: .bold)
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .frame(width: 22, height: 22)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.dockHover)
+                        .help("Remove \(file.name)")
+                    }
+                    .dockPadding(.horizontal, 8)
+                    .dockPadding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                            .dockSurfaceFill(Color.dockSurface)
+                    )
+                }
+                if uploadingCount > 0 { ProgressView().controlSize(.small).help("Uploading") }
+            }
+        }
+    }
+
+    private func upload(_ urls: [URL]) {
+        isEditorFocused = true
+        for url in urls {
+            uploadingCount += 1
+            Task {
+                defer { uploadingCount -= 1 }
+                do {
+                    attachments.append(try await store.uploadAttachment(url, to: roomID))
+                } catch {
+                    store.errorMessage =
+                        "Couldn't attach \(url.lastPathComponent): \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+                }
+            }
+        }
     }
 
     private var composerControls: some View {
@@ -1078,16 +1178,20 @@ struct GroupChatView: View {
                 ComposerControlLabel(icon: .plus)
             }
             .buttonStyle(.dockHover)
-            .help("Insert a snippet")
+            .help(store.supportsAttachments ? "Attach files or insert a snippet" : "Insert a snippet")
             .dockPopover(isPresented: $showingInsertPopover, arrowEdge: .bottom) {
                 AttachmentPopover(
                     pasteImageAvailable: false,
-                    onSelect: { _ in },
+                    onSelect: { action in
+                        showingInsertPopover = false
+                        attachmentPicker = action == .images ? .images : .files
+                        showingFilePicker = true
+                    },
                     onSelectSnippet: {
                         draft = AttachmentPopoverPresentation.insertingSnippet($0, into: draft)
                         showingInsertPopover = false
                     },
-                    actions: [.promptSnippets]
+                    actions: store.supportsAttachments ? [.files, .images, .promptSnippets] : [.promptSnippets]
                 )
             }
             Button {
@@ -1103,12 +1207,12 @@ struct GroupChatView: View {
     }
 
     private var sendButton: some View {
-        Button(action: isWorking ? { Task { await store.stop(roomID) } } : send) {
-            ComposerSubmitLabel(isEnabled: !isWorking && canSend, isFullscreen: metrics == .resolve(isFullscreen: true))
-            {
-                if store.pendingRooms.contains(roomID) {
+        let canStop = isWorking || store.sendingRooms.contains(roomID)
+        return Button(action: canStop ? { Task { await store.stop(roomID) } } : send) {
+            ComposerSubmitLabel(isEnabled: !canStop && canSend, isFullscreen: metrics == .resolve(isFullscreen: true)) {
+                if store.pendingRooms.contains(roomID) && !canStop {
                     ProgressView().controlSize(.small)
-                } else if isWorking && !canSend {
+                } else if canStop {
                     DockIcon(.stop, weight: .fill)
                         .dockFont(.compactStatus, weight: .bold)
                         .foregroundStyle(Color.dockDestructive)
@@ -1121,18 +1225,18 @@ struct GroupChatView: View {
         }
         .buttonStyle(.dockHover)
         .frame(width: 32, height: 32)
-        .disabled(store.pendingRooms.contains(roomID) || (!isWorking && !canSend))
-        .help(isWorking && !canSend ? "Stop the room" : "Send")
+        .disabled(!canStop && (store.pendingRooms.contains(roomID) || !canSend))
+        .help(canStop ? "Stop the room" : "Send")
     }
 
     private func send() {
         let text = draft
-        guard !store.pendingRooms.contains(roomID), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
-        }
+        guard !store.pendingRooms.contains(roomID), canSend else { return }
+        let files = attachments
         draft = ""
+        attachments = []
         let outgoing = replyQuote?.composing(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? text
         replyQuote = nil
-        Task { await store.send(outgoing, to: roomID, thread: thread) }
+        Task { await store.send(outgoing, attachments: files, to: roomID, thread: thread) }
     }
 }

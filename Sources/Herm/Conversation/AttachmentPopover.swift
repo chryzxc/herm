@@ -129,7 +129,7 @@ struct AttachmentPopover: View {
     let pasteImageAvailable: Bool
     let onSelect: (AttachmentPopoverAction) -> Void
     let onSelectSnippet: (String) -> Void
-    /// Group rooms carry text only, so they offer just the inserting actions.
+    /// Group rooms offer only the actions their gateway supports.
     var actions = AttachmentPopoverAction.allCases
 
     var body: some View {
