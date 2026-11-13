@@ -194,6 +194,29 @@ struct SessionNavSidebarSnapshotTests {
         #expect(build() == build())
     }
 
+    @Test func reusedSnapshotMatchesFreshBuildAcrossActivityAndSessionChanges() {
+        let sessions = [session("s1", updatedAt: Date(timeIntervalSince1970: 1))]
+        let projects = [project("p1", name: "/repos/Alpha", sessionIDs: ["s1"])]
+        let base = SessionNavSidebarSnapshot(inputs: inputs(sessions: sessions, projects: projects))
+
+        let activity = inputs(
+            sessions: sessions, projects: projects,
+            latestActivities: [
+                LatestActivityItem(
+                    id: "l1", sessionID: "s1", sessionTitle: "T", state: "failed", activityName: "tool",
+                    timestamp: Date(timeIntervalSince1970: 5))
+            ])
+        let reused = SessionNavSidebarSnapshot(inputs: activity, reusing: base)
+        #expect(reused == SessionNavSidebarSnapshot(inputs: activity))
+        #expect(reused.attentionDots["s1"] == .failure)
+
+        let moved = inputs(
+            sessions: sessions + [session("s2", updatedAt: Date(timeIntervalSince1970: 9))], projects: projects)
+        let rebuilt = SessionNavSidebarSnapshot(inputs: moved, reusing: reused)
+        #expect(rebuilt == SessionNavSidebarSnapshot(inputs: moved))
+        #expect(rebuilt.conversations.map(\.id) == ["s2", "s1"])
+    }
+
     @Test func emptyProjectsStayVisibleAndProjectsFollowLatestActivity() {
         let now = Date()
         let snapshot = SessionNavSidebarSnapshot(

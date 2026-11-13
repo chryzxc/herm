@@ -72,6 +72,17 @@ struct SessionNavSidebarSnapshot: Equatable {
         var localProjectPathBySessionID: [String: String] = [:]
         /// Every bot's recent sessions, for the multi-bot groupings.
         var allBotSessionsState: HermesProjectionState<[HermesSession]> = .loading
+
+        /// Every input `conversationGroups` and `SidebarAgentGrouping.merged` read.
+        func hasSameConversations(as other: Inputs) -> Bool {
+            sessions == other.sessions && projects == other.projects
+                && projectIDBySessionID == other.projectIDBySessionID
+                && projectSessionsByProjectID == other.projectSessionsByProjectID
+                && projectProfileID == other.projectProfileID
+                && localProjectPathBySessionID == other.localProjectPathBySessionID
+                && allBotSessionsState == other.allBotSessionsState
+                && profileScopeID == other.profileScopeID
+        }
     }
 
     let inputs: Inputs
@@ -90,12 +101,23 @@ struct SessionNavSidebarSnapshot: Equatable {
         }
     }
 
-    init(inputs: Inputs) {
+    /// Activity, attention and status tick on every tool event from every
+    /// running session but only feed `attentionDots`; reusing `previous`'s
+    /// groups keeps those ticks from rescanning every project × session.
+    init(inputs: Inputs, reusing previous: SessionNavSidebarSnapshot? = nil) {
         self.inputs = inputs
+        self.attentionDots = Self.attentionDots(inputs: inputs)
+        if let previous, previous.inputs.hasSameConversations(as: inputs) {
+            self.linkedProjectGroups = previous.linkedProjectGroups
+            self.conversations = previous.conversations
+            self.linkedSessionIDs = previous.linkedSessionIDs
+            self.projectNameBySessionID = previous.projectNameBySessionID
+            self.allBotConversations = previous.allBotConversations
+            return
+        }
         let groups = Self.conversationGroups(inputs: inputs)
         self.linkedProjectGroups = groups.filter(\.isLinked)
         self.conversations = Self.deduplicatedConversations(groups: groups)
-        self.attentionDots = Self.attentionDots(inputs: inputs)
         var linkedSessionIDs = Set<String>()
         var projectNameBySessionID: [String: String] = [:]
         for group in self.linkedProjectGroups {
@@ -354,7 +376,7 @@ final class SessionNavSidebarModel: ObservableObject {
         let inputs = SessionNavSidebarSnapshot.inputs(
             model: model, control: control, localProjectPaths: store.projectPathsBySessionID)
         guard inputs != snapshot.inputs else { return }
-        snapshot = SessionNavSidebarSnapshot(inputs: inputs)
+        snapshot = SessionNavSidebarSnapshot(inputs: inputs, reusing: snapshot)
         DebugLog.writePerformance(
             "sidebar instance=\(instanceID) snapshot_refresh_ms=\(Int(Date().timeIntervalSince(startedAt) * 1000))"
         )
