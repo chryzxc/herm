@@ -604,7 +604,8 @@ extension DockPopover {
                             tabRequest: $sessionInspectorTabRequest,
                             workspaceSections: [.talk] + (sessionGitHubTabsAvailable ? [.pullRequests, .issues] : []),
                             workspaceContent: inspectorWorkspaceTab,
-                            onWorkspaceSection: showInspectorWorkspaceSection
+                            onWorkspaceSection: showInspectorWorkspaceSection,
+                            keepsTalkOpen: sessionWorkspaceMode == .voice
                         )
                     case .artifacts:
                         ArtifactsInspectorView(model: model, presentation: .inspector)

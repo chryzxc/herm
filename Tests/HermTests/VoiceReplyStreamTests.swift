@@ -32,4 +32,15 @@ struct VoiceReplyStreamTests {
         _ = stream.append("The result is ten. More")
         #expect(stream.finish("Correction: the result is twelve.") == "Correction: the result is twelve.")
     }
+
+    @Test func whitespaceOnlyDifferencesInTheFinalAnswerAreNotSpokenTwice() {
+        var stream = VoiceReplyStream()
+        _ = stream.append("\n\nThe answer is ready.  Here")
+        #expect(stream.finish("The answer is ready. Here is more.") == " Here is more.")
+
+        var narration = VoiceReplyStream()
+        _ = narration.append("Let me check that.")
+        _ = narration.flushSentence()
+        #expect(narration.finish("Let me check that.\n\nIt passed.") == "\n\nIt passed.")
+    }
 }

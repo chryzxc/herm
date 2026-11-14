@@ -194,11 +194,14 @@ extension DockPopover {
         Group {
             // Replaces the shell instead of overlaying it: the AppKit split
             // panes draw above SwiftUI overlays, so side panels showed through.
+            // Only entering fades. The workspace remount on exit is not
+            // animated: AppKit panes draw above the fading stage anyway, and
+            // animating a full split relayout stutters.
             if isVoiceImmersive && sessionWorkspaceMode == .voice {
-                immersiveVoiceStage.dockPadding(.top, titlebarInset).transition(
-                    .opacity.combined(with: .scale(scale: 1.02)))
+                immersiveVoiceStage.dockPadding(.top, titlebarInset)
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
             } else {
-                layoutContent
+                layoutContent.transition(.identity)
             }
         }
         .background {
@@ -213,7 +216,7 @@ extension DockPopover {
                 }
             }
         }
-        .animation(.dockEase(duration: 0.3), value: isVoiceImmersive)
+        .animation(.dockEase(duration: 0.2), value: isVoiceImmersive)
         .frame(
             width: isFullscreen ? nil : min(popupWidth, panelPresentation.compactWidth),
             height: isFullscreen ? nil : panelPresentation.compactHeight

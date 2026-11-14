@@ -18,10 +18,22 @@ extension DockPopover {
     }
 
     func voiceStage(immersive: Bool) -> some View {
+        GeometryReader { geometry in
+            voiceStage(immersive: immersive, size: geometry.size)
+        }
+        .onAppear {
+            beginVoiceConversation()
+        }
+    }
+
+    private func voiceStage(immersive: Bool, size: CGSize) -> some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         let captions = voiceCaptions
-        let orbScale: CGFloat = immersive ? 0.85 : 0.65
         let generativeReply = voiceGenerativeReply
+        let layout = VoiceStageLayout(
+            size: size, immersive: immersive, hasPanel: generativeReply != nil,
+            cardsEnabled: UserDefaults.standard.object(forKey: VoiceStageSettings.activityPillsKey) as? Bool ?? true)
+        let orbScale = layout.orbSide / 320
         let stage = VStack(spacing: 0) {
             VoiceStatusStrip(model: model)
                 .dockPadding(.top, 12)
@@ -67,9 +79,11 @@ extension DockPopover {
                     Text(voiceInteractionHint)
                         .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
                 }
             }
-            .frame(maxWidth: 480, minHeight: 76, maxHeight: 76)
+            .frame(maxWidth: min(480, layout.columnWidth), minHeight: 76, maxHeight: 76)
             .dockPadding(.horizontal, 16)
 
             if !model.activeSubagents.isEmpty {
@@ -81,7 +95,7 @@ extension DockPopover {
                 // Approvals and questions block the turn, so they take the
                 // captions' place until answered.
                 voicePromptCard
-                    .frame(maxWidth: immersive ? 520 : 420)
+                    .frame(maxWidth: min(immersive ? 520 : 420, max(0, size.width - 32)))
                     .shadow(
                         color: (model.approvalText != nil ? Color.dockWarning : Color.dockAccent).opacity(0.35),
                         radius: 28
@@ -97,7 +111,13 @@ extension DockPopover {
                             .lineLimit(2)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
-                    if let caption = model.voiceState.isNativeConversationActive
+                    if let generativeReply, !layout.showsPanelBeside {
+                        // Too narrow to sit beside the stage: the panel
+                        // takes the reply caption's place.
+                        voiceGenerativeCard(generativeReply, immersive: immersive)
+                            .frame(maxHeight: 260)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    } else if let caption = model.voiceState.isNativeConversationActive
                         ? model.voiceSpokenCaption : captions.reply?.text
                     {
                         VoiceReplyCaption(text: caption, immersive: immersive)
@@ -105,28 +125,36 @@ extension DockPopover {
                     }
                 }
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: immersive ? 560 : 360, minHeight: 96, alignment: .top)
+                .frame(maxWidth: layout.columnWidth, minHeight: 96, alignment: .top)
                 .dockPadding(.horizontal, 16)
             }
 
             voiceControls(style: style)
                 .dockPadding(.top, 10)
+                .dockPadding(.horizontal, 16)
             Spacer(minLength: 12)
+            // Fixed slot so the compact card never covers the controls.
+            Color.clear.frame(height: layout.compactCardSlot)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, minHeight: size.height)
         .background {
             // A pending approval or question dims everything else.
             VoiceActivityPillsLayer(
-                model: model, cardWidth: immersive ? 280 : 200, cronJobs: controlCenter.cronJobs
+                model: model, cardWidth: layout.cardWidth, isCompact: layout.isCompact,
+                cronJobs: controlCenter.cronJobs
             )
             .dockPadding(immersive ? 24 : 12)
             .opacity(hasPendingVoicePrompt ? 0.2 : 1)
         }
+        // Very short panes scroll rather than clip the controls.
+        let scrollingStage = ScrollView(.vertical) { stage }
+            .scrollIndicators(.never)
+            .scrollBounceBehavior(.basedOnSize)
         // A reply with generative UI slides in on the right and pushes the
         // stage left; the next user message returns the stage to the center.
         return HStack(spacing: 0) {
-            stage
-            if let generativeReply {
+            scrollingStage
+            if let generativeReply, layout.showsPanelBeside {
                 voiceGenerativePanel(generativeReply, immersive: immersive)
                     .transition(
                         .asymmetric(
@@ -140,9 +168,6 @@ extension DockPopover {
         .animation(.dockEase(duration: 0.25), value: captions.user)
         .animation(.dockEase(duration: 0.25), value: captions.reply == nil)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: hasPendingVoicePrompt)
-        .onAppear {
-            beginVoiceConversation()
-        }
     }
 
     /// The current turn's reply when it carries generative UI.
@@ -157,6 +182,13 @@ extension DockPopover {
     /// A floating card beside the stage: inset from every edge, centered,
     /// hugging short replies and scrolling tall ones.
     func voiceGenerativePanel(_ message: ChatMessage, immersive: Bool) -> some View {
+        voiceGenerativeCard(message, immersive: immersive)
+            .dockPadding(.vertical, immersive ? 56 : 40)
+            .dockPadding(.trailing, immersive ? 40 : 24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    func voiceGenerativeCard(_ message: ChatMessage, immersive: Bool) -> some View {
         let shape = RoundedRectangle(cornerRadius: DockLayout.paneRadius + 8, style: .continuous)
         let content = GenerativeUIIntegration.renderReply(message.text) { MarkdownMessageView(markdown: message.text) }
             .generativeUIMessage(model: model, message: message)
@@ -170,9 +202,6 @@ extension DockPopover {
         .clipShape(shape)
         .dockFloatingSurface(shape, stroke: Color.dockBorderLight)
         .shadow(color: .black.opacity(0.22), radius: 28, y: 12)
-        .dockPadding(.vertical, immersive ? 56 : 40)
-        .dockPadding(.trailing, immersive ? 40 : 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     var conversationHermFaceID: String? {
@@ -284,29 +313,91 @@ extension DockPopover {
         )
     }
 
+    /// Call-style controls: toggles on the left, the turn action in the
+    /// middle, layout and End voice on the right. Narrow panes stack the turn
+    /// action above its companions.
     func voiceControls(style: DockThemePalette) -> some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                if model.voiceState.isNativeConversationActive {
-                    Button(model.isVoiceMicMuted ? "Unmute mic" : "Mute mic") { model.toggleVoiceMicMuted() }
-                        .buttonStyle(.dockSecondary)
-                    Button(model.voiceRepliesEnabled ? "Mute replies" : "Speak replies") { model.toggleVoiceReplies() }
-                        .buttonStyle(.dockSecondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                voiceMuteControls
+                voiceTurnButton.dockPadding(.horizontal, 4)
+                voiceImmersiveButton(style: style)
+                endVoiceButton
+            }
+            VStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    voiceTurnButton
+                    voiceImmersiveButton(style: style)
                 }
-                Button("End voice", action: exitVoiceMode)
-                    .buttonStyle(.dockSecondary)
+                HStack(spacing: 8) {
+                    voiceMuteControls
+                    endVoiceButton
+                }
             }
-            HStack(spacing: 12) {
-                Button(voiceOrbHelp, action: handleVoiceOrbTap)
-                    .buttonStyle(.dockPrimary)
-                    .disabled(model.voiceState == .preparing || model.voiceState == .transcribing)
-                DockIconButton(
-                    icon: isVoiceImmersive ? .cornersIn : .cornersOut,
-                    label: isVoiceImmersive ? "Exit full voice mode" : "Full voice mode",
-                    size: 34, style: style
-                ) { isVoiceImmersive.toggle() }
-                .keyboardShortcut(isVoiceImmersive ? .cancelAction : nil)
+            VStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    voiceTurnButton
+                    voiceImmersiveButton(style: style)
+                }
+                HStack(spacing: 8) { voiceMuteControls }
+                endVoiceButton
             }
+        }
+    }
+
+    private var voiceTurnButton: some View {
+        Button(action: handleVoiceOrbTap) {
+            voiceControlLabel(voiceOrbHelp, icon: voiceOrbMode == .listening ? .paperPlaneRight : .stop)
+        }
+        .buttonStyle(.dockPrimary)
+        .disabled(model.voiceState == .preparing || model.voiceState == .transcribing)
+    }
+
+    private func voiceImmersiveButton(style: DockThemePalette) -> some View {
+        DockIconButton(
+            icon: isVoiceImmersive ? .cornersIn : .cornersOut,
+            label: isVoiceImmersive ? "Exit full voice mode" : "Full voice mode",
+            style: style
+        ) { isVoiceImmersive.toggle() }
+        .keyboardShortcut(isVoiceImmersive ? .cancelAction : nil)
+    }
+
+    @ViewBuilder
+    private var voiceMuteControls: some View {
+        if model.voiceState.isNativeConversationActive {
+            Button {
+                model.toggleVoiceMicMuted()
+            } label: {
+                voiceControlLabel(
+                    model.isVoiceMicMuted ? "Unmute mic" : "Mute mic",
+                    icon: model.isVoiceMicMuted ? .microphoneSlash : .microphone,
+                    tint: model.isVoiceMicMuted ? .dockWarning : nil)
+            }
+            .buttonStyle(.dockSecondary)
+            Button {
+                model.toggleVoiceReplies()
+            } label: {
+                voiceControlLabel(
+                    model.voiceRepliesEnabled ? "Mute replies" : "Speak replies",
+                    icon: model.voiceRepliesEnabled ? .speakerSimpleHigh : .speakerSimpleSlash,
+                    tint: model.voiceRepliesEnabled ? nil : .dockWarning)
+            }
+            .buttonStyle(.dockSecondary)
+        }
+    }
+
+    private var endVoiceButton: some View {
+        Button(action: exitVoiceMode) {
+            voiceControlLabel("End voice", icon: .phoneDisconnect, tint: .dockDestructive)
+        }
+        .buttonStyle(.dockSecondary)
+    }
+
+    /// Icon and title; a tint marks an off or destructive state on the icon.
+    private func voiceControlLabel(_ title: String, icon: Ph, tint: Color? = nil) -> some View {
+        HStack(spacing: 6) {
+            DockIcon(icon, size: 13, color: tint)
+            Text(title)
         }
     }
 
