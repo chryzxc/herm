@@ -364,6 +364,7 @@ final class SessionNavSidebarModel: ObservableObject {
     private let control: ControlCenterModel
     private let store: WorkspaceStore
     private var cancellables: Set<AnyCancellable> = []
+    private var lowPowerRefreshTask: Task<Void, Never>?
 
     init(model: DockModel, control: ControlCenterModel, store: WorkspaceStore) {
         self.model = model
@@ -380,8 +381,24 @@ final class SessionNavSidebarModel: ObservableObject {
         // hop reads the settled values and coalesces same-tick bursts.
         .receive(on: DispatchQueue.main)
         .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main)
-        .sink { [weak self] _ in self?.refresh() }
+        .sink { [weak self] _ in self?.scheduleRefresh() }
         .store(in: &cancellables)
+    }
+
+    /// Low Power Mode slows the main thread enough that a rail rebuild per
+    /// running-session tick stalls scrolling, so ticks coalesce to 4 Hz there.
+    /// Selection changes still refresh at once.
+    private func scheduleRefresh() {
+        guard ProcessInfo.processInfo.isLowPowerModeEnabled,
+            model.navigationSessionID == snapshot.inputs.activeSessionID
+        else { return refresh() }
+        guard lowPowerRefreshTask == nil else { return }
+        lowPowerRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self else { return }
+            self.lowPowerRefreshTask = nil
+            self.refresh()
+        }
     }
 
     func refresh() {
