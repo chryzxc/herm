@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.2.2](https://github.com/chryzxc/herm/compare/v0.2.1...v0.2.2) (2026-11-14)
+
+
+### Bug Fixes
+
+* **composer:** leave Return and arrows to the input method while composing ([#184](https://github.com/chryzxc/herm/issues/184)) ([0433e4f](https://github.com/chryzxc/herm/commit/0433e4f6534b916dd7c8a2a900d543fec2e10ed8))
+* harden browser and bundled integrations ([aa36c5a](https://github.com/chryzxc/herm/commit/aa36c5a6784e55d42ff7d702e2def932a2f7574f))
+* keep ci runs for every main commit so release commits are not cancelled ([e904c0b](https://github.com/chryzxc/herm/commit/e904c0bb94847044e8a12d73e232236cea0ccd90))
+* **quota:** read remote provider usage from the backend ([#160](https://github.com/chryzxc/herm/issues/160)) ([49153ef](https://github.com/chryzxc/herm/commit/49153ef322bd08953f85e122de5def3cc50db1c8))
+
+
+### Performance Improvements
+
+* **composer:** reduce animation and usage updates ([9fd6f1b](https://github.com/chryzxc/herm/commit/9fd6f1b35cc050aafc366079cffcc04a4dc761ba))
+* isolate tool activity presentation updates ([27a7310](https://github.com/chryzxc/herm/commit/27a731080a51b66d12375bf133b8e25aa5c1ade0))
+* isolate tool activity presentation updates ([dea82ce](https://github.com/chryzxc/herm/commit/dea82ce612c214b97ee81d03b25e8e91abe09c38))
+* **notch:** reduce observation and polling ([3dc0d7c](https://github.com/chryzxc/herm/commit/3dc0d7cdb586ada434ae21c04bac810db3565654))
+* reduce composer animation and usage updates ([5b8d7fc](https://github.com/chryzxc/herm/commit/5b8d7fcfa902a3aa3f950962ac81b13b60fa33dd))
+* reduce notch observation and polling ([25ddc6d](https://github.com/chryzxc/herm/commit/25ddc6da8ed3b0392c65d43ef6e7cf71d2b71e44))
+* stop idle message navigator pointer polling ([e9a68ee](https://github.com/chryzxc/herm/commit/e9a68eec79620209dad2b8e4bc2eec1ffa9dccc8))
+* stop idle message navigator pointer polling ([7720134](https://github.com/chryzxc/herm/commit/772013430b5f985311503bad85ba69ed199369c5))
+
 ## [0.2.1](https://github.com/chryzxc/herm/compare/v0.2.0...v0.2.1) (2026-11-14)
 
 
