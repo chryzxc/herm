@@ -105,6 +105,15 @@ struct WorkspaceFoundationRenderTests {
             let layout = try #require(text.layoutManager)
             let container = try #require(text.textContainer)
             layout.ensureLayout(for: container)
+            // The height glides for 0.16s; a loaded CI runner can still be mid-animation
+            // after a fixed sleep, so wait for the settled frame instead.
+            let deadline = ContinuousClock.now + .seconds(3)
+            while scroll.documentVisibleRect.maxY < layout.usedRect(for: container).maxY + 2,
+                ContinuousClock.now < deadline
+            {
+                try await Task.sleep(for: .milliseconds(50))
+                host.layoutSubtreeIfNeeded()
+            }
             let glyphs = layout.glyphRange(
                 forCharacterRange: NSRange(location: text.string.utf16.count - 1, length: 1),
                 actualCharacterRange: nil)
