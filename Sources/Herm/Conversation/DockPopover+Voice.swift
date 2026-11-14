@@ -313,46 +313,92 @@ extension DockPopover {
         )
     }
 
+    /// Call-style controls: toggles on the left, the turn action in the
+    /// middle, layout and End voice on the right. Narrow panes stack the turn
+    /// action above its companions.
     func voiceControls(style: DockThemePalette) -> some View {
-        VStack(spacing: 12) {
-            // Narrow panes put End voice on its own row instead of clipping.
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                voiceMuteControls
+                voiceTurnButton.dockPadding(.horizontal, 4)
+                voiceImmersiveButton(style: style)
+                endVoiceButton
+            }
+            VStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    voiceTurnButton
+                    voiceImmersiveButton(style: style)
+                }
+                HStack(spacing: 8) {
                     voiceMuteControls
                     endVoiceButton
                 }
-                VStack(spacing: 10) {
-                    HStack(spacing: 10) { voiceMuteControls }
-                    endVoiceButton
-                }
             }
-            HStack(spacing: 12) {
-                Button(voiceOrbHelp, action: handleVoiceOrbTap)
-                    .buttonStyle(.dockPrimary)
-                    .disabled(model.voiceState == .preparing || model.voiceState == .transcribing)
-                DockIconButton(
-                    icon: isVoiceImmersive ? .cornersIn : .cornersOut,
-                    label: isVoiceImmersive ? "Exit full voice mode" : "Full voice mode",
-                    size: 34, style: style
-                ) { isVoiceImmersive.toggle() }
-                .keyboardShortcut(isVoiceImmersive ? .cancelAction : nil)
+            VStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    voiceTurnButton
+                    voiceImmersiveButton(style: style)
+                }
+                HStack(spacing: 8) { voiceMuteControls }
+                endVoiceButton
             }
         }
+    }
+
+    private var voiceTurnButton: some View {
+        Button(action: handleVoiceOrbTap) {
+            voiceControlLabel(voiceOrbHelp, icon: voiceOrbMode == .listening ? .paperPlaneRight : .stop)
+        }
+        .buttonStyle(.dockPrimary)
+        .disabled(model.voiceState == .preparing || model.voiceState == .transcribing)
+    }
+
+    private func voiceImmersiveButton(style: DockThemePalette) -> some View {
+        DockIconButton(
+            icon: isVoiceImmersive ? .cornersIn : .cornersOut,
+            label: isVoiceImmersive ? "Exit full voice mode" : "Full voice mode",
+            style: style
+        ) { isVoiceImmersive.toggle() }
+        .keyboardShortcut(isVoiceImmersive ? .cancelAction : nil)
     }
 
     @ViewBuilder
     private var voiceMuteControls: some View {
         if model.voiceState.isNativeConversationActive {
-            Button(model.isVoiceMicMuted ? "Unmute mic" : "Mute mic") { model.toggleVoiceMicMuted() }
-                .buttonStyle(.dockSecondary)
-            Button(model.voiceRepliesEnabled ? "Mute replies" : "Speak replies") { model.toggleVoiceReplies() }
-                .buttonStyle(.dockSecondary)
+            Button {
+                model.toggleVoiceMicMuted()
+            } label: {
+                voiceControlLabel(
+                    model.isVoiceMicMuted ? "Unmute mic" : "Mute mic",
+                    icon: model.isVoiceMicMuted ? .microphoneSlash : .microphone,
+                    tint: model.isVoiceMicMuted ? .dockWarning : nil)
+            }
+            .buttonStyle(.dockSecondary)
+            Button {
+                model.toggleVoiceReplies()
+            } label: {
+                voiceControlLabel(
+                    model.voiceRepliesEnabled ? "Mute replies" : "Speak replies",
+                    icon: model.voiceRepliesEnabled ? .speakerSimpleHigh : .speakerSimpleSlash,
+                    tint: model.voiceRepliesEnabled ? nil : .dockWarning)
+            }
+            .buttonStyle(.dockSecondary)
         }
     }
 
     private var endVoiceButton: some View {
-        Button("End voice", action: exitVoiceMode)
-            .buttonStyle(.dockSecondary)
+        Button(action: exitVoiceMode) {
+            voiceControlLabel("End voice", icon: .phoneDisconnect, tint: .dockDestructive)
+        }
+        .buttonStyle(.dockSecondary)
+    }
+
+    /// Icon and title; a tint marks an off or destructive state on the icon.
+    private func voiceControlLabel(_ title: String, icon: Ph, tint: Color? = nil) -> some View {
+        HStack(spacing: 6) {
+            DockIcon(icon, size: 13, color: tint)
+            Text(title)
+        }
     }
 
     var voiceInteractionHint: String {
