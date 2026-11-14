@@ -1,5 +1,6 @@
 import AppKit
 import ObjectiveC
+import SwiftUI
 
 /// Thin, track-less overlay scroller used by every scroll view in the app.
 final class DockScroller: NSScroller {
@@ -65,4 +66,24 @@ extension NSScrollView {
         }
         scrollerStyle = originalStyle
     }
+}
+
+/// Draws the enclosing scroll view's scroller over its content. With "Show scroll bars: Always" a legacy
+/// scroller reserves its width inside the content, doubling the trailing inset of padded panes.
+private final class DockOverlayScrollerProbe: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // After the scroll view's own viewDidMoveToWindow restores the system style.
+        DispatchQueue.main.async { [weak self] in self?.enclosingScrollView?.scrollerStyle = .overlay }
+    }
+}
+
+private struct DockOverlayScroller: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DockOverlayScrollerProbe() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+extension View {
+    /// Apply to a ScrollView's content so its scroller overlays instead of narrowing the content.
+    func dockOverlayScroller() -> some View { background(DockOverlayScroller()) }
 }
