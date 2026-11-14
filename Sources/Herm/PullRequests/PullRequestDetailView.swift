@@ -141,6 +141,7 @@ struct PullRequestDetailView: View {
                         ScrollView {
                             summary(pr, wide: geometry.size.width >= 840)
                                 .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 24)
+                                .background { if isInspector { Color.clear.dockOverlayScroller() } }
                         }.clipped()
                     }
                 } else if detailTab == 2 {
