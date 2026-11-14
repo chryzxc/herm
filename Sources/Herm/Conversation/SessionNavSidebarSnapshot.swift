@@ -194,17 +194,30 @@ struct SessionNavSidebarSnapshot: Equatable {
         var groups: [SessionNavConversationGroup] = []
         var assigned = Set<String>()
 
-        for project in inputs.projects where project.isRenderableProject {
+        // One pass over sessions through reverse indexes; the old per-project
+        // scan was projects × sessions and reran on every running-session tick.
+        let renderable = inputs.projects.filter(\.isRenderableProject)
+        var projectsBySessionID: [String: [Int]] = [:]
+        var projectsByID: [String: [Int]] = [:]
+        var projectsByName: [String: [Int]] = [:]
+        for (index, project) in renderable.enumerated() {
+            projectsByID[project.id, default: []].append(index)
+            projectsByName[project.name, default: []].append(index)
+            for sessionID in project.sessionIDs { projectsBySessionID[sessionID, default: []].append(index) }
+        }
+        var members = Array(repeating: [HermesSession](), count: renderable.count)
+        for session in recentSessions {
+            var hits = projectsBySessionID[session.id] ?? []
+            if let projectID = inputs.projectIDBySessionID[session.id] { hits += projectsByID[projectID] ?? [] }
+            if let path = inputs.localProjectPathBySessionID[session.id] { hits += projectsByName[path] ?? [] }
+            guard !hits.isEmpty else { continue }
+            assigned.insert(session.id)
+            for index in hits where members[index].last?.id != session.id { members[index].append(session) }
+        }
+
+        for (index, project) in renderable.enumerated() {
             var sessionsByID = Dictionary(
-                recentSessions.compactMap { session -> (String, HermesSession)? in
-                    let isMember =
-                        project.sessionIDs.contains(session.id)
-                        || inputs.projectIDBySessionID[session.id] == project.id
-                        || inputs.localProjectPathBySessionID[session.id] == project.name
-                    guard isMember else { return nil }
-                    assigned.insert(session.id)
-                    return (session.id, session)
-                }, uniquingKeysWith: { first, _ in first })
+                members[index].map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             for summary in inputs.projectSessionsByProjectID[project.id] ?? [] {
                 let savedSession = sessionsByID[summary.id]
                 let updatedAt = [summary.updatedAt, savedSession?.updatedAt].compactMap { $0 }.max()
@@ -351,6 +364,7 @@ final class SessionNavSidebarModel: ObservableObject {
     private let control: ControlCenterModel
     private let store: WorkspaceStore
     private var cancellables: Set<AnyCancellable> = []
+    private var lowPowerRefreshTask: Task<Void, Never>?
 
     init(model: DockModel, control: ControlCenterModel, store: WorkspaceStore) {
         self.model = model
@@ -367,8 +381,24 @@ final class SessionNavSidebarModel: ObservableObject {
         // hop reads the settled values and coalesces same-tick bursts.
         .receive(on: DispatchQueue.main)
         .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main)
-        .sink { [weak self] _ in self?.refresh() }
+        .sink { [weak self] _ in self?.scheduleRefresh() }
         .store(in: &cancellables)
+    }
+
+    /// Low Power Mode slows the main thread enough that a rail rebuild per
+    /// running-session tick stalls scrolling, so ticks coalesce to 4 Hz there.
+    /// Selection changes still refresh at once.
+    private func scheduleRefresh() {
+        guard ProcessInfo.processInfo.isLowPowerModeEnabled,
+            model.navigationSessionID == snapshot.inputs.activeSessionID
+        else { return refresh() }
+        guard lowPowerRefreshTask == nil else { return }
+        lowPowerRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self else { return }
+            self.lowPowerRefreshTask = nil
+            self.refresh()
+        }
     }
 
     func refresh() {

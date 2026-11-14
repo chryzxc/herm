@@ -10,7 +10,9 @@ struct SessionInspector: View {
     let model: DockModel
     @State private var modelRevision = 0
     @ObservedObject var botMode: BotModeModel
-    @ObservedObject var control: ControlCenterModel
+    /// Not observed: only `projectFacts` is read here, and every other control
+    /// publication (activity, attention, quotas) would redraw every tab.
+    let control: ControlCenterModel
     @ObservedObject var workflow: DeveloperWorkflowModel
     @ObservedObject var gitHub: GitHubInspectorStore
     var onOpenPullRequestChat: (PullRequestRecord) -> Void
@@ -317,6 +319,7 @@ struct SessionInspector: View {
             Text("The foreground commands will stop. Other terminal groups stay open.")
         }
         .onReceive(model.inspectorPresentationChanges) { _ in modelRevision &+= 1 }
+        .onReceive(control.$projectFacts.dropFirst()) { _ in modelRevision &+= 1 }
         .task(id: WorkspaceIdentity.session(model)) {
             restoringPresentation = true
             let messageSelection = messageTabs.selection[WorkspaceIdentity.session(model)]
