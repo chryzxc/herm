@@ -17,15 +17,51 @@ final class SessionUnreadReplies {
     private let client: HermesRPCClientProtocol
     private struct Key: Hashable {
         let identity: ProfileScopedID
-        let updatedAt: Date?
         let seenAt: Date
         let cutoff: Date?
     }
-    private var cached: [Key: (projection: Projection, expiresAt: Date)] = [:]
-    private var pending: [Key: Task<Projection, Error>] = [:]
+    /// The newest stored row a projection was read through, including its
+    /// serialized fields. While the newest row is unchanged, the history behind
+    /// the projection has neither grown nor had its tail rewritten in place.
+    private struct Tail: Equatable {
+        let rowID: Int
+        let timestamp: Double
+        let fingerprint: Data
+    }
+    private struct Entry {
+        let projection: Projection
+        let tail: Tail?
+        let updatedAt: Date?
+        let expiresAt: Date
+        /// When the projection was last built from a full read.
+        let readAt: Date
+    }
+    private struct Read {
+        let projection: Projection
+        let tail: Tail?
+    }
+    /// Badges re-ask every 15 seconds and running sessions bump `updatedAt`
+    /// constantly, so an expired or outdated entry is first revalidated with a
+    /// one-row probe instead of re-reading and re-parsing the whole history.
+    private static let freshFor: TimeInterval = 10
+    /// The probe only sees the newest row. Hermes can still rewrite older rows
+    /// in place (transcript repair, pruning), so a projection is rebuilt from a
+    /// full read at least this often.
+    private static let maximumReuse: TimeInterval = 300
+    private var cached: [Key: Entry] = [:]
+    /// In-flight reads also key on the caller's `updatedAt`, so a caller holding
+    /// a newer session snapshot never joins a read started for an older one.
+    private struct PendingKey: Hashable {
+        let key: Key
+        let updatedAt: Date?
+    }
+    private var pending: [PendingKey: Task<Projection, Error>] = [:]
 
-    init(client: HermesRPCClientProtocol) {
+    private let now: () -> Date
+
+    init(client: HermesRPCClientProtocol, now: @escaping () -> Date = Date.init) {
         self.client = client
+        self.now = now
     }
 
     func botCounts(
@@ -68,26 +104,59 @@ final class SessionUnreadReplies {
         async throws -> Projection
     {
         let key = Key(
-            identity: ProfileScopedID(profileID: profileID, resourceID: session.id),
-            updatedAt: session.lastUpdatedAt, seenAt: seenAt, cutoff: cutoff)
-        if let value = cached[key], value.expiresAt > Date() { return value.projection }
-        if let task = pending[key] { return try await task.value }
-        let task = Task { try await self.read(session: session, profileID: profileID, after: seenAt, through: cutoff) }
-        pending[key] = task
-        do {
-            let value = try await task.value
-            pending[key] = nil
-            if cached.count >= 256 { cached.removeAll() }
-            cached[key] = (value, Date().addingTimeInterval(10))
-            return value
-        } catch {
-            pending[key] = nil
-            throw error
+            identity: ProfileScopedID(profileID: profileID, resourceID: session.id), seenAt: seenAt, cutoff: cutoff)
+        let updatedAt = session.lastUpdatedAt
+        let entry = cached[key]
+        if let entry, entry.updatedAt == updatedAt, entry.expiresAt > now() { return entry.projection }
+        let pendingKey = PendingKey(key: key, updatedAt: updatedAt)
+        if let task = pending[pendingKey] { return try await task.value }
+        let task = Task { () throws -> Projection in
+            if let entry, let tail = entry.tail, self.now().timeIntervalSince(entry.readAt) < Self.maximumReuse,
+                try await self.newestRow(session: session, profileID: profileID) == tail
+            {
+                self.store(
+                    Entry(
+                        projection: entry.projection, tail: tail, updatedAt: updatedAt,
+                        expiresAt: self.now().addingTimeInterval(Self.freshFor), readAt: entry.readAt), for: key)
+                return entry.projection
+            }
+            let read = try await self.read(session: session, profileID: profileID, after: seenAt, through: cutoff)
+            self.store(
+                Entry(
+                    projection: read.projection, tail: read.tail, updatedAt: updatedAt,
+                    expiresAt: self.now().addingTimeInterval(Self.freshFor), readAt: self.now()), for: key)
+            return read.projection
         }
+        pending[pendingKey] = task
+        defer { pending[pendingKey] = nil }
+        return try await task.value
+    }
+
+    private func store(_ entry: Entry, for key: Key) {
+        if cached[key] == nil, cached.count >= 256 { cached.removeAll() }
+        cached[key] = entry
+    }
+
+    private func newestRow(session: HermesSession, profileID: String?) async throws -> Tail? {
+        guard
+            let path = TranscriptHistoryPaging.pagePath(
+                sessionID: session.id, profileID: profileID, limit: 1, offset: 0),
+            let page = TranscriptHistoryPaging.page(from: try await client.fetchHTTP(path))
+        else { throw HermesGateway.GatewayError.malformedResponse }
+        return page.rows.last.flatMap(Self.tail(of:))
+    }
+
+    private static func tail(of row: [String: Any]) -> Tail? {
+        guard let id = (row["id"] as? NSNumber)?.intValue,
+            let timestamp = (row["timestamp"] as? NSNumber)?.doubleValue,
+            JSONSerialization.isValidJSONObject(row),
+            let fingerprint = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys])
+        else { return nil }
+        return Tail(rowID: id, timestamp: timestamp, fingerprint: fingerprint)
     }
 
     private func read(session: HermesSession, profileID: String?, after seenAt: Date, through cutoff: Date?)
-        async throws -> Projection
+        async throws -> Read
     {
         var cursor = TranscriptHistoryCursor(storageSessionID: session.id, profileID: profileID)
         var rows: [[String: Any]] = []
@@ -115,7 +184,9 @@ final class SessionUnreadReplies {
                 let unread = ConversationUnreadMessagePolicy.project(
                     transcript.messages, after: seenAt, through: cutoff)
                 let firstRowID = transcript.rowIDs.filter { $0.value == unread.firstMessageID }.keys.min()
-                return Projection(count: unread.count, firstRowID: firstRowID)
+                return Read(
+                    projection: Projection(count: unread.count, firstRowID: firstRowID),
+                    tail: rows.last.flatMap(Self.tail(of:)))
             }
         }
         // A partial history read cannot claim an exact unread count.
