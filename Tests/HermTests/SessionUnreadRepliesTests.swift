@@ -83,6 +83,127 @@ struct SessionUnreadRepliesTests {
         #expect(count == 0)
     }
 
+    private func session(updatedAt: Double) -> HermesSession {
+        HermesSession(
+            id: "stored-session", profileID: "bot", title: "Chat", preview: "", startedAt: nil,
+            updatedAt: Date(timeIntervalSince1970: updatedAt), messageCount: 1, source: "test")
+    }
+
+    @Test func unchangedHistoryIsRevalidatedWithOneRowInsteadOfReread() async throws {
+        let client = Client()
+        client.rows = [row(1, role: "assistant", text: "Unread reply", timestamp: 102)]
+        client.rows += (2...600).map { row($0, role: "tool", text: "Activity", timestamp: 103) }
+        var now = Date(timeIntervalSince1970: 1_000)
+        let replies = SessionUnreadReplies(client: client, now: { now })
+        let seenAt = Date(timeIntervalSince1970: 100)
+        #expect(try await replies.count(session: session(updatedAt: 200), profileID: "bot", after: seenAt) == 1)
+        let fullRead = client.paths.count
+        #expect(fullRead == 2)
+
+        // A running session bumps its timestamp, and the badge refresh tick
+        // arrives after the short cache window; neither added a row.
+        #expect(try await replies.count(session: session(updatedAt: 201), profileID: "bot", after: seenAt) == 1)
+        now = now.addingTimeInterval(16)
+        #expect(try await replies.count(session: session(updatedAt: 201), profileID: "bot", after: seenAt) == 1)
+        let probes = client.paths.dropFirst(fullRead)
+        #expect(probes.count == 2)
+        #expect(probes.allSatisfy { $0.contains("limit=1&") })
+    }
+
+    @Test func aNewRowAfterTheCachedReadIsCounted() async throws {
+        let client = Client()
+        client.rows = [row(1, role: "assistant", text: "First reply", timestamp: 102)]
+        var now = Date(timeIntervalSince1970: 1_000)
+        let replies = SessionUnreadReplies(client: client, now: { now })
+        let seenAt = Date(timeIntervalSince1970: 100)
+        #expect(try await replies.count(session: session(updatedAt: 200), profileID: "bot", after: seenAt) == 1)
+
+        // The session timestamp has not caught up yet, so only the probe can
+        // notice the reply.
+        client.rows.append(row(2, role: "assistant", text: "Second reply", timestamp: 103))
+        now = now.addingTimeInterval(16)
+        #expect(try await replies.count(session: session(updatedAt: 200), profileID: "bot", after: seenAt) == 2)
+    }
+
+    @Test func aNewestRowRewrittenInPlaceIsReread() async throws {
+        let client = Client()
+        client.rows = [
+            row(1, role: "assistant", text: "First reply", timestamp: 102),
+            row(2, role: "assistant", text: "", timestamp: 103),
+        ]
+        var now = Date(timeIntervalSince1970: 1_000)
+        let replies = SessionUnreadReplies(client: client, now: { now })
+        let seenAt = Date(timeIntervalSince1970: 100)
+        #expect(try await replies.count(session: session(updatedAt: 200), profileID: "bot", after: seenAt) == 1)
+
+        // The streamed row is finalized under the same id and timestamp.
+        client.rows[1] = row(2, role: "assistant", text: "Second reply", timestamp: 103)
+        now = now.addingTimeInterval(16)
+        #expect(try await replies.count(session: session(updatedAt: 200), profileID: "bot", after: seenAt) == 2)
+    }
+
+    @Test func olderRowsRewrittenInPlaceAreCaughtByThePeriodicFullRead() async throws {
+        let client = Client()
+        client.rows = [
+            row(1, role: "assistant", text: "", timestamp: 102),
+            row(2, role: "tool", text: "Activity", timestamp: 103),
+        ]
+        var now = Date(timeIntervalSince1970: 1_000)
+        let replies = SessionUnreadReplies(client: client, now: { now })
+        let seenAt = Date(timeIntervalSince1970: 100)
+        #expect(try await replies.count(session: session(updatedAt: 200), profileID: "bot", after: seenAt) == 0)
+
+        // A repair fills in an older row; the newest row is untouched.
+        client.rows[0] = row(1, role: "assistant", text: "Repaired reply", timestamp: 102)
+        now = now.addingTimeInterval(16)
+        #expect(try await replies.count(session: session(updatedAt: 200), profileID: "bot", after: seenAt) == 0)
+        now = now.addingTimeInterval(300)
+        #expect(try await replies.count(session: session(updatedAt: 200), profileID: "bot", after: seenAt) == 1)
+    }
+
+    /// Serves each page from the rows as they were when the request arrived,
+    /// holding the first request open until released.
+    private final class HeldClient: HermesRPCClientProtocol {
+        var onEvent: ((String, [String: Any]) -> Void)?
+        var rows: [[String: Any]] = []
+        var requests = 0
+        private var held: CheckedContinuation<Void, Never>?
+
+        func connect() async throws {}
+        func close() {}
+        func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
+
+        func fetchHTTP(_ path: String) async throws -> [String: Any] {
+            requests += 1
+            let page = rows
+            if requests == 1 { await withCheckedContinuation { held = $0 } }
+            return ["messages": page, "pagination": ["returned": page.count]]
+        }
+
+        func release() {
+            held?.resume()
+            held = nil
+        }
+    }
+
+    @Test func aNewerSessionSnapshotDoesNotJoinAnOlderRead() async throws {
+        let client = HeldClient()
+        client.rows = [row(1, role: "assistant", text: "First reply", timestamp: 102)]
+        let replies = SessionUnreadReplies(client: client)
+        let seenAt = Date(timeIntervalSince1970: 100)
+        let older = Task { try await replies.count(session: session(updatedAt: 200), profileID: "bot", after: seenAt) }
+        for _ in 0..<1_000 where client.requests == 0 { await Task.yield() }
+
+        client.rows.append(row(2, role: "assistant", text: "Second reply", timestamp: 103))
+        let newer = Task { try await replies.count(session: session(updatedAt: 201), profileID: "bot", after: seenAt) }
+        for _ in 0..<1_000 where client.requests == 1 { await Task.yield() }
+        // The newer caller issued its own request instead of joining the held one.
+        #expect(client.requests == 2)
+        client.release()
+        #expect(try await older.value == 1)
+        #expect(try await newer.value == 2)
+    }
+
     @Test func staleSessionTimestampDoesNotHideUnreadReplyFromBadge() async throws {
         let client = Client()
         client.rows = [row(1, role: "assistant", text: "Unread reply", timestamp: 102)]
