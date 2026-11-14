@@ -2980,10 +2980,13 @@ activity cards overlapping the conversation or a worktree chip above it. Activit
 their scroll columns without being clipped. When the pane is too narrow for side
 columns, the newest card sits in a fixed slot below the controls; the orb shrinks
 to the available height, the stage scrolls rather than clipping, End voice wraps
-to its own row, and a generative panel takes the reply caption's slot instead of
+to its own row (controls otherwise sit in one call-style row: mic and reply
+toggles, the turn action, full-screen, then End voice; muted toggles show a
+slashed icon), and a generative panel takes the reply caption's slot instead of
 squeezing the stage. Every tool step gets an activity card; running cards stay
 until their step completes or the turn ends. Leaving full voice mode keeps the
-Talk tab open and the conversation live. Words before a pause stay in the
+Talk tab open and the conversation live; only entering full voice mode fades,
+leaving it restores the workspace without an animated relayout. Words before a pause stay in the
 utterance when on-device recognition restarts its partial text, and a final
 answer that differs from the streamed text only in whitespace is not spoken twice. Microphone startup and permission
 errors occupy the existing status slot with Retry microphone. Muting releases
