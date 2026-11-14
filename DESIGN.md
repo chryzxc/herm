@@ -3889,6 +3889,8 @@ Its categories are Messaging, Skills, Tools, Connectors, Plugins, and MCP server
 The first visit opens Skills; later visits restore the last category. Search,
 selection, discovery scope, and plugin filters stay separate per category in memory.
 Only the category preference is persisted; Hermes owns all inventories and settings.
+New bundled plugins are installed disabled; users enable them in Plugins → Installed.
+Version replacements retain the existing enabled choice, and restart guidance remains explicit.
 
 One shared title row provides profile selection, Refresh, and a fixed status subtitle.
 Connectors instead identifies Account connections, including account-wide connection
@@ -4226,6 +4228,8 @@ Session automation shares the composer tray: goal, loop, and heartbeat disclosur
 Direct simulator displays use a black canvas in every theme to blend with device
 corner masks. Bridge input pipes suppress SIGPIPE per descriptor, so a helper that
 exits during discovery cannot terminate Herm when queued input is released.
+New bridge package installs use the bundled hash-checked wheel lock; existing
+importable environments and custom Python overrides are not audited.
 
 **Settings → Chat → Simulators → Open simulators in Herm** defaults on. At the
 Herm RPC boundary, each submitted message, redirect, and steer carries the current

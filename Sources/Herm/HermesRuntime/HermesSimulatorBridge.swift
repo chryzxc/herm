@@ -38,7 +38,7 @@ final class HermesSimulatorBridge {
             .appendingPathComponent("Library/Application Support/Herm/simulator-bridge/bin/python3")
     }
 
-    /// What Scripts/setup-simulator-bridge.sh does (keep the pins in sync): a private venv with gRPC, plus
+    /// What Scripts/setup-simulator-bridge.sh does: a private venv with gRPC, plus
     /// the bundled scripts the `herm-simulator` plugin runs. Only Macs with simulators or emulators get it.
     static func prepare() async {
         let fm = FileManager.default
@@ -50,18 +50,12 @@ final class HermesSimulatorBridge {
             let bundled = Bundle.herm.url(forResource: "SimulatorBridge", withExtension: nil)
         else { return }
         let root = python.deletingLastPathComponent().deletingLastPathComponent()
-        let run = HermesBundledPlugins.run
-        if !fm.isExecutableFile(atPath: python.path) {
-            guard await run("/usr/bin/python3", ["-m", "venv", root.path], 120) else {
-                return DebugLog.write("simulator: bridge environment could not be created")
-            }
-        }
-        if !(await run(python.path, ["-c", "import grpc, google.protobuf"], 30)) {
-            DebugLog.write("simulator: installing bridge packages")
-            let pins = ["grpcio==1.78.0", "protobuf==6.33.5"]
-            guard await run(python.path, ["-m", "pip", "install", "-q", "--disable-pip-version-check"] + pins, 600)
-            else { return DebugLog.write("simulator: bridge package install failed") }
-        }
+        guard
+            await HermesSimulatorSetup.prepare(
+                python: python, root: root, lock: bundled.appendingPathComponent("requirements.lock"),
+                executable: fm.isExecutableFile(atPath: python.path), run: HermesBundledPlugins.run
+            )
+        else { return }
         let resources = root.appendingPathComponent("resources", isDirectory: true)
         try? fm.createDirectory(at: resources, withIntermediateDirectories: true)
         for file in (try? fm.contentsOfDirectory(atPath: bundled.path)) ?? [] where file.hasSuffix(".py") {

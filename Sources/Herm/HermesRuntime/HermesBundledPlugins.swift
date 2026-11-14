@@ -35,7 +35,10 @@ enum HermesBundledPlugins {
         !bundled.isEmpty && installed != bundled
     }
 
-    private static func install(client: HermesRPCClientProtocol) async -> Bool {
+    static func install(
+        client: HermesRPCClientProtocol,
+        stageRepository: (URL, String) async throws -> URL = { try await stage($0, name: $1) }
+    ) async -> Bool {
         guard let folder = Bundle.herm.url(forResource: "HermesPlugins", withExtension: nil) else { return false }
         let rpc = HermesWorkflowRPC(client: client, profileID: nil)
         do {
@@ -46,9 +49,9 @@ enum HermesBundledPlugins {
                     try String(contentsOf: source.appendingPathComponent("plugin.yaml"), encoding: .utf8))
                 let row = rows.first { $0.name == name }
                 guard needsInstall(bundled: version, installed: row?.version) else { continue }
-                let repository = try await stage(source, name: name)
+                let repository = try await stageRepository(source, name)
                 // Keep the user's on/off choice for a plugin they already have.
-                try await rpc.installPlugin(identifier: repository.absoluteString, enable: row?.enabled ?? true)
+                try await rpc.installPlugin(identifier: repository.absoluteString, enable: row?.enabled ?? false)
                 DebugLog.write("plugins: installed bundled \(name) \(version)")
             }
             return true
