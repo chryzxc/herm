@@ -33,9 +33,14 @@ struct ComposerSubmitLabel<Content: View>: View {
 }
 
 struct ComposerInputSurface: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isFocused: Bool
     var isRecording = false
-    var isPulsing = false
+
+    init(isFocused: Bool, isRecording: Bool = false) {
+        self.isFocused = isFocused
+        self.isRecording = isRecording
+    }
 
     func body(content: Content) -> some View {
         content.background {
@@ -54,13 +59,23 @@ struct ComposerInputSurface: ViewModifier {
                 let showsNeutralOutline = DockLayout.outline > 0 && !isGlass
                 shape.dockInputFill()
                     .overlay {
-                        shape.stroke(
-                            isRecording
-                                ? Color.dockDestructive.opacity(isPulsing ? 0.65 : 0.28)
-                                : (isFocused ? Color.dockAccent.opacity(isGlass ? 0.2 : 0.42) : Color.dockBorder),
-                            lineWidth: isFocused || isRecording ? max(1, DockLayout.outline) : DockLayout.outline
-                        )
-                        .opacity(showsNeutralOutline || isFocused || isRecording ? 1 : 0)
+                        if isRecording && !reduceMotion && DockThemeStyle.current.animates {
+                            TimelineView(.dockMotion()) { timeline in
+                                shape.stroke(
+                                    Color.dockDestructive.opacity(
+                                        ComposerRecordingPulse.opacity(at: timeline.date, animates: true)),
+                                    lineWidth: max(1, DockLayout.outline))
+                            }
+                        } else {
+                            shape.stroke(
+                                isRecording
+                                    ? Color.dockDestructive.opacity(
+                                        ComposerRecordingPulse.opacity(at: .now, animates: false))
+                                    : (isFocused ? Color.dockAccent.opacity(isGlass ? 0.2 : 0.42) : Color.dockBorder),
+                                lineWidth: isFocused || isRecording ? max(1, DockLayout.outline) : DockLayout.outline
+                            )
+                            .opacity(showsNeutralOutline || isFocused || isRecording ? 1 : 0)
+                        }
                     }
                     .dockStickerShadow(shape)
                     .dockFoldCrease()
@@ -75,16 +90,22 @@ struct ComposerInputSurface: ViewModifier {
     }
 }
 
+enum ComposerRecordingPulse {
+    static func opacity(at date: Date, animates: Bool) -> Double {
+        animates ? 0.28 + 0.37 * DockMotionSchedule.breath(date, period: 1.6) : 0.65
+    }
+}
+
 /// Composer chrome shared by the main chat and group chats so both inputs sit
 /// in the same spot with the same card, tray and column insets.
 extension View {
     /// The input card: its insets and themed surface.
-    func composerCard(isFocused: Bool, isRecording: Bool = false, isPulsing: Bool = false) -> some View {
+    func composerCard(isFocused: Bool, isRecording: Bool = false) -> some View {
         dockPadding(.leading, 6)
             .dockPadding(.trailing, 8)
             .dockPadding(.top, 6)
             .dockPadding(.bottom, 6)
-            .modifier(ComposerInputSurface(isFocused: isFocused, isRecording: isRecording, isPulsing: isPulsing))
+            .modifier(ComposerInputSurface(isFocused: isFocused, isRecording: isRecording))
     }
 
     /// The sunken tray that joins strips (plan, queue, quote, folder bar) to the card.

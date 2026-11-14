@@ -843,10 +843,11 @@ extension DockModel {
                     case let total = ControlCenterModel.parseSessionUsage(usageDict).totalTokens, total > 0
                 {
                     if total > usage.total { turnTokens = total - usage.total }
-                    sessionTokenUsage = (id, total)
+                    updateSessionTokenUsage(sessionID: id, total: total)
                 } else {
                     let streamed = streamingMessageBuffer.utf8.count + streamingReasoningBuffer.utf8.count
-                    sessionTokenUsage = (id, usage.total + Self.estimatedTokens(utf8Count: streamed))
+                    updateSessionTokenUsage(
+                        sessionID: id, total: usage.total + Self.estimatedTokens(utf8Count: streamed))
                 }
             }
             refreshSessionTokenUsage()

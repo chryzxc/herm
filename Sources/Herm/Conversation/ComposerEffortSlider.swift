@@ -116,7 +116,7 @@ struct ComposerEffortSlider<Trailing: View>: View {
     @ViewBuilder
     private func effects(width: CGFloat) -> some View {
         if !reduceMotion, variant >= .high {
-            TimelineView(.animation) { timeline in
+            TimelineView(.dockMotion()) { timeline in
                 Canvas { context, size in
                     let time = timeline.date.timeIntervalSinceReferenceDate
                     let speed = variant >= .max ? 0.9 : 0.5
