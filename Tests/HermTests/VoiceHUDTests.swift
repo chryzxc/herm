@@ -114,4 +114,35 @@ struct VoiceHUDTests {
         #expect(mono.format.channelCount == 1)
         #expect((0..<64).allSatisfy { mono.floatChannelData![0][$0] == 0.25 })
     }
+
+    @Test func stageLayoutKeepsActivityCardsOutOfTheCenterColumn() {
+        // Wide pane: cards fit beside the 360pt column without crossing it.
+        let wide = VoiceStageLayout(size: CGSize(width: 1000, height: 700), immersive: false, hasPanel: false)
+        #expect(!wide.isCompact)
+        #expect(wide.cardWidth >= VoiceStageLayout.minCardWidth)
+        #expect(wide.columnWidth + 2 * (wide.cardWidth + 12 + 12) <= 1000)
+        #expect(wide.compactCardSlot == 0)
+
+        // Narrow pane (the reported clash): cards move below the controls.
+        let narrow = VoiceStageLayout(size: CGSize(width: 640, height: 640), immersive: false, hasPanel: false)
+        #expect(narrow.isCompact)
+        #expect(narrow.cardWidth <= 640 - 24)
+        #expect(narrow.compactCardSlot > 0)
+
+        let hidden = VoiceStageLayout(
+            size: CGSize(width: 640, height: 640), immersive: false, hasPanel: false, cardsEnabled: false)
+        #expect(hidden.compactCardSlot == 0)
+    }
+
+    @Test func stageLayoutShrinksTheOrbAndStacksThePanelWhenSmall() {
+        let roomy = VoiceStageLayout(size: CGSize(width: 1200, height: 900), immersive: true, hasPanel: true)
+        #expect(roomy.showsPanelBeside)
+        #expect(roomy.orbSide == 320 * 0.85)
+
+        let small = VoiceStageLayout(size: CGSize(width: 600, height: 480), immersive: false, hasPanel: true)
+        #expect(!small.showsPanelBeside)
+        #expect(small.orbSide < 320 * 0.65)
+        #expect(small.orbSide >= 120)
+        #expect(small.columnWidth <= 600 - 32)
+    }
 }

@@ -106,6 +106,8 @@ struct VoicePillQueue: Equatable {
 struct VoiceActivityPillsLayer: View {
     @ObservedObject var model: DockModel
     var cardWidth: CGFloat = 280
+    /// One card centered at the bottom, for panes too narrow for side columns.
+    var isCompact = false
     var cronJobs: [CronSummary] = []
     /// The HUD deck sits on the left, so cards keep to the right corners.
     var leavesLeftFree = false
@@ -115,7 +117,16 @@ struct VoiceActivityPillsLayer: View {
     var body: some View {
         GeometryReader { geometry in
             let width = min(cardWidth, max(0, (geometry.size.width - 12) / 2))
-            if isEnabled {
+            if isEnabled, isCompact {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    if let pill = queue.pills.last {
+                        VoicePillCard(pill: pill, maxWidth: min(cardWidth, geometry.size.width))
+                            .allowsHitTesting(pill.target != nil)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isEnabled {
                 HStack(spacing: 0) {
                     pillColumn(slots: leavesLeftFree ? [] : [0, 3], width: width, height: geometry.size.height)
                     Spacer(minLength: 12)
@@ -434,5 +445,39 @@ struct VoiceRecentTranscript: View {
                 ($0.role == .user || $0.role == .hermes) && !$0.isError
                     && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }.suffix(limit))
+    }
+}
+
+/// Sizes for the voice stage so the centered column, activity cards, and a
+/// generative panel never overlap, whatever the pane size.
+struct VoiceStageLayout: Equatable {
+    /// Side-by-side generative panel; otherwise it takes the reply caption's slot.
+    let showsPanelBeside: Bool
+    /// Activity cards sit below the controls instead of beside the column.
+    let isCompact: Bool
+    let cardWidth: CGFloat
+    let columnWidth: CGFloat
+    let orbSide: CGFloat
+    /// Space kept under the controls for the compact activity card.
+    let compactCardSlot: CGFloat
+
+    static let minStageWidth: CGFloat = 420
+    static let minCardWidth: CGFloat = 160
+    /// Status strip, status slot, captions, controls, and spacers.
+    static let chromeHeight: CGFloat = 330
+
+    init(size: CGSize, immersive: Bool, hasPanel: Bool, cardsEnabled: Bool = true) {
+        showsPanelBeside = hasPanel && size.width >= Self.minStageWidth * 2
+        // The panel and stage split a side-by-side row evenly.
+        let stageWidth = max(0, showsPanelBeside ? size.width / 2 : size.width)
+        let inset: CGFloat = immersive ? 24 : 12
+        columnWidth = max(0, min(immersive ? 560 : 360, stageWidth - 32))
+        let sideWidth = min(immersive ? 280 : 200, (stageWidth - columnWidth) / 2 - inset - 12)
+        isCompact = sideWidth < Self.minCardWidth
+        cardWidth = isCompact ? max(0, min(320, stageWidth - 2 * inset)) : sideWidth
+        compactCardSlot = isCompact && cardsEnabled ? 76 : 0
+        let maxOrb = 320 * (immersive ? 0.85 : 0.65)
+        let fitting = min(size.height - Self.chromeHeight - compactCardSlot, stageWidth - 32)
+        orbSide = min(maxOrb, max(120, fitting))
     }
 }

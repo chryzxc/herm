@@ -2977,7 +2977,11 @@ recording uses session-scoped controls. Process-wide speech toggles are never
 used. Recognized words cannot be held indefinitely by background noise.
 Voice keeps captions and labeled controls in a centered column, without floating
 activity cards overlapping the conversation or a worktree chip above it. Activity card shadows extend beyond
-their scroll columns without being clipped. Microphone startup and permission
+their scroll columns without being clipped. When the pane is too narrow for side
+columns, the newest card sits in a fixed slot below the controls; the orb shrinks
+to the available height, the stage scrolls rather than clipping, End voice wraps
+to its own row, and a generative panel takes the reply caption's slot instead of
+squeezing the stage. Microphone startup and permission
 errors occupy the existing status slot with Retry microphone. Muting releases
 capture in every phase and rejects late speech callbacks. Speech that interrupts
 local playback retains the same recognition request so opening words are kept;
