@@ -738,6 +738,7 @@ final class BotModeModel: ObservableObject {
     private(set) var rosterRevision = 0
     @Published private(set) var isRefreshing = false
     private var isPolling = false
+    private var lastInventoryAttempt: Date?
     @Published private(set) var isCreatingBot = false
     @Published var searchText = ""
     @Published var botCreationError: String?
@@ -842,6 +843,7 @@ final class BotModeModel: ObservableObject {
     var canCreateBots: Bool { capabilityAvailable && inventory.availability == .ready }
 
     func bind(to client: HermesRPCClientProtocol, capabilityAvailable: Bool) {
+        lastInventoryAttempt = nil
         supportsBotDeletion = false
         partialCreatedBotID = nil
         service = BotService(client: client)
@@ -868,11 +870,16 @@ final class BotModeModel: ObservableObject {
     /// directly instead of trusting a capability batch: the RPC answer is the
     /// capability. `force` follows that model so a user-opened page verifies
     /// the contract even when the batch probe starved.
-    func refreshNow(force: Bool = false) async {
+    func refreshNow(
+        force: Bool = false, probeCapability: Bool = false, minimumInterval: TimeInterval = 0, now: Date = Date()
+    ) async {
         guard let service, !isRefreshing, !isPolling else { return }
         // `.unavailable` is a transport failure, so polling keeps retrying it.
-        guard force || capabilityAvailable || inventory.availability == .ready || inventory.availability == .unavailable
-        else { return }
+        let canProbe = force || probeCapability || capabilityAvailable
+        let canRetry = inventory.availability == .ready || inventory.availability == .unavailable
+        guard canProbe || canRetry else { return }
+        if !force, let lastInventoryAttempt, now.timeIntervalSince(lastInventoryAttempt) < minimumInterval { return }
+        lastInventoryAttempt = now
         // Background polls stay unpublished so the sidebar rail does not
         // rebuild twice every 10s; only explicit refreshes show a spinner.
         if force { isRefreshing = true } else { isPolling = true }

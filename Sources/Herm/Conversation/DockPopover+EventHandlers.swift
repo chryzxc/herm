@@ -260,9 +260,7 @@ extension DockPopover {
         // Reissue its durable, read-only projection after binding so an early
         // unbound attempt cannot leave the visible session permanently empty.
         controlCenter.refreshSessionKanban(for: model.kanbanSessionID)
-        botMode.bind(
-            to: model.controlRPCClient,
-            capabilityAvailable: controlCenter.capabilityAvailable(HermesFeatureIDs.ID.bots.rawValue))
+        botMode.setCapabilityAvailable(controlCenter.capabilityAvailable(HermesFeatureIDs.ID.bots.rawValue))
         agentUpdateService.checkForUpdates()
         Task { @MainActor in
             await botMode.refreshNow(force: true)

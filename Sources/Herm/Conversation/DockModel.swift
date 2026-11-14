@@ -26,6 +26,7 @@ struct RestoredTranscript {
 @MainActor
 final class DockModel: ObservableObject {
     let presentationDemand = DockPresentationDemand()
+    lazy var botMode = makeBotMode()
     lazy var workspacePresentationChanges = makeWorkspacePresentationChanges()
     lazy var inspectorPresentationChanges = makeInspectorPresentationChanges()
     var interruptionCoordinator: HermInterruptionCoordinator?
