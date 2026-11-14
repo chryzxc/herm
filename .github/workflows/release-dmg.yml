@@ -112,7 +112,7 @@ jobs:
           hdiutil imageinfo dist/Herm.dmg >/dev/null
           echo "Built Herm.dmg ($(du -h dist/Herm.dmg | cut -f1))"
 
-      # Herm's updater reads /releases/latest and rejects pre-releases, so nightlies never reach users.
+      # Stable builds read only /releases/latest; nightly builds also follow this tag by commit.
       - name: Publish nightly pre-release
         if: steps.version.outputs.skip != 'true' && steps.version.outputs.tag == 'nightly'
         env:
@@ -124,7 +124,7 @@ jobs:
         run: |
           set -euo pipefail
           TITLE="Nightly $VERSION-dev (${SHA:0:8})"
-          NOTES="Automatic build of main at ${SHA:0:8}: $(git log -1 --format=%s "$SHA"). Not a stable release; Herm's updater ignores it."
+          NOTES="Automatic build of main at ${SHA:0:8}: $(git log -1 --format=%s "$SHA"). Not a stable release; only nightly builds of Herm update to it."
           # Recreate rather than edit, so the release date, tag and commit track the newest build.
           gh release delete nightly -R "$REPO" --yes --cleanup-tag 2>/dev/null || true
           gh release create nightly -R "$REPO" --target "$SHA" --prerelease --latest=false \
