@@ -180,6 +180,7 @@ struct ProviderConnectSheet: View {
     @State private var saveError: String?
     @State private var isSaving = false
     @State private var remoteKeySaved = false
+    @State private var showsRemoteLogin = false
     @State private var quotaCheckedAt: [String: Date] = [:]
     @Environment(\.dismiss) private var dismiss
 
@@ -197,7 +198,12 @@ struct ProviderConnectSheet: View {
                 if allowsLogin {
                     loginSection(command, instruction)
                 } else {
-                    ModalNote(text: ProviderBackendAvailability.remoteAuthMessage, icon: .info)
+                    VStack(alignment: .leading, spacing: 12) {
+                        ModalNote(text: ProviderBackendAvailability.remoteAuthMessage, icon: .info)
+                        if descriptor.id == "codex-hermes" {
+                            Button("Backend Sign-In") { showsRemoteLogin = true }.buttonStyle(.dockPrimary)
+                        }
+                    }
                 }
             case .openApp(_, let instruction): openAppSection(instruction)
             }
@@ -246,6 +252,9 @@ struct ProviderConnectSheet: View {
             }
         }
         .onAppear { refreshStoredKeyState() }
+        .dockSheet(isPresented: $showsRemoteLogin) {
+            RemoteProviderLoginSheet(control: control, provider: "openai-codex")
+        }
         .onReceive(control.providerQuotaFreshness.$checkedAt) { quotaCheckedAt = $0 }
         .onChange(of: login.exitStatus) {
             if allowsLogin { control.refreshProviderQuota() }
@@ -269,11 +278,21 @@ struct ProviderConnectSheet: View {
         apiKeyInput = ""
         saveError = nil
         isSaving = true
+        let binding = control.clientBindingGeneration
+        let identity = control.dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        let profile = control.dockModel?.profileScopeID
         Task {
             defer { isSaving = false }
             // Providers is the source of truth: make sure its catalog is loaded
             // so the key lands in Hermes instead of a Herm-only store.
             if hermesRow == nil { try? await control.loadHermesProviderRows() }
+            guard control.isCurrentClient(identity, bindingGeneration: binding),
+                control.dockModel?.profileScopeID == profile
+            else {
+                testStartedAt = nil
+                saveError = "The backend or profile changed before the key was saved."
+                return
+            }
             guard let row = hermesRow else {
                 testStartedAt = nil
                 saveError = "Couldn't reach Hermes to save this key. Check Settings → Providers."
@@ -335,7 +354,7 @@ struct ProviderConnectSheet: View {
         if control.refreshState(for: "provider.quota")?.isRefreshing != true {
             return (
                 false,
-                control.providerQuotaDiagnostics[descriptor.id]
+                control.providerQuotaDiagnostic(for: descriptor.id)
                     ?? "The key was saved, but quota couldn't be read with it."
             )
         }

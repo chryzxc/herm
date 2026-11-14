@@ -13,6 +13,7 @@ struct DockModal<Content: View, Footer: View>: View {
     /// Body inset; scrolling bodies pass 0 and pad inside the scroll view.
     let contentPadding: CGFloat
     let content: Content
+    let onClose: (() -> Void)?
     let footer: Footer
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isEnabled) private var isEnabled
@@ -23,6 +24,7 @@ struct DockModal<Content: View, Footer: View>: View {
         subtitle: String? = nil,
         width: CGFloat? = 460,
         contentPadding: CGFloat = 20,
+        onClose: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content,
         @ViewBuilder footer: () -> Footer
     ) {
@@ -33,6 +35,7 @@ struct DockModal<Content: View, Footer: View>: View {
         self.contentPadding = contentPadding
         self.content = content()
         self.footer = footer()
+        self.onClose = onClose
     }
 
     var body: some View {
@@ -56,7 +59,7 @@ struct DockModal<Content: View, Footer: View>: View {
         .frame(width: width)
         .background(DockPaneBackground())
         .dockThemedRoot()
-        .onExitCommand { if isEnabled { dismiss() } }
+        .onExitCommand { if isEnabled { close() } }
     }
 
     private var header: some View {
@@ -79,7 +82,7 @@ struct DockModal<Content: View, Footer: View>: View {
             }
             Spacer(minLength: 12)
             Button {
-                dismiss()
+                close()
             } label: {
                 DockIcon(.x)
                     .dockFont(.body, weight: .semibold)
@@ -92,6 +95,10 @@ struct DockModal<Content: View, Footer: View>: View {
         }
         .dockPadding(.horizontal, 20)
         .dockPadding(.vertical, 16)
+    }
+
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
     }
 }
 

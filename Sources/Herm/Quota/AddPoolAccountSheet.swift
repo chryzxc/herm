@@ -13,6 +13,7 @@ struct AddPoolAccountSheet: View {
     @State private var apiKey = ""
     @State private var useAPIKey = false
     @State private var showsLogin = false
+    @State private var showsRemoteLogin = false
     @Environment(\.dismiss) private var dismiss
 
     private static let commonProviders = ["openai-codex", "anthropic", "nous", "openrouter", "xai-oauth", "deepseek"]
@@ -68,6 +69,10 @@ struct AddPoolAccountSheet: View {
                 if !allowsLocalAuth {
                     VStack(alignment: .leading, spacing: 12) {
                         ModalNote(text: ProviderBackendAvailability.remoteAuthMessage, icon: .info)
+                        DockTextField("Provider id", text: $provider).textFieldStyle(.dockGlass)
+                        Button("Backend Sign-In") { showsRemoteLogin = true }
+                            .buttonStyle(.dockPrimary)
+                            .disabled(providerID.isEmpty)
                         DockCopyButton("hermes auth add <provider>", accessibilityLabel: "Copy command")
                     }
                 } else if showsLogin {
@@ -114,6 +119,9 @@ struct AddPoolAccountSheet: View {
             }
         }
         .onAppear { if provider.isEmpty { provider = initialProvider } }
+        .dockSheet(isPresented: $showsRemoteLogin) {
+            RemoteProviderLoginSheet(control: control, provider: providerID)
+        }
         .onChange(of: login.exitStatus) {
             apiKey = ""
             if allowsLocalAuth && login.exitStatus == 0 {
