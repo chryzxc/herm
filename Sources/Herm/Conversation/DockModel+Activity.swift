@@ -154,9 +154,14 @@ extension DockModel {
             guard let result = try? await self?.interruptRPC.sessionUsage(sessionID: id),
                 let self, self.sessionID == id
             else { return }
-            self.sessionTokenUsage = (id, ControlCenterModel.parseSessionUsage(result).totalTokens)
+            self.updateSessionTokenUsage(sessionID: id, total: ControlCenterModel.parseSessionUsage(result).totalTokens)
             self.applyContextUsage(result, sessionID: id)
         }
+    }
+
+    func updateSessionTokenUsage(sessionID id: String, total: Int) {
+        guard sessionTokenUsage?.sessionID != id || sessionTokenUsage?.total != total else { return }
+        sessionTokenUsage = (id, total)
     }
 
     func fetchSessionUsageDetails() async -> SessionUsageSummary? {

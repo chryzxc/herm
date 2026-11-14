@@ -22,7 +22,6 @@ struct ChatComposerView: View {
     var worktreeBar: WorktreePicker? = nil
 
     @State private var composerHeight: CGFloat = ComposerLayout.minHeight
-    @State private var isComposerPulsing = false
     @State private var sendKick = 0
     @State private var contextCaret = 0
     @State private var inspectingContext: ChatContext?
@@ -67,14 +66,7 @@ struct ChatComposerView: View {
             .onChange(of: model.composerFocusRequest) { _, _ in
                 isComposerFocused = true
             }
-            .animation(
-                reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true),
-                value: isComposerPulsing
-            )
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: composerHeight)
-            .onChange(of: speechInput.isRecording) { _, isRecording in
-                isComposerPulsing = isRecording
-            }
             .onChange(of: dictation.isRecording) { _, isRecording in
                 if !isRecording {
                     updateDictation()
@@ -669,8 +661,7 @@ struct ChatComposerView: View {
                             .dockPadding(.top, 2)
                     }
                 }
-                .composerCard(
-                    isFocused: isComposerFocused, isRecording: speechInput.isRecording, isPulsing: isComposerPulsing)
+                .composerCard(isFocused: isComposerFocused, isRecording: speechInput.isRecording)
 
                 if let worktreeBar { worktreeBar.dockPadding(.vertical, 2) }
             }
