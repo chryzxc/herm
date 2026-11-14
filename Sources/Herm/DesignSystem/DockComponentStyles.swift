@@ -1861,7 +1861,7 @@ extension View {
                 .dockSurfaceFill(
                     Color.dockSurface6.opacity(0.94), stroke: tint.opacity(0.3), lineWidth: 0.6, strokeOnGlass: true)
         )
-        .shadow(color: tint.opacity(0.18), radius: 16)
+        .shadow(color: tint.opacity(0.08), radius: 8)
     }
 
     /// Soft drop shadow and accent halo for themes that opt in; both are 0 by default.
