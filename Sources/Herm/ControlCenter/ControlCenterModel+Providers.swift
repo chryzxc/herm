@@ -4,6 +4,11 @@ import Foundation
 extension ControlCenterModel {
     func quotaReaderID(for providerID: String) -> String? { providerQuotaReaderIDs[providerID] }
 
+    static func quotaReaderIDs(isLocalBackend: Bool, only: Set<String>?) -> Set<String> {
+        let available = isLocalBackend ? Set(quotaReaders.map(\.id)) : Set(["claude", "antigravity"])
+        return available.intersection(only ?? available)
+    }
+
     /// Loads the stored Codex account quota through Codex's authenticated usage endpoint,
     /// independently of the active Hermes provider/model. Each provider is
     /// published as soon as its read returns, so one slow service never holds
@@ -12,10 +17,25 @@ extension ControlCenterModel {
     /// `quiet` is the notch's background poll: it skips while another read is
     /// in flight and publishes only real changes, since each publish re-renders
     /// every view observing this model (a scroll hitch every 30s otherwise).
-    func refreshProviderQuota(only readerIDs: Set<String>? = nil, quiet: Bool = false) {
+    func refreshProviderQuota(
+        only readerIDs: Set<String>? = nil, quiet: Bool = false,
+        isLocalBackend: Bool = GatewayConnectionStore.isLocalBackend
+    ) {
+        if !isLocalBackend {
+            let localIDs = Self.quotaReaderIDs(isLocalBackend: false, only: nil)
+            let removed = Set(
+                reportedProviderQuotas.filter {
+                    !localIDs.contains(providerQuotaReaderIDs[$0.provider] ?? "")
+                }.map(\.provider))
+            reportedProviderQuotas.removeAll { removed.contains($0.provider) }
+            providerQuotaReaderIDs = providerQuotaReaderIDs.filter { !removed.contains($0.key) }
+            providerQuotaFreshness.checkedAt = providerQuotaFreshness.checkedAt.filter { !removed.contains($0.key) }
+            applyProviderQuotaPresentation()
+            hermesActiveCredentialKeys = []
+        }
         let quotaState = projectionRefreshStates["provider.quota"]
         let quiet = quiet && quotaState?.lastSuccess != nil && quotaState?.error == nil && quotaState?.isStale == false
-        if quiet, providerQuotaReadsInFlight > 0 { return }
+        if quiet, isLocalBackend, providerQuotaReadsInFlight > 0 { return }
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
@@ -29,12 +49,19 @@ extension ControlCenterModel {
         if !quiet { beginProjectionRefresh("provider.quota") }
         // Balance cards derive spend and runway from usage analytics.
         if !quiet, tokenUsage == nil { refreshTokenUsage(days: UsageWorkspaceView.reportDays) }
-        let readers = Self.quotaReaders.filter { readerIDs?.contains($0.id) ?? true }
+        let selectedReaderIDs = Self.quotaReaderIDs(isLocalBackend: isLocalBackend, only: readerIDs)
+        let readers = Self.quotaReaders.filter { selectedReaderIDs.contains($0.id) }
         providerQuotaReadsInFlight += 1
         Task { @MainActor in
             defer { providerQuotaReadsInFlight -= 1 }
             var changed = false
             var diagnostics = readerIDs == nil ? [:] : providerQuotaDiagnostics
+            if !isLocalBackend {
+                let localIDs = Self.quotaReaderIDs(isLocalBackend: false, only: nil)
+                for reader in Self.quotaReaders where !localIDs.contains(reader.id) {
+                    diagnostics[reader.id] = ProviderBackendAvailability.remoteQuotaMessage
+                }
+            }
             var seen = Set<String>()
             var errors: [String] = []
             await withTaskGroup(of: (String, QuotaReadResult).self) { group in
@@ -90,7 +117,7 @@ extension ControlCenterModel {
                 changed = true
             }
             if !seen.isEmpty {
-                refreshHermesActiveCredentials()
+                if isLocalBackend { refreshHermesActiveCredentials() }
                 if !quiet || changed { recordProjectionSuccess("provider.quota") }
             } else {
                 recordProjectionFailure("provider.quota", error: errors.first ?? "Provider quota data is unavailable.")

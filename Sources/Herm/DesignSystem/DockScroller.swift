@@ -5,6 +5,8 @@ import ObjectiveC
 final class DockScroller: NSScroller {
     private static let thickness: CGFloat = 8
 
+    override class var isCompatibleWithOverlayScrollers: Bool { true }
+
     override class func scrollerWidth(for controlSize: NSControl.ControlSize, scrollerStyle: NSScroller.Style)
         -> CGFloat
     {
@@ -54,12 +56,13 @@ extension NSScrollView {
     @objc fileprivate func dockViewDidMoveToWindow() {
         dockViewDidMoveToWindow()  // original implementation after the exchange
         guard window != nil else { return }
-        scrollerStyle = .overlay
+        let originalStyle = scrollerStyle
         if hasVerticalScroller, !(verticalScroller is DockScroller) {
             verticalScroller = DockScroller()
         }
         if hasHorizontalScroller, !(horizontalScroller is DockScroller) {
             horizontalScroller = DockScroller()
         }
+        scrollerStyle = originalStyle
     }
 }

@@ -48,6 +48,10 @@ struct QuotaWorkspaceView: View {
         VStack(alignment: .leading, spacing: 16) {
             toolbar
 
+            if !GatewayConnectionStore.isLocalBackend {
+                compactMessage(
+                    title: "Remote quota unavailable", detail: ProviderBackendAvailability.remoteQuotaMessage)
+            }
             if refreshState?.isRefreshing == true && control.providerQuotas.isEmpty {
                 compactMessage(
                     title: "Reading provider quota…",

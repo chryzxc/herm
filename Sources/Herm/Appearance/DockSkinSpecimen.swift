@@ -18,6 +18,15 @@ struct DockSkinSpecimen: View {
     }
 
     var body: some View {
+        DockSkinSpecimenHost(theme: theme, colorScheme: colorScheme) {
+            specimen
+        }
+        .frame(height: 148)
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+    }
+
+    private var specimen: some View {
         HStack(spacing: 0) {
             VStack(spacing: 10) {
                 selection
