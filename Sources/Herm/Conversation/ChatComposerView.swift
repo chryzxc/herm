@@ -1300,7 +1300,8 @@ private struct RunningProcessesStrip: View {
 
     var body: some View {
         let _ = processesRevision
-        return content
+        return
+            content
             .onReceive(control.$processes.dropFirst()) { _ in processesRevision &+= 1 }
             // Processes outlive the turn that started them, so poll while a turn runs or any are listed.
             .task(id: hostVisible && (isTurnActive || !control.processes.isEmpty)) {
