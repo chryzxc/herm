@@ -186,7 +186,9 @@ struct GeneratedHTMLPreview: View {
 @MainActor
 protocol GeneratedHTMLBridge: AnyObject {
     var send: (([String: Any]) -> Void)? { get set }
+    var authorize: ((GeneratedHTMLActionApproval.Action) async -> Bool)? { get set }
     func receive(_ message: [String: Any])
+    func invalidate()
 }
 
 @MainActor
@@ -249,6 +251,8 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
         web.removeFromSuperview()
         coordinator.retainedWeb = nil
         coordinator.cancelled = true
+        coordinator.approval.invalidate()
+        coordinator.bridge?.invalidate()
         coordinator.timeout?.cancel()
         web.stopLoading()
         web.navigationDelegate = nil
@@ -307,6 +311,7 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
         var cancelled = false
         var timeout: Task<Void, Never>?
         var bridge: (any GeneratedHTMLBridge)?
+        let approval = GeneratedHTMLActionApproval()
         init(html: String, state: GeneratedHTMLLoadState) {
             self.html = html
             self.state = state
@@ -325,6 +330,10 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
                     source: GeneratedHTMLPolicy.textSizeListener,
                     injectionTime: .atDocumentStart, forMainFrameOnly: false))
             if let bridge {
+                bridge.authorize = { [weak self] action in
+                    guard let self, !self.cancelled else { return false }
+                    return await self.approval.approve(action, window: self.web?.window)
+                }
                 // The relay and handler live in their own world: the sandboxed iframe reaches Herm only via postMessage.
                 let world = WKContentWorld.world(name: "HermHTMLBridge")
                 configuration.userContentController.add(self, contentWorld: world, name: "hermBridge")
@@ -408,9 +417,12 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
             _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
         ) {
-            decisionHandler(
-                GeneratedHTMLPolicy.allowsNavigation(navigationAction.request.url, initialURL: initialURL)
-                    ? .allow : .cancel)
+            let allowed = GeneratedHTMLPolicy.allowsNavigation(navigationAction.request.url, initialURL: initialURL)
+            if allowed && (!navigationAction.sourceFrame.isMainFrame || !state.loading) {
+                approval.invalidate()
+                bridge?.invalidate()
+            }
+            decisionHandler(allowed ? .allow : .cancel)
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             timeout?.cancel()
@@ -448,6 +460,8 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
         private func fail(_ message: String) {
             timeout?.cancel()
             guard !cancelled else { return }
+            approval.invalidate()
+            bridge?.invalidate()
             state.loading = false
             state.error = message
         }

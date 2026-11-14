@@ -2401,6 +2401,8 @@ place, without a card or header, clipped to the pane radius, full column width, 
 sized by the widget's height reports within 120–1200 pt (280 pt before the first
 report). Below the cap, wheel events scroll the transcript rather than the frame.
 Non-HTML targets and unreadable files use the standard attachment card.
+Widget message requests show a native per-action review with the complete prompt and
+conversation; Cancel denies the request. Rendering is not authorization.
 
 MCP App views (tool results carrying a `herm.mcp-app.v1` receipt) render as one
 `.dockCard` per call below the turn's activity summary, in the same place whether
@@ -2412,6 +2414,8 @@ a metadata note; a missing cache shows "This app view is unavailable on this Mac
 Theme variables and reduced-motion defaults are injected into the saved document;
 changing themes reloads an open HTML preview. Authored styles may customize the
 interactive content itself. See `docs/generative-ui.md` for isolation and removal.
+External links requested by an MCP view require a native per-action review of the
+complete URL; opening the view does not authorize links.
 
 #### Generated card motion
 

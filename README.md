@@ -302,8 +302,8 @@ Sections group related components, and metadata labels **Fictional data**, assum
 
 **Safety and limits**
 
-- **Hermes inline widgets.** When the agent writes an HTML file and replies with `::preview{file="…html"}`, Herm shows the widget live in the reply, in the same offline sandbox, sized to its content. Buttons using `hermes.send` or `data-hermes-send` send their prompt as a message in that chat (one per second, 500 characters max). Other files show the usual attachment card.
-- **MCP Apps.** An MCP tool that ships its own view (the MCP Apps standard) shows an app card under the turn's activity. Click **Open** to run it in the same offline sandbox; it receives the tool's input and result and can open HTTPS links. Network access a view requests is listed but not granted, and views cannot call tools yet.
+- **Hermes inline widgets.** When the agent writes an HTML file and replies with `::preview{file="…html"}`, Herm shows the widget live in the reply, in the same offline sandbox, sized to its content. Requests using `hermes.send` or `data-hermes-send` require native confirmation before sending a prompt in that chat (one per second, 500 characters max). Other files show the usual attachment card.
+- **MCP Apps.** An MCP tool that ships its own view (the MCP Apps standard) shows an app card under the turn's activity. Click **Open** to run it in the same offline sandbox; it receives the tool's input and result and can request HTTPS links, each requiring native confirmation. Network access a view requests is listed but not granted, and views cannot call tools yet.
 - Interactive HTML runs only after you click **Open interactive view**, in an offline sandbox with no network, storage, files, credentials, tools, downloads, popups, or device access. Closing it, switching session or profile, or restarting Herm resets it; changing the theme reloads it.
 - A reply is limited to 1 MiB, 100 blocks, and 1,000 rows or points per block. Invalid or oversized replies show **Visual reply unavailable** with their readable text, the reason, and the source. While a reply streams, visual content waits until it finishes.
 
