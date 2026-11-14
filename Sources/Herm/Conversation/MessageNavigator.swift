@@ -668,7 +668,7 @@ struct MessageNavigatorView: View {
 /// AppKit tracking area for the marker rail. SwiftUI hover and tap regions
 /// here drifted left of the drawn bars; an NSView's tracking area follows the
 /// view's real frame. Reports the pointer's y in the strip's top-left space.
-private struct RailPointerStrip: NSViewRepresentable {
+struct RailPointerStrip: NSViewRepresentable {
     var onMove: (CGFloat) -> Void
     var onExit: () -> Void
     var onClick: (CGFloat) -> Void
@@ -679,12 +679,12 @@ private struct RailPointerStrip: NSViewRepresentable {
         view.onMove = onMove
         view.onExit = onExit
         view.onClick = onClick
+        view.callbacksReady = true
+        view.deferRefreshPointer()
     }
 
-    /// Polls the pointer instead of relying on hover events: something over the
-    /// right edge of the chat swallows them before SwiftUI or this view's
-    /// tracking area sees them, so the pointer is hit-tested against the
-    /// strip's on-screen frame directly.
+    /// Events wake the rail; polling while inside catches swallowed exit events
+    /// and changes in the topmost window under a stationary pointer.
     final class StripView: NSView {
         var onMove: (CGFloat) -> Void = { _ in }
         var onExit: () -> Void = {}
@@ -695,60 +695,138 @@ private struct RailPointerStrip: NSViewRepresentable {
 
         private var timer: Timer?
         private var clickMonitor: Any?
-        private var occlusionObserver: NSObjectProtocol?
+        private var observers: [NSObjectProtocol] = []
+        private weak var observedWindow: NSWindow?
+        private var previousMouseMovedEvents = false
+        private var pointerTrackingArea: NSTrackingArea?
         private var lastY: CGFloat?
+        var callbacksReady = false
+        var pointerLocation: () -> NSPoint = { NSEvent.mouseLocation }
+        var windowNumberAtPoint: (NSPoint) -> Int = {
+            NSWindow.windowNumber(at: $0, belowWindowWithWindowNumber: 0)
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let pointerTrackingArea { removeTrackingArea(pointerTrackingArea) }
+            let area = NSTrackingArea(
+                rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: self)
+            addTrackingArea(area)
+            pointerTrackingArea = area
+        }
+
+        override func mouseEntered(with event: NSEvent) { refreshPointer() }
+        override func mouseMoved(with event: NSEvent) { refreshPointer() }
+        override func mouseExited(with event: NSEvent) { refreshPointer() }
+        override func layout() {
+            super.layout()
+            deferRefreshPointer()
+        }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
-            if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
-            clickMonitor = nil
-            occlusionObserver = nil
-            updatePolling()
+            cleanup()
             guard let window else { return }
-            // A hidden, minimized or fully covered window can't be hovered: stop the timer there.
-            occlusionObserver = NotificationCenter.default.addObserver(
-                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.updatePolling() }
+            observedWindow = window
+            previousMouseMovedEvents = window.acceptsMouseMovedEvents
+            window.acceptsMouseMovedEvents = true
+            for name in [
+                NSWindow.didChangeOcclusionStateNotification, NSWindow.didMoveNotification,
+                NSWindow.didResizeNotification, NSWindow.didMiniaturizeNotification,
+                NSWindow.didDeminiaturizeNotification,
+            ] {
+                observers.append(
+                    NotificationCenter.default.addObserver(
+                        forName: name, object: window, queue: .main
+                    ) { [weak self] _ in
+                        MainActor.assumeIsolated { self?.refreshPointer() }
+                    })
             }
-            clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                if let self, let y = self.pointerY(), event.window === self.window { self.onClick(y) }
-                return event
+            clickMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.leftMouseDown, .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+            ) { [weak self] event in
+                self?.handlePointerEvent(event) ?? event
+            }
+            deferRefreshPointer()
+        }
+
+        func handlePointerEvent(_ event: NSEvent) -> NSEvent {
+            if event.type == .leftMouseDown {
+                if event.window === window, let y = pointerY() { onClick(y) }
+            } else {
+                refreshPointer()
+            }
+            return event
+        }
+
+        private func stopPolling(deferExit: Bool = false) {
+            timer?.invalidate()
+            timer = nil
+            if lastY != nil {
+                lastY = nil
+                if deferExit {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.lastY == nil else { return }
+                        self.onExit()
+                    }
+                } else {
+                    onExit()
+                }
             }
         }
 
+        private func cleanup() {
+            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+            clickMonitor = nil
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+            observers.removeAll()
+            if let observedWindow, observedWindow.acceptsMouseMovedEvents {
+                observedWindow.acceptsMouseMovedEvents = previousMouseMovedEvents
+            }
+            observedWindow = nil
+            stopPolling(deferExit: true)
+        }
+
+        func deferRefreshPointer() {
+            DispatchQueue.main.async { [weak self] in self?.refreshPointer() }
+        }
+
+        func refreshPointer() {
+            updatePolling()
+            if timer != nil, callbacksReady { poll() }
+        }
+
         private func updatePolling() {
-            guard let window, window.occlusionState.contains(.visible) else {
-                timer?.invalidate()
-                timer = nil
-                if lastY != nil {
-                    lastY = nil
-                    onExit()
-                }
+            guard let window, window.isVisible, window.occlusionState.contains(.visible),
+                bounds.contains(convert(window.convertPoint(fromScreen: pointerLocation()), from: nil))
+            else {
+                stopPolling()
                 return
             }
             guard timer == nil else { return }
             timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.poll() }
+                MainActor.assumeIsolated { self?.refreshPointer() }
             }
         }
 
         isolated deinit {
             timer?.invalidate()
             if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
-            if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+            if let observedWindow, observedWindow.acceptsMouseMovedEvents {
+                observedWindow.acceptsMouseMovedEvents = previousMouseMovedEvents
+            }
         }
 
         /// The pointer's y in this view, or nil when it is outside the strip.
         private func pointerY() -> CGFloat? {
             guard let window, window.isVisible else { return nil }
-            let pointer = NSEvent.mouseLocation
+            let pointer = pointerLocation()
             let inWindow = window.convertPoint(fromScreen: pointer)
             let local = convert(inWindow, from: nil)
             // Most timer ticks are outside the rail; avoid a WindowServer query there.
             guard bounds.contains(local),
-                NSWindow.windowNumber(at: pointer, belowWindowWithWindowNumber: 0) == window.windowNumber
+                windowNumberAtPoint(pointer) == window.windowNumber
             else { return nil }
             return local.y
         }
