@@ -1290,13 +1290,18 @@ private struct PinnedWorkStrip: View {
 /// Hermes background terminal processes for the current session, with a stop button each.
 private struct RunningProcessesStrip: View {
     @Environment(\.dockHostVisible) private var hostVisible
-    @ObservedObject var control: ControlCenterModel
+    /// Not observed: only `processes` is read, and the strip stays mounted under
+    /// the composer while every other control publication ticks.
+    let control: ControlCenterModel
     var isTurnActive = false
     @State private var isExpanded = false
     @State private var pending: ProcessStopConfirmation?
+    @State private var processesRevision = 0
 
     var body: some View {
-        content
+        let _ = processesRevision
+        return content
+            .onReceive(control.$processes.dropFirst()) { _ in processesRevision &+= 1 }
             // Processes outlive the turn that started them, so poll while a turn runs or any are listed.
             .task(id: hostVisible && (isTurnActive || !control.processes.isEmpty)) {
                 guard hostVisible && (isTurnActive || !control.processes.isEmpty) else { return }
