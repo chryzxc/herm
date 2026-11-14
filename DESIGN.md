@@ -1048,9 +1048,11 @@ shared-cookie file is ignored on startup and removed only on explicit sign-out;
 its Keychain item is never accessed. Gateway Keychain storage remains separate.
 Annotation selection, submission, and cancellation require trusted user input.
 
-Automatic updates require a full asset checksum and matching Developer ID publisher
-signatures before and after staging. Ad-hoc builds use manual updates. A failed trust
-check stays in the existing Updates error state and does not replace the installed app.
+Automatic updates require a full asset checksum. Ad-hoc builds additionally verify a
+detached Ed25519 archive signature against the public key pinned in the installed app,
+before mounting the DMG. Developer ID builds require matching publisher signatures
+before and after staging. Both paths validate the staged code signature. A failed
+trust check stays in Updates and does not replace the installed app.
 
 User-message bubbles follow the selected text size, including when it changes while a chat is open. Short prompts hug their text from the first layout, without briefly stretching across the chat.
 The chat composer keeps its minimum input height for a short draft and grows as text wraps.
@@ -1944,6 +1946,13 @@ opens at the top when the category changes.
   keeps the working directory, execution backend, shell, file access, and output limits together.
   Panel and window share one agent updater. Its owner-scoped phase affects only
   ambient rail and companion activity, never session tasks or announcements.
+  Herm checks for app updates in the background and badges Settings and Updates
+  when one is available. Supported builds offer Download, then Install and
+  restart; a requested restart waits for the current turn. Builds that cannot
+  install in-app explain why. A secondary Release page button remains visible in every
+  state. Downloading shows an animated byte-based progress meter and percentage;
+  unknown lengths, verification and staging use the shared shimmer. Reduce Motion
+  uses the shared components’ static treatment, and the meter has a fixed layout slot.
   Checkpoint limits live beside the checkpoint switch in Privacy & safety.
   Preference rows keep the 52pt minimum with a small switch trailing.
 - **Gateway service.** Gateway shows the default-profile messaging gateway's

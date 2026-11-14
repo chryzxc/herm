@@ -58,7 +58,7 @@ A newer push to the same branch cancels the older run.
 
 - **Nightly**: each green CI run on `main` replaces `Herm.dmg` on the rolling
   `nightly` pre-release. Use it to test the latest `main`. Herm's updater
-  ignores pre-releases, so nightlies never reach installed copies.
+  checks this tag only from installed nightly builds; stable builds stay on stable.
 - **Stable**: `.github/workflows/release-please.yml` keeps a
   `chore: release X.Y.Z` pull request open after each green CI run on `main`.
   It picks the version from Conventional Commits (`fix:` patch, `feat:` minor)
@@ -66,6 +66,22 @@ A newer push to the same branch cancels the older run.
   and attaches `Herm.dmg`. To release by hand instead, push a tag
   (`git tag v1.2.3 && git push origin v1.2.3`) or run the DMG workflow with a
   version. Either way it packages only a commit whose CI already passed.
+
+Both channels publish `Herm.dmg.sig`, an Ed25519 signature over the complete DMG.
+`HERM_UPDATE_PRIVATE_KEY` is an Actions secret; its public key is pinned as
+`HermUpdatePublicKey` in `Sources/Herm/Info.plist`. Releases fail before publishing
+if the secret is missing or does not match that key. The private key is also stored
+in the maintainer's login Keychain under `io.github.chryzxc.Herm.update-signing`.
+Keep that Keychain safe: losing the signing key requires a manual bootstrap for
+ad-hoc users. Never put private keys in source, shell arguments or logs.
+
+To configure the secret from the original signing Mac, run
+`swift Scripts/sign-update.swift setup chryzxc/herm` after `gh auth login`.
+The script reuses the Keychain key, refuses to replace the secret with a different
+key, and prints only the public key. CI runs `swift Scripts/sign-update.swift sign
+dist/Herm.dmg` after packaging. Developer ID signing can be added separately through
+the packaging script's existing `HERM_CODESIGN_IDENTITY`; installed Developer ID
+builds continue to enforce their Apple publisher even if an archive signature exists.
 
 ## Before opening a PR
 
