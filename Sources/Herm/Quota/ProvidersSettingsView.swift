@@ -257,6 +257,9 @@ struct ProvidersSettingsView: View {
             if let error = actionError[row.slug] {
                 ModalNote(text: error, icon: .warning, tone: .dockWarning)
             }
+            if !GatewayConnectionStore.isLocalBackend {
+                ModalNote(text: ProviderBackendAvailability.remoteQuotaMessage, icon: .info)
+            }
 
             HStack(spacing: 8) {
                 if row.access == .browser && !row.authenticated {
