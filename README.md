@@ -957,7 +957,7 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 - **Offline notice.** If the agent browser can't start or keeps closing, a notice says Herm can't browse, and the tab falls back to a regular web view. Browser notices overlay the page below the toolbar so failures do not shift the page layout. Use **Retry**, reopen the tab, or reconnect Hermes to try again.
 - **Remote backends.** Hermes is pointed at the agent browser only in Local mode; with a remote backend its loopback address would reach the remote host instead.
 - **Dev servers over SSH.** In SSH mode, opening `http://localhost:<port>` (or `127.0.0.1`, `[::1]`, `*.localhost`) forwards that port from the SSH host with `ssh -L`, then loads the page. Ports 1024 and up are forwarded; tunnels last until Herm quits. If this Mac already uses the port, the tab says so instead of showing the Mac's server.
-- **Sharing the browser with other tools.** Each session's agent browser listens for remote debugging on `127.0.0.1:9333`, or on a random port if 9333 is busy. Hermes follows the selected session's endpoint. A Chrome DevTools MCP configured with `--browserUrl=http://127.0.0.1:9333` stays attached to the session that acquired that port.
+- **Sharing the browser with other tools.** New agent browsers use an OS-assigned loopback debugging port; Hermes follows the selected session's endpoint. Tools hard-coded to port 9333 must instead use the active endpoint. An existing browser may still use 9333. Loopback and a random port do not authenticate local clients: other local processes may access debugging and browser data.
 
 ### iOS Simulator and Android Emulator
 
@@ -973,7 +973,7 @@ Simulator and Emulator tabs show a virtual device's screen live in the session i
 - **Closing a tab disconnects only.** The virtual device keeps running.
 - **Local backend only for the agent.** Devices run on this Mac, so a remote Hermes cannot launch or drive them; you can still open tabs yourself.
 
-Setup: run `Scripts/setup-simulator-bridge.sh` (plus `brew install facebook/fb/idb-companion` for iOS), with Xcode iOS runtimes or the Android SDK Emulator and an AVD. See [Direct simulator tabs](docs/direct-simulators.md) for details and limitations (single touch, limited hardware-keyboard mapping on iOS).
+Setup: run `Scripts/setup-simulator-bridge.sh` (plus `brew install facebook/fb/idb-companion` for iOS), with Xcode iOS runtimes or the Android SDK Emulator and an AVD. New bundled plugins are installed disabled: enable them under Integrations → Plugins → Installed, then start a new session or restart when prompted. Existing enabled and disabled choices are retained on upgrades. See [Direct simulator tabs](docs/direct-simulators.md) for details and limitations (single touch, limited hardware-keyboard mapping on iOS).
 
 ### Projects and session continuity
 

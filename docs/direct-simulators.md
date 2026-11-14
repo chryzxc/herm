@@ -14,12 +14,15 @@ Scripts/setup-simulator-bridge.sh
 brew install facebook/fb/idb-companion
 ```
 
-The setup script installs pinned Python gRPC/protobuf packages in
+The setup script installs pinned, hash-checked Python wheels in
 `~/Library/Application Support/Herm/simulator-bridge`, separate from system Python.
 Python 3.10+ is required. Advanced installations can set `HERM_SIMULATOR_PYTHON`
 to the Python executable in an equivalent environment. Distributing Herm.app alone
 does not install these dependencies; run setup on each Mac. The bundled bridge
 and protocol definitions ship as app resources, with upstream license notices.
+Hashes check downloaded artifacts against the lock, not their authors; existing
+importable environments and custom Python overrides are not audited. Local users
+who can modify the lock or environment remain trusted.
 
 Select a full Xcode installation with installed iOS runtimes. The idb companion
 must support that Xcode/runtime version. Android needs SDK Emulator and an AVD.
@@ -162,7 +165,11 @@ live. Desktop `computer_use` is a separate capability and is not required.
 
 Herm bundles the plugin and, on connecting to a local Hermes Agent, installs it
 through `plugins.manage install` when its version differs, then prepares the
-bridge environment and resources. Bump `plugin.yaml`'s version to ship a plugin
+bridge environment and resources. New bundled plugins are installed disabled;
+enable them in Integrations → Plugins → Installed and start a new session or
+restart when prompted. Upgrades preserve existing choices; a previously enabled
+plugin remains enabled. Installation itself is automatic and does not guarantee
+that the backend will not import plugin code. Bump `plugin.yaml`'s version to ship a plugin
 change. Use a new Hermes session to load an added tool. Neither setup nor the code change restarts Herm or Hermes.
 Input delivery is not a verified UI outcome; the agent must capture again after
 an ambiguous failure before retrying. Concurrent manual input should be avoided.
