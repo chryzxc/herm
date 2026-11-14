@@ -85,6 +85,12 @@ final class ComposerInputTextView: NSTextView {
 
     override func keyDown(with event: NSEvent) {
         onPrepareForInput?(self)
+        // While an input method is composing, its keys belong to it: Return commits
+        // the conversion and the arrows move through candidates.
+        if hasMarkedText() {
+            super.keyDown(with: event)
+            return
+        }
         let editingModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
         if event.modifierFlags.intersection(editingModifiers).isEmpty,
             let key = ComposerCompletionKey(keyCode: event.keyCode),
