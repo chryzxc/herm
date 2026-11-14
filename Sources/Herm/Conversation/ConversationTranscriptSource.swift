@@ -159,7 +159,7 @@ final class ConversationTranscriptSource: ObservableObject {
         observe(model.$activeBotProfileID)
         observe(model.$sessionProfileID)
         observe(model.$compactingSessionID)
-        observe(model.$activityPresentationRevision)
+        observe(model.activityPresentation.$revision)
         observe(model.$botActivityRevision)
         observe(model.$botActivityBySessionID)
         observe(model.$botLiveSteps)

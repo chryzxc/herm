@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Reads current projections when available; captured content survives transcript paging.
@@ -5,9 +6,11 @@ struct SessionDataPreviewView: View {
     let content: SessionPreviewContent
     @ObservedObject var model: DockModel
     @ObservedObject var botMode: BotModeModel
+    @State private var activityRevision = 0
     let onOpenPullRequestChat: (PullRequestRecord) -> Void
 
     var body: some View {
+        let _ = activityRevision
         Group {
             if case .message(let message) = content {
                 SessionMessageTabView(message: message, model: model)
@@ -36,6 +39,9 @@ struct SessionDataPreviewView: View {
             }
         }
         .foregroundStyle(Color.dockPrimaryText)
+        .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
+            activityRevision &+= 1
+        }
         .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(model))
     }
 

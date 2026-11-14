@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import ServiceManagement
 import SwiftUI
@@ -215,9 +216,14 @@ struct WorkspaceActivitySidebar: View {
     @Environment(\.dockTitleRow) var titleRow
 
     @StateObject private var confirmedAction = DockAsyncAction()
+    @State private var activityRevision = 0
 
     var body: some View {
+        let _ = activityRevision
         observedSidebar
+            .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
+                activityRevision &+= 1
+            }
             .overlay(alignment: .bottomTrailing) {
                 if confirmedAction.isPending {
                     HStack(spacing: 6) {
