@@ -2981,7 +2981,11 @@ their scroll columns without being clipped. When the pane is too narrow for side
 columns, the newest card sits in a fixed slot below the controls; the orb shrinks
 to the available height, the stage scrolls rather than clipping, End voice wraps
 to its own row, and a generative panel takes the reply caption's slot instead of
-squeezing the stage. Microphone startup and permission
+squeezing the stage. Every tool step gets an activity card; running cards stay
+until their step completes or the turn ends. Leaving full voice mode keeps the
+Talk tab open and the conversation live. Words before a pause stay in the
+utterance when on-device recognition restarts its partial text, and a final
+answer that differs from the streamed text only in whitespace is not spoken twice. Microphone startup and permission
 errors occupy the existing status slot with Retry microphone. Muting releases
 capture in every phase and rejects late speech callbacks. Speech that interrupts
 local playback retains the same recognition request so opening words are kept;
