@@ -71,6 +71,7 @@ struct DockPopover: View {
     @State var modelPresentationRevision = 0
     @ObservedObject var panelPresentation: DockPanelPresentation
     let controlCenter: ControlCenterModel
+    @ObservedObject var botMode: BotModeModel
     @State var controlPresentationRevision = 0
     /// Read-only screen capacity. Layout decisions must never resize the live
     /// panel while they are merely determining whether desktop content fits.
@@ -129,7 +130,6 @@ struct DockPopover: View {
     @State var chatContextRouter = ChatContextRouter()
     @StateObject var repositoryPreferences = CommandCenterPreferencesStore.shared
     @ObservedObject var dockThemeStore = DockThemeStore.shared
-    @StateObject var botMode = BotModeModel()
     @StateObject var sessionNavNavigation = SessionNavigationState()
     @State var sessionWorkspaceMode: SessionWorkspaceMode = .chat
     @State var suppressNextVoiceResponse = false

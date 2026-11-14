@@ -35,8 +35,6 @@ final class EdgeDockController: NSObject {
     private var latestToolID: String?
     private var latestToolComplete = false
     private var kanbanActivity = EdgeKanbanActivity()
-    private var lastBotRead: Date?
-    private var loadingBots = false
     private var lastKanbanRead: Date?
     private var lastKanbanPoll: Date?
     private var kanbanStatusCurrent = false
@@ -248,14 +246,25 @@ final class EdgeDockController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refreshKanbanActivity() }
             .store(in: &subscriptions)
-        // The notch remains alive when the workspace is unmounted. Use the
-        // same aggregate projection, without board filters or supporting reads.
-        Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+        // The notch remains alive when the workspace is unmounted.
+        Timer.publish(every: EdgeNotchPolling.deliveryQuestionInterval, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in
-                self?.pollKanban(force: false)
                 self?.pollDeliveryQuestions()
             }
             .store(in: &subscriptions)
+        Timer.publish(every: EdgeNotchPolling.kanbanInterval, on: .main, in: .common).autoconnect()
+            .sink { [weak self] _ in
+                self?.pollKanban(force: false)
+                self?.pollBots()
+            }
+            .store(in: &subscriptions)
+        model.botMode.$inventory.combineLatest(model.botMode.$avatarImages)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] inventory, avatars in
+                guard let self, inventory.availability == .ready else { return }
+                if self.state.bots != inventory.bots { self.state.bots = inventory.bots }
+                if self.state.avatarImages != avatars { self.state.avatarImages = avatars }
+            }.store(in: &subscriptions)
         NotificationCenter.default.publisher(for: .hermBotActivity)
             .compactMap { $0.userInfo?["events"] as? [BotActivityEvent] }
             .receive(on: RunLoop.main)
@@ -655,35 +664,25 @@ final class EdgeDockController: NSObject {
 
     private func refreshSelectedTasks() {
         pollKanban()
+        pollBots()
         model.loadSessions()
     }
 
-    /// Idle polls are throttled to once a minute: each aggregate read pulls and
-    /// re-diffs every board, which kept the CPU (and the Hermes backend) busy
-    /// every 5s even with nothing happening. Live work keeps the 5s cadence.
     private func pollKanban(force: Bool = true) {
-        guard model.status != .offline else { return }
-        if !force, !state.activity.working,
-            let last = lastKanbanPoll, Date().timeIntervalSince(last) < 60
-        {
-            return
-        }
-        lastKanbanPoll = Date()
+        let now = Date()
+        let shouldPoll = EdgeNotchPolling.shouldPollKanban(
+            now: now, lastPoll: lastKanbanPoll, isWorking: state.activity.working,
+            isOffline: model.status == .offline, force: force)
+        guard shouldPoll else { return }
+        lastKanbanPoll = now
         controlCenter.refreshGlobalKanban(trigger: .background)
-        guard !loadingBots, lastBotRead.map({ Date().timeIntervalSince($0) >= 15 }) ?? true else { return }
-        loadingBots = true
-        lastBotRead = Date()
-        Task {
-            defer { loadingBots = false }
-            let service = BotService(client: model.controlRPCClient)
-            let inventory = await service.list()
-            guard inventory.availability == .ready else { return }
-            let events = BotActivityEvent.events(from: state.bots, to: inventory.bots, excluding: model.profileScopeID)
-            state.bots = inventory.bots
-            announceBots(events)
-            for bot in inventory.bots where bot.hasAvatar && state.avatarImages[bot.id] == nil {
-                if let data = await service.avatarImageData(profileID: bot.id) { state.avatarImages[bot.id] = data }
-            }
+    }
+
+    private func pollBots() {
+        guard model.status != .offline else { return }
+        Task { [weak self] in
+            await self?.model.botMode.refreshNow(
+                probeCapability: true, minimumInterval: EdgeNotchPolling.kanbanInterval)
         }
     }
 
@@ -820,8 +819,7 @@ final class EdgeDockController: NSObject {
                 sourceID: provider, eventID: String(current.updatedAt.timeIntervalSince1970)))
     }
 
-    /// Both the roster poll here and the workspace's post the same events; the
-    /// stamp-based notice id lets `admit` drop the duplicate.
+    /// The shared roster publishes activity notifications with stable stamps.
     private func announceBots(_ events: [BotActivityEvent]) {
         for event in events {
             _ = state.interruptions.admit(
@@ -1894,7 +1892,8 @@ final class EdgeNotchState: ObservableObject {
 
 struct EdgeNotchView: View {
     @ObservedObject var state: EdgeNotchState
-    @ObservedObject var controlCenter: ControlCenterModel
+    let controlCenter: ControlCenterModel
+    @State private var controlPresentationRevision = 0
     var onQuotaRequested: () -> Void = {}
     var onTasksRefresh: () -> Void = {}
     var onOpenQuota: () -> Void = {}
@@ -1921,6 +1920,7 @@ struct EdgeNotchView: View {
     var onSideChange: (EdgeDockSide) -> Void = { _ in }
 
     var body: some View {
+        let _ = controlPresentationRevision
         GeometryReader { geometry in
             // Pin the shell to its edge: the window stays expanded-wide while it collapses,
             // and default center alignment made the shrinking notch drift to the middle.
@@ -2004,6 +2004,7 @@ struct EdgeNotchView: View {
             .offset(y: state.side == .top ? 0 : state.windowTop - (open ? state.openTop : state.collapsedTop))
         }
         .clipped()
+        .onReceive(controlCenter.notchPresentationChanges) { _ in controlPresentationRevision &+= 1 }
         // Rail growth (more stacked marks) uses the same spring as the open/close morph.
         .animation(morph, value: state.collapsedSize)
         .animation(morph, value: state.openSize)

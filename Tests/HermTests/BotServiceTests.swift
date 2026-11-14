@@ -6,6 +6,70 @@ import Testing
 
 @MainActor
 struct BotServiceTests {
+    @Test func notchBackgroundProbeRecoversMalformedRoster() async {
+        let client = BotFixtureClient(result: ["profiles": "malformed"])
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: false)
+        let start = Date(timeIntervalSinceReferenceDate: 100)
+        await model.refreshNow(probeCapability: true, minimumInterval: 15, now: start)
+        #expect(model.inventory.availability == .malformed)
+        client.result = ["profiles": [["name": "research"]]]
+        await model.refreshNow(probeCapability: true, minimumInterval: 15, now: start.addingTimeInterval(14))
+        #expect(client.methods.filter { $0 == "profiles.list" }.count == 1)
+        await model.refreshNow(probeCapability: true, minimumInterval: 15, now: start.addingTimeInterval(15))
+        #expect(client.methods.filter { $0 == "profiles.list" }.count == 2)
+        #expect(model.inventory.availability == .ready)
+        #expect(model.bots.map(\.id) == ["research"])
+    }
+
+    @Test func notchProbeSharesInFlightRefreshWithoutSpinner() async {
+        let client = BotFixtureClient(result: ["profiles": [["name": "research"]]])
+        let (started, signalStarted) = AsyncStream<Void>.makeStream()
+        let (release, signalRelease) = AsyncStream<Void>.makeStream()
+        client.onProfileRequest = {
+            signalStarted.yield(())
+            for await _ in release { break }
+        }
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: false)
+        let start = Date(timeIntervalSinceReferenceDate: 100)
+        let first = Task { await model.refreshNow(probeCapability: true, minimumInterval: 15, now: start) }
+        var iterator = started.makeAsyncIterator()
+        await iterator.next()
+        #expect(!model.isRefreshing)
+        await model.refreshNow(probeCapability: true, minimumInterval: 15, now: start.addingTimeInterval(30))
+        await model.refreshNow(force: true, now: start.addingTimeInterval(30))
+        #expect(client.methods.filter { $0 == "profiles.list" }.count == 1)
+        #expect(!model.isRefreshing)
+        signalRelease.yield(())
+        await first.value
+        signalRelease.finish()
+        signalStarted.finish()
+        #expect(model.inventory.availability == .ready)
+    }
+
+    @Test func sharedRefreshSkipsRecentAttemptAndRetriesFailure() async {
+        let client = BotFixtureClient(result: ["profiles": [["name": "research"]]])
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+        let start = Date(timeIntervalSinceReferenceDate: 100)
+        await model.refreshNow(minimumInterval: 15, now: start)
+        #expect(client.methods.filter { $0 == "profiles.list" }.count == 1)
+        await model.refreshNow(minimumInterval: 15, now: start.addingTimeInterval(14))
+        #expect(client.methods.filter { $0 == "profiles.list" }.count == 1)
+        client.failingMethod = "profiles.list"
+        await model.refreshNow(minimumInterval: 15, now: start.addingTimeInterval(15))
+        #expect(model.bots.count == 1)
+        await model.refreshNow(minimumInterval: 15, now: start.addingTimeInterval(29))
+        #expect(client.methods.filter { $0 == "profiles.list" }.count == 2)
+        client.failingMethod = nil
+        await model.refreshNow(minimumInterval: 15, now: start.addingTimeInterval(30))
+        #expect(client.methods.filter { $0 == "profiles.list" }.count == 3)
+        await model.refreshNow(force: true, minimumInterval: 15, now: start.addingTimeInterval(30))
+        await model.refreshNow(now: start.addingTimeInterval(30))
+        #expect(client.methods.filter { $0 == "profiles.list" }.count == 5)
+    }
+
     @Test func orbFacesRequireExplicitlyEnabledPlugin() async {
         let client = BotFixtureClient(result: ["profiles": [["name": "research"], ["name": "writer"]]])
         let model = BotModeModel()
@@ -925,8 +989,9 @@ private final class MetadataFixtureClient: HermesRPCClientProtocol {
 @MainActor
 private final class BotFixtureClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
-    let result: [String: Any]
+    var result: [String: Any]
     var stubNextResult: [String: Any]?
+    var onProfileRequest: (() async -> Void)?
     var failingMethod: String?
     private(set) var lastMethod: String?
     private(set) var lastParams: [String: Any]?
@@ -939,6 +1004,7 @@ private final class BotFixtureClient: HermesRPCClientProtocol {
         paramsList.append(params)
         lastMethod = method
         lastParams = params
+        if method == "profiles.list" { await onProfileRequest?() }
         defer { stubNextResult = nil }
         if method == failingMethod { throw URLError(.timedOut) }
         return stubNextResult ?? result

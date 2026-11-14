@@ -599,6 +599,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         let hostingView = EdgeDockHostingView(
             rootView: DockPopover(
                 model: model, panelPresentation: panelPresentation, controlCenter: controlCenter,
+                botMode: model.botMode,
                 availableWorkspaceWidth: { [weak self] in
                     self?.availableWorkspaceWidth() ?? .greatestFiniteMagnitude
                 },
