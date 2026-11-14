@@ -48,6 +48,8 @@ struct DockWorkspaceShell<Rail: View, Content: View>: View {
             let insets = EdgeInsets(
                 top: toolbarHeight, leading: 0, bottom: DockShell.margin, trailing: DockShell.margin)
             content()
+                // Lay out inside the card, not just mask to it, or trailing/bottom content is clipped by the margin.
+                .dockPadding(EdgeInsets(top: 0, leading: 0, bottom: DockShell.margin, trailing: DockShell.margin))
                 // The frame tint is opaque, so the card carries its own canvas and skin backdrop
                 // (Hermes Desktop paints its backdrop inside the chat surface the same way).
                 .background {
