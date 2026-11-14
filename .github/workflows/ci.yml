@@ -9,9 +9,11 @@ on:
 permissions:
   contents: read
 
+# A newer PR push supersedes the older run, but every main commit keeps its own run:
+# Release Please and the stable DMG need green CI on the exact release commit.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Guard, tests and the release build run side by side; `verify` is the single required check.
 jobs:
