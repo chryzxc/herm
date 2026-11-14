@@ -519,17 +519,7 @@ extension DockModel {
                     _ = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.slashExec.rawValue,
                         params: ["command": "voice on", "session_id": sessionID, "profile": profile])
-                    let mode = try await sessionRPCClient.request(
-                        HermesFeatureIDs.ID.configGet.rawValue,
-                        params: ["key": "voice", "session_id": sessionID, "profile": profile])
-                    guard ["voice_only", "all"].contains(mode["value"] as? String ?? "") else {
-                        throw NSError(
-                            domain: "HermVoice", code: 501,
-                            userInfo: [
-                                NSLocalizedDescriptionKey:
-                                    "This Hermes runtime does not support session-scoped voice recording."
-                            ])
-                    }
+
                     guard voiceConversationGeneration == conversationGeneration else { return }
                     voiceRecorderEnabled = true
                 }
@@ -578,7 +568,7 @@ extension DockModel {
                         ChatMessage(
                             role: .hermes,
                             text:
-                                "I couldn’t start the voice microphone: \(Self.safeUserDiagnostic(error.localizedDescription))",
+                                "I couldn’t start the voice microphone: \(Self.safeUserDiagnostic(error.localizedDescription)). Check voice setup and microphone permissions, then tap to resume.",
                             isError: true))
                 }
             }
