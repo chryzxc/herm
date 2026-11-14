@@ -59,10 +59,15 @@ final class HermesPreviewBridge: GeneratedHTMLBridge {
     var send: (([String: Any]) -> Void)?
     var resize: ((CGFloat) -> Void)?
     var submit: ((String) async -> Bool)?
+    var authorize: ((GeneratedHTMLActionApproval.Action) async -> Bool)?
+    var destinationLabel = "Conversation"
+    private var active = true
+    private var pending = false
     var now: () -> Date = Date.init
     private var lastIntent: Date?
 
     func receive(_ message: [String: Any]) {
+        guard active else { return }
         switch message["type"] as? String {
         case "hermes-inline-preview-size":
             if let height = (message["height"] as? NSNumber)?.doubleValue, height.isFinite, height > 0 {
@@ -75,13 +80,19 @@ final class HermesPreviewBridge: GeneratedHTMLBridge {
             if prompt.count > HermesInlinePreview.maxPromptLength {
                 return ack(id, ["ok": false, "error": "too_long", "maxLength": HermesInlinePreview.maxPromptLength])
             }
+            if pending { return ack(id, ["ok": false, "error": "busy"]) }
             let time = now()
             if let lastIntent, time.timeIntervalSince(lastIntent) < 1 {
                 let wait = Int(((1 - time.timeIntervalSince(lastIntent)) * 1000).rounded())
                 return ack(id, ["ok": false, "error": "throttled", "retryAfterMs": wait])
             }
             lastIntent = time
+            pending = true
             Task {
+                defer { pending = false }
+                let approved = await authorize?(.submitPrompt(prompt: prompt, conversation: destinationLabel)) ?? false
+                guard active, !Task.isCancelled else { return }
+                guard approved else { return ack(id, ["ok": false, "error": "cancelled"]) }
                 let delivered = await submit?(prompt) ?? false
                 ack(id, delivered ? ["ok": true] : ["ok": false, "error": "undelivered"])
             }
@@ -89,6 +100,8 @@ final class HermesPreviewBridge: GeneratedHTMLBridge {
             break
         }
     }
+
+    func invalidate() { active = false }
 
     private func ack(_ id: Int, _ ack: [String: Any]) {
         send?(["type": "hermes-inline-preview-intent-ack", "id": id, "ack": ack])
@@ -98,24 +111,24 @@ final class HermesPreviewBridge: GeneratedHTMLBridge {
 struct HermesInlinePreviewView: View {
     let file: String
     @Environment(\.richReplyContext) private var context
+    @State private var loadedFile: String?
     @State private var html: String?
-    @State private var loaded = false
     @State private var height: CGFloat = 280
     @StateObject private var state = GeneratedHTMLLoadState()
 
     var body: some View {
         if let url = HermesInlinePreview.htmlURL(file) {
             Group {
-                if let html, state.error == nil {
+                if loadedFile == file, let html, state.error == nil {
                     GeneratedHTMLWebView(
                         html: html, state: state, bridge: bridge(),
                         passesScroll: height < HermesInlinePreview.maxHeight
                     )
-                    .id(DockThemeRuntime.revision)
+                    .id("\(file):\(DockThemeRuntime.revision)")
                     .frame(height: height)
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
                     .accessibilityLabel(url.lastPathComponent)
-                } else if loaded {
+                } else if loadedFile == file {
                     ChatMediaAttachmentCard(path: file)
                 } else {
                     Color.clear.frame(height: height)
@@ -123,9 +136,11 @@ struct HermesInlinePreviewView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .task(id: file) {
-                html = await Task.detached(priority: .utility) { HermesInlinePreview.load(url) }.value
-                    .map(HermesInlinePreview.document)
-                loaded = true
+                state.error = nil
+                let result = await Task.detached(priority: .utility) { HermesInlinePreview.load(url) }.value
+                guard !Task.isCancelled else { return }
+                html = result.map(HermesInlinePreview.document)
+                loadedFile = file
             }
         } else {
             ChatMediaAttachmentCard(path: file)
@@ -136,6 +151,7 @@ struct HermesInlinePreviewView: View {
         let bridge = HermesPreviewBridge()
         bridge.resize = { height = $0 }
         let context = context
+        bridge.destinationLabel = context?.destination.title ?? "Conversation"
         bridge.submit = { prompt in
             guard let context, context.isCurrent, let model = context.model else { return false }
             var record = QuickDraftRecord(destination: context.destination, text: prompt)
