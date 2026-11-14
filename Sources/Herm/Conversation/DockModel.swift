@@ -606,6 +606,9 @@ final class DockModel: ObservableObject {
                             "Connection changed. Retry loading this conversation.")
                         self.status = .offline
                     }
+                    // Reopen the socket with the new sign-in instead of requiring a restart.
+                    self.gateway.close()
+                    Task { try? await self.gateway.connect() }
                 }
             }
     }
