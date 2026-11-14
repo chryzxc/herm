@@ -53,8 +53,15 @@ struct SessionNavQueue: View, Equatable {
     @State private var botUnreadIncomplete = true
 
     private struct BotUnreadRequest: Hashable {
-        let sessions: [String]
-        let seen: [String]
+        struct Row: Hashable {
+            let profileID: String
+            let id: String
+            let updatedAt: Date?
+            let isHidden: Bool
+        }
+        // Sets/dictionaries are order-independent without per-body string formatting and sorting.
+        let sessions: Set<Row>
+        let seen: [String: Date]
         let incomplete: Bool
     }
 
@@ -67,10 +74,13 @@ struct SessionNavQueue: View, Equatable {
         case .loading, .stale, .unavailable, .failed: incomplete = true
         }
         return BotUnreadRequest(
-            sessions: sessions.map {
-                "\($0.profileID ?? model.profileScopeID ?? "")|\($0.id)|\($0.lastUpdatedAt?.timeIntervalSince1970 ?? 0)|\($0.isHidden)"
-            }.sorted(),
-            seen: sidebarSessionSeenStore.seenAtByKey.map { "\($0.key)|\($0.value.timeIntervalSince1970)" }.sorted(),
+            sessions: Set(
+                sessions.map {
+                    BotUnreadRequest.Row(
+                        profileID: $0.profileID ?? model.profileScopeID ?? "", id: $0.id,
+                        updatedAt: $0.lastUpdatedAt, isHidden: $0.isHidden)
+                }),
+            seen: sidebarSessionSeenStore.seenAtByKey,
             incomplete: incomplete)
     }
 
