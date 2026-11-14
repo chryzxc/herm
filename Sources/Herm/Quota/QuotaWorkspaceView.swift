@@ -140,7 +140,9 @@ struct QuotaWorkspaceView: View {
     private func disconnect(_ descriptor: QuotaProviderDescriptor) {
         // Herm's own stored key outranks Hermes' .env, so clear it too or the
         // provider keeps reporting after a Hermes disconnect.
-        if let storageKey = descriptor.storageKey { ProviderKeyStore().save(nil, storageKey: storageKey) }
+        if GatewayConnectionStore.isLocalBackend, let storageKey = descriptor.storageKey {
+            ProviderKeyStore().save(nil, storageKey: storageKey)
+        }
         control.forgetQuota(for: descriptor.id)
         guard let row = control.hermesRow(for: descriptor), row.authenticated else {
             control.refreshProviderQuota()
@@ -828,7 +830,7 @@ struct QuotaWorkspaceView: View {
         // Same state Settings → Providers shows for this provider.
         let signedIn = control.hermesRow(for: descriptor)?.authenticated == true
         let diagnostic =
-            control.providerQuotaDiagnostics[descriptor.id]
+            control.providerQuotaDiagnostic(for: descriptor.id)
             ?? (signedIn ? "Connected in Settings; no quota reported yet." : nil)
         return HStack(spacing: 10) {
             ProviderMarkBadge(

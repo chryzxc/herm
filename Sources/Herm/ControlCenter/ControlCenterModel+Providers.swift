@@ -4,6 +4,16 @@ import Foundation
 extension ControlCenterModel {
     func quotaReaderID(for providerID: String) -> String? { providerQuotaReaderIDs[providerID] }
 
+    func providerQuotaDiagnostic(for providerID: String) -> String? {
+        providerQuotaDiagnostics["\(HermesRemoteProviderService.readerID).\(providerID)"]
+            ?? providerQuotaDiagnostics[providerID]
+    }
+
+    static func quotaReaderIDs(isLocalBackend: Bool, only: Set<String>?) -> Set<String> {
+        let available = isLocalBackend ? Set(quotaReaders.map(\.id)) : Set(["claude", "antigravity"])
+        return available.intersection(only ?? available)
+    }
+
     /// Loads the stored Codex account quota through Codex's authenticated usage endpoint,
     /// independently of the active Hermes provider/model. Each provider is
     /// published as soon as its read returns, so one slow service never holds
@@ -12,13 +22,32 @@ extension ControlCenterModel {
     /// `quiet` is the notch's background poll: it skips while another read is
     /// in flight and publishes only real changes, since each publish re-renders
     /// every view observing this model (a scroll hitch every 30s otherwise).
-    func refreshProviderQuota(only readerIDs: Set<String>? = nil, quiet: Bool = false) {
+    func refreshProviderQuota(
+        only readerIDs: Set<String>? = nil, quiet: Bool = false,
+        isLocalBackend: Bool = GatewayConnectionStore.isLocalBackend
+    ) {
+        if !isLocalBackend {
+            let localIDs = Self.quotaReaderIDs(isLocalBackend: false, only: nil)
+            let removed = Set(
+                reportedProviderQuotas.filter {
+                    let reader = providerQuotaReaderIDs[$0.provider] ?? ""
+                    return !localIDs.contains(reader) && reader != HermesRemoteProviderService.readerID
+                        && reader != HermesRemoteProviderService.balanceReaderID
+                }.map(\.provider))
+            reportedProviderQuotas.removeAll { removed.contains($0.provider) }
+            providerQuotaReaderIDs = providerQuotaReaderIDs.filter { !removed.contains($0.key) }
+            providerQuotaFreshness.checkedAt = providerQuotaFreshness.checkedAt.filter { !removed.contains($0.key) }
+            applyProviderQuotaPresentation()
+            hermesActiveCredentialKeys = []
+        }
         let quotaState = projectionRefreshStates["provider.quota"]
         let quiet = quiet && quotaState?.lastSuccess != nil && quotaState?.error == nil && quotaState?.isStale == false
-        if quiet, providerQuotaReadsInFlight > 0 { return }
+        if quiet, isLocalBackend, providerQuotaReadsInFlight > 0 { return }
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        let profile = dockModel?.profileScopeID
+        let remoteClient = dockModel?.quickWorkflowClient
         providerQuotaGeneration = generation
         guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else {
             providerQuotas = []
@@ -29,7 +58,8 @@ extension ControlCenterModel {
         if !quiet { beginProjectionRefresh("provider.quota") }
         // Balance cards derive spend and runway from usage analytics.
         if !quiet, tokenUsage == nil { refreshTokenUsage(days: UsageWorkspaceView.reportDays) }
-        let readers = Self.quotaReaders.filter { readerIDs?.contains($0.id) ?? true }
+        let selectedReaderIDs = Self.quotaReaderIDs(isLocalBackend: isLocalBackend, only: readerIDs)
+        let readers = Self.quotaReaders.filter { selectedReaderIDs.contains($0.id) }
         providerQuotaReadsInFlight += 1
         Task { @MainActor in
             defer { providerQuotaReadsInFlight -= 1 }
@@ -73,6 +103,112 @@ extension ControlCenterModel {
                     changed = true
                 }
             }
+            if !isLocalBackend, readerIDs == nil || readerIDs?.contains(HermesRemoteProviderService.readerID) == true,
+                let remoteClient
+            {
+                let readerID = HermesRemoteProviderService.readerID
+                let previous = reportedProviderQuotas.filter { providerQuotaReaderIDs[$0.provider] == readerID }
+                do {
+                    let result = try await HermesRemoteProviderService.readPartial(
+                        client: remoteClient, profile: profile)
+                    guard generation == providerQuotaGeneration,
+                        isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
+                        dockModel?.profileScopeID == profile
+                    else { return }
+
+                    let retained = previous.filter { snapshot in
+                        result.retainIDs.contains(snapshot.provider)
+                            || result.unavailableIDs.contains(snapshot.provider)
+                            || result.retainPrefixes.contains { snapshot.provider.hasPrefix($0) }
+                            || result.missingUsagePrefixes.contains { snapshot.provider.hasPrefix($0) }
+                    }
+                    let retainedIDs = Set(retained.map(\.provider))
+                    let snapshots = result.snapshots.filter { !retainedIDs.contains($0.provider) }
+                    let replaced = Set(previous.map(\.provider)).subtracting(retainedIDs)
+                    reportedProviderQuotas.removeAll { replaced.contains($0.provider) }
+                    for id in replaced {
+                        providerQuotaReaderIDs[id] = nil
+                        providerQuotaFreshness.checkedAt[id] = nil
+                    }
+                    for snapshot in snapshots {
+                        providerQuotaReaderIDs[snapshot.provider] = readerID
+                        providerQuotaFreshness.checkedAt[snapshot.provider] = snapshot.updatedAt
+                    }
+                    reportedProviderQuotas += snapshots
+                    seen.formUnion(snapshots.map(\.provider))
+                    seen.formUnion(retainedIDs)
+                    let diagnosticPrefix = "\(readerID)."
+                    diagnostics = diagnostics.filter { !$0.key.hasPrefix(diagnosticPrefix) }
+                    for provider in result.missingUsageProviders {
+                        diagnostics[diagnosticPrefix + provider] = "Backend did not report quota for this provider."
+                    }
+                    let missingRetained = retained.contains { snapshot in
+                        result.unavailableIDs.contains(snapshot.provider)
+                            || result.missingUsagePrefixes.contains { snapshot.provider.hasPrefix($0) }
+                    }
+                    if result.malformed || missingRetained || !result.missingUsageProviders.isEmpty {
+                        let message = "Some backend quota data is unavailable; previous readings may be stale."
+                        diagnostics[readerID] = message
+                        errors.append(message)
+                    } else {
+                        diagnostics[readerID] = nil
+                    }
+                    applyProviderQuotaPresentation()
+                    changed = true
+                } catch {
+                    guard generation == providerQuotaGeneration,
+                        isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
+                        dockModel?.profileScopeID == profile
+                    else { return }
+                    let message = "Backend quota could not be read. Refresh to try again."
+                    diagnostics[readerID] = message
+                    errors.append(message)
+                    seen.formUnion(previous.map(\.provider))
+                }
+            }
+            if !isLocalBackend,
+                readerIDs == nil || readerIDs?.contains(HermesRemoteProviderService.readerID) == true
+                    || readerIDs?.contains(HermesRemoteProviderService.balanceReaderID) == true,
+                let remoteClient
+            {
+                let readerID = HermesRemoteProviderService.balanceReaderID
+                let previous = reportedProviderQuotas.filter { providerQuotaReaderIDs[$0.provider] == readerID }
+                do {
+                    let balance = try await HermesRemoteProviderBalanceService.read(
+                        client: remoteClient, profile: profile)
+                    guard generation == providerQuotaGeneration,
+                        isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
+                        dockModel?.profileScopeID == profile
+                    else { return }
+                    let id = HermesRemoteProviderService.snapshotID(
+                        "openrouter", profile: profile, slug: "openrouter-balance", account: nil)
+                    let snapshot = ProviderQuotaSnapshot(
+                        provider: id, displayName: balance.displayName, model: nil, updatedAt: balance.updatedAt,
+                        windows: balance.windows, safeDetail: balance.safeDetail)
+                    let replaced = Set(previous.map(\.provider))
+                    reportedProviderQuotas.removeAll { replaced.contains($0.provider) }
+                    for id in replaced {
+                        providerQuotaReaderIDs[id] = nil
+                        providerQuotaFreshness.checkedAt[id] = nil
+                    }
+                    reportedProviderQuotas.append(snapshot)
+                    providerQuotaReaderIDs[id] = readerID
+                    providerQuotaFreshness.checkedAt[id] = snapshot.updatedAt
+                    seen.insert(id)
+                    diagnostics[readerID] = nil
+                    applyProviderQuotaPresentation()
+                    changed = true
+                } catch {
+                    guard generation == providerQuotaGeneration,
+                        isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
+                        dockModel?.profileScopeID == profile
+                    else { return }
+                    let message = "Backend OpenRouter balance is unavailable. Refresh or check the backend."
+                    diagnostics[readerID] = message
+                    errors.append(message)
+                    seen.formUnion(previous.map(\.provider))
+                }
+            }
             guard generation == providerQuotaGeneration else { return }
             guard self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else {
                 // Rebound mid-read: clear the spinner or every later poll,
@@ -89,8 +225,10 @@ extension ControlCenterModel {
                 applyProviderQuotaPresentation()
                 changed = true
             }
-            if !seen.isEmpty {
-                refreshHermesActiveCredentials()
+            if !errors.isEmpty {
+                recordProjectionFailure("provider.quota", error: errors[0])
+            } else if !seen.isEmpty || (!isLocalBackend && readerIDs == nil && remoteClient != nil) {
+                if isLocalBackend { refreshHermesActiveCredentials() }
                 if !quiet || changed { recordProjectionSuccess("provider.quota") }
             } else {
                 recordProjectionFailure("provider.quota", error: errors.first ?? "Provider quota data is unavailable.")
@@ -111,10 +249,22 @@ extension ControlCenterModel {
     /// `hermesProviderRows`, shared by Settings and the Quota page.
     func loadHermesProviderRows() async throws {
         guard let client = dockModel?.quickWorkflowClient else { return }
+        let profile = dockModel?.profileScopeID
+        let binding = clientBindingGeneration
+        let identity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        var params: [String: Any] = ["include_unconfigured": true]
+        if !GatewayConnectionStore.isLocalBackend {
+            params["profile"] = HermesRemoteProviderService.profileName(profile)
+        } else if let profile {
+            params["profile"] = profile
+        }
         let result = try await client.request(
             HermesFeatureIDs.ID.modelOptions.rawValue,
-            params: ["include_unconfigured": true]
+            params: params
         )
+        guard isCurrentClient(identity, bindingGeneration: binding), dockModel?.profileScopeID == profile else {
+            return
+        }
         hermesProviderRows = HermesProviderRow.rows(from: result)
     }
 
@@ -175,18 +325,46 @@ extension ControlCenterModel {
     /// Saves (nil removes) a provider key through Hermes, exactly as Settings →
     /// Providers does, then re-reads the catalog and quota.
     func saveHermesProviderKey(_ key: String?, row: HermesProviderRow) async throws {
-        if key == nil { clearHermesStoredKey(slug: row.slug) }
-        guard let client = dockModel?.quickWorkflowClient else { return }
+        if key == nil, GatewayConnectionStore.isLocalBackend { clearHermesStoredKey(slug: row.slug) }
+        guard let client = dockModel?.quickWorkflowClient else {
+            throw NSError(
+                domain: "HermesControl", code: 503,
+                userInfo: [NSLocalizedDescriptionKey: "The backend is unavailable."])
+        }
+        let profile = dockModel?.profileScopeID
+        let binding = clientBindingGeneration
+        let identity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        var params: [String: Any] = key.map { ["slug": row.slug, "api_key": $0] } ?? ["slug": row.slug]
+        if !GatewayConnectionStore.isLocalBackend {
+            params["profile"] = HermesRemoteProviderService.profileName(profile)
+        } else if let profile {
+            params["profile"] = profile
+        }
         _ = try await client.request(
             (key == nil ? HermesFeatureIDs.ID.modelDisconnect : .modelSaveKey).rawValue,
-            params: key.map { ["slug": row.slug, "api_key": $0] } ?? ["slug": row.slug]
+            params: params
         )
+        guard isCurrentClient(identity, bindingGeneration: binding), dockModel?.profileScopeID == profile else {
+            throw NSError(
+                domain: "HermesControl", code: 409,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "The backend or profile changed while saving. Check the original profile."
+                ])
+        }
+        var failures: [String] = []
         if let key {
-            let failures = await shareProviderKeyWithBots(row: row, key: key, client: client)
-            if !failures.isEmpty { throw BotKeyShareError(failures: failures) }
+            failures = await shareProviderKeyWithBots(row: row, key: key, client: client)
+            guard isCurrentClient(identity, bindingGeneration: binding), dockModel?.profileScopeID == profile else {
+                throw NSError(domain: "HermesControl", code: 409)
+            }
         }
         try? await loadHermesProviderRows()
+        guard isCurrentClient(identity, bindingGeneration: binding), dockModel?.profileScopeID == profile else {
+            throw NSError(domain: "HermesControl", code: 409)
+        }
         refreshProviderQuota()
+        if !failures.isEmpty { throw BotKeyShareError(failures: failures) }
     }
 
     /// Hermes only attaches `key_env` to providers that aren't connected yet, so
@@ -207,8 +385,14 @@ extension ControlCenterModel {
     func shareProviderKeyWithBots(row: HermesProviderRow, key: String, client: HermesRPCClientProtocol) async
         -> [String]
     {
+        let binding = clientBindingGeneration
+        let identity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        let profileID = dockModel?.profileScopeID
         guard let keyEnv = await providerKeyEnv(for: row, client: client) else {
             return ["Hermes doesn't say which environment variable \(row.name) uses"]
+        }
+        guard isCurrentClient(identity, bindingGeneration: binding), dockModel?.profileScopeID == profileID else {
+            return ["The backend or profile changed before sharing completed."]
         }
         let profiles: [[String: Any]]
         do {
@@ -219,6 +403,9 @@ extension ControlCenterModel {
         }
         var failures: [String] = []
         for profile in profiles where (profile["is_default"] as? Bool) != true {
+            guard isCurrentClient(identity, bindingGeneration: binding), dockModel?.profileScopeID == profileID else {
+                return failures + ["The backend or profile changed before sharing completed."]
+            }
             guard let name = profile["name"] as? String else { continue }
             do {
                 _ = try await client.sendHTTP(
@@ -246,7 +433,14 @@ extension ControlCenterModel {
         // A pooled key with no usage windows duplicates the provider's own
         // balance card (same credential), so only the balance card shows.
         let readerIDs = Set(reportedProviderQuotas.map(\.provider))
+        let balance = reportedProviderQuotas.first {
+            providerQuotaReaderIDs[$0.provider] == HermesRemoteProviderService.balanceReaderID
+        }
+        let singletonID = HermesRemoteProviderService.snapshotID(
+            "openrouter", profile: dockModel?.profileScopeID, slug: "openrouter", account: nil)
+        let singleton = reportedProviderQuotas.first { $0.provider == singletonID }
         let named = reportedProviderQuotas.filter { snapshot in
+            if balance != nil && snapshot.provider == singletonID { return false }
             guard let credential = snapshot.hermesCredential, snapshot.windows.isEmpty,
                 let id = QuotaWorkspacePresentation.quotaProviderID(for: credential.provider),
                 // Claude and Antigravity read other logins, not this pooled key.
@@ -258,9 +452,13 @@ extension ControlCenterModel {
                 provider: snapshot.provider,
                 displayName: providerNicknameStore.nickname(for: snapshot.provider) ?? snapshot.displayName,
                 model: snapshot.model,
-                updatedAt: snapshot.updatedAt,
-                windows: snapshot.windows + Self.balanceUsageWindows(for: snapshot, usage: tokenUsage),
-                safeDetail: snapshot.safeDetail,
+                updatedAt: snapshot.provider == balance?.provider
+                    ? min(snapshot.updatedAt, singleton?.updatedAt ?? snapshot.updatedAt) : snapshot.updatedAt,
+                windows: snapshot.windows + (snapshot.provider == balance?.provider ? singleton?.windows ?? [] : [])
+                    + Self.balanceUsageWindows(for: snapshot, usage: tokenUsage),
+                safeDetail: snapshot.provider == balance?.provider && singleton != nil
+                    ? "Credits: \(snapshot.updatedAt.formatted()); key limit: \(singleton!.updatedAt.formatted())."
+                    : snapshot.safeDetail,
                 hermesCredential: snapshot.hermesCredential
             )
         }

@@ -430,6 +430,14 @@ final class HermesCLIAdapter {
         try await run(HermesFeatureContract.enabledSkillsCommand.words)
     }
     func mcpTest(name: String) async throws -> HermesCLIResult { try await run(["hermes", "mcp", "test", name]) }
+    func openRouterUsageHelp(profileID: String?) async throws -> HermesCLIResult {
+        try await run(["hermes", "--profile", HermesRemoteProviderService.profileName(profileID), "usage", "--help"])
+    }
+    func openRouterUsage(profileID: String?) async throws -> HermesCLIResult {
+        try await run(
+            ["hermes", "--profile", HermesRemoteProviderService.profileName(profileID)]
+                + ["usage", "--provider", "openrouter", "--json"])
+    }
     func journey() async throws -> HermesCLIResult { try await run(["hermes", "journey", "--json"]) }
     func sessionStats() async throws -> HermesCLIResult { try await run(["hermes", "sessions", "stats"]) }
     func memoryStatus() async throws -> HermesCLIResult { try await run(["hermes", "memory", "status"]) }

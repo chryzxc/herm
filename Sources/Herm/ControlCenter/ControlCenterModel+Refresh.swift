@@ -192,6 +192,21 @@ extension ControlCenterModel {
         let next = normalized?.isEmpty == false ? normalized : nil
         let nextUnavailable = next == nil
         guard projectProfileID != next || projectProfileScopeUnavailable != nextUnavailable else { return }
+        providerQuotaGeneration = UUID()
+        if projectionRefreshStates["provider.quota"]?.isRefreshing == true {
+            recordProjectionFailure("provider.quota", error: "Quota read was interrupted by a profile change.")
+        }
+        let remoteIDs = Set(
+            reportedProviderQuotas.filter {
+                let reader = providerQuotaReaderIDs[$0.provider]
+                return reader == HermesRemoteProviderService.readerID
+                    || reader == HermesRemoteProviderService.balanceReaderID
+            }.map(\.provider))
+        reportedProviderQuotas.removeAll { remoteIDs.contains($0.provider) }
+        providerQuotaReaderIDs = providerQuotaReaderIDs.filter { !remoteIDs.contains($0.key) }
+        providerQuotaFreshness.checkedAt = providerQuotaFreshness.checkedAt.filter { !remoteIDs.contains($0.key) }
+        hermesProviderRows = nil
+        applyProviderQuotaPresentation()
         projectProfileID = next
         projectProfileScopeUnavailable = nextUnavailable
         projectNavigationRefreshGeneration = nil

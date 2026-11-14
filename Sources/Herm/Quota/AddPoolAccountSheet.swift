@@ -13,6 +13,7 @@ struct AddPoolAccountSheet: View {
     @State private var apiKey = ""
     @State private var useAPIKey = false
     @State private var showsLogin = false
+    @State private var showsRemoteLogin = false
     @Environment(\.dismiss) private var dismiss
 
     private static let commonProviders = ["openai-codex", "anthropic", "nous", "openrouter", "xai-oauth", "deepseek"]
@@ -56,7 +57,8 @@ struct AddPoolAccountSheet: View {
         return words.joined(separator: " ")
     }
 
-    private var accountAdded: Bool { login.exitStatus == 0 && !login.isRunning }
+    private var allowsLocalAuth: Bool { GatewayConnectionStore.isLocalBackend }
+    private var accountAdded: Bool { allowsLocalAuth && login.exitStatus == 0 && !login.isRunning }
 
     var body: some View {
         DockModal(
@@ -64,7 +66,16 @@ struct AddPoolAccountSheet: View {
             subtitle: "Connect another account to a Hermes provider pool."
         ) {
             Group {
-                if showsLogin {
+                if !allowsLocalAuth {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ModalNote(text: ProviderBackendAvailability.remoteAuthMessage, icon: .info)
+                        DockTextField("Provider id", text: $provider).textFieldStyle(.dockGlass)
+                        Button("Backend Sign-In") { showsRemoteLogin = true }
+                            .buttonStyle(.dockPrimary)
+                            .disabled(providerID.isEmpty)
+                        DockCopyButton("hermes auth add <provider>", accessibilityLabel: "Copy command")
+                    }
+                } else if showsLogin {
                     ProviderSignInFlow(
                         login: login,
                         providerName: providerID,
@@ -79,12 +90,16 @@ struct AddPoolAccountSheet: View {
             }
             .frame(height: 360, alignment: .topLeading)
         } footer: {
-            if showsLogin && !login.isRunning && !accountAdded {
+            if allowsLocalAuth && showsLogin && !login.isRunning && !accountAdded {
                 Button("Back") { showsLogin = false }
                     .buttonStyle(.dockSecondary)
             }
             Spacer()
-            if login.isRunning {
+            if !allowsLocalAuth {
+                Button("Done") { dismiss() }
+                    .buttonStyle(.dockPrimary)
+                    .keyboardShortcut(.defaultAction)
+            } else if login.isRunning {
                 Button("Cancel Sign-In") { login.cancel() }
                     .buttonStyle(.dockSecondary)
             } else if accountAdded && showsLogin {
@@ -104,9 +119,12 @@ struct AddPoolAccountSheet: View {
             }
         }
         .onAppear { if provider.isEmpty { provider = initialProvider } }
+        .dockSheet(isPresented: $showsRemoteLogin) {
+            RemoteProviderLoginSheet(control: control, provider: providerID)
+        }
         .onChange(of: login.exitStatus) {
             apiKey = ""
-            if login.exitStatus == 0 {
+            if allowsLocalAuth && login.exitStatus == 0 {
                 control.refreshProviderQuota()
                 onAdded?()
             }
@@ -115,7 +133,7 @@ struct AddPoolAccountSheet: View {
     }
 
     private func start() {
-        guard let command else { return }
+        guard allowsLocalAuth, let command else { return }
         showsLogin = true
         login.start(command: command)
     }

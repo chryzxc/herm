@@ -63,6 +63,7 @@ struct ProvidersSettingsView: View {
     @State private var keyDraft = ""
     @State private var busySlug: String?
     @State private var actionError: [String: String] = [:]
+    @State private var actionSuccess: [String: String] = [:]
     @State private var addingAccountFor: String?
     @State private var confirmingDisconnect: HermesProviderRow?
 
@@ -257,6 +258,14 @@ struct ProvidersSettingsView: View {
             if let error = actionError[row.slug] {
                 ModalNote(text: error, icon: .warning, tone: .dockWarning)
             }
+            if let success = actionSuccess[row.slug] {
+                ModalNote(text: success, icon: .info)
+            }
+            if !GatewayConnectionStore.isLocalBackend {
+                ModalNote(
+                    text: "Backend quota and OpenRouter balance appear when supported by the connected gateway.",
+                    icon: .info)
+            }
 
             HStack(spacing: 8) {
                 if row.access == .browser && !row.authenticated {
@@ -270,7 +279,8 @@ struct ProvidersSettingsView: View {
                     Button {
                         addingAccountFor = row.slug
                     } label: {
-                        DockIconLabel("Add Pool Account", icon: .plus)
+                        DockIconLabel(
+                            GatewayConnectionStore.isLocalBackend ? "Add Pool Account" : "Backend Sign-In", icon: .plus)
                     }
                     .buttonStyle(.dockSecondary)
                 }
@@ -292,11 +302,7 @@ struct ProvidersSettingsView: View {
         isLoading = true
         Task {
             do {
-                let result = try await model.quickWorkflowClient.request(
-                    HermesFeatureIDs.ID.modelOptions.rawValue,
-                    params: ["include_unconfigured": true]
-                )
-                control.hermesProviderRows = HermesProviderRow.rows(from: result)
+                try await control.loadHermesProviderRows()
                 control.refreshProviderQuota(quiet: true)
                 loadError = nil
             } catch {
@@ -309,37 +315,34 @@ struct ProvidersSettingsView: View {
     private func saveKey(_ row: HermesProviderRow) {
         let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
-        run(row, HermesFeatureIDs.ID.modelSaveKey, params: ["slug": row.slug, "api_key": key]) {
-            keyDraft = ""
-            let failures = await control.shareProviderKeyWithBots(
-                row: row, key: key, client: model.quickWorkflowClient)
-            if !failures.isEmpty {
-                actionError[row.slug] = BotKeyShareError(failures: failures).localizedDescription
-            }
-        }
-    }
-
-    private func disconnect(_ row: HermesProviderRow) {
-        control.clearHermesStoredKey(slug: row.slug)
-        run(row, HermesFeatureIDs.ID.modelDisconnect, params: ["slug": row.slug]) {}
-    }
-
-    private func run(
-        _ row: HermesProviderRow, _ method: HermesFeatureIDs.ID, params: [String: Any],
-        onSuccess: @escaping () async -> Void
-    ) {
         busySlug = row.slug
         actionError[row.slug] = nil
+        actionSuccess[row.slug] = nil
         Task {
             do {
-                _ = try await model.quickWorkflowClient.request(method.rawValue, params: params)
-                await onSuccess()
-                load()
-                control.refreshProviderQuota()
+                try await control.saveHermesProviderKey(key, row: row)
+                keyDraft = ""
+                actionSuccess[row.slug] = "Key saved on the backend. Quota and balance are checked separately."
+            } catch let error as BotKeyShareError {
+                keyDraft = ""
+                actionError[row.slug] = HermesDiagnosticsService.safeSummary(error.localizedDescription)
             } catch {
-                actionError[row.slug] = error.localizedDescription
+                actionError[row.slug] = HermesDiagnosticsService.safeSummary(error.localizedDescription)
             }
             busySlug = nil
         }
     }
+
+    private func disconnect(_ row: HermesProviderRow) {
+        busySlug = row.slug
+        actionError[row.slug] = nil
+        actionSuccess[row.slug] = nil
+        Task {
+            do { try await control.saveHermesProviderKey(nil, row: row) } catch {
+                actionError[row.slug] = HermesDiagnosticsService.safeSummary(error.localizedDescription)
+            }
+            busySlug = nil
+        }
+    }
+
 }

@@ -179,6 +179,8 @@ struct ProviderConnectSheet: View {
     @State private var testStartedAt: Date?
     @State private var saveError: String?
     @State private var isSaving = false
+    @State private var remoteKeySaved = false
+    @State private var showsRemoteLogin = false
     @State private var quotaCheckedAt: [String: Date] = [:]
     @Environment(\.dismiss) private var dismiss
 
@@ -192,7 +194,17 @@ struct ProviderConnectSheet: View {
         ) {
             switch descriptor.connect {
             case .apiKey(let instruction, _): apiKeySection(instruction)
-            case .login(let command, let instruction): loginSection(command, instruction)
+            case .login(let command, let instruction):
+                if allowsLogin {
+                    loginSection(command, instruction)
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ModalNote(text: ProviderBackendAvailability.remoteAuthMessage, icon: .info)
+                        if descriptor.id == "codex-hermes" {
+                            Button("Backend Sign-In") { showsRemoteLogin = true }.buttonStyle(.dockPrimary)
+                        }
+                    }
+                }
             case .openApp(_, let instruction): openAppSection(instruction)
             }
         } footer: {
@@ -212,12 +224,16 @@ struct ProviderConnectSheet: View {
                     }
                     .buttonStyle(.dockSecondary)
                 }
-                Button("Save & Test") { saveAPIKey() }
+                Button(GatewayConnectionStore.isLocalBackend ? "Save & Test" : "Save Key") { saveAPIKey() }
                     .buttonStyle(.dockPrimary)
                     .keyboardShortcut(.defaultAction)
                     .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             case .login(let command, _):
-                if login.isRunning {
+                if !allowsLogin {
+                    Button("Done") { dismiss() }
+                        .buttonStyle(.dockPrimary)
+                        .keyboardShortcut(.defaultAction)
+                } else if login.isRunning {
                     Button("Cancel Sign-In") { login.cancel() }
                         .buttonStyle(.dockSecondary)
                 } else if login.exitStatus == 0 {
@@ -225,7 +241,7 @@ struct ProviderConnectSheet: View {
                         .buttonStyle(.dockPrimary)
                         .keyboardShortcut(.defaultAction)
                 } else if login.exitStatus == nil && login.failureText == nil {
-                    Button("Log In") { login.start(command: command) }
+                    Button("Log In") { startLogin(command) }
                         .buttonStyle(.dockPrimary)
                         .keyboardShortcut(.defaultAction)
                 }
@@ -236,22 +252,47 @@ struct ProviderConnectSheet: View {
             }
         }
         .onAppear { refreshStoredKeyState() }
+        .dockSheet(isPresented: $showsRemoteLogin) {
+            RemoteProviderLoginSheet(control: control, provider: "openai-codex")
+        }
         .onReceive(control.providerQuotaFreshness.$checkedAt) { quotaCheckedAt = $0 }
-        .onChange(of: login.exitStatus) { control.refreshProviderQuota() }
+        .onChange(of: login.exitStatus) {
+            if allowsLogin { control.refreshProviderQuota() }
+        }
+    }
+
+    private var allowsLogin: Bool {
+        ProviderBackendAvailability(isLocalBackend: GatewayConnectionStore.isLocalBackend).allowsLogin(for: descriptor)
+    }
+
+    private func startLogin(_ command: String) {
+        guard allowsLogin else { return }
+        login.start(command: command)
     }
 
     private func saveAPIKey() {
         let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
-        testStartedAt = .now
+        testStartedAt = GatewayConnectionStore.isLocalBackend ? .now : nil
+        remoteKeySaved = false
         apiKeyInput = ""
         saveError = nil
         isSaving = true
+        let binding = control.clientBindingGeneration
+        let identity = control.dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        let profile = control.dockModel?.profileScopeID
         Task {
             defer { isSaving = false }
             // Providers is the source of truth: make sure its catalog is loaded
             // so the key lands in Hermes instead of a Herm-only store.
             if hermesRow == nil { try? await control.loadHermesProviderRows() }
+            guard control.isCurrentClient(identity, bindingGeneration: binding),
+                control.dockModel?.profileScopeID == profile
+            else {
+                testStartedAt = nil
+                saveError = "The backend or profile changed before the key was saved."
+                return
+            }
             guard let row = hermesRow else {
                 testStartedAt = nil
                 saveError = "Couldn't reach Hermes to save this key. Check Settings → Providers."
@@ -259,6 +300,7 @@ struct ProviderConnectSheet: View {
             }
             do {
                 try await control.saveHermesProviderKey(key, row: row)
+                remoteKeySaved = !GatewayConnectionStore.isLocalBackend
                 refreshStoredKeyState()
             } catch {
                 testStartedAt = nil
@@ -312,7 +354,7 @@ struct ProviderConnectSheet: View {
         if control.refreshState(for: "provider.quota")?.isRefreshing != true {
             return (
                 false,
-                control.providerQuotaDiagnostics[descriptor.id]
+                control.providerQuotaDiagnostic(for: descriptor.id)
                     ?? "The key was saved, but quota couldn't be read with it."
             )
         }
@@ -331,6 +373,11 @@ struct ProviderConnectSheet: View {
                 .onSubmit { saveAPIKey() }
             }
             VStack(alignment: .leading, spacing: 6) {
+                if remoteKeySaved {
+                    ModalNote(
+                        text: "Key saved to the Hermes backend. " + ProviderBackendAvailability.remoteQuotaMessage,
+                        icon: .checkCircle, tone: .dockSuccess)
+                }
                 if testStartedAt != nil {
                     if let result = testResult {
                         ModalNote(
@@ -366,7 +413,7 @@ struct ProviderConnectSheet: View {
                 providerName: descriptor.displayName,
                 mark: ProviderMark(providerID: descriptor.id, displayName: descriptor.displayName),
                 successDetail: "Signed in. Quota is refreshing.",
-                onRetry: { login.start(command: command) }
+                onRetry: { startLogin(command) }
             )
             .frame(height: 300, alignment: .topLeading)
         } else {

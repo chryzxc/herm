@@ -2003,6 +2003,11 @@ connected/attention/available sentence, a Custom/Health order toggle, an
 auto-refresh menu (Off, 1, 5, or 15 minutes; it runs only while the page is
 open), the last-updated time (warning hue when stale), and refresh.
 
+- **Remote backend.** Display Hermes-reported backend quota and supported
+  OpenRouter credit balance without substituting this Mac's backend credentials.
+  Claude Code and Antigravity remain local. Backend device sign-in requires an
+  advertised device-code flow; otherwise provide backend-host recovery. API keys
+  save to the backend. Activity → Spend is recorded usage, not remaining quota.
 - **Overview.** One `dockCard` row with three measured figures: Most headroom
   (the provider whose tightest window has the most left), Needs attention
   (count and names), and Next recovery (soonest reset of a low or exhausted
