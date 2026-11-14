@@ -32,6 +32,9 @@ struct SessionInspector: View {
     var workspaceContent: (Section) -> AnyView = { _ in AnyView(EmptyView()) }
     /// The workspace tab now showing, or nil when none is.
     var onWorkspaceSection: (Section?) -> Void = { _ in }
+    /// Voice is live; Talk is never persisted, so a remount (leaving full
+    /// voice mode) must keep it open instead of ending the conversation.
+    var keepsTalkOpen = false
 
     struct TabRequest: Equatable {
         let session: String
@@ -375,6 +378,13 @@ struct SessionInspector: View {
                 reopen(.diff)
             } else if selectedSection == .diff {
                 selectedSection = .changes
+            }
+            if keepsTalkOpen {
+                if !simulatorSections.contains(Section.talk.rawValue) {
+                    simulatorSections.append(Section.talk.rawValue)
+                }
+                selectedSection = .talk
+                selectedExtraID = nil
             }
             if selectedSection.isOnDemand, !simulatorSections.contains(selectedSection.rawValue) {
                 selectedSection = .timeline

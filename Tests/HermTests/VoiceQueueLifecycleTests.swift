@@ -28,6 +28,14 @@ private final class VoiceQueueRPCClient: HermesRPCClientProtocol {
         }
         if method == "voice.toggle" { return ["available": true, "stt_available": true, "tts": true] }
         if method == "slash.exec", let command = params["command"] as? String {
+            if command == "voice on", !canEnableRecorder {
+                throw NSError(
+                    domain: "HermVoice", code: 501,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "This Hermes runtime does not support session-scoped voice recording."
+                    ])
+            }
             voiceMode = command == "voice on" && canEnableRecorder ? "voice_only" : "off"
             return [:]
         }

@@ -145,6 +145,7 @@ struct SessionNavRail: View {
     let workspaceStore: WorkspaceStore
     let isWorkspaceVisible: Bool
     @ObservedObject var agentUpdateService: HermesUpdateService
+    @ObservedObject var appUpdater = HermAppUpdater.shared
     @ObservedObject var navigationState: SessionNavigationState
     @ObservedObject var dockThemeStore: DockThemeStore
     @AppStorage(DockRailDestination.pinsKey) private var pinnedDestinations = DockRailDestination.defaultPins
@@ -221,7 +222,7 @@ struct SessionNavRail: View {
                 destination(
                     "Settings and appearance", icon: .gear,
                     isSelected: navigationState.selection.isGlobalSelected(.core),
-                    showsUpdateBadge: agentUpdateService.phase == .updateAvailable, style: style
+                    showsUpdateBadge: agentUpdateService.phase == .updateAvailable || appUpdater.hasUpdate, style: style
                 ) {
                     showsViewMenu.toggle()
                 }

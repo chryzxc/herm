@@ -168,8 +168,9 @@ Hermes Desktop (`inline-preview-directive.tsx`):
   current skin, zero margins, then the widget's own styles. The theme reloads the frame.
 - The widget reports its body height (`hermes-inline-preview-size`); Herm clamps it to
   120–1200 pt, starting at 280. Width follows the transcript column.
-- `window.hermes.send(prompt)` and `data-hermes-send="prompt"` send the prompt as a normal
-  user turn in the reply's session. Prompts are trimmed, capped at 500 characters and
+- `window.hermes.send(prompt)` and `data-hermes-send="prompt"` request a normal
+  user turn in the reply's session. Each request needs native confirmation; opening a view
+  does not grant future actions. Prompts are trimmed, capped at 500 characters and
   throttled to one per second; the frame gets `{ok}` or `{ok:false, error}` back.
   Herm shows the turn in the transcript (Hermes Desktop hides it), and sends only while
   that reply is still in the current session.
@@ -197,6 +198,9 @@ Supported host methods: `ui/initialize` (theme, locale, time zone, tool info),
 and `notifications/message`. `tools/call`, `resources/read`, `ui/message` and other requests
 get JSON-RPC `-32601`. Network domains declared in `_meta.ui.csp` are listed on the card
 but not granted.
+
+Each `ui/open-link` request requires native confirmation of the full URL; cancel denies it.
+Opening the app view does not grant later link requests. See issue #155.
 
 ## Expanded native formats and session Artifacts
 

@@ -61,8 +61,18 @@ struct VoicePillQueue: Equatable {
                 tone: tone, target: target, slot: slot, expiresAt: expiresAt))
     }
 
+    /// Running cards stay until their work ends, so a long step never
+    /// leaves the stage looking stuck.
     mutating func expire(now: Date = .now) {
-        pills.removeAll { $0.expiresAt <= now }
+        pills.removeAll { !$0.isRunning && $0.expiresAt <= now }
+    }
+
+    /// The turn ended: running cards stop and fade on the normal lifetime.
+    mutating func settleRunning(now: Date = .now) {
+        for index in pills.indices where pills[index].isRunning {
+            pills[index].isRunning = false
+            pills[index].expiresAt = now.addingTimeInterval(Self.lifetime)
+        }
     }
 
     /// Keep the newest cards and move them into distinct allowed slots.
@@ -106,6 +116,8 @@ struct VoicePillQueue: Equatable {
 struct VoiceActivityPillsLayer: View {
     @ObservedObject var model: DockModel
     var cardWidth: CGFloat = 280
+    /// One card centered at the bottom, for panes too narrow for side columns.
+    var isCompact = false
     var cronJobs: [CronSummary] = []
     /// The HUD deck sits on the left, so cards keep to the right corners.
     var leavesLeftFree = false
@@ -115,7 +127,16 @@ struct VoiceActivityPillsLayer: View {
     var body: some View {
         GeometryReader { geometry in
             let width = min(cardWidth, max(0, (geometry.size.width - 12) / 2))
-            if isEnabled {
+            if isEnabled, isCompact {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    if let pill = queue.pills.last {
+                        VoicePillCard(pill: pill, maxWidth: min(cardWidth, geometry.size.width))
+                            .allowsHitTesting(pill.target != nil)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isEnabled {
                 HStack(spacing: 0) {
                     pillColumn(slots: leavesLeftFree ? [] : [0, 3], width: width, height: geometry.size.height)
                     Spacer(minLength: 12)
@@ -126,6 +147,11 @@ struct VoiceActivityPillsLayer: View {
         // Replacement cards must not animate on top of their outgoing card.
         .transaction { $0.animation = nil }
         .onChange(of: leavesLeftFree) { _, _ in queue.restrict(to: allowedSlots) }
+        .onChange(of: model.status == .working) { _, isWorking in
+            guard !isWorking else { return }
+            queue.settleRunning()
+            scheduleExpiry(after: VoicePillQueue.lifetime)
+        }
         .onChange(of: model.activeToolCalls) { old, new in
             // `__thinking` / `__compaction` are internal activity markers.
             for call in new where !call.name.hasPrefix("__") {
@@ -262,7 +288,6 @@ struct VoiceActivityPillsLayer: View {
                     ? "\(tests.failed) test\(tests.failed == 1 ? "" : "s") failed" : "All \(tests.passed) tests passed",
                 detail: tests.failed > 0 ? "\(tests.passed) passed" : nil, tone: tests.failed > 0 ? .danger : .success)
         }
-        guard !ToolStep.hasCard(call.name) else { return }
         let step = ToolStep.describe(call)
         if name == "web_extract", call.isComplete {
             let target = call.args?["urls"].flatMap(VoicePillQueue.target(in:))
@@ -310,7 +335,10 @@ struct VoiceActivityPillsLayer: View {
         queue.push(
             key: key, icon: icon, title: title, detail: detail, isRunning: isRunning, tone: tone, target: target,
             slots: allowedSlots)
-        let lifetime = target == nil ? VoicePillQueue.lifetime : VoicePillQueue.targetLifetime
+        scheduleExpiry(after: target == nil ? VoicePillQueue.lifetime : VoicePillQueue.targetLifetime)
+    }
+
+    private func scheduleExpiry(after lifetime: TimeInterval) {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(lifetime + 0.05))
             queue.expire()
@@ -434,5 +462,39 @@ struct VoiceRecentTranscript: View {
                 ($0.role == .user || $0.role == .hermes) && !$0.isError
                     && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }.suffix(limit))
+    }
+}
+
+/// Sizes for the voice stage so the centered column, activity cards, and a
+/// generative panel never overlap, whatever the pane size.
+struct VoiceStageLayout: Equatable {
+    /// Side-by-side generative panel; otherwise it takes the reply caption's slot.
+    let showsPanelBeside: Bool
+    /// Activity cards sit below the controls instead of beside the column.
+    let isCompact: Bool
+    let cardWidth: CGFloat
+    let columnWidth: CGFloat
+    let orbSide: CGFloat
+    /// Space kept under the controls for the compact activity card.
+    let compactCardSlot: CGFloat
+
+    static let minStageWidth: CGFloat = 420
+    static let minCardWidth: CGFloat = 160
+    /// Status strip, status slot, captions, controls, and spacers.
+    static let chromeHeight: CGFloat = 330
+
+    init(size: CGSize, immersive: Bool, hasPanel: Bool, cardsEnabled: Bool = true) {
+        showsPanelBeside = hasPanel && size.width >= Self.minStageWidth * 2
+        // The panel and stage split a side-by-side row evenly.
+        let stageWidth = max(0, showsPanelBeside ? size.width / 2 : size.width)
+        let inset: CGFloat = immersive ? 24 : 12
+        columnWidth = max(0, min(immersive ? 560 : 360, stageWidth - 32))
+        let sideWidth = min(immersive ? 280 : 200, (stageWidth - columnWidth) / 2 - inset - 12)
+        isCompact = sideWidth < Self.minCardWidth
+        cardWidth = isCompact ? max(0, min(320, stageWidth - 2 * inset)) : sideWidth
+        compactCardSlot = isCompact && cardsEnabled ? 76 : 0
+        let maxOrb = 320 * (immersive ? 0.85 : 0.65)
+        let fitting = min(size.height - Self.chromeHeight - compactCardSlot, stageWidth - 32)
+        orbSide = min(maxOrb, max(120, fitting))
     }
 }

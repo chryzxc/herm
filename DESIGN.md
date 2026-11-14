@@ -2401,6 +2401,8 @@ place, without a card or header, clipped to the pane radius, full column width, 
 sized by the widget's height reports within 120–1200 pt (280 pt before the first
 report). Below the cap, wheel events scroll the transcript rather than the frame.
 Non-HTML targets and unreadable files use the standard attachment card.
+Widget message requests show a native per-action review with the complete prompt and
+conversation; Cancel denies the request. Rendering is not authorization.
 
 MCP App views (tool results carrying a `herm.mcp-app.v1` receipt) render as one
 `.dockCard` per call below the turn's activity summary, in the same place whether
@@ -2412,6 +2414,8 @@ a metadata note; a missing cache shows "This app view is unavailable on this Mac
 Theme variables and reduced-motion defaults are injected into the saved document;
 changing themes reloads an open HTML preview. Authored styles may customize the
 interactive content itself. See `docs/generative-ui.md` for isolation and removal.
+External links requested by an MCP view require a native per-action review of the
+complete URL; opening the view does not authorize links.
 
 #### Generated card motion
 
@@ -2973,7 +2977,18 @@ recording uses session-scoped controls. Process-wide speech toggles are never
 used. Recognized words cannot be held indefinitely by background noise.
 Voice keeps captions and labeled controls in a centered column, without floating
 activity cards overlapping the conversation or a worktree chip above it. Activity card shadows extend beyond
-their scroll columns without being clipped. Microphone startup and permission
+their scroll columns without being clipped. When the pane is too narrow for side
+columns, the newest card sits in a fixed slot below the controls; the orb shrinks
+to the available height, the stage scrolls rather than clipping, End voice wraps
+to its own row (controls otherwise sit in one call-style row: mic and reply
+toggles, the turn action, full-screen, then End voice; muted toggles show a
+slashed icon), and a generative panel takes the reply caption's slot instead of
+squeezing the stage. Every tool step gets an activity card; running cards stay
+until their step completes or the turn ends. Leaving full voice mode keeps the
+Talk tab open and the conversation live; only entering full voice mode fades,
+leaving it restores the workspace without an animated relayout. Words before a pause stay in the
+utterance when on-device recognition restarts its partial text, and a final
+answer that differs from the streamed text only in whitespace is not spoken twice. Microphone startup and permission
 errors occupy the existing status slot with Retry microphone. Muting releases
 capture in every phase and rejects late speech callbacks. Speech that interrupts
 local playback retains the same recognition request so opening words are kept;

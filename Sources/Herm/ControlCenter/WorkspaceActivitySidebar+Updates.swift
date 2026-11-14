@@ -12,6 +12,8 @@ extension WorkspaceActivitySidebar {
             case .unavailable(let reason): (reason, .dockMetadataText)
             case .checking: ("Checking \(HermAppUpdater.repository)…", .dockSecondaryText)
             case .upToDate: ("Up to date", .dockSecondaryText)
+            case .available(let version):
+                ("Herm \(version) is available. Download and install it manually.", .dockWarning)
             case .downloading: ("Downloading Herm \(appUpdater.latest?.version ?? "")…", .dockSecondaryText)
             case .readyToInstall(let version):
                 ("Herm \(version) is ready. It installs and restarts once the current turn finishes.", .dockWarning)
@@ -31,6 +33,12 @@ extension WorkspaceActivitySidebar {
                     Button("Restart now") { appUpdater.installNow() }
                         .buttonStyle(.dockPrimary)
                         .controlSize(.small)
+                } else if case .available = appUpdater.phase,
+                    let url = appUpdater.latest?.pageURL
+                        ?? URL(string: "https://github.com/\(HermAppUpdater.repository)/releases")
+                {
+                    Button("Download") { NSWorkspace.shared.open(url) }
+                        .buttonStyle(.dockPrimary)
                 } else if appUpdater.canCheck && !isUnavailable {
                     Button("Check for updates") { appUpdater.checkForUpdates() }
                         .buttonStyle(.dockCompact)

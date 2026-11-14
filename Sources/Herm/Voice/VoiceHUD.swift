@@ -72,12 +72,6 @@ enum ToolStep {
         guard let host = link.flatMap({ URL(string: $0)?.host() }) else { return nil }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
-
-    /// Tools with their own HUD card, kept out of the pills.
-    static func hasCard(_ name: String) -> Bool {
-        let lower = name.lowercased()
-        return lower.hasPrefix("browser_") || ["web_search", "terminal", "image_generate"].contains(lower)
-    }
 }
 
 /// Reads fields out of a stored tool result. Results are JSON truncated at

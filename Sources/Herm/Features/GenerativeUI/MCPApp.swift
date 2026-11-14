@@ -71,6 +71,9 @@ final class MCPAppBridge: GeneratedHTMLBridge {
     var send: (([String: Any]) -> Void)?
     var resize: ((CGFloat) -> Void)?
     var openLink: ((URL) -> Void)?
+    var authorize: ((GeneratedHTMLActionApproval.Action) async -> Bool)?
+    private var active = true
+    private var pending = false
     var hostContext: () -> [String: Any]
 
     init(call: MCPApp.Call, hostContext: @escaping () -> [String: Any]) {
@@ -79,7 +82,7 @@ final class MCPAppBridge: GeneratedHTMLBridge {
     }
 
     func receive(_ message: [String: Any]) {
-        guard message["jsonrpc"] as? String == "2.0" else { return }
+        guard active, message["jsonrpc"] as? String == "2.0" else { return }
         let id = message["id"]
         let params = message["params"] as? [String: Any] ?? [:]
         switch message["method"] as? String {
@@ -100,11 +103,21 @@ final class MCPAppBridge: GeneratedHTMLBridge {
                 resize?(CGFloat(height))
             }
         case "ui/open-link":
+            guard let id, id is String || (id is NSNumber && CFGetTypeID(id as CFTypeRef) != CFBooleanGetTypeID())
+            else { return }
             guard let text = params["url"] as? String, let url = RichResourcePolicy.url(text) else {
                 return fail(id, code: -32602, "Herm opens only public HTTPS links.")
             }
-            openLink?(url)
-            respond(id, result: [:])
+            guard !pending, openLink != nil else { return fail(id, code: -32000, "Action unavailable or busy.") }
+            pending = true
+            Task {
+                defer { pending = false }
+                let approved = await authorize?(.openLink(url: url, source: "\(call.server) · \(call.title)")) ?? false
+                guard active, !Task.isCancelled else { return }
+                guard approved, let openLink else { return fail(id, code: -32000, "Action cancelled.") }
+                openLink(url)
+                respond(id, result: [:])
+            }
         case "ping":
             respond(id, result: [:])
         case "notifications/message":
@@ -115,6 +128,8 @@ final class MCPAppBridge: GeneratedHTMLBridge {
             break
         }
     }
+
+    func invalidate() { active = false }
 
     private func object(_ data: Data) -> [String: Any] {
         (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
@@ -182,6 +197,7 @@ struct MCPAppCard: View {
                         Text(error).dockFont(.body).foregroundStyle(Color.dockWarning)
                     } else {
                         GeneratedHTMLWebView(html: call.html, state: state, bridge: bridge(call))
+                            .id("\(appID):\(callID):\(DockThemeRuntime.revision)")
                             .frame(height: height)
                             .overlay {
                                 if state.loading { ProgressView().controlSize(.small).allowsHitTesting(false) }

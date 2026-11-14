@@ -398,6 +398,8 @@ final class MicLevelMeter: ObservableObject {
     /// Text from earlier recognition requests in this utterance; the
     /// recognizer ends a request on long pauses and errors.
     private var committedTranscript = ""
+    /// The current request's latest partial text.
+    private var requestText = ""
     private var recognitionFailures = 0
     private var requestHeardSpeech = false
     private var requestStartedAt: TimeInterval = 0
@@ -462,6 +464,7 @@ final class MicLevelMeter: ObservableObject {
         feed.request?.endAudio()
         feed.request = nil
         committedTranscript = ""
+        requestText = ""
         transcript = ""
         turnAudio.reset()
         turnVerdict = nil
@@ -481,6 +484,7 @@ final class MicLevelMeter: ObservableObject {
         request.taskHint = .dictation
         if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
         feed.request = request
+        requestText = ""
         requestHeardSpeech = false
         requestStartedAt = ProcessInfo.processInfo.systemUptime
         let requestID = ObjectIdentifier(request)
@@ -518,6 +522,14 @@ final class MicLevelMeter: ObservableObject {
         guard isEndpointing || isWatchingForBarge else { return }
         requestHeardSpeech = true
         recognitionFailures = 0
+        // On-device recognition can restart its partial text after a pause
+        // without ending the request; keep the words said before the pause.
+        if VoiceEndpointDetector.startsNewSegment(
+            previous: requestText, next: text, pause: ProcessInfo.processInfo.systemUptime - lastWordAt)
+        {
+            committedTranscript = transcript
+        }
+        requestText = text
         let updated = [committedTranscript, text].filter { !$0.isEmpty }.joined(separator: " ")
         if updated != transcript {
             lastWordAt = ProcessInfo.processInfo.systemUptime
@@ -763,6 +775,21 @@ struct VoiceEndpointDetector {
     }
 
     /// Whether the last word leaves the sentence hanging.
+    /// A partial that no longer begins like the previous one, after a pause,
+    /// is a fresh segment rather than a revision of the earlier words.
+    // ponytail: first-word heuristic; a late revision of the first word after
+    // a pause would repeat it. Use segment timestamps if that shows up.
+    static func startsNewSegment(previous: String, next: String, pause: TimeInterval) -> Bool {
+        guard pause >= 0.5 else { return false }
+        func words(_ text: String) -> [Substring] {
+            text.lowercased().split { !$0.isLetter && !$0.isNumber && $0 != "'" }
+        }
+        let old = words(previous)
+        let new = words(next)
+        guard let first = old.first, let start = new.first else { return false }
+        return start != first && new.count <= old.count
+    }
+
     static func trailsOff(_ transcript: String) -> Bool {
         guard let last = transcript.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" }).last else {
             return false

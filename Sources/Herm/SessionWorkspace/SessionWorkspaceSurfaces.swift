@@ -86,7 +86,7 @@ struct SessionPullRequestsSurface: View {
                 Text(error)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
-                    .dockPadding(.horizontal, DockSpacing.tight)
+                    .dockPadding(.horizontal, DockSpacing.inspectorInset)
                     .dockPadding(.vertical, DockSpacing.control)
             }
             ScrollView {
@@ -115,7 +115,7 @@ struct SessionPullRequestsSurface: View {
                         }
                     }
                 }
-                .dockPadding(.horizontal, DockSpacing.tight)
+                .dockPadding(.horizontal, DockSpacing.inspectorInset)
                 .dockPadding(.vertical, 6)
             }
         }
@@ -131,7 +131,7 @@ struct SessionPullRequestsSurface: View {
             }
         }
         .dockFont(.body)
-        .dockPadding(.horizontal, DockSpacing.tight)
+        .dockPadding(.horizontal, DockSpacing.inspectorInset)
         .dockPadding(.vertical, 10)
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
@@ -170,7 +170,7 @@ struct SessionIssuesSurface: View {
                         Text(error)
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockWarning)
-                            .dockPadding(.horizontal, DockSpacing.tight)
+                            .dockPadding(.horizontal, DockSpacing.inspectorInset)
                             .dockPadding(.vertical, DockSpacing.control)
                     }
                     ScrollView {
@@ -198,7 +198,7 @@ struct SessionIssuesSurface: View {
                                 }
                             }
                         }
-                        .dockPadding(.horizontal, DockSpacing.tight)
+                        .dockPadding(.horizontal, DockSpacing.inspectorInset)
                         .dockPadding(.vertical, 6)
                     }
                 }
@@ -232,7 +232,7 @@ struct SessionIssuesSurface: View {
             }
         }
         .dockFont(.body)
-        .dockPadding(.horizontal, DockSpacing.tight)
+        .dockPadding(.horizontal, DockSpacing.inspectorInset)
         .dockPadding(.vertical, 10)
         .background(Color.dockCanvas)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }

@@ -40,6 +40,7 @@ struct HermesInlinePreviewTests {
         var clock = Date(timeIntervalSince1970: 100)
         bridge.send = { sent.append($0) }
         bridge.resize = { heights.append($0) }
+        bridge.authorize = { _ in true }
         bridge.submit = {
             prompts.append($0)
             return true
@@ -102,6 +103,7 @@ struct HermesInlinePreviewTests {
         let coordinator = GeneratedHTMLWebView.Coordinator(html: html, state: state)
         coordinator.bridge = bridge
         let web = coordinator.makeWebView()
+        bridge.authorize = { _ in true }
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 280), styleMask: [.borderless],
             backing: .buffered, defer: false)

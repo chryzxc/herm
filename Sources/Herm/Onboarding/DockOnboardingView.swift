@@ -142,8 +142,10 @@ struct DockOnboardingView: View {
             }
             .disabled(setup.busy)
             if !setup.connected && !setup.busy {
-                Text("New to Hermes? Install and configure Hermes Agent, then check again.")
-                    .foregroundStyle(Color.dockSecondaryText)
+                Text(
+                    "New to Hermes? Install and configure Hermes Agent, then check again. Using a remote, SSH, or Cloud gateway? Choose it in Connection settings."
+                )
+                .foregroundStyle(Color.dockSecondaryText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

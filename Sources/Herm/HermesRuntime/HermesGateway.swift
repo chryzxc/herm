@@ -118,6 +118,10 @@ final class HermesGateway: NSObject {
             if !(error is CancellationError) {
                 lastFailure = HermesDiagnosticsService.safeSummary(error.localizedDescription)
                 onConnectionChange?(false)
+                // A remote gateway that is unreachable at launch (network not up yet,
+                // gateway restarting, sign-in pending) otherwise stays offline until
+                // the user acts. Local mode is excluded: retrying relaunches Hermes.
+                if !isLocal, reconnectTask == nil { scheduleReconnect() }
             }
             throw error
         }
@@ -476,15 +480,17 @@ final class HermesGateway: NSObject {
             var delay = 1.0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(delay))
-                guard !Task.isCancelled, let self, self.socket == nil else { return }
+                guard !Task.isCancelled, let self, self.socket == nil else { break }
                 do {
                     try await self.connect()
-                    return
+                    break
                 } catch {
                     DebugLog.write("reconnect: failed, retrying in \(Int(min(delay * 2, 30)))s")
                 }
                 delay = min(delay * 2, 30)
             }
+            // Lets a later connect failure start a fresh loop; a cancelled loop was replaced.
+            if !Task.isCancelled { self?.reconnectTask = nil }
         }
     }
 

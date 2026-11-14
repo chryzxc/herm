@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.2.1](https://github.com/chryzxc/herm/compare/v0.2.0...v0.2.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* consistent padding in inspector pull request and issue tabs ([b018727](https://github.com/chryzxc/herm/commit/b018727104fe9ead360fe49e20e861715d2c85b2))
+* keep spoken words across pauses and stop repeating replies ([f68d888](https://github.com/chryzxc/herm/commit/f68d888499e357bb00ce56d3e765d16e1d0ab777))
+* keep talk tab layout from overlapping on small panes ([2965b49](https://github.com/chryzxc/herm/commit/2965b49f1e6dc2a27ecccf999fe6d363ed0826a3))
+* keep the talk tab open when leaving full voice mode ([73e509e](https://github.com/chryzxc/herm/commit/73e509e1a2f887596731e2bf4492a31a8d7dcd5a))
+* lay out shell content inside the card margin ([54acc91](https://github.com/chryzxc/herm/commit/54acc91c5b1c7d08082f206873777bb4776e4133))
+* lay out voice controls as one call-style row ([f33da91](https://github.com/chryzxc/herm/commit/f33da9104a21eab2a1f956963dbe00fe41412f43))
+* match inspector inset in pull request and issue lists ([5054081](https://github.com/chryzxc/herm/commit/5054081468b749786a2e1933170a34ad481a87f6))
+* overlay scroller in inspector pull request and issue details ([2e12a03](https://github.com/chryzxc/herm/commit/2e12a035cc09f57c6eb0823cd34add55dabeadf4))
+* preserve native conversation scrollbar behavior ([b6f5aff](https://github.com/chryzxc/herm/commit/b6f5aff6214b7d5f112199924b4a5105b07e444f))
+* preserve native conversation scrollbar behavior ([b9c6785](https://github.com/chryzxc/herm/commit/b9c678546ef7c2302c17e696bda73c16c0c1a5ad))
+* preserve skin preview appearance in dark mode ([8782e9a](https://github.com/chryzxc/herm/commit/8782e9adb67af73e6759dc3ade9b46e500f53ffc))
+* preserve skin preview appearance in dark mode ([4ae3641](https://github.com/chryzxc/herm/commit/4ae36419bdc5bdeff9f44f671eb862336bc6f6ae))
+* retry remote gateway connections and reconnect after sign-in ([9316382](https://github.com/chryzxc/herm/commit/93163825632fdc080ec4297d5dff59c6d3426bd0))
+* retry remote gateway connections and reconnect after sign-in ([f5846c3](https://github.com/chryzxc/herm/commit/f5846c379eebc3ae46ad675a5c8fa3f140f0fc82))
+* **security:** require approval for generated content actions ([cb94d14](https://github.com/chryzxc/herm/commit/cb94d140a7ed3c3d509474f12be2766ec00faab9))
+* show voice activity cards for every step until it ends ([03b42cb](https://github.com/chryzxc/herm/commit/03b42cb8a2d2043f065c8956964d18ebc24a2f0a))
+* soften voice activity card shadow ([25aa9ee](https://github.com/chryzxc/herm/commit/25aa9eeea38182e42dcd3f011cc14db6b8970e74))
+* start voice without unsupported config lookup ([23ee731](https://github.com/chryzxc/herm/commit/23ee7318c02cd3ba753b596f47627ac05203200b))
+* start voice without unsupported config lookup ([a2d56a2](https://github.com/chryzxc/herm/commit/a2d56a2e3a8f2baa246bc4f09cf276d68f02fd9d))
+* stop animating the workspace remount when leaving full voice mode ([f9e02e8](https://github.com/chryzxc/herm/commit/f9e02e89adb73cc648315fb7a87eefa895be34a0))
+* surface herm updates for nightly and unsigned builds ([d8bb32d](https://github.com/chryzxc/herm/commit/d8bb32df98ca0360d5c5e7e00629e2ba3df76a38))
+* surface herm updates for nightly and unsigned builds ([f2a64fe](https://github.com/chryzxc/herm/commit/f2a64febb6fa166e5f2181758a34c1d8e2d9ff1d))
+* talk tab layout, voice capture, and activity cards ([5ca31b1](https://github.com/chryzxc/herm/commit/5ca31b1f6e1d83b8d8aeeb61d34abae76f0ac6c9))
+
+
+### Performance Improvements
+
+* coalesce sidebar refreshes to 4 hz in low power mode ([1311918](https://github.com/chryzxc/herm/commit/131191800f9a19ab41b78ba493a640b768d90258))
+* cut sidebar and inspector main-thread work with many running sessions ([63dfc4b](https://github.com/chryzxc/herm/commit/63dfc4bf155b715168c483d392ce4b2903a7e3d8))
+* group sidebar conversations in one pass over sessions ([b0ed1dd](https://github.com/chryzxc/herm/commit/b0ed1dde41ad3cc72c8b6a030dcbe1b33d2169b8))
+* key bot unread refresh by sets instead of formatted strings ([a25db60](https://github.com/chryzxc/herm/commit/a25db60792d31673088677de684d11b6fd5b91a6))
+* redraw running processes strip only for process changes ([b20ca09](https://github.com/chryzxc/herm/commit/b20ca094f4ae01d6d4bdf11b8eea6f147047a1a9))
+* redraw session inspector only for project facts changes ([0678c16](https://github.com/chryzxc/herm/commit/0678c1655e09df163b3ba7f14bc115522aad4161))
+* revalidate unread badge counts with a one-row probe ([6a97d83](https://github.com/chryzxc/herm/commit/6a97d83cb4275cf9e0e3a3433ad33a965d4d84de))
+* revalidate unread badge counts with a one-row probe ([5f15f50](https://github.com/chryzxc/herm/commit/5f15f507e9cf5c4e26bfc4d238a7ab35aa8d2271)), closes [#162](https://github.com/chryzxc/herm/issues/162)
+
 ## [0.2.0](https://github.com/chryzxc/herm/compare/v0.1.0...v0.2.0) (2026-11-13)
 
 

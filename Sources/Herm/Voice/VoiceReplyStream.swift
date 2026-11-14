@@ -52,6 +52,25 @@ struct VoiceReplyStream {
         // Hermes may replace the final answer. A corrected answer must remain
         // audible; an unchanged streamed prefix must never be spoken twice.
         if final.hasPrefix(emitted) { return String(final.dropFirst(emitted.count)) }
+        // Hermes' completed text can differ from the streamed deltas only in
+        // whitespace (a trimmed leading newline, joined segments); speaking
+        // the whole answer again then repeats what was already said.
+        if let end = Self.endOfSpokenPrefix(emitted, in: final) { return String(final[end...]) }
         return final
+    }
+
+    /// Where `spoken` ends inside `final`, comparing everything but whitespace.
+    static func endOfSpokenPrefix(_ spoken: String, in final: String) -> String.Index? {
+        var remaining = spoken.filter { !$0.isWhitespace }[...]
+        guard !remaining.isEmpty else { return nil }
+        var index = final.startIndex
+        while index < final.endIndex, let next = remaining.first {
+            let character = final[index]
+            index = final.index(after: index)
+            if character.isWhitespace { continue }
+            guard character == next else { return nil }
+            remaining = remaining.dropFirst()
+        }
+        return remaining.isEmpty ? index : nil
     }
 }

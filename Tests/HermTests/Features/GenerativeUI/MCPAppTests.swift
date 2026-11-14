@@ -44,7 +44,7 @@ struct MCPAppTests {
         #expect(MCPApp.Call.load(id: "missing", directory: directory) == nil)
     }
 
-    @Test func bridgeInitializesThenSendsInputAndResult() throws {
+    @Test func bridgeInitializesThenSendsInputAndResult() async throws {
         let call = MCPApp.Call(
             server: "srv", toolName: "show", toolTitle: nil, html: "", requestedDomains: [],
             arguments: Data(#"{"q":1}"#.utf8), result: Data(#"{"structuredContent":{"n":1}}"#.utf8))
@@ -55,6 +55,7 @@ struct MCPAppTests {
         bridge.send = { sent.append($0) }
         bridge.resize = { height = $0 }
         bridge.openLink = { opened = $0 }
+        bridge.authorize = { _ in true }
 
         bridge.receive(["jsonrpc": "2.0", "id": 1, "method": "ui/initialize", "params": [:]])
         let initialized = try #require(sent.last?["result"] as? [String: Any])
@@ -72,6 +73,7 @@ struct MCPAppTests {
         #expect(height == 240)
 
         bridge.receive(["jsonrpc": "2.0", "id": 2, "method": "ui/open-link", "params": ["url": "https://example.com"]])
+        for _ in 0..<50 where opened == nil { await Task.yield() }
         #expect(opened?.absoluteString == "https://example.com")
         bridge.receive(["jsonrpc": "2.0", "id": 3, "method": "ui/open-link", "params": ["url": "file:///etc/passwd"]])
         #expect((sent.last?["error"] as? [String: Any])?["code"] as? Int == -32602)

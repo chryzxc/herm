@@ -197,7 +197,9 @@ struct IssueDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .dockPadding(.horizontal, isInspector ? DockSpacing.inspectorInset : 16).dockPadding(.top, 20)
                 .dockPadding(
-                    .bottom, 32)
+                    .bottom, 32
+                )
+                .background { if isInspector { Color.clear.dockOverlayScroller() } }
             }
             .clipped()
         }
