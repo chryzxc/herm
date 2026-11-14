@@ -61,8 +61,18 @@ struct VoicePillQueue: Equatable {
                 tone: tone, target: target, slot: slot, expiresAt: expiresAt))
     }
 
+    /// Running cards stay until their work ends, so a long step never
+    /// leaves the stage looking stuck.
     mutating func expire(now: Date = .now) {
-        pills.removeAll { $0.expiresAt <= now }
+        pills.removeAll { !$0.isRunning && $0.expiresAt <= now }
+    }
+
+    /// The turn ended: running cards stop and fade on the normal lifetime.
+    mutating func settleRunning(now: Date = .now) {
+        for index in pills.indices where pills[index].isRunning {
+            pills[index].isRunning = false
+            pills[index].expiresAt = now.addingTimeInterval(Self.lifetime)
+        }
     }
 
     /// Keep the newest cards and move them into distinct allowed slots.
@@ -137,6 +147,11 @@ struct VoiceActivityPillsLayer: View {
         // Replacement cards must not animate on top of their outgoing card.
         .transaction { $0.animation = nil }
         .onChange(of: leavesLeftFree) { _, _ in queue.restrict(to: allowedSlots) }
+        .onChange(of: model.status == .working) { _, isWorking in
+            guard !isWorking else { return }
+            queue.settleRunning()
+            scheduleExpiry(after: VoicePillQueue.lifetime)
+        }
         .onChange(of: model.activeToolCalls) { old, new in
             // `__thinking` / `__compaction` are internal activity markers.
             for call in new where !call.name.hasPrefix("__") {
@@ -273,7 +288,6 @@ struct VoiceActivityPillsLayer: View {
                     ? "\(tests.failed) test\(tests.failed == 1 ? "" : "s") failed" : "All \(tests.passed) tests passed",
                 detail: tests.failed > 0 ? "\(tests.passed) passed" : nil, tone: tests.failed > 0 ? .danger : .success)
         }
-        guard !ToolStep.hasCard(call.name) else { return }
         let step = ToolStep.describe(call)
         if name == "web_extract", call.isComplete {
             let target = call.args?["urls"].flatMap(VoicePillQueue.target(in:))
@@ -321,7 +335,10 @@ struct VoiceActivityPillsLayer: View {
         queue.push(
             key: key, icon: icon, title: title, detail: detail, isRunning: isRunning, tone: tone, target: target,
             slots: allowedSlots)
-        let lifetime = target == nil ? VoicePillQueue.lifetime : VoicePillQueue.targetLifetime
+        scheduleExpiry(after: target == nil ? VoicePillQueue.lifetime : VoicePillQueue.targetLifetime)
+    }
+
+    private func scheduleExpiry(after lifetime: TimeInterval) {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(lifetime + 0.05))
             queue.expire()

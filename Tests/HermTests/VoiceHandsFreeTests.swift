@@ -151,4 +151,29 @@ struct VoiceHandsFreeTests {
         messages.append(ChatMessage(role: .hermes, text: "  "))
         #expect(VoiceRecentTranscript.recent(messages).map(\.text) == ["m4", "m5", "m6", "m7", "m8", "m9"])
     }
+
+    @Test func recognizerRestartAfterAPauseKeepsTheEarlierWords() {
+        // The recognizer dropped "turn on the lights" and restarted at "and".
+        #expect(VoiceEndpointDetector.startsNewSegment(previous: "Turn on the lights", next: "And", pause: 1.2))
+        // Growing or revising the same phrase is not a new segment.
+        #expect(
+            !VoiceEndpointDetector.startsNewSegment(previous: "Turn on", next: "Turn on the lights", pause: 1.2))
+        #expect(!VoiceEndpointDetector.startsNewSegment(previous: "I scream", next: "Ice cream", pause: 0.1))
+        #expect(!VoiceEndpointDetector.startsNewSegment(previous: "", next: "Hello", pause: 2))
+    }
+
+    @Test func runningActivityCardsStayUntilTheirWorkEnds() {
+        var queue = VoicePillQueue()
+        let now = Date(timeIntervalSince1970: 1000)
+        queue.push(
+            key: "tool", icon: .terminalWindow, title: "Running a command", detail: nil, isRunning: true, now: now)
+        queue.expire(now: now.addingTimeInterval(VoicePillQueue.lifetime * 3))
+        #expect(queue.pills.map(\.id) == ["tool"])
+
+        let ended = now.addingTimeInterval(VoicePillQueue.lifetime * 3)
+        queue.settleRunning(now: ended)
+        #expect(queue.pills.first?.isRunning == false)
+        queue.expire(now: ended.addingTimeInterval(VoicePillQueue.lifetime + 1))
+        #expect(queue.pills.isEmpty)
+    }
 }
