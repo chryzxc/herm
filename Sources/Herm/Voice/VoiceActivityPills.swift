@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Short-lived activity cards around the voice orb. At most `capacity` are
@@ -110,9 +111,11 @@ struct VoiceActivityPillsLayer: View {
     /// The HUD deck sits on the left, so cards keep to the right corners.
     var leavesLeftFree = false
     @State private var queue = VoicePillQueue()
+    @State private var activityRevision = 0
     @AppStorage(VoiceStageSettings.activityPillsKey) private var isEnabled = true
 
     var body: some View {
+        let _ = activityRevision
         GeometryReader { geometry in
             let width = min(cardWidth, max(0, (geometry.size.width - 12) / 2))
             if isEnabled {
@@ -125,6 +128,9 @@ struct VoiceActivityPillsLayer: View {
         }
         // Replacement cards must not animate on top of their outgoing card.
         .transaction { $0.animation = nil }
+        .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
+            activityRevision &+= 1
+        }
         .onChange(of: leavesLeftFree) { _, _ in queue.restrict(to: allowedSlots) }
         .onChange(of: model.activeToolCalls) { old, new in
             // `__thinking` / `__compaction` are internal activity markers.

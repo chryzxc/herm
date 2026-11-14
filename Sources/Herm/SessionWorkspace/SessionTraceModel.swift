@@ -46,7 +46,7 @@ final class SessionTraceModel: ObservableObject {
             subscriptions.removeAll()
             self.model = model
             observe(model.$messages)
-            observe(model.$activityPresentationRevision)
+            observe(model.activityPresentation.$revision)
             observe(model.$botActivityRevision)
             observe(model.$status.removeDuplicates())
             observe(model.$isHermesConnected.removeDuplicates())

@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Compact, glassmorphism-first live overview for the menubar popup's agents.
@@ -9,6 +10,7 @@ struct AgentBoardView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
+    @State private var activityRevision = 0
     @State private var expandedAgentID: String?
     @State private var expandedActivityID: String?
     @State private var expandedPipelineItemID: String?
@@ -50,6 +52,7 @@ struct AgentBoardView: View {
     }
 
     var body: some View {
+        let _ = activityRevision
         let totalPipelineItemCount = pipeline.count
         let pipelineItems = Array(pipeline.prefix(embedded ? 20 : 40))
         ZStack {
@@ -84,6 +87,9 @@ struct AgentBoardView: View {
             }
         }
         .opacity(appeared ? 1 : 0)
+        .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
+            activityRevision &+= 1
+        }
         .offset(y: appeared ? 0 : 8)
         .onAppear {
             if reduceMotion {

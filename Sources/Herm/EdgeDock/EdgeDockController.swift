@@ -238,7 +238,7 @@ final class EdgeDockController: NSObject {
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] in self?.rebuildTasks() }
             .store(in: &subscriptions)
-        model.$activityPresentationRevision
+        model.activityPresentation.$revision
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in self?.refreshProgress() }
             .store(in: &subscriptions)

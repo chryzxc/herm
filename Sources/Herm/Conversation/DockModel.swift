@@ -234,7 +234,11 @@ final class DockModel: ObservableObject {
     }
     /// The sole UI invalidation signal for high-frequency agent activity.
     /// Canonical arrays above update immediately; this revision is coalesced.
-    @Published var activityPresentationRevision = 0
+    let activityPresentation = DockActivityPresentation()
+    var activityPresentationRevision: Int {
+        get { activityPresentation.revision }
+        set { activityPresentation.revision = newValue }
+    }
     /// Changes whenever the active session proves an exact Kanban task
     /// reference through a Hermes tool event. Views observe this instead of
     /// waiting for their periodic Kanban refresh.

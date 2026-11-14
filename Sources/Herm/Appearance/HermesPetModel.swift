@@ -105,7 +105,7 @@ final class HermesPetModel: ObservableObject {
             self.updatePose()
         }.store(in: &subscriptions)
         Publishers.Merge3(
-            model.$status.map { _ in () }, model.$activityPresentationRevision.map { _ in () },
+            model.$status.map { _ in () }, model.activityPresentation.$revision.map { _ in () },
             model.$backgroundTasks.map { _ in () }
         )
         .receive(on: RunLoop.main).sink { [weak self] in self?.updatePose() }.store(in: &subscriptions)

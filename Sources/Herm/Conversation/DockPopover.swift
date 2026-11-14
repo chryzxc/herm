@@ -296,7 +296,7 @@ struct DockPopover: View {
         // Bound the root's generic layout before observer modifiers copy its sheet state.
         return observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(AnyView(rootPopoverContent)))))
             .onReceive(model.workspacePresentationChanges) { _ in modelPresentationRevision &+= 1 }
-            .onReceive(model.$activityPresentationRevision.dropFirst().receive(on: RunLoop.main)) { _ in
+            .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
                 if sessionWorkspaceMode == .voice { modelPresentationRevision &+= 1 }
             }
             .onReceive(controlCenter.workspacePresentationChanges) { _ in controlPresentationRevision &+= 1 }

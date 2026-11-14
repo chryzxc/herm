@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// Plain-language descriptions of Hermes tool calls ("Browsing booking.com"),
@@ -597,8 +598,10 @@ private struct MediaCard: View {
 /// Elapsed time with steps and the plan's progress, above the orb.
 struct VoiceStatusStrip: View {
     @ObservedObject var model: DockModel
+    @State private var activityRevision = 0
 
     var body: some View {
+        let _ = activityRevision
         HStack(spacing: 8) {
             if model.status == .working, let start = turnStart {
                 TimelineView(.dockMotion(rate: 1)) { context in
@@ -632,6 +635,9 @@ struct VoiceStatusStrip: View {
                 .help(
                     plan.items.map { "\($0.status == "completed" ? "✓" : "○") \($0.content)" }.joined(separator: "\n"))
             }
+        }
+        .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
+            activityRevision &+= 1
         }
     }
 

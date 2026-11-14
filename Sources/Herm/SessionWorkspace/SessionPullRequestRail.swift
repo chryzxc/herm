@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 
@@ -141,6 +142,7 @@ struct SessionPullRequestRail: View {
     @StateObject private var outputs = SessionRailOutputsModel()
     @ObservedObject private var details = PullRequestDetailStore.shared
     @State private var refreshID = UUID()
+    @State private var activityRevision = 0
     @State private var lastOutputsRefreshID: UUID?
     @State private var contextFiles: (sessionID: String, files: [SessionContextFile])?
     @State private var lineSummary: RepositoryChangeLineSummary?
@@ -162,6 +164,7 @@ struct SessionPullRequestRail: View {
     }
 
     var body: some View {
+        let _ = activityRevision
         ScrollView {
             SessionRailCard(
                 repositoryName: repositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent },
@@ -181,6 +184,9 @@ struct SessionPullRequestRail: View {
             .dockPadding(16)
         }
         .foregroundStyle(Color.dockPrimaryText)
+        .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
+            activityRevision &+= 1
+        }
         .onChange(of: model.messagesRevision, initial: true) { _, _ in
             rail.discover(messages: model.messages, activity: SessionPullRequestReferences.liveActivity(model: model))
         }
