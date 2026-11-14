@@ -232,7 +232,7 @@ extension WorkspaceActivitySidebar {
     func settingsCategoryBadge(for category: SettingsCategory) -> SettingsCategoryBadge? {
         switch category {
         case .updates:
-            if case .readyToInstall = appUpdater.phase {
+            if appUpdater.hasUpdate {
                 return SettingsCategoryBadge(kind: .dot, isWarning: true)
             }
             return agentUpdateService.phase == .updateAvailable

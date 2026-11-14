@@ -73,6 +73,8 @@ struct HermRelease: Equatable {
     let assetURL: URL
     /// "sha256:<hex>" when GitHub reports one.
     let digest: String?
+    /// Source commit of a nightly; nightlies share a version, so the commit identifies the build.
+    var commit: String? = nil
 }
 
 enum HermAppUpdatePhase: Equatable {
@@ -80,6 +82,8 @@ enum HermAppUpdatePhase: Equatable {
     case unavailable(String)
     case checking
     case upToDate
+    /// Newer release exists but this build can't install it automatically (no Developer ID signature).
+    case available(String)
     case downloading
     /// Verified and staged next to the running app; installs once Herm is idle.
     case readyToInstall(String)
@@ -90,20 +94,35 @@ enum HermAppUpdatePhase: Equatable {
 enum HermUpdateParsing {
     static let assetName = "Herm.dmg"
 
+    static let nightlyTag = "nightly"
+
     static func release(from payload: [String: Any]) -> HermRelease? {
         guard let tag = payload["tag_name"] as? String,
-            payload["draft"] as? Bool != true, payload["prerelease"] as? Bool != true,
+            payload["draft"] as? Bool != true,
+            payload["prerelease"] as? Bool != true || tag == nightlyTag,
             let assets = payload["assets"] as? [[String: Any]],
             let asset = assets.first(where: { $0["name"] as? String == assetName }),
             let assetURL = (asset["url"] as? String).flatMap(URL.init(string:)),
             assetURL.scheme == "https", assetURL.host == "api.github.com"
         else { return nil }
+        let pageURL = (payload["html_url"] as? String).flatMap(URL.init(string:))
+        let digest = asset["digest"] as? String
+        if tag == nightlyTag {
+            // The workflow targets the release at the full source SHA.
+            guard let commit = payload["target_commitish"] as? String, commit.count == 40 else { return nil }
+            return HermRelease(
+                version: "nightly \(commit.prefix(8))", pageURL: pageURL, assetURL: assetURL, digest: digest,
+                commit: commit)
+        }
         return HermRelease(
             version: tag.hasPrefix("v") ? String(tag.dropFirst()) : tag,
-            pageURL: (payload["html_url"] as? String).flatMap(URL.init(string:)),
-            assetURL: assetURL,
-            digest: asset["digest"] as? String
-        )
+            pageURL: pageURL, assetURL: assetURL, digest: digest)
+    }
+
+    /// A nightly build moves to a newer nightly whenever main has a different commit.
+    static func isNewerNightly(_ release: HermRelease, currentCommit: String?) -> Bool {
+        guard let commit = release.commit, let currentCommit, !currentCommit.isEmpty else { return false }
+        return !commit.hasPrefix(currentCommit) && !currentCommit.hasPrefix(commit)
     }
 
     /// Numeric major.minor.patch comparison; build/pre-release suffixes are ignored.
@@ -146,6 +165,14 @@ final class HermAppUpdater: ObservableObject {
     let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
     let isNightly = HermBuildInfo.current.channel == .nightly
 
+    /// Drives the update badges on the rail and in Settings.
+    var hasUpdate: Bool {
+        switch phase {
+        case .available, .readyToInstall: true
+        default: false
+        }
+    }
+
     var canCheck: Bool {
         switch phase {
         case .checking, .downloading, .installing, .readyToInstall: false
@@ -181,11 +208,27 @@ final class HermAppUpdater: ObservableObject {
         Task {
             do {
                 let token = await GitHubCodeHostService.localGitHubToken()
-                let release = try await Self.fetchLatestRelease(token: token)
-                latest = release
+                let stable = try await Self.fetchRelease("latest", token: token)
+                // Nightlies are pre-releases, absent from /releases/latest; a nightly build checks its own tag.
+                let nightly =
+                    isNightly ? try? await Self.fetchRelease("tags/\(HermUpdateParsing.nightlyTag)", token: token) : nil
                 lastChecked = Date()
-                guard HermUpdateParsing.shouldOffer(release.version, over: currentVersion, isNightly: isNightly) else {
+                let release: HermRelease
+                if HermUpdateParsing.shouldOffer(stable.version, over: currentVersion, isNightly: isNightly) {
+                    release = stable
+                } else if let nightly,
+                    HermUpdateParsing.isNewerNightly(nightly, currentCommit: HermBuildInfo.current.commit)
+                {
+                    release = nightly
+                } else {
+                    latest = nightly ?? stable
                     phase = .upToDate
+                    return
+                }
+                latest = release
+                // Ad-hoc signed builds can't verify an update's publisher; tell the user instead of failing.
+                guard (try? HermUpdateTrust.trustedPublisher(of: Bundle.main.bundleURL)) != nil else {
+                    phase = .available(release.version)
                     return
                 }
                 phase = .downloading
@@ -238,8 +281,8 @@ final class HermAppUpdater: ObservableObject {
         return request
     }
 
-    nonisolated private static func fetchLatestRelease(token: String?) async throws -> HermRelease {
-        let url = URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!
+    nonisolated private static func fetchRelease(_ path: String, token: String?) async throws -> HermRelease {
+        let url = URL(string: "https://api.github.com/repos/\(repository)/releases/\(path)")!
         let (data, response) = try await URLSession.shared.data(
             for: request(url, token: token, accept: "application/vnd.github+json"))
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -306,7 +349,11 @@ final class HermAppUpdater: ObservableObject {
         guard info?["CFBundleIdentifier"] as? String == Bundle.main.bundleIdentifier else {
             throw UpdateError("The update is not a Herm build.")
         }
-        guard info?["CFBundleShortVersionString"] as? String == release.version else {
+        if let commit = release.commit {
+            guard info?["HermBuildCommit"] as? String == commit else {
+                throw UpdateError("The update's commit doesn't match release \(release.version).")
+            }
+        } else if info?["CFBundleShortVersionString"] as? String != release.version {
             throw UpdateError("The update's version doesn't match release \(release.version).")
         }
         try HermUpdateTrust.verify(mountedApp, requirement: publisher)
