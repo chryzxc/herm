@@ -192,7 +192,7 @@ Quick approval and clarification answers stay tied to their original request, se
 
 The status colors match the rest of the app: blue means active, green means healthy or done, amber means a warning or that Hermes needs you, and red means a failure.
 
-Global hover tooltips show one floating, fully opaque, theme-aware panel beside the hovered control and above workspace content and scroll containers. Long help wraps, stays within the display, and never takes keyboard focus.
+Global hover tooltips show one floating, fully opaque, theme-aware panel beside the hovered control and above workspace content and scroll containers. Hover descriptions appear on first attachment and are cancelled when the control is removed. Long help wraps, stays within the display, and never takes keyboard focus.
 
 Chat message timestamps appear on hover, with no separator after the assistant message actions.
 

@@ -701,7 +701,8 @@ requested edge with a 6pt gap, flip
 at the display edge, and try the other sides if clamping would cover the hovered
 control. Keep a visible gap beside the control and stay inside the display bounds.
 Dismiss on pointer exit, click, typing, scrolling, host movement/resizing/hiding,
-or source removal.
+or source removal. Preserve hover on initial attachment and cancel pending display
+when the source is removed.
 Informational tooltip windows never prevent normal notch/workspace dismissal.
 
 ### Themes
