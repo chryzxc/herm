@@ -115,15 +115,15 @@ struct SessionProcessIsolationTests {
         primary.receiveGatewayEvent("message.complete", params: ["session_id": pane.sessionID ?? ""])
         await control.eventRefreshTask?.value
         await control.refreshTask?.value
-        #expect(client.activeSessionRequests - before == 2)
+        #expect(client.activeSessionRequests - before == 1)
         #expect(control.dockModel === primary)
     }
 
     @Test func messageCompleteRefreshCountDoesNotGrowWithPanesOrSessionSwitch() async throws {
         let one = try await refreshCounts(panes: 1)
         let four = try await refreshCounts(panes: 4)
-        // Each refresh reads active sessions directly and through capability probing.
-        #expect(one == [2, 2])
+        // A message completion refreshes active sessions once, without probing capabilities.
+        #expect(one == [1, 1])
         #expect(four == one)
     }
 
