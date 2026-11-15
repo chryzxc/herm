@@ -190,17 +190,11 @@ extension DockModel {
     static func estimatedTokens(utf8Count: Int) -> Int { (utf8Count + 3) / 4 }
 
     func refreshSessionIndexAfterActivity() {
-        guard !isLoadingSessions else {
+        guard sessionLoadTask == nil else {
             pendingSessionIndexRefresh = true
             return
         }
-        guard let refresh = loadSessions(reuseHistory: true) else { return }
-        Task { @MainActor [weak self] in
-            await refresh.value
-            guard let self, self.pendingSessionIndexRefresh else { return }
-            self.pendingSessionIndexRefresh = false
-            self.refreshSessionIndexAfterActivity()
-        }
+        loadSessions(quiet: true, reuseHistory: true)
     }
 
     static func isUnreadUpdateEvent(_ type: String) -> Bool {

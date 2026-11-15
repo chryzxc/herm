@@ -50,3 +50,31 @@ struct ScrollRefreshTests {
         withExtendedLifetime(subscription) {}
     }
 }
+
+@MainActor
+struct ActivityRefreshPublicationTests {
+    @Test func unchangedActivityRefreshDoesNotInvalidateWorkspace() async throws {
+        let client = ScrollRefreshClient()
+        let model = DockModel(initialSessionID: "scroll-refresh", rpcClient: client)
+        defer { model.shutdown() }
+        await model.loadSessions(quiet: true)?.value
+        try await Task.sleep(for: .milliseconds(30))
+        var updates = 0
+        let subscription = model.workspacePresentationChanges.sink { updates += 1 }
+        model.refreshSessionIndexAfterActivity()
+        await model.sessionLoadTask?.value
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(updates == 0)
+        #expect(!model.isLoadingSessions)
+        withExtendedLifetime(subscription) {}
+    }
+}
+
+struct CallbackGapSummaryTests {
+    @Test func summarizesObservedGapsWithoutAssumingRefreshRate() {
+        #expect(HermPerformanceRecorder.gapSummary([]) == "unavailable")
+        let summary = HermPerformanceRecorder.gapSummary([1.0 / 60, 0.06, 0.2])
+        #expect(summary.contains("p50=60.0ms"))
+        #expect(summary.contains(">50ms=2 >100ms=1"))
+    }
+}

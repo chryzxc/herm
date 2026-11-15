@@ -30,6 +30,7 @@ extension DockModel {
             defaults.removeObject(forKey: profileScopeKey)
         }
         sessionHistoryLoadedAt = nil
+        pendingSessionIndexRefresh = false
         sessionLoadGeneration &+= 1
         sessionLoadTask?.cancel()
         sessionLoadTask = nil
@@ -96,6 +97,7 @@ extension DockModel {
 
     @discardableResult
     func loadSessions(profileID: String? = nil, quiet: Bool = false, reuseHistory: Bool = false) -> Task<Void, Never>? {
+        guard !hasShutDown else { return nil }
         let scope = profileID ?? profileScopeID
         if profileScopeUnavailable, scope == nil {
             sessions = []
@@ -115,6 +117,10 @@ extension DockModel {
                     if isLoadingSessions { isLoadingSessions = false }
                     isPollingSessions = false
                     sessionLoadTask = nil
+                    if pendingSessionIndexRefresh && !hasShutDown {
+                        pendingSessionIndexRefresh = false
+                        refreshSessionIndexAfterActivity()
+                    }
                 }
             }
             do {
@@ -123,7 +129,9 @@ extension DockModel {
                 if let scope, !scope.isEmpty { params["profile"] = scope }
                 let result = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.sessionList.rawValue, params: params)
-                guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
+                guard !self.hasShutDown, self.sessionLoadGeneration == generation, self.profileScopeID == scope else {
+                    return
+                }
                 guard let rawSessions = result["sessions"] as? [[String: Any]] else {
                     throw HermesGateway.GatewayError.malformedResponse
                 }
@@ -137,7 +145,9 @@ extension DockModel {
                     } == true
                 let index = try? await Self.fetchSessionIndex(
                     client: sessionRPCClient, profileID: scope, includeHistory: !reuseStoredHistory)
-                guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
+                guard !self.hasShutDown, self.sessionLoadGeneration == generation, self.profileScopeID == scope else {
+                    return
+                }
                 if !reuseStoredHistory, let index, !index.stored.isEmpty {
                     sessionHistoryLoadedAt = (scope, Date())
                 }
@@ -145,7 +155,9 @@ extension DockModel {
                 // the `/api/sessions` rows so a cold start does not show (and
                 // sort by) when an old chat began.
                 let stored = index?.stored ?? []
-                guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
+                guard !self.hasShutDown, self.sessionLoadGeneration == generation, self.profileScopeID == scope else {
+                    return
+                }
                 let feedIDs = index?.feedIDs ?? []
                 var seen = Set<String>()
                 let refreshed = (rawSessions + stored).compactMap { Self.parseSession($0, profileID: scope) }
@@ -179,7 +191,9 @@ extension DockModel {
                 DebugLog.write("model: loaded \(sessions.count) saved sessions")
                 loadAllBotSessions()
             } catch {
-                guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
+                guard !self.hasShutDown, self.sessionLoadGeneration == generation, self.profileScopeID == scope else {
+                    return
+                }
                 sessionProjectionState = Self.failedOrStale(
                     previousProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
                 DebugLog.write("model: session list failed: \(Self.safeUserDiagnostic(error.localizedDescription))")

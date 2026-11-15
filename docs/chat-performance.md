@@ -584,3 +584,34 @@ The Release baseline was stopped during compilation; paired Release results and 
 physical-trackpad check remain outstanding. Styling and text installation can still
 perform whole-section main-thread work; resumable styling/installation and detailed
 per-stage timing are not yet implemented.
+
+## Battery responsiveness follow-up — 15 November 2026
+
+Activity-triggered session index reads now use the quiet refresh path. Events
+arriving during an index read retain one follow-up read, drained by the current
+request's completion. Profile changes and shutdown discard pending demand.
+Explicit refreshes retain their ability to supersede an older background read.
+
+Performance capture defaults to timing only. Optional stack samples perturb the
+measured app; sampled intervals are marked even when sampling ends mid-interval.
+Reports include callback arrival-gap percentiles and threshold counts, expected
+display-link intervals, power source, Low Power Mode, thermal state, and available
+build identity. Callback counts and estimated missed frames are not displayed FPS.
+Native host updates and sidebar projection refreshes record aggregate work only
+while a capture is active. Stopping freezes timing and waits asynchronously for
+an active sampler to terminate before saving; a new capture waits for finalization.
+
+No live app was relaunched and no paired charger/battery measurements were taken.
+These changes remove a known source of redundant workspace publications; they do
+not establish an end-to-end battery smoothness improvement. Compare five paired
+30-second timing-only captures of the same optimized baseline/fixed build workload,
+window, conversation and scroll/hover actions on each power source, controlling Low
+Power Mode independently. Compare callback-gap p95, counts above 100 ms, and host
+work; check focus, selection and scroll position manually. Do not claim improvement
+from sampled timings, and investigate remaining hotspots before changing pane hosts.
+
+Verification: the focused run passed 15 tests in five suites (`SessionStartupTests`,
+`ScrollRefreshTests`, `ActivityRefreshPublicationTests`, `CallbackGapSummaryTests`,
+`HermPerformanceRecorderTests`). The debug build, `make guard`, and diff checks
+passed. Existing unrelated compiler warnings remain. Release profiling, sampler
+process integration tests, and physical battery/charger comparisons were not run.

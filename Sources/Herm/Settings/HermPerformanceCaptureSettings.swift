@@ -11,17 +11,22 @@ struct HermPerformanceCaptureSettings: View {
                 Text(
                     recorder.isRecording
                         ? "Recording. Scroll and click where Herm feels slow; the report opens when it ends."
-                        : "Records frame drops, what redraws the workspace, and stack samples of slow seconds for \(Int(HermPerformanceRecorder.duration)) seconds."
+                        : "Records callback timing and workspace updates for \(Int(HermPerformanceRecorder.duration)) seconds."
                 )
                 .dockFont(.body)
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+                Toggle("Include stack samples", isOn: $recorder.includeStackSamples)
+                    .disabled(recorder.isRecording || recorder.isFinalizing)
+                if let error = recorder.error { Text(error).dockFont(.body) }
                 HStack(spacing: 8) {
                     if recorder.isRecording {
                         Button("Stop and save") { recorder.stop() }.buttonStyle(.dockPrimary)
+                            .disabled(recorder.isFinalizing)
                     } else {
                         Button("Record \(Int(HermPerformanceRecorder.duration)) seconds") { recorder.start() }
                             .buttonStyle(.dockPrimary)
+                            .disabled(recorder.isFinalizing)
                     }
                     if let report = recorder.lastReportURL, !recorder.isRecording {
                         Button("Show last report") { NSWorkspace.shared.activateFileViewerSelecting([report]) }

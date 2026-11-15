@@ -214,6 +214,39 @@ struct SessionStartupTests {
         }
     }
 
+    @Test func shutdownDiscardsQueuedActivityRefresh() async throws {
+        try await withModel { model, client in
+            client.holdsList = true
+            let initial = model.loadSessions()
+            await client.waitForList()
+            model.refreshSessionIndexAfterActivity()
+            model.shutdown()
+            client.releaseList()
+            await initial?.value
+            #expect(client.listLimits == [50])
+            #expect(!model.pendingSessionIndexRefresh)
+            #expect(model.loadSessions() == nil)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func activityDuringReadRefreshesAfterward(quiet: Bool) async throws {
+        try await withModel { model, client in
+            client.holdsList = true
+            let initial = model.loadSessions(quiet: quiet)
+            await client.waitForList()
+            client.rows = [["id": "updated", "title": "Updated"]]
+            model.refreshSessionIndexAfterActivity()
+            model.refreshSessionIndexAfterActivity()
+            client.releaseList()
+            await initial?.value
+            await model.sessionLoadTask?.value
+            #expect(client.listLimits == [50, 50])
+            #expect(model.sessions.map(\.id) == ["updated"])
+            #expect(!model.isLoadingSessions)
+        }
+    }
+
     @Test(arguments: [false, true])
     func restorationWaitsForTheInFlightList(quietFirst: Bool) async throws {
         try await withModel { model, client in
