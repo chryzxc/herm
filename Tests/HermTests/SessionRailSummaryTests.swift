@@ -249,6 +249,57 @@ struct SessionRailSummaryTests {
         #expect(!summary.isEmpty)
     }
 
+    @Test func restoredRunningSubagentIsNotCompletedBeforeLiveStatusReturns() {
+        let model = model()
+        func summary() -> SessionRailSummary {
+            .make(model: model, repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil)
+        }
+        func event(_ type: String) {
+            model.receiveGatewayEvent(
+                type,
+                params: [
+                    "session_id": "session", "profile": "profile",
+                    "payload": ["subagent_id": "worker", "name": "Builder", "goal": "Build the feature"],
+                ])
+        }
+        event("subagent.start")
+        #expect(summary().subagents.first?.status == "running")
+        #expect(summary().runningSubagentCount == 1)
+        model.cacheAgentState(for: "session")
+        #expect(model.restoreAgentState(for: "session"))
+        #expect(model.activeSubagents.isEmpty)
+        #expect(model.sessionAgents.first?.status == "running")
+        #expect(summary().subagents.first?.status == "stale")
+        #expect(summary().runningSubagentCount == 0)
+        event("subagent.progress")
+        #expect(summary().subagents.first?.status == "running")
+        #expect(summary().runningSubagentCount == 1)
+        event("subagent.complete")
+        #expect(summary().subagents.first?.status == "complete")
+        #expect(summary().runningSubagentCount == 0)
+    }
+
+    @Test func disappearedWorkersRemainStaleAndTerminalHistoryIsPreserved() {
+        let model = model()
+        let worker = HermesSubagent(id: "worker", goal: "Build", status: "running")
+        model.sessionAgents =
+            [worker]
+            + ["complete", "failed", "interrupted", "unknown"].map {
+                HermesSubagent(id: $0, goal: $0, status: $0)
+            }
+        model.activeSubagents = DockModel.reconciledLiveAgents(
+            authoritative: [], current: [worker], synthesizedIDs: [])
+        let summary = SessionRailSummary.make(
+            model: model, repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil)
+        let statuses = Dictionary(uniqueKeysWithValues: summary.subagents.map { ($0.id, $0.status) })
+        #expect(statuses["worker"] == "stale")
+        #expect(statuses["unknown"] == "stale")
+        #expect(statuses["complete"] == "complete")
+        #expect(statuses["failed"] == "failed")
+        #expect(statuses["interrupted"] == "interrupted")
+        #expect(summary.runningSubagentCount == 0)
+    }
+
     @Test func checkpointsFromAnotherSessionAreDropped() {
         let checkpoints = [
             RestoreCheckpoint(sessionID: "session", hash: "abc")!,
