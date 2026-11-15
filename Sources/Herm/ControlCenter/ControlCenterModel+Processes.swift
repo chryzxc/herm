@@ -1,4 +1,91 @@
+import Combine
 import Foundation
+
+/// A composer's process inventory follows its own conversation, not window focus.
+@MainActor
+final class SessionProcessProjection: ObservableObject {
+    @Published private(set) var processes: [ProcessSummary] = []
+    private(set) var sessionID: String?
+    private let control: ControlCenterModel
+    private let model: DockModel
+    private var generation = UUID()
+    private var inventoryBinding: UInt64?
+
+    init(control: ControlCenterModel, model: DockModel) {
+        self.control = control
+        self.model = model
+    }
+
+    private var subscription: UUID?
+
+    func startObserving() {
+        guard subscription == nil else { return }
+        subscription = model.eventRouter.subscribe { [weak self] type, params in
+            guard type == "process.changed", let self else { return }
+            let payload = params["payload"] as? [String: Any] ?? [:]
+            let session = (params["session_id"] as? String) ?? (payload["session_id"] as? String)
+            guard session == nil || session == self.model.sessionID else { return }
+            Task { await self.poll() }
+        }
+    }
+
+    func stopObserving() {
+        if let subscription { model.eventRouter.unsubscribe(subscription) }
+        subscription = nil
+    }
+
+    func reset(for sessionID: String?) {
+        guard self.sessionID != sessionID else { return }
+        self.sessionID = sessionID
+        generation = UUID()
+        processes = []
+    }
+
+    func poll() async {
+        guard let sessionID, !sessionID.isEmpty, model.sessionID == sessionID,
+            let rpc = control.rpc
+        else { return }
+        let binding = control.clientBindingGeneration
+        if inventoryBinding != binding {
+            inventoryBinding = nil
+            processes = []
+        }
+        let generation = generation
+        guard let result = try? await rpc.processes(sessionID: sessionID),
+            self.generation == generation, self.sessionID == sessionID, model.sessionID == sessionID,
+            control.clientBindingGeneration == binding, !Task.isCancelled
+        else { return }
+        inventoryBinding = binding
+        let parsed = ControlCenterModel.parseProcesses(result)
+        if parsed != processes { processes = parsed }
+    }
+
+    func confirmation(for process: ProcessSummary) -> ProcessStopConfirmation {
+        ProcessStopConfirmation(
+            process: process, sessionID: sessionID ?? "", generation: generation,
+            binding: control.clientBindingGeneration)
+    }
+
+    func stop(_ confirmation: ProcessStopConfirmation) async -> Bool {
+        guard !confirmation.sessionID.isEmpty, sessionID == confirmation.sessionID,
+            model.sessionID == confirmation.sessionID, generation == confirmation.generation,
+            control.clientBindingGeneration == confirmation.binding, inventoryBinding == confirmation.binding,
+            processes.contains(where: { $0.id == confirmation.process.id && $0.state == "running" }),
+            let rpc = control.rpc
+        else { return false }
+        do {
+            _ = try await rpc.killProcess(sessionID: confirmation.sessionID, processID: confirmation.process.id)
+            await poll()
+            return true
+        } catch {
+            control.reportActionError(
+                "Could not stop process",
+                message: HermesDiagnosticsService.safeSummary(
+                    ControlCenterModel.safeUserDiagnostic(error.localizedDescription)))
+            return false
+        }
+    }
+}
 
 struct ProcessStopConfirmation {
     let process: ProcessSummary

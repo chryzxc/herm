@@ -160,7 +160,8 @@ struct ConversationTranscriptView: View, Equatable {
                                             await controlCenter.sessionKanbanTaskDetail(
                                                 KanbanTaskSummary(
                                                     id: cardID, title: cardID, status: "", detail: nil, priority: nil,
-                                                    assignee: nil)
+                                                    assignee: nil),
+                                                sessionIDs: Set(model.botActivitySessionIDs.compactMap { $0 })
                                             ).map { ($0.status, $0.latestSummary ?? $0.result) }
                                         }
                                     }
@@ -473,7 +474,8 @@ struct ConversationTranscriptView: View, Equatable {
                     )
                 },
                 loadKanbanDetail: { notice in
-                    await controlCenter.sessionKanbanTaskDetail(notice.taskSummary)
+                    await controlCenter.sessionKanbanTaskDetail(
+                        notice.taskSummary, sessionIDs: Set(model.botActivitySessionIDs.compactMap { $0 }))
                 }
             )
             .equatable()

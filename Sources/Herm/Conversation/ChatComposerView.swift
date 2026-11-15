@@ -234,7 +234,9 @@ struct ChatComposerView: View {
             VStack(spacing: 0) {
                 ComposerSessionControlView(model: model)
                 PinnedWorkStrip(model: model)
-                if let controlCenter { RunningProcessesStrip(control: controlCenter, isTurnActive: isResponding) }
+                if let controlCenter {
+                    RunningProcessesStrip(control: controlCenter, model: model, isTurnActive: isResponding)
+                }
 
                 if !queuedPrompts.isEmpty {
                     QueuedPromptList(model: model, prompts: queuedPrompts)
@@ -1279,40 +1281,50 @@ private struct PinnedWorkStrip: View {
 }
 
 /// Hermes background terminal processes for the current session, with a stop button each.
-private struct RunningProcessesStrip: View {
+struct RunningProcessesStrip: View {
     @Environment(\.dockHostVisible) private var hostVisible
-    /// Not observed: only `processes` is read, and the strip stays mounted under
-    /// the composer while every other control publication ticks.
-    let control: ControlCenterModel
+    @ObservedObject var model: DockModel
+    @StateObject private var projection: SessionProcessProjection
     var isTurnActive = false
     @State private var isExpanded = false
     @State private var pending: ProcessStopConfirmation?
-    @State private var processesRevision = 0
+
+    init(control: ControlCenterModel, model: DockModel, isTurnActive: Bool) {
+        self.model = model
+        self.isTurnActive = isTurnActive
+        _projection = StateObject(wrappedValue: SessionProcessProjection(control: control, model: model))
+    }
 
     var body: some View {
-        let _ = processesRevision
-        return
-            content
-            .onReceive(control.$processes.dropFirst()) { _ in processesRevision &+= 1 }
+        content
+            .onAppear { projection.startObserving() }
+            .onDisappear { projection.stopObserving() }
             // Processes outlive the turn that started them, so poll while a turn runs or any are listed.
-            .task(id: hostVisible && (isTurnActive || !control.processes.isEmpty)) {
-                guard hostVisible && (isTurnActive || !control.processes.isEmpty) else { return }
+            .task(
+                id: "\(model.sessionID ?? ""):\(model.isHermesConnected):\(hostVisible):"
+                    + "\(isTurnActive || !projection.processes.isEmpty)"
+            ) {
+                projection.reset(for: model.sessionID)
+                guard hostVisible else { return }
+                await projection.poll()
                 while !Task.isCancelled {
-                    await control.pollProcesses()
+                    guard isTurnActive || !projection.processes.isEmpty else { return }
                     try? await Task.sleep(for: .seconds(5))
+                    guard !Task.isCancelled else { return }
+                    await projection.poll()
                 }
             }
     }
 
     /// Hermes keeps a finished process listed for a while, so the count says which kind it is.
     private var summary: String {
-        let running = control.processes.filter { $0.state == "running" }.count
-        let count = running > 0 ? running : control.processes.count
+        let running = projection.processes.filter { $0.state == "running" }.count
+        let count = running > 0 ? running : projection.processes.count
         return "\(count) background process\(count == 1 ? "" : "es") \(running > 0 ? "running" : "finished")"
     }
 
     @ViewBuilder private var content: some View {
-        if !control.processes.isEmpty {
+        if !projection.processes.isEmpty && model.sessionID == projection.sessionID {
             VStack(alignment: .leading, spacing: 4) {
                 Button {
                     withAnimation(.dockEase(duration: 0.18)) { isExpanded.toggle() }
@@ -1345,7 +1357,7 @@ private struct RunningProcessesStrip: View {
                 if let confirmation = pending {
                     Button("Stop \(confirmation.process.name)", role: .destructive) {
                         Task {
-                            _ = await control.killProcess(confirmation)
+                            _ = await projection.stop(confirmation)
                             pending = nil
                         }
                     }
@@ -1356,7 +1368,7 @@ private struct RunningProcessesStrip: View {
     }
 
     @ViewBuilder private var processRows: some View {
-        ForEach(control.processes) { process in
+        ForEach(projection.processes) { process in
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(process.name).lineLimit(1).truncationMode(.middle)
@@ -1372,7 +1384,7 @@ private struct RunningProcessesStrip: View {
                 }
                 Spacer(minLength: 0)
                 if process.state == "running" {
-                    Button("Stop") { pending = control.processStopConfirmation(process) }
+                    Button("Stop") { pending = projection.confirmation(for: process) }
                         .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
                 } else {
                     Text(process.state.capitalized).dockFont(.metadata)
