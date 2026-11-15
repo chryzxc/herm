@@ -89,18 +89,6 @@ func splitPaneSize(_ proposal: ProposedViewSize) -> CGSize {
     proposal.replacingUnspecifiedDimensions(by: CGSize(width: 800, height: 600))
 }
 
-@MainActor
-func splitPaneHost() -> NSHostingView<AnyView> {
-    let host = NSHostingView(rootView: AnyView(EmptyView()))
-    // The split view places panes by frame; don't publish SwiftUI's
-    // intrinsic/min/max size as constraints for the outer layout to solve.
-    host.sizingOptions = []
-    // Panes draw their own title row; inheriting the window's titlebar safe
-    // area would push every pane down a second 52pt.
-    host.safeAreaRegions = []
-    return host
-}
-
 /// Named target proportions for the desktop three-column shell (queue rail /
 /// conversation / inspector), applied identically whether the Dock is
 /// fullscreen or in its windowed/minimized popover presentation. The center

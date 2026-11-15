@@ -41,7 +41,7 @@ final class DockHoverTipAnchorView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if window != newWindow {
+        if window != nil, window != newWindow {
             hovering = false
             DockHoverTipPresenter.shared.update(self)
         }

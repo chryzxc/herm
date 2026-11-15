@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>HermUpdatePublicKey</key>
+    <string>fIr16C9UFLv5pLY4UWX3wMdKn0oIkhxzcZVTIuilKjk=</string>
     <key>CFBundleIdentifier</key>
     <string>io.github.chryzxc.Herm</string>
     <key>CFBundleName</key>

@@ -152,8 +152,11 @@ and cancellation. Editor saves compare the loaded contents inside file coordinat
 draft edits made during saving remain unsaved. Only images explicitly created by
 Herm are eligible for attachment cleanup.
 
-Automatic app updates require a complete GitHub asset SHA-256 digest and a Developer
-ID signature matching the installed Herm bundle's Apple-validated team. Both the
-mounted and staged bundles are verified; ad-hoc builds require manual updates.
+Automatic app updates require a complete GitHub asset SHA-256 digest. Ad-hoc builds
+verify the DMG's detached Ed25519 signature with the installed app's pinned public
+key before mounting. Developer ID builds require the installed bundle's
+Apple-validated team on the update. Both paths verify mounted and staged code
+signatures. The user downloads explicitly and requests installation and restart;
+Herm waits for the current turn and retains the existing rollback helper.
 
 The composer reads the selected live session’s automation snapshot through `session.control.read` and projects `session.control.update` events. Hermes remains authoritative for goals, loops, and heartbeats.

@@ -582,7 +582,9 @@ final class GroupChatStore: ObservableObject {
         let pollGeneration = (pollGenerations[roomID] ?? 0) + 1
         pollGenerations[roomID] = pollGeneration
         var appended: [GroupRoomEvent] = []
-        if cursors[roomID] == nil {
+        let initialLoad = cursors[roomID] == nil
+        var start = cursors[roomID] ?? 0
+        if initialLoad {
             // Long rooms: start near the end instead of replaying every event.
             let latest =
                 (try? await client.request(
@@ -591,29 +593,41 @@ final class GroupChatStore: ObservableObject {
                         "room_id": roomID, "since_seq": 0, "limit": 1,
                     ]))?["latest_seq"] as? Int ?? 0
             guard generation == bindingGeneration, pollGenerations[roomID] == pollGeneration else { return }
-            let start = max(0, latest - Self.historyWindow)
-            cursors[roomID] = start
+            start = max(0, latest - Self.historyWindow)
+        }
+        var cursor = start
+        repeat {
+            cursor = start
+            var pageEvents: [GroupRoomEvent] = []
+            while true {
+                guard
+                    let page = try? await client.request(
+                        HermesFeatureIDs.ID.groupsLog.rawValue,
+                        params: [
+                            "room_id": roomID, "since_seq": cursor, "limit": 500,
+                        ])
+                else { return }
+                guard generation == bindingGeneration, pollGenerations[roomID] == pollGeneration else { return }
+                guard let rows = page["events"] as? [[String: Any]],
+                    let next = page["cursor"] as? Int, next >= cursor,
+                    let hasMore = page["has_more"] as? Bool, !hasMore || next > cursor
+                else { return }
+                pageEvents += rows.compactMap(GroupRoomEvent.init)
+                cursor = next
+                guard hasMore else { break }
+            }
+            appended = pageEvents
+            let hasVisibleEvent = appended.contains { event in
+                if case .started = event.kind { return false }
+                return true
+            }
+            guard initialLoad, !hasVisibleEvent, start > 0 else { break }
+            start = max(0, start - Self.historyWindow)
+        } while true
+        guard generation == bindingGeneration, pollGenerations[roomID] == pollGeneration else { return }
+        if initialLoad {
             earliestLoadedSeq[roomID] = start
         }
-        var cursor = cursors[roomID] ?? 0
-        while true {
-            guard
-                let page = try? await client.request(
-                    HermesFeatureIDs.ID.groupsLog.rawValue,
-                    params: [
-                        "room_id": roomID, "since_seq": cursor, "limit": 500,
-                    ])
-            else { return }
-            guard generation == bindingGeneration else { return }
-            guard let rows = page["events"] as? [[String: Any]],
-                let next = page["cursor"] as? Int, next >= cursor,
-                let hasMore = page["has_more"] as? Bool, !hasMore || next > cursor
-            else { return }
-            appended += rows.compactMap(GroupRoomEvent.init)
-            cursor = next
-            guard hasMore else { break }
-        }
-        guard generation == bindingGeneration, pollGenerations[roomID] == pollGeneration else { return }
         cursors[roomID] = cursor
         if !appended.isEmpty { events[roomID, default: []] += appended }
         if markRead && !Task.isCancelled { markSeen(roomID, through: cursor) }

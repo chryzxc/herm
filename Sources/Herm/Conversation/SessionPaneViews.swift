@@ -7,6 +7,8 @@ import SwiftUI
 /// the row opens a new column or adds a tab to the column under the cursor.
 struct SessionPaneRow<Primary: View>: View {
     @ObservedObject var store: SessionPaneStore
+    let control: ControlCenterModel
+    let bots: BotModeModel
     let isEnabled: Bool
     let headerHeight: CGFloat
     let usesWindowChrome: Bool
@@ -190,14 +192,14 @@ struct SessionPaneRow<Primary: View>: View {
         case .primary:
             // A group chat tab in the active column shows the room, not the main conversation.
             if let panel = store.activePanel, panel.selected?.groupRoomID != nil {
-                SessionPanelView(panel: panel, store: store, metrics: metrics) {
+                SessionPanelView(panel: panel, store: store, control: control, bots: bots, metrics: metrics) {
                     header($0, panel: panel, isLeading: isLeading, width: width)
                 }
             } else {
                 primary(isLeading)
             }
         case .panel(let panel):
-            SessionPanelView(panel: panel, store: store, metrics: metrics) {
+            SessionPanelView(panel: panel, store: store, control: control, bots: bots, metrics: metrics) {
                 header($0, panel: panel, isLeading: isLeading, width: width)
             }
         }
@@ -509,16 +511,21 @@ private struct SessionPaneDropHint: View {
 private struct SessionPanelView<Header: View>: View {
     let panel: SessionPaneStore.Panel
     let store: SessionPaneStore
+    let control: ControlCenterModel
+    let bots: BotModeModel
     let metrics: ConversationWorkspaceMetrics
     let header: (AnyView) -> Header
     @ObservedObject private var chat: EdgeQuickConversationModel
 
     init(
-        panel: SessionPaneStore.Panel, store: SessionPaneStore, metrics: ConversationWorkspaceMetrics,
+        panel: SessionPaneStore.Panel, store: SessionPaneStore, control: ControlCenterModel, bots: BotModeModel,
+        metrics: ConversationWorkspaceMetrics,
         header: @escaping (AnyView) -> Header
     ) {
         self.panel = panel
         self.store = store
+        self.control = control
+        self.bots = bots
         self.metrics = metrics
         self.header = header
         chat = panel.chat
@@ -580,7 +587,7 @@ private struct SessionPanelView<Header: View>: View {
         if let conversation = chat.conversation, !chat.loadFailed,
             !(chat.isLoading && conversation.messages.isEmpty)
         {
-            SessionPaneChat(model: conversation, metrics: metrics)
+            SessionPaneChat(model: conversation, control: control, bots: bots, metrics: metrics)
                 .id(panel.selectedID)
         } else if chat.loadFailed {
             VStack(spacing: 6) {
@@ -598,11 +605,10 @@ private struct SessionPanelView<Header: View>: View {
 }
 
 /// Transcript and composer for an inactive column, mirroring the PR floating chat.
-private struct SessionPaneChat: View {
+struct SessionPaneChat: View {
     @ObservedObject var model: DockModel
-    @Environment(\.chatContextRouter) private var router
-    @StateObject private var control = ControlCenterModel()
-    @StateObject private var bots = BotModeModel()
+    let control: ControlCenterModel
+    let bots: BotModeModel
     @StateObject private var speech = SpeechInput()
     @StateObject private var voice = VoiceOutput()
     @StateObject private var actions = ConversationMessageActionState()
@@ -610,23 +616,28 @@ private struct SessionPaneChat: View {
     @State private var jumpID: UUID?
     @State private var image: ChatImagePreview?
     let metrics: ConversationWorkspaceMetrics
-    private var chatBots: BotModeModel { router?.bots ?? bots }
+
+    init(model: DockModel, control: ControlCenterModel, bots: BotModeModel, metrics: ConversationWorkspaceMetrics) {
+        self.model = model
+        self.control = control
+        self.bots = bots
+        self.metrics = metrics
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ConversationTranscriptView(
-                model: model, controlCenter: control, botMode: chatBots, messageActionState: actions,
+                model: model, controlCenter: control, botMode: bots, messageActionState: actions,
                 voiceOutput: voice, conversationMetrics: metrics, conversationHermFaceID: nil,
                 isShowingMessageSearch: $searching, pinnedMessageJumpID: $jumpID, selectedChatImage: $image
             )
             .equatable()
             .frame(maxHeight: .infinity)
             ChatComposerView(
-                model: model, composer: model.composer, speechInput: speech, botMode: chatBots,
+                model: model, composer: model.composer, speechInput: speech, botMode: bots,
                 onStop: { model.stop() }, metrics: metrics, controlCenter: control)
         }
-        .task { control.bind(to: model) }
-        .onChange(of: model.sessionID) { _, id in control.focus(sessionID: id) }
+
         .dockSheet(item: $image) { ChatImagePreviewModal(image: $0.image) }
     }
 }

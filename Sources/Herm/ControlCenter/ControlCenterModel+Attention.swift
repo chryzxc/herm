@@ -194,23 +194,178 @@ extension ControlCenterModel {
             break
         }
         if ["message.complete", "sessions.changed", "cron.changed", "process.changed"].contains(type) {
-            scheduleEventRefresh()
+            scheduleEventRefresh(type)
         }
         rebuildAttention()
     }
 
     /// Gateway event bursts collapse into one refresh. A refresh already in
     /// flight would otherwise drop the event and leave projects stale.
-    func scheduleEventRefresh() {
-        eventRefreshTask?.cancel()
+    func scheduleEventRefresh(_ type: String) {
+        pendingEventRefreshes.insert(type)
+        guard eventRefreshTask == nil else { return }
         eventRefreshTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(300))
-            while self?.isRefreshing == true, !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(250))
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(300))
+                while self?.isRefreshing == true, !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                guard let self, !Task.isCancelled else { return }
+                let events = self.pendingEventRefreshes
+                self.pendingEventRefreshes.removeAll()
+                if events.contains("sessions.changed") {
+                    self.refresh()
+                    while self.isRefreshing, !Task.isCancelled {
+                        try? await Task.sleep(for: .milliseconds(250))
+                    }
+                } else {
+                    self.inFlightEventRefreshes = events
+                    let generation = self.refreshGeneration
+                    if events.contains("message.complete") || events.contains("process.changed") {
+                        await self.refreshEventSessions()
+                    }
+                    if generation != self.refreshGeneration {
+                        self.inFlightEventRefreshes.removeAll()
+                        continue
+                    }
+                    if events.contains("message.complete") {
+                        await self.refreshEventActivity()
+                    }
+                    if generation != self.refreshGeneration {
+                        self.inFlightEventRefreshes.removeAll()
+                        continue
+                    }
+                    guard !Task.isCancelled else { return }
+                    await self.refreshEventDelegation()
+                    if generation != self.refreshGeneration {
+                        self.inFlightEventRefreshes.removeAll()
+                        continue
+                    }
+                    if let dock = self.dockModel {
+                        self.refreshSessionCockpit(for: dock.sessionID, quiet: true)
+                        self.refreshPromptBudget(quiet: true)
+                        self.refreshVerification()
+                    }
+                    if events.contains("process.changed"), let sessionID = self.processSessionID {
+                        await self.refreshFocusedProcesses(for: sessionID, generation: self.sessionProcessesGeneration)?
+                            .value
+                    }
+                    if events.contains("cron.changed") {
+                        await self.refreshRoutineInventory(
+                            profileID: self.dockModel?.profileScopeID, includeSessions: true)
+                        self.refreshCronRuns()
+                    }
+                    self.inFlightEventRefreshes.removeAll()
+                }
+                guard !Task.isCancelled else { return }
+                if self.pendingEventRefreshes.isEmpty {
+                    self.eventRefreshTask = nil
+                    return
+                }
             }
-            guard let self, !Task.isCancelled else { return }
-            self.eventRefreshTask = nil
-            self.refresh()
+        }
+    }
+
+    func refreshEventDelegation() async {
+        guard let rpc else { return }
+        let generation = refreshGeneration
+        let identity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        do {
+            let result = try await rpc.delegationStatus()
+            guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity) else { return }
+            let agents = Self.parseAgents(result)
+            if activeAgents != agents { activeAgents = agents }
+            let paused = result["paused"] as? Bool ?? delegationPaused
+            if delegationPaused != paused { delegationPaused = paused }
+            let state = refreshState(for: "agents")
+            if state?.lastSuccess == nil || state?.error != nil || state?.isStale == true || state?.isRefreshing == true
+            {
+                recordProjectionSuccess("agents")
+            }
+        } catch {
+            guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity) else { return }
+            recordProjectionFailure("agents", error: Self.safeUserDiagnostic(error.localizedDescription))
+        }
+    }
+
+    /// Event refreshes do not toggle loading state for an already current snapshot.
+    func refreshEventSessions() async {
+        guard let rpc else { return }
+        let generation = refreshGeneration
+        let identity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        do {
+            let result = try await rpc.activeSessions()
+            guard let sessions = Self.parseSessions(result) else { throw HermesGateway.GatewayError.malformedResponse }
+            guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity) else { return }
+            let changed = activeSessions != sessions
+            if changed { activeSessions = sessions }
+            establishFocusIfNeeded()
+            let state = refreshState(for: "sessions")
+            if changed || state?.lastSuccess == nil || state?.error != nil || state?.isRefreshing == true
+                || state?.isStale == true
+            {
+                recordProjectionSuccess("sessions")
+            }
+        } catch {
+            guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity) else { return }
+            recordProjectionFailure("sessions", error: Self.safeUserDiagnostic(error.localizedDescription))
+        }
+    }
+
+    /// Preserve project navigation and activity without toggling every projection on each turn.
+    func refreshEventActivity() async {
+        guard let rpc, dockModel != nil else { return }
+        let generation = refreshGeneration
+        let identity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        let profile = projectProfileID
+        do {
+            if !projectProfileScopeUnavailable {
+                let tree = try await rpc.projectsTree(profileID: profile)
+                guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity),
+                    projectProfileID == profile
+                else { return }
+                let refreshed = Self.reconcileProjectRefresh(current: projects, incoming: Self.parseProjects(tree))
+                if refreshed != projects {
+                    refresh()
+                    return
+                }
+                if profile != nil {
+                    for project in refreshed where project.name != "__no_project__" {
+                        let result = try await rpc.projectSessions(projectID: project.id, profileID: profile)
+                        guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity),
+                            projectProfileID == profile
+                        else { return }
+                        if projectSessionsByProjectID[project.id] != Self.parseProjectSessions(result) {
+                            refresh()
+                            return
+                        }
+                    }
+                }
+                let state = refreshState(for: "projects")
+                if state?.lastSuccess == nil || state?.error != nil || state?.isRefreshing == true
+                    || state?.isStale == true
+                {
+                    recordProjectionSuccess("projects")
+                }
+            }
+        } catch {
+            guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity),
+                projectProfileID == profile
+            else { return }
+            recordProjectionFailure("projects", error: Self.safeUserDiagnostic(error.localizedDescription))
+            return
+        }
+        do {
+            try await refreshLatestActivities(rpc: rpc, generation: generation, clientIdentity: identity)
+            guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity) else { return }
+            let state = refreshState(for: "latest.activity")
+            if state?.lastSuccess == nil || state?.error != nil || state?.isRefreshing == true || state?.isStale == true
+            {
+                recordProjectionSuccess("latest.activity")
+            }
+        } catch {
+            guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity) else { return }
+            recordProjectionFailure("latest.activity", error: Self.safeUserDiagnostic(error.localizedDescription))
         }
     }
 

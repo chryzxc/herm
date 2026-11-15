@@ -13,31 +13,50 @@ extension WorkspaceActivitySidebar {
             case .checking: ("Checking \(HermAppUpdater.repository)…", .dockSecondaryText)
             case .upToDate: ("Up to date", .dockSecondaryText)
             case .available(let version):
-                ("Herm \(version) is available. Download and install it manually.", .dockWarning)
-            case .downloading: ("Downloading Herm \(appUpdater.latest?.version ?? "")…", .dockSecondaryText)
+                ("Herm \(version) is available. " + (appUpdater.installUnavailableReason ?? ""), .dockWarning)
+            case .downloading:
+                ("\(appUpdater.downloadStage) Herm \(appUpdater.latest?.version ?? "")…", .dockSecondaryText)
             case .readyToInstall(let version):
-                ("Herm \(version) is ready. It installs and restarts once the current turn finishes.", .dockWarning)
+                (
+                    appUpdater.waitingForIdle
+                        ? "Herm \(version) will install and restart when the current turn finishes."
+                        : "Herm \(version) is ready to install and restart.", .dockWarning
+                )
             case .installing: ("Installing and restarting…", .dockWarning)
             case .failed(let reason): (reason, .dockWarning)
             }
         let isUnavailable = if case .unavailable = appUpdater.phase { true } else { false }
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Circle().fill(color).frame(width: 7, height: 7)
+                if appUpdater.phase == .downloading {
+                    DockStatusDot(tone: .working, size: 7, pulses: true)
+                } else if appUpdater.phase == .checking {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Circle().fill(color).frame(width: 7, height: 7)
+                }
                 Text(status)
                     .dockFont(.body)
                     .foregroundStyle(color)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                if case .readyToInstall = appUpdater.phase {
-                    Button("Restart now") { appUpdater.installNow() }
-                        .buttonStyle(.dockPrimary)
-                        .controlSize(.small)
-                } else if case .available = appUpdater.phase,
-                    let url = appUpdater.latest?.pageURL
-                        ?? URL(string: "https://github.com/\(HermAppUpdater.repository)/releases")
+                if appUpdater.phase == .downloading, appUpdater.downloadStage == "Downloading",
+                    let fraction = appUpdater.downloadFraction
                 {
-                    Button("Download") { NSWorkspace.shared.open(url) }
+                    Text(fraction, format: .percent.precision(.fractionLength(0)))
+                        .dockFont(.machineMetadata)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .contentTransition(.numericText())
+                }
+                if case .readyToInstall = appUpdater.phase {
+                    Button("Install and restart") { appUpdater.installWhenIdle() }
+                        .buttonStyle(.dockPrimary)
+                        .disabled(appUpdater.waitingForIdle)
+                } else if case .available = appUpdater.phase,
+                    appUpdater.installUnavailableReason == nil
+                {
+                    Button("Download") { appUpdater.downloadUpdate() }
                         .buttonStyle(.dockPrimary)
                 } else if appUpdater.canCheck && !isUnavailable {
                     Button("Check for updates") { appUpdater.checkForUpdates() }
@@ -46,12 +65,34 @@ extension WorkspaceActivitySidebar {
                         .foregroundStyle(Color.dockAccent)
                 }
             }
-            Text(
-                "Source  ·  \(HermAppUpdater.repository)"
-                    + (appUpdater.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? "")
-            )
-            .dockFont(.metadata)
-            .foregroundStyle(Color.dockMetadataText)
+            Group {
+                if appUpdater.phase == .downloading {
+                    if appUpdater.downloadStage == "Downloading", let fraction = appUpdater.downloadFraction {
+                        DockProgressBar(fraction: fraction)
+                    } else {
+                        DockShimmerTrack(tone: .working)
+                    }
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(height: 4)
+            HStack {
+                Text(
+                    "Source  ·  \(HermAppUpdater.repository)"
+                        + (appUpdater.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? "")
+                )
+                .dockFont(.metadata)
+                .foregroundStyle(Color.dockMetadataText)
+                Spacer(minLength: 0)
+                Button("Release page") {
+                    let fallback = "https://github.com/\(HermAppUpdater.repository)/releases"
+                    if let url = appUpdater.latest?.pageURL ?? URL(string: fallback) {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.dockSecondary)
+            }
         }
     }
 

@@ -300,7 +300,7 @@ extension ControlCenterModel {
         return sessions
     }
 
-    func refreshSessionCockpit(for requestedSessionID: String? = nil) {
+    func refreshSessionCockpit(for requestedSessionID: String? = nil, quiet: Bool = false) {
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
@@ -308,8 +308,8 @@ extension ControlCenterModel {
         let sessionID = requestedSessionID ?? dockModel?.sessionID
         guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID, !sessionID.isEmpty else {
             sessionCockpitSessionID = nil
-            sessionUsage = nil
-            sessionContext = nil
+            if sessionUsage != nil { sessionUsage = nil }
+            if sessionContext != nil { sessionContext = nil }
             return
         }
         if sessionCockpitSessionID != sessionID {
@@ -329,19 +329,31 @@ extension ControlCenterModel {
                 isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
                 requestedSessionID != nil || dockModel?.sessionID == sessionID
             else { return }
-            if let usage { sessionUsage = Self.parseSessionUsage(usage) }
-            if let context { sessionContext = Self.parseSessionContext(context) }
+            if let usage {
+                let parsed = Self.parseSessionUsage(usage)
+                if sessionUsage != parsed { sessionUsage = parsed }
+            }
+            if let context {
+                let parsed = Self.parseSessionContext(context)
+                if sessionContext != parsed { sessionContext = parsed }
+            }
             if usage != nil || context != nil {
-                recordProjectionSuccess("session.cockpit")
+                let state = refreshState(for: "session.cockpit")
+                if !quiet || state?.lastSuccess == nil || state?.error != nil || state?.isStale == true
+                    || state?.isRefreshing == true
+                {
+                    recordProjectionSuccess("session.cockpit")
+                }
             }
         }
-        refreshCheckpoints(sessionID: sessionID)
+        refreshCheckpoints(sessionID: sessionID, quiet: quiet)
     }
 
     func refreshCheckpoints(
         sessionID: String? = nil,
         projectID requestedProjectID: String? = nil,
-        selectionID requestedSelectionID: String? = nil
+        selectionID requestedSelectionID: String? = nil,
+        quiet: Bool = false
     ) {
         guard let rpc, let resolvedSessionID = sessionID ?? dockModel?.sessionID, !resolvedSessionID.isEmpty else {
             checkpoints = []
@@ -354,20 +366,22 @@ extension ControlCenterModel {
         checkpointsGeneration = generation
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
-        isLoadingCheckpoints = true
+        let showLoading = !quiet || isLoadingCheckpoints
+        if !quiet { isLoadingCheckpoints = true }
         Task {
             defer {
-                if generation == checkpointsGeneration { isLoadingCheckpoints = false }
+                if showLoading, generation == checkpointsGeneration { isLoadingCheckpoints = false }
             }
             guard let result = try? await rpc.listRestoreCheckpoints(sessionID: resolvedSessionID),
                 generation == checkpointsGeneration,
                 isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
                 sessionID != nil || dockModel?.sessionID == resolvedSessionID
             else { return }
-            checkpoints = Self.parseCheckpoints(result)
+            let parsed = Self.parseCheckpoints(result)
+            if checkpoints != parsed { checkpoints = parsed }
             let projectID = requestedProjectID ?? projectIDBySessionID[resolvedSessionID]
             let selectionID = requestedSelectionID ?? currentFocus?.sourceID
-            restoreCheckpoints = RestoreCheckpointEligibility.eligible(
+            let eligible = RestoreCheckpointEligibility.eligible(
                 checkpoints.compactMap { row in
                     RestoreCheckpoint(
                         sessionID: resolvedSessionID,
@@ -382,7 +396,8 @@ extension ControlCenterModel {
                 projectID: projectID,
                 selectionID: selectionID
             )
-            if checkpoints.isEmpty { checkpointDiff = nil }
+            if restoreCheckpoints != eligible { restoreCheckpoints = eligible }
+            if checkpoints.isEmpty, checkpointDiff != nil { checkpointDiff = nil }
         }
     }
 

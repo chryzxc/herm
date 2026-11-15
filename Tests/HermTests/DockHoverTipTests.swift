@@ -166,6 +166,52 @@ struct DockHoverTipTests {
         #expect(presenter.panel == nil)
     }
 
+    @Test func mountingAlreadyHoveredControlShowsTooltipAndRemovalDismissesIt() async throws {
+        let window = makeWindow()
+        let presenter = DockHoverTipPresenter.shared
+        presenter.dismiss()
+        let host = NSHostingView(
+            rootView: Button("Open session") {}.background(
+                DockHoverTipAnchor(text: "Open session help", edge: .bottom, gap: 6, hovering: true)))
+        defer {
+            presenter.dismiss()
+            window.orderOut(nil)
+        }
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        func findAnchor(_ view: NSView) -> DockHoverTipAnchorView? {
+            if let anchor = view as? DockHoverTipAnchorView { return anchor }
+            return view.subviews.lazy.compactMap { findAnchor($0) }.first
+        }
+        let anchor = try #require(findAnchor(host))
+        #expect(anchor.window === window)
+        try #require(anchor.hovering, "Mounting an already-hovered control must preserve its hover state")
+        for _ in 0..<60 where presenter.panel == nil { try await Task.sleep(for: .milliseconds(50)) }
+        let panel = try #require(presenter.panel)
+        #expect(presenter.activeAnchor === anchor)
+        #expect(anchor.text == "Open session help")
+        #expect(panel.parent === window)
+        #expect(panel.ignoresMouseEvents)
+        #expect(!panel.canBecomeKey && !panel.canBecomeMain)
+        window.contentView = NSView()
+        for _ in 0..<20 where presenter.panel != nil { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(presenter.panel == nil)
+
+        let earlyHost = NSHostingView(
+            rootView: Button("Open session") {}.background(
+                DockHoverTipAnchor(text: "Open session help", edge: .bottom, gap: 6, hovering: true)))
+        window.contentView = earlyHost
+        earlyHost.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        let earlyAnchor = try #require(findAnchor(earlyHost))
+        try #require(earlyAnchor.hovering)
+        window.contentView = NSView()
+        try await Task.sleep(for: .milliseconds(550))
+        #expect(presenter.panel == nil)
+        #expect(presenter.activeAnchor == nil)
+    }
+
     private func makeWindow() -> NSWindow {
         _ = NSApplication.shared
         let screen = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1024, height: 768)

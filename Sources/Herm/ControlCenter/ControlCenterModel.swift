@@ -189,6 +189,8 @@ final class ControlCenterModel: ObservableObject {
     var latestActivityRefreshTask: Task<Void, Never>?
     var latestActivityCache: [String: LatestActivityCacheEntry] = [:]
     var eventRefreshTask: Task<Void, Never>?
+    var pendingEventRefreshes: Set<String> = []
+    var inFlightEventRefreshes: Set<String> = []
     var initialProjectNavigationTask: Task<Void, Never>?
     var refreshGeneration: UInt64 = 0
     var clientBindingGeneration: UInt64 = 0
@@ -209,6 +211,8 @@ final class ControlCenterModel: ObservableObject {
     /// published projection, but must not make already loaded work disappear
     /// while the same read-only query refreshes in the background.
     var sessionKanbanTasksByRequest: [SessionKanbanProjectionRequest: [KanbanTaskSummary]] = [:]
+    var sessionTaskBoards: [SessionTaskBoardKey: SessionTaskBoardCacheEntry] = [:]
+    var sessionTaskBoardInventory: (id: UUID, binding: UInt64, task: Task<[KanbanTaskSummary]?, Never>)?
     /// Observed card IDs (`board|id`) whose `kanban show` returned no usable
     /// card. Each lookup spawns a Hermes CLI process, so polling must not
     /// retry them on every refresh.

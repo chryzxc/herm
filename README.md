@@ -192,7 +192,7 @@ Quick approval and clarification answers stay tied to their original request, se
 
 The status colors match the rest of the app: blue means active, green means healthy or done, amber means a warning or that Hermes needs you, and red means a failure.
 
-Global hover tooltips show one floating, fully opaque, theme-aware panel beside the hovered control and above workspace content and scroll containers. Long help wraps, stays within the display, and never takes keyboard focus.
+Global hover tooltips show one floating, fully opaque, theme-aware panel beside the hovered control and above workspace content and scroll containers. Hover descriptions appear on first attachment and are cancelled when the control is removed. Long help wraps, stays within the display, and never takes keyboard focus.
 
 Chat message timestamps appear on hover, with no separator after the assistant message actions.
 
@@ -876,7 +876,9 @@ Timeline uses a single horizontal gutter and compact 36pt bot faces, and shows b
 - **iOS Simulator / Android Emulator**: live device tabs Hermes can launch and you can drive. See [iOS Simulator and Android Emulator](#ios-simulator-and-android-emulator).
 - **Terminal**: a native terminal in the session's project folder, with history, Tab completion, and optional repository checks.
 - **Repository review**: reviews the whole repository locally and tells you what it didn't cover. Optional repository watching never starts Hermes work on its own.
-- **⌘K command palette** for app actions and Inbox filters.
+- **⌘K command palette** for app actions and Inbox filters; in a workspace window it opens the same Command Center action palette as the Activity sidebar button, with registry shortcuts in the View and Go menus.
+- **⌘N** starts a new chat and **⌘.** stops the current generation; both appear in the command palette and menu bar.
+- **⌘,** opens Settings; **⌘[ / ⌘]** navigate backward and forward through visited workspace destinations.
 
 ### Native review and workflow tools
 
@@ -1270,7 +1272,7 @@ Confirmed automation runs show Starting immediately, then Running only when Herm
 - The Quota page, chat composer, and notch Quota tab share one quota inventory, including provider names, readings, reset times, and the tightest remaining window. For pooled accounts, compact session readings use the account marked Active by Hermes; if its reading is unavailable, they do not substitute another account. Session model responses do not supply a separate quota reading.
 - **Quota**: remaining allowance for Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity. Its toolbar highlights Add account, groups automatic refresh and peak-hour sync, and keeps the last update time above the controls. Controls stack in narrow windows. The Add account dialog keeps provider names readable, shows readable sign-in instructions in a stable layout, and offers Done after Hermes confirms success.
 - With a remote backend, Herm shows quota reported by Hermes and, when the backend permits the supported usage command, OpenRouter credits. Claude Code and Antigravity readings remain local to this Mac. Backend device sign-in requires an advertised device-code flow; otherwise sign in on the backend host. Recorded Spend is not a remaining balance.
-- **Herm updates**: the installed app checks [GitHub Releases](https://github.com/chryzxc/herm/releases) every few hours, downloads and verifies the new DMG, and installs it once no turn is running, rolling back if the swap or relaunch fails. **Settings → Updates** shows the status with **Check for updates** and **Restart now**. Automatic installation requires a Developer ID signed build and an update signed by the same team, plus a valid SHA-256 checksum. Ad-hoc/development builds and copies Herm cannot write to require manual updates. The top toolbar shows a violet **Dev** pill for development builds or a blue **Nightly** pill for nightly builds; stable releases show no build pill. Settings uses the same label and includes the short commit when supplied. Nightly builds from the `nightly` pre-release never receive other nightlies, only the next stable release.
+- **Herm updates**: the installed app checks [GitHub Releases](https://github.com/chryzxc/herm/releases) at startup and every few hours, with a badge on Settings when an update is available. Stable builds check stable releases; nightly builds also check the rolling nightly by commit. In **Settings → Updates**, supported builds can **Download**, then **Install and restart**; Herm waits for the current turn to finish and rolls back if the swap or relaunch fails. In-app installation verifies the SHA-256 checksum and, for ad-hoc builds, a detached Ed25519 signature against the public key built into Herm. Developer ID builds continue to require the same Apple publisher. Install the first version with signing-key support manually once; subsequent signed stable and nightly updates install in-app. Copies Herm cannot write to still require manual installation. The release-page button stays available for recovery. Ad-hoc updates do not provide notarization or a stable macOS privacy identity, so macOS can ask for permissions again. The top toolbar shows a violet **Dev** pill for development builds or a blue **Nightly** pill for nightly builds; stable releases show no build pill. Settings uses the same label and includes the short commit when supplied.
 - **Hermes updates**: runs `hermes update` only after you confirm. Settings shows the current activity and elapsed time; expand Output to inspect the streamed log. It never updates automatically.
 
 Automation uses consistent compact actions, quieter two-line schedule titles,
@@ -1366,6 +1368,8 @@ Herm doesn't yet support everything Hermes can do. Some features require additio
 Project management and bot **@mention autocomplete** are already implemented; runtime-dependent features remain unavailable on installations that do not expose their required methods. The remaining limitations are not a promise of future feature parity. The feature descriptions above reflect the current frontend.
 
 ## Development
+
+Window toolbar icons remain clickable without dragging the window; drag the blank title row to move it.
 
 Forward to Bot closes after a successful send; failures keep the note and show an error for retry.
 
