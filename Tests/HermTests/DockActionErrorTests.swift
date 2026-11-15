@@ -8,7 +8,7 @@ import Testing
 struct DockActionErrorTests {
     @Test func closeButtonWorksWithoutMakingThePopupKey() async throws {
         _ = NSApplication.shared
-        let parent = DockPanel(
+        let parent = ActionErrorTestPanel(
             contentRect: NSRect(x: 100, y: 100, width: 600, height: 300),
             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         parent.isReleasedWhenClosed = false
@@ -17,6 +17,8 @@ struct DockActionErrorTests {
         defer { parent.close() }
         let center = DockActionErrorCenter()
         let presenter = DockActionErrorPresenter(center: center)
+        // Reproduce a defaults notification arriving after the fixture overrides privacy.
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
         center.report("Could not pin session", message: "not_found")
         let popup = try #require(parent.childWindows?.first)
         #expect(abs(popup.frame.maxX - (parent.frame.maxX - 20)) < 1)
@@ -77,6 +79,11 @@ struct DockActionErrorTests {
         #expect(center.current?.title == "Could not compress session")
         #expect(control.lastError?.contains("unavailable") == true)
         if let current = center.current { center.dismiss(current.id) }
+    }
+
+    private final class ActionErrorTestPanel: NSPanel {
+        override var canBecomeKey: Bool { true }
+        override var canBecomeMain: Bool { true }
     }
 
     @Test func renderErrorPopups() async throws {
