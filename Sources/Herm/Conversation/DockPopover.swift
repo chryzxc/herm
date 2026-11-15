@@ -66,6 +66,8 @@ struct DockPopover: View {
     @AppStorage(DockWorkspaceScale.preferenceKey) private var textSize = DockWorkspaceScale.defaultTextSize
     @StateObject var expandedReviewRouter = ExpandedReviewRouter()
     @StateObject var hostPresentation = DockHostPresentation()
+    @StateObject var commandPalettePresentation = DockActionPalettePresentation()
+    @State private var isShowingShortcutList = false
     @State private var presentationHostID = UUID()
     let model: DockModel
     @State var modelPresentationRevision = 0
@@ -78,6 +80,7 @@ struct DockPopover: View {
     var availableWorkspaceWidth: () -> CGFloat = { .greatestFiniteMagnitude }
     var onWorkspaceWidthChange: (CGFloat) -> CGFloat = { $0 }
     var onClose: () -> Void = {}
+    var onOpenSettings: () -> Void = {}
     var onFullscreenToggle: () -> Void = {}
     /// Floating panel: open the docked window. Docked window: return to floating.
     var onOpenWindow: (() -> Void)?
@@ -301,6 +304,48 @@ struct DockPopover: View {
             }
             .onReceive(controlCenter.workspacePresentationChanges) { _ in controlPresentationRevision &+= 1 }
             .environment(\.dockWorkspaceScale, CGFloat(DockWorkspaceScale.supportedTextSize(textSize)))
+            .background(
+                HermCommandRegistration(
+                    handlers: HermCommandHandlers(
+                        openSettings: onOpenSettings,
+                        openCommandPalette: { commandPalettePresentation.present() },
+                        goBack: goBack,
+                        goForward: goForward,
+                        newChat: startNewConversation,
+                        stopGeneration: { model.stop() },
+                        closeSession: {
+                            if let panel = sessionPanes.activePanel, let sessionID = panel.selectedID {
+                                sessionPanes.closeTab(sessionID, in: panel.id)
+                            } else {
+                                startNewConversation()
+                            }
+                        },
+                        toggleSidebar: { isChatListCollapsed.toggle() },
+                        toggleInspector: toggleInspectorPanel,
+                        showShortcutList: { isShowingShortcutList = true }
+                    ))
+            )
+            .dockSheet(
+                isPresented: Binding(
+                    get: { commandPalettePresentation.isPresented },
+                    set: { if !$0 { commandPalettePresentation.dismiss() } }
+                )
+            ) {
+                DockActionPalette(
+                    repositoryAvailable: activeSessionRepositoryPath != nil,
+                    isWorking: model.status == .working
+                ) { command in
+                    if let actionHandler = commandPalettePresentation.actionHandler {
+                        actionHandler(command)
+                    } else {
+                        runDockActionWithoutSidebar(command)
+                    }
+                    commandPalettePresentation.dismiss()
+                }
+            }
+            .dockSheet(isPresented: $isShowingShortcutList) {
+                HermShortcutList()
+            }
             .environment(\.dockHostVisible, hostPresentation.isVisible)
             .environment(\.dockHostResizing, hostPresentation.isResizing)
             .background { DockHostPresentationObserver(presentation: hostPresentation).frame(width: 0, height: 0) }

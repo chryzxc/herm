@@ -135,7 +135,6 @@ extension DockPopover {
     func observerLayerThree<V: View>(_ view: V) -> some View {
         view
             // Settled destinations only: opening a session changes the surface before the session id.
-            .background { historyShortcuts }
             .task(id: currentNavigationDestination) {
                 try? await Task.sleep(for: .milliseconds(150))
                 guard !Task.isCancelled else { return }

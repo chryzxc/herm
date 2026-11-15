@@ -12,10 +12,7 @@ struct HermApp: App {
             EmptyView()
         }
         .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button("Settings…") { appDelegate.showSettings() }
-                    .keyboardShortcut(",")
-            }
+            HermCommandMenus(openSettings: { appDelegate.showSettings() })
         }
     }
 }

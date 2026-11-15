@@ -145,16 +145,6 @@ extension DockPopover {
             canGoBack: navHistory.canGoBack, canGoForward: navHistory.canGoForward, back: goBack, forward: goForward)
     }
 
-    /// One pair of window-wide shortcuts, so the visible buttons never compete for them.
-    var historyShortcuts: some View {
-        Group {
-            Button("Back", action: goBack).keyboardShortcut("[", modifiers: .command).disabled(!navHistory.canGoBack)
-            Button("Forward", action: goForward).keyboardShortcut("]", modifiers: .command)
-                .disabled(!navHistory.canGoForward)
-        }
-        .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
-    }
-
     func goBack() { if let destination = navHistory.back() { navigate(to: destination) } }
     func goForward() { if let destination = navHistory.forward() { navigate(to: destination) } }
 
@@ -207,6 +197,52 @@ extension DockPopover {
         }
     }
 
+    func runDockActionWithoutSidebar(_ action: DockAction) {
+        switch action {
+        case .tab(let tab):
+            presentDeferredSidebarAction(action, on: tab)
+        case .captureWindow:
+            model.captureDesktopWindow()
+            model.requestComposerFocus()
+        case .newChat:
+            model.newChat()
+            model.requestComposerFocus()
+        case .focusComposer:
+            model.requestComposerFocus()
+        case .stop:
+            model.stop()
+        case .voice:
+            model.startVoiceConversation()
+        case .refresh:
+            controlCenter.refresh(forceCapabilities: true)
+            Task {
+                await developerWorkflow.setActiveRepository(
+                    path: activeSessionRepositoryPath,
+                    preferences: repositoryPreferences,
+                    control: controlCenter
+                )
+                await developerWorkflow.refresh(preferences: repositoryPreferences, control: controlCenter)
+            }
+        case .artifacts:
+            navigate(
+                to: NavigationDestination(
+                    surface: .artifacts, tab: nil, sessionID: nil, gitHubSection: nil, gitHubItemID: nil))
+        case .restartDock:
+            presentDeferredSidebarAction(action, on: fullscreenGlobalTab)
+        case .workflow(let recipe):
+            guard !recipe.requiresRepository || activeSessionRepositoryPath != nil else { return }
+            let repositoryContext = activeSessionRepositoryPath.map { " Repository: \($0)." } ?? ""
+            Task { _ = await controlCenter.startBackgroundTask(recipe.prompt + repositoryContext) }
+        }
+    }
+
+    private func presentDeferredSidebarAction(_ action: DockAction, on tab: ControlTab) {
+        commandPalettePresentation.pendingAction = action
+        navigate(
+            to: NavigationDestination(
+                surface: .global, tab: tab, sessionID: nil, gitHubSection: nil, gitHubItemID: nil))
+    }
+
     func handleProfileScopeChange(_ profileID: String?) {
         let normalized = profileID?.trimmingCharacters(in: .whitespacesAndNewlines)
         let selected = normalized?.isEmpty == false ? normalized : nil
@@ -225,6 +261,7 @@ extension DockPopover {
     var fullscreenGlobalControlSurface: some View {
         WorkspaceActivitySidebar(
             model: model,
+            commandPalettePresentation: commandPalettePresentation,
             botMode: botMode,
             store: workspaceStore,
             control: controlCenter,
@@ -566,6 +603,7 @@ extension DockPopover {
                     case .global:
                         WorkspaceActivitySidebar(
                             model: model,
+                            commandPalettePresentation: commandPalettePresentation,
                             botMode: botMode,
                             store: workspaceStore,
                             control: controlCenter,
