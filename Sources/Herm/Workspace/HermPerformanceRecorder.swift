@@ -236,10 +236,16 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         let id = captureID
-        process.terminationHandler = { _ in
+        process.terminationHandler = { terminated in
+            let status = terminated.terminationStatus
             Task { @MainActor in
                 let recorder = HermPerformanceRecorder.shared
                 guard recorder.captureID == id else { return }
+                if let index = recorder.stackCaptures.firstIndex(of: file.lastPathComponent) {
+                    recorder.stackCaptures[index] = Self.stackCaptureResult(
+                        name: file.lastPathComponent, status: status,
+                        hasFile: FileManager.default.fileExists(atPath: file.path))
+                }
                 recorder.isCapturingStack = false
                 recorder.sampler = nil
                 if recorder.isFinalizing { recorder.saveReport() }
@@ -253,6 +259,10 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
         isCapturingStack = true
         secondWasSampled = true
         stackCaptures.append(file.lastPathComponent)
+    }
+
+    nonisolated static func stackCaptureResult(name: String, status: Int32, hasFile: Bool) -> String {
+        status == 0 && hasFile ? name : "Stack sample unavailable"
     }
 
     private func renderReport() -> String {

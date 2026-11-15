@@ -360,6 +360,18 @@ private final class ActivityCacheClient: HermesRPCClientProtocol {
 }
 
 struct HermPerformanceRecorderTests {
+    @Test func stackCaptureReportsOnlySuccessfulExistingFiles() {
+        #expect(
+            HermPerformanceRecorder.stackCaptureResult(name: "stack-t1s.txt", status: 0, hasFile: true)
+                == "stack-t1s.txt")
+        #expect(
+            HermPerformanceRecorder.stackCaptureResult(name: "stack-t1s.txt", status: 15, hasFile: false)
+                == "Stack sample unavailable")
+        #expect(
+            HermPerformanceRecorder.stackCaptureResult(name: "stack-t1s.txt", status: 0, hasFile: false)
+                == "Stack sample unavailable")
+    }
+
     @Test func droppedFramesIgnoresJitterAndCountsWholeMissedFrames() {
         let frame = 1.0 / 120
         #expect(HermPerformanceRecorder.droppedFrames(delta: frame, expected: frame) == 0)
