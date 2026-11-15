@@ -1,10 +1,92 @@
+import AppKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import Herm
 
 @MainActor
 struct SessionProcessIsolationTests {
+    @Test func composerProjectionsKeepProcessesAndStopsInTheirOwnSession() async throws {
+        let client = SessionProcessIsolationClient()
+        client.processState = "running"
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        control.capabilities = [
+            CapabilityState(
+                id: "rpc-sessions", title: "Sessions", detail: "Available", isAvailable: true, recovery: nil)
+        ]
+        let first = DockModel(initialSessionID: "session-a", rpcClient: client)
+        let second = DockModel(initialSessionID: "session-b", rpcClient: client)
+        let a = SessionProcessProjection(control: control, model: first)
+        let b = SessionProcessProjection(control: control, model: second)
+        a.reset(for: first.sessionID)
+        b.reset(for: second.sessionID)
+        client.processID = "process-a"
+        await a.poll()
+        client.processID = "process-b"
+        await b.poll()
+        #expect(a.processes.map(\.id) == ["process-a"])
+        #expect(b.processes.map(\.id) == ["process-b"])
+        let stale = a.confirmation(for: try #require(a.processes.first))
+        let target = b.confirmation(for: try #require(b.processes.first))
+        first.sessionID = "session-c"
+        a.reset(for: first.sessionID)
+        #expect(a.processes.isEmpty)
+        #expect(!(await a.stop(stale)))
+        #expect(await b.stop(target))
+        #expect(client.killedSessionIDs == ["session-b"])
+        #expect(client.killedProcessIDs == ["process-b"])
+    }
+
+    @Test func messageCompleteRefreshCountDoesNotGrowWithPanesOrSessionSwitch() async throws {
+        let one = try await refreshCounts(panes: 1)
+        let four = try await refreshCounts(panes: 4)
+        // Each refresh reads active sessions directly and through capability probing.
+        #expect(one == [2, 2])
+        #expect(four == one)
+    }
+
+    private func refreshCounts(panes: Int) async throws -> [Int] {
+        let client = SessionProcessIsolationClient()
+        let defaults = try #require(UserDefaults(suiteName: "pane-refresh-\(UUID().uuidString)"))
+        let primary = DockModel(defaults: defaults, initialSessionID: "primary", rpcClient: client)
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        control.bind(to: primary)
+        let bots = BotModeModel()
+        var models = [primary]
+        for index in 1..<panes {
+            models.append(DockModel(defaults: defaults, initialSessionID: "pane-\(index)", rpcClient: client))
+        }
+        let host = NSHostingView(
+            rootView: HStack {
+                ForEach(Array(models.enumerated()), id: \.offset) { _, model in
+                    SessionPaneChat(model: model, control: control, bots: bots, metrics: .resolve(isFullscreen: false))
+                }
+            })
+        host.frame = NSRect(x: 0, y: 0, width: 1000, height: 600)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        host.layoutSubtreeIfNeeded()
+        await control.refreshTask?.value
+        #expect(control.dockModel === primary)
+        var counts: [Int] = []
+        for sessionID in ["primary", "switched"] {
+            primary.sessionID = sessionID
+            control.focus(sessionID: sessionID)
+            await control.refreshTask?.value
+            let before = client.activeSessionRequests
+            for model in models {
+                model.eventRouter.route(type: "message.complete", params: ["session_id": sessionID])
+            }
+            await control.eventRefreshTask?.value
+            await control.refreshTask?.value
+            counts.append(client.activeSessionRequests - before)
+        }
+        return counts
+    }
+
     @Test(arguments: [false, true])
     func listedProcessCanStopWithoutActivityProbe(includeUnavailableProbe: Bool) async throws {
         let client = SessionProcessIsolationClient()
@@ -309,6 +391,7 @@ struct SessionProcessIsolationTests {
 
 @MainActor
 private final class SessionProcessIsolationClient: HermesRPCClientProtocol {
+    var activeSessionRequests = 0
     var onEvent: ((String, [String: Any]) -> Void)?
     private(set) var processSessionIDs: [String] = []
     private(set) var killedSessionIDs: [String] = []
@@ -344,6 +427,7 @@ private final class SessionProcessIsolationClient: HermesRPCClientProtocol {
             return ["session_id": "runtime-owner", "session_key": "owner", "messages": []]
         }
         if method == "session.active_list" {
+            activeSessionRequests += 1
             return ["sessions": [["id": "foreign", "state": "running"]]]
         }
         // A valid empty inventory keeps the broad refresh's unrelated cron read

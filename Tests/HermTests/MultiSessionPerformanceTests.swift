@@ -6,6 +6,53 @@ import Testing
 
 @MainActor
 struct MultiSessionPerformanceTests {
+    @Test func boardResolutionCachesPerSessionAndExpiresMisses() async {
+        let control = ControlCenterModel()
+        let a = KanbanTaskSummary(
+            id: "same", boardSlug: "board-a", title: "A", status: "", detail: nil, priority: nil,
+            assignee: nil, sessionID: "session-a")
+        let b = KanbanTaskSummary(
+            id: "same", boardSlug: "board-b", title: "B", status: "", detail: nil, priority: nil,
+            assignee: nil, sessionID: "session-b")
+        let keyA = SessionTaskBoardKey(taskID: "same", sessionIDs: ["session-a"])
+        let keyB = SessionTaskBoardKey(taskID: "same", sessionIDs: ["session-b"])
+        let missing = SessionTaskBoardKey(taskID: "missing", sessionIDs: ["session-a"])
+        var reads = 0
+        let load: () async -> [KanbanTaskSummary]? = {
+            reads += 1
+            return [a, b]
+        }
+        for _ in 0..<4 {
+            #expect(await control.resolveSessionTaskBoard(keyA, load: load) == "board-a")
+        }
+        #expect(reads == 1)
+        #expect(await control.resolveSessionTaskBoard(keyB, load: load) == "board-b")
+        #expect(reads == 2)
+        #expect(await control.resolveSessionTaskBoard(missing, load: load) == nil)
+        #expect(await control.resolveSessionTaskBoard(missing, load: load) == nil)
+        #expect(reads == 3)
+        control.sessionTaskBoards[missing] = SessionTaskBoardCacheEntry(board: nil, expiresAt: .distantPast)
+        #expect(await control.resolveSessionTaskBoard(missing, load: load) == nil)
+        #expect(reads == 4)
+        control.sessionTaskBoards[keyA] = nil
+        #expect(await control.resolveSessionTaskBoard(keyA, load: load) == "board-a")
+        #expect(reads == 5)
+    }
+
+    @Test func boardlessDetailsResolveAgainstOriginSession() {
+        let a = KanbanTaskSummary(
+            id: "same", boardSlug: "board-a", title: "A", status: "", detail: nil, priority: nil,
+            assignee: nil, sessionID: "session-a")
+        let b = KanbanTaskSummary(
+            id: "same", boardSlug: "board-b", title: "B", status: "", detail: nil, priority: nil,
+            assignee: nil, sessionID: "session-b")
+        #expect(
+            ControlCenterModel.sessionTaskBoard(taskID: "same", sessionIDs: ["session-a"], tasks: [a, b]) == "board-a")
+        #expect(
+            ControlCenterModel.sessionTaskBoard(taskID: "same", sessionIDs: ["session-b"], tasks: [a, b]) == "board-b")
+        #expect(ControlCenterModel.sessionTaskBoard(taskID: "same", sessionIDs: [], tasks: [a, b]) == nil)
+    }
+
     @Test func backgroundToolBurstsDoNotInvalidateTheOpenConversation() {
         let model = DockModel(
             sessionAgentStateFileURL: FileManager.default.temporaryDirectory

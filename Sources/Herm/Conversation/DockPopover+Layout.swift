@@ -659,7 +659,7 @@ extension DockPopover {
                 if sessionWorkspaceMode.isColumnMode, !(sessionWorkspaceMode == .voice && isVoiceImmersive) {
                     // Each column owns its title row, so the primary header spans only its column.
                     SessionPaneRow(
-                        store: sessionPanes, isEnabled: !isNarrowLayout,
+                        store: sessionPanes, control: controlCenter, bots: botMode, isEnabled: !isNarrowLayout,
                         headerHeight: usesWindowChrome
                             ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight,
                         usesWindowChrome: usesWindowChrome,
