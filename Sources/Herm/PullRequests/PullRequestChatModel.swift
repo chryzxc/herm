@@ -19,6 +19,7 @@ final class PullRequestChatModel: ObservableObject {
     private let links: UserDefaults
     private var sessionLink: AnyCancellable?
     private var connectionLink: AnyCancellable?
+    private var reasoningLink: AnyCancellable?
     private var presentationSuite: String?
     private var eventSubscription: UUID?
     private weak var eventOwner: DockModel?
@@ -45,6 +46,7 @@ final class PullRequestChatModel: ObservableObject {
             sessionAgentStateFileURL: cache.appendingPathComponent("agents.json"), defaults: defaults,
             botActivityFileURL: cache.appendingPathComponent("bots.json"), rpcClient: runtime.controlRPCClient)
         connectionLink = runtime.$isHermesConnected.sink { [weak model] in model?.isHermesConnected = $0 }
+        reasoningLink = runtime.$defaultReasoningVariant.sink { [weak model] in model?.defaultReasoningVariant = $0 }
         conversation = model
         eventOwner = runtime
         eventSubscription = runtime.eventRouter.subscribe { [weak model] type, params in
@@ -77,6 +79,7 @@ final class PullRequestChatModel: ObservableObject {
         eventSubscription = nil
         sessionLink = nil
         connectionLink = nil
+        reasoningLink = nil
         if let presentationSuite { UserDefaults.standard.removePersistentDomain(forName: presentationSuite) }
         conversation?.shutdown()
     }

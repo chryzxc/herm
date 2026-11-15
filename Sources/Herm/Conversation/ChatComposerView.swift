@@ -846,12 +846,12 @@ struct ChatComposerView: View {
         return HermesModelOption(provider: provider, model: modelName).id
     }
 
-    private var selectedReasoningVariant: HermesReasoningVariant? {
+    var selectedReasoningVariant: HermesReasoningVariant? {
         model.sessionID == nil
             ? (model.draftReasoningVariant ?? model.defaultReasoningVariant) : model.sessionReasoningVariant
     }
 
-    private var reasoningVariantSelection: Binding<HermesReasoningVariant?> {
+    var reasoningVariantSelection: Binding<HermesReasoningVariant?> {
         Binding(
             get: { selectedReasoningVariant },
             set: { variant in

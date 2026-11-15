@@ -50,6 +50,24 @@ private actor PullRequestDetailRenderTransport: GitHubIssueTransport {
 }
 
 @MainActor
+private final class PullRequestDetailRenderRPC: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    func connect() async throws {}
+    func close() {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == "model.options" {
+            return [
+                "provider": "openai", "model": "gpt-6",
+                "providers": [
+                    ["slug": "openai", "models": ["gpt-6"], "capabilities": ["gpt-6": ["reasoning": true]]]
+                ],
+            ]
+        }
+        return [:]
+    }
+}
+
+@MainActor
 struct PullRequestDetailRenderTests {
     @Test func renderWideAndNarrowDetailsAcrossThemes() async throws {
         guard let directory = ProcessInfo.processInfo.environment["HERM_PR_DETAIL_UI_DIR"] else { return }
@@ -68,8 +86,27 @@ struct PullRequestDetailRenderTests {
         let runtime = DockModel(
             sessionAgentStateFileURL: root.appendingPathComponent("agents.json"),
             defaults: defaults, initialSessionID: "selected-workspace",
-            botActivityFileURL: root.appendingPathComponent("bots.json"), rpcClient: PullRequestChatRPC())
+            botActivityFileURL: root.appendingPathComponent("bots.json"), rpcClient: PullRequestDetailRenderRPC())
         defer { runtime.shutdown() }
+        runtime.defaultReasoningVariant = .high
+        let issueRuntime = DockModel(
+            sessionAgentStateFileURL: root.appendingPathComponent("issue-agents.json"), defaults: defaults,
+            botActivityFileURL: root.appendingPathComponent("issue-bots.json"), rpcClient: PullRequestDetailRenderRPC())
+        defer { issueRuntime.shutdown() }
+        issueRuntime.defaultReasoningVariant = .high
+        issueRuntime.refreshRuntimeModelOptions()
+        let issue = GitHubIssueRecord(
+            repository: try #require(GitHubReferenceParser.repository("owner/issue-fixture")), localPath: "",
+            number: 193,
+            title: "Thinking default", body: "", state: "open", author: "author", assignee: nil, updatedAt: nil,
+            webURL: nil)
+        let popover = DockPopover(
+            model: issueRuntime, panelPresentation: DockPanelPresentation(), controlCenter: ControlCenterModel(),
+            botMode: issueRuntime.botMode)
+        popover.openIssueChat(issue)
+        for _ in 0..<200 where issueRuntime.draft.isEmpty || issueRuntime.effortCatalog == nil { await Task.yield() }
+        #expect(issueRuntime.draft == IssueContext(issue: issue).prompt)
+        #expect(issueRuntime.effortCatalog?.choices(for: issueRuntime.defaultModelOptionID)?.contains(.high) == true)
         let router = ChatContextRouter()
         router.model = runtime
         let center = PullRequestCenterModel(api: PullRequestCenterAPI(transport: PullRequestDetailRenderTransport()))
@@ -126,6 +163,10 @@ struct PullRequestDetailRenderTests {
             let chat = PullRequestChatModel(links: defaults)
             await chat.prepareConversation(for: record, runtime: runtime)
             let conversation = try #require(chat.conversation)
+            for _ in 0..<200 where conversation.effortCatalog == nil { await Task.yield() }
+            #expect(conversation.defaultReasoningVariant == .high)
+            #expect(
+                conversation.effortCatalog?.choices(for: conversation.defaultModelOptionID)?.contains(.high) == true)
             conversation.messages = [
                 ChatMessage(role: .user, text: "What should I review first?"),
                 ChatMessage(role: .hermes, text: "Start with **timeout handling**, then check the focused tests."),
@@ -170,6 +211,27 @@ struct PullRequestDetailRenderTests {
                 chatHost.cacheDisplay(in: chatHost.bounds, to: bitmap)
                 try #require(bitmap.representation(using: .png, properties: [:]))
                     .write(to: root.appendingPathComponent("chat-\(appearanceName)-\(Int(chatWidth)).png"))
+                let issueHost = NSHostingView(
+                    rootView: ChatComposerView(
+                        model: issueRuntime, composer: issueRuntime.composer, speechInput: SpeechInput(),
+                        botMode: issueRuntime.botMode, onStop: {}
+                    )
+                    .padding(20).frame(width: chatWidth, height: 300)
+                    .background(Color.dockOpaqueCanvas).dockThemedRoot())
+                issueHost.frame = NSRect(x: 0, y: 0, width: chatWidth, height: 300)
+                let issueWindow = NSWindow(
+                    contentRect: issueHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                issueWindow.contentView = issueHost
+                issueWindow.orderFrontRegardless()
+                defer { issueWindow.orderOut(nil) }
+                for _ in 0..<4 {
+                    issueHost.layoutSubtreeIfNeeded()
+                    try await Task.sleep(for: .milliseconds(80))
+                }
+                let issueBitmap = try #require(issueHost.bitmapImageRepForCachingDisplay(in: issueHost.bounds))
+                issueHost.cacheDisplay(in: issueHost.bounds, to: issueBitmap)
+                try #require(issueBitmap.representation(using: .png, properties: [:]))
+                    .write(to: root.appendingPathComponent("issue-composer-\(appearanceName)-\(Int(chatWidth)).png"))
             }
         }
         #expect(runtime.sessionID == "selected-workspace")
