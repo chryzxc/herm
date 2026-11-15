@@ -40,9 +40,17 @@ struct SessionRailSummary: Equatable {
     var runningSubagentCount: Int { subagents.count { AgentActivityPresentation.isActiveStatus($0.status) } }
 
     /// Live rows override their history copy; nested workers stay listed under the same session.
+    @MainActor
     static func subagents(history: [HermesSubagent], live: [HermesSubagent]) -> [HermesSubagent] {
         var byID: [String: HermesSubagent] = [:]
-        for agent in history + live { byID[agent.id] = agent }
+        let liveIDs = Set(live.map(\.id))
+        for var agent in history {
+            if !liveIDs.contains(agent.id), !DockModel.isTerminalAgentStatus(agent.status) {
+                agent.status = "stale"
+            }
+            byID[agent.id] = agent
+        }
+        for agent in live { byID[agent.id] = agent }
         return byID.values.sorted {
             ($0.startedAt ?? .distantPast, $0.id) > ($1.startedAt ?? .distantPast, $1.id)
         }
@@ -77,8 +85,8 @@ struct SessionRailSummary: Equatable {
         summary.outputsError = outputsError
         summary.contextFiles = contextFiles
         summary.processes = processes
-        // Displayed history settles stale non-terminal rows so the rail never shows a ghost "Running".
-        summary.subagents = subagents(history: model.displayedSubagents, live: model.activeSubagents)
+        // Historical nonterminal statuses are not evidence of current activity or completion.
+        summary.subagents = subagents(history: model.sessionAgents, live: model.activeSubagents)
         summary.checkpoints = checkpoints.filter { ids.contains($0.sessionID) }
         summary.pins = model.pinnedMessages
         // Unsupported pins should not advertise a rail section on older runtimes.

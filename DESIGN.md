@@ -505,8 +505,10 @@ shared fill or marker treatment without an additional underline.
 **Session rail.** The rail is shown by default whenever the column fits it. Chat has a
 stacked-cards Show/Hide session rail icon immediately before Conversation actions. The summary card includes Needs attention (current approvals,
 questions, and value prompts), Tasks (the selected session's Hermes todo plan),
-Subagents (this session's delegated workers, live state overriding history, with
-View in timeline), Checkpoints (`rollback.list` for the session workspace; Show diff
+Subagents (this session's delegated workers, identity and status without activity
+descriptions; live state overrides history, and nonterminal history without live
+evidence is status not current, not inferred complete; View in timeline),
+Checkpoints (`rollback.list` for the session workspace; Show diff
 inline and a confirmed Restore that is disabled mid-turn and reloads the transcript
 Hermes rewinds), Outputs (the existing session artifact index), Pinned items
 (canonical message pins), and Workspace (path and a matching fresh Git snapshot).

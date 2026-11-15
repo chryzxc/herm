@@ -486,6 +486,8 @@ The card is titled **Session overview** when no repository is selected.
 Its sections summarize pending questions and approvals, the session task plan,
 delegated subagents, workspace checkpoints (with diff and a confirmed restore),
 outputs, pinned messages, and the current workspace alongside Changes and PRs.
+Subagents show identity and status without activity descriptions. Live status wins;
+nonterminal history without current live evidence is shown as status not current.
 Tasks share the composer's status indicators and ordering: in-progress tasks first,
 pending next, and completed or cancelled tasks last. The active task remains visible
 in the Tasks summary and uses a highlighted row and progress indicator when expanded.
