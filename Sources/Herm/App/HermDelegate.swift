@@ -612,6 +612,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
                 onClose: { [weak self] in
                     self?.hide()
                 },
+                onOpenSettings: { [weak self] in self?.showSettings() },
                 onFullscreenToggle: { [weak self] in
                     self?.toggleFullscreen()
                 },

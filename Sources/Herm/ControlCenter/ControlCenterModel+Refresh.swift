@@ -15,6 +15,10 @@ extension ControlCenterModel {
             latestActivityRefreshTask?.cancel()
             latestActivityRefreshTask = nil
             latestActivityCache = [:]
+            eventRefreshTask?.cancel()
+            eventRefreshTask = nil
+            pendingEventRefreshes.removeAll()
+            inFlightEventRefreshes.removeAll()
             refreshTask?.cancel()
             refreshTask = nil
             initialProjectNavigationTask?.cancel()
@@ -61,6 +65,9 @@ extension ControlCenterModel {
             sessionKanbanTasks = []
             sessionKanbanSessionID = nil
             sessionKanbanTasksByRequest = [:]
+            sessionTaskBoards = [:]
+            sessionTaskBoardInventory?.task.cancel()
+            sessionTaskBoardInventory = nil
             kanbanDetail = nil
             kanbanDetailTaskIdentity = nil
             kanbanDetailError = nil
@@ -235,11 +242,22 @@ extension ControlCenterModel {
 
     func refresh(forceCapabilities: Bool = false) {
         guard !isRefreshing else { return }
+        refreshGeneration &+= 1
+        pendingEventRefreshes.formUnion(inFlightEventRefreshes)
+        if eventRefreshTask != nil {
+            sessionCockpitGeneration = UUID()
+            checkpointsGeneration = UUID()
+            promptBudgetGeneration = UUID()
+            projectFactsGeneration = UUID()
+            verificationGeneration = UUID()
+            sessionProcessesGeneration = UUID()
+            if isLoadingCheckpoints { isLoadingCheckpoints = false }
+        }
         let generation = refreshGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         isRefreshing = true
         refreshLatestActivityProjection()
-        lastError = nil
+        if lastError != nil { lastError = nil }
         rebuildAttention()
         // The left Kanban is a global Control projection. Hydrate it with the
         // shared refresh so a relaunch or tab restoration cannot leave its

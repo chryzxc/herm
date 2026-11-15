@@ -786,10 +786,57 @@ extension ControlCenterModel {
 
     /// Card detail for the session Activity panel and chat kanban notices;
     /// leaves the board's selected `kanbanDetail` untouched.
-    func sessionKanbanTaskDetail(_ task: KanbanTaskSummary) async -> KanbanTaskDetail? {
+    func sessionKanbanTaskDetail(_ task: KanbanTaskSummary, sessionIDs: Set<String> = []) async -> KanbanTaskDetail? {
         guard let cli else { return nil }
-        return try? await fetchKanbanTaskDetail(task, boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, cli: cli)
-            .detail
+        let key = SessionTaskBoardKey(taskID: task.id, sessionIDs: sessionIDs)
+        let binding = clientBindingGeneration
+        let boardSlug: String?
+        if let explicit = task.boardSlug {
+            boardSlug = explicit
+        } else {
+            boardSlug = await resolveSessionTaskBoard(key) {
+                guard
+                    let result = try? await cli.kanbanListAggregate(
+                        filter: KanbanListFilter(includeArchived: true), background: true), result.succeeded,
+                    let tasks = await Self.parseKanbanTasksOffMain(result.stdout, boardSlug: nil)
+                else { return nil }
+                return tasks
+            }
+            guard boardSlug != nil else { return nil }
+        }
+        guard clientBindingGeneration == binding else { return nil }
+        let detail = try? await fetchKanbanTaskDetail(task, boardSlug: boardSlug, cli: cli).detail
+        guard clientBindingGeneration == binding else { return nil }
+        if detail == nil, task.boardSlug == nil { sessionTaskBoards[key] = nil }
+        return detail
+    }
+
+    func resolveSessionTaskBoard(
+        _ key: SessionTaskBoardKey, load: @escaping @MainActor () async -> [KanbanTaskSummary]?
+    ) async -> String? {
+        if let cached = sessionTaskBoards[key], cached.expiresAt > Date() { return cached.board }
+        let binding = clientBindingGeneration
+        let inventory: (id: UUID, binding: UInt64, task: Task<[KanbanTaskSummary]?, Never>)
+        if let current = sessionTaskBoardInventory, current.binding == binding {
+            inventory = current
+        } else {
+            inventory = (UUID(), binding, Task { await load() })
+            sessionTaskBoardInventory = inventory
+        }
+        let tasks = await inventory.task.value
+        if sessionTaskBoardInventory?.id == inventory.id { sessionTaskBoardInventory = nil }
+        guard let tasks, binding == clientBindingGeneration else { return nil }
+        let board = Self.sessionTaskBoard(taskID: key.taskID, sessionIDs: key.sessionIDs, tasks: tasks)
+        sessionTaskBoards[key] = SessionTaskBoardCacheEntry(board: board, expiresAt: Date().addingTimeInterval(60))
+        return board
+    }
+
+    static func sessionTaskBoard(taskID: String, sessionIDs: Set<String>, tasks: [KanbanTaskSummary]) -> String? {
+        let matching = tasks.filter { $0.id == taskID }
+        let attributed = matching.filter { $0.sessionID.map(sessionIDs.contains) ?? false }
+        let candidates = attributed.isEmpty ? matching : attributed
+        let boards = Set(candidates.compactMap(\.boardSlug))
+        return boards.count == 1 ? boards.first : nil
     }
 
     /// One `show` round trip, plus `runs` only for Hermes versions whose

@@ -194,7 +194,7 @@ Quick approval and clarification answers stay tied to their original request, se
 
 The status colors match the rest of the app: blue means active, green means healthy or done, amber means a warning or that Hermes needs you, and red means a failure.
 
-Global hover tooltips show one floating, fully opaque, theme-aware panel beside the hovered control and above workspace content and scroll containers. Long help wraps, stays within the display, and never takes keyboard focus.
+Global hover tooltips show one floating, fully opaque, theme-aware panel beside the hovered control and above workspace content and scroll containers. Hover descriptions appear on first attachment and are cancelled when the control is removed. Long help wraps, stays within the display, and never takes keyboard focus.
 
 Chat message timestamps appear on hover, with no separator after the assistant message actions.
 
@@ -876,7 +876,9 @@ Timeline uses a single horizontal gutter and compact 36pt bot faces, and shows b
 - **iOS Simulator / Android Emulator**: live device tabs Hermes can launch and you can drive. See [iOS Simulator and Android Emulator](#ios-simulator-and-android-emulator).
 - **Terminal**: a native terminal in the session's project folder, with history, Tab completion, and optional repository checks.
 - **Repository review**: reviews the whole repository locally and tells you what it didn't cover. Optional repository watching never starts Hermes work on its own.
-- **⌘K command palette** for app actions and Inbox filters.
+- **⌘K command palette** for app actions and Inbox filters; in a workspace window it opens the same Command Center action palette as the Activity sidebar button, with registry shortcuts in the View and Go menus.
+- **⌘N** starts a new chat and **⌘.** stops the current generation; both appear in the command palette and menu bar.
+- **⌘,** opens Settings; **⌘[ / ⌘]** navigate backward and forward through visited workspace destinations.
 
 ### Native review and workflow tools
 
@@ -1366,6 +1368,8 @@ Herm doesn't yet support everything Hermes can do. Some features require additio
 Project management and bot **@mention autocomplete** are already implemented; runtime-dependent features remain unavailable on installations that do not expose their required methods. The remaining limitations are not a promise of future feature parity. The feature descriptions above reflect the current frontend.
 
 ## Development
+
+Window toolbar icons remain clickable without dragging the window; drag the blank title row to move it.
 
 Forward to Bot closes after a successful send; failures keep the note and show an error for retry.
 

@@ -4,6 +4,21 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum ApprovalCardKey: String {
+    case returnKey
+    case deleteKey
+}
+
+struct ApprovalCardKeyAction {
+    static func choice(for key: ApprovalCardKey, isFocused: Bool, isPending: Bool) -> String? {
+        guard isFocused, !isPending else { return nil }
+        return switch key {
+        case .returnKey: ApprovalChoice.once
+        case .deleteKey: ApprovalChoice.deny
+        }
+    }
+}
+
 struct ConversationPromptRows: View {
     let model: DockModel
     let conversationMetrics: ConversationWorkspaceMetrics
@@ -25,6 +40,7 @@ struct ConversationPromptRows: View {
     @State private var clarificationSelection: [String] = []
     @State private var valuePromptText = ""
     @State private var valuePromptIdentifier = ""
+    @FocusState private var approvalCardIsFocused: Bool
 
     var body: some View {
         Group {
@@ -92,11 +108,14 @@ struct ConversationPromptRows: View {
                         Button {
                             if state.matchesApproval(in: model) { model.respondToApproval(ApprovalChoice.once) }
                         } label: {
-                            DockActionLabel(
-                                title: "Allow once", pendingTitle: "Allowing…", isPending: isPending,
-                                tint: .dockPrimaryText
-                            )
-
+                            HStack(spacing: 8) {
+                                DockActionLabel(
+                                    title: "Allow once", pendingTitle: "Allowing…", isPending: isPending,
+                                    tint: .dockPrimaryText
+                                )
+                                Spacer(minLength: 4)
+                                approvalKeyHint("Return")
+                            }
                         }
                         .buttonStyle(DockPrimaryButtonStyle())
                     }
@@ -121,7 +140,11 @@ struct ConversationPromptRows: View {
                     Button(role: .destructive) {
                         if state.matchesApproval(in: model) { model.respondToApproval(ApprovalChoice.deny) }
                     } label: {
-                        Text("Deny")
+                        HStack(spacing: 8) {
+                            Text("Deny")
+                            Spacer(minLength: 4)
+                            approvalKeyHint("Delete")
+                        }
                     }
                     .buttonStyle(DockSecondaryButtonStyle())
                 }
@@ -137,9 +160,40 @@ struct ConversationPromptRows: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .overlay {
+            if approvalCardIsFocused {
+                DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                    .stroke(Color.dockAccent, lineWidth: 2)
+                    .padding(1)
+                    .allowsHitTesting(false)
+            }
+        }
+        .focusable()
+        .focused($approvalCardIsFocused)
+        .simultaneousGesture(TapGesture().onEnded { approvalCardIsFocused = true })
+        .onKeyPress(keys: [.return, .delete]) { press in
+            let key: ApprovalCardKey = press.key == .return ? .returnKey : .deleteKey
+            guard
+                let choice = ApprovalCardKeyAction.choice(
+                    for: key, isFocused: approvalCardIsFocused, isPending: isPending),
+                choices.contains(choice), state.matchesApproval(in: model)
+            else { return .ignored }
+            model.respondToApproval(choice)
+            return .handled
+        }
+        .onChange(of: state.approvalText) { _, value in
+            if value == nil { approvalCardIsFocused = false }
+        }
         .dockButtonSize(.compact)
         .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
         .dockPadding(.vertical, 8)
+    }
+
+    private func approvalKeyHint(_ title: String) -> some View {
+        Text(title)
+            .dockFont(.metadata, weight: .semibold)
+            .foregroundStyle(Color.dockSecondaryText)
+            .dockPill(compact: true)
     }
 
     /// The question itself stays in the transcript as Hermes' message; this

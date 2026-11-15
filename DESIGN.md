@@ -488,6 +488,7 @@ traffic-light clearance and sidebar toggle, the conversation owns its session
 identity and actions, and the inspector's tabs reach the top of its
 pane. When the chat list is collapsed, its restore toggle moves into the
 conversation header with traffic-light clearance.
+Toolbar icons do not initiate window movement; blank title-row space remains draggable.
 
 The leftmost title row shows a build pill before the sidebar toggle: violet **Dev** for
 development builds, blue **Nightly** for nightly builds, and no pill for stable
@@ -701,7 +702,8 @@ requested edge with a 6pt gap, flip
 at the display edge, and try the other sides if clamping would cover the hovered
 control. Keep a visible gap beside the control and stay inside the display bounds.
 Dismiss on pointer exit, click, typing, scrolling, host movement/resizing/hiding,
-or source removal.
+or source removal. Preserve hover on initial attachment and cancel pending display
+when the source is removed.
 Informational tooltip windows never prevent normal notch/workspace dismissal.
 
 ### Themes
@@ -2726,6 +2728,8 @@ so the card does not present their counts as complete working-tree totals.
 The first message replaces the welcome with the transcript while the same composer
 glides from its centered position to the bottom, decelerating into place. The welcome
 fades in place rather than following it. Reduce Motion and motion-free skins skip motion.
+
+- **⌘K** opens the existing Command Center action palette from the floating panel or companion window, whether or not the activity sidebar is mounted. The sidebar button uses the same presentation state. When the sidebar is mounted, actions use its existing handler; tab navigation and Restart Herm are deferred until it mounts when opened from another workspace surface, preserving its selection refresh and restart confirmation behavior. File, View, and Go menus use the command registry for Settings, palette, Back, and Forward shortcuts.
 
 The session title uses the available header width before the flexible spacer;
 toolbar actions remain visible and the title truncates when space is limited.

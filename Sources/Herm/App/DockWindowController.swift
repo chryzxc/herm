@@ -83,11 +83,12 @@ final class DockWindowController: NSObject, NSWindowDelegate {
             width: 900 * DockWorkspaceScale.window,
             height: 600 * DockWorkspaceScale.window)
         window.delegate = self
-        let workspace = NSHostingView(
+        let workspace = DockWindowHostingView(
             rootView: DockWindowWorkspace {
                 DockPopover(
                     model: model, panelPresentation: presentation, controlCenter: controlCenter, botMode: model.botMode,
                     onClose: { [weak window] in window?.performClose(nil) },
+                    onOpenSettings: { [weak self] in self?.showSettings() },
                     onFullscreenToggle: { [weak window] in window?.toggleFullScreen(nil) },
                     onOpenWindow: { [weak self, weak window] in
                         window?.close()
