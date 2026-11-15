@@ -1281,7 +1281,7 @@ private struct PinnedWorkStrip: View {
 }
 
 /// Hermes background terminal processes for the current session, with a stop button each.
-private struct RunningProcessesStrip: View {
+struct RunningProcessesStrip: View {
     @Environment(\.dockHostVisible) private var hostVisible
     @ObservedObject var model: DockModel
     @StateObject private var projection: SessionProcessProjection
@@ -1297,8 +1297,13 @@ private struct RunningProcessesStrip: View {
 
     var body: some View {
         content
+            .onAppear { projection.startObserving() }
+            .onDisappear { projection.stopObserving() }
             // Processes outlive the turn that started them, so poll while a turn runs or any are listed.
-            .task(id: "\(model.sessionID ?? ""):\(hostVisible):\(isTurnActive || !projection.processes.isEmpty)") {
+            .task(
+                id: "\(model.sessionID ?? ""):\(model.isHermesConnected):\(hostVisible):"
+                    + "\(isTurnActive || !projection.processes.isEmpty)"
+            ) {
                 projection.reset(for: model.sessionID)
                 guard hostVisible else { return }
                 await projection.poll()

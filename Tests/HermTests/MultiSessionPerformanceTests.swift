@@ -18,7 +18,7 @@ struct MultiSessionPerformanceTests {
         let keyB = SessionTaskBoardKey(taskID: "same", sessionIDs: ["session-b"])
         let missing = SessionTaskBoardKey(taskID: "missing", sessionIDs: ["session-a"])
         var reads = 0
-        let load: () async -> [KanbanTaskSummary]? = {
+        let load: @MainActor () async -> [KanbanTaskSummary]? = {
             reads += 1
             return [a, b]
         }
@@ -37,6 +37,29 @@ struct MultiSessionPerformanceTests {
         control.sessionTaskBoards[keyA] = nil
         #expect(await control.resolveSessionTaskBoard(keyA, load: load) == "board-a")
         #expect(reads == 5)
+    }
+
+    @Test func concurrentBoardResolutionSharesInventory() async {
+        let control = ControlCenterModel()
+        let task = KanbanTaskSummary(
+            id: "task", boardSlug: "board", title: "Task", status: "", detail: nil, priority: nil,
+            assignee: nil, sessionID: "session")
+        var reads = 0
+        let load: @MainActor () async -> [KanbanTaskSummary]? = {
+            reads += 1
+            try? await Task.sleep(for: .milliseconds(100))
+            return [task]
+        }
+        let first = Task { @MainActor in
+            await control.resolveSessionTaskBoard(.init(taskID: "task", sessionIDs: ["session"]), load: load)
+        }
+        let second = Task { @MainActor in
+            await control.resolveSessionTaskBoard(.init(taskID: "other", sessionIDs: ["session"]), load: load)
+        }
+        let results = await (first.value, second.value)
+        #expect(results.0 == "board")
+        #expect(results.1 == nil)
+        #expect(reads == 1)
     }
 
     @Test func boardlessDetailsResolveAgainstOriginSession() {

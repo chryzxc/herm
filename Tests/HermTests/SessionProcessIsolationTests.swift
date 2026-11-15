@@ -38,6 +38,87 @@ struct SessionProcessIsolationTests {
         #expect(client.killedProcessIDs == ["process-b"])
     }
 
+    @Test func idlePaneRetriesProcessReadWhenConnectionBecomesReady() async throws {
+        let client = SessionProcessIsolationClient()
+        let model = DockModel(initialSessionID: "session-a", rpcClient: client)
+        let control = ControlCenterModel()
+        let host = NSHostingView(
+            rootView: RunningProcessesStrip(control: control, model: model, isTurnActive: false))
+        host.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        try await Task.sleep(for: .milliseconds(200))
+        control.bind(to: model)
+        model.isHermesConnected = true
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(client.processSessionIDs.contains("session-a"))
+    }
+
+    @Test func processEventRefreshesIdleProjection() async throws {
+        let client = SessionProcessIsolationClient()
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        let model = DockModel(initialSessionID: "session-a", rpcClient: client)
+        let projection = SessionProcessProjection(control: control, model: model)
+        projection.reset(for: model.sessionID)
+        projection.startObserving()
+        model.eventRouter.route(type: "process.changed", params: ["session_id": "session-a"])
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(client.processSessionIDs == ["session-a"])
+        projection.stopObserving()
+        model.eventRouter.route(type: "process.changed", params: ["session_id": "session-a"])
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(client.processSessionIDs == ["session-a"])
+    }
+
+    @Test func oldProcessCannotBeStoppedAfterBackendRebind() async throws {
+        let client = SessionProcessIsolationClient()
+        client.processState = "running"
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        let model = DockModel(initialSessionID: "session-a", rpcClient: client)
+        let projection = SessionProcessProjection(control: control, model: model)
+        projection.reset(for: model.sessionID)
+        await projection.poll()
+        let process = try #require(projection.processes.first)
+        control.clientBindingGeneration += 1
+        let confirmation = projection.confirmation(for: process)
+        #expect(!(await projection.stop(confirmation)))
+        #expect(client.killedProcessIDs.isEmpty)
+    }
+
+    @Test func productionSplitRowUsesOneRefreshSubscription() async throws {
+        let client = SessionProcessIsolationClient()
+        let primary = DockModel(initialSessionID: "primary", rpcClient: client)
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        control.bind(to: primary)
+        let store = SessionPaneStore()
+        store.runtime = primary
+        store.open(QuickDestination(profileID: nil, sessionID: "pane-a", title: "A"), target: .newPanel(1))
+        try await Task.sleep(for: .milliseconds(300))
+        let pane = try #require(store.panels.last?.chat.conversation)
+        let host = NSHostingView(
+            rootView: SessionPaneRow(
+                store: store, control: control, bots: BotModeModel(), isEnabled: true,
+                headerHeight: 40, usesWindowChrome: false, leadingControls: nil
+            ) { _ in Color.clear })
+        host.frame = NSRect(x: 0, y: 0, width: 1000, height: 600)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        try await Task.sleep(for: .milliseconds(300))
+        await control.refreshTask?.value
+        let before = client.activeSessionRequests
+        primary.receiveGatewayEvent("message.complete", params: ["session_id": pane.sessionID ?? ""])
+        await control.eventRefreshTask?.value
+        await control.refreshTask?.value
+        #expect(client.activeSessionRequests - before == 2)
+        #expect(control.dockModel === primary)
+    }
+
     @Test func messageCompleteRefreshCountDoesNotGrowWithPanesOrSessionSwitch() async throws {
         let one = try await refreshCounts(panes: 1)
         let four = try await refreshCounts(panes: 4)
@@ -78,7 +159,7 @@ struct SessionProcessIsolationTests {
             await control.refreshTask?.value
             let before = client.activeSessionRequests
             for model in models {
-                model.eventRouter.route(type: "message.complete", params: ["session_id": sessionID])
+                model.eventRouter.route(type: "message.complete", params: ["session_id": model.sessionID ?? ""])
             }
             await control.eventRefreshTask?.value
             await control.refreshTask?.value

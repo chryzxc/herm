@@ -9,10 +9,29 @@ final class SessionProcessProjection: ObservableObject {
     private let control: ControlCenterModel
     private let model: DockModel
     private var generation = UUID()
+    private var inventoryBinding: UInt64?
 
     init(control: ControlCenterModel, model: DockModel) {
         self.control = control
         self.model = model
+    }
+
+    private var subscription: UUID?
+
+    func startObserving() {
+        guard subscription == nil else { return }
+        subscription = model.eventRouter.subscribe { [weak self] type, params in
+            guard type == "process.changed", let self else { return }
+            let payload = params["payload"] as? [String: Any] ?? [:]
+            let session = (params["session_id"] as? String) ?? (payload["session_id"] as? String)
+            guard session == nil || session == self.model.sessionID else { return }
+            Task { await self.poll() }
+        }
+    }
+
+    func stopObserving() {
+        if let subscription { model.eventRouter.unsubscribe(subscription) }
+        subscription = nil
     }
 
     func reset(for sessionID: String?) {
@@ -26,12 +45,17 @@ final class SessionProcessProjection: ObservableObject {
         guard let sessionID, !sessionID.isEmpty, model.sessionID == sessionID,
             let rpc = control.rpc
         else { return }
-        let generation = generation
         let binding = control.clientBindingGeneration
+        if inventoryBinding != binding {
+            inventoryBinding = nil
+            processes = []
+        }
+        let generation = generation
         guard let result = try? await rpc.processes(sessionID: sessionID),
             self.generation == generation, self.sessionID == sessionID, model.sessionID == sessionID,
             control.clientBindingGeneration == binding, !Task.isCancelled
         else { return }
+        inventoryBinding = binding
         let parsed = ControlCenterModel.parseProcesses(result)
         if parsed != processes { processes = parsed }
     }
@@ -45,7 +69,7 @@ final class SessionProcessProjection: ObservableObject {
     func stop(_ confirmation: ProcessStopConfirmation) async -> Bool {
         guard !confirmation.sessionID.isEmpty, sessionID == confirmation.sessionID,
             model.sessionID == confirmation.sessionID, generation == confirmation.generation,
-            control.clientBindingGeneration == confirmation.binding,
+            control.clientBindingGeneration == confirmation.binding, inventoryBinding == confirmation.binding,
             processes.contains(where: { $0.id == confirmation.process.id && $0.state == "running" }),
             let rpc = control.rpc
         else { return false }

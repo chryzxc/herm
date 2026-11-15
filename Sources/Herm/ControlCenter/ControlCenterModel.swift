@@ -210,6 +210,7 @@ final class ControlCenterModel: ObservableObject {
     /// while the same read-only query refreshes in the background.
     var sessionKanbanTasksByRequest: [SessionKanbanProjectionRequest: [KanbanTaskSummary]] = [:]
     var sessionTaskBoards: [SessionTaskBoardKey: SessionTaskBoardCacheEntry] = [:]
+    var sessionTaskBoardInventory: (id: UUID, binding: UInt64, task: Task<[KanbanTaskSummary]?, Never>)?
     /// Observed card IDs (`board|id`) whose `kanban show` returned no usable
     /// card. Each lookup spawns a Hermes CLI process, so polling must not
     /// retry them on every refresh.

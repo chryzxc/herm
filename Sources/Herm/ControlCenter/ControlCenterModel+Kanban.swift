@@ -812,11 +812,20 @@ extension ControlCenterModel {
     }
 
     func resolveSessionTaskBoard(
-        _ key: SessionTaskBoardKey, load: () async -> [KanbanTaskSummary]?
+        _ key: SessionTaskBoardKey, load: @escaping @MainActor () async -> [KanbanTaskSummary]?
     ) async -> String? {
         if let cached = sessionTaskBoards[key], cached.expiresAt > Date() { return cached.board }
         let binding = clientBindingGeneration
-        guard let tasks = await load(), binding == clientBindingGeneration else { return nil }
+        let inventory: (id: UUID, binding: UInt64, task: Task<[KanbanTaskSummary]?, Never>)
+        if let current = sessionTaskBoardInventory, current.binding == binding {
+            inventory = current
+        } else {
+            inventory = (UUID(), binding, Task { await load() })
+            sessionTaskBoardInventory = inventory
+        }
+        let tasks = await inventory.task.value
+        if sessionTaskBoardInventory?.id == inventory.id { sessionTaskBoardInventory = nil }
+        guard let tasks, binding == clientBindingGeneration else { return nil }
         let board = Self.sessionTaskBoard(taskID: key.taskID, sessionIDs: key.sessionIDs, tasks: tasks)
         sessionTaskBoards[key] = SessionTaskBoardCacheEntry(board: board, expiresAt: Date().addingTimeInterval(60))
         return board

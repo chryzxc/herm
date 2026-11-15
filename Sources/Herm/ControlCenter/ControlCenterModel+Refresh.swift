@@ -62,6 +62,8 @@ extension ControlCenterModel {
             sessionKanbanSessionID = nil
             sessionKanbanTasksByRequest = [:]
             sessionTaskBoards = [:]
+            sessionTaskBoardInventory?.task.cancel()
+            sessionTaskBoardInventory = nil
             kanbanDetail = nil
             kanbanDetailTaskIdentity = nil
             kanbanDetailError = nil
