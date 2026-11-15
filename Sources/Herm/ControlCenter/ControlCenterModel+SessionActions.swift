@@ -7,11 +7,11 @@ extension ControlCenterModel {
         DockActionErrorCenter.shared.report(title, message: message)
     }
 
-    func refreshPromptBudget() {
+    func refreshPromptBudget(quiet: Bool = false) {
         guard let cli else { return }
         let generation = UUID()
         promptBudgetGeneration = generation
-        beginProjectionRefresh("prompt.budget")
+        if !quiet { beginProjectionRefresh("prompt.budget") }
         Task {
             do {
                 let result = try await cli.promptSize()
@@ -23,11 +23,17 @@ extension ControlCenterModel {
                     recordProjectionFailure("prompt.budget", error: Self.safeUserDiagnostic(result.stderr))
                     return
                 }
-                promptBudget = PromptBudgetSummary(
+                let parsed = PromptBudgetSummary(
                     totalTokens: Self.intValue(row["total_tokens"] ?? row["total"]),
                     tokenLimit: Self.optionalIntValue(row["token_limit"] ?? row["context_max"]),
                     percent: Self.doubleValue(row["percent"] ?? row["context_percent"]), model: row["model"] as? String)
-                recordProjectionSuccess("prompt.budget")
+                if promptBudget != parsed { promptBudget = parsed }
+                let state = refreshState(for: "prompt.budget")
+                if !quiet || state?.lastSuccess == nil || state?.error != nil || state?.isStale == true
+                    || state?.isRefreshing == true
+                {
+                    recordProjectionSuccess("prompt.budget")
+                }
             } catch {
                 guard generation == promptBudgetGeneration else { return }
                 recordProjectionFailure("prompt.budget", error: Self.safeUserDiagnostic(error.localizedDescription))
@@ -37,8 +43,9 @@ extension ControlCenterModel {
 
     func refreshVerification(for requestedSessionID: String? = nil) {
         guard let rpc, let repository = developmentContext, !repository.path.isEmpty else {
-            projectFacts = nil
-            verification = VerificationSummary(state: .notApplicable, evidence: nil)
+            if projectFacts != nil { projectFacts = nil }
+            let unavailable = VerificationSummary(state: .notApplicable, evidence: nil)
+            if verification != unavailable { verification = unavailable }
             return
         }
         let factsGeneration = UUID()
@@ -54,24 +61,27 @@ extension ControlCenterModel {
                 guard factsGeneration == self.projectFactsGeneration,
                     self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
-                projectFacts = Self.parseProjectFacts(factsResult)
+                let parsed = Self.parseProjectFacts(factsResult)
+                if projectFacts != parsed { projectFacts = parsed }
             } catch {
                 guard factsGeneration == self.projectFactsGeneration,
                     self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
-                projectFacts = nil
+                if projectFacts != nil { projectFacts = nil }
             }
             do {
                 let result = try await rpc.verificationStatus(sessionID: sessionID, cwd: repository.path)
                 guard verificationGeneration == self.verificationGeneration,
                     self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
-                verification = Self.parseVerification(result)
+                let parsed = Self.parseVerification(result)
+                if verification != parsed { verification = parsed }
             } catch {
                 guard verificationGeneration == self.verificationGeneration,
                     self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
-                verification = VerificationSummary(state: .unknown, evidence: nil)
+                let unavailable = VerificationSummary(state: .unknown, evidence: nil)
+                if verification != unavailable { verification = unavailable }
             }
         }
     }

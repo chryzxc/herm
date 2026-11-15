@@ -606,6 +606,16 @@ struct ControlSearchResult: Identifiable, Equatable {
     let sourceLabel: String
 }
 
+struct SessionTaskBoardKey: Hashable {
+    let taskID: String
+    let sessionIDs: Set<String>
+}
+
+struct SessionTaskBoardCacheEntry {
+    let board: String?
+    let expiresAt: Date
+}
+
 struct KanbanTaskSummary: Identifiable, Equatable {
     let id: String
     let boardSlug: String?

@@ -135,7 +135,6 @@ extension DockPopover {
     func observerLayerThree<V: View>(_ view: V) -> some View {
         view
             // Settled destinations only: opening a session changes the surface before the session id.
-            .background { historyShortcuts }
             .task(id: currentNavigationDestination) {
                 try? await Task.sleep(for: .milliseconds(150))
                 guard !Task.isCancelled else { return }
@@ -659,7 +658,7 @@ extension DockPopover {
                 if sessionWorkspaceMode.isColumnMode, !(sessionWorkspaceMode == .voice && isVoiceImmersive) {
                     // Each column owns its title row, so the primary header spans only its column.
                     SessionPaneRow(
-                        store: sessionPanes, isEnabled: !isNarrowLayout,
+                        store: sessionPanes, control: controlCenter, bots: botMode, isEnabled: !isNarrowLayout,
                         headerHeight: usesWindowChrome
                             ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight,
                         usesWindowChrome: usesWindowChrome,

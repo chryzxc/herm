@@ -874,7 +874,9 @@ Timeline uses a single horizontal gutter and compact 36pt bot faces, and shows b
 - **iOS Simulator / Android Emulator**: live device tabs Hermes can launch and you can drive. See [iOS Simulator and Android Emulator](#ios-simulator-and-android-emulator).
 - **Terminal**: a native terminal in the session's project folder, with history, Tab completion, and optional repository checks.
 - **Repository review**: reviews the whole repository locally and tells you what it didn't cover. Optional repository watching never starts Hermes work on its own.
-- **⌘K command palette** for app actions and Inbox filters.
+- **⌘K command palette** for app actions and Inbox filters; in a workspace window it opens the same Command Center action palette as the Activity sidebar button, with registry shortcuts in the View and Go menus.
+- **⌘N** starts a new chat and **⌘.** stops the current generation; both appear in the command palette and menu bar.
+- **⌘,** opens Settings; **⌘[ / ⌘]** navigate backward and forward through visited workspace destinations.
 
 ### Native review and workflow tools
 

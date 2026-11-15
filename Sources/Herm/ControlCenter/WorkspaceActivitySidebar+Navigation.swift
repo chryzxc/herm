@@ -459,7 +459,7 @@ extension WorkspaceActivitySidebar {
         HStack {
             Spacer()
             Button {
-                isShowingCommandPalette = true
+                commandPalettePresentation.present()
             } label: {
                 DockIcon(.command)
                     .dockFont(.body, weight: .semibold)
@@ -468,7 +468,6 @@ extension WorkspaceActivitySidebar {
             }
             .buttonStyle(.dockHover)
             .help("Command palette")
-            .keyboardShortcut("k", modifiers: [.command])
             Button(action: onClose) {
                 DockIcon(.caretLeft)
                     .dockFont(.body, weight: .semibold)

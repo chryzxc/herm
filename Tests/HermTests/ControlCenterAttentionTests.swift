@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 
@@ -12,11 +13,33 @@ private final class ClarificationResponseRPCClient: HermesRPCClientProtocol {
 
     var onEvent: ((String, [String: Any]) -> Void)?
     private(set) var calls: [Call] = []
+    var suspendFirstSessionRead = false
+    var firstSessionRead: CheckedContinuation<[String: Any], Never>?
+    var sessions: [[String: Any]] = []
+    var agents: [[String: Any]] = []
+    var promptTokens = 0
+    private(set) var httpPaths: [String] = []
+
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        httpPaths.append(path)
+        return ["data": [[String: Any]](), "has_more": false]
+    }
 
     func connect() async throws {}
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         calls.append(Call(method: method, params: params))
+        if method == "session.active_list" {
+            if suspendFirstSessionRead {
+                suspendFirstSessionRead = false
+                return await withCheckedContinuation { firstSessionRead = $0 }
+            }
+            return ["sessions": sessions]
+        }
+        if method == "session.list" { return ["data": [[String: Any]](), "has_more": false] }
+        if method == "projects.tree" { return ["projects": [[String: Any]]()] }
+        if method == "delegation.status" { return ["agents": agents] }
+        if method == "shell.exec" { return ["stdout": "{\"total_tokens\":\(promptTokens)}", "code": 0] }
         return [:]
     }
 
@@ -103,6 +126,99 @@ struct ControlCenterAttentionTests {
         let item = model.attention.first
         #expect(item?.title == "Run command")
         #expect(item?.detail == "rm -rf -- .omo")
+    }
+
+    @Test func refreshEventsCoalesceWithoutLosingTheirKinds() {
+        let model = ControlCenterModel()
+        model.ingestEvent("process.changed", params: ["session_id": "session-a"])
+        model.ingestEvent("cron.changed", params: ["session_id": "session-a"])
+        #expect(model.pendingEventRefreshes == ["process.changed", "cron.changed"])
+        model.eventRefreshTask?.cancel()
+    }
+
+    @Test func unchangedMessageRefreshDoesNotPublish() async {
+        let client = ClarificationResponseRPCClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client), capabilities: [])
+        let dock = DockModel(rpcClient: client)
+        model.bind(to: dock)
+        model.projectProfileScopeUnavailable = false
+        model.verification = VerificationSummary(state: .notApplicable, evidence: nil)
+        model.promptBudget = PromptBudgetSummary(totalTokens: 0, tokenLimit: nil, percent: nil, model: nil)
+        model.recordProjectionSuccess("sessions")
+        model.recordProjectionSuccess("projects")
+        model.recordProjectionSuccess("latest.activity")
+        model.recordProjectionSuccess("agents")
+        model.recordProjectionSuccess("prompt.budget")
+        model.ingestEvent("message.complete", params: ["session_id": "session-a"])
+        await model.eventRefreshTask?.value
+        try? await Task.sleep(for: .milliseconds(500))
+        var publications = 0
+        let subscription = model.objectWillChange.sink { publications += 1 }
+        model.ingestEvent("message.complete", params: ["session_id": "session-a"])
+        model.ingestEvent("process.changed", params: ["session_id": "session-a"])
+        await model.eventRefreshTask?.value
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(publications == 0)
+        #expect(client.calls.map(\.method).contains("projects.tree"))
+        #expect(client.httpPaths.contains { $0.hasPrefix("/api/sessions?") })
+        #expect(client.calls.map(\.method).contains("shell.exec"))
+        withExtendedLifetime(subscription) {}
+    }
+
+    @Test func boundEventsPublishChangedSessionsAgentsAndPromptBudget() async throws {
+        let client = ClarificationResponseRPCClient()
+        let model = ControlCenterModel()
+        let dock = DockModel(rpcClient: client)
+        model.bind(to: dock)
+        model.projectProfileScopeUnavailable = false
+        model.verification = VerificationSummary(state: .notApplicable, evidence: nil)
+        client.sessions = [["id": "session-a", "title": "Changed"]]
+        client.agents = [["id": "agent-a", "status": "running"]]
+        client.promptTokens = 42
+        model.ingestEvent("message.complete", params: ["session_id": "session-a"])
+        model.ingestEvent("process.changed", params: ["session_id": "session-a"])
+        await model.eventRefreshTask?.value
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(model.activeSessions.first?.title == "Changed")
+        #expect(model.activeAgents.first?.id == "agent-a")
+        #expect(model.promptBudget?.totalTokens == 42)
+        #expect(client.calls.contains { $0.method == "shell.exec" })
+    }
+
+    @Test func unchangedProjectsRecoverFromError() async {
+        let client = ClarificationResponseRPCClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client), capabilities: [])
+        let dock = DockModel(rpcClient: client)
+        model.dockModel = dock
+        model.projectProfileScopeUnavailable = false
+        model.recordProjectionSuccess("projects")
+        model.recordProjectionFailure("projects", error: "temporary failure")
+        await model.refreshEventActivity()
+        #expect(model.refreshState(for: "projects")?.error == nil)
+        #expect(model.refreshState(for: "projects")?.isStale == false)
+    }
+
+    @Test func eventReadsAreSerializedAcrossOverlappingEvents() async throws {
+        let client = ClarificationResponseRPCClient()
+        client.suspendFirstSessionRead = true
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client), capabilities: [])
+        let dock = DockModel(rpcClient: client)
+        model.dockModel = dock
+        model.recordProjectionSuccess("sessions")
+        model.recordProjectionSuccess("agents")
+        model.ingestEvent("process.changed", params: ["session_id": "a"])
+        let task = try #require(model.eventRefreshTask)
+        for _ in 0..<100 where client.firstSessionRead == nil {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let firstRead = try #require(client.firstSessionRead)
+        model.ingestEvent("process.changed", params: ["session_id": "a"])
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(client.calls.filter { $0.method == "session.active_list" }.count == 1)
+        firstRead.resume(returning: ["sessions": [["id": "old", "title": "Old"]]])
+        await task.value
+        #expect(client.calls.filter { $0.method == "session.active_list" }.count == 2)
+        #expect(model.activeSessions.isEmpty)
     }
 
     @Test func completedResponsesDoNotAppearAsNeedsMeAttention() {

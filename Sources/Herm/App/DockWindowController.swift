@@ -88,6 +88,7 @@ final class DockWindowController: NSObject, NSWindowDelegate {
                 DockPopover(
                     model: model, panelPresentation: presentation, controlCenter: controlCenter, botMode: model.botMode,
                     onClose: { [weak window] in window?.performClose(nil) },
+                    onOpenSettings: { [weak self] in self?.showSettings() },
                     onFullscreenToggle: { [weak window] in window?.toggleFullScreen(nil) },
                     onOpenWindow: { [weak self, weak window] in
                         window?.close()
