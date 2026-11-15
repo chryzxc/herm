@@ -488,6 +488,7 @@ traffic-light clearance and sidebar toggle, the conversation owns its session
 identity and actions, and the inspector's tabs reach the top of its
 pane. When the chat list is collapsed, its restore toggle moves into the
 conversation header with traffic-light clearance.
+Toolbar icons do not initiate window movement; blank title-row space remains draggable.
 
 The leftmost title row shows a build pill before the sidebar toggle: violet **Dev** for
 development builds, blue **Nightly** for nightly builds, and no pill for stable

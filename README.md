@@ -1365,6 +1365,8 @@ Project management and bot **@mention autocomplete** are already implemented; ru
 
 ## Development
 
+Window toolbar icons remain clickable without dragging the window; drag the blank title row to move it.
+
 Forward to Bot closes after a successful send; failures keep the note and show an error for retry.
 
 ```sh
