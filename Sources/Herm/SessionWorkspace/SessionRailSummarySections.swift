@@ -49,8 +49,7 @@ struct SessionRailSummarySections: View {
             let running = summary.runningSubagentCount
             SessionRailSummarySection(
                 title: "Subagents", icon: .usersThree, count: summary.subagents.count,
-                detail: running > 0 ? "\(running) running" : nil,
-                subtitle: summary.subagents.lazy.compactMap(SessionRailSubagentRow.activity).first
+                detail: running > 0 ? "\(running) running" : nil
             ) {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(summary.subagents) { agent in
@@ -309,15 +308,6 @@ private struct SessionRailSubagentRow: View {
     }
     private var finished: Bool { ["complete", "completed", "done"].contains(agent.status.lowercased()) }
 
-    /// Live progress only; raw tool payloads and compaction handoffs are not progress.
-    static func activity(_ agent: HermesSubagent) -> String? {
-        guard AgentActivityPresentation.isActiveStatus(agent.status),
-            let text = agent.latestActivity?.trimmingCharacters(in: .whitespacesAndNewlines),
-            let first = text.first, first != "{", first != "["
-        else { return nil }
-        return SessionTraceProjection.taskTitle(text)
-    }
-
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Group {
@@ -333,16 +323,15 @@ private struct SessionRailSubagentRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(agent.name ?? agent.role ?? SessionTraceProjection.taskTitle(agent.goal))
                     .lineLimit(1).truncationMode(.tail)
-                if let activity = Self.activity(agent) {
-                    Text(activity).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
-                }
             }
             Spacer(minLength: 0)
             Group {
                 if finished, let duration = agent.durationSeconds, duration.isFinite, duration >= 0 {
                     Text(TurnActivityView.stepDuration(duration))
                 } else if !finished {
-                    Text(agent.status.replacingOccurrences(of: "_", with: " ").capitalized)
+                    Text(
+                        agent.status.lowercased() == "stale"
+                            ? "Status not current" : agent.status.replacingOccurrences(of: "_", with: " ").capitalized)
                 }
             }
             .foregroundStyle(failed ? Color.dockWarning : Color.dockMetadataText).monospacedDigit().fixedSize()

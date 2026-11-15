@@ -26,6 +26,13 @@ struct SessionRailCardVisualTests {
         summary.pins = [.init(rowID: 1, uid: "pin", role: "assistant", preview: pinPreview)]
         summary.workspace = .init(
             path: "/tmp/project", branch: "feature", latestCommit: "abc1234 Refine workspace details")
+        summary.subagents = [
+            .init(id: "a", name: "Builder", goal: "Build", status: "running", latestActivity: "sh lane.sh 1"),
+            .init(
+                id: "b", depth: 1, goal: "Review", role: "Reviewer", status: "stale", latestActivity: "Reviewing code"),
+            .init(id: "c", goal: "Write tests", status: "completed", durationSeconds: 12),
+            .init(id: "d", goal: "Audit", status: "failed"),
+        ]
         var navigations: [String] = []
         let root = ScrollView {
             SessionRailSummarySections(
@@ -35,12 +42,12 @@ struct SessionRailCardVisualTests {
                 onViewPin: { _ in
                     navigations.append("pin")
                     return true
-                }
+                }, onViewTimeline: { navigations.append("timeline") }
             )
             .padding(16)
         }.frame(width: 330).dockThemedRoot()
         let host = NSHostingView(rootView: root)
-        host.frame = NSRect(x: 0, y: 0, width: 330, height: 900)
+        host.frame = NSRect(x: 0, y: 0, width: 330, height: 1400)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         window.orderFrontRegardless()
@@ -65,6 +72,20 @@ struct SessionRailCardVisualTests {
         }
         try await settle()
         #expect(elements(host).contains { ($0.accessibilityLabel?() ?? "").contains("In progress: Task 1") })
+        #expect(!elements(host).contains { ($0.accessibilityLabel?() ?? "").contains("sh lane.sh 1") })
+        try await press("Subagents")
+        // AppKit exposes combined static text as AXValue rather than AXLabel.
+        let agentValues = elements(host).filter { $0.accessibilityRole?() == .staticText }.compactMap {
+            ($0 as? NSObject)?.perform(NSSelectorFromString("accessibilityValue"))?.takeUnretainedValue() as? String
+        }
+        for text in ["Builder, Running", "Reviewer, Status not current", "Write tests, 12.0s", "Audit, Failed"] {
+            #expect(agentValues.contains(text))
+        }
+        let agentText = (agentValues + elements(host).compactMap { $0.accessibilityLabel?() }).joined(separator: " | ")
+        #expect(!agentText.contains("sh lane.sh 1") && !agentText.contains("Reviewing code"))
+        try await press("View in timeline")
+        #expect(navigations == ["timeline"])
+        navigations.removeAll()
         for section in [
             "Needs attention", "Tasks", "Outputs", "Pinned items", "Workspace",
         ] {

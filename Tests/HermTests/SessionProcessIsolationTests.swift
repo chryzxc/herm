@@ -122,7 +122,7 @@ struct SessionProcessIsolationTests {
     @Test func messageCompleteRefreshCountDoesNotGrowWithPanesOrSessionSwitch() async throws {
         let one = try await refreshCounts(panes: 1)
         let four = try await refreshCounts(panes: 4)
-        // A message completion refreshes active sessions once, without probing capabilities.
+        // Each event refresh reads active sessions once without a capability probe.
         #expect(one == [1, 1])
         #expect(four == one)
     }
