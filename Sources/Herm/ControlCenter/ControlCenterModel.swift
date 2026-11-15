@@ -189,6 +189,8 @@ final class ControlCenterModel: ObservableObject {
     var latestActivityRefreshTask: Task<Void, Never>?
     var latestActivityCache: [String: LatestActivityCacheEntry] = [:]
     var eventRefreshTask: Task<Void, Never>?
+    var pendingEventRefreshes: Set<String> = []
+    var inFlightEventRefreshes: Set<String> = []
     var initialProjectNavigationTask: Task<Void, Never>?
     var refreshGeneration: UInt64 = 0
     var clientBindingGeneration: UInt64 = 0

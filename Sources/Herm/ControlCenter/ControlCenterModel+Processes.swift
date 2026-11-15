@@ -120,17 +120,28 @@ extension ControlCenterModel {
     func refreshFocusedProcesses(for sessionID: String, generation: UUID) -> Task<Void, Never>? {
         guard capabilityAvailable("rpc-sessions"), let rpc else { return nil }
         let binding = clientBindingGeneration
+        let refresh = refreshGeneration
         return Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let result = try await rpc.processes(sessionID: sessionID)
-                guard self.acceptsProcessResponse(for: sessionID, generation: generation, binding: binding) else {
+                guard self.refreshGeneration == refresh,
+                    self.acceptsProcessResponse(for: sessionID, generation: generation, binding: binding)
+                else {
                     return
                 }
-                self.processes = Self.parseProcesses(result)
-                self.recordProjectionSuccess("processes")
+                let parsed = Self.parseProcesses(result)
+                if self.processes != parsed { self.processes = parsed }
+                let state = self.refreshState(for: "processes")
+                if state?.lastSuccess == nil || state?.error != nil || state?.isStale == true
+                    || state?.isRefreshing == true
+                {
+                    self.recordProjectionSuccess("processes")
+                }
             } catch {
-                guard self.acceptsProcessResponse(for: sessionID, generation: generation, binding: binding) else {
+                guard self.refreshGeneration == refresh,
+                    self.acceptsProcessResponse(for: sessionID, generation: generation, binding: binding)
+                else {
                     return
                 }
                 self.processes = []
