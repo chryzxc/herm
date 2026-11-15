@@ -89,7 +89,10 @@ extension DockModel {
                 sessionID: eventSessionID,
                 at: dateValue(params["timestamp"]) ?? dateValue(eventPayload["timestamp"]) ?? Date())
         }
-        if type == "message.start", let eventSessionID {
+        if let eventSessionID,
+            type == "message.start" || Self.isMidTurnEvent(type),
+            !(type != "message.start" && isDiscardingStoppedTurn && currentSessionIDs.contains(eventSessionID))
+        {
             updateSessionActivity(sessionID: eventSessionID, isWorking: true)
         }
         if let eventSessionID {

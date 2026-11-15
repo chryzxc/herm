@@ -233,7 +233,9 @@ struct SessionNavSidebarSnapshot: Equatable {
                     updatedAt: updatedAt,
                     messageCount: savedSession?.messageCount ?? 0,
                     source: savedSession?.source ?? "project",
-                    isHidden: savedSession?.isHidden ?? false
+                    isHidden: savedSession?.isHidden ?? false,
+                    isWorking: savedSession?.isWorking ?? false,
+                    hasUnreadUpdate: savedSession?.hasUnreadUpdate ?? false
                 )
                 assigned.insert(summary.id)
             }
@@ -274,7 +276,9 @@ struct SessionNavSidebarSnapshot: Equatable {
                     updatedAt: updatedAt,
                     messageCount: savedSession?.messageCount ?? 0,
                     source: savedSession?.source ?? "conversation",
-                    isHidden: savedSession?.isHidden ?? false
+                    isHidden: savedSession?.isHidden ?? false,
+                    isWorking: savedSession?.isWorking ?? false,
+                    hasUnreadUpdate: savedSession?.hasUnreadUpdate ?? false
                 )
             }
         }
