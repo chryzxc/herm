@@ -31,6 +31,8 @@ struct SessionNavSplitView<Queue: View, Workspace: View, Inspector: View>: NSVie
     }
 
     func updateNSView(_ splitView: NSSplitView, context: Context) {
+        let performanceStart = ProcessInfo.processInfo.systemUptime
+        defer { HermPerformanceRecorder.recordWork("splitHostUpdate", since: performanceStart) }
         context.coordinator.queueHost.rootView = AnyView(
             queue.dockThemedRoot().environment(\.dockWorkspaceScale, context.environment.dockWorkspaceScale))
         context.coordinator.workspaceHost.rootView = AnyView(
@@ -188,6 +190,8 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
     }
 
     func updateNSView(_ splitView: NSSplitView, context: Context) {
+        let performanceStart = ProcessInfo.processInfo.systemUptime
+        defer { HermPerformanceRecorder.recordWork("splitHostUpdate", since: performanceStart) }
         context.coordinator.leadingHost.rootView = AnyView(
             leading.dockThemedRoot().environment(\.self, context.environment)
                 .disabled(isLeadingCollapsed).accessibilityHidden(isLeadingCollapsed)

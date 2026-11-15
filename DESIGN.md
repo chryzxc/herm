@@ -1912,6 +1912,7 @@ Older Hermes runtimes must show support as unavailable, never local-only pins.
 ### Settings workspace
 
 The macOS Settings command opens the existing Settings workspace in the active Herm surface.
+Performance capture records timing by default and offers optional stack samples.
 
 Settings groups destinations by purpose:
 

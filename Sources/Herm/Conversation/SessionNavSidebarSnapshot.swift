@@ -402,6 +402,8 @@ final class SessionNavSidebarModel: ObservableObject {
     }
 
     func refresh() {
+        let performanceStart = ProcessInfo.processInfo.systemUptime
+        defer { HermPerformanceRecorder.recordWork("sidebarRefresh", since: performanceStart) }
         let startedAt = Date()
         let inputs = SessionNavSidebarSnapshot.inputs(
             model: model, control: control, localProjectPaths: store.projectPathsBySessionID)

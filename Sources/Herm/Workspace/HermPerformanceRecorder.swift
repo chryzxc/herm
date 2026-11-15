@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import IOKit.ps
 import QuartzCore
 
 /// Records what the running app actually does while the user reproduces lag:
@@ -18,6 +19,9 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
 
     @Published private(set) var isRecording = false
     @Published private(set) var lastReportURL: URL?
+    @Published var includeStackSamples = false
+    @Published private(set) var isFinalizing = false
+    @Published private(set) var error: String?
 
     /// Checked on every counted body evaluation; kept outside `@Published` so
     /// counting never invalidates the views being measured.
@@ -35,6 +39,14 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
     private var timeline: [String] = []
     private var stackCaptures: [String] = []
     private var isCapturingStack = false
+    private var captureID = UUID()
+    private var sampler: Process?
+    private var endedAt: CFTimeInterval = 0
+    private var lastArrival: CFTimeInterval = 0
+    private var gaps: [Double] = []
+    private var expectedIntervals: [Int: Int] = [:]
+    private var environment: [String] = []
+    private var secondWasSampled = false
     private var stopTask: Task<Void, Never>?
 
     private struct Counters {
@@ -44,6 +56,7 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
         var worstFrame: CFTimeInterval = 0
         var publications: [String: Int] = [:]
         var bodies: [String: Int] = [:]
+        var workMilliseconds: [String: Double] = [:]
 
         mutating func absorb(_ other: Counters) {
             frames += other.frames
@@ -52,6 +65,7 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
             worstFrame = max(worstFrame, other.worstFrame)
             publications.merge(other.publications, uniquingKeysWith: +)
             bodies.merge(other.bodies, uniquingKeysWith: +)
+            workMilliseconds.merge(other.workMilliseconds, uniquingKeysWith: +)
         }
     }
 
@@ -74,18 +88,33 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
         shared.second.bodies[name, default: 0] += 1
     }
 
+    static func recordWork(_ name: String, since start: CFTimeInterval) {
+        guard active else { return }
+        shared.second.bodies[name, default: 0] += 1
+        shared.second.workMilliseconds[name, default: 0] += (CACurrentMediaTime() - start) * 1000
+    }
+
     func start() {
-        guard !isRecording, let screen = NSScreen.main else { return }
+        guard !isRecording, !isFinalizing, let screen = NSScreen.main else { return }
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
         let folder = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/Herm/Performance/\(stamp)", isDirectory: true)
         guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil
         else { return }
         directory = folder
+        error = nil
+        gaps = []
+        expectedIntervals = [:]
+        environment = []
+        endedAt = 0
+        lastArrival = 0
+        secondWasSampled = false
         second = Counters()
         total = Counters()
         timeline = []
         stackCaptures = []
+        captureID = UUID()
+        isCapturingStack = false
         startedAt = CACurrentMediaTime()
         secondStart = startedAt
         lastFrame = 0
@@ -96,7 +125,7 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
         Self.active = true
         isRecording = true
         stopTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(Self.duration))
+            do { try await Task.sleep(for: .seconds(Self.duration)) } catch { return }
             self?.stop()
         }
     }
@@ -109,10 +138,24 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
         subscriptions = []
         Self.active = false
         isRecording = false
-        closeSecond(at: CACurrentMediaTime())
+        endedAt = CACurrentMediaTime()
+        closeSecond(at: endedAt)
+        if let sampler {
+            isFinalizing = true
+            if sampler.isRunning { sampler.terminate() }
+            return
+        }
+        saveReport()
+    }
+
+    private func saveReport() {
+        isFinalizing = false
         guard let directory else { return }
         let report = directory.appendingPathComponent("report.txt")
-        try? renderReport().write(to: report, atomically: true, encoding: .utf8)
+        do { try renderReport().write(to: report, atomically: true, encoding: .utf8) } catch {
+            self.error = "Performance report could not be saved."
+            return
+        }
         lastReportURL = report
         NSWorkspace.shared.activateFileViewerSelecting([report])
     }
@@ -125,8 +168,12 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
     }
 
     @objc private func frame(_ link: CADisplayLink) {
+        let arrival = CACurrentMediaTime()
+        if lastArrival > 0 { gaps.append(arrival - lastArrival) }
+        lastArrival = arrival
         let now = link.timestamp
         let expected = max(link.targetTimestamp - link.timestamp, 1.0 / 240)
+        expectedIntervals[Int((expected * 1_000_000).rounded()), default: 0] += 1
         if lastFrame > 0 {
             let delta = now - lastFrame
             second.frames += 1
@@ -147,26 +194,40 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
     }
 
     private func closeSecond(at now: CFTimeInterval) {
+        let power: String
+        if let info = IOPSCopyPowerSourcesInfo() {
+            power = IOPSGetProvidingPowerSourceType(info.takeRetainedValue()).takeUnretainedValue() as String
+        } else {
+            power = "unavailable"
+        }
+        let state =
+            "power=\(power) low_power=\(ProcessInfo.processInfo.isLowPowerModeEnabled) thermal=\(ProcessInfo.processInfo.thermalState.rawValue)"
+        if environment.last?.hasSuffix(state) != true {
+            environment.append(String(format: "t=%.2fs %@", now - startedAt, state))
+        }
         let elapsed = now - secondStart
         guard elapsed > 0 else { return }
         let lostRatio = second.lostTime / elapsed
         let t = Int((secondStart - startedAt).rounded())
         timeline.append(
             String(
-                format: "t=%3ds%@ fps=%3d dropped=%3d lost=%4.0fms worst=%4.0fms  pubs: %@  bodies: %@",
-                t, isCapturingStack ? "*" : " ", second.frames, second.droppedFrames, second.lostTime * 1000,
+                format: "t=%3ds%@ callbacks=%3d dropped=%3d lost=%4.0fms worst=%4.0fms  pubs: %@  bodies: %@",
+                t, secondWasSampled ? "*" : " ", second.frames, second.droppedFrames, second.lostTime * 1000,
                 second.worstFrame * 1000,
                 Self.ranked(second.publications, limit: 5), Self.ranked(second.bodies, limit: 4)))
-        if lostRatio >= Self.stallCaptureRatio { captureStack(label: "t\(t)s") }
+        if isRecording && includeStackSamples && lostRatio >= Self.stallCaptureRatio { captureStack(label: "t\(t)s") }
         total.absorb(second)
         second = Counters()
+        secondWasSampled = isCapturingStack
         secondStart = now
     }
 
     /// The lag reported so far is sustained, so sampling right after a bad
     /// second still lands inside it. `sample` is the same tool used by hand.
     private func captureStack(label: String) {
-        guard !isCapturingStack, stackCaptures.count < Self.maxStackCaptures, let directory else { return }
+        guard isRecording, includeStackSamples, !isCapturingStack, stackCaptures.count < Self.maxStackCaptures,
+            let directory
+        else { return }
         let file = directory.appendingPathComponent("stack-\(label).txt")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
@@ -174,25 +235,56 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
         process.arguments = ["\(ProcessInfo.processInfo.processIdentifier)", "3", "10", "-mayDie", "-file", file.path]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        process.terminationHandler = { _ in
-            Task { @MainActor in HermPerformanceRecorder.shared.isCapturingStack = false }
+        let id = captureID
+        process.terminationHandler = { terminated in
+            let status = terminated.terminationStatus
+            Task { @MainActor in
+                let recorder = HermPerformanceRecorder.shared
+                guard recorder.captureID == id else { return }
+                if let index = recorder.stackCaptures.firstIndex(of: file.lastPathComponent) {
+                    recorder.stackCaptures[index] = Self.stackCaptureResult(
+                        name: file.lastPathComponent, status: status,
+                        hasFile: FileManager.default.fileExists(atPath: file.path))
+                }
+                recorder.isCapturingStack = false
+                recorder.sampler = nil
+                if recorder.isFinalizing { recorder.saveReport() }
+            }
         }
-        guard (try? process.run()) != nil else { return }
+        do { try process.run() } catch {
+            stackCaptures.append("Stack sample unavailable")
+            return
+        }
+        sampler = process
         isCapturingStack = true
+        secondWasSampled = true
         stackCaptures.append(file.lastPathComponent)
     }
 
+    nonisolated static func stackCaptureResult(name: String, status: Int32, hasFile: Bool) -> String {
+        status == 0 && hasFile ? name : "Stack sample unavailable"
+    }
+
     private func renderReport() -> String {
-        let seconds = max(CACurrentMediaTime() - startedAt, 1)
-        let build = Bundle.main.bundleURL.path.contains("/Debug/") ? "Debug" : "Release"
+        let seconds = max(endedAt - startedAt, 0.001)
+        let build = HermBuildInfo.current
         return """
             Herm performance capture
-            build: \(build)   duration: \(Int(seconds))s   display: \(NSScreen.main?.maximumFramesPerSecond ?? 0) Hz
-            frames: \(total.frames)   dropped: \(total.droppedFrames)   lost: \(Int(total.lostTime * 1000))ms \
+            build: \(build.channel.rawValue) \(build.commit ?? "unavailable")   duration: \(Int(seconds))s   display maximum: \(NSScreen.main?.maximumFramesPerSecond ?? 0) Hz
+            callbacks: \(total.frames)   estimated dropped: \(total.droppedFrames)   estimated lost: \(Int(total.lostTime * 1000))ms \
             (\(Int(total.lostTime / seconds * 100))% of wall time)   worst frame: \(Int(total.worstFrame * 1000))ms
 
-            Publications (objectWillChange; each one re-renders the workspace root):
+            Observed publications (→root names identify scoped workspace subscriptions; other names are broad observables):
             \(Self.ranked(total.publications, limit: 40, separator: "\n"))
+
+            Callback arrival gaps: \(Self.gapSummary(gaps))
+            Observed callback rate: \(String(format: "%.1f", Double(total.frames) / seconds))/s
+            Expected intervals (microseconds: callbacks): \(expectedIntervals.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: " "))
+            Power context:
+            \(environment.joined(separator: "\n"))
+
+            Measured UI work (total milliseconds; overlapping work may be counted):
+            \(total.workMilliseconds.sorted { $0.key < $1.key }.map { "\($0.key)=\(String(format: "%.2f", $0.value))" }.joined(separator: "\n"))
 
             Body evaluations:
             \(Self.ranked(total.bodies, limit: 40, separator: "\n"))
@@ -204,6 +296,18 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
             \(timeline.joined(separator: "\n"))
 
             """
+    }
+
+    nonisolated static func gapSummary(_ gaps: [Double]) -> String {
+        let sorted = gaps.sorted()
+        guard !sorted.isEmpty else { return "unavailable" }
+        func percentile(_ fraction: Double) -> Double {
+            sorted[min(sorted.count - 1, max(0, Int(ceil(Double(sorted.count) * fraction)) - 1))] * 1000
+        }
+        return String(
+            format: "p50=%.1fms p95=%.1fms p99=%.1fms max=%.1fms >50ms=%d >100ms=%d",
+            percentile(0.5), percentile(0.95), percentile(0.99), percentile(1),
+            gaps.filter { $0 > 0.05 }.count, gaps.filter { $0 > 0.1 }.count)
     }
 
     private static func ranked(_ counts: [String: Int], limit: Int, separator: String = " ") -> String {

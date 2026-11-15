@@ -12,6 +12,7 @@ extension DockModel {
     func shutdown() {
         guard !hasShutDown else { return }
         hasShutDown = true
+        pendingSessionIndexRefresh = false
         streamingMessageFlushTask?.cancel()
         sessionResumeTask?.cancel()
         sessionResumeWorkTask?.cancel()
