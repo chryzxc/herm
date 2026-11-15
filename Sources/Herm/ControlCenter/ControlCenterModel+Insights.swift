@@ -177,6 +177,7 @@ extension ControlCenterModel {
             rebuildWorkCalendar()
             return
         }
+        workCalendarLoadedAt[monthStart] = nil
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
@@ -187,27 +188,43 @@ extension ControlCenterModel {
         }
         beginProjectionRefresh("work.calendar")
         workCalendarPaths[monthStart] = paths
+        if workCalendarSources[monthStart] != nil { rebuildWorkCalendar() }
         workCalendarTask = Task { @MainActor in
             defer { if generation == workCalendarGeneration { workCalendarTask = nil } }
             do {
                 async let commits = RepositoryService.commits(paths: paths, since: monthStart, until: monthEnd)
                 async let pullRequests = GitHubCodeHostService().mergedPullRequests(since: monthStart, until: monthEnd)
                 async let sessions = Self.workCalendarSessions(rpc: rpc, since: monthStart)
-                // Usage is best-effort: older Hermes builds lack the web server.
                 let usageDays = (calendar.dateComponents([.day], from: monthStart, to: Date()).day ?? -1) + 1
-                var usage: [TokenUsageReport.Day] = []
-                if (1...365).contains(usageDays), let result = try? await rpc.usageAnalytics(days: usageDays) {
-                    usage = Self.parseTokenUsage(result).daily
-                }
+                async let usage = Self.workCalendarUsage(rpc: rpc, days: usageDays)
                 let fetched = (
-                    sessions: try await sessions, commits: await commits, pullRequests: await pullRequests, usage: usage
+                    sessions: try await sessions,
+                    commits: workCalendarSources[monthStart]?.commits ?? [],
+                    pullRequests: workCalendarSources[monthStart]?.pullRequests ?? [],
+                    usage: workCalendarSources[monthStart]?.usage ?? []
                 )
-                guard generation == workCalendarGeneration,
+                guard !Task.isCancelled, generation == workCalendarGeneration,
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
                 workCalendarSources[monthStart] = fetched
-                workCalendarLoadedAt[monthStart] = Date()
                 workCalendarBuildNeedsSuccess = true
+                rebuildWorkCalendar()
+                let fetchedCommits = await commits
+                let fetchedPullRequests = await pullRequests
+                guard !Task.isCancelled, generation == workCalendarGeneration,
+                    isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
+                    workCalendarSources[monthStart] != nil
+                else { return }
+                workCalendarSources[monthStart]?.commits = fetchedCommits
+                workCalendarSources[monthStart]?.pullRequests = fetchedPullRequests
+                rebuildWorkCalendar()
+                let fetchedUsage = await usage
+                guard !Task.isCancelled, generation == workCalendarGeneration,
+                    isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
+                    workCalendarSources[monthStart] != nil
+                else { return }
+                workCalendarSources[monthStart]?.usage = fetchedUsage
+                workCalendarLoadedAt[monthStart] = Date()
                 rebuildWorkCalendar()
             } catch {
                 guard generation == workCalendarGeneration,
@@ -217,6 +234,12 @@ extension ControlCenterModel {
                 recordProjectionFailure("work.calendar", error: error.localizedDescription)
             }
         }
+    }
+
+    /// Usage is best-effort: older Hermes builds lack the web server.
+    private static func workCalendarUsage(rpc: HermesControlRPC, days: Int) async -> [TokenUsageReport.Day] {
+        guard (1...365).contains(days), let result = try? await rpc.usageAnalytics(days: days) else { return [] }
+        return parseTokenUsage(result).daily
     }
 
     /// Hermes' projects are the working directories its sessions ran in, the same list the PR center reads.
