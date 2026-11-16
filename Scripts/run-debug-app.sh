@@ -122,10 +122,10 @@ if pgrep -x "$PROCESS_NAME" >/dev/null 2>&1; then
     fi
 fi
 
-# Herm's `hermes serve` backends lead their own process group, so they survive
-# the app and get reparented to launchd. An orphan keeps holding its session
-# lock ("This chat is open in another Hermes window"), so reap them — plus
-# their MCP children — now that Herm is gone.
+# Builds without HermesBackendLaunch's supervisor left their `hermes serve`
+# backends running after the app died, reparented to launchd. An orphan keeps
+# holding its session lock ("This chat is open in another Hermes window"), so
+# reap them, plus their MCP children, now that Herm is gone.
 orphan_backends() {
     ps -axo pid=,ppid=,command= | awk '$2 == 1 && / serve --host 127\.0\.0\.1 --port 0$/ { print $1 }'
 }

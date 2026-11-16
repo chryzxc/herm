@@ -555,10 +555,8 @@ final class HermesGateway: NSObject {
 
             DebugLog.write("backend: launching hermes serve")
             token = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-            let process = Process()
+            let process = HermesBackendLaunch.process()
             let stdout = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["hermes", "serve", "--host", "127.0.0.1", "--port", "0"]
             process.currentDirectoryURL = workingDirectory
             var environment = HermesEnvironment.processEnvironment()
                 .merging(HermAgentSurfaces.startPublishing()) { _, herm in herm }
