@@ -814,7 +814,12 @@ struct GroupChatView: View {
                     )
                     if !event.text.isEmpty || !files.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            ForEach(files) { UserMessageAttachmentRow(name: $0.name) }
+                            DockChipFlow(spacing: 6) {
+                                ForEach(files) { file in
+                                    UserMessageAttachmentRow(
+                                        name: file.name, url: store.localAttachmentURLs[roomID + ":" + file.id])
+                                }
+                            }
                             if let quote = split?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }
                             // Same type as the main chat's bubble, so it follows the text-size setting.
                             if !event.text.isEmpty {

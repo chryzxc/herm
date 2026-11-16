@@ -41,6 +41,7 @@ struct HermesCompatibilitySettings: View {
                                 }
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .dockPadding(.top, 8)
                     }
                 }
@@ -59,6 +60,7 @@ struct HermesCompatibilitySettings: View {
                                 }
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .dockPadding(.top, 8)
                     }
                 }

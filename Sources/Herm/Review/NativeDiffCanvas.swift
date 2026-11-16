@@ -1,6 +1,24 @@
 import AppKit
 import SwiftUI
 
+private func diffBlameEntry(_ line: DiffLine?, side: String?, blame: DiffBlame) -> RepositoryBlameLine? {
+    guard let line else { return nil }
+    let entry =
+        side == "LEFT" || (side == nil && line.newLine == nil)
+        ? line.oldLine.flatMap { blame.old[$0] } : line.newLine.flatMap { blame.new[$0] }
+    guard let entry, entry.text == DiffDocument.source(line) else { return nil }
+    return entry
+}
+
+private func blameDetails(_ entry: RepositoryBlameLine) -> String {
+    let commit = entry.commit
+    guard !commit.isUncommitted else { return "Uncommitted changes" }
+    return [
+        commit.author, commit.authoredAt?.formatted(date: .abbreviated, time: .shortened), commit.hash, commit.summary,
+    ]
+    .compactMap { $0 }.joined(separator: " · ")
+}
+
 struct NativeDiffCanvas: NSViewRepresentable {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     let document: DiffDocument
@@ -10,6 +28,7 @@ struct NativeDiffCanvas: NSViewRepresentable {
     let findRequest: Int
     var reveal: DiffSearchMatch? = nil
     var viewport: DiffViewportState? = nil
+    var blame = DiffBlame()
     let onNote: ((DiffSelection) -> Void)?
     let onComment: ((DiffLine) -> Void)?
     var noteMarks: [DiffNoteMark] = []
@@ -19,7 +38,7 @@ struct NativeDiffCanvas: NSViewRepresentable {
     func updateNSView(_ view: DiffCanvasContainer, context: Context) {
         view.update(
             document, split: split, wraps: wraps, wordDiffs: wordDiffs, findRequest: findRequest, reveal: reveal,
-            viewport: viewport,
+            viewport: viewport, blame: blame,
             onNote: onNote, onComment: onComment, noteMarks: noteMarks, onEditNote: onEditNote, noteEditor: noteEditor,
             textScale: workspaceScale)
     }
@@ -100,6 +119,56 @@ final class DiffCanvasContainer: NSView {
             pendingScroll = []
         }
     }
+    private struct GutterInput: Equatable {
+        let identity: String
+        let split: Bool
+        let textScale: CGFloat
+        let hasComment: Bool
+        let blame: DiffBlame
+    }
+    private struct GutterLayout {
+        let rows: [DiffSplitRow]
+        let columns: [[DiffLine?]]
+        let blameWidths: [CGFloat]
+        let gutterWidths: [CGFloat]
+    }
+    private var gutterCache: (input: GutterInput, layout: GutterLayout)?
+    /// Stands in for the blame in the fingerprint: interpolating the blame
+    /// maps into the key would describe every entry on each SwiftUI update.
+    private var blameRevision = 0
+
+    /// Split rows and gutter widths scan every line; SwiftUI calls `update` on
+    /// unrelated state changes, so they are recomputed only when an input
+    /// changes. The same blame value shares storage, so equality is cheap.
+    private func gutterLayout(_ input: GutterInput, document: DiffDocument) -> GutterLayout {
+        if let cache = gutterCache, cache.input == input { return cache.layout }
+        if gutterCache?.input.blame != input.blame { blameRevision &+= 1 }
+        let split = input.split
+        let digits = max(
+            1,
+            document.lines.lazy.flatMap { [$0.oldLine, $0.newLine].compactMap { $0 } }
+                .map { String($0).count }.max() ?? 1)
+        let font = NSFont.monospacedSystemFont(
+            ofSize: DockTypography.size(.metadata, scale: input.textScale), weight: .regular)
+        let digitWidth = ("0" as NSString).size(withAttributes: [.font: font]).width
+        let rows = DiffPresentation.splitRows(document.lines)
+        let columns: [[DiffLine?]] =
+            split ? [rows.map(\.left), rows.map(\.right)] : [document.lines.map(Optional.some)]
+        let hasBlame = !input.blame.old.isEmpty || !input.blame.new.isEmpty
+        let blameWidths: [CGFloat] = columns.enumerated().map { index, column in
+            guard hasBlame else { return 0 }
+            let side = split ? (index == 0 ? "LEFT" : "RIGHT") : nil
+            return column.contains { diffBlameEntry($0, side: side, blame: input.blame) != nil } ? 128 : 0
+        }
+        let numberWidth =
+            ceil(18 + CGFloat(digits * (split ? 1 : 2) + (split ? 0 : 2)) * digitWidth)
+            + (input.hasComment ? 24 : 0)
+        let layout = GutterLayout(
+            rows: rows, columns: columns, blameWidths: blameWidths, gutterWidths: blameWidths.map { $0 + numberWidth })
+        gutterCache = (input, layout)
+        return layout
+    }
+
     private func alignWrappedRows() {
         let key = fingerprint + ":" + String(Double(bounds.width))
         guard alignmentKey != key, stack.arrangedSubviews.count == 2 else { return }
@@ -140,32 +209,61 @@ final class DiffCanvasContainer: NSView {
     }
     func update(
         _ document: DiffDocument, split: Bool, wraps: Bool, wordDiffs: Bool, findRequest: Int, reveal: DiffSearchMatch?,
-        viewport: DiffViewportState?,
+        viewport: DiffViewportState?, blame: DiffBlame = DiffBlame(),
         onNote: ((DiffSelection) -> Void)?, onComment: ((DiffLine) -> Void)?,
         noteMarks: [DiffNoteMark] = [], onEditNote: ((UUID) -> Bool)? = nil,
         noteEditor: ((@escaping () -> Void) -> DiffNoteEditor)? = nil, textScale: CGFloat = 1
     ) {
         self.textScale = textScale
         let split = split && document.supportsSplitView
+        let layout = gutterLayout(
+            GutterInput(
+                identity: document.identity, split: split, textScale: textScale, hasComment: onComment != nil,
+                blame: blame),
+            document: document)
+        let (rows, columns, blameWidths, gutterWidths) =
+            (layout.rows, layout.columns, layout.blameWidths, layout.gutterWidths)
         let key =
-            "\(textScale):\(document.identity):\(split):\(wraps):\(wordDiffs):\(DockThemeRuntime.revision):\(viewport?.restorationRevision ?? 0)"
+            "\(textScale):\(document.identity):\(split):\(wraps):\(wordDiffs):\(DockThemeRuntime.revision):\(viewport?.restorationRevision ?? 0):\(blameRevision)"
         if fingerprint == key {
             // A revision can change without changing the patch. Rebind actions while keeping selection and scroll.
-            for case let scroll as NSScrollView in stack.arrangedSubviews {
+            for (index, view) in stack.arrangedSubviews.enumerated() {
+                guard let scroll = view as? NSScrollView, gutterWidths.indices.contains(index) else { continue }
+                let gutterWidth = gutterWidths[index]
                 guard let text = scroll.documentView as? DiffSelectableTextView else { continue }
+                text.blame = blame
                 text.onNote = onNote
                 text.noteEditor = noteEditor
                 text.onEditNote = onEditNote
                 text.noteMarks = noteMarks
                 text.onComment = onComment
                 if let ruler = scroll.verticalRulerView {
-                    ruler.ruleThickness = onComment == nil ? 76 : 100
+                    let wasAtStart = scroll.contentView.bounds.minX <= -ruler.ruleThickness + 0.5
+                    let changed = ruler.ruleThickness != gutterWidth
+                    ruler.ruleThickness = gutterWidth
                     ruler.needsDisplay = true
+                    if changed {
+                        sizingKey = ""
+                        alignmentKey = ""
+                        if wasAtStart {
+                            scroll.contentView.scroll(to: NSPoint(x: -gutterWidth, y: scroll.contentView.bounds.minY))
+                        }
+                        needsLayout = true
+                    }
                 }
             }
         }
         if fingerprint != key {
-            let previous = stack.arrangedSubviews.compactMap { ($0 as? NSScrollView)?.contentView.bounds.origin }
+            let previous = stack.arrangedSubviews.enumerated().compactMap { index, view -> NSPoint? in
+                guard let scroll = view as? NSScrollView else { return nil }
+                var origin = scroll.contentView.bounds.origin
+                if gutterWidths.indices.contains(index),
+                    origin.x <= -(scroll.verticalRulerView?.ruleThickness ?? 0) + 0.5
+                {
+                    origin.x = -gutterWidths[index]
+                }
+                return origin
+            }
             let restored =
                 viewport?.comparison == document.identity && lastViewportRestore != viewport?.restorationRevision
             pendingScroll = restored ? (viewport?.origins ?? []) : previousPath == document.path ? previous : []
@@ -182,7 +280,6 @@ final class DiffCanvasContainer: NSView {
                 stack.removeArrangedSubview(subview)
                 subview.removeFromSuperview()
             }
-            let rows = DiffPresentation.splitRows(document.lines)
             var counterparts: [Int: String] = [:]
             for row in rows {
                 if let left = row.left, let right = row.right, left.kind == .deletion, right.kind == .addition {
@@ -190,25 +287,24 @@ final class DiffCanvasContainer: NSView {
                     counterparts[right.index] = DiffDocument.source(left)
                 }
             }
-            let columns: [[DiffLine?]] =
-                split ? [rows.map(\.left), rows.map(\.right)] : [document.lines.map(Optional.some)]
             // Overlay rulers inset the document; zero would hide source underneath the gutter.
-            let leadingOrigin = NSPoint(x: onComment == nil ? -76 : -100, y: 0)
             pendingScroll = columns.indices.map {
-                pendingScroll.indices.contains($0) ? pendingScroll[$0] : leadingOrigin
+                pendingScroll.indices.contains($0) ? pendingScroll[$0] : NSPoint(x: -gutterWidths[$0], y: 0)
             }
             for (columnIndex, column) in columns.enumerated() {
+                let gutterWidth = gutterWidths[columnIndex]
                 let scroll = NSScrollView()
                 let text = DiffSelectableTextView()
                 text.lines = column
                 text.side = split ? (columnIndex == 0 ? "LEFT" : "RIGHT") : nil
+                text.blame = blame
                 text.onNote = onNote
                 text.noteEditor = noteEditor
                 text.onEditNote = onEditNote
                 text.noteMarks = noteMarks
                 text.onComment = onComment
                 text.frame = NSRect(
-                    x: 0, y: 0, width: max(100, bounds.width / CGFloat(columns.count) - 90), height: 100)
+                    x: 0, y: 0, width: max(100, bounds.width / CGFloat(columns.count) - gutterWidth), height: 100)
                 text.minSize = NSSize(width: 0, height: 100)
                 text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
                 text.isEditable = false
@@ -224,7 +320,8 @@ final class DiffCanvasContainer: NSView {
                 text.autoresizingMask = wraps ? [.width] : []
                 text.textContainer?.widthTracksTextView = wraps
                 text.textContainer?.containerSize = NSSize(
-                    width: wraps ? max(100, bounds.width / CGFloat(columns.count) - 90) : .greatestFiniteMagnitude,
+                    width: wraps
+                        ? max(100, bounds.width / CGFloat(columns.count) - gutterWidth) : .greatestFiniteMagnitude,
                     height: .greatestFiniteMagnitude)
                 text.string = column.map { $0.map(DiffDocument.source) ?? "" }.joined(separator: "\n")
                 text.textStorage?.addAttributes(
@@ -235,7 +332,7 @@ final class DiffCanvasContainer: NSView {
                 clip.onScroll = { [weak viewport] point in viewport?.record(point, column: columnIndex) }
                 scroll.contentView = clip
                 scroll.documentView = text
-                scroll.hasVerticalScroller = true
+                scroll.hasVerticalScroller = !split || columnIndex == columns.count - 1
                 scroll.hasHorizontalScroller = !wraps
                 scroll.autohidesScrollers = true
                 scroll.drawsBackground = true
@@ -244,7 +341,9 @@ final class DiffCanvasContainer: NSView {
                 ruler.clientView = text
                 ruler.text = text
                 ruler.side = text.side
-                ruler.ruleThickness = onComment == nil ? 76 : 100
+                ruler.blame = blame
+                ruler.blameWidth = blameWidths[columnIndex]
+                ruler.ruleThickness = gutterWidth
                 scroll.verticalRulerView = ruler
                 scroll.hasVerticalRuler = true
                 scroll.rulersVisible = true
@@ -347,6 +446,8 @@ private final class DiffSelectableTextView: NSTextView {
     }
     private(set) var lineOffsets = DiffLineOffsets(lengths: [])
     var side: String?
+    var blame = DiffBlame()
+    private var copiedBlame: String?
     var onNote: ((DiffSelection) -> Void)?
     var onComment: ((DiffLine) -> Void)?
     private var captured = DiffSelection(lines: [])
@@ -434,12 +535,18 @@ private final class DiffSelectableTextView: NSTextView {
         let menu = super.menu(for: event) ?? NSMenu()
         if highlighted.length > 0 {
             setSelectedRange(highlighted)
-        } else if selectedRange().length == 0 {
+        } else if selectedRange().length == 0, event.type == .rightMouseDown {
             setSelectedRange(
                 NSRange(location: characterIndexForInsertion(at: convert(event.locationInWindow, from: nil)), length: 0)
             )
         }
         captureSelection()
+        copiedBlame = captured.lines.first.flatMap { diffBlameEntry($0, side: side, blame: blame) }.map(blameDetails)
+        if copiedBlame != nil {
+            let item = NSMenuItem(title: "Copy blame details", action: #selector(copyBlame), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
         if onNote != nil {
             let item = NSMenuItem(title: "Add revision note", action: #selector(addNote), keyEquivalent: "")
             item.target = self
@@ -472,6 +579,11 @@ private final class DiffSelectableTextView: NSTextView {
             onComment?(first)
         }
     }
+    @objc private func copyBlame() {
+        guard let copiedBlame else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(copiedBlame, forType: .string)
+    }
 }
 
 extension DiffSelectableTextView: NSPopoverDelegate {
@@ -488,12 +600,23 @@ extension DiffSelectableTextView: NSPopoverDelegate {
 private final class DiffLineRuler: NSRulerView {
     weak var text: DiffSelectableTextView?
     var side: String?
+    var blame = DiffBlame()
+    var blameWidth: CGFloat = 0
     private var commentButtons: [Int: DiffLineCommentButton] = [:]
-    override var requiredThickness: CGFloat { text?.onComment == nil ? 76 : 100 }
+    private var blameAccessibility: [NSAccessibilityElement] = []
+    override func accessibilityChildren() -> [Any]? {
+        (super.accessibilityChildren() ?? []) + blameAccessibility
+    }
+    override var isFlipped: Bool { true }
+    override var requiredThickness: CGFloat { ruleThickness }
+    override func draw(_ dirtyRect: NSRect) {
+        drawHashMarksAndLabels(in: dirtyRect)
+    }
     override func drawHashMarksAndLabels(in rect: NSRect) {
         guard let text, let manager = text.layoutManager, let container = text.textContainer,
             manager.numberOfGlyphs > 0
         else {
+            blameAccessibility = []
             for button in commentButtons.values { button.removeFromSuperview() }
             commentButtons.removeAll()
             return
@@ -514,12 +637,17 @@ private final class DiffLineRuler: NSRulerView {
         let first = text.lineOffsets.row(containing: character)
         let length = (text.string as NSString).length
         var visibleComments = Set<Int>()
+        var accessibility: [NSAccessibilityElement] = []
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        var blameAttributes = attributes
+        blameAttributes[.paragraphStyle] = paragraph
         for index in first..<text.lines.count {
             let line = text.lines[index]
             let offset = text.lineOffsets.starts[index]
             let glyph = manager.glyphIndexForCharacter(at: min(offset, max(0, length - 1)))
             let frame = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-            let y = frame.minY + text.textContainerInset.height - (scrollView?.contentView.bounds.minY ?? 0)
+            let y = convert(NSPoint(x: 0, y: frame.minY + text.textContainerOrigin.y), from: text).y
             if y > bounds.maxY { break }
             if y + frame.height >= bounds.minY {
                 let sign = line?.kind == .addition ? "+" : line?.kind == .deletion ? "−" : " "
@@ -530,7 +658,33 @@ private final class DiffLineRuler: NSRulerView {
                         ? (line?.newLine.map(String.init) ?? "")
                         : "\(line?.oldLine.map(String.init) ?? "")  \(line?.newLine.map(String.init) ?? "")"
                 let label = "\(sign) \(numbers)" as NSString
-                label.draw(at: NSPoint(x: 4, y: y), withAttributes: attributes)
+                label.draw(at: NSPoint(x: blameWidth + 4, y: y), withAttributes: attributes)
+                if let entry = diffBlameEntry(line, side: side, blame: blame), blameWidth > 0 {
+                    let commit = entry.commit
+                    let rect = NSRect(x: 4, y: y, width: blameWidth - 8, height: frame.height)
+                    if !commit.isUncommitted, let date = commit.authoredAt {
+                        let dateText = date.formatted(.dateTime.month(.abbreviated).year()) as NSString
+                        let dateWidth = min(rect.width * 0.55, dateText.size(withAttributes: blameAttributes).width)
+                        (commit.author as NSString).draw(
+                            in: NSRect(x: rect.minX, y: y, width: rect.width - dateWidth - 6, height: rect.height),
+                            withAttributes: blameAttributes)
+                        dateText.draw(
+                            in: NSRect(x: rect.maxX - dateWidth, y: y, width: dateWidth, height: rect.height),
+                            withAttributes: blameAttributes)
+                    } else {
+                        let title = commit.isUncommitted ? "Uncommitted changes" : commit.author
+                        (title as NSString).draw(in: rect, withAttributes: blameAttributes)
+                    }
+                    if let window {
+                        let screenRect = window.convertToScreen(convert(rect, to: nil))
+                        let element = NSAccessibilityElement()
+                        element.setAccessibilityRole(.staticText)
+                        element.setAccessibilityFrame(screenRect)
+                        element.setAccessibilityLabel(blameDetails(entry))
+                        element.setAccessibilityParent(self)
+                        accessibility.append(element)
+                    }
+                }
                 if text.noteMark(atRow: index) != nil {
                     let glyphs = manager.glyphRange(
                         forCharacterRange: text.characterRange(ofRow: index), actualCharacterRange: nil)
@@ -543,7 +697,7 @@ private final class DiffLineRuler: NSRulerView {
                     let button = commentButtons[line.index] ?? DiffLineCommentButton()
                     if button.superview == nil { addSubview(button) }
                     commentButtons[line.index] = button
-                    button.frame = NSRect(x: 77, y: y, width: 22, height: max(20, frame.height))
+                    button.frame = NSRect(x: ruleThickness - 23, y: y, width: 22, height: max(20, frame.height))
                     var target = line
                     if side == "LEFT" { target.newLine = nil }
                     if side == "RIGHT" { target.oldLine = nil }
@@ -559,6 +713,7 @@ private final class DiffLineRuler: NSRulerView {
         for key in Array(commentButtons.keys) where !visibleComments.contains(key) {
             commentButtons.removeValue(forKey: key)?.removeFromSuperview()
         }
+        blameAccessibility = accessibility
         _ = container
     }
 }
@@ -585,6 +740,13 @@ private final class DiffSyncedClipView: NSClipView {
     weak var peer: DiffSyncedClipView?
     var onScroll: ((NSPoint) -> Void)?
     private var syncing = false
+    override func constrainBoundsRect(_ proposed: NSRect) -> NSRect {
+        var rect = super.constrainBoundsRect(proposed)
+        if let own = documentView?.frame.height, let other = peer?.documentView?.frame.height, other > own {
+            rect.origin.y = min(max(proposed.origin.y, 0), max(0, other - bounds.height))
+        }
+        return rect
+    }
     override func scroll(to newOrigin: NSPoint) {
         super.scroll(to: newOrigin)
         onScroll?(bounds.origin)

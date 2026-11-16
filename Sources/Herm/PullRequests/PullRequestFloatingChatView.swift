@@ -34,7 +34,7 @@ private struct PullRequestSessionChatView: View {
     @State private var searching = false
     @State private var jumpID: UUID?
     @State private var image: ChatImagePreview?
-    private let metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: false)
+    private let metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: false, usesContextChatInsets: true)
     private var chatBots: BotModeModel { router?.bots ?? bots }
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
 

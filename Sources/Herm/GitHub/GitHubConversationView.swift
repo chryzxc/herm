@@ -147,61 +147,62 @@ struct GitHubTimelineView: View {
     var body: some View {
         LazyVStack(alignment: .leading, spacing: grouped ? 0 : 12) {
             ForEach(items) { item in
+                let isEvent = item.body.isEmpty
+                let avatarSize: CGFloat = isEvent ? 16 : 24
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline) {
-                        if let avatarURL = item.avatarURL {
-                            AsyncImage(url: avatarURL) { phase in
-                                if let image = phase.image {
-                                    image.resizable().scaledToFill()
-                                } else {
-                                    DockIcon(.user, size: 14, color: Color.dockMetadataText)
-                                        .frame(width: 24, height: 24)
-                                        .background(Circle().fill(Color.dockSurface2))
-                                }
+                    HStack(alignment: .center, spacing: 8) {
+                        AsyncImage(url: item.avatarURL) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFill()
+                            } else {
+                                DockIcon(.user, size: avatarSize - 10, color: Color.dockMetadataText)
+                                    .frame(width: avatarSize, height: avatarSize)
+                                    .background(Circle().fill(Color.dockSurface2))
                             }
-                            .frame(width: 24, height: 24)
-                            .clipShape(Circle())
-                            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-                            .accessibilityHidden(true)
                         }
+                        .frame(width: avatarSize, height: avatarSize)
+                        .clipShape(Circle())
+                        .accessibilityHidden(true)
                         Text(item.author).fontWeight(.semibold)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.summary).foregroundStyle(Color.dockSecondaryText)
-                            if let sha = item.commitSHA, let onOpenCommit {
-                                Button {
-                                    onOpenCommit(sha)
-                                } label: {
-                                    DockCommitIdentifier(
-                                        revision: sha, repositoryID: reference.repository.id,
-                                        evidence: commitCheckEvidence)
-                                }
-                                .buttonStyle(.dockLink)
-                                .help("Show commit diff")
-                                .accessibilityLabel(
-                                    DockCommitPresentation.diffActionLabel(
-                                        revision: sha, repositoryID: reference.repository.id,
-                                        evidence: commitCheckEvidence))
+                        Text(item.summary).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
+                        if let sha = item.commitSHA, let onOpenCommit {
+                            Button {
+                                onOpenCommit(sha)
+                            } label: {
+                                DockCommitIdentifier(
+                                    revision: sha, repositoryID: reference.repository.id,
+                                    evidence: commitCheckEvidence)
                             }
+                            .buttonStyle(.dockLink)
+                            .help("Show commit diff")
+                            .accessibilityLabel(
+                                DockCommitPresentation.diffActionLabel(
+                                    revision: sha, repositoryID: reference.repository.id,
+                                    evidence: commitCheckEvidence))
                         }
                         Spacer(minLength: 8)
                         if let date = item.date {
                             Text(HumanDateFormatting.relative(date)).dockFont(.metadata).foregroundStyle(
                                 Color.dockMetadataText)
                         }
-                        if let url = item.url { Link("GitHub", destination: url).buttonStyle(.dockLink) }
-                    }
-                    if !item.body.isEmpty {
-                        MarkdownMessageView(markdown: item.body).frame(maxWidth: .infinity, alignment: .leading)
-                        AttachToChatMenu {
-                            ChatContext(
-                                id: reference.id + ":" + item.id, title: reference.title + " · " + item.author,
-                                body:
-                                    "\(reference.title)\n\(item.url?.absoluteString ?? reference.webURL.absoluteString)\n\n"
-                                    + String(item.body.prefix(12_000)))
+                        if let url = item.url, !isEvent || item.commitSHA != nil {
+                            Link("GitHub", destination: url).buttonStyle(.dockLink)
                         }
                     }
-                }.dockFont(.body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent)
-                    .modifier(GitHubTimelineRowSurface(grouped: grouped))
+                    if !isEvent {
+                        VStack(alignment: .leading, spacing: 8) {
+                            MarkdownMessageView(markdown: item.body).frame(maxWidth: .infinity, alignment: .leading)
+                            AttachToChatMenu {
+                                ChatContext(
+                                    id: reference.id + ":" + item.id, title: reference.title + " · " + item.author,
+                                    body:
+                                        "\(reference.title)\n\(item.url?.absoluteString ?? reference.webURL.absoluteString)\n\n"
+                                        + String(item.body.prefix(12_000)))
+                            }
+                        }.padding(.leading, avatarSize + 8)
+                    }
+                }.dockFont(isEvent ? .metadata : .body).foregroundStyle(Color.dockPrimaryText).tint(Color.dockAccent)
+                    .modifier(GitHubTimelineRowSurface(grouped: grouped, compact: isEvent))
                 if grouped, item.id != items.last?.id { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             }
         }
@@ -301,7 +302,8 @@ struct GitHubConversationView: View {
 
 private struct GitHubTimelineRowSurface: ViewModifier {
     let grouped: Bool
+    var compact = false
     @ViewBuilder func body(content: Content) -> some View {
-        if grouped { content.dockPadding(.vertical, 12) } else { content.dockCard(padding: 12) }
+        if grouped { content.dockPadding(.vertical, compact ? 8 : 12) } else { content.dockCard(padding: 12) }
     }
 }

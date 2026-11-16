@@ -8,6 +8,11 @@ enum GitHubIssueFilter: String, CaseIterable, Identifiable, Sendable {
     var id: Self { self }
 }
 
+struct GitHubIssueAssignee: Equatable, Sendable {
+    let login: String
+    let avatarURL: URL?
+}
+
 struct GitHubIssueRecord: Identifiable, Equatable, Sendable {
     let repository: GitHubRepositoryReference
     let localPath: String
@@ -16,6 +21,7 @@ struct GitHubIssueRecord: Identifiable, Equatable, Sendable {
     var body: String
     var state: String
     var author: String
+    var authorAvatarURL: URL? = nil
     var assignee: String?
     var assignees: [String]
     var updatedAt: Date?
@@ -23,6 +29,10 @@ struct GitHubIssueRecord: Identifiable, Equatable, Sendable {
     var createdAt: Date? = nil
     var nodeID: String? = nil
     var labels: [String] = []
+    var labelRecords: [GitHubLabel] = []
+    var assigneeAvatars: [GitHubIssueAssignee] = []
+    var typeName: String? = nil
+    var stateReason: String? = nil
     var reference: GitHubItemReference { .init(repository: repository, number: number, kind: .issue, nodeID: nodeID) }
     var id: String { "github:\(repository.id)#\(number)" }
     var displayNumber: String { String(number) }
@@ -71,9 +81,37 @@ enum GitHubIssueParser {
             webURL: (payload["html_url"] as? String).flatMap(URL.init)
         )
         record.createdAt = (payload["created_at"] as? String).flatMap { try? Date($0, strategy: .iso8601) }
+        record.authorAvatarURL = avatarURL(user?["avatar_url"] as? String)
         record.nodeID = payload["node_id"] as? String
-        record.labels = (payload["labels"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+        record.typeName = bounded((payload["type"] as? [String: Any])?["name"] as? String)
+        record.stateReason = bounded(payload["state_reason"] as? String)
+        var labelNames = Set<String>()
+        record.labelRecords = (payload["labels"] as? [Any] ?? []).compactMap { value in
+            let label = value as? [String: Any] ?? [:]
+            guard let name = bounded((value as? String) ?? (label["name"] as? String)),
+                labelNames.insert(name).inserted
+            else { return nil }
+            let color = label["color"] as? String
+            return GitHubLabel(
+                id: label["node_id"] as? String ?? name, name: name, description: "",
+                color: color.flatMap { DockMetadataPillColor(hex: $0) == nil ? nil : $0 })
+        }
+        record.labels = record.labelRecords.map(\.name)
+        let people =
+            (payload["assignees"] as? [[String: Any]])
+            ?? (payload["assignee"] as? [String: Any]).map { [$0] } ?? []
+        record.assigneeAvatars = people.compactMap { person in
+            guard let login = bounded(person["login"] as? String) else { return nil }
+            return GitHubIssueAssignee(login: login, avatarURL: avatarURL(person["avatar_url"] as? String))
+        }
         return record
+    }
+
+    private static func avatarURL(_ value: String?) -> URL? {
+        guard let value, let url = URL(string: value), url.scheme == "https",
+            url.host == "avatars.githubusercontent.com", url.user == nil, url.password == nil, url.port == nil
+        else { return nil }
+        return url
     }
 
     private static func repositoryReference(from payload: [String: Any]) -> GitHubRepositoryReference? {

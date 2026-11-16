@@ -183,11 +183,15 @@ struct ControlCenterProjectTests {
     @Test func conversationWorkspaceMetricsAdaptWithoutChangingReadingWidth() {
         let fullscreen = ConversationWorkspaceMetrics.resolve(isFullscreen: true)
         let compact = ConversationWorkspaceMetrics.resolve(isFullscreen: false)
+        let contextChat = ConversationWorkspaceMetrics.resolve(isFullscreen: false, usesContextChatInsets: true)
 
         #expect(fullscreen.readingWidth == 760)
         #expect(compact.readingWidth == 760)
         #expect(fullscreen.contentInset == 24)
         #expect(compact.contentInset == 12)
+        #expect(contextChat.contentInset == 16)
+        #expect(contextChat.composerInset == 16)
+        #expect(ConversationWorkspaceMetrics.resolve(isFullscreen: true, usesContextChatInsets: true) == fullscreen)
         #expect(fullscreen.composerMaxWidth == fullscreen.readingWidth)
         #expect(compact.composerMaxWidth == compact.readingWidth)
         #expect(fullscreen.userMessageWidthFraction == 0.72)

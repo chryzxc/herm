@@ -187,6 +187,7 @@ struct SessionNavProjectList: View {
     @State private var isExpanded = true
     @State private var hoveredNewChatProjectID: String?
     @State private var hoveredProjectRowID: String?
+    @FocusState private var focusedProjectControl: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let sessionLimit = 10
@@ -263,10 +264,15 @@ struct SessionNavProjectList: View {
             }
             .buttonStyle(.dockHover)
             .accessibilityLabel(isCollapsed ? "Expand project \(group.title)" : "Collapse project \(group.title)")
+            .focused($focusedProjectControl, equals: "disclosure:\(group.id)")
             .layoutPriority(1)
 
             // Count at rest; actions replace it while the row is hovered.
-            let showsActions = hoveredProjectRowID == group.id || isCreatingHere
+            let showsActions =
+                hoveredProjectRowID == group.id || isCreatingHere
+                || focusedProjectControl == "disclosure:\(group.id)"
+                || focusedProjectControl == "chat:\(group.id)"
+                || focusedProjectControl == "menu:\(group.id)"
             ZStack(alignment: .trailing) {
                 if sessionCount > 0 {
                     Text(compactCount(sessionCount))
@@ -286,7 +292,9 @@ struct SessionNavProjectList: View {
                                 } else {
                                     DockIcon(
                                         .chatTeardropText, size: 15,
-                                        color: hoveredNewChatProjectID == group.id ? style.accent : style.secondaryText)
+                                        color: hoveredNewChatProjectID == group.id ? style.accent : style.secondaryText
+                                    )
+                                    .offset(x: 4)
                                 }
                             }
                             .frame(width: 32, height: 44)
@@ -296,6 +304,7 @@ struct SessionNavProjectList: View {
                         .disabled(isCreatingChat || creatingProjectPath != nil)
                         .help("New chat in \(group.title)")
                         .accessibilityLabel("New chat in \(group.title)")
+                        .focused($focusedProjectControl, equals: "chat:\(group.id)")
                         .onHover { isHovered in
                             hoveredNewChatProjectID =
                                 isHovered
@@ -307,15 +316,16 @@ struct SessionNavProjectList: View {
                             projectActions(group, projectPath: projectPath)
                         } label: {
                             Ph.dotsThree.image(size: 15, color: NSColor(style.secondaryText))
+                                .offset(x: -4)
                                 .frame(width: 32, height: 44)
                                 .contentShape(Rectangle())
                         }
                         .fixedSize()
                         .help("More options for \(group.title)")
                         .accessibilityLabel("More options for \(group.title)")
+                        .focused($focusedProjectControl, equals: "menu:\(group.id)")
                     }
                     .opacity(showsActions ? 1 : 0)
-                    .allowsHitTesting(showsActions)
                 }
             }
             .frame(width: 64)

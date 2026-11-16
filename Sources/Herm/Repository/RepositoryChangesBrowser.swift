@@ -828,7 +828,26 @@ struct RepositoryChangesBrowser: View {
                             DiffComparisonIdentity(
                                 repository: $0, revision: workflow.repository.headRevision ?? "unavailable",
                                 fingerprint: workflow.repositoryFingerprint ?? "")
-                        }, revisionNotes: revisionNotes
+                        }, revisionNotes: revisionNotes,
+                        blameLoader: { document in
+                            guard let projectPath, file.status != .untracked else {
+                                return DiffBlame(reason: "Blame unavailable for this comparison.")
+                            }
+                            do {
+                                let comparison = try await RepositoryComparisonService.load(
+                                    path: projectPath, scope: file.isStaged ? .staged : .working,
+                                    reference: "", ignoreWhitespace: false)
+                                let current = try await RepositoryComparisonService.patch(
+                                    path: projectPath, file: file.path, comparison: comparison)
+                                guard current.text == diff.text else {
+                                    return DiffBlame(reason: "Comparison changed. Refresh to load blame.")
+                                }
+                                return await RepositoryComparisonService.blame(
+                                    path: projectPath, file: file.path, comparison: comparison, document: document)
+                            } catch {
+                                return DiffBlame(reason: "Blame unavailable for this comparison.")
+                            }
+                        }
                     )
                     .id(reviewScope + ":" + file.id)
                 }

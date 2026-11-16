@@ -196,6 +196,10 @@ extension DockPopover {
     }
 
     func handleSessionIDChange(oldValue: String?, newValue: String?) {
+        if pendingIssueChatInsets, oldValue == nil, let newValue {
+            issueChatInsetSessionID = newValue
+            pendingIssueChatInsets = false
+        }
         DebugLog.writeDiagnostic(
             "session.switch old=\(oldValue ?? "nil") new=\(newValue ?? "nil") title=\(model.currentSessionTitle ?? "nil") cachedProject=\(cachedProjectName ?? "nil") cachedRepo=\(cachedSessionRepositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil")"
         )

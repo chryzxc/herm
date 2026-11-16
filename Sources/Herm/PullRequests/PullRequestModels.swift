@@ -361,6 +361,22 @@ struct PullRequestRecord: Identifiable, Equatable, Sendable {
         return parts.isEmpty ? "No checks reported" : parts.joined(separator: " · ")
     }
 
+    var checkProgress: String? {
+        guard checksAvailable, headRevision != nil, !checks.isEmpty else { return nil }
+        return "\(checks.filter { !$0.isPending && $0.conclusion?.lowercased() == "success" }.count)/\(checks.count)"
+    }
+
+    enum CheckStatus { case unknown, empty, pending, failure, success, neutral }
+
+    var checkStatus: CheckStatus {
+        guard checksAvailable, headRevision != nil else { return .unknown }
+        guard !checks.isEmpty else { return .empty }
+        if checks.contains(where: \.isFailure) { return .failure }
+        if checks.contains(where: \.isPending) { return .pending }
+        if checks.allSatisfy({ $0.conclusion?.lowercased() == "success" }) { return .success }
+        return .neutral
+    }
+
     var readinessLabel: String {
         if mergedAt != nil { return "Merged" }
         if state == "closed" { return "Closed" }

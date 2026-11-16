@@ -109,7 +109,8 @@ extension DockModel {
         let transcriptText = (attachmentLabels + [visibleText]).filter { !$0.isEmpty }.joined(separator: "\n")
         let sentMessage = ChatMessage(
             role: .user, text: transcriptText, images: attachedImages.map(\.image),
-            botMentions: ComposerBotMention.rebasing(botMentions, from: prompt, to: transcriptText))
+            botMentions: ComposerBotMention.rebasing(botMentions, from: prompt, to: transcriptText),
+            attachmentURLs: contexts.compactMap(\.attachmentURL) + (attachedPDF.map { [$0] } ?? []))
         messages.append(sentMessage)
         let sendID = UUID()
         pendingSessionSends.append(

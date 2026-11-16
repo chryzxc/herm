@@ -49,9 +49,30 @@ struct UserMessageImages: View {
 
 /// One attached file inside a user bubble.
 struct UserMessageAttachmentRow: View {
+    @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
     let name: String
+    /// A local file Herm can still reach; without one the row is a plain label.
+    var url: URL? = nil
 
     var body: some View {
+        if let url {
+            Button {
+                if let previewWorkspace, FilePreviewKind(url: url) != nil {
+                    SessionMessageTabs.shared.open(.file(url), in: previewWorkspace)
+                } else {
+                    ArtifactOpener.open(url.path)
+                }
+            } label: {
+                label
+            }
+            .buttonStyle(.dockHover)
+            .help("Open attachment")
+        } else {
+            label
+        }
+    }
+
+    private var label: some View {
         HStack(spacing: 8) {
             FileTypeIcon(fileName: name)
             Text(name).dockFont(.body, weight: .medium).lineLimit(2)

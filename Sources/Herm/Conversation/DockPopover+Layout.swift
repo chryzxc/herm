@@ -262,6 +262,8 @@ extension DockPopover {
             sessionNavNavigation.selectGlobal(.kanban)
             fullscreenGlobalTab = .kanban
             fullscreenSurface = .global
+            inspectorScope = .global
+            ensureInspectorPanelVisible()
         }
         .onChange(of: panelPresentation.quotaRequest, initial: true) { _, request in
             guard request > 0 else { return }
@@ -619,7 +621,10 @@ extension DockPopover {
     }
 
     var conversationMetrics: ConversationWorkspaceMetrics {
-        .resolve(isFullscreen: isFullscreen)
+        .resolve(
+            isFullscreen: isFullscreen,
+            usesContextChatInsets: (pendingIssueChatInsets && model.sessionID == nil)
+                || (issueChatInsetSessionID != nil && issueChatInsetSessionID == model.sessionID))
     }
 
     func conversationColumn(inspector: AnyView?) -> some View {

@@ -30,6 +30,8 @@ final class EdgeDockController: NSObject {
     private var workspacePresented = false
     private var quickProfileID: String?
     private var completedTaskIDs: Set<String>?
+    private var finishedBots = EdgeFinishedBotAcknowledgements()
+    private var finishedBotsOwner: String?
     private var routineEvents: [String: String] = [:]
     private var observedRoutineProfiles = Set<String>()
     private var latestToolID: String?
@@ -106,6 +108,7 @@ final class EdgeDockController: NSObject {
                 onQuickMessageFocus: { [weak self] active in self?.setQuickMessageFocus(active) },
                 onQuickReply: { [weak self] task in self?.beginQuickReply(task) },
                 onResultPeek: { [weak self] task in self?.peekResult(task) },
+                onMarkFinishedRead: { [weak self] targets in self?.markFinishedRead(targets) },
                 onResultReply: { [weak self] target in self?.beginQuickReply(target.task, target: target.session) },
                 onOpenDigest: { [weak self] notice in self?.openDigestSource(notice) },
                 onAnswer: { [weak self] task, choice in self?.answer(task, choice: choice) },
@@ -444,6 +447,27 @@ final class EdgeDockController: NSObject {
         openDock()
     }
 
+    private func markFinishedRead(_ targets: EdgeFinishedReadTargets) {
+        finishedBots.acknowledge(targets.bots)
+        var sessions = targets.sessions
+        if targets.includesCurrent {
+            sessions += latestSessions.filter {
+                model.currentSessionIDs.contains($0.id) && $0.profileID == model.sessionProfileID
+            }
+            state.activity.backgroundCompleted = false
+            state.activity.responseCompleted = false
+            model.markResponseRead()
+        }
+        model.markSessionsRead(sessions, at: .now)
+        for card in targets.kanban { kanbanActivity.acknowledge(card) }
+        let notices = state.interruptions.entries.filter { notice in
+            notice.kind == .completion && notice.source == .session
+                && sessions.contains { $0.id == notice.sourceID && $0.profileID == notice.profileID }
+        }
+        for notice in notices { state.interruptions.review(notice.id) }
+        rebuildTasks()
+    }
+
     func openTask(_ task: EdgeNotchTask) {
         guard !dragging, Date() >= suppressClickUntil else { return }
         if let routine = task.routine {
@@ -482,6 +506,10 @@ final class EdgeDockController: NSObject {
     /// Every session in progress or finished-but-unopened, with the open
     /// session contributing its own live activity instead of the index flag.
     private func rebuildTasks() {
+        if finishedBotsOwner != model.profileScopeID {
+            finishedBots = EdgeFinishedBotAcknowledgements()
+            finishedBotsOwner = model.profileScopeID
+        }
         let activity = state.activity
         var current: EdgeNotchTask?
         let request = model.currentSessionIDs.compactMap { latestAttention[$0] }.first
@@ -576,6 +604,7 @@ final class EdgeDockController: NSObject {
                     session: session, isFailure: true))
             tasks = EdgeNotchTask.merged(tasks)
         }
+        tasks.removeAll { finishedBots.isAcknowledged($0) }
         tasks = EdgeNotchTask.merged(tasks)
         if tasks != state.tasks {
             state.invalidateNewerResults(tasks)
@@ -1901,6 +1930,7 @@ struct EdgeNotchView: View {
     var onQuickMessageFocus: (Bool) -> Void = { _ in }
     var onQuickReply: (EdgeNotchTask) -> Void = { _ in }
     var onResultPeek: (EdgeNotchTask) -> Void = { _ in }
+    var onMarkFinishedRead: (EdgeFinishedReadTargets) -> Void = { _ in }
     var onResultReply: (EdgeResultTarget) -> Void = { _ in }
     var onOpenDigest: (HermNotice) -> Void = { _ in }
     var onAnswer: (EdgeNotchTask, String) -> Void = { _, _ in }
@@ -2191,6 +2221,7 @@ struct EdgeNotchView: View {
                     closeReply: { onQuickMessageFocus(false) },
                     answer: onAnswer,
                     peek: quickMessageModel == nil ? nil : onResultPeek,
+                    markFinishedRead: quickMessageModel == nil ? nil : onMarkFinishedRead,
                     recall: quickMessageModel == nil
                         ? nil
                         : {
@@ -2292,25 +2323,7 @@ struct EdgeNotchView: View {
     }
 
     private func tabButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .dockFont(.body, weight: isSelected ? .semibold : .medium)
-                .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
-                .dockPadding(.horizontal, 10)
-                .frame(height: 24)
-                .background(
-                    DockThemeShape(cornerRadius: 12).dockSelectionFill(
-                        isSelected, fallback: isSelected ? Color.dockSurface : .clear)
-                )
-                .overlay(
-                    DockThemeShape(cornerRadius: 12).stroke(
-                        isSelected && DockThemeStyle.current.material != .glass
-                            ? Color.dockBorderLight : .clear, lineWidth: 1)
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.dockHover)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        DockTabButton(title: title, isSelected: isSelected, height: 24, action: action)
     }
 }
 

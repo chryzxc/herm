@@ -4,7 +4,10 @@ import SwiftUI
 struct PullRequestRowView: View {
     let pullRequest: PullRequestRecord
     let isSelected: Bool
+    var isRefreshing = false
+    var loadSummary: (() async -> Bool)? = nil
     @State private var isHovered = false
+    @State private var summaryState = "Checking…"
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -29,11 +32,40 @@ struct PullRequestRowView: View {
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1).truncationMode(.middle)
                 }
+                if !pullRequest.labels.isEmpty {
+                    DockChipFlow(spacing: 6) {
+                        ForEach(Array(pullRequest.labels.prefix(3).enumerated()), id: \.offset) { _, label in
+                            DockMetadataPill(text: label, compact: true)
+                        }
+                        if pullRequest.labels.count > 3 {
+                            DockMetadataPill(text: "+\(pullRequest.labels.count - 3)", compact: true)
+                        }
+                    }
+                }
                 HStack(spacing: 8) {
                     Text(pullRequest.readinessLabel)
                         .dockFont(.metadata)
                         .foregroundStyle(pullRequest.readinessColor)
                         .dockPill(tint: pullRequest.readinessColor)
+                    if let progress = pullRequest.checkProgress {
+                        HStack(spacing: 4) {
+                            DockIcon(.checkCircle, size: 12, color: pullRequest.checkColor)
+                            Text(progress).monospacedDigit()
+                        }
+                        .dockFont(.metadata, weight: .medium)
+                        .foregroundStyle(pullRequest.checkColor)
+                        .dockPill(tint: pullRequest.checkColor)
+                        .help(pullRequest.checksSummary)
+                        .accessibilityLabel(pullRequest.checksSummary)
+                    } else if pullRequest.checkStatus == .empty {
+                        Text("No checks")
+                            .dockFont(.metadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                    } else if loadSummary != nil && !pullRequest.checksAvailable {
+                        Text(summaryState)
+                            .dockFont(.metadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
                     Spacer(minLength: 0)
                     if let adds = pullRequest.additions, let dels = pullRequest.deletions {
                         HStack(spacing: 6) {
@@ -54,6 +86,13 @@ struct PullRequestRowView: View {
         )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
+        .task(id: isRefreshing) {
+            guard !isRefreshing, let loadSummary else { return }
+            summaryState = "Checking…"
+            let loaded = await loadSummary()
+            guard !Task.isCancelled else { return }
+            summaryState = loaded ? "Checks unavailable" : "Checks unavailable · refresh to retry"
+        }
     }
 }
 
