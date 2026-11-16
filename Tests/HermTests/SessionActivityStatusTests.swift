@@ -12,6 +12,7 @@ private final class SessionActivityStatusRPCClient: HermesRPCClientProtocol {
     func close() {}
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == "session.interrupt" { return ["status": "interrupted"] }
         if method == "session.resume" {
             let stored = params["session_id"] as? String ?? ""
             return ["session_id": "runtime-\(stored)", "session_key": stored, "messages": []]
@@ -75,6 +76,43 @@ struct SessionActivityStatusTests {
         let ended = EdgeNotchTask.build(
             current: nil, sessions: model.sessions, currentSessionIDs: model.currentSessionIDs, isOnline: true)
         #expect(ended.first { $0.id == "a" }?.phase != .working)
+        await model.sessionLoadTask?.value
+    }
+
+    @Test(arguments: ["tool.call", "reasoning.delta"])
+    func stoppedBackgroundTailDoesNotRestoreActivity(event: String) async throws {
+        let suite = "SessionActivityStatusTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = DockModel(defaults: defaults, rpcClient: SessionActivityStatusRPCClient())
+        defer { model.delegationMonitoringTask?.cancel() }
+        let first = session("a")
+        let second = session("b")
+        model.sessions = [first, second]
+        model.pinnedSessions = [first]
+        #expect(await model.resumeSession(first, reportFailure: true))
+        model.receiveGatewayEvent("message.start", params: ["session_id": "runtime-a", "payload": [:]])
+        await model.stop()?.value
+        let stop = try #require(model.sessionStopAttempts[model.composerDraftKey])
+        #expect(stop.outcome == .accepted && stop.tailPending)
+        #expect(model.composerDraftKey.sessionID == "a")
+        #expect(model.rowSessionID("runtime-a") == "a")
+        #expect(model.sessions.first { $0.id == "a" }?.isWorking == false)
+        #expect(model.pinnedSessions.first?.isWorking == false)
+        #expect(await model.resumeSession(second, reportFailure: true))
+        #expect(!model.isDiscardingStoppedTurn)
+        model.receiveGatewayEvent(event, params: ["session_id": "runtime-a", "payload": [:]])
+        let row = try #require(model.sessions.first { $0.id == "a" })
+        #expect(!row.isWorking)
+        #expect(model.pinnedSessions.first?.isWorking == false)
+        #expect(status(for: row, model: model) != .working)
+        let tasks = EdgeNotchTask.build(
+            current: nil, sessions: model.sessions, currentSessionIDs: model.currentSessionIDs, isOnline: true)
+        #expect(tasks.first { $0.id == "a" }?.phase != .working)
+        #expect(model.status == .idle)
+        model.receiveGatewayEvent("message.start", params: ["session_id": "runtime-a", "payload": [:]])
+        #expect(model.sessions.first { $0.id == "a" }?.isWorking == true)
+        #expect(model.pinnedSessions.first?.isWorking == true)
         await model.sessionLoadTask?.value
     }
 

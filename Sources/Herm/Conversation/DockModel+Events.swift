@@ -89,11 +89,16 @@ extension DockModel {
                 sessionID: eventSessionID,
                 at: dateValue(params["timestamp"]) ?? dateValue(eventPayload["timestamp"]) ?? Date())
         }
-        if let eventSessionID,
-            type == "message.start" || Self.isMidTurnEvent(type),
-            !(type != "message.start" && isDiscardingStoppedTurn && currentSessionIDs.contains(eventSessionID))
-        {
-            updateSessionActivity(sessionID: eventSessionID, isWorking: true)
+        if let eventSessionID, type == "message.start" || Self.isMidTurnEvent(type) {
+            let ownerID = rowSessionID(eventSessionID)
+            let matchingOwners = sessionStopAttempts.keys.filter { $0.sessionID == ownerID }
+            let stop = matchingOwners.count == 1 ? matchingOwners.first.flatMap { sessionStopAttempts[$0] } : nil
+            let stoppedTail = stop?.outcome == .accepted && stop?.tailPending == true
+            if type == "message.start"
+                || !(stoppedTail || (isDiscardingStoppedTurn && currentSessionIDs.contains(eventSessionID)))
+            {
+                updateSessionActivity(sessionID: eventSessionID, isWorking: true)
+            }
         }
         if let eventSessionID {
             updateSessionActivityLabel(sessionID: eventSessionID, type: type, payload: eventPayload)
@@ -1644,6 +1649,7 @@ extension DockModel {
         compactingSessionID = nil
         commitStreamingMessage()
         updateInFlightBotActivity(for: sessionID, state: .canceled)
+        if let sessionID { updateSessionActivity(sessionID: sessionID, isWorking: false) }
         endLocalTurn(eventSessionID: sessionID)
         if voiceState.isNativeConversationActive {
             skipNextVoicePlaybackDrain = false
