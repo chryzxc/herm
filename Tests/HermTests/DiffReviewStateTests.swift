@@ -7,6 +7,30 @@ import Testing
 struct DiffReviewStateTests {
     private let document = DiffDocument(path: "main.swift", patch: "@@ -1 +1 @@\n-old\n+new")
 
+    @Test func diffBlameRejectsMismatchedSourceText() {
+        let commit = RepositoryBlameCommit(
+            hash: "123", author: "Author", authoredAt: nil, summary: "Change", isUncommitted: false)
+        let source = RepositoryBlameDocument(
+            path: "main.swift",
+            lines: [
+                RepositoryBlameLine(lineNumber: 1, text: "different", commit: commit)
+            ])
+        let mapped = DiffBlame.map(document: document, old: source, new: source)
+        #expect(mapped.old.isEmpty)
+        #expect(mapped.new.isEmpty)
+    }
+
+    @Test func diffBlameDefaultsOffAndUnsupportedIsHonest() {
+        let state = DiffReviewState()
+        #expect(!state.showsBlame)
+        state.toggleBlame(loader: nil)
+        #expect(state.showsBlame)
+        #expect(state.blame.reason != nil)
+        state.toggleBlame(loader: nil)
+        #expect(!state.showsBlame)
+        #expect(state.blame.reason == nil)
+    }
+
     @Test func quickDiffWithoutANoteActionOmitsTheRevisionNoteMenuItem() throws {
         let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 330, height: 200))
         let event = try #require(
@@ -61,6 +85,102 @@ struct DiffReviewStateTests {
                 #expect(ruler.subviews.compactMap { $0 as? NSButton }.isEmpty)
             }
         }
+    }
+
+    @Test func blameGutterUsesOnlyRenderedSideEntries() throws {
+        let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 1000, height: 400))
+        let commit = RepositoryBlameCommit(
+            hash: "abc", author: "Author", authoredAt: nil, summary: "test", isUncommitted: false)
+        let entry = RepositoryBlameLine(lineNumber: 1, text: "old", commit: commit)
+        func widths(_ blame: DiffBlame, split: Bool) throws -> [CGFloat] {
+            canvas.update(
+                document, split: split, wraps: false, wordDiffs: false, findRequest: 0,
+                reveal: nil, viewport: nil, blame: blame, onNote: nil, onComment: nil)
+            canvas.layoutSubtreeIfNeeded()
+            let stack = try #require(canvas.subviews.first as? NSStackView)
+            return try stack.arrangedSubviews.map {
+                try #require(($0 as? NSScrollView)?.verticalRulerView).ruleThickness
+            }
+        }
+        let empty = try widths(DiffBlame(), split: true)
+        let old = try widths(DiffBlame(old: [1: entry]), split: true)
+        #expect(old[0] == empty[0] + 128)
+        #expect(old[1] == empty[1])
+        let unifiedEmpty = try widths(DiffBlame(), split: false)
+        let mismatched = try widths(DiffBlame(new: [1: entry]), split: false)
+        #expect(unifiedEmpty == mismatched)
+    }
+
+    @Test func blameColumnShowsAuthorDateAndAccessibleDetails() throws {
+        let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let window = NSWindow(contentRect: canvas.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = canvas
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        let commit = RepositoryBlameCommit(
+            hash: "abc123", author: "Example Author", authoredAt: Date(timeIntervalSince1970: 1_600_000_000),
+            summary: "A change", isUncommitted: false)
+        let entry = RepositoryBlameLine(lineNumber: 1, text: "old", commit: commit)
+        canvas.update(
+            document, split: false, wraps: false, wordDiffs: false, findRequest: 0,
+            reveal: nil, viewport: nil, blame: DiffBlame(old: [1: entry]), onNote: nil, onComment: nil)
+        canvas.layoutSubtreeIfNeeded()
+        let stack = try #require(canvas.subviews.first as? NSStackView)
+        let scroll = try #require(stack.arrangedSubviews.first as? NSScrollView)
+        let ruler = try #require(scroll.verticalRulerView)
+        let image = NSImage(size: NSSize(width: 300, height: 300))
+        image.lockFocus()
+        ruler.drawHashMarksAndLabels(in: ruler.bounds)
+        image.unlockFocus()
+        let labels = (ruler.accessibilityChildren() ?? []).compactMap {
+            ($0 as? NSAccessibilityElement)?.accessibilityLabel()
+        }
+        #expect(labels.contains { $0.contains("Example Author") && $0.contains("abc123") && $0.contains("A change") })
+        let text = try #require(scroll.documentView as? NSTextView)
+        let range = (text.string as NSString).range(of: "old")
+        text.setSelectedRange(range)
+        let event = try #require(
+            NSEvent.mouseEvent(
+                with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        let menu = try #require(text.menu(for: event))
+        let item = try #require(menu.items.first { $0.title == "Copy blame details" })
+        _ = NSApp.sendAction(try #require(item.action), to: item.target, from: item)
+        #expect(NSPasteboard.general.string(forType: .string)?.contains("abc123") == true)
+    }
+
+    @Test func blameColumnToggleRestoresWidthAndCommentTargets() throws {
+        let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 1000, height: 400))
+        let commit = RepositoryBlameCommit(
+            hash: "abc", author: "A", authoredAt: nil, summary: "S", isUncommitted: false)
+        let entry = RepositoryBlameLine(lineNumber: 1, text: "old", commit: commit)
+        func width(_ blame: DiffBlame) throws -> CGFloat {
+            canvas.update(
+                document, split: false, wraps: true, wordDiffs: false, findRequest: 0,
+                reveal: nil, viewport: nil, blame: blame, onNote: nil, onComment: { _ in })
+            canvas.layoutSubtreeIfNeeded()
+            let stack = try #require(canvas.subviews.first as? NSStackView)
+            return try #require((stack.arrangedSubviews.first as? NSScrollView)?.verticalRulerView).ruleThickness
+        }
+        let off = try width(DiffBlame())
+        #expect(try width(DiffBlame(old: [1: entry])) == off + 128)
+        #expect(try width(DiffBlame()) == off)
+    }
+
+    @Test func splitRulerUsesLessSpaceThanUnifiedRuler() throws {
+        let canvas = DiffCanvasContainer(frame: NSRect(x: 0, y: 0, width: 1000, height: 400))
+        func width(split: Bool) throws -> CGFloat {
+            canvas.update(
+                document, split: split, wraps: false, wordDiffs: false, findRequest: 0,
+                reveal: nil, viewport: nil, onNote: nil, onComment: { _ in })
+            canvas.layoutSubtreeIfNeeded()
+            let stack = try #require(canvas.subviews.first as? NSStackView)
+            let scroll = try #require(stack.arrangedSubviews.first as? NSScrollView)
+            return try #require(scroll.verticalRulerView).ruleThickness
+        }
+        let unified = try width(split: false)
+        let split = try width(split: true)
+        #expect(split < unified)
     }
 
     @Test func commentingGutterStartsAtTheSourceEdgeAfterWindowLayout() async throws {

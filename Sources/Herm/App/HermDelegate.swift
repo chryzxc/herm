@@ -155,7 +155,11 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
                 self?.dockPanel?.showQuota()
             },
             openKanban: { [weak self] task in
-                self?.dockPanel?.showKanban(task)
+                if let window = self?.dockWindow, window.isOpen {
+                    window.showKanban(task)
+                } else {
+                    self?.dockPanel?.showKanban(task)
+                }
             },
             openDock: { [weak self] in
                 self?.dockPanel?.showFromNotification()

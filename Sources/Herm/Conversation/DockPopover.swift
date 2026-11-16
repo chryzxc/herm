@@ -134,6 +134,8 @@ struct DockPopover: View {
     @StateObject var repositoryPreferences = CommandCenterPreferencesStore.shared
     @ObservedObject var dockThemeStore = DockThemeStore.shared
     @StateObject var sessionNavNavigation = SessionNavigationState()
+    @State var issueChatInsetSessionID: String?
+    @State var pendingIssueChatInsets = false
     @State var sessionWorkspaceMode: SessionWorkspaceMode = .chat
     @State var suppressNextVoiceResponse = false
     /// Full voice mode: the voice stage covers the navigation and inspector.

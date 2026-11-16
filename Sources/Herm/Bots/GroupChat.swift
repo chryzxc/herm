@@ -319,6 +319,7 @@ final class GroupChatStore: ObservableObject {
     @Published private(set) var supportsAttachments = false
     /// Image attachments read back with `groups.attachment.download`, by attachment id.
     @Published private(set) var attachmentImages: [String: NSImage] = [:]
+    @Published private(set) var localAttachmentURLs: [String: URL] = [:]
     /// Downloads in flight or refused; a refused file stays a named row instead of retrying.
     private var requestedAttachments: Set<String> = []
     @Published var errorMessage: String? {
@@ -360,6 +361,7 @@ final class GroupChatStore: ObservableObject {
         rooms = []
         events = [:]
         attachmentImages = [:]
+        localAttachmentURLs = [:]
         requestedAttachments = []
         cursors = [:]
         pollGenerations = [:]
@@ -506,6 +508,7 @@ final class GroupChatStore: ObservableObject {
     /// Uploads one file to the room; send its manifest with the next message.
     func uploadAttachment(_ url: URL, to roomID: String) async throws -> GroupRoomAttachment {
         guard let client else { throw CocoaError(.featureUnsupported) }
+        let generation = bindingGeneration
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let data = try Data(contentsOf: url)
@@ -523,6 +526,7 @@ final class GroupChatStore: ObservableObject {
                 "data_base64": data.base64EncodedString(),
             ])
         guard let attachment = GroupRoomAttachment(result) else { throw CocoaError(.fileReadCorruptFile) }
+        if generation == bindingGeneration { localAttachmentURLs[roomID + ":" + attachment.id] = url }
         return attachment
     }
 

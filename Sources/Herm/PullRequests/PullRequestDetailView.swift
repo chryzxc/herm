@@ -34,7 +34,7 @@ struct PullRequestDetailView: View {
     @State private var sourceDiffFileIDs: Set<String> = []
     @State private var checksExpanded = true
     @State private var activityExpanded = true
-    @State private var changesExpanded = false
+    @State private var changesExpanded = true
     @State private var chatExpanded = false
     @ObservedObject private var chats: PullRequestChatStore
     private var commentDraft: String { center.commentDrafts[center.selectedID ?? ""] ?? "" }
@@ -315,9 +315,9 @@ struct PullRequestDetailView: View {
             HStack(spacing: 8) {
                 DockIcon(pr.presentationIcon, size: 14, color: pr.presentationColor)
                 Text(pr.repository.id).lineLimit(1).truncationMode(.middle)
-                Text("#\(pr.displayNumber)").foregroundStyle(Color.dockMetadataText)
+                Text("#\(pr.displayNumber)").foregroundStyle(Color.dockMetadataText).layoutPriority(1)
+                statusPicker(pr).layoutPriority(1)
                 Spacer(minLength: 0)
-                statusPicker(pr)
             }.dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             Text(pr.title)
                 .dockFont(.pageTitle).foregroundStyle(Color.dockPrimaryText)
@@ -619,26 +619,19 @@ struct PullRequestDetailView: View {
         return "\(max(1, Int(seconds / 60)))m"
     }
     private func detailTabs(_ pr: PullRequestRecord, compact: Bool = false) -> some View {
-        HStack(spacing: 4) {
-            detailTabButton("Summary", selected: detailTab == 0) { detailTab = 0 }
-            Button {
-                detailTab = 1
-            } label: {
+        HStack(spacing: 2) {
+            DockTabButton(title: "Summary", isSelected: detailTab == 0, height: 28) { detailTab = 0 }
+            DockTabSegment(isSelected: detailTab == 1, height: 28, action: { detailTab = 1 }) {
                 HStack(spacing: 6) {
                     Text("Changes")
                     if !compact {
                         if let additions = pr.additions { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
                         if let deletions = pr.deletions { Text("−\(deletions)").foregroundStyle(Color.dockDestructive) }
                     }
-                }.dockFont(.metadata).monospacedDigit()
-                    .dockPadding(.horizontal, 10).frame(height: 28)
-                    .background(Capsule().fill(detailTab == 1 ? Color.dockSurface4 : Color.clear))
-                    .contentShape(Capsule())
-            }.buttonStyle(.dockHover).accessibilityAddTraits(detailTab == 1 ? .isSelected : [])
-            detailTabButton("Reviews", selected: detailTab == 2) { detailTab = 2 }
-        }.dockPadding(4)
-            .background(Capsule().fill(Color.dockSurface))
-            .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
+                }.monospacedDigit()
+            }
+            DockTabButton(title: "Reviews", isSelected: detailTab == 2, height: 28) { detailTab = 2 }
+        }.dockTabTrack()
             .fixedSize(horizontal: true, vertical: false)
     }
 
@@ -729,9 +722,6 @@ struct PullRequestDetailView: View {
         readingGuide = true
     }
 
-    private func detailTabButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        DockTabButton(title: title, isSelected: selected, action: action)
-    }
     private func code(_ pr: PullRequestRecord) -> some View {
         let projection = PullRequestFilesProjection.state(
             files: center.filesByID[pr.id],

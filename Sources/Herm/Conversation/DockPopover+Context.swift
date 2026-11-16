@@ -189,6 +189,8 @@ extension DockPopover {
     /// Starts a chat with the selected bot from the sidebar or title picker.
     func startNewConversation() {
         leaveIntegrations {
+            pendingIssueChatInsets = false
+            issueChatInsetSessionID = nil
             sessionNavNavigation.beginNewConversation()
             fullscreenSurface = .conversation
             inspectorScope = .session
@@ -559,6 +561,8 @@ extension DockPopover {
                 if let sessionID { pullRequestChatLinks.save(sessionID: sessionID, for: context.id) }
             }
             sessionNavNavigation.openIssueChat(sessionID: sessionID)
+            issueChatInsetSessionID = sessionID
+            pendingIssueChatInsets = sessionID == nil
             model.draft = context.prompt
             fullscreenSurface = .conversation
             inspectorScope = .session

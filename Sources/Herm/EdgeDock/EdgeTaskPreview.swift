@@ -1,5 +1,49 @@
 import SwiftUI
 
+struct EdgeFinishedReadTargets {
+    var sessions: [HermesSession] = []
+    var kanban: [KanbanTaskSummary] = []
+    var bots: [EdgeNotchTask] = []
+    var includesCurrent = false
+    var isEmpty: Bool { sessions.isEmpty && kanban.isEmpty && bots.isEmpty && !includesCurrent }
+
+    init(tasks: [EdgeNotchTask]) {
+        for task in tasks where task.section == .finished {
+            if task.id.hasPrefix("bot:") {
+                bots.append(task)
+                if let session = task.session { sessions.append(session) }
+            } else if let card = task.kanbanTask {
+                kanban.append(card)
+            } else if task.isCurrent {
+                includesCurrent = true
+            } else if let session = task.session {
+                sessions.append(session)
+            }
+        }
+    }
+}
+
+struct EdgeFinishedBotAcknowledgements {
+    private struct Key: Hashable {
+        let id: String
+        let profile: String?
+        let updatedAt: Date?
+    }
+
+    private var keys: Set<Key> = []
+
+    mutating func acknowledge(_ tasks: [EdgeNotchTask]) {
+        for task in tasks where task.section == .finished && task.id.hasPrefix("bot:") {
+            keys.insert(Key(id: task.id, profile: task.profileID, updatedAt: task.updatedAt))
+        }
+    }
+
+    func isAcknowledged(_ task: EdgeNotchTask) -> Bool {
+        task.section == .finished && task.id.hasPrefix("bot:")
+            && keys.contains(Key(id: task.id, profile: task.profileID, updatedAt: task.updatedAt))
+    }
+}
+
 /// One row in the notch’s Tasks tab: session work or canonical Kanban activity.
 struct EdgeNotchTask: Identifiable, Equatable {
     enum Phase: Int, Comparable {
@@ -222,6 +266,7 @@ struct EdgeTaskPreview: View {
     var closeReply: () -> Void = {}
     var answer: ((EdgeNotchTask, String) -> Void)? = nil
     var peek: ((EdgeNotchTask) -> Void)? = nil
+    var markFinishedRead: ((EdgeFinishedReadTargets) -> Void)? = nil
     var recall: (() -> Void)? = nil
     var steer: ((EdgeNotchTask) -> Void)? = nil
     var beginEditing: () -> Void = {}
@@ -270,7 +315,7 @@ struct EdgeTaskPreview: View {
                                     VStack(alignment: .leading, spacing: 12) {
                                         ForEach(EdgeNotchTask.Section.allCases, id: \.self) { section in
                                             self.section(
-                                                section.title, groups[section] ?? [], bots: botLookup,
+                                                section, groups[section] ?? [], bots: botLookup,
                                                 now: timeline.date)
                                         }
                                         if let quotaChange {
@@ -337,12 +382,24 @@ struct EdgeTaskPreview: View {
     }
 
     @ViewBuilder
-    private func section(_ title: String, _ items: [EdgeNotchTask], bots: KanbanBoardPresentation.Snapshot, now: Date)
+    private func section(
+        _ section: EdgeNotchTask.Section, _ items: [EdgeNotchTask], bots: KanbanBoardPresentation.Snapshot, now: Date
+    )
         -> some View
     {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                DockSectionLabel(title: title, count: items.count)
+                HStack {
+                    DockSectionLabel(title: section.title, count: items.count)
+                    Spacer(minLength: 0)
+                    let targets = EdgeFinishedReadTargets(tasks: items)
+                    if section == .finished, let markFinishedRead, !targets.isEmpty {
+                        DockIconButton(
+                            icon: .checks, label: "Mark finished as read", size: 20,
+                            style: DockThemePalette(theme: DockThemeRuntime.current)
+                        ) { markFinishedRead(targets) }
+                    }
+                }.frame(height: 20)
                 ForEach(items, id: \.presentationID) { card($0, bots: bots, now: now) }
             }
         }

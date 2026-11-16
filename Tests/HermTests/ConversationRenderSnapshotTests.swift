@@ -8,6 +8,35 @@ import Testing
 /// `CHAT_SNAPSHOT_DIR` to a writable directory.
 @MainActor
 struct ConversationRenderSnapshotTests {
+    @Test func renderAttachmentFlow() async throws {
+        guard let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        let message = ChatMessage(
+            role: .user,
+            text: "Please review these files.\n[File: overview.pdf]\n[File: report.pdf]\n[File: notes.pdf]")
+        for width: CGFloat in [240, 420, 900] {
+            let view = ConversationMessageRow(
+                message: message, isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+                botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in }
+            )
+            .frame(width: width, height: 240, alignment: .top)
+            .background(Color.dockCanvas)
+            .dockThemedRoot()
+            let host = NSHostingView(rootView: view)
+            host.frame = NSRect(x: 0, y: 0, width: width, height: 240)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer { window.orderOut(nil) }
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let png = try #require(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("attachments-\(Int(width)).png"))
+        }
+    }
+
     @Test func renderDeliveryMetadata() async throws {
         guard let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] else { return }
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)

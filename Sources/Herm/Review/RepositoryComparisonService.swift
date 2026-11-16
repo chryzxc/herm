@@ -1,6 +1,28 @@
 import CryptoKit
 import Foundation
 
+struct DiffBlame: Equatable {
+    var old: [Int: RepositoryBlameLine] = [:]
+    var new: [Int: RepositoryBlameLine] = [:]
+    var reason: String?
+
+    static func map(document: DiffDocument, old: RepositoryBlameDocument?, new: RepositoryBlameDocument?) -> Self {
+        var result = Self()
+        let oldLines = Dictionary(old?.lines.map { ($0.lineNumber, $0) } ?? [], uniquingKeysWith: { first, _ in first })
+        let newLines = Dictionary(new?.lines.map { ($0.lineNumber, $0) } ?? [], uniquingKeysWith: { first, _ in first })
+        for line in document.lines {
+            let text = DiffDocument.source(line)
+            if let number = line.oldLine, let entry = oldLines[number], entry.text == text {
+                result.old[number] = entry
+            }
+            if let number = line.newLine, let entry = newLines[number], entry.text == text {
+                result.new[number] = entry
+            }
+        }
+        return result
+    }
+}
+
 struct RepositoryComparison {
     enum Scope: String, CaseIterable, Identifiable {
         case working = "Working tree"
@@ -16,10 +38,51 @@ struct RepositoryComparison {
     let fingerprint: String
     let partial: Bool
     var renameSources: [String: String] = [:]
+    var blameSources: (old: RepositoryBlameSource?, new: RepositoryBlameSource?)?
     var identity: String { revision + ":" + fingerprint + ":" + arguments.joined(separator: " ") }
 }
 
 enum RepositoryComparisonService {
+    static func blame(path: String, file: String, comparison: RepositoryComparison, document: DiffDocument)
+        async -> DiffBlame
+    {
+        guard let sources = comparison.blameSources else {
+            return DiffBlame(reason: "Blame unavailable for this comparison.")
+        }
+        let mutable =
+            comparison.title == RepositoryComparison.Scope.working.rawValue
+            || comparison.title == RepositoryComparison.Scope.staged.rawValue
+        if mutable {
+            let head = await RepositoryService.runGit(path: path, arguments: ["rev-parse", "--verify", "HEAD"])
+            guard head.output == comparison.revision, await fingerprint(path) == comparison.fingerprint else {
+                return DiffBlame(reason: "Comparison changed. Refresh to load blame.")
+            }
+        }
+        func load(_ source: RepositoryBlameSource?, _ file: String) async -> RepositoryBlameDocument? {
+            guard let source else { return nil }
+            if case .available(let document) = await RepositoryService.blame(path: path, filePath: file, source: source)
+            {
+                return document
+            }
+            return nil
+        }
+        let old = await load(sources.old, comparison.renameSources[file] ?? file)
+        let new = await load(sources.new, file)
+        if mutable {
+            let head = await RepositoryService.runGit(path: path, arguments: ["rev-parse", "--verify", "HEAD"])
+            guard head.output == comparison.revision, await fingerprint(path) == comparison.fingerprint else {
+                return DiffBlame(reason: "Comparison changed. Refresh to load blame.")
+            }
+        }
+        var result = DiffBlame.map(document: document, old: old, new: new)
+        if old == nil || new == nil {
+            result.reason =
+                old == nil && new == nil
+                ? "Blame unavailable for both sides."
+                : old == nil ? "Old-side blame unavailable." : "New-side blame unavailable."
+        }
+        return result
+    }
     static func references(path: String) async -> [String] {
         let result = await RepositoryService.runGit(
             path: path, arguments: ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"])
@@ -35,9 +98,12 @@ enum RepositoryComparisonService {
         }
         var arguments = ["diff", "--no-ext-diff", "--find-renames"]
         var revision = head.output
+        var blameSources: (old: RepositoryBlameSource?, new: RepositoryBlameSource?) = (.index, .workingTree)
         switch scope {
         case .working: break
-        case .staged: arguments.append("--cached")
+        case .staged:
+            arguments.append("--cached")
+            blameSources = (.revision(head.output), .index)
         case .branch, .commit:
             guard !reference.isEmpty, reference.count <= 256, !reference.contains("\n") else {
                 throw QuickDraftError.message("Choose a valid Git reference.")
@@ -56,8 +122,16 @@ enum RepositoryComparisonService {
                 }
                 arguments += [base.output, head.output]
                 revision = base.output + ".." + head.output
+                blameSources = (.revision(base.output), .revision(head.output))
             } else {
                 arguments = ["show", "--format=", "--no-ext-diff", "--find-renames", resolved.output]
+                let parents = await RepositoryService.runGit(
+                    path: path, arguments: ["rev-list", "--parents", "-n", "1", resolved.output])
+                let values = parents.output.split(separator: " ").map(String.init)
+                blameSources =
+                    values.count > 2
+                    ? (nil, nil)
+                    : (values.count == 2 ? .revision(values[1]) : nil, .revision(resolved.output))
             }
         }
         if ignoreWhitespace { arguments.insert("--ignore-all-space", at: 1) }
@@ -76,7 +150,7 @@ enum RepositoryComparisonService {
         return RepositoryComparison(
             title: scope.rawValue, revision: revision, files: Array(paths.prefix(200)), arguments: arguments,
             fingerprint: (scope == .working || scope == .staged) ? await fingerprint(path) : revision,
-            partial: paths.count > 200, renameSources: changes.renames)
+            partial: paths.count > 200, renameSources: changes.renames, blameSources: blameSources)
     }
 
     static func namedChanges(_ output: String) -> (paths: [String], renames: [String: String]) {
@@ -155,11 +229,15 @@ enum RepositoryComparisonService {
     static func fingerprint(_ path: String) async -> String {
         let result = await RepositoryService.runGit(
             path: path, arguments: ["diff", "--no-ext-diff", "--no-textconv", "HEAD"], trimOutput: false)
+        let index = await RepositoryService.runGit(
+            path: path, arguments: ["diff", "--cached", "--no-ext-diff", "--no-textconv", "HEAD"], trimOutput: false)
         let status = await RepositoryService.runGit(
             path: path, arguments: ["status", "--porcelain=v1", "-z"], trimOutput: false)
         let untracked = await RepositoryService.runGit(
             path: path, arguments: ["ls-files", "--others", "--exclude-standard", "-z"], trimOutput: false)
-        guard result.exitCode == 0, status.exitCode == 0, untracked.exitCode == 0 else { return UUID().uuidString }
+        guard result.exitCode == 0, index.exitCode == 0, status.exitCode == 0, untracked.exitCode == 0 else {
+            return UUID().uuidString
+        }
         let files = untracked.output.split(separator: "\0").map(String.init)
         guard files.count <= 200 else { return UUID().uuidString }
         let contents = await Task.detached(priority: .utility) { () -> String? in
@@ -182,7 +260,7 @@ enum RepositoryComparisonService {
             return hash.finalize().map { String(format: "%02x", $0) }.joined()
         }.value
         guard let contents else { return UUID().uuidString }
-        return SHA256.hash(data: Data((result.output + status.output + contents).utf8)).map {
+        return SHA256.hash(data: Data((result.output + index.output + status.output + contents).utf8)).map {
             String(format: "%02x", $0)
         }.joined()
     }

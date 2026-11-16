@@ -635,6 +635,8 @@ Short drafts keep the composer compact; it grows as text wraps.
 Background processes listed for the current chat can be stopped after confirmation,
 even when the general activity capability probe is unavailable. Process output
 continues refreshing after the turn finishes; Stop targets only that session's process.
+The composer disclosure shows the running count and the latest running process output;
+expand it to inspect process states and stop a running process.
 
 The **Effort** control uses Hermes' model catalog to offer inputs for the selected
 provider and model. Unsupported or unverified availability is shown in place;

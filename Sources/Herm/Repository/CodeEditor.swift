@@ -195,7 +195,7 @@ final class CodeEditorContainerView: NSView {
     func setBlame(_ blame: RepositoryBlameDocument?, showsGutter: Bool) {
         guard gutter.blame != blame || gutter.showsBlame != showsGutter else { return }
         gutter.setBlame(blame, showsBlame: showsGutter)
-        textView.blameByLine = gutter.blameByLine
+        textView.blameByLine = showsGutter ? gutter.blameByLine : [:]
         textView.needsDisplay = true
     }
 

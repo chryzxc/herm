@@ -480,6 +480,7 @@ private struct ShareBotForm: View {
 
 struct GroupChatView: View {
     @Environment(\.dockHostVisible) private var hostVisible
+    @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
     @ObservedObject var store: GroupChatStore
     @ObservedObject var botMode: BotModeModel
     let roomID: String
@@ -814,7 +815,25 @@ struct GroupChatView: View {
                     )
                     if !event.text.isEmpty || !files.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            ForEach(files) { UserMessageAttachmentRow(name: $0.name) }
+                            DockChipFlow(spacing: 6) {
+                                ForEach(files) { file in
+                                    if let url = store.localAttachmentURLs[roomID + ":" + file.id] {
+                                        Button {
+                                            if let previewWorkspace, FilePreviewKind(url: url) != nil {
+                                                SessionMessageTabs.shared.open(.file(url), in: previewWorkspace)
+                                            } else {
+                                                ArtifactOpener.open(url.path)
+                                            }
+                                        } label: {
+                                            UserMessageAttachmentRow(name: file.name)
+                                        }
+                                        .buttonStyle(.dockHover)
+                                        .help("Open attachment")
+                                    } else {
+                                        UserMessageAttachmentRow(name: file.name)
+                                    }
+                                }
+                            }
                             if let quote = split?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }
                             // Same type as the main chat's bubble, so it follows the text-size setting.
                             if !event.text.isEmpty {

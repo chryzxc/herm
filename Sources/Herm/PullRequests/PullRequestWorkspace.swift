@@ -114,7 +114,10 @@ struct PullRequestWorkspace: View {
                                 showsDetail = true
                             } label: {
                                 HStack(spacing: 4) {
-                                    PullRequestRowView(pullRequest: pr, isSelected: center.selectedID == pr.id)
+                                    PullRequestRowView(
+                                        pullRequest: pr, isSelected: center.selectedID == pr.id,
+                                        isRefreshing: center.isRefreshing,
+                                        loadSummary: { await center.loadSummary(for: pr) != nil })
                                     if center.changedIDs.contains(pr.id) {
                                         Circle().fill(Color.dockAccent).frame(width: 6, height: 6).accessibilityLabel(
                                             "Changed since last viewed"
@@ -123,10 +126,6 @@ struct PullRequestWorkspace: View {
                                 }
                             }
                             .buttonStyle(.dockHover)
-                            .task(id: center.isRefreshing) {
-                                guard !center.isRefreshing else { return }
-                                await center.loadSummary(for: pr)
-                            }
                         }
                     }
                 }

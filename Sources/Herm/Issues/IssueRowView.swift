@@ -56,10 +56,41 @@ struct IssueRowView: View {
                 HStack(spacing: 8) {
                     Text(issue.state.capitalized)
                         .foregroundStyle(Color.dockSecondaryText)
-                    Text(metadata.assignment)
-                        .foregroundStyle(issue.assignees.isEmpty ? Color.dockSecondaryText : Color.dockReview)
-                        .lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: 0)
+                    ForEach(Array(issue.assignees.prefix(3).enumerated()), id: \.offset) { _, login in
+                        let url = issue.assigneeAvatars.first {
+                            $0.login.caseInsensitiveCompare(login) == .orderedSame
+                        }?.avatarURL
+                        AsyncImage(url: url) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFill()
+                            } else {
+                                DockIcon(.user, size: 11, color: .dockMetadataText)
+                                    .frame(width: 20, height: 20).background(Color.dockSurface2)
+                            }
+                        }
+                        .frame(width: 20, height: 20).clipShape(Circle())
+                        .help(login).accessibilityLabel(login)
+                    }
+                    if issue.assignees.count > 3 {
+                        Text("+\(issue.assignees.count - 3)").foregroundStyle(Color.dockMetadataText)
+                            .help(issue.assignees.dropFirst(3).joined(separator: ", "))
+                    }
                 }.dockFont(.metadata)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(issue.state.capitalized), \(metadata.assignment)")
+                if issue.typeName != nil || !issue.labelRecords.isEmpty {
+                    DockChipFlow(spacing: 6) {
+                        if let typeName = issue.typeName { DockMetadataPill(text: typeName, compact: true) }
+                        ForEach(Array(issue.labelRecords.prefix(3).enumerated()), id: \.offset) { _, label in
+                            DockMetadataPill(text: label.name, colorHex: label.color, compact: true)
+                        }
+                        if issue.labelRecords.count > 3 {
+                            DockMetadataPill(text: "+\(issue.labelRecords.count - 3)", compact: true)
+                                .help(issue.labelRecords.map(\.name).joined(separator: ", "))
+                        }
+                    }
+                }
             }
         }
         .dockPadding(.horizontal, 12).dockPadding(.vertical, 12)
@@ -78,9 +109,14 @@ struct IssueRowView: View {
 
 extension GitHubIssueRecord {
     var presentationColor: Color {
-        if isOpen { return .dockInfo }
+        if isOpen { return .dockSuccess }
+        if state.lowercased() == "closed" && stateReason?.lowercased() == "not_planned" { return .dockSecondaryText }
         return state.lowercased() == "closed" ? .dockMerged : .dockSecondaryText
     }
-    var presentationIcon: Ph { isOpen ? .record : (state.lowercased() == "closed" ? .checkCircle : .question) }
+    var presentationIcon: Ph {
+        if isOpen { return .record }
+        if state.lowercased() != "closed" { return .question }
+        return stateReason?.lowercased() == "not_planned" ? .minusCircle : .checkCircle
+    }
     var isOpen: Bool { state.caseInsensitiveCompare("open") == .orderedSame }
 }

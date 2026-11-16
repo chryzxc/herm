@@ -457,6 +457,106 @@ struct RepositoryCodeWorkspaceTests {
         #expect(document.lines.map(\.text) == ["# Title", "", "Tracked content"])
     }
 
+    @Test func blameUsesCapturedRevisionInsteadOfWorkingTree() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-blame-revision-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("file.txt")
+        try "original\n".write(to: file, atomically: true, encoding: .utf8)
+        #expect(runGit(path: root.path, arguments: ["init", "-q"]))
+        #expect(runGit(path: root.path, arguments: ["config", "user.email", "tests@example.invalid"]))
+        #expect(runGit(path: root.path, arguments: ["config", "user.name", "Fixture"]))
+        #expect(runGit(path: root.path, arguments: ["add", "file.txt"]))
+        #expect(runGit(path: root.path, arguments: ["commit", "-qm", "original"]))
+        let head = await RepositoryService.runGit(path: root.path, arguments: ["rev-parse", "HEAD"])
+        try "changed\n".write(to: file, atomically: true, encoding: .utf8)
+        let result = await RepositoryService.blame(
+            path: root.path, filePath: "file.txt", source: .revision(head.output))
+        guard case .available(let document) = result else {
+            Issue.record("Expected revision blame, got \(result)")
+            return
+        }
+        #expect(document.lines.map(\.text) == ["original"])
+        #expect(document.lines.first?.commit.hash == head.output)
+        let invalid = await RepositoryService.blame(path: root.path, filePath: "file.txt", source: .revision("--help"))
+        guard case .unavailable = invalid else {
+            Issue.record("Invalid revision must be rejected")
+            return
+        }
+    }
+
+    @Test func indexBlameUsesStagedContent() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-index-blame-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("file.txt")
+        try "original\n".write(to: file, atomically: true, encoding: .utf8)
+        #expect(runGit(path: root.path, arguments: ["init", "-q"]))
+        #expect(runGit(path: root.path, arguments: ["config", "user.email", "tests@example.invalid"]))
+        #expect(runGit(path: root.path, arguments: ["config", "user.name", "Fixture"]))
+        #expect(runGit(path: root.path, arguments: ["add", "file.txt"]))
+        #expect(runGit(path: root.path, arguments: ["commit", "-qm", "original"]))
+        try "staged\n".write(to: file, atomically: true, encoding: .utf8)
+        #expect(runGit(path: root.path, arguments: ["add", "file.txt"]))
+        try "working\n".write(to: file, atomically: true, encoding: .utf8)
+        let result = await RepositoryService.blame(path: root.path, filePath: "file.txt", source: .index)
+        guard case .available(let document) = result else {
+            Issue.record("Expected index blame, got \(result)")
+            return
+        }
+        #expect(document.lines.map(\.text) == ["staged"])
+        #expect(document.lines.first?.commit.isUncommitted == true)
+    }
+
+    @Test func localDiffBlameMapsCapturedStagedAndWorkingSides() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-diff-blame-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("file.txt")
+        try "original\n".write(to: file, atomically: true, encoding: .utf8)
+        #expect(runGit(path: root.path, arguments: ["init", "-q"]))
+        #expect(runGit(path: root.path, arguments: ["config", "user.email", "tests@example.invalid"]))
+        #expect(runGit(path: root.path, arguments: ["config", "user.name", "Fixture"]))
+        #expect(runGit(path: root.path, arguments: ["add", "file.txt"]))
+        #expect(runGit(path: root.path, arguments: ["commit", "-qm", "original"]))
+        try "staged\n".write(to: file, atomically: true, encoding: .utf8)
+        #expect(runGit(path: root.path, arguments: ["add", "file.txt"]))
+        try "working\n".write(to: file, atomically: true, encoding: .utf8)
+        for scope in [RepositoryComparison.Scope.staged, .working] {
+            let comparison = try await RepositoryComparisonService.load(
+                path: root.path, scope: scope, reference: "", ignoreWhitespace: false)
+            let patch = try await RepositoryComparisonService.patch(
+                path: root.path, file: "file.txt", comparison: comparison)
+            let document = DiffDocument(path: "file.txt", patch: patch.text)
+            let blame = await RepositoryComparisonService.blame(
+                path: root.path, file: "file.txt", comparison: comparison, document: document)
+            #expect(blame.old[1]?.text == (scope == .staged ? "original" : "staged"))
+            #expect(blame.new[1]?.text == (scope == .staged ? "staged" : "working"))
+        }
+    }
+
+    @Test func fingerprintDistinguishesIndexChangesWithSameWorkingTree() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-index-fingerprint-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("file.txt")
+        try "original\n".write(to: file, atomically: true, encoding: .utf8)
+        #expect(runGit(path: root.path, arguments: ["init", "-q"]))
+        #expect(runGit(path: root.path, arguments: ["config", "user.email", "tests@example.invalid"]))
+        #expect(runGit(path: root.path, arguments: ["config", "user.name", "Fixture"]))
+        #expect(runGit(path: root.path, arguments: ["add", "file.txt"]))
+        #expect(runGit(path: root.path, arguments: ["commit", "-qm", "original"]))
+        try "first\n".write(to: file, atomically: true, encoding: .utf8)
+        #expect(runGit(path: root.path, arguments: ["add", "file.txt"]))
+        try "working\n".write(to: file, atomically: true, encoding: .utf8)
+        let before = await RepositoryComparisonService.fingerprint(root.path)
+        try "second\n".write(to: file, atomically: true, encoding: .utf8)
+        #expect(runGit(path: root.path, arguments: ["add", "file.txt"]))
+        try "working\n".write(to: file, atomically: true, encoding: .utf8)
+        let after = await RepositoryComparisonService.fingerprint(root.path)
+        #expect(before != after)
+    }
+
     private func runGit(path: String, arguments: [String]) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")

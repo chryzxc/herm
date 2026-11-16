@@ -107,6 +107,30 @@ struct EdgeNotchTests {
         #expect(!state.displaysStatus && !state.displaysQuota)
     }
 
+    @Test func finishedReadTargetsIncludeBotsAndAcknowledgeOnlyTheirExactUpdates() {
+        func task(
+            _ id: String, _ phase: EdgeNotchTask.Phase, current: Bool = false, date: Date? = nil,
+            profile: String? = nil
+        ) -> EdgeNotchTask {
+            EdgeNotchTask(
+                id: id, title: id, phase: phase, statusLabel: "", detail: nil, updatedAt: date,
+                isCurrent: current, isStatusCurrent: true, session: nil, profileID: profile)
+        }
+        #expect(EdgeFinishedReadTargets(tasks: [task("working", .working)]).isEmpty)
+        let bot = task("bot:one", .finished, date: Date(timeIntervalSince1970: 1), profile: "a")
+        let targets = EdgeFinishedReadTargets(tasks: [bot])
+        #expect(!targets.isEmpty)
+        var acknowledgements = EdgeFinishedBotAcknowledgements()
+        acknowledgements.acknowledge(targets.bots)
+        #expect(acknowledgements.isAcknowledged(bot))
+        #expect(!acknowledgements.isAcknowledged(task("bot:one", .working, date: bot.updatedAt, profile: "a")))
+        #expect(
+            !acknowledgements.isAcknowledged(
+                task("bot:one", .finished, date: Date(timeIntervalSince1970: 2), profile: "a")))
+        #expect(!acknowledgements.isAcknowledged(task("bot:one", .finished, date: bot.updatedAt, profile: "b")))
+        #expect(EdgeFinishedReadTargets(tasks: [task("current", .finished, current: true)]).includesCurrent)
+    }
+
     @Test func backgroundSessionFinishingAnnouncesOnce() {
         func task(_ id: String, _ phase: EdgeNotchTask.Phase, current: Bool = false) -> EdgeNotchTask {
             EdgeNotchTask(

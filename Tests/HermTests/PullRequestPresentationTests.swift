@@ -120,6 +120,33 @@ struct PullRequestPresentationTests {
         #expect(pr.checksSummary == "1 failed · Check status incomplete")
     }
 
+    @Test func checkProgressDoesNotClaimUnavailableResults() {
+        var pr = record()
+        #expect(pr.checkProgress == nil)
+        pr.headRevision = "head"
+        pr.checksAvailable = true
+        pr.checks = [
+            .init(id: "1", name: "Tests", status: "completed", conclusion: "success", detailsURL: nil),
+            .init(id: "2", name: "Build", status: "in_progress", conclusion: nil, detailsURL: nil),
+        ]
+        #expect(pr.checkProgress == "1/2")
+        pr.checks.append(.init(id: "3", name: "Optional", status: "completed", conclusion: "skipped", detailsURL: nil))
+        pr.checks.append(.init(id: "4", name: "Neutral", status: "completed", conclusion: "neutral", detailsURL: nil))
+        #expect(pr.checkProgress == "1/4")
+        #expect(pr.checkStatus == .pending)
+        pr.mergedAt = .now
+        #expect(pr.checkStatus == .pending)
+        pr.checks = [.init(id: "5", name: "Tests", status: "completed", conclusion: "failure", detailsURL: nil)]
+        #expect(pr.checkStatus == .failure)
+        pr.checks = [.init(id: "6", name: "Tests", status: "completed", conclusion: "skipped", detailsURL: nil)]
+        #expect(pr.checkStatus == .neutral)
+        pr.checks = []
+        #expect(pr.checkStatus == .empty)
+        pr.checksAvailable = false
+        #expect(pr.checkProgress == nil)
+        #expect(pr.checkStatus == .unknown)
+    }
+
     @Test func activityCountIncludesReviewsWithoutPhantomItemsOrRepeatedActor() {
         var pr = record()
         #expect(pr.activityItems(comments: [], commits: [], events: []).isEmpty)

@@ -46,29 +46,20 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
     private var segmented: some View {
         HStack(spacing: 2) {
             ForEach(options, id: \.self) { option in
-                Button {
-                    select(option)
-                } label: {
+                DockTabSegment(isSelected: selection == option, height: 22, inset: 0, action: { select(option) }) {
                     DockIcon(
                         symbol?(option) ?? .circle, size: 13,
-                        color: selection == option ? .dockAccent : .dockSecondaryText
+                        color: selection == option
+                            ? (DockThemeStyle.current.selection == .invert ? .dockCanvas : .dockPrimaryText)
+                            : .dockSecondaryText
                     )
-                    .frame(width: 26, height: 22)
-                    .background(
-                        DockThemeShape(cornerRadius: 5)
-                            .dockSelectionFill(
-                                selection == option, fallback: selection == option ? Color.dockAccentMuted : .clear)
-                    )
-                    .contentShape(Rectangle())
+                    .frame(width: 26)
                 }
-                .buttonStyle(.dockHover)
                 .help(title(option))
                 .accessibilityLabel(title(option))
-                .accessibilityAddTraits(selection == option ? .isSelected : [])
             }
         }
-        .dockPadding(2)
-        .dockWell(.sunken)
+        .dockTabTrack()
     }
 }
 
