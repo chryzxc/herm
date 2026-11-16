@@ -131,9 +131,16 @@ struct SessionStartupTests {
             #expect(model.sessions.first?.title == "Updated title")
             #expect(model.sessions.contains { $0.id == "saved-1500" })
 
+            // A side-effect foreground load (after a send, stop, or project
+            // attach) also reuses history instead of walking every page.
+            let beforeForeground = client.sessionPageReads
+            await model.loadSessions()?.value
+            #expect(client.sessionPageReads - beforeForeground == 1)
+            #expect(model.sessions.count == 1501)
+
             // An explicit refresh must still reconcile removals from older pages.
             client.storedRows?.removeLast()
-            await model.loadSessions()?.value
+            await model.loadSessions(reconcileHistory: true)?.value
             #expect(!model.sessions.contains { $0.id == "saved-1500" })
         }
     }
@@ -144,7 +151,7 @@ struct SessionStartupTests {
             client.storedRows = (0..<151).map { ["id": "saved-\($0)"] }
             await model.loadSessions()?.value
             client.storedRows?.removeLast()
-            model.sessionHistoryLoadedAt = (nil, Date().addingTimeInterval(-61))
+            model.sessionHistoryLoadedAt = (nil, Date().addingTimeInterval(-DockModel.sessionHistoryReuseWindow - 1))
             let beforeExpiry = client.sessionPageReads
             await model.loadSessions(quiet: true)?.value
             #expect(client.sessionPageReads - beforeExpiry == 2)
@@ -163,6 +170,7 @@ struct SessionStartupTests {
         try await withModel { model, client in
             client.rows = []
             client.storedRows = (0..<151).map { ["id": "saved-\($0)"] }
+            model.sessionIndexActivitySpacing = 0
             await model.loadSessions()?.value
             let initialReads = client.sessionPageReads
             model.refreshSessionIndexAfterActivity()
@@ -177,7 +185,7 @@ struct SessionStartupTests {
             #expect(model.sessions.count == 151)
 
             // Database writes are frequent; reconcile older external deletions on expiry.
-            model.sessionHistoryLoadedAt = (nil, Date().addingTimeInterval(-61))
+            model.sessionHistoryLoadedAt = (nil, Date().addingTimeInterval(-DockModel.sessionHistoryReuseWindow - 1))
             model.receiveGatewayEvent("sessions.changed", params: [:])
             await model.sessionLoadTask?.value
             #expect(!model.sessions.contains { $0.id == "saved-150" })
@@ -233,6 +241,7 @@ struct SessionStartupTests {
     func activityDuringReadRefreshesAfterward(quiet: Bool) async throws {
         try await withModel { model, client in
             client.holdsList = true
+            model.sessionIndexActivitySpacing = 0
             let initial = model.loadSessions(quiet: quiet)
             await client.waitForList()
             client.rows = [["id": "updated", "title": "Updated"]]
@@ -264,6 +273,73 @@ struct SessionStartupTests {
             #expect(model.sessions.map(\.id) == ["latest", "older"])
             #expect(model.sessionID == "latest")
             #expect(model.sessionProjectionState == .ready(model.sessions))
+        }
+    }
+
+    @Test func activityBurstDefersToOneSpacedRead() async throws {
+        try await withModel { model, client in
+            client.rows = []
+            client.storedRows = (0..<151).map { ["id": "saved-\($0)"] }
+            await model.loadSessions()?.value
+            let initialReads = client.sessionPageReads
+            // A burst right after a read schedules one deferred read, not one per event.
+            for _ in 0..<5 { model.receiveGatewayEvent("sessions.changed", params: [:]) }
+            #expect(model.sessionLoadTask == nil)
+            #expect(model.sessionIndexRefreshTask != nil)
+            #expect(client.sessionPageReads == initialReads)
+
+            model.sessionIndexActivitySpacing = 0
+            await model.sessionIndexRefreshTask?.value
+            await model.sessionLoadTask?.value
+            #expect(client.sessionPageReads - initialReads == 1)
+            #expect(model.sessionIndexRefreshTask == nil)
+        }
+    }
+
+    @Test func profileSwitchAndShutdownCancelDeferredActivityRead() async throws {
+        try await withModel { model, _ in
+            await model.loadSessions()?.value
+            model.refreshSessionIndexAfterActivity()
+            let deferred = try #require(model.sessionIndexRefreshTask)
+            model.setProfileScope("other-bot")
+            #expect(deferred.isCancelled)
+            #expect(model.sessionIndexRefreshTask == nil)
+
+            await model.sessionLoadTask?.value
+            model.refreshSessionIndexAfterActivity()
+            let next = try #require(model.sessionIndexRefreshTask)
+            model.shutdown()
+            #expect(next.isCancelled)
+            model.refreshSessionIndexAfterActivity()
+            #expect(model.sessionIndexRefreshTask == nil)
+        }
+    }
+
+    @Test func historyReuseRequiresSameScopeFreshWindowAndNoReconcile() {
+        let now = Date()
+        let fresh = (profileID: String?.some("bot"), date: now.addingTimeInterval(-10))
+        #expect(DockModel.canReuseSessionHistory(loadedAt: fresh, scope: "bot", now: now, reconcile: false))
+        #expect(!DockModel.canReuseSessionHistory(loadedAt: fresh, scope: "bot", now: now, reconcile: true))
+        #expect(!DockModel.canReuseSessionHistory(loadedAt: fresh, scope: "other", now: now, reconcile: false))
+        #expect(!DockModel.canReuseSessionHistory(loadedAt: nil, scope: "bot", now: now, reconcile: false))
+        let expiredDate = now.addingTimeInterval(-DockModel.sessionHistoryReuseWindow)
+        let expired = (profileID: String?.some("bot"), date: expiredDate)
+        #expect(!DockModel.canReuseSessionHistory(loadedAt: expired, scope: "bot", now: now, reconcile: false))
+    }
+
+    @Test func activityRefreshDelaySpacesReadsFromTheLastOne() {
+        let now = Date()
+        #expect(DockModel.activityRefreshDelay(since: nil, spacing: 3, now: now) == 0)
+        #expect(DockModel.activityRefreshDelay(since: now.addingTimeInterval(-1), spacing: 3, now: now) == 2)
+        #expect(DockModel.activityRefreshDelay(since: now.addingTimeInterval(-5), spacing: 3, now: now) == 0)
+    }
+
+    @Test func timerPollSkipsWhenIndexWasJustRead() async throws {
+        try await withModel { model, _ in
+            #expect(!model.sessionIndexReadRecently(within: 10))
+            await model.loadSessions()?.value
+            #expect(model.sessionIndexReadRecently(within: 10))
+            #expect(!model.sessionIndexReadRecently(within: 10, now: Date().addingTimeInterval(11)))
         }
     }
 

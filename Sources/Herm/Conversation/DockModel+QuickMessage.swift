@@ -13,6 +13,8 @@ extension DockModel {
         guard !hasShutDown else { return }
         hasShutDown = true
         pendingSessionIndexRefresh = false
+        sessionIndexRefreshTask?.cancel()
+        sessionIndexRefreshTask = nil
         streamingMessageFlushTask?.cancel()
         sessionResumeTask?.cancel()
         sessionResumeWorkTask?.cancel()

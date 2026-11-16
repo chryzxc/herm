@@ -162,8 +162,18 @@ final class DockModel: ObservableObject {
     /// Background polls stay unpublished: flipping `isLoadingSessions` rebuilt
     /// the whole sidebar rail twice per poll and stuttered its scrolling.
     var isPollingSessions = false
-    /// Older rows are reused by background polls between full history reads.
+    /// Older rows are reused between full history reads. Each `/api/sessions`
+    /// page ranks every stored session in Hermes, so a full walk costs one
+    /// ranking per 100 sessions; only cold start, a profile switch, an explicit
+    /// refresh, or an expired window pays for it.
     var sessionHistoryLoadedAt: (profileID: String?, date: Date)?
+    /// When the last session index read finished, for spacing activity refreshes.
+    var lastSessionIndexReadAt: Date?
+    /// One deferred read that absorbs a burst of completion/database events.
+    var sessionIndexRefreshTask: Task<Void, Never>?
+    /// ponytail: fixed 3s spacing between activity-driven index reads; tune if
+    /// sidebar titles feel late after back-to-back bot turns.
+    var sessionIndexActivitySpacing: TimeInterval = 3
     /// A live event can arrive while the initial session index is loading.
     /// Retain one follow-up refresh so the navigation list cannot get stuck on
     /// the snapshot that predated that event.

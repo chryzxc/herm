@@ -180,7 +180,7 @@ struct SessionDashboard<Conversation: View>: View {
     }
 
     private func refresh() {
-        model.loadSessions()
+        model.loadSessions(reconcileHistory: true)
         control.refreshProjectNavigation()
     }
 }

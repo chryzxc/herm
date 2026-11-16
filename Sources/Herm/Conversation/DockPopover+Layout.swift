@@ -499,7 +499,8 @@ extension DockPopover {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled else { return }
-                guard model.isHermesConnected else { continue }
+                // Activity events already re-read the index; skip a redundant read.
+                guard model.isHermesConnected, !model.sessionIndexReadRecently(within: 10) else { continue }
                 await model.loadSessions(quiet: true)?.value
             }
         }

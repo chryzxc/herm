@@ -531,7 +531,7 @@ extension DockPopover {
                     isBusy: model.isLoadingSessions,
                     size: 24,
                     style: style
-                ) { model.loadSessions() }
+                ) { model.loadSessions(reconcileHistory: true) }
             }
             .dockPadding(.horizontal, 6)
             .dockPadding(.top, 8)

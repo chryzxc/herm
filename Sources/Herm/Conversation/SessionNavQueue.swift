@@ -1024,7 +1024,7 @@ struct SessionNavQueue: View, Equatable {
                     size: 24,
                     style: style
                 ) {
-                    model.loadSessions()
+                    model.loadSessions(reconcileHistory: true)
                     controlCenter.refreshProjectNavigation()
                 }
             }
