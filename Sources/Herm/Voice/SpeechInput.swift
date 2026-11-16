@@ -393,7 +393,11 @@ final class MicLevelMeter: ObservableObject {
     private var engine: AVAudioEngine?
     private var generation = 0
     private let recognizer = SFSpeechRecognizer(locale: .current)
-    private let feed = RecognitionFeed()
+    private let feed: RecognitionFeed
+    private let cancelRecognition: (SFSpeechRecognitionTask?) -> Void
+    private var drainingRequest: ObjectIdentifier?
+    private var drainDeadline: Task<Void, Never>?
+    private var recognitionEpoch = 0
     private var recognitionTask: SFSpeechRecognitionTask?
     /// Text from earlier recognition requests in this utterance; the
     /// recognizer ends a request on long pauses and errors.
@@ -415,6 +419,14 @@ final class MicLevelMeter: ObservableObject {
     /// Something played through the speakers during this utterance, so the
     /// mic may have heard Hermes' own reply (a late TTS sentence).
     private(set) var heardPlayback = false
+
+    init(
+        feed: RecognitionFeed = RecognitionFeed(),
+        cancelRecognition: @escaping (SFSpeechRecognitionTask?) -> Void = { $0?.cancel() }
+    ) {
+        self.feed = feed
+        self.cancelRecognition = cancelRecognition
+    }
 
     func start() {
         guard engine == nil, !isStarting else { return }
@@ -459,9 +471,13 @@ final class MicLevelMeter: ObservableObject {
     }
 
     private func restartRecognition() {
-        recognitionTask?.cancel()
+        recognitionEpoch &+= 1
+        drainDeadline?.cancel()
+        drainDeadline = nil
+        drainingRequest = nil
+        cancelRecognition(recognitionTask)
         recognitionTask = nil
-        feed.request?.endAudio()
+        feed.endAudio()
         feed.request = nil
         committedTranscript = ""
         requestText = ""
@@ -490,32 +506,71 @@ final class MicLevelMeter: ObservableObject {
         let requestID = ObjectIdentifier(request)
         recognitionTask = Self.recognize(request, with: recognizer) { [weak self] text, ended, error in
             Task { @MainActor [weak self] in
-                guard let self, self.feed.request.map(ObjectIdentifier.init) == requestID else { return }
-                if let text, !text.isEmpty {
-                    self.receiveRecognizedText(text)
-                }
-                guard self.feed.request.map(ObjectIdentifier.init) == requestID, ended else { return }
-                // The recognizer gives up after silence or ~1 minute; keep
-                // listening with a fresh request. Repeated empty failures mean
-                // it is unusable (dictation off, no on-device model).
-                // A quiet room also ends requests with an error ("no speech
-                // detected") after a few seconds; counting those switched voice
-                // to Hermes' recorder for good. Only instant failures count.
-                let lived = ProcessInfo.processInfo.systemUptime - self.requestStartedAt
-                if VoiceEndpointDetector.isRecognizerFailure(
-                    heardSpeech: self.requestHeardSpeech, failed: error != nil, lived: lived)
-                {
-                    self.recognitionFailures += 1
-                }
-                self.committedTranscript = self.transcript
-                self.feed.request = nil
-                if self.recognitionFailures > 2, self.isEndpointing {
-                    self.onUtteranceEnd?(nil)
-                } else {
-                    self.beginRecognitionRequest()
-                }
+                self?.receiveRecognitionResult(text, ended: ended, requestID: requestID, error: error)
             }
         }
+    }
+
+    func receiveRecognitionResult(
+        _ text: String?, ended: Bool, requestID: ObjectIdentifier, error: (any Error)? = nil
+    ) {
+        guard feed.request.map(ObjectIdentifier.init) == requestID else { return }
+        if let text, !text.isEmpty { receiveRecognizedText(text) }
+        guard feed.request.map(ObjectIdentifier.init) == requestID, ended else { return }
+        if drainingRequest == requestID {
+            finishRecognitionDrain(requestID: requestID)
+            return
+        }
+        // Quiet-room errors are normal; only instant failures count.
+        let lived = ProcessInfo.processInfo.systemUptime - requestStartedAt
+        if VoiceEndpointDetector.isRecognizerFailure(
+            heardSpeech: requestHeardSpeech, failed: error != nil, lived: lived)
+        {
+            recognitionFailures += 1
+        }
+        committedTranscript = transcript
+        feed.request = nil
+        if recognitionFailures > 2, isEndpointing {
+            onUtteranceEnd?(nil)
+        } else {
+            beginRecognitionRequest()
+        }
+    }
+
+    func setRecognitionRequestForTesting(_ request: SFSpeechAudioBufferRecognitionRequest) {
+        feed.request = request
+    }
+
+    func finishDetectedUtterance() {
+        guard drainingRequest == nil else { return }
+        pendingEndSince = nil
+        if utteranceTranscript == "", let request = feed.request {
+            let requestID = ObjectIdentifier(request)
+            drainingRequest = requestID
+            feed.endAudio()
+            drainDeadline = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { return }
+                self?.finishRecognitionDrain(requestID: requestID)
+            }
+            return
+        }
+        onUtteranceEnd?(utteranceTranscript)
+        if isEndpointing { restartRecognition() }
+    }
+
+    func finishRecognitionDrain(requestID: ObjectIdentifier) {
+        guard drainingRequest == requestID, feed.request.map(ObjectIdentifier.init) == requestID else { return }
+        let result: String? = transcript.isEmpty ? nil : transcript
+        drainDeadline?.cancel()
+        drainDeadline = nil
+        drainingRequest = nil
+        feed.request = nil
+        cancelRecognition(recognitionTask)
+        recognitionTask = nil
+        let epoch = recognitionEpoch
+        onUtteranceEnd?(result)
+        if isEndpointing, recognitionEpoch == epoch { restartRecognition() }
     }
 
     func receiveRecognizedText(_ text: String) {
@@ -552,49 +607,7 @@ final class MicLevelMeter: ObservableObject {
         Self.installTap(on: input, feed: feed, turnAudio: turnAudio) { [weak self] value in
             Task { @MainActor [weak self] in
                 guard let self, self.generation == expected else { return }
-                let smoothing: CGFloat = value > self.level ? 0.5 : 0.12
-                self.level += (value - self.level) * smoothing
-                guard self.isEndpointing else { return }
-                let now = ProcessInfo.processInfo.systemUptime
-                if !self.heardPlayback, VoiceAudioOutput.isOutputRunning() == true { self.heardPlayback = true }
-                if self.endpoint.ingest(level: Double(value), at: now) {
-                    self.pendingEndSince = self.pendingEndSince ?? now
-                }
-                if self.endpoint.isHearingSpeech {
-                    self.lastLoudAt = now
-                    self.turnVerdict = nil
-                }
-                self.askTurnModel(at: now)
-                let progress =
-                    self.endpoint.isHearingSpeech || (self.utteranceTranscript ?? "").isEmpty
-                    ? 0
-                    : min(
-                        1,
-                        (now - self.lastWordAt)
-                            / VoiceEndpointDetector.turnHold(
-                                self.utteranceTranscript ?? "", quietSince: self.pendingEndSince,
-                                finished: self.turnVerdict))
-                if abs(progress - self.turnProgress) > 0.03 || (progress == 0) != (self.turnProgress == 0) {
-                    self.turnProgress = progress
-                }
-                // Words trail the audio, and a soft voice can stay under the
-                // level detector, so the transcript also ends (and keeps awake) a turn.
-                if VoiceEndpointDetector.shouldEndTurn(
-                    self.utteranceTranscript, lastWordAt: self.lastWordAt, quietSince: self.pendingEndSince, now: now,
-                    finished: self.turnVerdict, isHearingSpeech: self.endpoint.isHearingSpeech
-                ) {
-                    self.pendingEndSince = nil
-                    self.onUtteranceEnd?(self.utteranceTranscript)
-                    // Each utterance starts from a clean transcript, so words
-                    // heard while asleep never pile up into the next one.
-                    if self.isEndpointing { self.restartRecognition() }
-                } else if self.pendingEndSince == nil, self.transcript.isEmpty {
-                    if self.endpoint.heardNothing(for: self.idleLimit, at: now) {
-                        self.onIdle?()
-                    } else if self.endpoint.heardNothing(for: 1.5, at: now) {
-                        self.onQuiet?()
-                    }
-                }
+                self.ingestAudioLevel(value, at: ProcessInfo.processInfo.systemUptime)
             }
         }
         do {
@@ -612,6 +625,43 @@ final class MicLevelMeter: ObservableObject {
             } else {
                 errorMessage =
                     "Couldn’t start the microphone: " + HermesDiagnosticsService.safeSummary(error.localizedDescription)
+            }
+        }
+    }
+
+    func ingestAudioLevel(_ value: CGFloat, at now: TimeInterval, outputPlaying: Bool? = nil) {
+        let smoothing: CGFloat = value > level ? 0.5 : 0.12
+        level += (value - level) * smoothing
+        guard isEndpointing else { return }
+        if !heardPlayback, outputPlaying ?? (VoiceAudioOutput.isOutputRunning() == true) { heardPlayback = true }
+        guard drainingRequest == nil else { return }
+        if endpoint.ingest(level: Double(value), at: now) { pendingEndSince = pendingEndSince ?? now }
+        if endpoint.isHearingSpeech {
+            lastLoudAt = now
+            turnVerdict = nil
+        }
+        askTurnModel(at: now)
+        let progress =
+            endpoint.isHearingSpeech || (utteranceTranscript ?? "").isEmpty
+            ? 0
+            : min(
+                1,
+                (now - lastWordAt)
+                    / VoiceEndpointDetector.turnHold(
+                        utteranceTranscript ?? "", quietSince: pendingEndSince, finished: turnVerdict))
+        if abs(progress - turnProgress) > 0.03 || (progress == 0) != (turnProgress == 0) {
+            turnProgress = progress
+        }
+        if VoiceEndpointDetector.shouldEndTurn(
+            utteranceTranscript, lastWordAt: lastWordAt, quietSince: pendingEndSince, now: now,
+            finished: turnVerdict, isHearingSpeech: endpoint.isHearingSpeech
+        ) {
+            finishDetectedUtterance()
+        } else if pendingEndSince == nil, transcript.isEmpty {
+            if endpoint.heardNothing(for: idleLimit, at: now) {
+                onIdle?()
+            } else if endpoint.heardNothing(for: 1.5, at: now) {
+                onQuiet?()
             }
         }
     }
@@ -660,7 +710,7 @@ final class MicLevelMeter: ObservableObject {
         let firstChannelOnly = input.isVoiceProcessingEnabled
         input.installTap(onBus: 0, bufferSize: 1_024, format: nil) { buffer, _ in
             guard let buffer = firstChannelOnly ? firstChannel(of: buffer) : buffer else { return }
-            feed.request?.append(buffer)
+            feed.append(buffer)
             turnAudio.append(buffer)
             onLevel(SpeechInput.normalizedAudioLevel(buffer))
         }
@@ -683,13 +733,40 @@ final class MicLevelMeter: ObservableObject {
 }
 
 /// The recognition request the audio thread feeds, swapped from the main actor.
-private final class RecognitionFeed: @unchecked Sendable {
+final class RecognitionFeed: @unchecked Sendable {
     private let lock = NSLock()
+    private let endRequest: (SFSpeechAudioBufferRecognitionRequest) -> Void
     private var current: SFSpeechAudioBufferRecognitionRequest?
+    private var ended = false
+
+    init(endRequest: @escaping (SFSpeechAudioBufferRecognitionRequest) -> Void = { $0.endAudio() }) {
+        self.endRequest = endRequest
+    }
 
     var request: SFSpeechAudioBufferRecognitionRequest? {
         get { lock.withLock { current } }
-        set { lock.withLock { current = newValue } }
+        set {
+            lock.withLock {
+                current = newValue
+                ended = false
+            }
+        }
+    }
+
+    @discardableResult func append(_ buffer: AVAudioPCMBuffer) -> Bool {
+        lock.withLock {
+            guard !ended, let current else { return false }
+            current.append(buffer)
+            return true
+        }
+    }
+
+    func endAudio() {
+        lock.withLock {
+            guard !ended, let current else { return }
+            ended = true
+            endRequest(current)
+        }
     }
 }
 
