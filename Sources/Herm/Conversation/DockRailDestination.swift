@@ -2,7 +2,7 @@ import Foundation
 
 /// Local navigation preferences, shared by floating and window presentations.
 enum DockRailDestination: String, CaseIterable, Identifiable {
-    case kanban, github, automations, calendar, integrations, artifacts, office, usage, quota
+    case kanban, github, automations, calendar, integrations, artifacts, office, usage, quota, bots
 
     static let pinsKey = "herm.navigation.pinnedDestinations.v1"
     static let defaultPins = "automations,calendar"
@@ -17,6 +17,7 @@ enum DockRailDestination: String, CaseIterable, Identifiable {
         case .office: .officePreview
         case .usage: .usage
         case .quota: .quota
+        case .bots: .bots
         case .github, .artifacts: nil
         }
     }

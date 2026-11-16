@@ -2560,7 +2560,7 @@ fail, Create retries just them. A created profile whose role could not be confir
 keeps the form open and retries only the role. An unconfirmed creation admission
 cannot be submitted again from that draft; the user checks the roster first.
 Create opens the new bot's main chat; Cancel, Escape, or
-opening any row closes the form. Settings › Bots' New Bot modal uses the same
+opening any row closes the form. The roster's New Bot modal uses the same
 fields in a scrolling body capped at 400pt so the header and footer never clip. Group rooms share the
 list with bots and keep the group row (member avatars, unread, approval and
 working marks, the more-actions menu); the whole list sorts by last activity,
@@ -2609,9 +2609,9 @@ workers, so main-chat work never appears there. Main chats themselves are
 hidden from Chats Recents, Chats search, and the rail Chats badge; they open
 only from the Bots page.
 
-Settings → Bots (Agent group) hosts the roster manager without a nested workspace header. Its chat actions open
-the Bots page on that bot. The roster uses a responsive adaptive grid for profiles and a compact
-schedule list for routines. The grid uses one column below 600pt, two columns
+The side rail's Bots destination hosts the roster manager, separate from the Bots conversation page. Its chat actions open
+the Bots page on that bot. The roster uses a responsive adaptive grid for profiles; routines are managed in Automation.
+The grid uses one column below 600pt, two columns
 from 600pt, and three columns from 900pt, with flexible cards filling the
 workspace width. Cards keep identity and live presence first, a bounded
 latest-activity preview second, and relative activity time plus provider/model
@@ -2623,7 +2623,7 @@ The More menu stays visible at rest and accessible by keyboard. New Bot is the
 primary header action; avatar generation is secondary.
 In the profile editor, model card rows keep 10pt of vertical padding around the
 complete row, including actions, clear of borders and dividers.
-Tabs, search, activity, and visibility filters share a
+Search, activity, and visibility filters share a
 responsive toolbar that wraps at narrower widths. The full card opens the
 canonical Bot Chat; profile editing, duplication, activity history, and
 hide/unhide remain in More and the native context menu. Delete Bot… is a
@@ -2632,14 +2632,9 @@ listing the profile data and active sessions affected. The default profile is
 protected. Pending deletion uses the existing More slot; failures show a safe
 diagnostic and the roster refreshes from Hermes. Focus and hover use one
 quiet surface treatment, and the 44pt More target does not change card layout.
-Routines retain their own focused list with assigned Bot names, schedules,
-disabled state, and confirmed removal. This page uses the global Herm tokens and
-is independent of the sidebar brand-concept preference. Groups, sections,
-cross-machine routing and richer routine actions require
-additional Hermes gateway contracts and are not presented as available Herm
-controls yet.
+This page uses the global Herm tokens and is independent of the sidebar brand-concept preference.
 
-On a bot's main chat, the toolbar ⋯ menu starts with Bot settings. It opens the Settings › Bots profile editor as a tab (the same component,
+On a bot's main chat, the toolbar ⋯ menu starts with Bot settings. It opens the roster's profile editor as a tab (the same component,
 without modal chrome), with Save Changes in a footer bar that reloads the
 profile after saving. The editor fills the available tab height, with its form
 scrolling above the compact footer; the modal retains its bounded form height.
@@ -4119,8 +4114,8 @@ Repository browsing uses a compact filter toolbar and one detail tab bar. Overvi
 
 ### Pinned navigation destinations
 
-The side rail keeps Chats and pinned destinations visible. Automation, Calendar, and Bots start pinned;
-Kanban and GitHub are available in the **…** menu. The menu lists destinations with a separate pin/unpin button;
+The side rail keeps Chats and pinned destinations visible. Automation and Calendar start pinned;
+Bots, Kanban and GitHub are available in the **…** menu. Existing explicit Bots pins are retained. The menu lists destinations with a separate pin/unpin button;
 opening a destination closes the menu, while pinning keeps it open. Right-click a pinned
 icon to unpin it. Pins persist locally and are shared by floating and window mode.
 Existing visibility settings still hide disabled destinations without erasing their pins.

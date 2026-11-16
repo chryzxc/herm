@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import Herm
@@ -45,7 +46,7 @@ struct SettingsWorkspaceTests {
     func categoryOrder() {
         #expect(
             SettingsCategory.allCases == [
-                .general, .gateway, .appearance, .notifications, .runtime, .subagents, .providers, .bots, .chat,
+                .general, .gateway, .appearance, .notifications, .runtime, .subagents, .providers, .chat,
                 .workspace,
                 .safety, .browser, .passwords, .memory, .voice, .advanced, .integrations, .session, .diagnostics,
                 .updates,
@@ -54,9 +55,27 @@ struct SettingsWorkspaceTests {
         #expect(grouped.count == Set(grouped).count)
         #expect(Set(grouped) == Set(SettingsCategory.allCases))
         #expect(SettingsCategoryGroup.app.categories == [.general, .gateway, .appearance, .notifications])
-        #expect(SettingsCategoryGroup.agent.categories.contains(.bots))
+        #expect(!SettingsCategoryGroup.agent.categories.map(\.rawValue).contains("bots"))
         #expect(SettingsCategory.general.title == "General")
         #expect(SettingsCategory.diagnostics.icon == .stethoscope)
+    }
+
+    @Test("persisted category falls back without rewriting unknown values")
+    @MainActor
+    func persistedCategoryFallback() throws {
+        let suite = "SettingsCategory.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = "herm.settings.category"
+        let cases: [(String?, SettingsCategory)] = [
+            (nil, .general), ("bots", .general), ("unknown", .general), ("providers", .providers),
+        ]
+        for (raw, expected) in cases {
+            if let raw { defaults.set(raw, forKey: key) } else { defaults.removeObject(forKey: key) }
+            let category = AppStorage(wrappedValue: SettingsCategory.general, key, store: defaults)
+            #expect(category.wrappedValue == expected)
+            #expect(defaults.string(forKey: key) == raw)
+        }
     }
 
     @Test("layout switches at the native compact breakpoint")
