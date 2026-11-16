@@ -18,7 +18,7 @@ final class ChatRailActivityModel: ObservableObject {
     ) {
         self.model = model
         self.seenStore = seenStore
-        let sidebar = SessionNavSidebarModel(model: model, control: control, store: store)
+        let sidebar = SessionNavSidebarModel.shared(model: model, control: control, store: store)
         self.sidebar = sidebar
         activity = Self.project(sidebar.snapshot, seenStore: seenStore, isConnected: model.isHermesConnected)
         cancellable = Publishers.Merge3(

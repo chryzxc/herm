@@ -361,6 +361,29 @@ struct SessionNavSidebarSnapshot: Equatable {
 /// when an input the rail renders actually changed.
 @MainActor
 final class SessionNavSidebarModel: ObservableObject {
+    private struct Key: Hashable {
+        let model: ObjectIdentifier
+        let control: ObjectIdentifier
+        let store: ObjectIdentifier
+    }
+
+    private final class WeakBox {
+        weak var value: SessionNavSidebarModel?
+        init(_ value: SessionNavSidebarModel) { self.value = value }
+    }
+
+    private static var registry: [Key: WeakBox] = [:]
+
+    static func shared(model: DockModel, control: ControlCenterModel, store: WorkspaceStore) -> SessionNavSidebarModel {
+        let key = Key(
+            model: ObjectIdentifier(model), control: ObjectIdentifier(control), store: ObjectIdentifier(store))
+        if let existing = registry[key]?.value { return existing }
+        registry = registry.filter { $0.value.value != nil }
+        let sidebar = SessionNavSidebarModel(model: model, control: control, store: store)
+        registry[key] = WeakBox(sidebar)
+        return sidebar
+    }
+
     @Published private(set) var snapshot: SessionNavSidebarSnapshot
     let instanceID = UUID().uuidString.prefix(8).description
 

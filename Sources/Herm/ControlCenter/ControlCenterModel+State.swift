@@ -73,7 +73,7 @@ extension ControlCenterModel {
             $globalKanbanTasks.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $kanbanTasks.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $tokenUsage.dropFirst().map { _ in () }.eraseToAnyPublisher()
-        ).receive(on: RunLoop.main).eraseToAnyPublisher()
+        ).debounce(for: .milliseconds(1), scheduler: DispatchQueue.main).eraseToAnyPublisher()
     }
 
     /// Installs deterministic navigation data for local scroll profiling. It

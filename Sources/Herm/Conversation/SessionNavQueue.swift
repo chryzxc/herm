@@ -144,7 +144,7 @@ struct SessionNavQueue: View, Equatable {
         self.navigationState = navigationState
         self.dockThemeStore = dockThemeStore
         _sidebar = StateObject(
-            wrappedValue: SessionNavSidebarModel(model: model, control: controlCenter, store: workspaceStore))
+            wrappedValue: SessionNavSidebarModel.shared(model: model, control: controlCenter, store: workspaceStore))
         self._sessionPendingDeletion = sessionPendingDeletion
         self.activeSessionID = activeSessionID
         self.activeGlobalTab = activeGlobalTab
