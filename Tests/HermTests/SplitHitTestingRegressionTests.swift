@@ -6,12 +6,12 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct SplitHitTestingRegressionTests {
-    private enum Pane: Sendable, CaseIterable {
+    enum Pane: Sendable, CaseIterable {
         case leading
         case trailing
     }
 
-    private enum Edge: Sendable, CaseIterable {
+    enum Edge: Sendable, CaseIterable {
         case leading
         case trailing
     }
