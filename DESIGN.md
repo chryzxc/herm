@@ -1753,6 +1753,9 @@ hides the roster when both panels would crowd the scene.
 
 ### Navigation sidebar
 
+Working and unread activity follows each session through selection, pinned rows,
+and project summaries; the notch uses the same session activity state.
+
 A fixed Search sessions field below the Bot header filters loaded session titles,
 previews, and project names case-insensitively in the selected Bot scope. Nonempty
 search replaces the normal sections with deduplicated results in newest-first order,

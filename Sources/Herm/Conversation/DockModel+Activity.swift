@@ -52,13 +52,11 @@ extension DockModel {
     func updateSessionActivity(sessionID rawSessionID: String, isWorking: Bool? = nil, unread: Bool? = nil) {
         if isWorking != nil { sessionActivityGeneration &+= 1 }
         let sessionID = rowSessionID(rawSessionID)
-        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
-        let session = sessions[index]
-        let working = isWorking ?? session.isWorking
-        let hasUnread = unread ?? session.hasUnreadUpdate
-        // An unchanged row must not republish `sessions` to every observer.
-        if working != session.isWorking || hasUnread != session.hasUnreadUpdate {
-            sessions[index] = HermesSession(
+        func updated(_ session: HermesSession) -> HermesSession? {
+            let working = isWorking ?? session.isWorking
+            let hasUnread = unread ?? session.hasUnreadUpdate
+            guard working != session.isWorking || hasUnread != session.hasUnreadUpdate else { return nil }
+            return HermesSession(
                 id: session.id,
                 profileID: session.profileID,
                 title: session.title,
@@ -72,7 +70,11 @@ extension DockModel {
                 hasUnreadUpdate: hasUnread
             )
         }
-        if let unread {
+        let recentIndex = sessions.firstIndex { $0.id == sessionID }
+        let pinnedIndex = pinnedSessions.firstIndex { $0.id == sessionID }
+        if let recentIndex, let row = updated(sessions[recentIndex]) { sessions[recentIndex] = row }
+        if let pinnedIndex, let row = updated(pinnedSessions[pinnedIndex]) { pinnedSessions[pinnedIndex] = row }
+        if let unread, recentIndex != nil || pinnedIndex != nil {
             var unreadIDs = Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? [])
             if unread { unreadIDs.insert(sessionID) } else { unreadIDs.remove(sessionID) }
             defaults.set(Array(unreadIDs), forKey: unreadSessionIDsKey)

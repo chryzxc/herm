@@ -13,6 +13,8 @@
 
 Glance at the notch to see what your agents are doing and how much provider allowance remains. Send a quick message without opening the workspace, reply to a specific session when it is idle, or talk with your agent through continuous **Voice mode**. Expand into the full workspace when you want to inspect files, review changes, answer an approval, or manage your bots and tasks.
 
+Session activity remains visible in the sidebar and notch when you switch conversations, including pinned and project sessions.
+
 In-chat approvals, questions, and input requests keep their actions compact; errors use the same clear callout treatment.
 
 When Hermes supplies edit previews, completed replies show a changes card with expandable file diffs. These previews can omit files or lines and are not a complete working-tree diff.
