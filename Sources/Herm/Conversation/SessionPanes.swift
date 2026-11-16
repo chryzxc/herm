@@ -417,7 +417,9 @@ struct SessionPaneDropDelegate: DropDelegate {
     func validateDrop(info: DropInfo) -> Bool { Self.isSessionPaneDrag(info) }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard Self.isSessionPaneDrag(info) else {
+        // AppKit can deliver one more update after `performDrop`; with the button already
+        // released the drag is over, so re-arming the hints would leave them stuck on screen.
+        guard Self.isSessionPaneDrag(info), NSEvent.pressedMouseButtons & 1 != 0 else {
             if target != nil { target = nil }
             return DropProposal(operation: .cancel)
         }
