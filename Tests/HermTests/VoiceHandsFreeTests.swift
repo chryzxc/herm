@@ -1,9 +1,159 @@
+import AVFoundation
 import Foundation
+import Speech
 import Testing
 
 @testable import Herm
 
 struct VoiceHandsFreeTests {
+    @MainActor private func endAudioConfirmedTurn(_ meter: MicLevelMeter, playback: Bool = false) {
+        meter.ingestAudioLevel(0.1, at: 0, outputPlaying: playback)
+        meter.ingestAudioLevel(0.8, at: 1, outputPlaying: playback)
+        meter.ingestAudioLevel(0.8, at: 1.4, outputPlaying: playback)
+        meter.ingestAudioLevel(0.1, at: 1.5, outputPlaying: playback)
+        meter.ingestAudioLevel(0.1, at: 2.8, outputPlaying: playback)
+        meter.ingestAudioLevel(0.1, at: 5.9, outputPlaying: playback)
+    }
+
+    @Test @MainActor func finalOnlyRecognitionSurvivesAudioEndpoint() throws {
+        var ends = 0
+        var cancels = 0
+        let feed = RecognitionFeed { request in
+            ends += 1
+            request.endAudio()
+        }
+        let meter = MicLevelMeter(
+            feed: feed,
+            cancelRecognition: { task in
+                cancels += 1
+                task?.cancel()
+            })
+        meter.listen(endpointing: true, watchingForBarge: false)
+        cancels = 0
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        meter.setRecognitionRequestForTesting(request)
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 32))
+        buffer.frameLength = 32
+        #expect(feed.append(buffer))
+        var completions: [String?] = []
+        meter.onUtteranceEnd = { completions.append($0) }
+        endAudioConfirmedTurn(meter)
+        #expect(ends == 1)
+        #expect(cancels == 0)
+        #expect(!feed.append(buffer))
+        #expect(completions.isEmpty)
+        meter.receiveRecognitionResult("original words", ended: true, requestID: ObjectIdentifier(request))
+        meter.receiveRecognitionResult("original words", ended: true, requestID: ObjectIdentifier(request))
+        #expect(completions.count == 1)
+        #expect(completions.first == "original words")
+    }
+
+    @Test @MainActor func exhaustedDrainRecoversOnceAndStaleResultsAreIgnored() {
+        let meter = MicLevelMeter()
+        meter.listen(endpointing: true, watchingForBarge: false)
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        let id = ObjectIdentifier(request)
+        meter.setRecognitionRequestForTesting(request)
+        var completions: [String?] = []
+        meter.onUtteranceEnd = { completions.append($0) }
+        endAudioConfirmedTurn(meter)
+        meter.finishRecognitionDrain(requestID: id)
+        meter.finishRecognitionDrain(requestID: id)
+        meter.receiveRecognitionResult("late", ended: true, requestID: id)
+        #expect(completions.count == 1)
+        #expect(completions[0] == nil)
+        #expect(meter.transcript.isEmpty)
+    }
+
+    @Test @MainActor func stoppingInvalidatesPendingFinal() {
+        let meter = MicLevelMeter()
+        meter.listen(endpointing: true, watchingForBarge: false)
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        let id = ObjectIdentifier(request)
+        meter.setRecognitionRequestForTesting(request)
+        var completions: [String?] = []
+        meter.onUtteranceEnd = { completions.append($0) }
+        endAudioConfirmedTurn(meter)
+        meter.stop()
+        meter.receiveRecognitionResult("late", ended: true, requestID: id)
+        meter.finishRecognitionDrain(requestID: id)
+        #expect(completions.isEmpty)
+        #expect(meter.transcript.isEmpty)
+    }
+
+    @Test @MainActor func playbackFlagSurvivesDelayedFinal() {
+        let meter = MicLevelMeter()
+        meter.listen(endpointing: true, watchingForBarge: false)
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        meter.setRecognitionRequestForTesting(request)
+        var playbackAtCompletion = false
+        meter.onUtteranceEnd = { _ in playbackAtCompletion = meter.heardPlayback }
+        endAudioConfirmedTurn(meter, playback: true)
+        meter.receiveRecognitionResult("echo", ended: true, requestID: ObjectIdentifier(request))
+        #expect(playbackAtCompletion)
+    }
+
+    @Test @MainActor func drainSuppressesQuietAnnouncementsUntilFinal() {
+        let meter = MicLevelMeter()
+        meter.listen(endpointing: true, watchingForBarge: false)
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        meter.setRecognitionRequestForTesting(request)
+        var quiet = 0
+        var completions: [String?] = []
+        meter.onQuiet = { quiet += 1 }
+        meter.onUtteranceEnd = { completions.append($0) }
+        endAudioConfirmedTurn(meter)
+        let beforeDrain = quiet
+        meter.ingestAudioLevel(0.1, at: 8, outputPlaying: false)
+        meter.ingestAudioLevel(0.1, at: 40, outputPlaying: false)
+        #expect(quiet == beforeDrain)
+        meter.receiveRecognitionResult("original words", ended: true, requestID: ObjectIdentifier(request))
+        #expect(completions.count == 1)
+        #expect(completions.first == "original words")
+    }
+
+    @Test @MainActor func drainErrorKeepsAccumulatedWords() {
+        let meter = MicLevelMeter()
+        meter.listen(endpointing: true, watchingForBarge: false)
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        let id = ObjectIdentifier(request)
+        meter.setRecognitionRequestForTesting(request)
+        var completions: [String?] = []
+        meter.onUtteranceEnd = { completions.append($0) }
+        endAudioConfirmedTurn(meter)
+        meter.receiveRecognitionResult("partial", ended: false, requestID: id)
+        meter.receiveRecognitionResult(nil, ended: true, requestID: id, error: NSError(domain: "test", code: 1))
+        #expect(completions.count == 1)
+        #expect(completions.first == "partial")
+    }
+
+    @Test @MainActor func drainDeadlineTriggersRecovery() async throws {
+        let meter = MicLevelMeter()
+        meter.listen(endpointing: true, watchingForBarge: false)
+        meter.setRecognitionRequestForTesting(SFSpeechAudioBufferRecognitionRequest())
+        var completions: [String?] = []
+        meter.onUtteranceEnd = { completions.append($0) }
+        endAudioConfirmedTurn(meter)
+        try await Task.sleep(for: .seconds(8))
+        #expect(completions.count == 1)
+        #expect(completions.first == .some(nil))
+    }
+
+    @Test func feedRejectsAudioAfterEndingAndRetainsRequest() throws {
+        let feed = RecognitionFeed()
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 32))
+        buffer.frameLength = 32
+        feed.request = request
+        #expect(feed.append(buffer))
+        feed.endAudio()
+        feed.endAudio()
+        #expect(feed.request === request)
+        #expect(!feed.append(buffer))
+    }
+
     @Test @MainActor func interruptionKeepsTheWordsThatStoppedPlayback() {
         let meter = MicLevelMeter()
         meter.listen(endpointing: false, watchingForBarge: true)

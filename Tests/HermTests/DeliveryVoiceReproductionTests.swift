@@ -26,6 +26,30 @@ private final class DeliveryVoiceRPC: HermesRPCClientProtocol {
 
 @MainActor
 struct DeliveryBugReproductionTests {
+    @Test func emptyManualCompletionDoesNotSubmitOrEnterRecovery() async throws {
+        let client = DeliveryVoiceRPC()
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("delivery-voice-\(UUID().uuidString).json"),
+            initialSessionID: "delivery-voice", rpcClient: client)
+        defer { model.shutdown() }
+        model.canTranscribeVoice = { true }
+        model.startVoiceConversation()
+        for _ in 0..<300 where model.voiceState == .preparing {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(model.voiceState == .listening)
+        #expect(model.nativeCaptureIsLocal)
+
+        model.finishVoiceUtterance(transcript: "")
+        await model.voiceRequestChain?.value
+
+        #expect(!model.localVoiceTranscriptionFailed)
+        #expect(!client.requests.contains { $0.0 == "voice.record" })
+        model.stopVoiceConversation()
+        await model.voiceRequestChain?.value
+    }
+
     @Test func supportedRecorderStartsWithoutAnOptionalVoiceConfigGetter() async throws {
         let client = DeliveryVoiceRPC()
         let model = DockModel(
