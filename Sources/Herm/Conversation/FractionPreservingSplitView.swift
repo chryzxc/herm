@@ -32,6 +32,52 @@ final class FractionPreservingSplitView: NSSplitView {
     var onUserResizeEnded: (() -> Void)?
     private var expandedLeadingWidth: CGFloat?
     private var lastAppliedWidth: CGFloat = 0
+    private lazy var dividerHitProbe = DividerHitProbe(owner: self)
+
+    @MainActor
+    private final class DividerHitProbe: NSObject, NSSplitViewDelegate {
+        weak var owner: FractionPreservingSplitView?
+        let split = NSSplitView()
+
+        init(owner: FractionPreservingSplitView) {
+            self.owner = owner
+            super.init()
+            split.delegate = self
+        }
+
+        func contains(_ point: NSPoint, in owner: FractionPreservingSplitView) -> Bool {
+            let panes = owner.arrangedSubviews
+            guard panes.count >= 2 else { return false }
+            if split.isVertical != owner.isVertical { split.isVertical = owner.isVertical }
+            if split.dividerStyle != owner.dividerStyle { split.dividerStyle = owner.dividerStyle }
+            if split.frame.size != owner.bounds.size { split.frame.size = owner.bounds.size }
+            if split.bounds != owner.bounds { split.bounds = owner.bounds }
+            while split.arrangedSubviews.count < panes.count { split.addArrangedSubview(NSView()) }
+            while split.arrangedSubviews.count > panes.count {
+                split.arrangedSubviews.last?.removeFromSuperview()
+            }
+            for (probe, pane) in zip(split.arrangedSubviews, panes) {
+                if probe.frame != pane.frame { probe.frame = pane.frame }
+                if probe.isHidden != pane.isHidden { probe.isHidden = pane.isHidden }
+            }
+            return split.hitTest(split.convert(point, to: split.superview)) === split
+        }
+
+        func splitView(
+            _ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect,
+            forDrawnRect drawnRect: NSRect, ofDividerAt dividerIndex: Int
+        ) -> NSRect {
+            guard let owner else { return proposedEffectiveRect }
+            return owner.delegate?.splitView?(
+                owner, effectiveRect: proposedEffectiveRect, forDrawnRect: drawnRect, ofDividerAt: dividerIndex
+            ) ?? proposedEffectiveRect
+        }
+
+        func splitView(_ splitView: NSSplitView, additionalEffectiveRectOfDividerAt dividerIndex: Int) -> NSRect {
+            guard let owner else { return .zero }
+            return owner.delegate?.splitView?(owner, additionalEffectiveRectOfDividerAt: dividerIndex) ?? .zero
+        }
+    }
 
     /// Collapsed panes stay mounted at zero width so their SwiftUI state survives.
     private(set) var isTrailingCollapsed = false
@@ -84,11 +130,17 @@ final class FractionPreservingSplitView: NSSplitView {
     /// A collapsed trailing host is zero-width, but its SwiftUI content still
     /// claims clicks past that frame, swallowing the leading pane's edge controls.
     override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        guard bounds.contains(local) else { return nil }
         if isLeadingCollapsed, let trailing = arrangedSubviews.last {
-            return trailing.hitTest(convert(point, from: superview))
+            return trailing.hitTest(local)
         }
         if isTrailingCollapsed, let leading = arrangedSubviews.first {
-            return leading.hitTest(convert(point, from: superview))
+            return leading.hitTest(local)
+        }
+        if dividerHitProbe.contains(local, in: self) { return super.hitTest(point) }
+        if let pane = arrangedSubviews.first(where: { !$0.isHidden && $0.frame.contains(local) }) {
+            return pane.hitTest(local)
         }
         return super.hitTest(point)
     }
