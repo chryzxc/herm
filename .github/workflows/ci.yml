@@ -15,7 +15,7 @@ concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Guard, tests and the release build run side by side; `verify` is the single required check.
+# Guard and tests gate PRs; main pushes also run the release build. `verify` is the single required check.
 jobs:
   guard:
     runs-on: macos-26
@@ -33,7 +33,7 @@ jobs:
         run: sh -n Scripts/run-debug-app.sh Scripts/build-and-run-app.sh
 
   # Suites are split across shards balanced by test count. GitHub runs only a few macOS jobs at
-  # once, so more shards queue instead of overlapping; the release build sets the floor anyway.
+  # once, so more shards queue instead of overlapping.
   test:
     name: test (${{ matrix.shard }}/${{ matrix.total }})
     runs-on: macos-26
@@ -63,7 +63,10 @@ jobs:
       - name: Test
         run: Scripts/test-shard.sh ${{ matrix.shard }} ${{ matrix.total }}
 
+  # The ~25 min optimized build runs only on main pushes, so PRs are not gated on it. A
+  # release-only compile failure surfaces on main and holds back the nightly and releases.
   release-build:
+    if: github.event_name == 'push'
     runs-on: macos-26
     timeout-minutes: 40
     steps:
@@ -85,22 +88,6 @@ jobs:
       - name: Release build
         run: make build-release
 
-      # PR builds reuse the release build above, so reviewers can install the change.
-      - name: Package PR build
-        if: github.event_name == 'pull_request'
-        env:
-          HERM_BUILD_CHANNEL: nightly
-          HERM_BUILD_COMMIT: ${{ github.event.pull_request.head.sha }}
-        run: Scripts/package-app.sh
-
-      - name: Upload PR build
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: Herm-pr-${{ github.event.pull_request.number }}
-          path: dist/Herm.dmg
-          retention-days: 14
-
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -109,7 +96,12 @@ jobs:
     steps:
       - name: Require every job to pass
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          GUARD: ${{ needs.guard.result }}
+          TEST: ${{ needs.test.result }}
+          RELEASE: ${{ needs.release-build.result }}
+          EVENT: ${{ github.event_name }}
+        # release-build is skipped on PRs by design; anywhere else it must pass.
         run: |
-          echo "guard, test, release-build: $RESULTS"
-          for result in $RESULTS; do [ "$result" = success ] || exit 1; done
+          echo "guard=$GUARD test=$TEST release-build=$RELEASE"
+          [ "$GUARD" = success ] && [ "$TEST" = success ] || exit 1
+          [ "$RELEASE" = success ] || { [ "$EVENT" = pull_request ] && [ "$RELEASE" = skipped ]; }
