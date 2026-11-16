@@ -175,7 +175,9 @@ final class SpeechInput: ObservableObject {
         request: SFSpeechAudioBufferRecognitionRequest,
         onAudioLevel: @escaping (CGFloat) -> Void
     ) {
+        let normalizer = MicBufferNormalizer(firstChannelOnly: false)
         inputNode.installTap(onBus: 0, bufferSize: 1_024, format: nil) { buffer, _ in
+            guard let buffer = normalizer.normalize(buffer) else { return }
             request.append(buffer)
             onAudioLevel(normalizedAudioLevel(buffer))
         }
@@ -707,28 +709,82 @@ final class MicLevelMeter: ObservableObject {
         on input: AVAudioInputNode, feed: RecognitionFeed, turnAudio: TurnAudio,
         onLevel: @escaping @Sendable (CGFloat) -> Void
     ) {
-        let firstChannelOnly = input.isVoiceProcessingEnabled
+        // Voice processing hands the tap extra channels (3 on most Macs); only
+        // channel 0 is the cleaned voice, the rest would mix the echo back in.
+        let normalizer = MicBufferNormalizer(firstChannelOnly: input.isVoiceProcessingEnabled)
         input.installTap(onBus: 0, bufferSize: 1_024, format: nil) { buffer, _ in
-            guard let buffer = firstChannelOnly ? firstChannel(of: buffer) : buffer else { return }
+            guard let buffer = normalizer.normalize(buffer) else { return }
             feed.append(buffer)
             turnAudio.append(buffer)
             onLevel(SpeechInput.normalizedAudioLevel(buffer))
         }
     }
+}
 
-    /// Voice processing hands the tap extra channels (3 on most Macs); only
-    /// channel 0 is the cleaned voice, the rest would mix the echo back in.
-    nonisolated static func firstChannel(of buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        guard buffer.format.channelCount > 1 else { return buffer }
-        guard let source = buffer.floatChannelData, !buffer.format.isInterleaved,
-            let mono = AVAudioFormat(
-                commonFormat: .pcmFormatFloat32, sampleRate: buffer.format.sampleRate, channels: 1, interleaved: false),
+/// Turns whatever a microphone delivers (interleaved, Int16/Int32, many
+/// channels) into deinterleaved Float32 that the level meter and recognizer
+/// read. Used only from one tap's audio thread, which calls it serially.
+final class MicBufferNormalizer: @unchecked Sendable {
+    private let firstChannelOnly: Bool
+    private var converter: AVAudioConverter?
+    private var loggedFormat: AVAudioFormat?
+    private var loggedDrop = false
+
+    init(firstChannelOnly: Bool) {
+        self.firstChannelOnly = firstChannelOnly
+    }
+
+    func normalize(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        let format = buffer.format
+        let isFloat = format.commonFormat == .pcmFormatFloat32 && !format.isInterleaved
+        if loggedFormat != format {
+            loggedFormat = format
+            Self.log(
+                "voice: mic format channels=\(format.channelCount) interleaved=\(format.isInterleaved) "
+                    + "common=\(format.commonFormat.rawValue) rate=\(Int(format.sampleRate))"
+                    + (isFloat ? "" : "; converting to mono Float32"))
+        }
+        if isFloat, format.channelCount == 1 || !firstChannelOnly { return buffer }
+        if isFloat { return Self.copyFirstChannel(of: buffer) }
+        guard let converted = convertFirstChannel(of: buffer) else {
+            if !loggedDrop {
+                loggedDrop = true
+                Self.log("voice: dropping mic buffers the converter cannot read")
+            }
+            return nil
+        }
+        return converted
+    }
+
+    private static func copyFirstChannel(of buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let source = buffer.floatChannelData, let mono = monoFormat(sampleRate: buffer.format.sampleRate),
             let out = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength),
             let target = out.floatChannelData
         else { return nil }
         out.frameLength = buffer.frameLength
         target[0].update(from: source[0], count: Int(buffer.frameLength))
         return out
+    }
+
+    private func convertFirstChannel(of buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let mono = Self.monoFormat(sampleRate: buffer.format.sampleRate) else { return nil }
+        if converter?.inputFormat != buffer.format {
+            converter = AVAudioConverter(from: buffer.format, to: mono)
+            converter?.channelMap = [0]
+        }
+        guard let converter, let out = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength),
+            (try? converter.convert(to: out, from: buffer)) != nil
+        else { return nil }
+        return out
+    }
+
+    /// The tap runs on the audio thread; the log writer is main-actor isolated.
+    private static func log(_ line: String) {
+        Task { @MainActor in DebugLog.write(line) }
+    }
+
+    private static func monoFormat(sampleRate: Double) -> AVAudioFormat? {
+        AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)
     }
 }
 
