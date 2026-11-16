@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -8,6 +9,8 @@ from unittest.mock import MagicMock, patch
 spec = importlib.util.spec_from_file_location('herm_simulator_plugin', Path(__file__).with_name('__init__.py'))
 p = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(p)
+# Launch tests record ownership; keep them out of the real Herm ledger.
+os.environ['HERM_SIMULATOR_ENV'] = tempfile.mkdtemp(prefix='herm-ledger-test-')
 
 
 class SimulatorTests(unittest.TestCase):
@@ -149,6 +152,17 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual([call.args[0] for call in run.call_args_list], [
             ['/usr/bin/xcrun', 'simctl', 'boot', 'uuid'],
             ['/usr/bin/xcrun', 'simctl', 'bootstatus', 'uuid', '-b']])
+
+    @patch.object(p, 'executable', return_value='/usr/bin/xcrun')
+    @patch.object(p, 'run', return_value='')
+    def test_launch_records_only_devices_it_booted(self, run, executable):
+        ledger = Path(os.environ['HERM_SIMULATOR_ENV']) / 'owned-devices.json'
+        ledger.unlink(missing_ok=True)
+        p.launch_ios(dict(id='running', running=True))
+        self.assertFalse(ledger.exists())
+        p.launch_ios(dict(id='uuid', running=False))
+        p.launch_ios(dict(id='uuid', running=False))
+        self.assertEqual(json.loads(ledger.read_text()), [dict(platform='ios', key='uuid')])
 
     @patch.object(p.subprocess, 'run')
     def test_commands_are_argument_vectors_with_timeout_and_no_shell(self, run):

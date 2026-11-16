@@ -284,6 +284,9 @@ def main():
     try:
         platform, device = sys.argv[1:3]
         import devices as device_manager
+        if len(sys.argv) > 3 and sys.argv[3] == 'shutdown':
+            device_manager.shutdown_owned(platform)
+            return
         if len(sys.argv) > 3 and sys.argv[3] == 'boot':
             emit('J', dict(booted=device_manager.boot(platform, device)))
             return

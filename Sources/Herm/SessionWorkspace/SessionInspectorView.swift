@@ -660,6 +660,10 @@ struct SessionInspector: View {
         if section != .diff { recentClosed.append(section.rawValue) }
         if section == .diff { filePreview.attachmentDiff = nil }
         if section == .terminal { TerminalWorkspaceStore.shared.closeWorkspace(key: baseTerminalKey) }
+        if section == .iosSimulator || section == .androidEmulator {
+            SessionSimulatorView.close(
+                section == .iosSimulator ? .ios : .android, sessionKey: WorkspaceIdentity.session(model))
+        }
         if section == .browser {
             browserWorkspace?.suspend()
             setBrowserOpenHere(false)

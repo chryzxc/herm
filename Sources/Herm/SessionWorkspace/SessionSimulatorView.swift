@@ -43,6 +43,17 @@ struct SessionSimulatorView: View {
         idleStops.removeValue(forKey: platform)?.cancel()
     }
 
+    /// Closing the tab ends the device too, unless another chat now holds it.
+    static func close(_ platform: SessionSimulatorPlatform, sessionKey: String) {
+        if let held = retained[platform] {
+            guard held.key == sessionKey else { return }
+            cancelIdleStop(platform)
+            held.capture.stop()
+            retained.removeValue(forKey: platform)
+        }
+        HermesSimulatorBridge.shutdownOwned(platform.rawValue)
+    }
+
     private static func retainedCapture(_ platform: SessionSimulatorPlatform, _ key: String) -> SessionSimulatorCapture
     {
         cancelIdleStop(platform)
