@@ -804,7 +804,8 @@ struct NativeMarkdownPalette {
     let bodyWeight: NSFont.Weight
     var rendersBotMentions = true
     func fontSize(_ compactSize: CGFloat) -> CGFloat {
-        DockWorkspaceScale.points(compactSize, scale: bodySize / NativeMarkdownAttributedTextBuilder.bodySize)
+        let scale = bodySize / NativeMarkdownAttributedTextBuilder.bodySize
+        return scale == 1 ? compactSize : (compactSize * scale).rounded()
     }
     init(bodySize: CGFloat = DockTypography.size(.conversation), bodyWeight: NSFont.Weight = .regular) {
         self.bodySize = bodySize

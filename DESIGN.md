@@ -238,8 +238,8 @@ hierarchy. `dockFont` and native Markdown resolve that value exactly once.
 Never magnify the workspace with a render transform or scaled AppKit bounds:
 drawing, pointer events, and text selection must share native coordinates.
 Display resolution and pixel alignment remain system-owned.
-Compact uses 96% native sizing and 80% density-aware spacing, prioritizing
-readability while reducing insets; existing saved Compact selections are retained.
+Compact uses the same native sizing as Default and 80% density-aware spacing,
+prioritizing readability while reducing insets; existing saved Compact selections are retained.
 
 Session and group-chat list titles use scaled 13pt text, previews use the 12pt
 body role, and timestamps use 11pt metadata. Inline session renaming matches
@@ -4357,7 +4357,7 @@ role. Bots filters use shared compact secondary actions and put search above fil
 at narrow widths. Artifact origin is quiet metadata, not a success-colored badge;
 artifact icon geometry follows the active skin.
 
-Density offers Default and Compact, stored as the workspace scale (1.1 / 0.9). Text, icons, icon buttons, button heights, and bot avatars read it through `DockWorkspaceScale.points`; margins and padding use `.dockPadding`, which keeps Default unchanged and tightens Compact to 0.8×. Use `.dockPadding` instead of `.padding` for all view insets. Stack spacing and fixed frame sizes do not change with density yet.
+Density offers Default and Compact, stored as the workspace selection (1.1 / 0.96). Text, icons, icon buttons, button heights, and bot avatars retain Default native sizing through `DockWorkspaceScale.points`; margins and padding use `.dockPadding`, which keeps Default unchanged and tightens Compact to 0.8×. Use `.dockPadding` instead of `.padding` for view insets. Stack spacing and fixed frame sizes do not change with density yet.
 
 ## Engineering rules
 

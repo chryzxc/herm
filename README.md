@@ -1528,7 +1528,7 @@ HTML artwork with explicitly authored styles may override defaults; theme variab
 remain the supported way to match Herm. Switching skins reloads an open HTML preview
 and resets its interactive inputs.
 
-Settings → Density offers Default and Compact. Compact tightens supported margins and padding and slightly reduces text, icons, avatars, and controls across workspace and floating presentations. Previously saved Small scales open as Compact; Large and Larger open as Default.
+Settings → Density offers Default and Compact. Compact tightens density-aware margins and padding across workspace and floating presentations without reducing text size. Previously saved Small scales open as Compact; Large and Larger open as Default.
 
 Expand/collapse keeps the current workspace mounted: chat-list and inspector
 switches, shared list/detail layouts, and shared disclosure sections preserve

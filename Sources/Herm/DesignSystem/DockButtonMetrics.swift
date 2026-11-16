@@ -36,8 +36,12 @@ private struct DockButtonMetrics: ViewModifier {
     func body(content: Content) -> some View {
         content
             .dockFont(.control)
-            .padding(.horizontal, DockWorkspaceScale.points(size.horizontalPadding, scale: scale))
-            .padding(.vertical, DockWorkspaceScale.points(4, scale: scale))
+            .padding(
+                .horizontal,
+                DockWorkspaceScale.spacing(
+                    DockWorkspaceScale.points(size.horizontalPadding, scale: scale), scale: scale)
+            )
+            .padding(.vertical, DockWorkspaceScale.spacing(DockWorkspaceScale.points(4, scale: scale), scale: scale))
             .frame(minHeight: DockWorkspaceScale.points(size.height, scale: scale))
     }
 }
