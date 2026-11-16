@@ -23,11 +23,34 @@ struct SplitHitTestingRegressionTests {
         let target = fixture.pane(pane)
         let sibling = fixture.pane(pane == .leading ? .trailing : .leading)
         #expect(target.bounds.width > 2, "fixture must give the pane a real frame")
-        let point = target.convert(target.probePoint(at: edge), to: fixture.parent)
-        let hit = fixture.split.hitTest(point)
-        #expect(hit === target)
-        #expect(target.calls == 1)
-        #expect(sibling.calls == 0)
+        let plain = NSSplitView(frame: fixture.split.frame)
+        plain.isVertical = true
+        plain.dividerStyle = .thin
+        plain.addArrangedSubview(NSView())
+        plain.addArrangedSubview(NSView())
+        fixture.parent.addSubview(plain)
+        plain.adjustSubviews()
+        plain.setPosition(400, ofDividerAt: 0)
+        plain.layoutSubtreeIfNeeded()
+        #expect(plain.arrangedSubviews[0].frame == fixture.leading.frame)
+        #expect(plain.arrangedSubviews[1].frame == fixture.trailing.frame)
+
+        for localPoint in [target.probePoint(at: edge), NSPoint(x: target.bounds.midX, y: target.bounds.midY)] {
+            target.calls = 0
+            sibling.calls = 0
+            let point = target.convert(localPoint, to: fixture.parent)
+            let reference = plain.hitTest(point)
+            let hit = fixture.split.hitTest(point)
+            if reference === plain {
+                #expect(hit === fixture.split)
+            } else {
+                let expectedPane = plain.arrangedSubviews[pane == .leading ? 0 : 1]
+                #expect(reference === expectedPane)
+                #expect(hit === target)
+                #expect(target.calls == 1)
+                #expect(sibling.calls == 0)
+            }
+        }
     }
 
     @Test(arguments: Pane.allCases)

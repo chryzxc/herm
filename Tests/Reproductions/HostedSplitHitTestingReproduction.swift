@@ -112,13 +112,19 @@ struct HostedSplitHitTestingReproduction {
                 && abs(plainSecond.frame.minX - right) < 0.01,
             "native and production divider geometry match"
         )
-        for (x, name) in [(left - 0.25, "leading edge"), ((left + right) / 2, "gap"), (right + 0.25, "trailing edge")] {
+        for (x, name) in [
+            (left - 1, "leading test point"), (left - 0.25, "leading edge"),
+            ((left + right) / 2, "gap"), (right + 0.25, "trailing edge"), (right + 1, "trailing test point"),
+        ] {
             let point = outer.convert(NSPoint(x: x, y: outer.bounds.midY), to: parent)
             let actual = outer.hitTest(point)
             let reference = plain.hitTest(point)
             let actualKind = actual === outer ? "divider" : actual == nil ? "nil" : "pane"
             let referenceKind = reference === plain ? "divider" : reference == nil ? "nil" : "pane"
-            check(actualKind == referenceKind, "\(name): production=\(actualKind) native=\(referenceKind)")
+            check(
+                actualKind == "divider" && referenceKind == "divider",
+                "\(name): production=\(actualKind) native=\(referenceKind)"
+            )
         }
         let extended = ExtendedDividerDelegate()
         outer.delegate = extended
