@@ -9,7 +9,7 @@ extension DockModel {
     /// Inputs read by the workspace shell; chat activity is observed by its own leaves.
     func makeWorkspacePresentationChanges() -> AnyPublisher<Void, Never> {
         Publishers.MergeMany(workspacePresentationSources().map(\.publisher))
-            .receive(on: RunLoop.main).eraseToAnyPublisher()
+            .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main).eraseToAnyPublisher()
     }
 
     /// Named so the performance recorder can say which input redrew the workspace.
@@ -77,7 +77,7 @@ extension DockModel {
             Self.change($status), Self.change($sessionID), Self.change($sessionStorageID),
             Self.change($profileScopeID), Self.change($sessionProfileID), Self.change($currentSessionTitle),
             Self.change($sessionWorkspace)
-        ).receive(on: RunLoop.main).eraseToAnyPublisher()
+        ).debounce(for: .milliseconds(1), scheduler: DispatchQueue.main).eraseToAnyPublisher()
     }
 
     private static func change<Value>(_ publisher: Published<Value>.Publisher) -> AnyPublisher<Void, Never> {

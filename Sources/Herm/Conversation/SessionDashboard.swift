@@ -29,7 +29,8 @@ struct SessionDashboard<Conversation: View>: View {
         self.onShowList = onShowList
         self.onSelectProfile = onSelectProfile
         self.conversation = conversation
-        _sidebar = StateObject(wrappedValue: SessionNavSidebarModel(model: model, control: control, store: store))
+        _sidebar = StateObject(
+            wrappedValue: SessionNavSidebarModel.shared(model: model, control: control, store: store))
     }
 
     private var snapshot: SessionNavSidebarSnapshot { sidebar.snapshot }

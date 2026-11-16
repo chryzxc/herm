@@ -471,7 +471,7 @@ final class SessionPaneTabStatusModel: ObservableObject {
     /// Binds once; the window shell calls it on appear.
     func bind(model: DockModel, control: ControlCenterModel, store: WorkspaceStore, panes: SessionPaneStore) {
         guard sidebar == nil else { return }
-        let sidebar = SessionNavSidebarModel(model: model, control: control, store: store)
+        let sidebar = SessionNavSidebarModel.shared(model: model, control: control, store: store)
         self.sidebar = sidebar
         let seenStore = SidebarSessionSeenStore.shared
         cancellable = Publishers.Merge3(
