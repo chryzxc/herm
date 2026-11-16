@@ -6,6 +6,28 @@ import Testing
 
 @MainActor
 struct DockWorkspaceScaleTests {
+    @Test func densitySelectionKeepsWorkspaceFontSizesInvariant() throws {
+        let suite = "DensityFontInvariant.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let roles: [DockTypography.Role] = [
+            .pageTitle, .sectionLabel, .rowTitle, .body, .control, .metadata,
+            .machineMetadata, .compactStatus, .metric, .navigation, .conversation, .code,
+        ]
+        var observedSizes: [[CGFloat]] = []
+        for preference in [DockWorkspaceScale.defaultTextSize, DockWorkspaceScale.compactTextSize] {
+            defaults.set(preference, forKey: DockWorkspaceScale.preferenceKey)
+            let host = NSHostingView(
+                rootView: DockWindowWorkspace { Marker(label: "Density font probe").frame(width: 1, height: 1) }
+                    .defaultAppStorage(defaults))
+            host.frame = NSRect(x: 0, y: 0, width: 10, height: 10)
+            host.layoutSubtreeIfNeeded()
+            let marker = try #require(descendants(host).compactMap { $0 as? MarkerView }.first)
+            observedSizes.append(roles.map { DockTypography.size($0, scale: marker.workspaceScale) })
+        }
+        #expect(observedSizes[0] == observedSizes[1])
+    }
+
     @Test func savedSizesResolveToDefaultOrCompact() {
         for value in [0.9, 0.96, 1.0] { #expect(DockWorkspaceScale.supportedTextSize(value) == 0.96) }
         for value in [1.1, 1.2, 1.3] { #expect(DockWorkspaceScale.supportedTextSize(value) == 1.1) }
@@ -13,8 +35,8 @@ struct DockWorkspaceScaleTests {
 
     @Test func compactKeepsBodyTextReadableWhileTighteningLayout() {
         let scale = CGFloat(DockWorkspaceScale.compactTextSize)
-        #expect(DockTypography.size(.body, scale: scale) == 12)
-        #expect(DockTypography.size(.conversation, scale: scale) == 13)
+        #expect(DockTypography.size(.body, scale: scale) == DockTypography.size(.body, scale: 1.1))
+        #expect(DockTypography.size(.conversation, scale: scale) == DockTypography.size(.conversation, scale: 1.1))
         #expect(DockWorkspaceScale.spacing(20, scale: scale) == 16)
     }
 
@@ -44,6 +66,9 @@ struct DockWorkspaceScaleTests {
         #expect(DockWorkspaceScale.points(12, scale: DockWorkspaceScale.window) == 12)
         #expect(DockWorkspaceScale.points(14, scale: DockWorkspaceScale.window) == 14)
         #expect(DockWorkspaceScale.points(28, scale: DockWorkspaceScale.window) == 28)
+        #expect(DockWorkspaceScale.points(11.5, scale: 0.96) == DockWorkspaceScale.points(11.5, scale: 1.1))
+        let palette = NativeMarkdownPalette(bodySize: NativeMarkdownAttributedTextBuilder.bodySize * 0.96)
+        #expect(palette.fontSize(20) == 19)
     }
 
     @Test func visibleSwiftUIButtonsReceiveClicksAcrossDisplaysAndResizes() async throws {

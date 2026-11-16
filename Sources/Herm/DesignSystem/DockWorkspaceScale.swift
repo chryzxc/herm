@@ -5,7 +5,7 @@ enum DockWorkspaceScale {
     static let window: CGFloat = 1
     static let preferenceKey = "herm.textSize"
     static let defaultTextSize = 1.1
-    /// Density "Compact": smaller text and icons, plus tighter padding via `spacing`.
+    /// Density "Compact": tighter padding via `spacing` without shrinking content.
     static let compactTextSize = 0.96
     static let compactSpacing: CGFloat = 0.8
 
@@ -21,7 +21,8 @@ enum DockWorkspaceScale {
     }
 
     static func points(_ value: CGFloat, scale: CGFloat) -> CGFloat {
-        scale == 1 ? value : (value * scale).rounded()
+        let contentScale = scale == CGFloat(compactTextSize) ? CGFloat(defaultTextSize) : scale
+        return contentScale == 1 ? value : (value * contentScale).rounded()
     }
 }
 

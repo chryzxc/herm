@@ -275,7 +275,8 @@ struct ConversationMessageRow: View, Equatable {
                             if showsPinAction { actionButton(.pin, action: onPin, isAvailable: isPinAvailable) }
                         }
                     }
-                    .frame(minHeight: 20)
+                    // Reserve space for the taller unconfirmed status and its action.
+                    .frame(minHeight: 30)
                     .dockPadding(.horizontal, 4)
                     .dockPadding(.top, 2)
                 }
