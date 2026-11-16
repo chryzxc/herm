@@ -162,6 +162,7 @@ struct ConversationMessageRow: View, Equatable {
         lhs.message.id == rhs.message.id
             && lhs.changes == rhs.changes
             && lhs.message.contentRevision == rhs.message.contentRevision
+            && lhs.message.attachmentURLs == rhs.message.attachmentURLs
             && lhs.message.role == rhs.message.role
             && lhs.message.images.elementsEqual(rhs.message.images, by: { $0 === $1 })
             && lhs.message.timestamp == rhs.message.timestamp
@@ -224,8 +225,15 @@ struct ConversationMessageRow: View, Equatable {
                     )
                     if !userText.isEmpty || !attachments.names.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            ForEach(Array(attachments.names.enumerated()), id: \.offset) { _, name in
-                                UserMessageAttachmentRow(name: name)
+                            DockChipFlow(spacing: 6) {
+                                ForEach(Array(attachments.files.enumerated()), id: \.offset) { index, file in
+                                    // attachmentURLs holds one URL per pending label, in label order.
+                                    let pendingIndex = attachments.files[..<index].filter(\.isPendingLabel).count
+                                    let pendingURL =
+                                        file.isPendingLabel && pendingIndex < message.attachmentURLs.count
+                                        ? message.attachmentURLs[pendingIndex] : nil
+                                    UserMessageAttachmentRow(name: file.name, url: file.url ?? pendingURL)
+                                }
                             }
                             if let quote = replySplit?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }
                             if !userText.isEmpty {

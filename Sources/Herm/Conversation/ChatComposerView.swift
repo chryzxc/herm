@@ -1280,6 +1280,18 @@ private struct PinnedWorkStrip: View {
     }
 }
 
+struct RunningProcessesPresentation {
+    let count: String
+    let preview: String?
+
+    init(_ processes: [ProcessSummary]) {
+        let running = processes.filter { $0.state == "running" }
+        count = running.isEmpty ? "Finished" : "\(running.count) running"
+        let output = running.last?.latestOutput
+        preview = output?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? output : nil
+    }
+}
+
 /// Hermes background terminal processes for the current session, with a stop button each.
 struct RunningProcessesStrip: View {
     @Environment(\.dockHostVisible) private var hostVisible
@@ -1316,39 +1328,35 @@ struct RunningProcessesStrip: View {
             }
     }
 
-    /// Hermes keeps a finished process listed for a while, so the count says which kind it is.
-    private var summary: String {
-        let running = projection.processes.filter { $0.state == "running" }.count
-        let count = running > 0 ? running : projection.processes.count
-        return "\(count) background process\(count == 1 ? "" : "es") \(running > 0 ? "running" : "finished")"
-    }
-
     @ViewBuilder private var content: some View {
         if !projection.processes.isEmpty && model.sessionID == projection.sessionID {
-            VStack(alignment: .leading, spacing: 4) {
-                Button {
-                    withAnimation(.dockEase(duration: 0.18)) { isExpanded.toggle() }
-                } label: {
-                    HStack(spacing: 6) {
-                        DockIcon(.terminal, size: 12, color: Color.dockSecondaryText)
-                        Text(summary)
-                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                        DockIcon(isExpanded ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
-                        Spacer(minLength: 0)
+            let presentation = RunningProcessesPresentation(projection.processes)
+            DisclosureGroup(isExpanded: $isExpanded) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        processRows
                     }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.dockHover)
-                if isExpanded {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 4) {
-                            processRows
+                .frame(maxHeight: 120)
+                .fixedSize(horizontal: false, vertical: true)
+            } label: {
+                HStack(alignment: .top, spacing: 8) {
+                    DockIcon(.terminal, size: 14, color: .dockSecondaryText)
+                        .frame(width: 14, height: 14).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Background processes").dockFont(.body, weight: .semibold)
+                            .foregroundStyle(Color.dockPrimaryText)
+                        if !isExpanded, let preview = presentation.preview {
+                            Text(preview).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                                .lineLimit(1).truncationMode(.tail).help(preview)
                         }
                     }
-                    .frame(maxHeight: 120)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(presentation.count).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                        .fixedSize()
                 }
             }
+            .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top))
             .dockPadding(.horizontal, 12)
             .dockPadding(.vertical, 8)
             .confirmationDialog(
@@ -1369,29 +1377,48 @@ struct RunningProcessesStrip: View {
 
     @ViewBuilder private var processRows: some View {
         ForEach(projection.processes) { process in
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(process.name).lineLimit(1).truncationMode(.middle)
-                        .dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(
-                            Color.dockPrimaryText
-                        )
-                        .help(process.detail ?? process.name)
-                    if let latest = process.latestOutput {
-                        Text(latest).lineLimit(1).truncationMode(.tail)
-                            .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                            .help(latest)
+            HStack(alignment: .top, spacing: 8) {
+                Group {
+                    if process.state == "running" {
+                        DockStatusDot(tone: .working, size: 7, pulses: true)
+                    } else {
+                        DockIcon(
+                            process.state == "killed" ? .minusCircle : .checkCircle, size: 14,
+                            color: .dockMetadataText)
+                    }
+                }.frame(width: 14, height: 14).accessibilityHidden(true)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 8) {
+                        processText(process).frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
+                        stopButton(process)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        processText(process)
+                        stopButton(process)
                     }
                 }
-                Spacer(minLength: 0)
-                if process.state == "running" {
-                    Button("Stop") { pending = projection.confirmation(for: process) }
-                        .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
-                } else {
-                    Text(process.state.capitalized).dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                }
             }
-            .dockPadding(.leading, 18)
+        }
+    }
+
+    private func processText(_ process: ProcessSummary) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(process.name).lineLimit(1).truncationMode(.middle)
+                .dockFont(.metadata, weight: .regular, design: .monospaced).foregroundStyle(Color.dockPrimaryText)
+                .help(process.detail ?? process.name)
+            Text(process.state.capitalized).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+            if let latest = process.latestOutput {
+                Text(latest).lineLimit(1).truncationMode(.tail)
+                    .dockFont(.metadata).foregroundStyle(Color.dockMetadataText).help(latest)
+            }
+        }
+    }
+
+    @ViewBuilder private func stopButton(_ process: ProcessSummary) -> some View {
+        if process.state == "running" {
+            Button("Stop") { pending = projection.confirmation(for: process) }
+                .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
+                .accessibilityLabel("Stop \(process.name)")
         }
     }
 }

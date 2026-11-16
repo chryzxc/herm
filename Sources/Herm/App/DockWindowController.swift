@@ -45,6 +45,12 @@ final class DockWindowController: NSObject, NSWindowDelegate {
         presentation.settingsRequest &+= 1
     }
 
+    func showKanban(_ task: KanbanTaskSummary) {
+        controlCenter.revealKanbanTask(task)
+        open()
+        presentation.kanbanRequest &+= 1
+    }
+
     /// Shortcut: hide when frontmost, otherwise bring it on top of other apps.
     func toggle() {
         if let window, window.isKeyWindow, NSApp.isActive {

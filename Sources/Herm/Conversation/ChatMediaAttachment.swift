@@ -49,15 +49,23 @@ enum ChatMediaSegment: Equatable {
 
 /// Separates Herm's pending labels and Hermes' persisted file references from message text.
 enum UserMessageAttachments {
-    static func split(_ text: String) -> (text: String, names: [String]) {
-        var names: [String] = []
+    struct File {
+        let name: String
+        let url: URL?
+        let isPendingLabel: Bool
+    }
+
+    static func split(_ text: String) -> (text: String, names: [String], files: [File]) {
+        var files: [File] = []
         var lines: [String] = []
         for line in text.components(separatedBy: .newlines) {
             let value = line.trimmingCharacters(in: .whitespaces)
             var path: String?
+            var persisted = false
             if value.hasPrefix("[PDF: ") || value.hasPrefix("[File: "), value.hasSuffix("]") {
                 path = String(value.dropFirst(value.hasPrefix("[PDF: ") ? 6 : 7).dropLast())
             } else if value.hasPrefix("@file:") {
+                persisted = true
                 var reference = String(value.dropFirst(6))
                 if reference.count >= 2, let first = reference.first, first == reference.last,
                     "`\"'".contains(first)
@@ -71,13 +79,14 @@ enum UserMessageAttachments {
                 path = reference
             }
             if let path, !path.isEmpty {
-                names.append((path as NSString).lastPathComponent)
+                let url = persisted && path.hasPrefix("/") ? URL(fileURLWithPath: path) : nil
+                files.append(File(name: (path as NSString).lastPathComponent, url: url, isPendingLabel: !persisted))
             } else {
                 lines.append(line)
             }
         }
-        if !names.isEmpty { lines.removeAll { $0 == "[document]" || $0 == "[attachments]" } }
-        return (lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), names)
+        if !files.isEmpty { lines.removeAll { $0 == "[document]" || $0 == "[attachments]" } }
+        return (lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), files.map(\.name), files)
     }
 }
 

@@ -616,6 +616,32 @@ Verification: the focused run passed 15 tests in five suites (`SessionStartupTes
 passed. Existing unrelated compiler warnings remain. Release profiling, sampler
 process integration tests, and physical battery/charger comparisons were not run.
 
+## Root publication cascade — 16 November 2026
+
+Captures from 15 November put the worst frames during agent file edits. In those
+frames `developerWorkflow→root` bursts lined up with sidebar refreshes of 12–29 ms.
+`DockPopover` held `DeveloperWorkflowModel` as a `@StateObject`, so each
+filesystem-driven publication (notices, baseline status, watch state, file counts)
+re-rendered the root. The root then updated three nested split-pane hosting views.
+
+- The root now observes `DeveloperWorkflowModel.rootPresentationChanges`. This
+  scoped publisher emits only when the repository path, Git status, worktrees or
+  worktree availability change. Child views keep their own `@ObservedObject`.
+- Watch-state and baseline-status writes are skipped when the value is unchanged.
+  A notice insert is now a single assignment rather than three publications.
+- The rail coalesces activity-only refreshes to 4 Hz on every power source, not
+  only in Low Power Mode. With several running sessions, each one's ticks used to
+  trigger a full rail rebuild. Selection changes still refresh at once and cancel
+  any pending coalesced refresh.
+- Bot activity pulses use the shared `dockMotion` clock instead of a
+  per-pill `phaseAnimator`.
+- Split-pane `DockWindowHostingView.layout()` records `hostLayout` work. The next
+  capture can confirm or rule out the nested-host cascade before panes are
+  restructured.
+
+Not measured: paired before/after captures on battery and on charger. Follow the
+comparison method in the previous section.
+
 ## Markdown scroll layout invalidation — 16 November 2026
 
 Scrolling a chat stays rough after the sidebar and publication coalescing work,

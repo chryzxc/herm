@@ -124,7 +124,10 @@ struct DockPopover: View {
     @StateObject var messageActionState = ConversationMessageActionState()
     @StateObject var workspaceStore = WorkspaceStore()
     @StateObject var agentUpdateService = HermesUpdateService.shared
-    @StateObject var developerWorkflow = DeveloperWorkflowModel.shared
+    /// Not observed here: panes that show workflow state observe it themselves,
+    /// and the root redraws only on `rootPresentationChanges`.
+    var developerWorkflow: DeveloperWorkflowModel { .shared }
+    @State var workflowPresentationRevision = 0
     @StateObject var pullRequestCenter = PullRequestCenterModel(details: .shared)
     @StateObject var issueCenter = IssueCenterModel()
     @StateObject var githubRepositories = GitHubRepositoriesModel()
@@ -134,6 +137,8 @@ struct DockPopover: View {
     @StateObject var repositoryPreferences = CommandCenterPreferencesStore.shared
     @ObservedObject var dockThemeStore = DockThemeStore.shared
     @StateObject var sessionNavNavigation = SessionNavigationState()
+    @State var issueChatInsetSessionID: String?
+    @State var pendingIssueChatInsets = false
     @State var sessionWorkspaceMode: SessionWorkspaceMode = .chat
     @State var suppressNextVoiceResponse = false
     /// Full voice mode: the voice stage covers the navigation and inspector.
@@ -295,6 +300,7 @@ struct DockPopover: View {
         let _ = HermPerformanceRecorder.countBody("DockPopover")
         let _ = modelPresentationRevision
         let _ = controlPresentationRevision
+        let _ = workflowPresentationRevision
         let _ = workspaceLayoutRevision
         // Bound the root's generic layout before observer modifiers copy its sheet state.
         return observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(AnyView(rootPopoverContent)))))
@@ -303,6 +309,7 @@ struct DockPopover: View {
                 if sessionWorkspaceMode == .voice { modelPresentationRevision &+= 1 }
             }
             .onReceive(controlCenter.workspacePresentationChanges) { _ in controlPresentationRevision &+= 1 }
+            .onReceive(developerWorkflow.rootPresentationChanges) { _ in workflowPresentationRevision &+= 1 }
             .environment(\.dockWorkspaceScale, CGFloat(DockWorkspaceScale.supportedTextSize(textSize)))
             .background(
                 HermCommandRegistration(

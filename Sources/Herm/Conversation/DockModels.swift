@@ -468,6 +468,7 @@ struct ChatMessage: Identifiable, Equatable {
     let role: Role
     let text: String
     let images: [NSImage]
+    let attachmentURLs: [URL]
     let timestamp: Date
     let modelName: String?
     let responseDuration: TimeInterval?
@@ -514,12 +515,13 @@ struct ChatMessage: Identifiable, Equatable {
         tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false,
         botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil,
         activity: [ActiveToolCall] = [], kanbanNotice: KanbanNotice? = nil, systemEvent: SystemEvent? = nil,
-        isBotHandoffReply: Bool = false, botMentions: [ComposerBotMention] = []
+        isBotHandoffReply: Bool = false, botMentions: [ComposerBotMention] = [], attachmentURLs: [URL] = []
     ) {
         self.id = id
         self.role = role
         self.text = text
         self.images = images.isEmpty ? image.map { [$0] } ?? [] : images
+        self.attachmentURLs = attachmentURLs
         self.timestamp = timestamp
         self.modelName = modelName
         self.responseDuration = responseDuration
@@ -570,7 +572,9 @@ struct ChatMessage: Identifiable, Equatable {
             activity: activity,
             kanbanNotice: kanbanNotice,
             systemEvent: systemEvent,
-            botMentions: botMentions
+            isBotHandoffReply: isBotHandoffReply,
+            botMentions: botMentions,
+            attachmentURLs: attachmentURLs
         )
         copy.reactions = reactions
         return copy

@@ -15,6 +15,13 @@ struct ChatMediaSegmentTests {
         #expect(ordinary.names.isEmpty)
         #expect(ordinary.text == "Please read @file:notes.txt later")
         #expect(UserMessageAttachments.split("[document]\n\n@file:report.pdf").text.isEmpty)
+        let paths = UserMessageAttachments.split("[File: report.pdf]\n@file:`/tmp/report.pdf`")
+        #expect(paths.files.map(\.url) == [nil, URL(fileURLWithPath: "/tmp/report.pdf")])
+        #expect(UserMessageAttachments.split("@file:relative/report.pdf").files.first?.url == nil)
+        let local = URL(fileURLWithPath: "/tmp/pending.pdf")
+        let pendingMessage = ChatMessage(role: .user, text: "[PDF: pending.pdf]", attachmentURLs: [local])
+        #expect(pendingMessage.attachmentURLs == [local])
+        #expect(pendingMessage.attachingImages([]).attachmentURLs == [local])
     }
 
     @Test @MainActor func restoredFileReferenceMatchesPendingAttachment() {

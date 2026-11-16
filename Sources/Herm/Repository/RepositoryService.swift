@@ -126,6 +126,12 @@ enum RepositoryBlameResult: Equatable {
     case unavailable(String)
 }
 
+enum RepositoryBlameSource: Equatable {
+    case workingTree
+    case index
+    case revision(String)
+}
+
 /// A bounded, UTF-8 text file projection for the Dock's inline code workspace.
 /// The repository remains the canonical owner; this is only an ephemeral editor
 /// draft rendered inside the menu-bar popover.
@@ -835,14 +841,39 @@ enum RepositoryService {
         }.value
     }
 
-    static func blame(path repositoryPath: String, filePath: String) async -> RepositoryBlameResult {
+    static func blame(
+        path repositoryPath: String, filePath: String, source: RepositoryBlameSource = .workingTree
+    ) async -> RepositoryBlameResult {
         guard isSafeRelativePath(filePath) else {
             return .unavailable("Blame is unavailable for this file path.")
         }
-
+        var arguments = ["blame", "--line-porcelain"]
+        var temporary: URL?
+        defer { if let temporary { try? FileManager.default.removeItem(at: temporary) } }
+        if source == .index {
+            let contents = await runGit(path: repositoryPath, arguments: ["show", ":0:\(filePath)"], trimOutput: false)
+            guard contents.exitCode == 0, contents.output.utf8.count <= 2 * 1024 * 1024 else {
+                return .unavailable("Index blame is unavailable for this file.")
+            }
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            guard
+                FileManager.default.createFile(
+                    atPath: url.path, contents: Data(contents.output.utf8), attributes: [.posixPermissions: 0o600]
+                )
+            else { return .unavailable("Index blame could not be prepared.") }
+            temporary = url
+            arguments += ["--contents", url.path]
+        }
+        if case .revision(let revision) = source {
+            guard [40, 64].contains(revision.utf8.count),
+                revision.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })
+            else { return .unavailable("Blame is unavailable for this revision.") }
+            arguments.append(revision)
+        }
+        arguments += ["--", filePath]
         let result = await runGit(
             path: repositoryPath,
-            arguments: ["blame", "--line-porcelain", "--", filePath],
+            arguments: arguments,
             trimOutput: false
         )
         guard result.exitCode == 0 else {

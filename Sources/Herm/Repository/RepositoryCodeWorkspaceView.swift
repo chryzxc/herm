@@ -164,6 +164,7 @@ struct RepositoryCodeWorkspaceView: View {
             ) {
                 showsBlame.toggle()
             }
+            .accessibilityValue(showsBlame ? "On" : "Off")
             toolbarButton(.textAlignLeft, help: wrapsLines ? "Turn off word wrap" : "Wrap long lines", isOn: wrapsLines)
             {
                 wrapsLines.toggle()
@@ -212,6 +213,7 @@ struct RepositoryCodeWorkspaceView: View {
                 Button("Open on GitHub") { ExternalOpen.open(githubFileURL(githubRemote)) }
             }
             Divider()
+            Toggle("Git blame", isOn: $showsBlame)
             Button("Reload Blame") { Task { await loadBlame() } }
             if hasUnsavedChanges {
                 Button("Revert Unsaved Changes", role: .destructive) { draft.text = draft.savedContents }

@@ -52,6 +52,9 @@ struct WorkflowUIRenderTests {
                 }.padding(20)
                 try await capture(
                     settings, root: root, name: "settings-\(raw)-\(Int(width))", width: width, height: 390)
+                try await capture(
+                    HermesCompatibilitySettings(installedVersion: "fixture").padding(20),
+                    root: root, name: "compatibility-\(raw)-\(Int(width))", width: width, height: 300)
             }
             try await capture(
                 SavedPromptLibrary(model: model), root: root, name: "saved-prompts-\(raw)", width: 560, height: 440)

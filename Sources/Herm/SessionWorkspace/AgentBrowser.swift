@@ -127,23 +127,23 @@ final class AgentBrowser: ObservableObject {
     var inputLocked = false {
         didSet {
             guard inputLocked != oldValue else { return }
-            if inputLocked { onPageEvent?(.cursor("default")) }
+            if inputLocked { pageEventUpdates.send(.cursor("default")) }
             applyPageInput()
         }
     }
     /// Where Hermes' pointer or focus landed, in CSS pixels; nil hides the agent cursor.
     /// Like frames, this bypasses SwiftUI.
-    var onPointer: ((AgentPointer?) -> Void)?
+    let pointerUpdates = PassthroughSubject<AgentPointer?, Never>()
     private(set) var lastPointer: AgentPointer?
 
     /// Keep the last observed position between tool calls, without replaying a click on remount.
     func updatePointer(_ pointer: AgentPointer?) {
         if pointer == nil { pointerTracker?.clearPointer() }
         lastPointer = pointer.map { AgentPointer(kind: .move, point: $0.point) }
-        onPointer?(pointer)
+        pointerUpdates.send(pointer)
     }
     /// What the page reports back about your own input: dropdowns to draw, cursor, focused field.
-    var onPageEvent: ((AgentPageEvent) -> Void)?
+    let pageEventUpdates = PassthroughSubject<AgentPageEvent, Never>()
     /// Where Hermes' browser downloads land; set explicitly rather than left to Chrome.
     nonisolated static var downloadsFolder: URL {
         (FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
@@ -189,9 +189,13 @@ final class AgentBrowser: ObservableObject {
         inputLocked = callID != nil && !userHasControl
     }
     /// Frames bypass SwiftUI: the canvas draws them directly at screencast rate.
-    var onFrame: ((NSImage, CGSize) -> Void)?
+    let frameUpdates = PassthroughSubject<(image: NSImage, css: CGSize), Never>()
     /// A remounted canvas paints this at once; a static page sends no new screencast frame.
     private(set) var lastFrame: (image: NSImage, css: CGSize)?
+    func receiveFrame(_ image: NSImage, css: CGSize) {
+        lastFrame = (image, css)
+        frameUpdates.send((image: image, css: css))
+    }
     /// Canvases on screen. The screencast only runs while someone is watching, so a
     /// hidden Browser tab costs nothing; Hermes' own CDP use is unaffected.
     var viewers = 0 { didSet { if (viewers > 0) != (oldValue > 0) { scheduleViewport() } } }
@@ -711,8 +715,7 @@ final class AgentBrowser: ObservableObject {
             let css = CGSize(
                 width: meta?["deviceWidth"] as? Double ?? image.size.width,
                 height: meta?["deviceHeight"] as? Double ?? image.size.height)
-            lastFrame = (image, css)
-            onFrame?(image, css)
+            receiveFrame(image, css: css)
         case "Page.frameNavigated":
             guard let frame = params["frame"] as? [String: Any], frame["parentId"] == nil else { return }
             mainFrameID = frame["id"] as? String
@@ -752,7 +755,7 @@ final class AgentBrowser: ObservableObject {
             else { return }
             switch params["name"] as? String {
             case "hermAnnotate": receive(payload)
-            case "hermPage": if !inputLocked, let event = AgentPageEvent(json: payload) { onPageEvent?(event) }
+            case "hermPage": if !inputLocked, let event = AgentPageEvent(json: payload) { pageEventUpdates.send(event) }
             default: break
             }
         case "Runtime.consoleAPICalled":
@@ -1307,18 +1310,24 @@ final class AgentBrowserCanvas: NSView {
                 oldValue?.viewers -= 1
                 browser?.viewers += 1
             }
-            oldValue?.onFrame = nil
-            oldValue?.onPointer = nil
-            oldValue?.onPageEvent = nil
+            subscriptions.removeAll()
             page.layer?.contents = nil
             if let frame = browser?.lastFrame { show(frame.image, css: frame.css) }
-            browser?.onFrame = { [weak self] image, css in self?.show(image, css: css) }
-            browser?.onPointer = { [weak self] pointer in self?.showPointer(pointer) }
+            browser?.frameUpdates.sink { [weak self] frame in
+                self?.show(frame.image, css: frame.css)
+            }.store(in: &subscriptions)
+            browser?.pointerUpdates.sink { [weak self] pointer in
+                self?.showPointer(pointer)
+            }.store(in: &subscriptions)
             showPointer(browser?.lastPointer)
-            browser?.onPageEvent = { [weak self] event in self?.receive(event) }
-            if window != nil { browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2) }
+            browser?.pageEventUpdates.sink { [weak self] event in
+                guard let self, self.isViewing else { return }
+                self.receive(event)
+            }.store(in: &subscriptions)
+            reportViewport()
         }
     }
+    private var subscriptions = Set<AnyCancellable>()
     private var pageCursor = NSCursor.arrow
     /// The focused field in CSS pixels, where input-method candidates appear.
     private var fieldRect: CGRect?
@@ -1564,15 +1573,24 @@ final class AgentBrowserCanvas: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2)
         updateViewing()
     }
 
     private func updateViewing() {
         let viewing = window != nil && surfaceVisible && !isHiddenOrHasHiddenAncestor
+        if viewing { reportViewport() }
         guard viewing != isViewing else { return }
         isViewing = viewing
         browser?.viewers += viewing ? 1 : -1
+        if viewing {
+            if let frame = browser?.lastFrame { show(frame.image, css: frame.css) }
+            showPointer(browser?.lastPointer)
+        }
+    }
+
+    private func reportViewport() {
+        guard window != nil, surfaceVisible, !isHiddenOrHasHiddenAncestor else { return }
+        browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2)
     }
 
     override func viewDidHide() {
@@ -1610,12 +1628,12 @@ final class AgentBrowserCanvas: NSView {
         super.setFrameSize(newSize)
         page.frame = pageRect
         positionCursor()
-        browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2)
+        reportViewport()
     }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        browser?.resize(to: bounds.size, scale: window?.backingScaleFactor ?? 2)
+        reportViewport()
     }
 
     private func cssPoint(_ event: NSEvent) -> CGPoint {
@@ -1858,6 +1876,10 @@ private struct AgentCanvasView: NSViewRepresentable {
     func updateNSView(_ nsView: AgentBrowserCanvas, context: Context) {
         nsView.surfaceVisible = hostVisible
         nsView.browser = browser
+    }
+    static func dismantleNSView(_ nsView: AgentBrowserCanvas, coordinator: ()) {
+        nsView.surfaceVisible = false
+        nsView.browser = nil
     }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: AgentBrowserCanvas, context: Context) -> CGSize? {
         CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)

@@ -1877,8 +1877,6 @@ extension View {
 
 /// The standard tab control for mutually exclusive scopes on every page.
 struct DockTabButton: View {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
     let isSelected: Bool
     var showsSelectionMark = false
@@ -1889,8 +1887,10 @@ struct DockTabButton: View {
     let action: () -> Void
 
     var body: some View {
-        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
-        Button(action: action) {
+        DockTabSegment(
+            isSelected: isSelected, showsSelectionMark: showsSelectionMark, selectionNamespace: selectionNamespace,
+            fillsWidth: fillsWidth, height: height, inset: showsSelectionMark ? 6 : 10, action: action
+        ) {
             HStack(spacing: 4) {
                 if showsSelectionMark && isSelected {
                     DockIcon(
@@ -1899,27 +1899,47 @@ struct DockTabButton: View {
                 }
                 Text(title)
             }
-            .dockFont(.metadata, weight: isSelected ? .medium : .regular)
-            .foregroundStyle(
-                isSelected
-                    ? (DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)
-                    : Color.dockSecondaryText
-            )
-            .dockPadding(.horizontal, showsSelectionMark ? 6 : 10)
-            .frame(maxWidth: fillsWidth ? .infinity : nil)
-            .frame(height: height)
-            .dockSelectionBackground(
-                shape, active: isSelected,
-                fill: DockThemeStyle.current.material == .glass
-                    ? (colorScheme == .light ? Color.white.opacity(0.9) : Color.dockPrimaryText.opacity(0.14))
-                    : Color.dockSurface4,
-                namespace: selectionNamespace
-            )
-            .overlay(
-                shape.stroke(
-                    isSelected && DockThemeStyle.current.material != .glass
-                        && (showsSelectionMark || DockLayout.outline > 1) ? Color.dockBorderStrong : .clear,
-                    lineWidth: DockLayout.outline))
+        }
+    }
+}
+
+struct DockTabSegment<Label: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let isSelected: Bool
+    var showsSelectionMark = false
+    var selectionNamespace: Namespace.ID? = nil
+    var fillsWidth = false
+    var height: CGFloat = 30
+    var inset: CGFloat = 10
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        let shape = DockThemeShape(cornerRadius: max(0, DockLayout.controlRadius - 1))
+        Button(action: action) {
+            label()
+                .dockFont(.metadata, weight: isSelected ? .medium : .regular)
+                .foregroundStyle(
+                    isSelected
+                        ? (DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)
+                        : Color.dockSecondaryText
+                )
+                .dockPadding(.horizontal, inset)
+                .frame(maxWidth: fillsWidth ? .infinity : nil)
+                .frame(height: height)
+                .dockSelectionBackground(
+                    shape, active: isSelected,
+                    fill: DockThemeStyle.current.material == .glass
+                        ? (colorScheme == .light ? Color.white.opacity(0.9) : Color.dockPrimaryText.opacity(0.14))
+                        : Color.dockSurface4,
+                    namespace: selectionNamespace
+                )
+                .overlay(
+                    shape.stroke(
+                        isSelected && DockThemeStyle.current.material != .glass
+                            && (showsSelectionMark || DockLayout.outline > 1) ? Color.dockBorderStrong : .clear,
+                        lineWidth: DockLayout.outline))
         }
         .buttonStyle(.dockHover)
         .contentShape(shape)
@@ -1977,7 +1997,7 @@ extension View {
     func dockTabTrack() -> some View {
         dockPadding(2)
             .background(
-                DockThemeShape(cornerRadius: DockLayout.controlRadius + 1)
+                DockThemeShape(cornerRadius: DockLayout.controlRadius == 0 ? 0 : DockLayout.controlRadius + 1)
                     .dockSurfaceFill(Color.dockSurface4.opacity(0.5))
             )
     }

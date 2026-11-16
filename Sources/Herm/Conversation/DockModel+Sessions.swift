@@ -1295,6 +1295,8 @@ extension DockModel {
         return true
     }
 
+    func markResponseRead() { hasUnreadResponse = false }
+
     func markPopoverVisible() {
         isPopoverVisible = true
         hasUnreadResponse = false

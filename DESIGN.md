@@ -2709,6 +2709,12 @@ Group chat action errors use toast notifications without an inline error row abo
 
 ### Conversation workspace
 
+The composer background-process tray uses a shared disclosure with a terminal icon,
+separate running count or neutral Finished label, and the last running process's
+output as a collapsed preview when available. Expanded rows keep state, command,
+output and confirmed Stop actions distinct; narrow rows move the action below the
+text. The bounded list retains the existing session-scoped process projection.
+
 The composer quota indicator uses the selected provider's limiting window and,
 for Hermes-pooled accounts, the account marked Active on the Quota page. An
 unavailable active-account reading is not replaced with another account's quota.
@@ -3319,7 +3325,7 @@ Wide PR Summary layouts place a `dockBorderLight` vertical hairline midway throu
 the existing gap between the reading column and details sidebar. Stacked layouts omit it.
 
 The PR detail panel follows the ChatGPT pull request reference: an open reading
-canvas, a compact capsule tab strip (Summary, Changes with line totals, Reviews),
+canvas, a compact skin-shaped shared tab strip (Summary, Changes with line totals, Reviews),
 and a quiet action toolbar. Before wrapping, the header drops tab line totals and
 uses compact icon actions. At phone-like widths, compact tabs and actions
 form left-aligned rows, with actions wrapping further when needed. Watch, GitHub,
@@ -4186,6 +4192,7 @@ Shared history buttons inherit their actions from the window shell; keyboard sho
 Settings → Updates contains a Compatibility section beside the existing app and
 agent update disclosures. Its header keeps Check upstream in a fixed action slot;
 known work and detected changes use disclosures inside the same section. The
+expanded disclosure content uses the available width and leading alignment. The
 installed CLI version, reviewed upstream revision, and last successful check are
 separate facts. Results are refreshed on opening after six hours or explicitly.
 A failed refresh retains the previous result and labels it stale.

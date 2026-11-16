@@ -124,10 +124,24 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         var warning: [String] = []
         if let sha = (payload["head"] as? [String: Any])?["sha"] as? String {
             async let runsLookup = try? client.pages(
-                record.repository.apiRepositoryPath + "/commits/\(sha)/check-runs", key: "check_runs")
+                record.repository.apiRepositoryPath + "/commits/\(sha)/check-runs",
+                query: ["filter": "latest"], key: "check_runs")
             async let statusLookup = try? client.pages(record.repository.apiRepositoryPath + "/commits/\(sha)/statuses")
             let (runs, statuses) = await (runsLookup, statusLookup)
-            var checks = runs?.rows ?? []
+            var checks: [[String: Any]] = []
+            var runIDs = Set<String>()
+            var validRuns = true
+            for run in runs?.rows ?? [] {
+                if let head = run["head_sha"], (head as? String) != sha {
+                    validRuns = false
+                    continue
+                }
+                guard let id = run["id"] else {
+                    validRuns = false
+                    continue
+                }
+                if runIDs.insert(String(describing: id)).inserted { checks.append(run) }
+            }
             var contexts = Set<String>()
             for status in statuses?.rows ?? [] {
                 let name = status["context"] as? String ?? "Status check"
@@ -141,7 +155,8 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
             }
             payload["checks"] = checks
             payload["checks_available"] =
-                runs != nil && statuses != nil && runs?.coverage.partial != true && statuses?.coverage.partial != true
+                runs != nil && statuses != nil && validRuns && runs?.coverage.partial != true
+                && statuses?.coverage.partial != true
             if payload["checks_available"] as? Bool != true {
                 warning.append("Some check sources are unavailable or incomplete.")
             }

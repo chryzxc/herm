@@ -214,7 +214,16 @@ struct IssueDetailView: View {
         )
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
-                DockIcon(.user, size: 14, color: Color.dockSecondaryText)
+                AsyncImage(url: issue.authorAvatarURL) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        DockIcon(.user, size: 14, color: Color.dockMetadataText)
+                            .frame(width: 24, height: 24)
+                            .background(Circle().fill(Color.dockSurface2))
+                    }
+                }
+                .frame(width: 24, height: 24).clipShape(Circle()).accessibilityHidden(true)
                 Text(issue.author).foregroundStyle(Color.dockPrimaryText)
                 Text("opened this").foregroundStyle(Color.dockSecondaryText)
             }

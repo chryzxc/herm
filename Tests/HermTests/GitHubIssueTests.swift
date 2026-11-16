@@ -5,12 +5,41 @@ import Testing
 @testable import Herm
 
 struct GitHubIssueTests {
+    @Test func issueAuthorAvatarAcceptsOnlyGitHubHTTPSImages() {
+        let cases: [(String?, String?)] = [
+            ("https://avatars.githubusercontent.com/u/42", "https://avatars.githubusercontent.com/u/42"),
+            (nil, nil), ("not a URL", nil), ("http://avatars.githubusercontent.com/u/42", nil),
+            ("https://example.com/u/42", nil), ("https://user@avatars.githubusercontent.com/u/42", nil),
+            ("https://user:password@avatars.githubusercontent.com/u/42", nil),
+            ("https://avatars.githubusercontent.com:443/u/42", nil),
+        ]
+        for (avatar, expected) in cases {
+            var user: [String: Any] = ["login": "ada"]
+            if let avatar { user["avatar_url"] = avatar }
+            let issue = GitHubIssueParser.parse([
+                "number": 1, "title": "Issue", "state": "open", "user": user,
+                "repository": ["full_name": "owner/repo"],
+            ])
+            #expect(issue?.authorAvatarURL?.absoluteString == expected)
+        }
+        for user: Any in [NSNull(), [String: Any]()] {
+            let issue = GitHubIssueParser.parse([
+                "number": 1, "title": "Issue", "state": "open", "user": user,
+                "repository": ["full_name": "owner/repo"],
+            ])
+            #expect(issue?.authorAvatarURL == nil)
+        }
+    }
+
     @Test func parsesIssueAndPreservesSafeMarkdownSource() {
         let issue = GitHubIssueParser.parse([
             "number": 19,
             "title": "Add issue workspace",
             "body": "**Details** [docs](https://example.com/docs)",
             "state": "open",
+            "state_reason": "reopened",
+            "type": ["name": "Bug"],
+            "labels": ["plain", "plain", ["name": "bug", "color": "ff0000"]] as [Any],
             "html_url": "https://github.com/owner/repo/issues/19",
             "updated_at": "2026-09-20T12:00:00Z",
             "user": ["login": "ada"],
@@ -21,6 +50,9 @@ struct GitHubIssueTests {
         #expect(issue?.body.contains("**Details**") == true)
         #expect(issue?.webURL?.absoluteString.hasSuffix("/issues/19") == true)
         #expect(issue?.assignee == "ada")
+        #expect(issue?.typeName == "Bug")
+        #expect(issue?.stateReason == "reopened")
+        #expect(issue?.labelRecords.map(\.name) == ["plain", "bug"])
     }
 
     @MainActor @Test func issueFiltersAreGitHubAuthoritativeAndSearchable() {
@@ -76,10 +108,13 @@ struct GitHubIssueTests {
             repository: GitHubReferenceParser.repository("owner/repo")!, localPath: "", number: 1, title: "Fixture",
             body: "", state: "OPEN", author: "ada", assignee: nil, updatedAt: nil, webURL: nil)
         #expect(issue.presentationIcon == .record)
-        #expect(issue.presentationColor == Color.dockInfo)
+        #expect(issue.presentationColor == Color.dockSuccess)
         issue.state = "closed"
         #expect(issue.presentationIcon == .checkCircle)
         #expect(issue.presentationColor == Color.dockMerged)
+        issue.stateReason = "not_planned"
+        #expect(issue.presentationIcon == .minusCircle)
+        #expect(issue.presentationColor == Color.dockSecondaryText)
         issue.state = "unavailable"
         #expect(issue.presentationIcon == .question)
         #expect(issue.presentationColor == Color.dockSecondaryText)
@@ -113,6 +148,23 @@ struct GitHubIssueTests {
         #expect(model.visible.map(\.number) == [20])
     }
 
+    @Test func parserRetainsLabelColorsAndAssigneeAvatarIdentity() {
+        let issue = GitHubIssueParser.parse([
+            "number": 22, "title": "Metadata", "state": "open",
+            "repository": ["full_name": "owner/repo"],
+            "labels": [["name": "bug", "color": "ff0000"], ["name": "help", "color": "invalid"]],
+            "assignees": [
+                ["login": "ada", "avatar_url": "https://avatars.githubusercontent.com/u/1"],
+                ["login": "bob", "avatar_url": "https://example.com/u/2"],
+            ],
+        ])
+        #expect(issue?.labels == ["bug", "help"])
+        #expect(issue?.labelRecords.map(\.color) == ["ff0000", nil])
+        #expect(issue?.assigneeAvatars.map(\.login) == ["ada", "bob"])
+        #expect(issue?.assigneeAvatars.first?.avatarURL?.host == "avatars.githubusercontent.com")
+        #expect(issue?.assigneeAvatars.last?.avatarURL == nil)
+    }
+
     @MainActor @Test func issueCenterUsesInjectedGitHubBoundaryForViewerSearchAndDetail() async {
         let transport = IssueTestTransport(responses: [
             "/user": ["login": "ada"],
@@ -120,14 +172,16 @@ struct GitHubIssueTests {
                 "items": [
                     [
                         "number": 19, "title": "From GitHub", "body": "summary", "state": "open",
-                        "repository": ["full_name": "owner/repo"], "user": ["login": "ada"],
+                        "repository": ["full_name": "owner/repo"],
+                        "user": ["login": "ada", "avatar_url": "https://avatars.githubusercontent.com/u/1"],
                         "assignee": ["login": "ada"], "html_url": "https://github.com/owner/repo/issues/19",
                     ]
                 ]
             ],
             "/repos/owner/repo/issues/19": [
                 "number": 19, "title": "Detailed GitHub issue", "body": "details", "state": "open",
-                "repository": ["full_name": "owner/repo"], "user": ["login": "ada"],
+                "repository": ["full_name": "owner/repo"],
+                "user": ["login": "ada", "avatar_url": "https://avatars.githubusercontent.com/u/2"],
                 "assignee": ["login": "ada"],
             ],
         ])
@@ -136,9 +190,13 @@ struct GitHubIssueTests {
         await model.refresh(projects: [])
         #expect(model.viewerLogin == "ada")
         #expect(model.records.map(\.number) == [19])
+        #expect(model.records.first?.authorAvatarURL?.absoluteString == "https://avatars.githubusercontent.com/u/1")
         model.selectedIssueID = model.records.first?.id
         await model.loadSelectedDetail()
         #expect(model.detailByID[model.records[0].id]?.title == "Detailed GitHub issue")
+        #expect(
+            model.detailByID[model.records[0].id]?.authorAvatarURL?.absoluteString
+                == "https://avatars.githubusercontent.com/u/2")
         #expect(transport.paths.contains("/user"))
         #expect(transport.paths.contains("/search/issues"))
         #expect(transport.paths.contains("/repos/owner/repo/issues/19"))

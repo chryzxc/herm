@@ -19,7 +19,7 @@ struct ConversationWorkspaceMetrics: Equatable {
         return min(360, availableWidth * 0.4)
     }
 
-    static func resolve(isFullscreen: Bool) -> Self {
+    static func resolve(isFullscreen: Bool, usesContextChatInsets: Bool = false) -> Self {
         if isFullscreen {
             return Self(
                 headerHeight: 56,
@@ -35,10 +35,10 @@ struct ConversationWorkspaceMetrics: Equatable {
         }
         return Self(
             headerHeight: 52,
-            contentInset: 12,
+            contentInset: usesContextChatInsets ? 16 : 12,
             readingWidth: 760,
             userMessageWidthFraction: 0.84,
-            composerInset: 12,
+            composerInset: usesContextChatInsets ? 16 : 12,
             composerMaxWidth: 760,
             composerTopInset: 12,
             composerBottomInset: 18,

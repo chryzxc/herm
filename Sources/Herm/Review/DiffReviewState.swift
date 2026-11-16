@@ -12,6 +12,38 @@ final class DiffReviewState: ObservableObject {
     @Published var splitOverride: Bool?
     @Published var wrapsOverride: Bool?
     @Published var findRequest = 0
+    @Published var showsBlame = false
+    @Published var loadingBlame = false
+    @Published var blame = DiffBlame()
+    private var blameGeneration = 0
+
+    func resetBlame() {
+        blameGeneration += 1
+        showsBlame = false
+        loadingBlame = false
+        blame = DiffBlame()
+    }
+
+    func toggleBlame(loader: (() async -> DiffBlame)?) {
+        if showsBlame {
+            resetBlame()
+            return
+        }
+        showsBlame = true
+        guard let loader else {
+            blame = DiffBlame(reason: "Blame unavailable for this comparison.")
+            return
+        }
+        blameGeneration += 1
+        let generation = blameGeneration
+        loadingBlame = true
+        Task {
+            let loaded = await loader()
+            guard generation == blameGeneration, showsBlame else { return }
+            blame = loaded
+            loadingBlame = false
+        }
+    }
     @Published var owner: HermesSession?
     @Published private(set) var pendingNote: RevisionNote?
     @Published var note = "" { didSet { noteError = nil } }

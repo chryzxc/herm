@@ -11,6 +11,7 @@ struct SharedDiffView: View {
     var onComment: ((DiffLine) -> Void)?
     var reviewAccessory: AnyView?
     var contextLoader: ((Int) async throws -> String)?
+    var blameLoader: ((DiffDocument) async -> DiffBlame)?
     var projectPath: String?
     var reveal: DiffSearchMatch?
     @State private var expanded = false
@@ -25,7 +26,8 @@ struct SharedDiffView: View {
         onComment: ((DiffLine) -> Void)? = nil, contextLoader: ((Int) async throws -> String)? = nil,
         projectPath: String? = nil, reveal: DiffSearchMatch? = nil, expandedPresentation: Bool = false,
         owningSession: HermesSession? = nil, comparison: DiffComparisonIdentity? = nil,
-        revisionNotes: RevisionNoteStore? = nil, state: DiffReviewState? = nil, reviewAccessory: AnyView? = nil
+        revisionNotes: RevisionNoteStore? = nil, state: DiffReviewState? = nil, reviewAccessory: AnyView? = nil,
+        blameLoader: ((DiffDocument) async -> DiffBlame)? = nil
     ) {
         self.patch = patch
         self.path = path
@@ -35,6 +37,7 @@ struct SharedDiffView: View {
         self.onComment = onComment
         self.reviewAccessory = reviewAccessory
         self.contextLoader = contextLoader
+        self.blameLoader = blameLoader
         self.projectPath = projectPath
         self.reveal = reveal
         self.expandedPresentation = expandedPresentation
@@ -89,6 +92,7 @@ struct SharedDiffView: View {
             state.revisionNotes.register(path: path, identity: sourceIdentity)
         }
         .onChange(of: sourceIdentity) { _, value in
+            state.resetBlame()
             state.activeSourceIdentity = value
             state.contextPatch = nil
             state.contextLines = 3
@@ -164,7 +168,7 @@ struct SharedDiffView: View {
             patch: patch, path: path, preferredSplit: preferredSplit, wraps: wraps, wordDiffs: wordDiffs,
             onComment: onComment, contextLoader: contextLoader, projectPath: projectPath, reveal: reveal,
             expandedPresentation: true, owningSession: owningSession, comparison: comparison, state: state,
-            reviewAccessory: reviewAccessory)
+            reviewAccessory: reviewAccessory, blameLoader: blameLoader)
     }
     private var toolbarStyle: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
 
@@ -209,6 +213,17 @@ struct SharedDiffView: View {
             state.wrapsOverride = !(state.wrapsOverride ?? wraps)
         }
         .accessibilityValue((state.wrapsOverride ?? wraps) ? "On" : "Off")
+        DockIconButton(
+            icon: .gitCommit, label: state.showsBlame ? "Hide git blame" : "Show git blame",
+            isProminent: state.showsBlame, isBusy: state.loadingBlame, style: toolbarStyle
+        ) {
+            let captured = document
+            state.toggleBlame(loader: blameLoader.map { loader in { await loader(captured) } })
+        }
+        .accessibilityValue(state.showsBlame ? "On" : "Off")
+        if state.showsBlame, let reason = state.blame.reason {
+            Text(reason).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+        }
         DockIconButton(icon: .magnifyingGlass, label: "Find in diff", style: toolbarStyle) {
             state.findRequest += 1
         }
@@ -246,7 +261,7 @@ struct SharedDiffView: View {
             NativeDiffCanvas(
                 document: document, split: (state.splitOverride ?? preferredSplit) && geometry.size.width >= 680,
                 wraps: state.wrapsOverride ?? wraps, wordDiffs: wordDiffs, findRequest: state.findRequest,
-                reveal: reveal, viewport: state.viewport,
+                reveal: reveal, viewport: state.viewport, blame: state.showsBlame ? state.blame : DiffBlame(),
                 onNote: { selection in
                     state.beginNote(
                         selection: selection, documentID: sourceIdentity, path: path, comparison: comparison)

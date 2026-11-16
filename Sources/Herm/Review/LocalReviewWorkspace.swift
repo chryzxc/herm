@@ -57,6 +57,7 @@ struct LocalReviewWorkspace: View {
     private func moveMatch(_ delta: Int) {
         guard !matches.isEmpty else { return }
         searchIndex = (searchIndex + delta + matches.count) % matches.count
+        if !files.contains(matches[searchIndex].path) { query = "" }
         selected = matches[searchIndex].path
     }
     var body: some View {
@@ -64,110 +65,112 @@ struct LocalReviewWorkspace: View {
             title: "Review changes", subtitle: "Local Git comparison", onRefresh: { requestID += 1 },
             isRefreshing: review.loading, close: { if let closeAction { closeAction() } else { dismiss() } }
         ) {
-            HStack {
-                DockOptionPicker(
-                    label: "Comparison", selection: $scope,
-                    options: RepositoryComparison.Scope.allCases.map { ($0, $0.rawValue) })
-                if scope == .branch || scope == .commit {
-                    TextField("Local Git reference", text: $reference).textFieldStyle(.dockGlass).onSubmit {
-                        requestID += 1
-                    }
-                    DockMenu(outlined: true) {
-                        ForEach(references, id: \.self) { value in
-                            Button(value) {
-                                reference = value
-                                requestID += 1
-                            }
-                        }
-                        if references.isEmpty { Text("No local references available") }
-                    } label: {
-                        Text("Choose reference")
-                    }
+            VStack(alignment: .leading, spacing: 0) {
+                ViewThatFits(in: .horizontal) {
+                    comparisonControls(layout: AnyLayout(HStackLayout(spacing: 8)))
+                        .fixedSize(horizontal: true, vertical: false)
+                    comparisonControls(layout: AnyLayout(DockChipFlow(spacing: 8)))
                 }
-                Toggle("Ignore whitespace", isOn: $ignoreWhitespace).toggleStyle(.dockSwitch)
-                TextField("Filter files or loaded changes", text: $query).textFieldStyle(.dockGlass)
-            }.dockFont(.body).dockPadding(.horizontal, 16).dockPadding(.bottom, 12)
-            HStack {
-                TextField("Find in loaded comparison", text: $search).textFieldStyle(.dockGlass).focused($searchFocused)
+                .fixedSize(horizontal: false, vertical: true)
+                .dockFont(.body).dockPadding(.horizontal, 16).dockPadding(.bottom, 12)
+                HStack {
+                    TextField("Find in loaded comparison", text: $search).textFieldStyle(.dockGlass).focused(
+                        $searchFocused
+                    )
                     .onSubmit { moveMatch(1) }
-                Text(
-                    "\(matches.isEmpty ? 0 : searchIndex + 1) / \(matches.count)" + (matches.count >= 10_000 ? "+" : "")
-                ).dockFont(.metadata)
-                Button("Previous") { moveMatch(-1) }.buttonStyle(.dockCompact).disabled(matches.isEmpty)
-                Button("Next") { moveMatch(1) }.buttonStyle(.dockCompact).disabled(matches.isEmpty)
-            }.dockPadding(.horizontal, 16).dockPadding(.bottom, 10)
-            Divider().overlay(Color.dockBorderLight)
-            FullscreenPanelSplitView(
-                leading: List(files, id: \.self, selection: $selected) { file in
-                    Text(file).dockFont(.body).tag(file)
-                }
-                .listStyle(.sidebar).scrollContentBackground(.hidden).background(Color.dockCanvas).frame(
-                    minWidth: 220, idealWidth: 280, maxWidth: 360),
-                trailing: ScrollView {
-                    if let selected, let diff = review.patches[selected] {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(selected).dockFont(.body, weight: .semibold).textSelection(.enabled)
-                            SharedDiffView(
-                                patch: diff.text, path: selected,
-                                contextLoader: { lines in
-                                    try await RepositoryComparisonService.expandedPatch(
-                                        path: path, file: selected,
-                                        arguments: review.comparison?.arguments ?? ["diff", "--no-ext-diff"],
-                                        original: diff.text, lines: lines,
-                                        renameSource: review.comparison?.renameSources[selected])
-                                }, projectPath: path, reveal: activeMatch?.path == selected ? activeMatch : nil,
-                                owningSession: owningSession,
-                                comparison: review.comparison.map {
-                                    DiffComparisonIdentity.local(path: path, comparison: $0)
-                                }, revisionNotes: review.revisionNotes)
-                            if diff.isTruncated {
-                                Text("Partial diff · display limit reached").foregroundStyle(Color.dockWarning)
-                            }
-                        }.dockPadding(12)
-                    } else {
-                        Text(
-                            review.loading
-                                ? "Loading changes…"
-                                : files.isEmpty ? "No changes in this comparison." : "Choose a changed file."
-                        )
-                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText).dockPadding(20)
+                    Text(
+                        "\(matches.isEmpty ? 0 : searchIndex + 1) / \(matches.count)"
+                            + (matches.count >= 10_000 ? "+" : "")
+                    ).dockFont(.metadata)
+                    Button("Previous") { moveMatch(-1) }.buttonStyle(.dockCompact).disabled(matches.isEmpty)
+                    Button("Next") { moveMatch(1) }.buttonStyle(.dockCompact).disabled(matches.isEmpty)
+                }.dockPadding(.horizontal, 16).dockPadding(.bottom, 10)
+                Divider().overlay(Color.dockBorderLight)
+                FullscreenPanelSplitView(
+                    leading: List(files, id: \.self, selection: $selected) { file in
+                        Text(file).dockFont(.body).tag(file)
                     }
-                }.frame(minWidth: 400), leadingFraction: nil, initialLeadingWidth: navigatorWidth,
-                minimumLeadingWidth: 220,
-                maximumLeadingWidth: 360, minimumTrailingWidth: 400, leadingWidth: $navigatorWidth
-            )
-            HStack {
-                Text(
-                    review.error.map { (review.stale ? "Stale comparison · " : "") + $0 }
-                        ?? (review.partial
-                            ? "Partial coverage · search includes loaded content only"
-                            : "\(review.patches.count) files loaded")
+                    .listStyle(.sidebar).scrollContentBackground(.hidden).background(Color.dockCanvas).frame(
+                        minWidth: 220, idealWidth: 280, maxWidth: 360),
+                    trailing: ScrollView {
+                        if let selected, files.contains(selected), let diff = review.patches[selected] {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(selected).dockFont(.body, weight: .semibold).textSelection(.enabled)
+                                SharedDiffView(
+                                    patch: diff.text, path: selected,
+                                    contextLoader: { lines in
+                                        try await RepositoryComparisonService.expandedPatch(
+                                            path: path, file: selected,
+                                            arguments: review.comparison?.arguments ?? ["diff", "--no-ext-diff"],
+                                            original: diff.text, lines: lines,
+                                            renameSource: review.comparison?.renameSources[selected])
+                                    }, projectPath: path, reveal: activeMatch?.path == selected ? activeMatch : nil,
+                                    owningSession: owningSession,
+                                    comparison: review.comparison.map {
+                                        DiffComparisonIdentity.local(path: path, comparison: $0)
+                                    }, revisionNotes: review.revisionNotes,
+                                    blameLoader: { document in
+                                        guard let comparison = review.comparison else {
+                                            return DiffBlame(reason: "Blame unavailable for this comparison.")
+                                        }
+                                        return await RepositoryComparisonService.blame(
+                                            path: path, file: selected, comparison: comparison, document: document)
+                                    })
+                                if diff.isTruncated {
+                                    Text("Partial diff · display limit reached").foregroundStyle(Color.dockWarning)
+                                }
+                            }.dockPadding(12)
+                        } else if !query.isEmpty && files.isEmpty && !(review.comparison?.files.isEmpty ?? true) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("No files match this filter.")
+                                Button("Clear filter") { query = "" }.buttonStyle(.dockSecondary)
+                            }.dockPadding(20)
+                        } else {
+                            Text(
+                                review.loading
+                                    ? "Loading changes…"
+                                    : files.isEmpty ? "No changes in this comparison." : "Choose a changed file."
+                            )
+                            .dockFont(.body).foregroundStyle(Color.dockSecondaryText).dockPadding(20)
+                        }
+                    }.frame(minWidth: 400), leadingFraction: nil, initialLeadingWidth: navigatorWidth,
+                    minimumLeadingWidth: 220,
+                    maximumLeadingWidth: 360, minimumTrailingWidth: 400, leadingWidth: $navigatorWidth
                 )
-                .dockFont(.body).foregroundStyle(
-                    review.error == nil ? Color.dockSecondaryText : Color.dockWarning
-                ).lineLimit(2)
-                Spacer()
-                if guide.session != nil || guide.requesting {
-                    Button("Read guide") { readingGuide = true }.buttonStyle(.dockCompact)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                HStack {
+                    Text(
+                        review.error.map { (review.stale ? "Stale comparison · " : "") + $0 }
+                            ?? (review.partial
+                                ? "Partial coverage · search includes loaded content only"
+                                : "\(review.patches.count) files loaded")
+                    )
+                    .dockFont(.body).foregroundStyle(
+                        review.error == nil ? Color.dockSecondaryText : Color.dockWarning
+                    ).lineLimit(2)
+                    Spacer()
+                    if guide.session != nil || guide.requesting {
+                        Button("Read guide") { readingGuide = true }.buttonStyle(.dockCompact)
+                    }
+                    if let session = guide.session {
+                        Button("Open review conversation") {
+                            openConversation(session)
+                        }.buttonStyle(.dockCompact)
+                    }
+                    ReviewGuideGenerateAction(requesting: guide.requesting) { requestGuide(reviewerProfileID: $0) }
+                        .disabled(
+                            review.loading || guide.requesting || guide.uncertain || review.patches.isEmpty
+                                || review.error != nil)
+                }.dockPadding(12)
+                if let source = guide.sourceIdentity, source != review.comparison?.identity {
+                    Text("Review guide source changed · generate a new guide after reviewing this comparison.")
+                        .dockFont(.body).foregroundStyle(Color.dockWarning).dockPadding(.horizontal, 12)
                 }
-                if let session = guide.session {
-                    Button("Open review conversation") {
-                        openConversation(session)
-                    }.buttonStyle(.dockCompact)
+                if let message = guide.message {
+                    Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText).dockPadding(
+                        .horizontal, 12
+                    ).dockPadding(.bottom, 8)
                 }
-                ReviewGuideGenerateAction(requesting: guide.requesting) { requestGuide(reviewerProfileID: $0) }
-                    .disabled(
-                        review.loading || guide.requesting || guide.uncertain || review.patches.isEmpty
-                            || review.error != nil)
-            }.dockPadding(12)
-            if let source = guide.sourceIdentity, source != review.comparison?.identity {
-                Text("Review guide source changed · generate a new guide after reviewing this comparison.")
-                    .dockFont(.body).foregroundStyle(Color.dockWarning).dockPadding(.horizontal, 12)
-            }
-            if let message = guide.message {
-                Text(message).dockFont(.body).foregroundStyle(Color.dockSecondaryText).dockPadding(
-                    .horizontal, 12
-                ).dockPadding(.bottom, 8)
             }
         }.dockSheet(isPresented: $readingGuide) {
             ReviewGuideView(
@@ -197,6 +200,22 @@ struct LocalReviewWorkspace: View {
         .onChange(of: navigatorWidth) { _, _ in savePresentation() }
         .onChange(of: scope) { _, _ in savePresentation() }
         .onChange(of: reference) { _, _ in savePresentation() }
+        .onChange(of: files) { _, visible in
+            selected = LocalReviewPresentation.selection(
+                selected, visible: visible, hasComparison: review.comparison != nil,
+                pending: review.loading
+                    && selected.map {
+                        (review.comparison?.files.contains($0) ?? false) && review.patches[$0] == nil
+                    } == true)
+        }
+        .onChange(of: matches) { previous, current in
+            searchIndex = LocalReviewPresentation.matchIndex(previous: previous, index: searchIndex, current: current)
+            if current.indices.contains(searchIndex) {
+                let match = current[searchIndex]
+                if !files.contains(match.path) { query = "" }
+                selected = match.path
+            }
+        }
         .onChange(of: search) { _, _ in
             searchIndex = 0
             if let first = matches.first {
@@ -207,6 +226,30 @@ struct LocalReviewWorkspace: View {
         .task(id: "\(path):\(scope.rawValue):\(ignoreWhitespace):\(requestID)") {
             await review.load(path: path, scope: scope, reference: reference, ignoreWhitespace: ignoreWhitespace)
             if selected == nil || !files.contains(selected ?? "") { selected = files.first }
+        }
+    }
+    private func comparisonControls(layout: AnyLayout) -> some View {
+        layout {
+            DockOptionPicker(
+                label: "Comparison", selection: $scope,
+                options: RepositoryComparison.Scope.allCases.map { ($0, $0.rawValue) })
+            if scope == .branch || scope == .commit {
+                TextField("Local Git reference", text: $reference).textFieldStyle(.dockGlass)
+                    .frame(width: 150).onSubmit { requestID += 1 }
+                DockMenu(outlined: true) {
+                    ForEach(references, id: \.self) { value in
+                        Button(value) {
+                            reference = value
+                            requestID += 1
+                        }
+                    }
+                    if references.isEmpty { Text("No local references available") }
+                } label: {
+                    Text("Choose reference")
+                }
+            }
+            Toggle("Ignore whitespace", isOn: $ignoreWhitespace).toggleStyle(.dockSwitch)
+            TextField("Filter files or loaded changes", text: $query).textFieldStyle(.dockGlass).frame(width: 200)
         }
     }
     private func openConversation(_ session: HermesSession) {

@@ -180,6 +180,15 @@ extension PullRequestRecord {
         }
     }
 
+    var checkColor: Color {
+        switch checkStatus {
+        case .pending: DockStatusTone.working.color
+        case .failure: .dockDestructive
+        case .success: .dockSuccess
+        case .unknown, .empty, .neutral: .dockSecondaryText
+        }
+    }
+
     /// Keep precedence identical to readinessLabel, including terminal lifecycle.
     var readinessColor: Color {
         if mergedAt != nil { return .dockMerged }
