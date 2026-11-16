@@ -480,7 +480,6 @@ private struct ShareBotForm: View {
 
 struct GroupChatView: View {
     @Environment(\.dockHostVisible) private var hostVisible
-    @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
     @ObservedObject var store: GroupChatStore
     @ObservedObject var botMode: BotModeModel
     let roomID: String
@@ -817,21 +816,8 @@ struct GroupChatView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             DockChipFlow(spacing: 6) {
                                 ForEach(files) { file in
-                                    if let url = store.localAttachmentURLs[roomID + ":" + file.id] {
-                                        Button {
-                                            if let previewWorkspace, FilePreviewKind(url: url) != nil {
-                                                SessionMessageTabs.shared.open(.file(url), in: previewWorkspace)
-                                            } else {
-                                                ArtifactOpener.open(url.path)
-                                            }
-                                        } label: {
-                                            UserMessageAttachmentRow(name: file.name)
-                                        }
-                                        .buttonStyle(.dockHover)
-                                        .help("Open attachment")
-                                    } else {
-                                        UserMessageAttachmentRow(name: file.name)
-                                    }
+                                    UserMessageAttachmentRow(
+                                        name: file.name, url: store.localAttachmentURLs[roomID + ":" + file.id])
                                 }
                             }
                             if let quote = split?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }

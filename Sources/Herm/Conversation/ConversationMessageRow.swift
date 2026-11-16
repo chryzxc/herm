@@ -227,24 +227,12 @@ struct ConversationMessageRow: View, Equatable {
                         VStack(alignment: .leading, spacing: 8) {
                             DockChipFlow(spacing: 6) {
                                 ForEach(Array(attachments.files.enumerated()), id: \.offset) { index, file in
+                                    // attachmentURLs holds one URL per pending label, in label order.
+                                    let pendingIndex = attachments.files[..<index].filter(\.isPendingLabel).count
                                     let pendingURL =
-                                        file.isPendingLabel && index < message.attachmentURLs.count
-                                        ? message.attachmentURLs[index] : nil
-                                    if let url = file.url ?? pendingURL {
-                                        Button {
-                                            if let previewWorkspace, FilePreviewKind(url: url) != nil {
-                                                SessionMessageTabs.shared.open(.file(url), in: previewWorkspace)
-                                            } else {
-                                                ArtifactOpener.open(url.path)
-                                            }
-                                        } label: {
-                                            UserMessageAttachmentRow(name: file.name)
-                                        }
-                                        .buttonStyle(.dockHover)
-                                        .help("Open attachment")
-                                    } else {
-                                        UserMessageAttachmentRow(name: file.name)
-                                    }
+                                        file.isPendingLabel && pendingIndex < message.attachmentURLs.count
+                                        ? message.attachmentURLs[pendingIndex] : nil
+                                    UserMessageAttachmentRow(name: file.name, url: file.url ?? pendingURL)
                                 }
                             }
                             if let quote = replySplit?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }

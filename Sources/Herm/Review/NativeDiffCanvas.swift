@@ -119,6 +119,56 @@ final class DiffCanvasContainer: NSView {
             pendingScroll = []
         }
     }
+    private struct GutterInput: Equatable {
+        let identity: String
+        let split: Bool
+        let textScale: CGFloat
+        let hasComment: Bool
+        let blame: DiffBlame
+    }
+    private struct GutterLayout {
+        let rows: [DiffSplitRow]
+        let columns: [[DiffLine?]]
+        let blameWidths: [CGFloat]
+        let gutterWidths: [CGFloat]
+    }
+    private var gutterCache: (input: GutterInput, layout: GutterLayout)?
+    /// Stands in for the blame in the fingerprint: interpolating the blame
+    /// maps into the key would describe every entry on each SwiftUI update.
+    private var blameRevision = 0
+
+    /// Split rows and gutter widths scan every line; SwiftUI calls `update` on
+    /// unrelated state changes, so they are recomputed only when an input
+    /// changes. The same blame value shares storage, so equality is cheap.
+    private func gutterLayout(_ input: GutterInput, document: DiffDocument) -> GutterLayout {
+        if let cache = gutterCache, cache.input == input { return cache.layout }
+        if gutterCache?.input.blame != input.blame { blameRevision &+= 1 }
+        let split = input.split
+        let digits = max(
+            1,
+            document.lines.lazy.flatMap { [$0.oldLine, $0.newLine].compactMap { $0 } }
+                .map { String($0).count }.max() ?? 1)
+        let font = NSFont.monospacedSystemFont(
+            ofSize: DockTypography.size(.metadata, scale: input.textScale), weight: .regular)
+        let digitWidth = ("0" as NSString).size(withAttributes: [.font: font]).width
+        let rows = DiffPresentation.splitRows(document.lines)
+        let columns: [[DiffLine?]] =
+            split ? [rows.map(\.left), rows.map(\.right)] : [document.lines.map(Optional.some)]
+        let hasBlame = !input.blame.old.isEmpty || !input.blame.new.isEmpty
+        let blameWidths: [CGFloat] = columns.enumerated().map { index, column in
+            guard hasBlame else { return 0 }
+            let side = split ? (index == 0 ? "LEFT" : "RIGHT") : nil
+            return column.contains { diffBlameEntry($0, side: side, blame: input.blame) != nil } ? 128 : 0
+        }
+        let numberWidth =
+            ceil(18 + CGFloat(digits * (split ? 1 : 2) + (split ? 0 : 2)) * digitWidth)
+            + (input.hasComment ? 24 : 0)
+        let layout = GutterLayout(
+            rows: rows, columns: columns, blameWidths: blameWidths, gutterWidths: blameWidths.map { $0 + numberWidth })
+        gutterCache = (input, layout)
+        return layout
+    }
+
     private func alignWrappedRows() {
         let key = fingerprint + ":" + String(Double(bounds.width))
         guard alignmentKey != key, stack.arrangedSubviews.count == 2 else { return }
@@ -166,26 +216,15 @@ final class DiffCanvasContainer: NSView {
     ) {
         self.textScale = textScale
         let split = split && document.supportsSplitView
-        let digits = max(
-            1,
-            document.lines.flatMap { [$0.oldLine, $0.newLine].compactMap { $0 } }
-                .map { String($0).count }.max() ?? 1)
-        let font = NSFont.monospacedSystemFont(
-            ofSize: DockTypography.size(.metadata, scale: textScale), weight: .regular)
-        let digitWidth = ("0" as NSString).size(withAttributes: [.font: font]).width
-        let rows = DiffPresentation.splitRows(document.lines)
-        let columns: [[DiffLine?]] =
-            split ? [rows.map(\.left), rows.map(\.right)] : [document.lines.map(Optional.some)]
-        let blameWidths: [CGFloat] = columns.enumerated().map { index, column in
-            let side = split ? (index == 0 ? "LEFT" : "RIGHT") : nil
-            return column.contains { diffBlameEntry($0, side: side, blame: blame) != nil } ? 128 : 0
-        }
-        let numberWidth =
-            ceil(18 + CGFloat(digits * (split ? 1 : 2) + (split ? 0 : 2)) * digitWidth)
-            + (onComment == nil ? 0 : 24)
-        let gutterWidths = blameWidths.map { $0 + numberWidth }
+        let layout = gutterLayout(
+            GutterInput(
+                identity: document.identity, split: split, textScale: textScale, hasComment: onComment != nil,
+                blame: blame),
+            document: document)
+        let (rows, columns, blameWidths, gutterWidths) =
+            (layout.rows, layout.columns, layout.blameWidths, layout.gutterWidths)
         let key =
-            "\(textScale):\(document.identity):\(split):\(wraps):\(wordDiffs):\(DockThemeRuntime.revision):\(viewport?.restorationRevision ?? 0):\(blame)"
+            "\(textScale):\(document.identity):\(split):\(wraps):\(wordDiffs):\(DockThemeRuntime.revision):\(viewport?.restorationRevision ?? 0):\(blameRevision)"
         if fingerprint == key {
             // A revision can change without changing the patch. Rebind actions while keeping selection and scroll.
             for (index, view) in stack.arrangedSubviews.enumerated() {
