@@ -367,6 +367,7 @@ struct DockPopover: View {
             .onAppear {
                 registerPerformanceSources()
                 sessionPanes.runtime = model
+                model.onPickedProjectSessionCreated = { groupPickedProjectSession(storageID: $0, path: $1) }
                 sessionPanes.tabStatus.bind(
                     model: model, control: controlCenter, store: workspaceStore, panes: sessionPanes)
             }

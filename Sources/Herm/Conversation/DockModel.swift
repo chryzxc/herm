@@ -408,6 +408,11 @@ final class DockModel: ObservableObject {
     /// a new chat. Resuming an existing session never grants this permission.
     var newSessionCreationAuthorized = false
     var newSessionProjectPath: String?
+    /// True when the user picked `newSessionProjectPath` in the new-chat project picker, so the
+    /// created session is grouped under that project straight away.
+    var newSessionProjectWasPicked = false
+    /// Called with the stable session id and project path once a picked-project chat exists.
+    var onPickedProjectSessionCreated: ((String, String) -> Void)?
     /// Project path each chat was created in, so project navigation can place
     /// a new chat before the project tree reports it.
     var createdSessionProjectPaths: [String: String] = [:]

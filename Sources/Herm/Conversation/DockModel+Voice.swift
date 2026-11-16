@@ -181,6 +181,10 @@ extension DockModel {
             sessionModelValue = model
         }
         newSessionCreationAuthorized = false
+        if newSessionProjectWasPicked, let path = newSessionProjectPath, let stableID = sessionStorageID {
+            onPickedProjectSessionCreated?(stableID, path)
+        }
+        newSessionProjectWasPicked = false
         newSessionProjectPath = nil
         refreshSessionModelOptions()
         refreshSessionReasoningVariant()
