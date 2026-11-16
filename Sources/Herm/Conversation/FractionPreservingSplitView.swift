@@ -34,6 +34,7 @@ final class FractionPreservingSplitView: NSSplitView {
     private var lastAppliedWidth: CGFloat = 0
     private lazy var dividerHitProbe = DividerHitProbe(owner: self)
 
+    @MainActor
     private final class DividerHitProbe: NSObject, NSSplitViewDelegate {
         weak var owner: FractionPreservingSplitView?
         let split = NSSplitView()
