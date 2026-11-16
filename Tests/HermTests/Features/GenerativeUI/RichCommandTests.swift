@@ -148,16 +148,16 @@ struct RichCommandTests {
         try tabs.runInNewShell("printf second > second.txt", directory: directory.path)
         #expect(tabs.sessions.count == 2)
         #expect(tabs.selected !== first)
+        // `>` creates the file before printf writes it, so wait for the contents, not existence.
+        let contents = { (name: String) in
+            try? String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8)
+        }
         for _ in 0..<100 {
-            if FileManager.default.fileExists(atPath: directory.appendingPathComponent("second.txt").path),
-                FileManager.default.fileExists(atPath: directory.appendingPathComponent("first.txt").path)
-            {
-                break
-            }
+            if contents("first.txt") == "first", contents("second.txt") == "second" { break }
             try await Task.sleep(for: .milliseconds(50))
         }
-        #expect(try String(contentsOf: directory.appendingPathComponent("first.txt"), encoding: .utf8) == "first")
-        #expect(try String(contentsOf: directory.appendingPathComponent("second.txt"), encoding: .utf8) == "second")
+        #expect(contents("first.txt") == "first")
+        #expect(contents("second.txt") == "second")
         #expect(tabs.sessions.allSatisfy { $0.lastVerificationRun == nil })
         let selected = tabs.selected.id
         #expect(throws: (any Error).self) {
