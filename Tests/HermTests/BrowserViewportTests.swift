@@ -118,6 +118,8 @@ struct BrowserViewportTests {
         window.contentView = canvas
         defer { window.contentView = nil }
         #expect(first.viewers == 1)
+        let other = AgentBrowserCanvas(frame: canvas.frame)
+        other.browser = first
         canvas.surfaceVisible = false
         #expect(first.viewers == 0)
         canvas.surfaceVisible = true
@@ -126,6 +128,19 @@ struct BrowserViewportTests {
         #expect(first.viewers == 0)
         #expect(second.viewers == 1)
         #expect(second.panelSize == NSSize(width: 640, height: 400))
+        first.frameUpdates.send((NSImage(size: NSSize(width: 1000, height: 800)), NSSize(width: 1000, height: 800)))
+        second.frameUpdates.send((NSImage(size: NSSize(width: 1280, height: 800)), NSSize(width: 1280, height: 800)))
+        #expect(other.pageRect.width == 500)
+        #expect(canvas.pageRect.width == 640)
+        first.updatePointer(AgentPointer(kind: .move, point: CGPoint(x: 500, y: 400)))
+        second.updatePointer(AgentPointer(kind: .move, point: CGPoint(x: 640, y: 400)))
+        let otherCursor = other.subviews.compactMap { $0 as? AgentCursorView }.first
+        let canvasCursor = canvas.subviews.compactMap { $0 as? AgentCursorView }.first
+        #expect(otherCursor?.isHidden == false)
+        #expect(canvasCursor?.isHidden == false)
+        first.frameUpdates.send((NSImage(size: NSSize(width: 800, height: 800)), NSSize(width: 800, height: 800)))
+        #expect(other.pageRect.width == 400)
+        #expect(canvas.pageRect.width == 640)
         canvas.browser = second
         #expect(second.viewers == 1)
         window.contentView = nil
@@ -136,6 +151,11 @@ struct BrowserViewportTests {
         let browser = AgentBrowser(profileID: "viewport")
         let canvas = AgentBrowserCanvas(frame: .zero)
         canvas.browser = browser
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = canvas
+        defer { window.contentView = nil }
         for width in [320.0, 900.0, 390.0, 1280.0] {
             let size = NSSize(width: width, height: 480)
             canvas.setFrameSize(size)
@@ -149,12 +169,17 @@ struct BrowserViewportTests {
         let browser = AgentBrowser(profileID: "fractional-viewport")
         let canvas = AgentBrowserCanvas(frame: .zero)
         canvas.browser = browser
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = canvas
+        defer { window.contentView = nil }
         for size in [NSSize(width: 833.5, height: 501.75), NSSize(width: 390.25, height: 480.5)] {
             canvas.setFrameSize(size)
             let viewport = browser.captureViewportSize
             #expect(viewport.width == size.width.rounded(.down))
             #expect(viewport.height == size.height.rounded(.down))
-            browser.onFrame?(NSImage(size: viewport), viewport)
+            browser.frameUpdates.send((NSImage(size: viewport), viewport))
             #expect(canvas.pageRect.size == viewport)
             #expect(canvas.pageRect.minX * 2 == (canvas.pageRect.minX * 2).rounded())
             #expect(canvas.bounds.contains(canvas.pageRect))
@@ -162,7 +187,7 @@ struct BrowserViewportTests {
         browser.presetWidth = 1280
         let viewport = browser.captureViewportSize
         #expect(viewport.width == 1280)
-        browser.onFrame?(NSImage(size: viewport), viewport)
+        browser.frameUpdates.send((NSImage(size: viewport), viewport))
         #expect(canvas.pageRect.width <= canvas.bounds.width)
         #expect(canvas.pageRect.height <= canvas.bounds.height)
     }
@@ -182,7 +207,7 @@ struct BrowserViewportTests {
         let canvas = AgentBrowserCanvas(frame: .zero)
         canvas.browser = browser
         canvas.setFrameSize(NSSize(width: 640, height: 400))
-        browser.onFrame?(NSImage(size: NSSize(width: 1280, height: 800)), CGSize(width: 1280, height: 800))
+        browser.frameUpdates.send((NSImage(size: NSSize(width: 1280, height: 800)), CGSize(width: 1280, height: 800)))
         let cursor = try #require(canvas.subviews.compactMap { $0 as? AgentCursorView }.first)
         #expect(cursor.isHidden)
 
