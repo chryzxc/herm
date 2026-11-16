@@ -224,14 +224,16 @@ private struct BotActivityPulse: View {
     let color: Color
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    // Shared dock clock: a phaseAnimator per pill ran its own display-rate
+    // phase, so several working bots rendered the window every frame.
     var body: some View {
-        Circle().fill(color)
-            .frame(width: 5, height: 5)
-            .phaseAnimator(reduceMotion ? [1.0] : [1.0, 0.35]) { dot, phase in
-                dot.opacity(phase).scaleEffect(0.8 + 0.2 * phase)
-            } animation: { _ in
-                .easeInOut(duration: 0.8)
-            }
+        TimelineView(.dockMotion(rate: 15, paused: reduceMotion)) { context in
+            let phase = reduceMotion ? 1 : 1 - 0.65 * DockMotionSchedule.breath(context.date, period: 1.6)
+            Circle().fill(color)
+                .frame(width: 5, height: 5)
+                .opacity(phase)
+                .scaleEffect(0.8 + 0.2 * phase)
+        }
     }
 }
 

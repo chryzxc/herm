@@ -338,7 +338,7 @@ extension DockPopover {
         recorder.watch("messageActionState", messageActionState)
         recorder.watch("workspaceStore", workspaceStore)
         recorder.watch("agentUpdateService", agentUpdateService)
-        recorder.watch("developerWorkflow", developerWorkflow)
+        recorder.watch("developerWorkflow→root", owner: developerWorkflow, developerWorkflow.rootPresentationChanges)
         recorder.watch("pullRequestCenter", pullRequestCenter)
         recorder.watch("issueCenter", issueCenter)
         recorder.watch("gitHubInspector", gitHubInspector)

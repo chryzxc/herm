@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import UserNotifications
 
@@ -135,6 +136,37 @@ final class DeveloperWorkflowModel: ObservableObject {
     @Published private(set) var reviewedFileIDs = Set<String>()
     private weak var preferencesStore: CommandCenterPreferencesStore?
     private let watcher = RepositoryWatchService()
+
+    /// What the window root renders from this model. While agents edit files,
+    /// watcher refreshes publish changes, review, notices and watch state; when
+    /// the root observed the whole model, each burst redrew every workspace pane.
+    struct RootPresentation: Equatable {
+        let path: String
+        let isGitRepository: Bool
+        let worktrees: [RepositoryWorktreeSummary]
+        let worktreesUnavailable: Bool
+    }
+
+    lazy var rootPresentationChanges = Self.rootPresentationChanges(
+        repository: $repository, worktrees: $worktrees, worktreesUnavailable: $worktreesUnavailable)
+
+    static func rootPresentationChanges<R: Publisher, W: Publisher, U: Publisher>(
+        repository: R, worktrees: W, worktreesUnavailable: U
+    ) -> AnyPublisher<Void, Never>
+    where
+        R.Output == RepositorySnapshot, W.Output == [RepositoryWorktreeSummary], U.Output == Bool,
+        R.Failure == Never, W.Failure == Never, U.Failure == Never
+    {
+        Publishers.CombineLatest3(repository, worktrees, worktreesUnavailable)
+            .map {
+                RootPresentation(
+                    path: $0.path, isGitRepository: $0.isGitRepository, worktrees: $1, worktreesUnavailable: $2)
+            }
+            .removeDuplicates()
+            .dropFirst()
+            .map { _ in }
+            .eraseToAnyPublisher()
+    }
 
     init() {
         watcher.onEvent = { [weak self] repositoryID in
@@ -642,9 +674,8 @@ final class DeveloperWorkflowModel: ObservableObject {
         let notice = RepositoryChangeNotice(
             repositoryID: id, displayName: URL(fileURLWithPath: path).lastPathComponent,
             changedFiles: snapshot.changedFiles, createdAt: .now)
-        notices.removeAll { $0.repositoryID == id }
-        notices.insert(notice, at: 0)
-        notices = Array(notices.prefix(20))
+        // One publication, not three.
+        notices = Array(([notice] + notices.filter { $0.repositoryID != id }).prefix(20))
         if id == repository.repositoryID, let preferencesStore {
             updateBaselineStatus(preferences: preferencesStore, repositoryID: id, fingerprint: fingerprint)
             updateWatchState(preferences: preferencesStore)
@@ -672,18 +703,22 @@ final class DeveloperWorkflowModel: ObservableObject {
         preferences: CommandCenterPreferencesStore?, repositoryID: String, fingerprint: String?
     ) {
         guard let preferences else { return }
-        baselineStatus = .make(baseline: preferences.baseline(for: repositoryID), fingerprint: fingerprint)
+        let status = RepositoryReviewBaselineStatus.make(
+            baseline: preferences.baseline(for: repositoryID), fingerprint: fingerprint)
+        if baselineStatus != status { baselineStatus = status }
     }
 
     private func updateWatchState(preferences: CommandCenterPreferencesStore) {
-        guard repository.isGitRepository, preferences.isWatchingRepository(repository.repositoryID) else {
-            watchState = .inactive
-            return
+        let state: RepositoryWatchState
+        if !repository.isGitRepository || !preferences.isWatchingRepository(repository.repositoryID) {
+            state = .inactive
+        } else if case .stale = baselineStatus {
+            state = .stale("Review baseline is stale.")
+        } else {
+            state = .watching
         }
-        switch baselineStatus {
-        case .stale: watchState = .stale("Review baseline is stale.")
-        default: watchState = .watching
-        }
+        // Every watcher refresh lands here; an unchanged state must not publish.
+        if watchState != state { watchState = state }
     }
 
     func handoffPrompt(focus: String, verification: VerificationSummary?, review: RepositoryReviewSnapshot?) -> String {
