@@ -74,10 +74,6 @@ struct ConversationTranscriptView: View, Equatable {
 
     var effectiveMountedRange: Range<Int> { source.snapshot.range }
 
-    var assistantResponseCount: Int {
-        ConversationUnreadMessagePolicy.assistantResponseCount(model.displayedTranscriptMessages)
-    }
-
     var body: some View {
         let snapshot = source.snapshot
         let _ = coordinator.performance.recordTranscriptEvaluation()
@@ -264,9 +260,7 @@ struct ConversationTranscriptView: View, Equatable {
     }
 
     private func reset() {
-        coordinator.reset(
-            sessionID: model.transcriptPresentationID, totalCount: model.displayedTranscriptMessages.count,
-            bubbleCount: assistantResponseCount)
+        coordinator.synchronize(model: model)
         coordinator.onEarlierHistory = { [weak model] in model?.loadEarlierTranscriptIfAvailable() }
     }
 

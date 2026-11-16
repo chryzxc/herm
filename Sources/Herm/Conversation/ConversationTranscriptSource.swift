@@ -107,6 +107,8 @@ final class ConversationTranscriptSource: ObservableObject {
     private var heldMeasurementContext: NativeMarkdownDocumentContainerView.MeasurementContext?
     private var isActive = true
     private var showingPreview = false
+    private var positionedUnreadSessionID: String?
+    private var positionedUnreadMessageID: UUID?
     let markdownPrefetch = ConversationMarkdownPrefetch()
 
     init(
@@ -120,6 +122,13 @@ final class ConversationTranscriptSource: ObservableObject {
         self.coordinator = coordinator
         showingPreview = model.sessionTranscriptPreview != nil
         coordinator.synchronize(model: model)
+        if !showingPreview, model.sessionActionsReady, let id = model.unreadDividerMessageID,
+            let index = model.displayedTranscriptMessages.firstIndex(where: { $0.id == id })
+        {
+            coordinator.jump(to: index)
+            positionedUnreadSessionID = model.transcriptPresentationID
+            positionedUnreadMessageID = id
+        }
         snapshot = Self.makeSnapshot(
             model: model, bots: bots, actions: actions, voice: voice, range: coordinator.mountedRange,
             generation: coordinator.generation)
@@ -214,6 +223,19 @@ final class ConversationTranscriptSource: ObservableObject {
             coordinator.promotePreview(model: model)
         } else {
             coordinator.synchronize(model: model)
+        }
+        if !hasPreview, model.sessionActionsReady {
+            let id = model.unreadDividerMessageID
+            if let id, positionedUnreadSessionID != model.transcriptPresentationID || positionedUnreadMessageID != id,
+                let index = model.displayedTranscriptMessages.firstIndex(where: { $0.id == id })
+            {
+                coordinator.jump(to: index)
+                positionedUnreadSessionID = model.transcriptPresentationID
+                positionedUnreadMessageID = id
+            } else if id == nil {
+                positionedUnreadSessionID = nil
+                positionedUnreadMessageID = nil
+            }
         }
         showingPreview = hasPreview
         let next = Self.makeSnapshot(

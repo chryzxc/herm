@@ -93,7 +93,7 @@ struct ConversationTranscriptIntegrationTests {
         init(
             source: String? = nil, streaming: Bool = false, messages: [ChatMessage]? = nil,
             includeTimeline: Bool = false, trailingContentInset: CGFloat = 0,
-            rpcClient: HermesRPCClientProtocol? = nil
+            rpcClient: HermesRPCClientProtocol? = nil, initialUnreadIndex: Int? = nil
         ) {
             timeline = includeTimeline ? SessionTraceModel() : nil
             coordinator = ConversationTranscriptCoordinator(controller: controller)
@@ -115,6 +115,7 @@ struct ConversationTranscriptIntegrationTests {
                             ?? String(repeating: "Paragraph **content** with `code` and wrapping text.\n\n", count: 6))
                             + "\nMessage \(index)")
                 }
+            if let initialUnreadIndex { model.unreadDividerMessageID = model.messages[initialUnreadIndex].id }
             if streaming {
                 model.streamingMessageID = model.messages.last?.id
                 model.streamingText.appendPresentation(source ?? "A streaming reply")
@@ -163,6 +164,41 @@ struct ConversationTranscriptIntegrationTests {
         defer { fixture.window.orderOut(nil) }
         try await fixture.settle()
         fixture.model.unreadDividerMessageID = messages[20].id
+        try await fixture.settle()
+        #expect(fixture.coordinator.mountedRange.contains(20))
+        let row = try #require(fixture.coordinator.rowViewports.first { $0.target.messageID == messages[20].id })
+        let geometry = try #require(fixture.controller.geometry)
+        #expect(row.minY >= geometry.visibleTop - 2)
+        #expect(row.minY < geometry.visibleTop + geometry.visibleHeight)
+        #expect(!fixture.coordinator.presentation.isAtBottom)
+    }
+
+    @Test func initialUnreadPositionSurvivesAppearance() async throws {
+        let messages = (0..<60).map { ChatMessage(role: .hermes, text: "Reply \($0)") }
+        let fixture = Fixture(messages: messages, initialUnreadIndex: 20)
+        fixture.window.orderFrontRegardless()
+        defer { fixture.window.orderOut(nil) }
+        try await fixture.settle()
+        #expect(fixture.coordinator.mountedRange.contains(20))
+        let row = try #require(fixture.coordinator.rowViewports.first { $0.target.messageID == messages[20].id })
+        let geometry = try #require(fixture.controller.geometry)
+        #expect(row.minY >= geometry.visibleTop - 2)
+        #expect(row.minY < geometry.visibleTop + geometry.visibleHeight)
+        #expect(!fixture.coordinator.presentation.isAtBottom)
+    }
+
+    @Test func unreadPositionSurvivesPreviewPromotion() async throws {
+        let messages = (0..<60).map { ChatMessage(role: .hermes, text: "Reply \($0)") }
+        let fixture = Fixture(messages: messages)
+        fixture.model.sessionTranscriptPreview = SessionTranscriptPreview(
+            messages: messages, rowIDs: [:], references: [:], pendingImages: [])
+        fixture.model.sessionTranscriptLoadState = .refreshing
+        fixture.window.orderFrontRegardless()
+        defer { fixture.window.orderOut(nil) }
+        try await fixture.settle()
+        fixture.model.unreadDividerMessageID = messages[20].id
+        fixture.model.sessionTranscriptPreview = nil
+        fixture.model.sessionTranscriptLoadState = .ready
         try await fixture.settle()
         #expect(fixture.coordinator.mountedRange.contains(20))
         let row = try #require(fixture.coordinator.rowViewports.first { $0.target.messageID == messages[20].id })
