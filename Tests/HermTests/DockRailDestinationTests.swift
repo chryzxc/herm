@@ -21,8 +21,19 @@ struct DockRailDestinationTests {
         #expect(DockRailDestination.toggling(.usage, in: "unknown,artifacts,artifacts") == "artifacts,usage")
     }
 
-    @Test func retiredBotsPinIsIgnored() {
-        #expect(DockRailDestination.pins("bots,github") == [.github])
+    @Test func botsPinsPreservePreferencesAndOrder() {
+        let bots = DockRailDestination(rawValue: "bots")
+        #expect(bots != nil)
+        #expect(DockRailDestination.ordered("unknown,bots,github,bots").map(\.rawValue) == ["bots", "github"])
+        #expect(!DockRailDestination.pins(DockRailDestination.defaultPins).contains { $0.rawValue == "bots" })
+        if let bots {
+            let pinned = DockRailDestination.toggling(bots, in: DockRailDestination.defaultPins)
+            #expect(pinned == "automations,calendar,bots")
+            let reordered = DockRailDestination.moving(bots, to: 0, in: DockRailDestination.ordered(pinned))
+            #expect(DockRailDestination.raw(reordered) == "bots,automations,calendar")
+            #expect(DockRailDestination.toggling(bots, in: pinned) == DockRailDestination.defaultPins)
+            #expect(bots.tab?.rawValue == "Bots")
+        }
     }
 
     @Test func userOrderIsPreservedAndMovesClamp() {

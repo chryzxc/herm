@@ -41,6 +41,16 @@ extension WorkspaceActivitySidebar {
                 .frame(maxHeight: .infinity, alignment: .top)
             } else if selectedMode == .integrations {
                 IntegrationsWorkspaceView(state: integrationsWorkspace)
+            } else if selectedMode == .bots {
+                DockExpandedPage(
+                    title: "Bots", subtitle: ControlTab.bots.pageHeaderSubtitle,
+                    showsClose: false, close: {}, trailing: { EmptyView() }
+                ) {
+                    BotRosterPage(
+                        model: botMode, dockModel: model, onSelectBot: onOpenBotChat,
+                        onOpenChat: onOpenBotChat, onOpenRecentSession: onOpenRecentBotSession
+                    )
+                }
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     pageHeader
@@ -56,7 +66,7 @@ extension WorkspaceActivitySidebar {
                             case .core: coreContent
                             case .quota: quotaContent
                             // Rendered outside this ScrollView so the work calendar can stay pinned.
-                            case .usage, .calendar, .integrations: EmptyView()
+                            case .usage, .calendar, .integrations, .bots: EmptyView()
                             }
                         }
                         .frame(
@@ -244,27 +254,15 @@ extension WorkspaceActivitySidebar {
         case .session:
             let count = control.attention.filter { $0.state == .open }.count
             return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
-        case .general, .gateway, .appearance, .notifications, .runtime, .subagents, .providers, .bots, .chat,
+        case .general, .gateway, .appearance, .notifications, .runtime, .subagents, .providers, .chat,
             .workspace, .safety,
             .browser, .passwords, .memory, .voice, .advanced, .diagnostics:
             return nil
         }
     }
 
-    /// Settings › Bots is the roster manager; it owns its scrolling.
-    @ViewBuilder
     var settingsDetail: some View {
-        if selectedSettingsCategory == .bots {
-            BotRosterPage(
-                model: botMode,
-                dockModel: model,
-                onSelectBot: onOpenBotChat,
-                onOpenChat: onOpenBotChat,
-                onOpenRecentSession: onOpenRecentBotSession
-            )
-        } else {
-            settingsDetailScroll
-        }
+        settingsDetailScroll
     }
 
     var settingsDetailScroll: some View {

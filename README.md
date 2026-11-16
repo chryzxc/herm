@@ -1011,8 +1011,8 @@ The forward-message composer keeps the insertion point with newly typed text whe
 
 - A **Bots page** that lists every bot's main chat and group room, Messenger-style: avatar (animating while the bot works, with an unread-reply count), name, role pill, last message and time, newest first. Click a bot to open its main chat beside the list. The page reopens the bot you last opened there, else the default bot. Main chats live only here; the Chats page lists a bot's other sessions.
 - **Folders** on the Bots page group bots and group chats: use the disclosure arrow or folder header to expand or collapse, drag rows in and out (folders open under a drag, spring open when collapsed and bounce as a row lands), drag folders to reorder, and use their menu to rename or delete them. Folders are Hermes Agent Desktop's bot sections: a bot's folder is saved on its profile and syncs with Hermes Agent Desktop and other clients, while folder order, collapse state and group-chat placement stay on this Mac. The **+** menu creates a bot, a group chat or a folder; **New Bot** opens a form in the chat area with a live face preview and a model picker. If a created bot's role cannot be confirmed, retrying finishes the role rather than creating another profile. If creation itself cannot be confirmed, check the Hermes roster before starting a new request.
-- On a bot's chat, **Bot settings** in the toolbar ⋯ menu opens the bot's profile editor (the one in Settings › Bots) as a tab, with a full-height scrolling form and a compact save footer.
-- **Settings → Bots** manages the roster without a second workspace toolbar: avatar-led cards, readable activity previews, quiet model and capability details, and always-visible action menus. Selected profiles are distinct from live working status; hover the model for provider and fallback details.
+- On a bot's chat, **Bot settings** in the toolbar ⋯ menu opens the bot's profile editor as a tab, with a full-height scrolling form and a compact save footer.
+- **Bots** in the side rail's More menu manages the roster: avatar-led cards, readable activity previews, quiet model and capability details, and always-visible action menus. Selected profiles are distinct from live working status; hover the model for provider and fallback details. Manage routines in Automation.
 - Create, clone, edit, duplicate, hide, and permanently delete bots. **Delete Bot…** in More or the context menu confirms removal of the profile and its data; the default bot is protected. Deletion requires Hermes CLI support. Editable fields include avatar, title, model, `SOUL.md`, skills, toolsets, and MCP servers.
 - The bot editor keeps vertical space around model actions so Keep and Edit sit clear of the card border and dividers.
 - **Group chats** bring selected bots into a shared room, with member replies, tool activity, unread indicators, and pending approvals. Attach files with **+**, by dragging them onto the composer, or by pasting copied files, when the gateway supports room attachments (up to 15 MB each). The composer offers Stop while a send is pending or turns are running; Hermes decides whether it can stop the work. Errors appear as toast notifications. They live on the Bots page beside the bots' main chats; start one with **+** next to the search field. Rooms and their history stay in Hermes; group chat appears only when the runtime exposes its room driver.
@@ -1205,8 +1205,8 @@ Window title-row drag regions occupy empty space only, outside action and menu t
 
 ### Pinned navigation destinations
 
-The side rail keeps Chats and pinned destinations visible. Automation, Calendar, and Bots start pinned;
-Kanban and GitHub are available in the **…** menu. The menu lists destinations with a separate pin/unpin button;
+The side rail keeps Chats and pinned destinations visible. Automation and Calendar start pinned;
+Bots, Kanban and GitHub are available in the **…** menu. Existing explicit Bots pins are retained. The menu lists destinations with a separate pin/unpin button;
 opening a destination closes the menu, while pinning keeps it open. Right-click a pinned
 icon to unpin it. Pins persist locally and are shared by floating and window mode.
 Existing visibility settings still hide disabled destinations without erasing their pins.

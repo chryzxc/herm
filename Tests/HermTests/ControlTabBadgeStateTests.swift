@@ -10,7 +10,9 @@ struct ControlTabBadgeStateTests {
         #expect(ControlTab.workspaceNavigation == [.projects])
         #expect(ControlTab.toolsNavigation == [.automations, .search, .officePreview, .core])
         #expect(
-            ControlTab.globalNavigation == [.kanban, .projects, .integrations, .quota, .usage, .calendar])
+            ControlTab.globalNavigation.map(\.rawValue) == [
+                "Kanban", "Projects", "Integrations", "Quota", "Usage", "Calendar", "Bots",
+            ])
         #expect(Set(ControlTab.globalNavigation + ControlTab.secondaryNavigation) == Set(ControlTab.allCases))
     }
 
@@ -20,5 +22,12 @@ struct ControlTabBadgeStateTests {
         #expect(badges.count(for: .changes) == 3)
         #expect(badges.count(for: .kanban) == 0)
         #expect(badges.isUrgent(for: .changes))
+        if let bots = ControlTab(rawValue: "Bots") {
+            #expect(badges.count(for: bots) == 0)
+            #expect(!badges.isUrgent(for: bots))
+            #expect(bots.icon == .ghost)
+        } else {
+            Issue.record("Bots global destination is missing")
+        }
     }
 }

@@ -87,6 +87,36 @@ struct SessionNavigationSelectionTests {
         #expect(state.selectedSessionID == "bot-session")
     }
 
+    @Test func botRosterAndBotConversationsKeepIndependentSelections() {
+        let state = SessionNavigationState()
+        let taskID = UUID(uuidString: "00000000-0000-0000-0000-000000000005")!
+        state.selectTask(taskID)
+        state.selectGlobal(.bots)
+        #expect(state.selection.selection == .global(.bots))
+        #expect(state.selectedTaskID == nil && state.selectedSessionID == nil)
+        #expect(!state.selection.isTaskSelected(taskID))
+
+        state.openBotChat(sessionID: "bot-session")
+        #expect(state.selection.selection == .session("bot-session"))
+        #expect(state.selectedTaskID == nil && state.selectedSessionID == "bot-session")
+        #expect(!state.selection.isGlobalSelected(.bots))
+
+        state.selectGlobal(.bots)
+        #expect(state.selection.selection == .global(.bots))
+        #expect(state.selectedTaskID == nil && state.selectedSessionID == nil)
+        #expect(!state.selection.isSessionSelected("bot-session"))
+
+        state.selectBots()
+        #expect(state.selection.selection == .bots)
+        #expect(state.selectedTaskID == nil && state.selectedSessionID == nil)
+        #expect(!state.selection.isGlobalSelected(.bots))
+
+        state.openSession("other-session")
+        #expect(state.selection.selection == .session("other-session"))
+        #expect(state.selectedTaskID == nil && state.selectedSessionID == "other-session")
+        #expect(!state.selection.isSessionSelected("bot-session"))
+    }
+
     @Test func pullRequestHandoffSelectsTheResolvedSession() {
         let state = SessionNavigationState()
         state.selectPullRequests()

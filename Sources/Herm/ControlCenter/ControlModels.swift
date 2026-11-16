@@ -1805,6 +1805,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case usage = "Usage"
     case calendar = "Calendar"
     case integrations = "Integrations"
+    case bots = "Bots"
 
     /// The fixed navigation strip is deliberately limited to the destinations
     /// used to orient, triage, and act on work. Everything else remains one
@@ -1813,7 +1814,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     /// Keep the high-frequency global destinations directly visible; supporting
     /// operational views remain available through the scrollable More menu.
     static let globalNavigation: [ControlTab] = [
-        .kanban, .projects, .integrations, .quota, .usage, .calendar,
+        .kanban, .projects, .integrations, .quota, .usage, .calendar, .bots,
     ]
     static let sessionNavigation: [ControlTab] = [.changes]
     static let workspaceNavigation: [ControlTab] = [.projects]
@@ -1859,6 +1860,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .usage: .pulse
         case .calendar: .calendarBlank
         case .integrations: .puzzlePiece
+        case .bots: .ghost
         }
     }
 
@@ -1886,6 +1888,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .usage: "What shipped, what was worked on, and what it cost"
         case .calendar: "Your Mac calendar, reminders, and upcoming agent runs"
         case .integrations: "Messaging, skills, tools and connected services"
+        case .bots: "Create, edit, and remove bots"
         }
     }
 }
@@ -1900,7 +1903,8 @@ struct ControlTabBadgeState: Equatable {
     func count(for tab: ControlTab) -> Int {
         switch tab {
         case .changes: changeCount
-        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .integrations:
+        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .integrations,
+            .bots:
             0
         }
     }
@@ -1908,7 +1912,8 @@ struct ControlTabBadgeState: Equatable {
     func isUrgent(for tab: ControlTab) -> Bool {
         switch tab {
         case .changes: changeCount > 0
-        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .integrations:
+        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .integrations,
+            .bots:
             false
         }
     }

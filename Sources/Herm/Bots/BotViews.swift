@@ -1,8 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Full Bots destination page for the right workspace pane. Bot profiles use
-/// an adaptive card grid; recurring jobs remain a compact schedule list.
+/// Bot profiles in an adaptive card grid.
 struct BotRosterPage: View {
     @Environment(\.dockHostVisible) private var hostVisible
     @ObservedObject var model: BotModeModel
@@ -17,12 +16,9 @@ struct BotRosterPage: View {
     @State private var confirmsRegenerateAll = false
     @State private var editingBot: BotSummary?
     @State private var duplicatingBot: BotSummary?
-    @State private var isShowingRoutineForm = false
     @State private var showsHiddenBots = false
     @State private var activityBot: BotSummary?
-    @State private var selectedSection: BotRosterSection = .bots
     @State private var activityFilter: BotRosterActivityFilter = .all
-    @State private var pendingRoutineRemoval: BotRoutine?
     @State private var pendingBotDeletion: BotSummary?
 
     private func generateAvatars(all: Bool) {
@@ -73,36 +69,6 @@ struct BotRosterPage: View {
                 }
             )
         }
-        .dockSheet(isPresented: $isShowingRoutineForm) {
-            BotRoutineFormSheet(model: model, bots: model.visibleBots)
-        }
-        .confirmationDialog(
-            "Remove Routine?",
-            isPresented: Binding(
-                get: { pendingRoutineRemoval != nil },
-                set: { if !$0 { pendingRoutineRemoval = nil } }
-            ),
-            presenting: pendingRoutineRemoval
-        ) { routine in
-            Button("Remove \(routine.name)", role: .destructive) {
-                pendingRoutineRemoval = nil
-                Task { await model.removeRoutine(routine) }
-            }
-            Button("Cancel", role: .cancel) { pendingRoutineRemoval = nil }
-        } message: { _ in
-            Text("This removes the recurring Hermes routine. Existing sessions and transcripts are not deleted.")
-        }
-        .alert(
-            "Could Not Remove Routine",
-            isPresented: Binding(
-                get: { model.routineRemovalError != nil },
-                set: { if !$0 { model.clearRoutineRemovalError() } }
-            )
-        ) {
-            Button("OK", role: .cancel) { model.clearRoutineRemovalError() }
-        } message: {
-            Text(model.routineRemovalError ?? "The routine could not be removed.")
-        }
         .confirmationDialog(
             "Delete Bot?",
             isPresented: Binding(get: { pendingBotDeletion != nil }, set: { if !$0 { pendingBotDeletion = nil } }),
@@ -137,7 +103,6 @@ struct BotRosterPage: View {
             if model.inventory.availability != .ready { await model.refreshNow(force: true) }
             await model.loadAvatars()
             await model.loadRuntimeConfigs()
-            await model.loadRoutines()
         }
         .task(id: hostVisible) {
             // Presence is a live projection, not a value that should remain
@@ -156,50 +121,39 @@ struct BotRosterPage: View {
 
     private var rosterActions: some View {
         HStack(spacing: 10) {
-            if selectedSection == .bots {
-                Button {
-                    isShowingCreateSheet = true
-                } label: {
-                    DockIconLabel("New Bot", icon: .plus)
-                }
-                .buttonStyle(.dockPrimary)
-                .disabled(!model.canCreateBots)
-                .help(
-                    model.canCreateBots
-                        ? "Create a new Hermes Bot profile"
-                        : "Bot creation requires a Hermes runtime with profile support")
-                Button {
-                    showsAvatarTip.toggle()
-                } label: {
-                    DockActionLabel(
-                        title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
-                }
-                .buttonStyle(.dockSecondary)
-                .disabled(isPopulatingAvatars)
-                .dockPopover(isPresented: $showsAvatarTip, arrowEdge: .bottom) {
-                    BotAvatarGeneratorTip(
-                        pending: model.bots.filter { !$0.hasCustomAvatar && !$0.hasAvatar },
-                        onFillMissing: { generateAvatars(all: false) },
-                        onRegenerateAll: {
-                            showsAvatarTip = false
-                            confirmsRegenerateAll = true
-                        }
-                    )
-                }
-                .confirmationDialog("Regenerate all avatars?", isPresented: $confirmsRegenerateAll) {
-                    Button("Regenerate All") { generateAvatars(all: true) }
-                } message: {
-                    Text("Every Bot gets its Herm face, replacing uploaded and generated images.")
-                }
-            } else {
-                Button {
-                    isShowingRoutineForm = true
-                } label: {
-                    DockIconLabel("New Routine", icon: .plus)
-                }
-                .buttonStyle(.dockPrimary)
-                .disabled(!model.canCreateBots || model.visibleBots.isEmpty)
-                .help("Attach a recurring routine to a Bot")
+            Button {
+                isShowingCreateSheet = true
+            } label: {
+                DockIconLabel("New Bot", icon: .plus)
+            }
+            .buttonStyle(.dockPrimary)
+            .disabled(!model.canCreateBots)
+            .help(
+                model.canCreateBots
+                    ? "Create a new Hermes Bot profile"
+                    : "Bot creation requires a Hermes runtime with profile support")
+            Button {
+                showsAvatarTip.toggle()
+            } label: {
+                DockActionLabel(
+                    title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
+            }
+            .buttonStyle(.dockSecondary)
+            .disabled(isPopulatingAvatars)
+            .dockPopover(isPresented: $showsAvatarTip, arrowEdge: .bottom) {
+                BotAvatarGeneratorTip(
+                    pending: model.bots.filter { !$0.hasCustomAvatar && !$0.hasAvatar },
+                    onFillMissing: { generateAvatars(all: false) },
+                    onRegenerateAll: {
+                        showsAvatarTip = false
+                        confirmsRegenerateAll = true
+                    }
+                )
+            }
+            .confirmationDialog("Regenerate all avatars?", isPresented: $confirmsRegenerateAll) {
+                Button("Regenerate All") { generateAvatars(all: true) }
+            } message: {
+                Text("Every Bot gets its Herm face, replacing uploaded and generated images.")
             }
             DockIconButton(
                 icon: .arrowsClockwise, label: "Refresh", isBusy: model.isRefreshing, hasBackground: false,
@@ -251,37 +205,15 @@ struct BotRosterPage: View {
 
     private var readyContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if selectedSection == .bots {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 12) {
-                        sectionPicker.fixedSize(horizontal: true, vertical: false)
-                        botFilters
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        sectionPicker.fixedSize(horizontal: true, vertical: false)
-                        botFilters
-                    }
-                }
+            botFilters
                 .dockPadding(.horizontal, DockLayout.contentInset)
                 .dockPadding(.vertical, DockLayout.tight)
-            } else {
-                sectionPicker
-                    .fixedSize(horizontal: true, vertical: false)
-                    .dockPadding(.horizontal, DockLayout.contentInset)
-                    .dockPadding(.vertical, DockLayout.tight)
-            }
             rosterActions
                 .dockPadding(.horizontal, DockLayout.contentInset)
                 .dockPadding(.bottom, DockLayout.tight)
-            if selectedSection == .bots { botsContent } else { routinesContent }
+            botsContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var sectionPicker: some View {
-        DockTabBar(options: BotRosterSection.allCases, selection: $selectedSection) { section in
-            section == .bots ? "Bots \(model.visibleBots.count)" : "Routines \(model.routines.count)"
-        }
     }
 
     private var botFilters: some View {
@@ -410,59 +342,6 @@ struct BotRosterPage: View {
                 if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
                 return $0.id > $1.id
             }
-    }
-
-    private var routinesContent: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 8) {
-                    Text("ROUTINES")
-                        .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
-                        .tracking(0.8)
-                        .foregroundStyle(Color.dockMetadataText)
-                    Text("\(model.routines.count)")
-                        .dockFont(.metadata, weight: .regular, design: .monospaced)
-                        .foregroundStyle(Color.dockSecondaryText)
-                    Spacer()
-                    Text("Recurring Hermes jobs")
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                }
-                .dockPadding(.horizontal, DockLayout.compactInset)
-                .dockPadding(.vertical, 10)
-
-                if model.isLoadingRoutines {
-                    Text("Loading routines…")
-                        .dockFont(.body)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                        .dockPadding(.horizontal, DockLayout.compactInset)
-                } else if model.routines.isEmpty {
-                    Text("No routines yet — a routine is a recurring Hermes cron job that runs in its Bot’s chat.")
-                        .dockFont(.body)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-                        .dockPadding(.horizontal, DockLayout.compactInset)
-                } else {
-                    ForEach(model.routines) { routine in
-                        BotRoutineRow(
-                            routine: routine,
-                            botName: botDisplayName(routine.profileID),
-                            isRemoving: model.removingRoutineID == routine.id,
-                            onRemove: { pendingRoutineRemoval = routine }
-                        )
-                        .equatable()
-                        Divider().overlay(Color.dockBorderLight)
-                    }
-                }
-            }
-            .dockPadding(.horizontal, DockLayout.contentInset)
-            .dockPadding(.vertical, DockLayout.tight)
-        }
-    }
-
-    private func botDisplayName(_ profileID: String) -> String {
-        model.inventory.bots.first { $0.id == profileID }?.name ?? profileID
     }
 
     private var isSearching: Bool {
@@ -902,14 +781,6 @@ private struct BotActivityHistorySheet: View {
     }
 }
 
-enum BotRosterSection: String, CaseIterable, Identifiable {
-    case bots
-    case routines
-
-    var id: Self { self }
-    var title: String { rawValue.capitalized }
-}
-
 enum BotRosterActivityFilter: String, CaseIterable, Identifiable {
     case all
     case active
@@ -956,74 +827,6 @@ struct BotRosterMetadata: Equatable {
         [model, lastActive]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-    }
-}
-
-private struct BotRoutineRow: View, Equatable {
-    let routine: BotRoutine
-    let botName: String
-    let isRemoving: Bool
-    let onRemove: () -> Void
-    @State private var isHovering = false
-
-    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.routine == rhs.routine && lhs.botName == rhs.botName && lhs.isRemoving == rhs.isRemoving
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            DockIcon(.clockCounterClockwise)
-                .dockFont(.conversation, weight: .medium)
-                .foregroundStyle(routine.enabled ? Color.dockAccent : Color.dockMetadataText)
-                .frame(width: 28, height: 44)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(routine.name)
-                        .dockFont(.navigation, weight: .medium)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(1)
-                    if !routine.enabled {
-                        Text("DISABLED")
-                            .dockFont(.metadata, weight: .semibold, design: .monospaced)
-                            .foregroundStyle(Color.dockMetadataText)
-                    }
-                }
-                HStack(spacing: 5) {
-                    Text(botName)
-                    Text("·")
-                    Text(routine.schedule)
-                    if let prompt = routine.prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
-                        Text("·")
-                        Text(prompt)
-                    }
-                }
-                .dockFont(.metadata)
-                .foregroundStyle(Color.dockMetadataText)
-                .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            DockMenu {
-                Button("Remove", icon: .trash, role: .destructive, action: onRemove)
-            } label: {
-                DockIcon(.dotsThree)
-                    .dockFont(.conversation, weight: .medium)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .disabled(isRemoving)
-            .help("More routine actions")
-        }
-        .dockPadding(.horizontal, DockLayout.compactInset)
-        .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
-        .background(isHovering ? Color.dockSurface4 : Color.clear)
-        .contentShape(Rectangle())
-        .onHover { isHovering = $0 }
-        .dockContextMenu {
-            Button("Remove", icon: .trash, role: .destructive, action: onRemove)
-                .disabled(isRemoving)
-        }
     }
 }
 

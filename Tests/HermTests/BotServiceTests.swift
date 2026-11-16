@@ -836,7 +836,6 @@ struct BotServiceTests {
     }
 
     @Test func botRosterSectionsAndResponsiveLayoutAreStable() {
-        #expect(BotRosterSection.allCases == [.bots, .routines])
         #expect(BotRosterActivityFilter.allCases == [.all, .active, .working])
         #expect(BotRosterRowLayout.columnCount(contentWidth: 500) == 1)
         #expect(BotRosterRowLayout.columnCount(contentWidth: 700) == 2)

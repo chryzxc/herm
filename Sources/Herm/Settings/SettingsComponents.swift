@@ -15,7 +15,7 @@ enum SettingsCategoryGroup: String, CaseIterable, Identifiable {
     var categories: [SettingsCategory] {
         switch self {
         case .app: [.general, .gateway, .appearance, .notifications]
-        case .agent: [.runtime, .subagents, .providers, .bots, .chat, .memory, .voice, .advanced]
+        case .agent: [.runtime, .subagents, .providers, .chat, .memory, .voice, .advanced]
         case .tools: [.workspace, .browser, .passwords, .safety, .integrations]
         case .activity: [.session, .diagnostics, .updates]
         }
@@ -30,7 +30,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case runtime
     case subagents
     case providers
-    case bots
     case chat
     case workspace
     case safety
@@ -56,7 +55,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .runtime: "Models & tools"
         case .subagents: "Subagents"
         case .providers: "Providers"
-        case .bots: "Bots"
         case .chat: "Chat"
         case .workspace: "Files & terminal"
         case .safety: "Privacy & safety"
@@ -81,7 +79,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .runtime: "Models, dispatch, and tools"
         case .subagents: "Routing, model defaults, and delegation limits"
         case .providers: "Accounts, API keys, sign-in, and account rotation"
-        case .bots: "Create, edit, and remove bots and their routines"
         case .chat: "Layout, typing, replies, session titles, and attachments"
         case .workspace: "Working directory, shell, file access, and output limits"
         case .safety: "Approvals, screen capture, privacy, and checkpoints"
@@ -106,7 +103,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .runtime: .gearSix
         case .subagents: .gitBranch
         case .providers: .key
-        case .bots: .ghost
         case .chat: .chatText
         case .workspace: .folder
         case .safety: .shieldWarning
