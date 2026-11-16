@@ -110,9 +110,51 @@ struct VoiceHUDTests {
         for (channel, value) in [Float(0.25), 0.9, -0.9].enumerated() {
             for frame in 0..<64 { buffer.floatChannelData![channel][frame] = value }
         }
-        let mono = try #require(MicLevelMeter.firstChannel(of: buffer))
+        let mono = try #require(MicBufferNormalizer(firstChannelOnly: true).normalize(buffer))
         #expect(mono.format.channelCount == 1)
         #expect((0..<64).allSatisfy { mono.floatChannelData![0][$0] == 0.25 })
+        // Without voice processing the existing deinterleaved Float32 buffer passes through untouched.
+        #expect(MicBufferNormalizer(firstChannelOnly: false).normalize(buffer) === buffer)
+    }
+
+    /// USB mics (#209) can deliver interleaved or integer samples; they must reach recognition, not be dropped.
+    @Test func interleavedAndIntegerMicsBecomeMonoFloat() throws {
+        let stereoFloat = try #require(
+            AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: true))
+        let floats = try #require(AVAudioPCMBuffer(pcmFormat: stereoFloat, frameCapacity: 64))
+        floats.frameLength = 64
+        let floatSamples = floats.mutableAudioBufferList.pointee.mBuffers.mData!.assumingMemoryBound(to: Float.self)
+        for frame in 0..<64 {
+            floatSamples[frame * 2] = 0.25
+            floatSamples[frame * 2 + 1] = -0.9
+        }
+
+        let stereoInt = try #require(
+            AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48_000, channels: 2, interleaved: true))
+        let ints = try #require(AVAudioPCMBuffer(pcmFormat: stereoInt, frameCapacity: 64))
+        ints.frameLength = 64
+        for frame in 0..<64 {
+            ints.int16ChannelData![0][frame * 2] = Int16.max / 4
+            ints.int16ChannelData![0][frame * 2 + 1] = Int16.min
+        }
+
+        let monoInt = try #require(
+            AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false))
+        let mono = try #require(AVAudioPCMBuffer(pcmFormat: monoInt, frameCapacity: 64))
+        mono.frameLength = 64
+        for frame in 0..<64 { mono.int16ChannelData![0][frame] = Int16.max / 4 }
+
+        for (buffer, firstChannelOnly) in [(floats, true), (ints, true), (ints, false), (mono, false)] {
+            let out = try #require(MicBufferNormalizer(firstChannelOnly: firstChannelOnly).normalize(buffer))
+            #expect(out.format.commonFormat == .pcmFormatFloat32)
+            #expect(!out.format.isInterleaved)
+            #expect(out.format.channelCount == 1)
+            #expect(out.format.sampleRate == buffer.format.sampleRate)
+            #expect(out.frameLength == 64)
+            // Channel 0 only, never mixed with the other channel.
+            #expect((0..<64).allSatisfy { abs(out.floatChannelData![0][$0] - 0.25) < 0.001 })
+            #expect(SpeechInput.normalizedAudioLevel(out) > 0)
+        }
     }
 
     @Test func stageLayoutKeepsActivityCardsOutOfTheCenterColumn() {
