@@ -391,7 +391,7 @@ final class SessionNavSidebarModel: ObservableObject {
     private let control: ControlCenterModel
     private let store: WorkspaceStore
     private var cancellables: Set<AnyCancellable> = []
-    private var lowPowerRefreshTask: Task<Void, Never>?
+    private var coalescedRefreshTask: Task<Void, Never>?
 
     init(model: DockModel, control: ControlCenterModel, store: WorkspaceStore) {
         self.model = model
@@ -412,18 +412,21 @@ final class SessionNavSidebarModel: ObservableObject {
         .store(in: &cancellables)
     }
 
-    /// Low Power Mode slows the main thread enough that a rail rebuild per
-    /// running-session tick stalls scrolling, so ticks coalesce to 4 Hz there.
-    /// Selection changes still refresh at once.
+    /// A rail rebuild costs 12–29 ms, and every running session publishes
+    /// activity ticks, so several live agents would rebuild the rail many times
+    /// a second and stall scrolling on any power source. Activity ticks
+    /// coalesce to 4 Hz; selection changes still refresh at once.
     private func scheduleRefresh() {
-        guard ProcessInfo.processInfo.isLowPowerModeEnabled,
-            model.navigationSessionID == snapshot.inputs.activeSessionID
-        else { return refresh() }
-        guard lowPowerRefreshTask == nil else { return }
-        lowPowerRefreshTask = Task { @MainActor [weak self] in
+        guard model.navigationSessionID == snapshot.inputs.activeSessionID else {
+            coalescedRefreshTask?.cancel()
+            coalescedRefreshTask = nil
+            return refresh()
+        }
+        guard coalescedRefreshTask == nil else { return }
+        coalescedRefreshTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(250))
-            guard let self else { return }
-            self.lowPowerRefreshTask = nil
+            guard let self, !Task.isCancelled else { return }
+            self.coalescedRefreshTask = nil
             self.refresh()
         }
     }

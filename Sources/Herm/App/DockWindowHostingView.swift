@@ -3,6 +3,14 @@ import SwiftUI
 
 final class DockWindowHostingView<Content: View>: NSHostingView<Content> {
     override var mouseDownCanMoveWindow: Bool { false }
+
+    // Nested split-pane hosts relayout whenever the root re-renders; time it so
+    // performance captures show whether that cascade is behind a dropped frame.
+    override func layout() {
+        let start = ProcessInfo.processInfo.systemUptime
+        super.layout()
+        HermPerformanceRecorder.recordWork("hostLayout", since: start)
+    }
 }
 
 @MainActor
