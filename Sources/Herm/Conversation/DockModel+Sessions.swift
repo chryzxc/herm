@@ -1171,6 +1171,7 @@ extension DockModel {
     }
 
     func newChat(projectPath: String? = nil) {
+        commitStreamingMessage()
         cacheLeavingTranscript()
         sessionWorkspace = nil
         pendingWorktreeDirectory = nil

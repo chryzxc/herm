@@ -212,6 +212,21 @@ struct SessionSwitchCacheTests {
         try await waitUntil { model.sessionActionsReady && model.sessionStorageID == "a" }
     }
 
+    @Test func startingANewChatCachesTheConversationItLeaves() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        #expect(await model.resumeSession(session("a"), reportFailure: true))
+        model.messages.append(ChatMessage(role: .hermes, text: "added before new chat"))
+        model.newChat()
+        rpc.holdNextA = true
+        model.resumeSession(session("a"))
+        try await waitUntil { rpc.held != nil }
+        #expect(model.displayedTranscriptMessages.last?.text == "added before new chat")
+        rpc.release()
+        try await waitUntil { model.sessionActionsReady && model.sessionStorageID == "a" }
+    }
+
     @Test func failedRefreshKeepsPreviewAndRetryCanConfirmIt() async throws {
         let rpc = SessionSwitchRPC()
         let model = makeModel(rpc)
