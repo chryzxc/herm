@@ -185,11 +185,12 @@ struct BrowserPageRenderingReproductionTests {
                     "width": Int(viewport.width), "height": Int(viewport.height), "deviceScaleFactor": 2,
                     "screenWidth": Int(viewport.width), "screenHeight": Int(viewport.height), "mobile": false,
                 ], session: session)
-            if index == 0 {
-                _ = try await cdp.send(
-                    "Page.startScreencast",
-                    ["format": "png", "everyNthFrame": 1, "maxWidth": 8192, "maxHeight": 8192], session: session)
-            }
+            // Mirrors AgentBrowser.applyViewport: a static page may not repaint for new metrics,
+            // so a size change restarts the screencast to get a frame at that size.
+            if index > 0 { _ = try await cdp.send("Page.stopScreencast", session: session) }
+            _ = try await cdp.send(
+                "Page.startScreencast",
+                ["format": "png", "everyNthFrame": 1, "maxWidth": 8192, "maxHeight": 8192], session: session)
             for _ in 0..<200 {
                 if frames > previous, reportedSize == viewport { break }
                 try await Task.sleep(for: .milliseconds(25))

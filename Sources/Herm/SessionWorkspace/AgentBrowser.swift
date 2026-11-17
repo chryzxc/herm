@@ -661,9 +661,9 @@ final class AgentBrowser: ObservableObject {
                 "screenWidth": Int(size.width), "screenHeight": Int(size.height),
                 "mobile": presetWidth > 0 && presetWidth < 800,
             ], session: sid)
-        // A running screencast follows metric changes by itself; restart only for a new tab,
-        // a new display scale, or the pane being shown or hidden.
-        let screencast = viewers > 0 ? "\(sid)@\(backingScale)" : nil
+        // Restart for a new tab, display scale, viewport size, or the pane being shown or hidden.
+        // A static page may not repaint for new metrics, which left the old-size frame letterboxed.
+        let screencast = viewers > 0 ? "\(sid)@\(backingScale)@\(size)" : nil
         guard sessionID == sid, screencast != self.screencast else { return }
         cdp.fire("Page.stopScreencast", session: sid)
         self.screencast = screencast
