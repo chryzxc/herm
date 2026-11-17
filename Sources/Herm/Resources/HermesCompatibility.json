@@ -594,6 +594,7 @@
     "session.title",
     "session.undo",
     "session.usage",
+    "session.workspace.move",
     "sessions.stats",
     "shell.exec",
     "skills",
