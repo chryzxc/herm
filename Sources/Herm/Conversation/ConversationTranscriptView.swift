@@ -295,6 +295,8 @@ struct ConversationTranscriptView: View, Equatable {
     private func jumpToUnread(_ id: UUID?, proxy: ScrollViewProxy) {
         guard let id, let index = model.displayedTranscriptMessages.firstIndex(where: { $0.id == id }) else { return }
         coordinator.synchronize(model: model)
+        // A session already viewed this run reopens where the reader left it.
+        guard !coordinator.restoresViewedPosition else { return }
         coordinator.jump(to: index) { proxy.scrollTo(id, anchor: .top) }
     }
 

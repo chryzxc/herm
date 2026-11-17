@@ -4237,7 +4237,9 @@ Profile route selection uses bot avatars and aligned switches, with profile IDs 
 
 Opening an unread session positions the first unread reply below an “Unread
 messages” divider with a solid red pill (the shared unread badge colors) and red-tinted rules. The divider stays for that visit while the reviewed count
-clears. The Bot picker counts unread sessions, rather than replies, in a solid red badge for each Bot;
+clears. A session already viewed during this app run instead reopens at the
+reader's last position (or the live tail if they were following it); the
+divider still marks where unread replies begin, without a jump. The Bot picker counts unread sessions, rather than replies, in a solid red badge for each Bot;
 partial inventories show a lower bound or an unavailable marker. Running Bot
 activity remains independently visible.
 

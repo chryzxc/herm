@@ -79,21 +79,17 @@ struct ConversationTranscriptCoordinatorTests {
         #expect(coordinator.pendingPage != nil)
     }
 
-    @Test func rowsIgnoreThePointerOnlyWhileTheReaderScrolls() throws {
-        let controller = ConversationScrollController()
-        let coordinator = ConversationTranscriptCoordinator(controller: controller)
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
-        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 3_600))
-        controller.clipView = scroll.contentView
+    @Test func reopeningAViewedSessionSkipsTheUnreadJump() {
+        let coordinator = ConversationTranscriptCoordinator()
         coordinator.reset(sessionID: "one", totalCount: 10, bubbleCount: 10)
-        let geometry = try #require(controller.geometry)
-        coordinator.userMoved(geometry, delta: -10)
-        #expect(coordinator.presentation.isUserScrolling)
-        coordinator.settled(geometry)
-        #expect(!coordinator.presentation.isUserScrolling)
-        coordinator.userMoved(geometry, delta: -10)
+        #expect(!coordinator.restoresViewedPosition)
         coordinator.reset(sessionID: "two", totalCount: 10, bubbleCount: 10)
-        #expect(!coordinator.presentation.isUserScrolling)
+        #expect(!coordinator.restoresViewedPosition)
+        coordinator.reset(sessionID: "one", totalCount: 12, bubbleCount: 12)
+        #expect(coordinator.restoresViewedPosition)
+        // Re-synchronizing the same session keeps the decision.
+        coordinator.reset(sessionID: "one", totalCount: 13, bubbleCount: 13)
+        #expect(coordinator.restoresViewedPosition)
     }
 
     @Test func partialHistoryRetainsItsRequestAcrossLayoutAndReversalCancelsIt() async throws {
@@ -318,6 +314,77 @@ struct ConversationTranscriptCoordinatorTests {
         coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500, messages: messages())
         #expect(coordinator.mountedRange.contains(anchored))
         #expect(coordinator.pendingPage?.anchor.messageID == identities[anchored])
+        #expect(coordinator.pendingPage?.anchor.offset == -40)
+        #expect(!coordinator.presentation.isAtBottom)
+    }
+
+    @Test func restoredAnchorStaysPinnedWhileRowsAboveSettle() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 20_000))
+        controller.clipView = scroll.contentView
+        leaveAwayFromBottom(coordinator, controller: controller, id: "one")
+        coordinator.reset(sessionID: "two", totalCount: 500, bubbleCount: 500, messages: messages())
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500, messages: messages())
+        let anchor = try #require(coordinator.pendingPage?.anchor)
+        coordinator.receiveLayout(layout(coordinator))
+        #expect(coordinator.pendingPage == nil)
+        let grown = { (by: CGFloat) in
+            let base = self.layout(coordinator)
+            return ConversationTranscriptLayout(
+                sessionID: base.sessionID, generation: base.generation, range: base.range,
+                rows: base.rows.map {
+                    MessageNavigatorViewport(target: $0.target, index: $0.index, minY: $0.minY + by, maxY: $0.maxY + by)
+                })
+        }
+        // A row above the anchor finishes measuring 30pt taller.
+        coordinator.receiveLayout(grown(30))
+        let row = try #require(grown(30).rows.first { $0.target.messageID == anchor.messageID })
+        let top = try #require(controller.geometry).visibleTop
+        #expect(row.minY - top == anchor.offset)
+        // Once the reader scrolls, later layout changes no longer move the view.
+        coordinator.userMoved(try #require(controller.geometry), delta: 5)
+        coordinator.receiveLayout(grown(60))
+        #expect(try #require(controller.geometry).visibleTop == top)
+    }
+
+    @Test func restoredAnchorLandsWhenTheSessionScrollViewAttachesAfterLayout() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 20_000))
+        controller.clipView = scroll.contentView
+        leaveAwayFromBottom(coordinator, controller: controller, id: "one")
+        coordinator.reset(sessionID: "two", totalCount: 500, bubbleCount: 500, messages: messages())
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500, messages: messages())
+        let anchor = try #require(coordinator.pendingPage?.anchor)
+        // The per-session scroll view is replaced; its first layout precedes the attach.
+        controller.clipView = nil
+        coordinator.receiveLayout(layout(coordinator))
+        #expect(coordinator.pendingPage != nil)
+        let fresh = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        fresh.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 20_000))
+        controller.clipView = fresh.contentView
+        coordinator.contentResized()
+        #expect(coordinator.pendingPage == nil)
+        let row = try #require(layout(coordinator).rows.first { $0.target.messageID == anchor.messageID })
+        #expect(row.minY - (try #require(controller.geometry).visibleTop) == anchor.offset)
+    }
+
+    @Test func sessionReturnRestoresAReparsedTranscriptByPosition() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 20_000))
+        controller.clipView = scroll.contentView
+        leaveAwayFromBottom(coordinator, controller: controller, id: "one")
+        let anchored = try #require(coordinator.mountedRange.first)
+        coordinator.reset(sessionID: "two", totalCount: 500, bubbleCount: 500, messages: messages())
+        // The returning transcript was parsed again and carries new message ids.
+        let reparsed = identities.map { _ in ChatMessage(role: .hermes, text: "message") }
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500, messages: reparsed)
+        #expect(coordinator.pendingPage?.anchor.messageID == reparsed[anchored].id)
         #expect(coordinator.pendingPage?.anchor.offset == -40)
         #expect(!coordinator.presentation.isAtBottom)
     }
