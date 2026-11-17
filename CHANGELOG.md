@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.3.0](https://github.com/chryzxc/herm/compare/v0.2.1...v0.3.0) (2026-11-17)
+
+
+### Features
+
+* add signed in-app updates for stable and nightly builds ([#188](https://github.com/chryzxc/herm/issues/188)) ([a608600](https://github.com/chryzxc/herm/commit/a608600add46c83efef74f6880773c2a131cba10))
+* centralize keyboard commands and add default shortcuts ([#194](https://github.com/chryzxc/herm/issues/194)) ([e23741f](https://github.com/chryzxc/herm/commit/e23741f8930f824f481e20cbc2c023e33bcda18e))
+* check for herm updates on activation and badge the settings menu row ([#225](https://github.com/chryzxc/herm/issues/225)) ([92760fe](https://github.com/chryzxc/herm/commit/92760fe9c5d15c529190a8dd9b6d424c34907a37))
+* choose a project when starting a new conversation ([#224](https://github.com/chryzxc/herm/issues/224)) ([b100aa0](https://github.com/chryzxc/herm/commit/b100aa044607d6c1c5ce96939561f7426d8c03ec))
+* move an existing conversation to another project ([#228](https://github.com/chryzxc/herm/issues/228)) ([8a73b80](https://github.com/chryzxc/herm/commit/8a73b808be4bb838502064d52683216e3465c1a0))
+* **rail:** move bot management to the sidebar ([#205](https://github.com/chryzxc/herm/issues/205)) ([f9e7b67](https://github.com/chryzxc/herm/commit/f9e7b67924fb0e2794893644a95fd92866ea5d87))
+* **ui:** refine compatibility, tabs, review, PR and issue surfaces ([12580b9](https://github.com/chryzxc/herm/commit/12580b9b07e8df301d2fb353dcf29c918fb7ba70))
+* **ui:** refine compatibility, tabs, review, PR and issue surfaces ([9c283cc](https://github.com/chryzxc/herm/commit/9c283ccc1172fe3b5db5c7e3ce9a77260ba9af75))
+
+
+### Bug Fixes
+
+* **browser:** keep each canvas's frames and viewport independent ([1d62bd6](https://github.com/chryzxc/herm/commit/1d62bd6954871f382ea38bd2180ba7e709f899ae))
+* **browser:** keep each canvas's frames and viewport independent ([63e7cdc](https://github.com/chryzxc/herm/commit/63e7cdcf3b5e04831e1eae78dc7e5df22119c0d9))
+* **browser:** restart screencast when the viewport size changes ([e89b0d6](https://github.com/chryzxc/herm/commit/e89b0d6bdcd2a8412fba522d7fe643411deef738))
+* clear split drop hints once a session drag ends ([#217](https://github.com/chryzxc/herm/issues/217)) ([61b9926](https://github.com/chryzxc/herm/commit/61b9926e782155a84709f0a3cdc162f506477f50))
+* **composer:** inherit default thinking in floating chat ([#199](https://github.com/chryzxc/herm/issues/199)) ([b279383](https://github.com/chryzxc/herm/commit/b27938345165e02b02a2f33e3c3834b28985349a))
+* **composer:** leave Return and arrows to the input method while composing ([#184](https://github.com/chryzxc/herm/issues/184)) ([0433e4f](https://github.com/chryzxc/herm/commit/0433e4f6534b916dd7c8a2a900d543fec2e10ed8))
+* **conversation:** keep and restore loaded transcripts when switching sessions ([#226](https://github.com/chryzxc/herm/issues/226)) ([83251dc](https://github.com/chryzxc/herm/commit/83251dc2baed73845d82b81a3d920bc4c0cfbeaa))
+* **conversation:** position unread messages before rendering ([#204](https://github.com/chryzxc/herm/issues/204)) ([4d1bc0c](https://github.com/chryzxc/herm/commit/4d1bc0ca0ec6b51817ae95b0e8edd61d30ceaba9))
+* **conversation:** restore the last read position and smooth chat scrolling ([#229](https://github.com/chryzxc/herm/issues/229)) ([50ea5ef](https://github.com/chryzxc/herm/commit/50ea5ef4f25ee0fb4062288c18ff1ffe5db8636d))
+* convert multichannel and integer mic buffers instead of dropping them ([7f180ae](https://github.com/chryzxc/herm/commit/7f180ae22dfe59a709483f57fefe9ba721673cca))
+* convert multichannel and integer mic buffers instead of dropping them ([c4d0291](https://github.com/chryzxc/herm/commit/c4d029135f96a93385ada36e75f50e57da53645a)), closes [#209](https://github.com/chryzxc/herm/issues/209)
+* **density:** preserve text size in compact layouts ([#203](https://github.com/chryzxc/herm/issues/203)) ([19dee7b](https://github.com/chryzxc/herm/commit/19dee7b57ec7399010584b6f79a5ecbc55559c22))
+* end the hermes backend when herm exits ([c190dcc](https://github.com/chryzxc/herm/commit/c190dcc8a54907c4fc43ddf7aa21197b665e7279))
+* **groups:** load history behind nonvisible events ([#190](https://github.com/chryzxc/herm/issues/190)) ([9d78daf](https://github.com/chryzxc/herm/commit/9d78daf005bd10cc9cbf00121af80a8c6c18e5a7))
+* harden browser and bundled integrations ([aa36c5a](https://github.com/chryzxc/herm/commit/aa36c5a6784e55d42ff7d702e2def932a2f7574f))
+* keep ci runs for every main commit so release commits are not cancelled ([e904c0b](https://github.com/chryzxc/herm/commit/e904c0bb94847044e8a12d73e232236cea0ccd90))
+* keep toolbar controls from dragging the window ([#191](https://github.com/chryzxc/herm/issues/191)) ([bdc0f69](https://github.com/chryzxc/herm/commit/bdc0f69d7d3e80e0f891bff33f6336ce7be4bc39))
+* **quota:** read remote provider usage from the backend ([#160](https://github.com/chryzxc/herm/issues/160)) ([49153ef](https://github.com/chryzxc/herm/commit/49153ef322bd08953f85e122de5def3cc50db1c8))
+* **rail:** correct subagent status and remove activity descriptions ([#200](https://github.com/chryzxc/herm/issues/200)) ([64183d7](https://github.com/chryzxc/herm/commit/64183d702dd50ad6654edbfb668fce37f5eb7de1))
+* reduce background refresh redraws and improve performance captures ([#198](https://github.com/chryzxc/herm/issues/198)) ([3c5dce0](https://github.com/chryzxc/herm/commit/3c5dce0bf66d3ee4acdd767fdc9278c208c732f6))
+* restore hover tooltips ([#189](https://github.com/chryzxc/herm/issues/189)) ([b7cd5a1](https://github.com/chryzxc/herm/commit/b7cd5a117d0ffa96264610e511d024eb176270e1))
+* restore session drops into tabs and columns ([#227](https://github.com/chryzxc/herm/issues/227)) ([50e2e7e](https://github.com/chryzxc/herm/commit/50e2e7e296f92b29ee6ebf8fdfdd086573cd1e9a))
+* **sessions:** preserve activity status when switching ([#208](https://github.com/chryzxc/herm/issues/208)) ([1f427bd](https://github.com/chryzxc/herm/commit/1f427bd4ed6dec6adcd7472532e3db4371305789))
+* stop session index cpu spikes and clean up herm-booted simulators ([#223](https://github.com/chryzxc/herm/issues/223)) ([e4fec75](https://github.com/chryzxc/herm/commit/e4fec75451022579a72c871c932cde360ba61d26))
+* **tests:** isolate popup sharing fixture from preferences ([#195](https://github.com/chryzxc/herm/issues/195)) ([6a2664f](https://github.com/chryzxc/herm/commit/6a2664fce8ac95ded59995e424477017a6d2f556))
+* **voice:** preserve delayed speech recognition results ([f216efc](https://github.com/chryzxc/herm/commit/f216efcb54a04e6e22ecbdff3cc59595d37fa51f))
+* **voice:** preserve delayed speech recognition results ([0b3b56c](https://github.com/chryzxc/herm/commit/0b3b56cbde63257897cf9d500ef1c34910223ac8))
+
+
+### Performance Improvements
+
+* **composer:** reduce animation and usage updates ([9fd6f1b](https://github.com/chryzxc/herm/commit/9fd6f1b35cc050aafc366079cffcc04a4dc761ba))
+* isolate tool activity presentation updates ([27a7310](https://github.com/chryzxc/herm/commit/27a731080a51b66d12375bf133b8e25aa5c1ade0))
+* isolate tool activity presentation updates ([dea82ce](https://github.com/chryzxc/herm/commit/dea82ce612c214b97ee81d03b25e8e91abe09c38))
+* **markdown:** skip per-scroll layout requests in chat ([#212](https://github.com/chryzxc/herm/issues/212)) ([13f05b4](https://github.com/chryzxc/herm/commit/13f05b47f95fdec097c504bc331cafc3a18b7108))
+* **notch:** reduce observation and polling ([3dc0d7c](https://github.com/chryzxc/herm/commit/3dc0d7cdb586ada434ae21c04bac810db3565654))
+* reduce composer animation and usage updates ([5b8d7fc](https://github.com/chryzxc/herm/commit/5b8d7fcfa902a3aa3f950962ac81b13b60fa33dd))
+* reduce control center event refresh publications ([#197](https://github.com/chryzxc/herm/issues/197)) ([5c50ed7](https://github.com/chryzxc/herm/commit/5c50ed7429c6ceaee9ce28302d5136e9383d61ef))
+* reduce notch observation and polling ([25ddc6d](https://github.com/chryzxc/herm/commit/25ddc6da8ed3b0392c65d43ef6e7cf71d2b71e44))
+* route expanded split hit tests to the containing pane ([#206](https://github.com/chryzxc/herm/issues/206)) ([076a5ad](https://github.com/chryzxc/herm/commit/076a5adf01829a8df3c6269763f798f820967852))
+* scope workflow root observation and coalesce sidebar activity ([3070a6a](https://github.com/chryzxc/herm/commit/3070a6a3428690b234973620060d1f725999b317))
+* scope workflow root observation and coalesce sidebar activity ([c735ad2](https://github.com/chryzxc/herm/commit/c735ad2ace03a65c26c3538e118a49d5ee70928c))
+* share sidebar projection and coalesce navigation publications ([#210](https://github.com/chryzxc/herm/issues/210)) ([af72143](https://github.com/chryzxc/herm/commit/af721430f48d667fd40a2eecda58c4d7cb2761a6))
+* share split pane control models ([#196](https://github.com/chryzxc/herm/issues/196)) ([d464736](https://github.com/chryzxc/herm/commit/d46473681f8de6c501243686cdac947d4d543f91))
+* show work calendar activity before slow sources finish ([#201](https://github.com/chryzxc/herm/issues/201)) ([6f66ef2](https://github.com/chryzxc/herm/commit/6f66ef2e36efa805b5f092f6502ec27432f0870a))
+* stop idle message navigator pointer polling ([e9a68ee](https://github.com/chryzxc/herm/commit/e9a68eec79620209dad2b8e4bc2eec1ffa9dccc8))
+* stop idle message navigator pointer polling ([7720134](https://github.com/chryzxc/herm/commit/772013430b5f985311503bad85ba69ed199369c5))
+
 ## [0.2.1](https://github.com/chryzxc/herm/compare/v0.2.0...v0.2.1) (2026-11-14)
 
 
