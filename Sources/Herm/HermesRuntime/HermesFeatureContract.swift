@@ -82,6 +82,7 @@ enum HermesFeatureIDs {
         case sessionContextBreakdown = "session.context_breakdown"
         case sessionCreate = "session.create"
         case sessionCwdSet = "session.cwd.set"
+        case sessionWorkspaceMove = "session.workspace.move"
         case projectFacts = "project.facts"
         case verificationStatus = "verification.status"
         case promptSubmit = "prompt.submit"
@@ -203,7 +204,8 @@ enum HermesFeatureIDs {
         "pet.info", "pet.info.meta", "pet.gallery", "pet.thumb", "pet.select", "pet.disable", "pet.scale",
         "session.list", "session.active_list", "session.activate", "session.delete", "session.resume",
         "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.create",
-        "session.cwd.set", "session.close", "session.set_hidden", "session.events.since", "project.facts",
+        "session.cwd.set", "session.workspace.move", "session.close", "session.set_hidden", "session.events.since",
+        "project.facts",
         "verification.status", "prompt.submit", "complete.slash", "complete.path", "commands.catalog", "slash.exec",
         "command.dispatch", "bot_relay.deliver",
         "groups.capabilities", "groups.list", "groups.create", "groups.state", "groups.send",

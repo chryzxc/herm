@@ -51,6 +51,7 @@ struct SessionNavSidebarSnapshotTests {
         sessions: [HermesSession] = [],
         projects: [ProjectSummary] = [],
         projectIDBySessionID: [String: String] = [:],
+        localProjectPathBySessionID: [String: String] = [:],
         projectSessionsByProjectID: [String: [SessionSummary]] = [:],
         attention: [AttentionItem] = [],
         latestActivities: [LatestActivityItem] = [],
@@ -77,8 +78,52 @@ struct SessionNavSidebarSnapshotTests {
             isLoadingProjects: false,
             isRefreshingProjectNavigation: false,
             attention: attention,
-            latestActivities: latestActivities
+            latestActivities: latestActivities,
+            localProjectPathBySessionID: localProjectPathBySessionID
         )
+    }
+
+    @Test func moveTargetsExcludeTheProjectsThatListTheSession() {
+        let snapshot = SessionNavSidebarSnapshot(
+            inputs: inputs(
+                sessions: [session("s1")],
+                projects: [
+                    project("a", name: "/repos/Alpha", sessionIDs: ["s1"], sessionCount: 1),
+                    project("b", name: "/repos/Beta"),
+                ]))
+
+        #expect(snapshot.projectTargets(forSessionID: "s1").map(\.path) == ["/repos/Beta"])
+        #expect(snapshot.projectTargets(forSessionID: "other").map(\.path).sorted() == ["/repos/Alpha", "/repos/Beta"])
+    }
+
+    @Test func movedSessionShowsOnlyInTheDestinationGroup() {
+        let before = [
+            project("a", name: "/repos/Alpha", sessionIDs: ["s1"], sessionCount: 1),
+            project("b", name: "/repos/Beta"),
+        ]
+        let moved = ControlCenterModel.projects(before, moving: "s1", toProjectID: "b")
+        let snapshot = SessionNavSidebarSnapshot(
+            inputs: inputs(
+                sessions: [session("s1")], projects: moved,
+                projectIDBySessionID: ["s1": "b"], localProjectPathBySessionID: ["s1": "/repos/Beta"]))
+
+        let groups = snapshot.linkedProjectGroups.filter { $0.sessions.contains { $0.id == "s1" } }
+        #expect(groups.map(\.title) == ["Beta"])
+        #expect(snapshot.projectNameBySessionID["s1"] == "Beta")
+    }
+
+    @Test func withoutUpdatingProjectsAMovedSessionListsInBothGroups() {
+        let snapshot = SessionNavSidebarSnapshot(
+            inputs: inputs(
+                sessions: [session("s1")],
+                projects: [
+                    project("a", name: "/repos/Alpha", sessionIDs: ["s1"], sessionCount: 1),
+                    project("b", name: "/repos/Beta"),
+                ],
+                localProjectPathBySessionID: ["s1": "/repos/Beta"]))
+
+        let groups = snapshot.linkedProjectGroups.filter { $0.sessions.contains { $0.id == "s1" } }
+        #expect(groups.count == 2)
     }
 
     @Test func renderableProjectsOwnGroupsAndSyntheticBucketsFallThroughToUnlinked() {

@@ -396,6 +396,67 @@ struct ControlCenterProjectTests {
         #expect(state.visibleSessions(sessions, projectID: "project-a").count == 10)
     }
 
+    private func moveSummary(_ id: String, _ ids: Set<String>) -> ProjectSummary {
+        ProjectSummary(
+            id: id, name: "/repos/\(id)", repoCount: 1, sessionCount: ids.count, sessionIDs: ids, preview: nil,
+            isActive: false)
+    }
+
+    @Test func projectsHelperMovesTheSessionBetweenSummaries() {
+        let moved = ControlCenterModel.projects(
+            [moveSummary("a", ["s1"]), moveSummary("b", []), moveSummary("c", ["s2"])],
+            moving: "s1", toProjectID: "b")
+
+        #expect(moved.map(\.sessionIDs) == [[], ["s1"], ["s2"]])
+        #expect(moved.map(\.sessionCount) == [0, 1, 1])
+    }
+
+    @Test func didMoveSessionRelabelsTheSessionAtOnce() {
+        let model = ControlCenterModel(rpc: nil)
+        model.projects = [moveSummary("A", ["s1"]), moveSummary("B", [])]
+        model.projectSessionsByProjectID = [
+            "A": [SessionSummary(id: "s1", title: "t", state: "", preview: nil, updatedAt: nil)]
+        ]
+
+        model.didMoveSession(["s1"], toProjectPath: "/repos/B")
+
+        #expect(model.project(forSessionID: "s1")?.id == "B")
+        #expect(model.projectSessionsByProjectID["A"]?.contains { $0.id == "s1" } == false)
+    }
+
+    @Test func moveDuringARefreshIsNotUndoneByItsLateCompletion() {
+        let model = ControlCenterModel(rpc: nil)
+        model.projects = [moveSummary("A", ["s1"]), moveSummary("B", [])]
+        let stale = UUID()
+        model.isRefreshingProjectNavigation = true
+        model.projectNavigationRefreshGeneration = stale
+        model.projectNavigationRefreshIDs = ["A"]
+        model.pendingProjectNavigationSessions = [
+            "A": [SessionSummary(id: "s1", title: "t", state: "", preview: nil, updatedAt: nil)]
+        ]
+
+        model.didMoveSession(["s1"], toProjectPath: "/repos/B")
+        model.completeProjectNavigationRefresh("A", generation: stale)
+
+        #expect(model.project(forSessionID: "s1")?.id == "B")
+        #expect(model.projectSessionsByProjectID["A"]?.contains { $0.id == "s1" } != true)
+    }
+
+    @Test func moveCancelsTheSharedRefreshCarryingPreMoveMembership() {
+        let model = ControlCenterModel(rpc: nil)
+        model.projects = [moveSummary("A", ["s1"]), moveSummary("B", [])]
+        model.isRefreshing = true
+        let generation = model.refreshGeneration
+        let inFlight = Task<Void, Never> { _ = try? await Task.sleep(for: .seconds(30)) }
+        model.refreshTask = inFlight
+
+        model.didMoveSession(["s1"], toProjectPath: "/repos/B")
+
+        #expect(model.refreshGeneration != generation)
+        #expect(inFlight.isCancelled)
+        #expect(model.project(forSessionID: "s1")?.id == "B")
+    }
+
     @Test func unchangedProjectRefreshPreservesNavigationOrder() {
         let first = ProjectSummary(
             id: "a", name: "A", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)

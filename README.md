@@ -514,6 +514,7 @@ choose another worktree, then **Move this chat here** to keep the conversation i
 to carry the unsent draft into a new chat. Moving waits until the current turn ends, and the chat then stays in the chosen
 worktree even if the agent works in another one. A chat that has not sent anything simply starts there. **New worktree task** creates a new worktree
 and moves the draft to a new chat there. Existing terminal shells keep their folders and running commands.
+Use **Add to project** or **Move to project** in a conversation's menu to re-home it under another project; the conversation keeps its history and the project label and lists follow at once. It is unavailable while the conversation is working or waiting on you.
 The icon has no background and highlights when the rail is open. Its floating
 cards sit over the same continuous conversation background, with the conversation's
 scrollbar at the far-right edge beyond the rail. The rail discovers PR

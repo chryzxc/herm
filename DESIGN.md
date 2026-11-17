@@ -3299,6 +3299,14 @@ events, and main-agent tool activity.
 - Never optimistically mark an agent interrupted or a process stopped before
   Hermes confirms the transition.
 - Delegation pause is global and must be labelled as such.
+- **Add to project** / **Move to project** appears in every conversation menu
+  (sidebar and pinned rows, project groups, the session picker, the header and
+  split panes) and lists the other projects. It calls Hermes
+  `session.workspace.move`, then links the conversation locally and moves it
+  between project lists at once. The menu is disabled while the conversation is
+  working or waiting on an approval or clarification, and while another move is
+  running; Hermes' busy refusal shows the same message. A failure keeps the
+  conversation where it was.
 
 #### Runtime parity and control authority
 
