@@ -183,6 +183,9 @@ struct SessionNavProjectList: View {
     let onAddSourceFolder: (String, String) -> Void
     let onNewChatInProject: (String) -> Void
     var pinningSessionID: String?
+    var projectTargets: (String) -> [SidebarProjectTarget] = { _ in [] }
+    var isMovingSession = false
+    var onAddToProject: (HermesSession, SidebarProjectTarget) -> Void = { _, _ in }
     @State private var disclosureState = ProjectDisclosureState()
     @State private var isExpanded = true
     @State private var hoveredNewChatProjectID: String?
@@ -407,7 +410,11 @@ struct SessionNavProjectList: View {
             onRename: onRename,
             onToggleHidden: onToggleHidden,
             onRequestDelete: onRequestDelete,
-            isPinning: pinningSessionID == session.id
+            isPinning: pinningSessionID == session.id,
+            projectTargets: projectTargets(session.id),
+            isInProject: true,
+            isMovingSession: isMovingSession,
+            onAddToProject: onAddToProject
         )
         .equatable()
     }
@@ -573,6 +580,9 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     let onRequestDelete: (HermesSession) -> Void
     var isPinning = false
     var projectTargets: [SidebarProjectTarget] = []
+    /// The conversation already belongs to a project, so the menu moves it.
+    var isInProject = false
+    var isMovingSession = false
     var onAddToProject: (HermesSession, SidebarProjectTarget) -> Void = { _, _ in }
     @State private var isHovered = false
     @State private var isEditingTitle = false
@@ -624,6 +634,8 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             && lhs.isRenaming == rhs.isRenaming
             && lhs.isPinning == rhs.isPinning
             && lhs.projectTargets == rhs.projectTargets
+            && lhs.isInProject == rhs.isInProject
+            && lhs.isMovingSession == rhs.isMovingSession
     }
 
     var body: some View {
@@ -872,11 +884,15 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         }
         .disabled(isUpdatingVisibility || isDeleting)
         if !projectTargets.isEmpty {
-            DockMenu("Add to project", icon: .folderPlus) {
+            DockMenu(isInProject ? "Move to project" : "Add to project", icon: .folderPlus) {
                 ForEach(projectTargets) { target in
                     Button(target.title) { onAddToProject(session, target) }
                 }
             }
+            .disabled(isMovingSession || SessionProjectMove.isBlocked(status: sessionStatus))
+            .help(
+                SessionProjectMove.isBlocked(status: sessionStatus)
+                    ? DockModel.sessionWorkspaceBusyMessage : "Move this conversation to another project")
         }
         Divider()
         Button("Delete", icon: .trash, role: .destructive) {

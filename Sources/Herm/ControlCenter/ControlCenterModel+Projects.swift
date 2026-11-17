@@ -55,6 +55,59 @@ extension ControlCenterModel {
         refreshProjectNavigation(refreshProjects: false)
     }
 
+    /// Records a confirmed move so the project label and lists follow the
+    /// conversation at once, then re-reads every project from Hermes.
+    /// `sessionIDs` holds the stored id plus any runtime alias of an open chat.
+    func didMoveSession(_ sessionIDs: [String], toProjectPath path: String) {
+        guard let target = Self.projectMatchingPath(path, projects: projects) else {
+            refreshProjectNavigation()
+            return
+        }
+        for sessionID in sessionIDs {
+            projects = Self.projects(projects, moving: sessionID, toProjectID: target.id)
+            projectIDBySessionID[sessionID] = target.id
+            resolvedProjectIDBySessionID[sessionID] = target.id
+            for key in projectSessionsByProjectID.keys where key != target.id {
+                projectSessionsByProjectID[key]?.removeAll { $0.id == sessionID }
+            }
+            projectSessions.removeAll { $0.id == sessionID && selectedProjectID != target.id }
+        }
+        // A refresh already in flight carries pre-move membership: drop it
+        // and start a fresh one so it cannot put the session back.
+        projectNavigationRefreshGeneration = nil
+        isRefreshingProjectNavigation = false
+        pendingProjectNavigationSessions = [:]
+        completedProjectNavigationIDs = []
+        projectNavigationRefreshIDs = []
+        // The shared refresh also carries pre-move membership; cancel it as a reset does.
+        if isRefreshing {
+            refreshGeneration &+= 1
+            refreshTask?.cancel()
+            refreshTask = nil
+            latestActivityRefreshTask?.cancel()
+            latestActivityRefreshTask = nil
+            isRefreshing = false
+        }
+        refreshProjectNavigation()
+    }
+
+    /// Moves `sessionID` into the target summary and out of every other one.
+    static func projects(
+        _ projects: [ProjectSummary], moving sessionID: String, toProjectID targetID: String
+    ) -> [ProjectSummary] {
+        projects.map { project in
+            let isTarget = project.id == targetID
+            let listed = project.sessionIDs.contains(sessionID)
+            guard isTarget != listed else { return project }
+            var ids = project.sessionIDs
+            if isTarget { ids.insert(sessionID) } else { ids.remove(sessionID) }
+            return ProjectSummary(
+                id: project.id, name: project.name, repoCount: project.repoCount,
+                sessionCount: max(0, project.sessionCount + (isTarget ? 1 : -1)),
+                sessionIDs: ids, preview: project.preview, isActive: project.isActive)
+        }
+    }
+
     static func projectMatchingPath(_ path: String, projects: [ProjectSummary]) -> ProjectSummary? {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
         guard !normalizedPath.isEmpty else { return nil }

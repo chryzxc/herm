@@ -186,6 +186,8 @@ final class DockModel: ObservableObject {
     /// same flag Hermes Desktop's Pinned section and `hermes sessions pin` use.
     @Published var pinnedSessions: [HermesSession] = []
     @Published var pinningSessionID: String?
+    /// The conversation a `session.workspace.move` is in flight for.
+    @Published var movingSessionToProjectID: String?
     /// Recent sessions across every bot profile, for the agent-grouped sidebar.
     @Published var allBotSessionsState: HermesProjectionState<[HermesSession]> = .loading
     var allBotSessionsTask: Task<Void, Never>?

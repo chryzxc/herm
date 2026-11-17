@@ -121,6 +121,7 @@ extension DockPopover {
                             }
                         }
                         .disabled(!model.sessionActionsReady)
+                        moveToProjectMenu(session, activate: activate)
                         Divider()
                     }
                     Button("Find in conversation", icon: .magnifyingGlass) {
@@ -137,6 +138,35 @@ extension DockPopover {
                 .accessibilityLabel("Conversation actions")
             }
             .fixedSize())
+    }
+
+    /// "Add/Move to project" for a conversation's header menu, listing every other project.
+    @ViewBuilder
+    func moveToProjectMenu(_ session: HermesSession, activate: @escaping () -> Void = {}) -> some View {
+        let targets = SessionProjectMove.targets(
+            projects: controlCenter.projects, excluding: session.id, control: controlCenter, store: workspaceStore)
+        if !targets.isEmpty {
+            let isBlocked =
+                !model.sessionActionsReady || session.isWorking || model.movingSessionToProjectID != nil
+                || (session.id == model.navigationSessionID && !model.canMoveSessionWorkspace)
+            DockMenu(
+                SessionProjectMove.currentProjectID(session.id, control: controlCenter, store: workspaceStore) == nil
+                    ? "Add to project" : "Move to project",
+                icon: .folderPlus
+            ) {
+                ForEach(targets) { target in
+                    Button(target.title) {
+                        activate()
+                        Task { @MainActor in
+                            _ = await SessionProjectMove.perform(
+                                session, to: target, model: model, control: controlCenter,
+                                store: workspaceStore)
+                        }
+                    }
+                }
+            }
+            .disabled(isBlocked)
+        }
     }
 
     func sessionViewMenu(includesInspector: Bool, style: DockThemePalette) -> some View {
@@ -177,6 +207,7 @@ extension DockPopover {
                     }
                 }
                 .disabled(!model.sessionActionsReady)
+                moveToProjectMenu(session)
                 // No trailing rule when nothing follows (voice mode, inspector shown).
                 if sessionWorkspaceMode == .chat || includesInspector { Divider() }
             }
@@ -588,7 +619,20 @@ extension DockPopover {
                                 guard model.deletingSessionID == nil else { return }
                                 sessionPendingDeletion = selected
                             },
-                            isPinning: model.pinningSessionID == session.id
+                            isPinning: model.pinningSessionID == session.id,
+                            projectTargets: SessionProjectMove.targets(
+                                projects: controlCenter.projects, excluding: session.id, control: controlCenter,
+                                store: workspaceStore),
+                            isInProject: SessionProjectMove.currentProjectID(
+                                session.id, control: controlCenter, store: workspaceStore) != nil,
+                            isMovingSession: model.movingSessionToProjectID != nil,
+                            onAddToProject: { selected, target in
+                                Task { @MainActor in
+                                    _ = await SessionProjectMove.perform(
+                                        selected, to: target, model: model, control: controlCenter,
+                                        store: workspaceStore)
+                                }
+                            }
                         )
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)

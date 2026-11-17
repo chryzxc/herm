@@ -101,6 +101,16 @@ struct SessionNavSidebarSnapshot: Equatable {
         }
     }
 
+    /// Projects a conversation can move to: every real project except the
+    /// ones that already list it.
+    func projectTargets(forSessionID sessionID: String) -> [SidebarProjectTarget] {
+        linkedProjectGroups.compactMap { group in
+            guard let path = group.projectPath, !group.sessions.contains(where: { $0.id == sessionID })
+            else { return nil }
+            return SidebarProjectTarget(title: group.title, path: path)
+        }
+    }
+
     /// Activity, attention and status tick on every tool event from every
     /// running session but only feed `attentionDots`; reusing `previous`'s
     /// groups keeps those ticks from rescanning every project × session.

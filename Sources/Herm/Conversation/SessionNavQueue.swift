@@ -705,7 +705,10 @@ struct SessionNavQueue: View, Equatable {
                     Task { _ = await controlCenter.addProjectFolder(project, folder: folder) }
                 },
                 onNewChatInProject: startNewChat(inProject:),
-                pinningSessionID: sidebarSnapshot.inputs.pinningSessionID
+                pinningSessionID: sidebarSnapshot.inputs.pinningSessionID,
+                projectTargets: { sidebarSnapshot.projectTargets(forSessionID: $0) },
+                isMovingSession: model.movingSessionToProjectID != nil,
+                onAddToProject: moveToProject
             )
         }
     }
@@ -902,12 +905,10 @@ struct SessionNavQueue: View, Equatable {
                 sessionPendingDeletion = selected
             },
             isPinning: sidebarSnapshot.inputs.pinningSessionID == session.id,
-            projectTargets: sidebarSnapshot.projectNameBySessionID[session.id] == nil
-                ? sidebarSnapshot.projectTargets : [],
-            onAddToProject: { selected, target in
-                workspaceStore.ensureTask(title: selected.displayTitle, sessionID: selected.id)
-                workspaceStore.attachProject(at: target.path, toSessionID: selected.id)
-            }
+            projectTargets: sidebarSnapshot.projectTargets(forSessionID: session.id),
+            isInProject: sidebarSnapshot.projectNameBySessionID[session.id] != nil,
+            isMovingSession: model.movingSessionToProjectID != nil,
+            onAddToProject: moveToProject
         )
         .equatable()
     }
@@ -991,9 +992,19 @@ struct SessionNavQueue: View, Equatable {
                 return succeeded
             },
             onRequestDelete: { sessionPendingDeletion = $0 },
-            isPinning: sidebarSnapshot.inputs.pinningSessionID == session.id
+            isPinning: sidebarSnapshot.inputs.pinningSessionID == session.id,
+            projectTargets: sidebarSnapshot.projectTargets(forSessionID: session.id),
+            isInProject: sidebarSnapshot.projectNameBySessionID[session.id] != nil,
+            onAddToProject: moveToProject
         )
         .equatable()
+    }
+
+    private func moveToProject(_ session: HermesSession, _ target: SidebarProjectTarget) {
+        Task { @MainActor in
+            _ = await SessionProjectMove.perform(
+                session, to: target, model: model, control: controlCenter, store: workspaceStore)
+        }
     }
 
     /// Section rows remain lazy; only the header is pinned by the rail.

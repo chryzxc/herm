@@ -12,7 +12,8 @@ extension DockModel {
 
     /// Hermes refuses to move a session while its turn runs.
     var canMoveSessionWorkspace: Bool {
-        sessionID != nil && !isSending && status != .working && status != .needsClarification
+        sessionID != nil && !isSending && status != .working && status != .needsApproval
+            && status != .needsClarification
     }
 
     /// Moves this chat to `path` with `session.cwd.set`. Hermes pins a folder
@@ -43,6 +44,43 @@ extension DockModel {
             return true
         } catch {
             guard sessionID == owner else { return false }
+            let code = ((error as NSError).userInfo["HermesRPCCode"] as? NSNumber)?.intValue
+            reportAttachmentError(
+                code == 4009
+                    ? Self.sessionWorkspaceBusyMessage
+                    : HermesDiagnosticsService.safeSummary(error.localizedDescription))
+            return false
+        }
+    }
+
+    /// Moves a stored conversation into the project folder `path` with
+    /// `session.workspace.move`. Hermes groups a session under the project that
+    /// holds its working directory, so the same conversation, with its messages,
+    /// then belongs to the destination project. Works for conversations that are
+    /// not open.
+    @discardableResult
+    func moveSessionToProject(_ session: HermesSession, path: String) async -> Bool {
+        guard movingSessionToProjectID == nil else { return false }
+        // A move re-homes a running agent mid-turn, which would split its tool calls across folders.
+        let isOpenChat = session.id == navigationSessionID
+        guard !session.isWorking, !isOpenChat || canMoveSessionWorkspace else {
+            reportAttachmentError(Self.sessionWorkspaceBusyMessage)
+            return false
+        }
+        movingSessionToProjectID = session.id
+        defer { movingSessionToProjectID = nil }
+        var params: [String: Any] = ["session_key": session.id, "cwd": path]
+        if let profileID = session.profileID ?? sessionProfileID ?? profileScopeID, !profileID.isEmpty {
+            params["profile"] = profileID
+        }
+        do {
+            let result = try await sessionRPCClient.request(
+                HermesFeatureIDs.ID.sessionWorkspaceMove.rawValue, params: params)
+            if session.id == navigationSessionID, let owner = sessionID {
+                applySessionWorkspace(result, owner: owner, force: true)
+            }
+            return true
+        } catch {
             let code = ((error as NSError).userInfo["HermesRPCCode"] as? NSNumber)?.intValue
             reportAttachmentError(
                 code == 4009
