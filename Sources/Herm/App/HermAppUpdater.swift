@@ -94,7 +94,9 @@ final class HermAppUpdater: ObservableObject {
     static let shared = HermAppUpdater()
     nonisolated static let repository = "chryzxc/herm"
     nonisolated static let updatePublicKey = Bundle.main.infoDictionary?["HermUpdatePublicKey"] as? String
-    private static let checkInterval: TimeInterval = 6 * 60 * 60
+    private static let checkInterval: TimeInterval = 60 * 60
+    /// Activation and Settings re-check only results older than this, so focus changes stay offline.
+    private static let staleInterval: TimeInterval = 15 * 60
     private static let idleRetryInterval: TimeInterval = 30
 
     @Published private(set) var phase: HermAppUpdatePhase = .idle
@@ -110,6 +112,7 @@ final class HermAppUpdater: ObservableObject {
     var isBusy: () -> Bool = { false }
 
     private var timer: Timer?
+    private var activationObserver: NSObjectProtocol?
     private var stagedAppURL: URL?
 
     let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -128,10 +131,26 @@ final class HermAppUpdater: ObservableObject {
             phase = .unavailable(reason)
             return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in self?.checkForUpdates() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in self?.checkIfStale() }
         timer = Timer.scheduledTimer(withTimeInterval: Self.checkInterval, repeats: true) { _ in
             Task { @MainActor in HermAppUpdater.shared.checkForUpdates() }
         }
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in HermAppUpdater.shared.checkIfStale() }
+        }
+    }
+
+    /// Checks only when the last result is older than `staleInterval`; cheap to call on every appear.
+    func checkIfStale() {
+        guard timer != nil, Self.isStale(lastChecked, now: Date(), maxAge: Self.staleInterval) else { return }
+        checkForUpdates()
+    }
+
+    nonisolated static func isStale(_ lastChecked: Date?, now: Date, maxAge: TimeInterval) -> Bool {
+        guard let lastChecked else { return true }
+        return now.timeIntervalSince(lastChecked) >= maxAge
     }
 
     nonisolated static func checkUnavailableReason(version: String?, bundleURL: URL = Bundle.main.bundleURL) -> String?

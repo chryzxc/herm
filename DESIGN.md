@@ -1954,8 +1954,9 @@ opens at the top when the category changes.
   keeps the working directory, execution backend, shell, file access, and output limits together.
   Panel and window share one agent updater. Its owner-scoped phase affects only
   ambient rail and companion activity, never session tasks or announcements.
-  Herm checks for app updates in the background and badges Settings and Updates
-  when one is available. Supported builds offer Download, then Install and
+  Herm checks for app updates hourly, and on app activation or opening Settings
+  when the last result is over 15 minutes old. It badges the Settings rail icon,
+  its Settings menu row, and Updates when one is available. Supported builds offer Download, then Install and
   restart; a requested restart waits for the current turn. Builds that cannot
   install in-app explain why. A secondary Release page button remains visible in every
   state. Downloading shows an animated byte-based progress meter and percentage;
