@@ -813,6 +813,30 @@ extension DockPopover {
         activeSessionRepositoryScope?.containsGitRepository(developerWorkflow.repository) == true
     }
 
+    /// The project chooser on an expanded, empty new chat; nil once a session exists.
+    var newChatProjectPicker: NewChatProjectPicker? {
+        guard isFullscreen, model.sessionID == nil, model.newSessionCreationAuthorized, !model.isCreatingSession,
+            model.messages.isEmpty
+        else { return nil }
+        return NewChatProjectPicker(
+            projects: controlCenter.projects,
+            selectedPath: model.newSessionProjectPath,
+            canCreateProject: controlCenter.projectMutationsAvailable,
+            onSelect: { model.chooseNewChatProject($0) },
+            onCreate: {
+                await controlCenter.createProject(name: URL(fileURLWithPath: $0).lastPathComponent, folder: $0)
+            }
+        )
+    }
+
+    /// Groups a chat created from the project picker under its project right away.
+    func groupPickedProjectSession(storageID: String, path: String) {
+        workspaceStore.attachProject(at: path, toSessionID: storageID)
+        model.touchSession(sessionID: storageID, at: Date())
+        controlCenter.selectProject(forPath: path)
+        model.loadSessions()
+    }
+
     /// Opens the worktree in a new chat carrying the draft; this chat keeps its folder.
     func openWorktreeInNewChat(_ path: String) async {
         guard await isSelectableWorktree(path) else { return }

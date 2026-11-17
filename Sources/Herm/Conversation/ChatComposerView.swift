@@ -18,6 +18,8 @@ struct ChatComposerView: View {
     /// Nil hides the quota chip (previews and snapshots).
     var controlCenter: ControlCenterModel? = nil
     var openQuota: () -> Void = {}
+    /// Set on a new chat with no session yet, to choose the project it starts in.
+    var projectPicker: NewChatProjectPicker? = nil
     /// The session's folder and branch, shown in the tray under the input.
     var worktreeBar: WorktreePicker? = nil
 
@@ -232,6 +234,7 @@ struct ChatComposerView: View {
             // One tray joins the plan, queue and folder bar to the input. With
             // none of them showing, the input covers it completely.
             VStack(spacing: 0) {
+                if let projectPicker { projectPicker }
                 ComposerSessionControlView(model: model)
                 PinnedWorkStrip(model: model)
                 if let controlCenter {

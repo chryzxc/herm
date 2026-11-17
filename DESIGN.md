@@ -3060,6 +3060,12 @@ with folder, branch and changed-file count. In a chat with a Hermes session, cho
 same fixed-size popover to a choice step: a back link, the chosen worktree, then **Move this chat here** (moves the
 session with `session.cwd.set`, disabled with its reason while a turn runs) and **Start a new chat here** (moves the
 draft to a new chat). A folder chosen this way is pinned by Hermes, so later agent worktree moves do not follow it.
+
+In the expanded panel, an empty new chat with no session yet shows a 28pt project bar at the top of the tray: a
+folder icon and **Choose project** (the project's folder name once chosen). It opens an anchored popover with a
+search field, the Herm projects (check on the current one) and **New project**, which creates a project from a
+folder. The choice sets the folder the session is created in, and the new session is grouped under that project as
+soon as it exists. The bar is absent in the popover, once a session exists, and in Bot chats.
 A chat without a session starts in the chosen worktree directly. When the
 session worktree has a committed HEAD, **New task in worktree…** creates a new
 worktree and moves the draft to a new chat there. Existing shells keep running in

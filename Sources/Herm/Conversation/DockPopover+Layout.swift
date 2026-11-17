@@ -775,6 +775,7 @@ extension DockPopover {
                 metrics: conversationMetrics,
                 controlCenter: controlCenter,
                 openQuota: { panelPresentation.quotaRequest += 1 },
+                projectPicker: newChatProjectPicker,
                 worktreeBar: activeSessionRepositoryScope.flatMap { scope in
                     guard developerWorkflow.repository.isGitRepository,
                         developerWorkflow.repository.path == scope.repositoryPath
