@@ -641,3 +641,59 @@ re-rendered the root. The root then updated three nested split-pane hosting view
 
 Not measured: paired before/after captures on battery and on charger. Follow the
 comparison method in the previous section.
+
+## Markdown scroll layout invalidation — 16 November 2026
+
+Scrolling a chat stays rough after the sidebar and publication coalescing work,
+so the question was whether the captures behind those changes describe the
+remaining cost. They do not fully.
+
+Observation. The installed `/Applications/Herm.app` reports build `af721430`;
+every capture in `~/Library/Logs/Herm/Performance` (`report-3` is
+`2026-11-16T11-43-37Z`) carries build `19dee7b5`, which predates `#210`. No
+capture exists of a build containing it. The `2026-11-16T07-01-06Z` capture (no
+stack samples) still estimates 55% lost callbacks, so sampling is not the cause,
+and its seconds with no publications and no body evaluations drop 35-45 of 120
+frames (t=10: 76 callbacks, worst 28 ms; t=12: 82 callbacks, worst 32 ms).
+`stack-t8s.txt`, taken in such a second, shows the main thread in
+`NSDisplayCycleFlush` -> `NSView layoutSubtreeIfNeeded` ->
+`NSHostingView.layout` -> `ViewGraphRootValueUpdater.render` for ~93 of 269
+samples, with fewer than 25 samples in Herm-owned frames. The per-frame cost is
+an AppKit/SwiftUI layout pass, not Markdown section layout.
+
+Mechanism. `MarkdownRenderDocument` registered bounds and frame change observers
+on every ancestor up to the clip view, and each notification set
+`needsLayout = true` (`Sources/Herm/Markdown/MarkdownRenderDocument.swift`).
+Every scroll tick changes the clip bounds, so each mounted assistant message
+requested a layout pass per tick, and `updateMountedSections` then returned early
+because the mounted range had not changed. The observers now call
+`viewportDidChange()`, which mounts the newly visible sections directly and only
+requests layout when the solved width or frame cache is out of date; width
+changes still go through `setFrameSize` -> `needsLayout`.
+
+Hypotheses still open. Whether this per-tick layout request is what keeps the
+window's display cycle in `layoutSubtreeIfNeeded` per frame needs a live A/B on
+the same build. The remaining 100-800 ms stalls in `report-3` (t=2, 5, 15, 16,
+22, 28) coincide with developer-workflow and session-workspace bursts and
+message streaming, which is the publication class `#210` targets; and
+`SessionAgentStateWriter.commit` still JSON-encodes on the main thread (14 of 269
+samples in `stack-t8s.txt`). Both are follow-ups, not this change.
+
+Recorder bias to control. The recorder's expected interval is always 8333 us, so
+dropped callbacks are counted against 120 Hz on a `.common`-mode run-loop display
+link; that measures main-thread availability rather than presented frames, and
+includes idle seconds where nothing needs drawing. `/usr/bin/sample` suspends the
+app while sampling, and Low Power Mode changes frame pacing.
+
+Acceptance for the live comparison. Same conversation, window size, power source
+and Low Power Mode on both builds, stack samples off, 30-second scroll captures:
+compare seconds with zero publications (callback count, worst gap) and the
+`layoutSubtreeIfNeeded` share in an optional sampled run, then confirm focus,
+selection and that sections still mount across the whole scroll. This change was
+verified by tests and builds only; no live capture of either build was taken
+here.
+
+Verification: `MarkdownScrollLayoutInvalidationTests` (2 tests) red before the
+observer change on `!container.needsLayout`, green after; the chat hot-path,
+render-optimisation, render-cache, scroll-observer, scroll-refresh, manual-scroll
+and scroll-fixture suites passed; `make build` and `make guard` passed.

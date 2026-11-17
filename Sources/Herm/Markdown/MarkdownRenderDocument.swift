@@ -371,7 +371,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                         NotificationCenter.default.addObserver(
                             forName: name, object: view, queue: .main
                         ) { [weak self] _ in
-                            MainActor.assumeIsolated { self?.needsLayout = true }
+                            MainActor.assumeIsolated { self?.viewportDidChange() }
                         })
                 }
                 if view === clip { break }
@@ -474,6 +474,18 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         super.layout()
         guard bounds.width > 1 else { return }
         _ = measuredHeight(forWidth: bounds.width)
+        updateMountedSections()
+    }
+
+    /// A scroll tick or an ancestor move changes what is visible, not how this
+    /// document is laid out. Mounting the newly visible sections directly keeps
+    /// the scroll's display cycle from queueing a layout pass per frame; the
+    /// layout pass is only needed when the solved geometry is out of date.
+    private func viewportDidChange() {
+        guard bounds.width > 1, cachedSolveWidth == bounds.width, entries.count == cachedFrames.count else {
+            needsLayout = true
+            return
+        }
         updateMountedSections()
     }
 
