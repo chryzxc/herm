@@ -468,7 +468,7 @@ struct ConversationRenderOptimizationTests {
             #expect(container.measuredHeight(forWidth: width) == height)
             container.needsLayout = true
             container.layoutSubtreeIfNeeded()
-            for section in container.subviews.compactMap({ $0 as? NativeMarkdownTextSectionView }) {
+            for section in container.mountedSectionViews.compactMap({ $0 as? NativeMarkdownTextSectionView }) {
                 let textContainer = try #require(section.textContainer)
                 let layout = try #require(section.layoutManager)
                 layout.ensureLayout(for: textContainer)

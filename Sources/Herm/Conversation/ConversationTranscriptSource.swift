@@ -125,7 +125,7 @@ final class ConversationTranscriptSource: ObservableObject {
         if !showingPreview, model.sessionActionsReady, let id = model.unreadDividerMessageID,
             let index = model.displayedTranscriptMessages.firstIndex(where: { $0.id == id })
         {
-            coordinator.jump(to: index)
+            if !coordinator.restoresViewedPosition { coordinator.jump(to: index) }
             positionedUnreadSessionID = model.transcriptPresentationID
             positionedUnreadMessageID = id
         }
@@ -229,7 +229,7 @@ final class ConversationTranscriptSource: ObservableObject {
             if let id, positionedUnreadSessionID != model.transcriptPresentationID || positionedUnreadMessageID != id,
                 let index = model.displayedTranscriptMessages.firstIndex(where: { $0.id == id })
             {
-                coordinator.jump(to: index)
+                if !coordinator.restoresViewedPosition { coordinator.jump(to: index) }
                 positionedUnreadSessionID = model.transcriptPresentationID
                 positionedUnreadMessageID = id
             } else if id == nil {

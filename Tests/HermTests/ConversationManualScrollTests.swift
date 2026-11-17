@@ -32,7 +32,7 @@ struct ConversationManualScrollTests {
             window.contentView = scroll
             scroll.layoutSubtreeIfNeeded()
             document.layoutSubtreeIfNeeded()
-            sections = document.subviews
+            sections = document.mountedSectionViews
         }
 
         func scroll(to y: CGFloat) {
@@ -51,7 +51,7 @@ struct ConversationManualScrollTests {
         }
         let height = fixture.document.intrinsicContentSize.height
         fixture.scroll(to: height - fixture.scroll.contentView.bounds.height)
-        #expect(!fixture.document.subviews.isEmpty)
+        #expect(!fixture.document.mountedSectionViews.isEmpty)
         #expect(fixture.document.intrinsicContentSize.height == height)
         fixture.document.keepsAccessibilitySectionsMounted = true
         fixture.document.layoutSubtreeIfNeeded()
@@ -74,7 +74,8 @@ struct ConversationManualScrollTests {
         fixture.document.applyStreaming(sections: sections, source: source)
         fixture.document.setFrameSize(NSSize(width: 640, height: fixture.document.measuredHeight(forWidth: 640)))
         fixture.document.layoutSubtreeIfNeeded()
-        let first = try #require(fixture.document.subviews.compactMap { $0 as? NativeMarkdownCodeView }.first)
+        let first = try #require(
+            fixture.document.mountedSectionViews.compactMap { $0 as? NativeMarkdownCodeView }.first)
         #expect(sections.count > 2)
         if !NSApp.isFullKeyboardAccessEnabled {
             #expect(fixture.document.instantiatedSectionCount < sections.count)
@@ -92,19 +93,21 @@ struct ConversationManualScrollTests {
         fixture.document.keepsAccessibilitySectionsMounted = false
         fixture.document.layoutSubtreeIfNeeded()
         if !NSApp.isFullKeyboardAccessEnabled {
-            #expect(fixture.document.subviews.count < fixture.sections.count)
+            #expect(fixture.document.mountedSectionViews.count < fixture.sections.count)
         }
         let first = try #require(fixture.sections.first as? NativeMarkdownTextSectionView).string
         fixture.scroll(to: height - fixture.scroll.contentView.bounds.height)
-        #expect(fixture.document.subviews.contains { $0 is NativeMarkdownCodeView })
+        #expect(fixture.document.mountedSectionViews.contains { $0 is NativeMarkdownCodeView })
         #expect(fixture.document.intrinsicContentSize.height == height)
         fixture.scroll(to: 0)
-        #expect(fixture.document.subviews.compactMap { $0 as? NativeMarkdownTextSectionView }.first?.string == first)
+        #expect(
+            fixture.document.mountedSectionViews.compactMap { $0 as? NativeMarkdownTextSectionView }.first?.string
+                == first)
         #expect(fixture.document.intrinsicContentSize.height == height)
 
         fixture.document.keepsAccessibilitySectionsMounted = true
         fixture.document.layoutSubtreeIfNeeded()
-        #expect(fixture.document.subviews.count == fixture.sections.count)
+        #expect(fixture.document.mountedSectionViews.count == fixture.sections.count)
         #expect(fixture.document.intrinsicContentSize.height == height)
     }
 
@@ -116,7 +119,7 @@ struct ConversationManualScrollTests {
         let height = fixture.document.intrinsicContentSize.height
         for step in 0...32 {
             fixture.scroll(to: (height - fixture.scroll.contentView.bounds.height) * CGFloat(step) / 32)
-            #expect(fixture.document.instantiatedSectionCount <= fixture.document.subviews.count + 8)
+            #expect(fixture.document.instantiatedSectionCount <= fixture.document.mountedSectionViews.count + 8)
         }
         #expect(fixture.document.viewportSectionVisits < 512 * 8)
         let visits = fixture.document.viewportSectionVisits
@@ -126,8 +129,24 @@ struct ConversationManualScrollTests {
         fixture.scroll(to: 0)
         #expect(fixture.document.intrinsicContentSize.height == height)
         #expect(
-            fixture.document.subviews.compactMap { $0 as? NativeMarkdownTextSectionView }
+            fixture.document.mountedSectionViews.compactMap { $0 as? NativeMarkdownTextSectionView }
                 .contains { $0.string.contains("Paragraph 0") })
+    }
+
+    @Test func scrollingBackReshowsAPooledSectionWithoutReaddingIt() throws {
+        let source = (0..<120).map { "Paragraph \($0) with **formatted** text.\n\n" }.joined()
+        let fixture = NativeFixture(source: source, keepsAllSections: false)
+        defer { fixture.window.orderOut(nil) }
+        guard !NSApp.isFullKeyboardAccessEnabled else { return }
+        let first = try #require(fixture.document.mountedSectionViews.first)
+        // Just past the unmount band: twice the viewport height beyond the visible rect.
+        fixture.scroll(to: first.frame.maxY + fixture.scroll.contentView.bounds.height * 2 + 10)
+        #expect(!fixture.document.mountedSectionViews.contains { $0 === first })
+        #expect(first.superview === fixture.document)
+        #expect(first.isHidden)
+        fixture.scroll(to: 0)
+        #expect(fixture.document.mountedSectionViews.first === first)
+        #expect(!first.isHidden)
     }
 
     @Test func scrollingKeepsFocusedTextAndSelectionMounted() throws {
@@ -135,7 +154,8 @@ struct ConversationManualScrollTests {
         defer { fixture.window.orderOut(nil) }
         fixture.document.keepsAccessibilitySectionsMounted = false
         fixture.document.layoutSubtreeIfNeeded()
-        let text = try #require(fixture.document.subviews.compactMap { $0 as? NativeMarkdownTextSectionView }.first)
+        let text = try #require(
+            fixture.document.mountedSectionViews.compactMap { $0 as? NativeMarkdownTextSectionView }.first)
         #expect(fixture.window.makeFirstResponder(text))
         let range = NSRange(location: 0, length: 5)
         text.setSelectedRange(range)
@@ -152,7 +172,7 @@ struct ConversationManualScrollTests {
         let fixture = NativeFixture(source: source, keepsAllSections: false)
         defer { fixture.window.orderOut(nil) }
         guard !NSApp.isFullKeyboardAccessEnabled else { return }
-        let code = try #require(fixture.document.subviews.compactMap { $0 as? NativeMarkdownCodeView }.first)
+        let code = try #require(fixture.document.mountedSectionViews.compactMap { $0 as? NativeMarkdownCodeView }.first)
         code.layoutSubtreeIfNeeded()
         let scroll = try #require(code.subviews.compactMap { $0 as? NativeMarkdownHorizontalScrollView }.first)
         scroll.contentView.scroll(to: NSPoint(x: 120, y: 0))
@@ -162,7 +182,8 @@ struct ConversationManualScrollTests {
         let maxY = fixture.document.intrinsicContentSize.height - fixture.scroll.contentView.bounds.height
         for step in 1...10 { fixture.scroll(to: maxY * CGFloat(step) / 10) }
         fixture.scroll(to: 0)
-        let restored = try #require(fixture.document.subviews.compactMap { $0 as? NativeMarkdownCodeView }.first)
+        let restored = try #require(
+            fixture.document.mountedSectionViews.compactMap { $0 as? NativeMarkdownCodeView }.first)
         #expect(restored !== code)
         restored.layoutSubtreeIfNeeded()
         #expect(abs(restored.horizontalOffset - offset) < 1)
@@ -173,10 +194,10 @@ struct ConversationManualScrollTests {
         defer { fixture.window.orderOut(nil) }
         fixture.document.keepsAccessibilitySectionsMounted = false
         fixture.document.layoutSubtreeIfNeeded()
-        let before = Set(fixture.document.subviews.map(ObjectIdentifier.init))
+        let before = Set(fixture.document.mountedSectionViews.map(ObjectIdentifier.init))
         fixture.scroll.contentView.setFrameSize(NSSize(width: 640, height: 1_000))
         fixture.document.layoutSubtreeIfNeeded()
-        let after = Set(fixture.document.subviews.map(ObjectIdentifier.init))
+        let after = Set(fixture.document.mountedSectionViews.map(ObjectIdentifier.init))
         #expect(before.isSubset(of: after))
         if !NSApp.isFullKeyboardAccessEnabled { #expect(after.count > before.count) }
     }
@@ -227,10 +248,10 @@ struct ConversationManualScrollTests {
         movingView.setFrameOrigin(NSPoint(x: 0, y: 2_000))
         fixture.document.keepsAccessibilitySectionsMounted = false
         fixture.scroll(to: 0)
-        if !NSApp.isFullKeyboardAccessEnabled { #expect(fixture.document.subviews.isEmpty) }
+        if !NSApp.isFullKeyboardAccessEnabled { #expect(fixture.document.mountedSectionViews.isEmpty) }
         movingView.setFrameOrigin(.zero)
         content.layoutSubtreeIfNeeded()
-        #expect(!fixture.document.subviews.isEmpty)
+        #expect(!fixture.document.mountedSectionViews.isEmpty)
     }
 
     @Test func streamedAppendPreservesReadingPositionAndRetainedSections() throws {
@@ -252,7 +273,7 @@ struct ConversationManualScrollTests {
         #expect(first.superview === fixture.document)
         fixture.scroll(to: fixture.document.frame.height - fixture.scroll.contentView.bounds.height)
         #expect(
-            fixture.document.subviews.compactMap { $0 as? NativeMarkdownTextSectionView }.contains {
+            fixture.document.mountedSectionViews.compactMap { $0 as? NativeMarkdownTextSectionView }.contains {
                 $0.string.contains("More streamed text.")
             })
     }
@@ -368,7 +389,7 @@ struct ConversationManualScrollTests {
         controller.shiftVisibleTop(by: height / 2)
         host.layoutSubtreeIfNeeded()
         #expect(document.intrinsicContentSize.height == height)
-        #expect(!document.subviews.isEmpty)
+        #expect(!document.mountedSectionViews.isEmpty)
     }
 
     /// Opt-in process CPU comparison; it never starts Hermes or reads a user's transcript.
@@ -449,7 +470,7 @@ struct ConversationManualScrollTests {
             host.layoutSubtreeIfNeeded()
             try await Task.sleep(for: .milliseconds(25))
         }
-        let mounted = containers.reduce(0) { $0 + $1.subviews.count }
+        let mounted = containers.reduce(0) { $0 + $1.mountedSectionViews.count }
         #expect(containers.count == 12)
         let setupMS = Double(DispatchTime.now().uptimeNanoseconds - setupStarted) / 1_000_000
         let readsBefore = metrics.geometryReads
@@ -482,7 +503,7 @@ struct ConversationManualScrollTests {
         if streams { #expect(streaming?.text == longMarkdown) }
         if keepsAllSections {
             #expect(containers.allSatisfy { $0.keepsAccessibilitySectionsMounted })
-            #expect(containers.reduce(0) { $0 + $1.subviews.count } == mounted)
+            #expect(containers.reduce(0) { $0 + $1.mountedSectionViews.count } == mounted)
         }
         let sortedSteps = stepMS.sorted()
         let mode =

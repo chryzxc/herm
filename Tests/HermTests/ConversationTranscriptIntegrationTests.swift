@@ -666,6 +666,98 @@ struct ConversationTranscriptIntegrationTests {
         #expect(abs((try #require(fixture.controller.geometry)).visibleTop - top) < 1)
     }
 
+    /// Long Markdown turns of uneven height (prose, lists, tables, code) through the
+    /// real resume path; every frame after returning must show the message the
+    /// reader left at the same offset, with or without a cached transcript.
+    @Test(.serialized, arguments: [true, false])
+    func sessionReturnKeepsTheLastViewedMessageInLongMarkdown(cached: Bool) async throws {
+        func reply(_ turn: Int) -> String {
+            var text = "## Turn \(turn) analysis\n\n"
+            for paragraph in 0..<(3 + turn % 7) {
+                text += "Paragraph \(paragraph) explains **why** the `Coordinator` keeps its anchor while "
+                text += String(
+                    repeating: "rows above it measure Markdown asynchronously and grow. ", count: 4 + turn % 5)
+                text += "\n\n"
+            }
+            text +=
+                (0..<(2 + turn % 4)).map { "- Item \($0) with `inline code` and a [link](https://example.com)" }
+                .joined(separator: "\n") + "\n\n"
+            if turn.isMultiple(of: 3) {
+                text += "| Column | Value | Notes |\n|---|---|---|\n"
+                text += (0..<6).map { "| row \($0) | \($0 * turn) | some wrapped table text |" }.joined(separator: "\n")
+                text += "\n\n"
+            }
+            if turn.isMultiple(of: 2) {
+                text += "```swift\n" + String(repeating: "let value = compute(input) // line\n", count: 10 + turn * 7)
+                text += "```\n\n"
+            }
+            return text + "End of turn \(turn)."
+        }
+        func session(_ id: String) -> HermesSession {
+            HermesSession(id: id, title: id, preview: "", startedAt: nil, messageCount: 0, source: "test")
+        }
+        var rows: [[String: Any]] = []
+        for turn in 0..<40 {
+            rows.append(["id": rows.count + 1, "role": "user", "content": "Question \(turn): walk me through it."])
+            rows.append(["id": rows.count + 1, "role": "assistant", "content": reply(turn)])
+        }
+        let fixture = Fixture(messages: [], rpcClient: SessionSwitchTimingRPC(rows: rows))
+        defer { fixture.window.orderOut(nil) }
+        try await fixture.settle()
+        #expect(await fixture.model.resumeSession(session("a"), reportFailure: true))
+        try await fixture.settle()
+        let sessionA = try #require(fixture.model.transcriptPresentationID)
+        for _ in 0..<5 {
+            let geometry = try #require(fixture.controller.geometry)
+            try fixture.move(to: max(0, geometry.visibleTop - 2_500))
+            try await fixture.settle()
+        }
+        try fixture.move(to: try #require(fixture.controller.geometry).visibleTop - 137)
+        try await fixture.settle()
+        func topRow() throws -> (text: String, offset: CGFloat)? {
+            let geometry = try #require(fixture.controller.geometry)
+            let messages = fixture.model.displayedTranscriptMessages
+            guard
+                let row = fixture.coordinator.rowViewports.filter({
+                    $0.maxY > geometry.visibleTop && $0.minY < geometry.visibleTop + geometry.visibleHeight
+                }).min(by: { $0.index < $1.index }), messages.indices.contains(row.index)
+            else { return nil }
+            return (String(messages[row.index].text.prefix(40)), row.minY - geometry.visibleTop)
+        }
+        for cycle in 0..<3 {
+            if cycle > 0 {
+                try fixture.move(to: try #require(fixture.controller.geometry).visibleTop - CGFloat(900 * cycle + 61))
+                try await fixture.settle()
+            }
+            let left = try #require(try topRow())
+            #expect(await fixture.model.resumeSession(session("b"), reportFailure: true))
+            try await fixture.settle()
+            if !cached { fixture.model.sessionTranscriptCache.removeAll() }
+            let back = Task { await fixture.model.resumeSession(session("a"), reportFailure: true) }
+            var frames: [String] = []
+            var wrong = 0
+            var hidden = 0
+            for _ in 0..<100 {
+                fixture.host.layoutSubtreeIfNeeded()
+                fixture.host.displayIfNeeded()
+                if fixture.controller.clipView?.enclosingScrollView?.alphaValue == 0 {
+                    hidden += 1
+                } else if fixture.coordinator.sessionID == sessionA, let top = try topRow() {
+                    if top.text != left.text || abs(top.offset - left.offset) >= 2 { wrong += 1 }
+                    let frame = "\(top.text.suffix(20))|\(Int(top.offset))"
+                    if frames.last != frame { frames.append(frame) }
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            #expect(await back.value)
+            let landed = try #require(try topRow())
+            #expect(landed.text == left.text, "cycle \(cycle)")
+            #expect(abs(landed.offset - left.offset) < 2, "cycle \(cycle)")
+            #expect(hidden < 15, "cycle \(cycle) concealed for \(hidden) frames")
+            #expect(wrong == 0, "cycle \(cycle) left \(Int(left.offset)); frames \(frames)")
+        }
+    }
+
     @Test func sessionReplacementResetsProductionMountingAndRejectsOldGeometry() async throws {
         let fixture = Fixture()
         defer { fixture.window.orderOut(nil) }

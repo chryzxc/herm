@@ -3,11 +3,23 @@ import Foundation
 // Compile with HermesCompatibilityContract.swift; the app and CI use the same comparison.
 func read(_ address: String) async throws -> Data {
     guard let url = URL(string: address) else { throw URLError(.badURL) }
-    let (data, response) = try await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 30))
-    guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 8_388_608 else {
-        throw URLError(.badServerResponse)
+    var request = URLRequest(url: url, timeoutInterval: 30)
+    // Shared CI runners exhaust GitHub's anonymous API limit; authenticate when a token is provided.
+    if url.host == "api.github.com", let token = ProcessInfo.processInfo.environment["GITHUB_TOKEN"], !token.isEmpty {
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    }
+    let (data, response) = try await URLSession.shared.data(for: request)
+    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+    guard status == 200, data.count <= 8_388_608 else {
+        throw HermesCompatibilityFetchError(address: address, status: status)
     }
     return data
+}
+
+struct HermesCompatibilityFetchError: LocalizedError {
+    let address: String
+    let status: Int
+    var errorDescription: String? { "\(address) returned HTTP \(status)." }
 }
 
 func run() async throws {

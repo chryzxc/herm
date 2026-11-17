@@ -244,7 +244,9 @@ final class NativeMarkdownTextView: NSTextView {
     override func mouseMoved(with event: NSEvent) {
         // NSTextView's own handling sets an I-beam, so it only runs when the
         // text (not a neighbouring button) is what the mouse is over.
-        guard claimsMarkdownCursor(for: event) else { return }
+        // Mid-scroll moves only chase text sliding under a still pointer;
+        // the claim below re-hit-tests the whole window.
+        guard !DockScrollActivity.isScrolling(at: event.timestamp), claimsMarkdownCursor(for: event) else { return }
         super.mouseMoved(with: event)
         markdownCursor(for: event).set()
     }
@@ -338,7 +340,10 @@ extension EnvironmentValues {
 /// jump followed by a correction).
 @MainActor
 final class ConversationScrollController {
-    weak var clipView: NSClipView?
+    weak var clipView: NSClipView? { didSet { applyConcealment() } }
+    /// Hides the transcript while a restored position lands, so the reader
+    /// sees one frame already in place instead of the window top, then a jump.
+    var isConcealed = false { didSet { applyConcealment() } }
     var allowsOccludedPreparationForTesting = false
     var markdownMeasurementContext: NativeMarkdownDocumentContainerView.MeasurementContext?
     var preparedPage: ConversationPreparedPage?
@@ -348,6 +353,8 @@ final class ConversationScrollController {
     let userScrollSettled = PassthroughSubject<Void, Never>()
 
     func userScrollDidMove() { isUserScrolling = true }
+
+    private func applyConcealment() { clipView?.enclosingScrollView?.alphaValue = isConcealed ? 0 : 1 }
 
     func userScrollDidSettle() {
         guard isUserScrolling else { return }
@@ -427,9 +434,24 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
+        let view = WindowAttachView(frame: .zero)
         view.isHidden = true
+        // Attach in the same turn the scroll view enters the window, so a
+        // restored position lands before its first frame instead of after it.
+        view.onMoveToWindow = { [weak view, coordinator = context.coordinator] in
+            guard let view else { return }
+            coordinator.attachIfNeeded(from: view)
+        }
         return view
+    }
+
+    final class WindowAttachView: NSView {
+        var onMoveToWindow: (() -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil { onMoveToWindow?() }
+        }
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
@@ -529,6 +551,8 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
         }
 
         private func boundsDidChange() {
+            // A session's outgoing scroll view must not report as reader movement.
+            guard controller.clipView === clipView else { return }
             lastBoundsChange = DispatchTime.now().uptimeNanoseconds
             if let geometry = controller.geometry {
                 let delta =

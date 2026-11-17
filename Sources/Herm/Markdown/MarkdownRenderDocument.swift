@@ -310,6 +310,9 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     private lazy var codeMeasurer = NativeMarkdownCodeView()
     private var entries: [Entry] = []
     var instantiatedSectionCount: Int { entries.filter { $0.view != nil }.count }
+    /// Section views in the viewport band, in document order. Pooled views
+    /// stay hidden subviews, so `subviews` is not the mounted set.
+    var mountedSectionViews: [NSView] { mountedIndices.sorted().compactMap { entries[$0].view } }
     private var source = ""
     private var renderedSections: [MarkdownRenderSection] = []
     private var isStreamingDocument = false
@@ -330,6 +333,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     private(set) var viewportSectionVisits = 0
     private(set) var viewportMountChanges = 0
     private weak var observedClipView: NSClipView?
+    private var observedAncestors: [ObjectIdentifier] = []
     nonisolated(unsafe) private var viewportObservers: [NSObjectProtocol] = []
     var keepsAccessibilitySectionsMounted = false {
         didSet {
@@ -357,28 +361,37 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
 
     private func observeViewport() {
         let clip = window == nil ? nil : enclosingScrollView?.contentView
+        observedClipView = clip
+        needsLayout = true
+        // SwiftUI detaches and reattaches platform views as rows scroll past.
+        // Keep the observers across that instead of rebuilding them each time;
+        // updateMountedSections ignores notifications while detached.
+        guard let clip else { return }
+        var chain: [NSView] = []
+        var ancestor: NSView? = self
+        while let view = ancestor {
+            chain.append(view)
+            if view === clip { break }
+            ancestor = view.superview
+        }
+        let ids = chain.map(ObjectIdentifier.init)
+        guard ids != observedAncestors else { return }
         for observer in viewportObservers { NotificationCenter.default.removeObserver(observer) }
         viewportObservers.removeAll()
-        observedClipView = clip
-        if let clip {
-            // A preceding row can move this message into view without scrolling.
-            var ancestor: NSView? = self
-            while let view = ancestor {
-                view.postsBoundsChangedNotifications = true
-                view.postsFrameChangedNotifications = true
-                for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
-                    viewportObservers.append(
-                        NotificationCenter.default.addObserver(
-                            forName: name, object: view, queue: .main
-                        ) { [weak self] _ in
-                            MainActor.assumeIsolated { self?.viewportDidChange() }
-                        })
-                }
-                if view === clip { break }
-                ancestor = view.superview
+        observedAncestors = ids
+        // A preceding row can move this message into view without scrolling.
+        for view in chain {
+            view.postsBoundsChangedNotifications = true
+            view.postsFrameChangedNotifications = true
+            for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
+                viewportObservers.append(
+                    NotificationCenter.default.addObserver(
+                        forName: name, object: view, queue: .main
+                    ) { [weak self] _ in
+                        MainActor.assumeIsolated { self?.viewportDidChange() }
+                    })
             }
         }
-        needsLayout = true
     }
 
     deinit {
@@ -501,6 +514,11 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         }
         let keepAll = keepsAccessibilitySectionsMounted || NSApp?.isFullKeyboardAccessEnabled == true
         let range = keepAll || viewport == nil ? entries.indices : sectionRange(intersecting: viewport!)
+        // Unmount only past a wider band, so scrolling back and forth near the
+        // edge does not remove, re-add, and redraw the same text views.
+        let retained: Range<Int> =
+            keepAll || viewport == nil || visible.isEmpty
+            ? range : sectionRange(intersecting: viewport!.insetBy(dx: 0, dy: -observedClipView!.bounds.height))
         var focused = window?.firstResponder as? NSView
         var focusedIndex: Int?
         while let view = focused, view !== self {
@@ -511,15 +529,19 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
             focused = view.superview
         }
         if range == lastMountedRange, keepAll == lastKeepAll, focusedIndex == lastFocusedIndex { return }
+        let carried = lastKeepAll ? [] : mountedIndices.filter(retained.contains)
         lastMountedRange = range
         lastKeepAll = keepAll
         lastFocusedIndex = focusedIndex
-        var desired = Set(range)
+        var desired = Set(range).union(carried)
         if let focusedIndex { desired.insert(focusedIndex) }
         for index in mountedIndices.subtracting(desired) {
             guard let view = entries[index].view else { continue }
             if let code = view as? NativeMarkdownCodeView { entries[index].horizontalOffset = code.horizontalOffset }
-            view.removeFromSuperview()
+            // Hide rather than remove: a pooled view keeps its drawn layer, so
+            // scrolling back shows it without a re-add, window attach, or redraw.
+            // Hidden views skip hit testing, cursor rects, display and accessibility.
+            view.isHidden = true
             inactiveIndices.removeAll { $0 == index }
             inactiveIndices.append(index)
             viewportMountChanges += 1
@@ -607,6 +629,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
             bytes -= entries[index].estimatedCost
             count -= 1
             viewIndices.removeValue(forKey: ObjectIdentifier(view))
+            view.removeFromSuperview()
             entries[index].view = nil
         }
         inactiveIndices.removeAll { entries[$0].view == nil }
@@ -673,9 +696,12 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         for entry in entries {
             if let view = entry.view, !kept.contains(ObjectIdentifier(view)) { view.removeFromSuperview() }
         }
+        let mountedViews = Set(mountedIndices.compactMap { entries[$0].view.map(ObjectIdentifier.init) })
+        let isMounted = { (index: Int) in next[index].view.map { mountedViews.contains(ObjectIdentifier($0)) } ?? false
+        }
         entries = next
-        mountedIndices = Set(next.indices.filter { next[$0].view?.superview === self })
-        inactiveIndices = next.indices.filter { next[$0].view != nil && next[$0].view?.superview !== self }
+        mountedIndices = Set(next.indices.filter(isMounted))
+        inactiveIndices = next.indices.filter { next[$0].view != nil && !isMounted($0) }
         viewIndices = Dictionary(
             uniqueKeysWithValues: next.indices.compactMap { index in
                 next[index].view.map { (ObjectIdentifier($0), index) }
@@ -1393,7 +1419,9 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
     override func mouseMoved(with event: NSEvent) {
         // NSTextView's own handling sets an I-beam, so it only runs when the
         // text (not a neighbouring button) is what the mouse is over.
-        guard claimsMarkdownCursor(for: event) else { return }
+        // Mid-scroll moves only chase text sliding under a still pointer;
+        // the claim below re-hit-tests the whole window.
+        guard !DockScrollActivity.isScrolling(at: event.timestamp), claimsMarkdownCursor(for: event) else { return }
         super.mouseMoved(with: event)
         markdownCursor(for: event).set()
     }

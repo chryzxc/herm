@@ -38,7 +38,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         let generation: UInt64
         let range: Range<Int>
         var anchor: ConversationScrollAnchor
-        var isRestoring = false
+        var isCorrecting = false
         var preparedPage: ConversationPreparedPage? = nil
     }
 
@@ -52,8 +52,26 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     let performance = ConversationPerformanceMonitor()
     private(set) var navigationGeneration: UInt64 = 0
     private var totalCount = 0
-    private var savedAnchors: [String: ConversationScrollAnchor] = [:]
+    /// A reading position survives a transcript re-parse (new message ids) by
+    /// its Hermes row id, then by its distance from the end.
+    private struct SavedPosition {
+        var anchor: ConversationScrollAnchor
+        var rowID: Int?
+        var fromEnd: Int
+    }
+    private var savedAnchors: [String: SavedPosition] = [:]
+    /// Hermes row id of each shown message, as of the last synchronize.
+    private var rowIDByMessage: [UUID: Int] = [:]
+    /// A session reopened before its transcript arrived restores once it does.
+    private var awaitingRestore: SavedPosition?
     private var savedAnchorOrder: [String] = []
+    private var viewedSessionIDs: [String] = []
+    /// The reader already saw this session in this run: reopening keeps their
+    /// last position (or the live tail) instead of jumping to the unread divider.
+    private(set) var restoresViewedPosition = false
+    /// A restored session position stays pinned while rows above it finish
+    /// measuring, until the reader scrolls or navigates.
+    private var restoredAnchor: ConversationScrollAnchor?
     private var lastResponseCount = 0
     private var countedMessagesRevision: UInt64?
     private var consumedPrependGeneration = 0
@@ -86,15 +104,26 @@ final class ConversationTranscriptCoordinator: ObservableObject {
                 $0.maxY > geometry.visibleTop && $0.minY < geometry.visibleTop + geometry.visibleHeight
             }).min(by: { $0.index < $1.index })
         else { return }
-        savedAnchors[id] = ConversationScrollAnchor(
-            messageID: row.target.messageID, offset: row.minY - geometry.visibleTop)
+        savedAnchors[id] = SavedPosition(
+            anchor: ConversationScrollAnchor(messageID: row.target.messageID, offset: row.minY - geometry.visibleTop),
+            rowID: rowIDByMessage[row.target.messageID], fromEnd: totalCount - row.index)
         savedAnchorOrder.removeAll { $0 == id }
         savedAnchorOrder.append(id)
         if savedAnchorOrder.count > 8 { savedAnchors[savedAnchorOrder.removeFirst()] = nil }
     }
 
-    func reset(sessionID: String?, totalCount: Int, bubbleCount: Int, messages: [ChatMessage] = []) {
-        if self.sessionID != sessionID { saveAnchor() }
+    func reset(
+        sessionID: String?, totalCount: Int, bubbleCount: Int, messages: [ChatMessage] = [], rowIDs: [Int: UUID] = [:]
+    ) {
+        if self.sessionID != sessionID {
+            saveAnchor()
+            if let left = self.sessionID {
+                viewedSessionIDs.removeAll { $0 == left }
+                viewedSessionIDs.append(left)
+                if viewedSessionIDs.count > 64 { viewedSessionIDs.removeFirst() }
+            }
+            restoresViewedPosition = sessionID.map(viewedSessionIDs.contains) ?? false
+        }
         invalidate()
         self.sessionID = sessionID
         self.totalCount = totalCount
@@ -103,28 +132,55 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         consumedPrependGeneration = 0
         rowViewports = []
         presentation.reset()
+        awaitingRestore = nil
         if let sessionID, let saved = savedAnchors.removeValue(forKey: sessionID) {
             savedAnchorOrder.removeAll { $0 == sessionID }
-            if let index = messages.firstIndex(where: { $0.id == saved.messageID }) {
-                setRange(ConversationMessageWindow.jumpWindow(aroundIndex: index, totalCount: totalCount))
+            if messages.isEmpty {
+                awaitingRestore = saved
                 presentation.isAtBottom = false
-                pendingPage = PageTransaction(
-                    sessionID: sessionID, generation: generation, range: mountedRange, anchor: saved)
+                setRange(0..<0)
                 return
             }
+            if restore(saved, messages: messages, rowIDs: rowIDs) { return }
         }
         setRange(ConversationMessageWindow.rangeForSessionReplacement(totalCount: totalCount))
         navigationAfterLayout = { [weak self] in self?.followTail() }
     }
 
+    private func restore(_ saved: SavedPosition, messages: [ChatMessage], rowIDs: [Int: UUID]) -> Bool {
+        let byID = messages.firstIndex { $0.id == saved.anchor.messageID }
+        let byRow = saved.rowID.flatMap { rowIDs[$0] }.flatMap { id in messages.firstIndex { $0.id == id } }
+        let fromEnd = messages.count - saved.fromEnd
+        guard let sessionID,
+            let index = byID ?? byRow ?? (messages.indices.contains(fromEnd) ? fromEnd : nil)
+        else { return false }
+        let anchor = ConversationScrollAnchor(messageID: messages[index].id, offset: saved.anchor.offset)
+        invalidate()
+        totalCount = messages.count
+        setRange(ConversationMessageWindow.jumpWindow(aroundIndex: index, totalCount: messages.count))
+        presentation.isAtBottom = false
+        pendingPage = PageTransaction(sessionID: sessionID, generation: generation, range: mountedRange, anchor: anchor)
+        restoredAnchor = anchor
+        controller.isConcealed = true
+        let landing = generation
+        // ponytail: fixed failsafe; a page that never measures still reveals.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self, self.generation == landing else { return }
+            self.controller.isConcealed = false
+        }
+        return true
+    }
+
     func invalidate() {
         navigationGeneration &+= 1
+        restoredAnchor = nil
         cancelMounting()
     }
 
     private func cancelMounting() {
         generation &+= 1
         pendingPage = nil
+        controller.isConcealed = false
         controller.preparedPage = nil
         navigationAfterLayout = nil
         queuedDirection = 0
@@ -141,8 +197,8 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     }
 
     func userMoved(_ geometry: ConversationScrollGeometry, delta: CGFloat) {
-        presentation.isUserScrolling = true
         pendingPage?.anchor.recordUserScroll(delta: delta)
+        restoredAnchor = nil
         if let request = historyRequest, request.direction * delta < 0 {
             cancelHistoryRequest()
         }
@@ -156,7 +212,6 @@ final class ConversationTranscriptCoordinator: ObservableObject {
 
     func settled(_ geometry: ConversationScrollGeometry) {
         performance.recordScrollSettled()
-        presentation.isUserScrolling = false
         guard pendingPage == nil else { return }
         updatePosition(geometry)
         presentation.visibleTargets = Set(
@@ -188,8 +243,23 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         }
     }
 
+    /// Runs the navigation queued for this layout once the session's scroll
+    /// view is attached; before that a scroll lands nowhere and is lost.
+    private func runNavigationIfAttached() -> Bool {
+        guard let navigate = navigationAfterLayout else { return false }
+        guard controller.geometry != nil, Set(rowViewports.map(\.index)) == Set(mountedRange) else { return true }
+        navigationAfterLayout = nil
+        scheduleScroll(navigate)
+        return true
+    }
+
     func contentResized() {
-        guard pendingPage == nil, presentation.isAtBottom else { return }
+        if runNavigationIfAttached() { return }
+        if restoredAnchor != nil || pendingPage != nil {
+            applyAnchor()
+            return
+        }
+        guard presentation.isAtBottom else { return }
         followTail()
     }
 
@@ -295,29 +365,45 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         else { return }
         onAcceptedLayout(layout.sessionID)
         rowViewports = layout.rows
-        if let navigate = navigationAfterLayout {
-            navigationAfterLayout = nil
-            scheduleScroll(navigate)
-            return
-        }
+        if runNavigationIfAttached() { return }
         if pendingPage == nil, queuedDirection != 0, let geometry = controller.geometry {
             let direction = queuedDirection
             queuedDirection = 0
             checkEdge(geometry, direction: direction)
             return
         }
-        guard let page = pendingPage, !page.isRestoring,
+        applyAnchor()
+    }
+
+    /// Lands the pending page, or keeps a restored session position pinned,
+    /// against the latest mounted rows. The transcript gets a new scroll view
+    /// per session that attaches after its first layout, so this also runs on attach.
+    private func applyAnchor() {
+        guard let geometry = controller.geometry, Set(rowViewports.map(\.index)) == Set(mountedRange) else { return }
+        if pendingPage == nil, let anchor = restoredAnchor,
+            let row = rowViewports.first(where: { $0.target.messageID == anchor.messageID })
+        {
+            let correction = anchor.correction(rowMinY: row.minY, visibleTop: geometry.visibleTop)
+            if abs(correction) > 0.5 { controller.shiftVisibleTop(by: correction) }
+            return
+        }
+        guard let page = pendingPage,
             page.sessionID == sessionID, page.generation == generation, page.range == mountedRange,
-            let row = layout.rows.first(where: { $0.target.messageID == page.anchor.messageID }),
-            let geometry = controller.geometry
+            let row = rowViewports.first(where: { $0.target.messageID == page.anchor.messageID })
         else { return }
-        pendingPage?.isRestoring = true
-        performance.recordAnchorCorrection()
+        if !page.isCorrecting {
+            pendingPage?.isCorrecting = true
+            performance.recordAnchorCorrection()
+        }
+        // Re-checked on every layout and resize: a shift clamped by a document
+        // that has not grown yet, or superseded by another adjustment (a new
+        // session scroll view), is applied again until the row has landed.
         controller.shiftVisibleTop(
             by: page.anchor.correction(rowMinY: row.minY, visibleTop: geometry.visibleTop)
         ) { [weak self] in
-            guard let self, self.generation == page.generation else { return }
+            guard let self, self.generation == page.generation, self.pendingPage != nil else { return }
             self.pendingPage = nil
+            self.controller.isConcealed = false
             self.controller.preparedPage = nil
             let direction = self.queuedDirection
             self.queuedDirection = 0
@@ -391,8 +477,22 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         if countedMessagesRevision != nil, countedMessagesRevision != model.messagesRevision, historyRequest != nil {
             cancelHistoryRequest()
         }
+        let rowIDs = model.sessionTranscriptPreview?.rowIDs ?? model.transcriptMessageIDsByRowID
+        defer { rowIDByMessage = Dictionary(rowIDs.map { ($1, $0) }, uniquingKeysWith: { first, _ in first }) }
         if sessionID != presentationID {
-            reset(sessionID: presentationID, totalCount: count, bubbleCount: responses, messages: messages)
+            reset(
+                sessionID: presentationID, totalCount: count, bubbleCount: responses, messages: messages, rowIDs: rowIDs
+            )
+        } else if let saved = awaitingRestore, count > 0 {
+            awaitingRestore = nil
+            lastResponseCount = responses
+            if !restore(saved, messages: messages, rowIDs: rowIDs) {
+                invalidate()
+                totalCount = count
+                presentation.isAtBottom = true
+                setRange(ConversationMessageWindow.rangeForSessionReplacement(totalCount: count))
+                navigationAfterLayout = { [weak self] in self?.followTail() }
+            }
         } else if let prepend = model.lastTranscriptPrepend,
             prepend.generation != consumedPrependGeneration, prepend.removedCount > 0,
             prepend.resultingCount == count, !presentation.isAtBottom
@@ -414,6 +514,18 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             synchronize(model: model)
             return
         }
+        // A restore still in flight carries over to the fresh transcript.
+        let carried =
+            awaitingRestore
+            ?? restoredAnchor.map { SavedPosition(anchor: $0, rowID: rowIDByMessage[$0.messageID], fromEnd: -1) }
+        let rowIDs = model.transcriptMessageIDsByRowID
+        rowIDByMessage = Dictionary(rowIDs.map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        if let carried {
+            awaitingRestore = nil
+            lastResponseCount = ConversationUnreadMessagePolicy.assistantResponseCount(messages)
+            countedMessagesRevision = model.messagesRevision
+            if restore(carried, messages: messages, rowIDs: rowIDs) { return }
+        }
         guard let geometry = controller.geometry,
             let row = rowViewports.filter({
                 $0.maxY > geometry.visibleTop && $0.minY < geometry.visibleTop + geometry.visibleHeight
@@ -422,7 +534,8 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         else {
             reset(
                 sessionID: model.transcriptPresentationID, totalCount: messages.count,
-                bubbleCount: ConversationUnreadMessagePolicy.assistantResponseCount(messages), messages: messages)
+                bubbleCount: ConversationUnreadMessagePolicy.assistantResponseCount(messages), messages: messages,
+                rowIDs: rowIDs)
             return
         }
         invalidate()
@@ -463,7 +576,15 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         presentation.isAtBottom = false
         presentation.unseenMessageCount = 0
         setRange(ConversationMessageWindow.jumpWindow(aroundIndex: index, totalCount: totalCount))
-        navigationAfterLayout = afterLayout
+        navigationAfterLayout = afterLayout ?? { [weak self] in self?.alignTop(index) }
+    }
+
+    /// Puts a mounted row at the top of the viewport natively, from its measured position.
+    private func alignTop(_ index: Int) {
+        guard let geometry = controller.geometry, let row = rowViewports.first(where: { $0.index == index }) else {
+            return
+        }
+        controller.shiftVisibleTop(by: row.minY - geometry.visibleTop)
     }
 
     func jumpToLatest(animated: Bool = false, reduceMotion: Bool = false) {

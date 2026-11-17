@@ -12,7 +12,9 @@ extension DockPopover {
             conversationMetrics: conversationMetrics, conversationHermFaceID: conversationHermFaceID,
             isShowingMessageSearch: $isShowingMessageSearch, pinnedMessageJumpID: $pinnedMessageJumpID,
             selectedChatImage: $selectedChatImage, trailingContentInset: trailingContentInset,
-            latestJumpRequest: sessionRailReplyRequest
+            latestJumpRequest: sessionRailReplyRequest,
+            // The welcome layer in ConversationComposerLayout animates the empty-chat orb.
+            animatesEmptyState: false
         ).equatable()
             .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(model))
     }

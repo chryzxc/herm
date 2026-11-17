@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import Herm
@@ -359,7 +360,11 @@ final class MessageNavigatorTests: XCTestCase {
         let model = DockModel(initialSessionID: "session-a")
         model.messages = (1...40).map { ChatMessage(role: .user, text: "message \($0)") }
         let selected = MessageNavigator.items(messages: model.messages, sessionID: "session-a")[19]
-        let coordinator = ConversationTranscriptCoordinator()
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 4_000))
+        controller.clipView = scroll.contentView
         coordinator.reset(sessionID: model.transcriptPresentationID, totalCount: 40, bubbleCount: 40)
         var scrolledMessageID: UUID?
         let productionHandler: (MessageNavigatorItem) -> Void = { item in
