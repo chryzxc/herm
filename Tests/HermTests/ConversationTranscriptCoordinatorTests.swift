@@ -269,7 +269,11 @@ struct ConversationTranscriptCoordinatorTests {
     }
 
     @Test func navigationWaitsForItsOwnLayoutAndCancellationRejectsIt() async {
-        let coordinator = ConversationTranscriptCoordinator()
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 3_600))
+        controller.clipView = scroll.contentView
         coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500)
         let stale = layout(coordinator)
         var jumps = 0

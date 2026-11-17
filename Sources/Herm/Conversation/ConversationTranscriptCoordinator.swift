@@ -243,7 +243,18 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         }
     }
 
+    /// Runs the navigation queued for this layout once the session's scroll
+    /// view is attached; before that a scroll lands nowhere and is lost.
+    private func runNavigationIfAttached() -> Bool {
+        guard let navigate = navigationAfterLayout else { return false }
+        guard controller.geometry != nil, Set(rowViewports.map(\.index)) == Set(mountedRange) else { return true }
+        navigationAfterLayout = nil
+        scheduleScroll(navigate)
+        return true
+    }
+
     func contentResized() {
+        if runNavigationIfAttached() { return }
         if restoredAnchor != nil || pendingPage != nil {
             applyAnchor()
             return
@@ -354,11 +365,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         else { return }
         onAcceptedLayout(layout.sessionID)
         rowViewports = layout.rows
-        if let navigate = navigationAfterLayout {
-            navigationAfterLayout = nil
-            scheduleScroll(navigate)
-            return
-        }
+        if runNavigationIfAttached() { return }
         if pendingPage == nil, queuedDirection != 0, let geometry = controller.geometry {
             let direction = queuedDirection
             queuedDirection = 0
@@ -569,7 +576,15 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         presentation.isAtBottom = false
         presentation.unseenMessageCount = 0
         setRange(ConversationMessageWindow.jumpWindow(aroundIndex: index, totalCount: totalCount))
-        navigationAfterLayout = afterLayout
+        navigationAfterLayout = afterLayout ?? { [weak self] in self?.alignTop(index) }
+    }
+
+    /// Puts a mounted row at the top of the viewport natively, from its measured position.
+    private func alignTop(_ index: Int) {
+        guard let geometry = controller.geometry, let row = rowViewports.first(where: { $0.index == index }) else {
+            return
+        }
+        controller.shiftVisibleTop(by: row.minY - geometry.visibleTop)
     }
 
     func jumpToLatest(animated: Bool = false, reduceMotion: Bool = false) {

@@ -236,10 +236,10 @@ struct ConversationTranscriptView: View, Equatable {
                             coordinator?.controller.scrollToBottom()
                         }
                     }
-                    jumpToUnread(snapshot.unreadDividerMessageID, proxy: proxy)
+                    jumpToUnread(snapshot.unreadDividerMessageID)
                 }
                 .onChange(of: snapshot.unreadDividerMessageID) { _, id in
-                    jumpToUnread(id, proxy: proxy)
+                    jumpToUnread(id)
                 }
                 .onChange(of: pinnedMessageJumpID) { _, id in
                     guard let id, let item = snapshot.navigatorItems.first(where: { $0.messageID == id })
@@ -292,12 +292,12 @@ struct ConversationTranscriptView: View, Equatable {
         .accessibilityLabel("Unread messages begin here")
     }
 
-    private func jumpToUnread(_ id: UUID?, proxy: ScrollViewProxy) {
+    private func jumpToUnread(_ id: UUID?) {
         guard let id, let index = model.displayedTranscriptMessages.firstIndex(where: { $0.id == id }) else { return }
         coordinator.synchronize(model: model)
         // A session already viewed this run reopens where the reader left it.
         guard !coordinator.restoresViewedPosition else { return }
-        coordinator.jump(to: index) { proxy.scrollTo(id, anchor: .top) }
+        coordinator.jump(to: index)
     }
 
     private func spotlight(_ id: UUID) {
