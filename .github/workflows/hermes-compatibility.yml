@@ -31,6 +31,8 @@ jobs:
           swiftc Sources/Herm/HermesRuntime/HermesCompatibilityContract.swift
           Scripts/hermes-compatibility/main.swift -o /tmp/hermes-compatibility
       - name: Check upstream against the reviewed baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: >-
           /tmp/hermes-compatibility Sources/Herm/Resources/HermesCompatibility.json
           --upstream main > hermes-compatibility-report.md
