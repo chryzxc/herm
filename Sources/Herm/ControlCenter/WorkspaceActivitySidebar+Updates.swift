@@ -8,7 +8,7 @@ extension WorkspaceActivitySidebar {
     var appUpdateSection: some View {
         let (status, color): (String, Color) =
             switch appUpdater.phase {
-            case .idle: ("Updates are checked automatically every few hours.", .dockMetadataText)
+            case .idle: ("Updates are checked automatically every hour.", .dockMetadataText)
             case .unavailable(let reason): (reason, .dockMetadataText)
             case .checking: ("Checking \(HermAppUpdater.repository)…", .dockSecondaryText)
             case .upToDate: ("Up to date", .dockSecondaryText)

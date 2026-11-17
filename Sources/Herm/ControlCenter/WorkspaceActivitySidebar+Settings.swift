@@ -92,6 +92,7 @@ extension WorkspaceActivitySidebar {
                     icon: .arrowsClockwise, isExpanded: $isAppUpdateExpanded, buildBadge: .current
                 ) {
                     appUpdateSection
+                        .onAppear { appUpdater.checkIfStale() }
                 }
                 settingsDisclosure(
                     title: "Agent update", subtitle: "Version and updates", icon: .arrowsClockwise,

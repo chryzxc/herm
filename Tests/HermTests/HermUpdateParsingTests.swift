@@ -94,4 +94,11 @@ import Testing
         #expect(HermUpdateParsing.release(from: payload(tag: "v0.3.0-rc.1", prerelease: true)) == nil)
         #expect(HermUpdateParsing.release(from: payload(tag: "v0.3.0", prerelease: false))?.commit == nil)
     }
+
+    @Test func staleCheckThrottlesRepeatChecks() {
+        let now = Date()
+        #expect(HermAppUpdater.isStale(nil, now: now, maxAge: 900))
+        #expect(!HermAppUpdater.isStale(now.addingTimeInterval(-60), now: now, maxAge: 900))
+        #expect(HermAppUpdater.isStale(now.addingTimeInterval(-900), now: now, maxAge: 900))
+    }
 }

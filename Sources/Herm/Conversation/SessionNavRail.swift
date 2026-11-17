@@ -222,7 +222,7 @@ struct SessionNavRail: View {
                 destination(
                     "Settings and appearance", icon: .gear,
                     isSelected: navigationState.selection.isGlobalSelected(.core),
-                    showsUpdateBadge: agentUpdateService.phase == .updateAvailable || appUpdater.hasUpdate, style: style
+                    showsUpdateBadge: hasUpdateBadge, style: style
                 ) {
                     showsViewMenu.toggle()
                 }
@@ -313,10 +313,15 @@ struct SessionNavRail: View {
         }
     }
 
+    private var hasUpdateBadge: Bool { agentUpdateService.phase == .updateAvailable || appUpdater.hasUpdate }
+
     /// Settings, quick skin switch and window mode.
     private var viewMenu: some View {
         VStack(alignment: .leading, spacing: 2) {
-            viewMenuRow("Settings", selected: navigationState.selection.isGlobalSelected(.core)) {
+            viewMenuRow(
+                "Settings", selected: navigationState.selection.isGlobalSelected(.core),
+                badgeColor: hasUpdateBadge ? DockThemePalette(theme: dockThemeStore.selectedThemeID).warning : nil
+            ) {
                 showsViewMenu = false
                 onOpenGlobal(.core)
             }
@@ -391,18 +396,21 @@ struct SessionNavRail: View {
     }
 
     private func viewMenuRow(
-        _ title: String, selected: Bool, hasSubmenu: Bool = false, action: @escaping () -> Void
+        _ title: String, selected: Bool, hasSubmenu: Bool = false, badgeColor: Color? = nil,
+        action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Text(title).dockFont(.body)
                 Spacer(minLength: 0)
+                if let badgeColor { Circle().fill(badgeColor).frame(width: 7, height: 7) }
                 if hasSubmenu { DockIcon(.caretRight, size: 10, color: Color.dockMetadataText) }
             }
             .dockPadding(8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
+        .accessibilityLabel(badgeColor == nil ? title : "\(title), update available")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
