@@ -13,7 +13,7 @@
 
 Glance at the notch to see what your agents are doing and how much provider allowance remains. Send a quick message without opening the workspace, reply to a specific session when it is idle, or talk with your agent through continuous **Voice mode**. Expand into the full workspace when you want to inspect files, review changes, answer an approval, or manage your bots and tasks.
 
-Session activity remains visible in the sidebar and notch when you switch conversations, including pinned and project sessions.
+Session activity remains visible in the sidebar and notch when you switch conversations, including pinned and project sessions. Recently viewed conversations reopen instantly at your last reading position and refresh in the background.
 
 In-chat approvals, questions, and input requests keep their actions compact; errors use the same clear callout treatment.
 

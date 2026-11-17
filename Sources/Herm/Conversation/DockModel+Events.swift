@@ -75,11 +75,6 @@ extension DockModel {
         capturePendingClarification(type: type, params: params)
         let eventPayload = params["payload"] as? [String: Any] ?? [:]
         let eventSessionID = (params["session_id"] as? String) ?? (eventPayload["session_id"] as? String)
-        if type == "message.start" || type == "message.complete", let eventSessionID {
-            let owner = interruptionNotice(.information, owner: eventSessionID)
-            sessionTranscriptCache.remove(
-                WorkspaceIdentity.session(profileID: owner.profileID, sessionID: rowSessionID(eventSessionID)))
-        }
         if type == "approval.expire", let eventSessionID {
             let requestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
             resolveApproval(for: eventSessionID, requestID: requestID)

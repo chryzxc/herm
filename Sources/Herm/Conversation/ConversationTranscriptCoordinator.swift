@@ -52,6 +52,8 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     let performance = ConversationPerformanceMonitor()
     private(set) var navigationGeneration: UInt64 = 0
     private var totalCount = 0
+    private var savedAnchors: [String: ConversationScrollAnchor] = [:]
+    private var savedAnchorOrder: [String] = []
     private var lastResponseCount = 0
     private var countedMessagesRevision: UInt64?
     private var consumedPrependGeneration = 0
@@ -77,7 +79,22 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         self.controller = controller
     }
 
-    func reset(sessionID: String?, totalCount: Int, bubbleCount: Int) {
+    /// Remembers where the reader was in the session being left; capped like the transcript cache.
+    private func saveAnchor() {
+        guard let id = sessionID, !presentation.isAtBottom, let geometry = controller.geometry,
+            let row = rowViewports.filter({
+                $0.maxY > geometry.visibleTop && $0.minY < geometry.visibleTop + geometry.visibleHeight
+            }).min(by: { $0.index < $1.index })
+        else { return }
+        savedAnchors[id] = ConversationScrollAnchor(
+            messageID: row.target.messageID, offset: row.minY - geometry.visibleTop)
+        savedAnchorOrder.removeAll { $0 == id }
+        savedAnchorOrder.append(id)
+        if savedAnchorOrder.count > 8 { savedAnchors[savedAnchorOrder.removeFirst()] = nil }
+    }
+
+    func reset(sessionID: String?, totalCount: Int, bubbleCount: Int, messages: [ChatMessage] = []) {
+        if self.sessionID != sessionID { saveAnchor() }
         invalidate()
         self.sessionID = sessionID
         self.totalCount = totalCount
@@ -86,6 +103,16 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         consumedPrependGeneration = 0
         rowViewports = []
         presentation.reset()
+        if let sessionID, let saved = savedAnchors.removeValue(forKey: sessionID) {
+            savedAnchorOrder.removeAll { $0 == sessionID }
+            if let index = messages.firstIndex(where: { $0.id == saved.messageID }) {
+                setRange(ConversationMessageWindow.jumpWindow(aroundIndex: index, totalCount: totalCount))
+                presentation.isAtBottom = false
+                pendingPage = PageTransaction(
+                    sessionID: sessionID, generation: generation, range: mountedRange, anchor: saved)
+                return
+            }
+        }
         setRange(ConversationMessageWindow.rangeForSessionReplacement(totalCount: totalCount))
         navigationAfterLayout = { [weak self] in self?.followTail() }
     }
@@ -365,7 +392,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             cancelHistoryRequest()
         }
         if sessionID != presentationID {
-            reset(sessionID: presentationID, totalCount: count, bubbleCount: responses)
+            reset(sessionID: presentationID, totalCount: count, bubbleCount: responses, messages: messages)
         } else if let prepend = model.lastTranscriptPrepend,
             prepend.generation != consumedPrependGeneration, prepend.removedCount > 0,
             prepend.resultingCount == count, !presentation.isAtBottom
@@ -395,7 +422,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         else {
             reset(
                 sessionID: model.transcriptPresentationID, totalCount: messages.count,
-                bubbleCount: ConversationUnreadMessagePolicy.assistantResponseCount(messages))
+                bubbleCount: ConversationUnreadMessagePolicy.assistantResponseCount(messages), messages: messages)
             return
         }
         invalidate()

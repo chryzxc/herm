@@ -293,6 +293,72 @@ struct ConversationTranscriptCoordinatorTests {
         #expect(coordinator.mountedRange.upperBound <= 3)
     }
 
+    private func messages() -> [ChatMessage] {
+        identities.map { ChatMessage(id: $0, role: .hermes, text: "message") }
+    }
+
+    private func leaveAwayFromBottom(
+        _ coordinator: ConversationTranscriptCoordinator, controller: ConversationScrollController, id: String
+    ) {
+        coordinator.reset(sessionID: id, totalCount: 500, bubbleCount: 500, messages: messages())
+        coordinator.receiveLayout(layout(coordinator))
+        controller.shiftVisibleTop(by: 40)
+        coordinator.presentation.isAtBottom = false
+    }
+
+    @Test func sessionReturnRestoresTheReadingAnchor() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 20_000))
+        controller.clipView = scroll.contentView
+        leaveAwayFromBottom(coordinator, controller: controller, id: "one")
+        let anchored = try #require(coordinator.mountedRange.first)
+        coordinator.reset(sessionID: "two", totalCount: 500, bubbleCount: 500, messages: messages())
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500, messages: messages())
+        #expect(coordinator.mountedRange.contains(anchored))
+        #expect(coordinator.pendingPage?.anchor.messageID == identities[anchored])
+        #expect(coordinator.pendingPage?.anchor.offset == -40)
+        #expect(!coordinator.presentation.isAtBottom)
+    }
+
+    @Test func sessionReturnWithoutAnAnchorMountsTheTail() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 20_000))
+        controller.clipView = scroll.contentView
+        let tail = ConversationMessageWindow.rangeForSessionReplacement(totalCount: 500)
+        // At the bottom nothing is saved.
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500, messages: messages())
+        coordinator.receiveLayout(layout(coordinator))
+        coordinator.reset(sessionID: "two", totalCount: 500, bubbleCount: 500, messages: messages())
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500, messages: messages())
+        #expect(coordinator.mountedRange == tail)
+        #expect(coordinator.pendingPage == nil)
+        // An anchored message that is no longer shown falls back to the tail.
+        leaveAwayFromBottom(coordinator, controller: controller, id: "gone")
+        coordinator.reset(sessionID: "two", totalCount: 500, bubbleCount: 500, messages: messages())
+        coordinator.reset(
+            sessionID: "gone", totalCount: 1, bubbleCount: 1, messages: [ChatMessage(role: .hermes, text: "new")])
+        #expect(coordinator.pendingPage == nil)
+        #expect(coordinator.presentation.isAtBottom)
+    }
+
+    @Test func savedReadingAnchorsAreCappedAtEightSessions() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 20_000))
+        controller.clipView = scroll.contentView
+        for index in 0..<9 { leaveAwayFromBottom(coordinator, controller: controller, id: "s\(index)") }
+        coordinator.reset(sessionID: "s0", totalCount: 500, bubbleCount: 500, messages: messages())
+        #expect(coordinator.pendingPage == nil)
+        #expect(coordinator.mountedRange == ConversationMessageWindow.rangeForSessionReplacement(totalCount: 500))
+        coordinator.reset(sessionID: "s1", totalCount: 500, bubbleCount: 500, messages: messages())
+        #expect(coordinator.pendingPage != nil)
+    }
+
     @Test func invalidatingCancelsNativeRemainders() async throws {
         let controller = ConversationScrollController()
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
