@@ -244,7 +244,9 @@ final class NativeMarkdownTextView: NSTextView {
     override func mouseMoved(with event: NSEvent) {
         // NSTextView's own handling sets an I-beam, so it only runs when the
         // text (not a neighbouring button) is what the mouse is over.
-        guard claimsMarkdownCursor(for: event) else { return }
+        // Mid-scroll moves only chase text sliding under a still pointer;
+        // the claim below re-hit-tests the whole window.
+        guard !DockScrollActivity.isScrolling(at: event.timestamp), claimsMarkdownCursor(for: event) else { return }
         super.mouseMoved(with: event)
         markdownCursor(for: event).set()
     }

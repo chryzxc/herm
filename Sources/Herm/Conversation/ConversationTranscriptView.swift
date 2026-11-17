@@ -27,6 +27,8 @@ struct ConversationTranscriptView: View, Equatable {
     private let themeRevision: Int
     private let searchPresented: Bool
     private let jumpID: UUID?
+    /// False where a welcome layer above the transcript already owns the animated orb.
+    private let animatesEmptyState: Bool
 
     init(
         model: DockModel, controlCenter: ControlCenterModel, botMode: BotModeModel,
@@ -36,6 +38,7 @@ struct ConversationTranscriptView: View, Equatable {
         selectedChatImage: Binding<ChatImagePreview?>,
         trailingContentInset: CGFloat = 0,
         latestJumpRequest: Int = 0,
+        animatesEmptyState: Bool = true,
         coordinator: @autoclosure @escaping () -> ConversationTranscriptCoordinator =
             ConversationTranscriptCoordinator()
     ) {
@@ -48,6 +51,7 @@ struct ConversationTranscriptView: View, Equatable {
         self.conversationHermFaceID = conversationHermFaceID
         self.trailingContentInset = trailingContentInset
         self.latestJumpRequest = latestJumpRequest
+        self.animatesEmptyState = animatesEmptyState
         self._isShowingMessageSearch = isShowingMessageSearch
         self._pinnedMessageJumpID = pinnedMessageJumpID
         self._selectedChatImage = selectedChatImage
@@ -68,6 +72,7 @@ struct ConversationTranscriptView: View, Equatable {
             && lhs.conversationHermFaceID == rhs.conversationHermFaceID
             && lhs.trailingContentInset == rhs.trailingContentInset
             && lhs.latestJumpRequest == rhs.latestJumpRequest
+            && lhs.animatesEmptyState == rhs.animatesEmptyState
             && lhs.searchPresented == rhs.searchPresented && lhs.jumpID == rhs.jumpID
             && lhs.themeRevision == rhs.themeRevision
     }
@@ -84,9 +89,11 @@ struct ConversationTranscriptView: View, Equatable {
                         VStack(spacing: 0) {
                             VStack(spacing: 0) {
                                 if snapshot.messages.isEmpty && snapshot.context.status != .working {
-                                    StartupAssistantView(hermFaceID: conversationHermFaceID)
-                                        .frame(maxWidth: .infinity)
-                                        .frame(minHeight: max(300, viewport.size.height - 16))
+                                    StartupAssistantView(
+                                        hermFaceID: conversationHermFaceID, isActive: hostVisible && animatesEmptyState
+                                    )
+                                    .frame(maxWidth: .infinity)
+                                    .frame(minHeight: max(300, viewport.size.height - 16))
                                 } else if snapshot.messages.isEmpty {
                                     DockLoadingState(
                                         title: "Loading conversation…", minHeight: max(300, viewport.size.height - 16))
@@ -166,7 +173,6 @@ struct ConversationTranscriptView: View, Equatable {
                                     try? await Task.sleep(for: .seconds(5))
                                 } while !Task.isCancelled && !model.workingBotDispatches.isEmpty
                             }
-                            .modifier(ConversationScrollHitTesting(presentation: coordinator.presentation))
                             .dockPadding(.vertical, 12)
                             .frame(maxWidth: conversationMetrics.readingWidth)
                             .frame(maxWidth: .infinity)

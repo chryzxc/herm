@@ -44,11 +44,11 @@ import Testing
         let fixture = makeFixture()
         #expect(fixture.height > 2_000)
         #expect(!fixture.container.needsLayout)
-        let mounted = fixture.container.subviews.count
+        let mounted = fixture.container.mountedSectionViews.count
 
         fixture.scroll.contentView.scroll(to: NSPoint(x: 0, y: 2))
 
-        #expect(fixture.container.subviews.count == mounted)
+        #expect(fixture.container.mountedSectionViews.count == mounted)
         #expect(!fixture.container.needsLayout)
     }
 
@@ -60,13 +60,13 @@ import Testing
         #expect(fixture.height > 2_000)
         let visitsBefore = container.viewportSectionVisits
         let mountsBefore = container.viewportMountChanges
-        let mountedBefore = Set(container.subviews.map(ObjectIdentifier.init))
+        let mountedBefore = Set(container.mountedSectionViews.map(ObjectIdentifier.init))
 
         fixture.scroll.contentView.scroll(to: NSPoint(x: 0, y: fixture.height / 2))
 
         #expect(container.viewportMountChanges > mountsBefore)
         #expect(container.viewportSectionVisits > visitsBefore)
-        #expect(Set(container.subviews.map(ObjectIdentifier.init)) != mountedBefore)
+        #expect(Set(container.mountedSectionViews.map(ObjectIdentifier.init)) != mountedBefore)
         #expect(!container.needsLayout)
     }
 }

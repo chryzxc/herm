@@ -141,7 +141,6 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     }
 
     func userMoved(_ geometry: ConversationScrollGeometry, delta: CGFloat) {
-        presentation.isUserScrolling = true
         pendingPage?.anchor.recordUserScroll(delta: delta)
         if let request = historyRequest, request.direction * delta < 0 {
             cancelHistoryRequest()
@@ -156,7 +155,6 @@ final class ConversationTranscriptCoordinator: ObservableObject {
 
     func settled(_ geometry: ConversationScrollGeometry) {
         performance.recordScrollSettled()
-        presentation.isUserScrolling = false
         guard pendingPage == nil else { return }
         updatePosition(geometry)
         presentation.visibleTargets = Set(

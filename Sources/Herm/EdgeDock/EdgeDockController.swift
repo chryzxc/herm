@@ -2461,9 +2461,19 @@ final class EdgeDockHostingView<Content: View>: NSHostingView<Content> {
         super.mouseEntered(with: event)
         updateNotchHover(event)
     }
+    private let hoverGate = DockHoverGate()
+    private let scrollHits = DockScrollHitCache()
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        scrollHits.hitTest(point, in: self) { super.hitTest($0) }
+    }
     override func mouseMoved(with event: NSEvent) {
-        super.mouseMoved(with: event)
+        // The notch hover is cheap and must never wait out a scroll.
         updateNotchHover(event)
+        guard hoverGate.admit(event, replay: { [weak self] in self?.replayHover($0) }) else { return }
+        super.mouseMoved(with: event)
+    }
+    private func replayHover(_ event: NSEvent) {
+        super.mouseMoved(with: event)
     }
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
