@@ -12,7 +12,7 @@ enum NewChatProjectChoice {
     /// Real projects only, in the order Hermes lists them, filtered by the search text.
     static func options(from projects: [ProjectSummary], query: String) -> [Option] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return projects.filter(\.isRenderableProject).compactMap { project -> Option? in
+        return projects.filter { $0.isRenderableProject && $0.name.hasPrefix("/") }.compactMap { project -> Option? in
             let title = SessionNavSidebarSnapshot.projectDisplayName(project.name)
             guard
                 search.isEmpty || title.localizedCaseInsensitiveContains(search)

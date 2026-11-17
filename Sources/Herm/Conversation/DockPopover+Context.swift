@@ -815,7 +815,8 @@ extension DockPopover {
 
     /// The project chooser on an expanded, empty new chat; nil once a session exists.
     var newChatProjectPicker: NewChatProjectPicker? {
-        guard isFullscreen, model.sessionID == nil, model.newSessionCreationAuthorized, model.messages.isEmpty
+        guard isFullscreen, model.sessionID == nil, model.newSessionCreationAuthorized, !model.isCreatingSession,
+            model.messages.isEmpty
         else { return nil }
         return NewChatProjectPicker(
             projects: controlCenter.projects,

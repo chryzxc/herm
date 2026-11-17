@@ -95,7 +95,9 @@ extension DockModel {
         let key = "/\(command.name)"
         switch command.name {
         case "new", "reset":
+            let picked = sessionID == nil && newSessionProjectWasPicked
             newChat(projectPath: sessionID.flatMap { createdSessionProjectPaths[$0] } ?? newSessionProjectPath)
+            newSessionProjectWasPicked = picked
             return
         case "stop":
             _ = stop()

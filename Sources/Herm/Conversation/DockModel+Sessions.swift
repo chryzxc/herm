@@ -1150,7 +1150,9 @@ extension DockModel {
 
     /// Sets the project the not-yet-created chat will start in (the new-chat project picker).
     func chooseNewChatProject(_ path: String) {
-        guard sessionID == nil, newSessionCreationAuthorized else { return }
+        guard sessionID == nil, newSessionCreationAuthorized, !isCreatingSession else { return }
+        // A worktree chat expects its own folder back from Hermes; a picked project replaces it.
+        pendingWorktreeDirectory = nil
         newSessionProjectPath = path
         newSessionProjectWasPicked = true
         objectWillChange.send()
