@@ -116,6 +116,24 @@ final class HermesSimulatorBridge {
         }
     }
 
+    /// Shuts down only devices Herm booted (the bridge's owned-devices ledger); a device the user
+    /// started elsewhere is never in it. The helper outlives Herm, so quit does not wait for it.
+    static func shutdownOwned(_ platform: String = "all") {
+        guard FileManager.default.isExecutableFile(atPath: python.path),
+            let folder = Bundle.herm.url(forResource: "SimulatorBridge", withExtension: nil)
+        else { return }
+        let child = Process()
+        child.executableURL = python
+        child.arguments = [folder.appendingPathComponent("bridge.py").path, platform, "", "shutdown"]
+        child.environment = ProcessInfo.processInfo.environment.merging(["PYTHONDONTWRITEBYTECODE": "1"]) { _, new in
+            new
+        }
+        child.standardInput = FileHandle.nullDevice
+        child.standardOutput = FileHandle.nullDevice
+        child.standardError = FileHandle.nullDevice
+        do { try child.run() } catch { DebugLog.write("simulator: owned-device shutdown did not start") }
+    }
+
     /// Discovery helpers can exit before a queued release-input write reaches the pipe.
     static func protectedInputPipe() throws -> Pipe {
         let pipe = Pipe()

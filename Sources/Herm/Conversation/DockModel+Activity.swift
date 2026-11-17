@@ -191,12 +191,34 @@ extension DockModel {
     // ponytail: ~4 chars/token heuristic for the live stream; session.usage replaces it at turn end.
     static func estimatedTokens(utf8Count: Int) -> Int { (utf8Count + 3) / 4 }
 
+    /// Busy bots emit `message.complete` / `sessions.changed` continuously.
+    /// Reads are spaced so a burst costs one first-page read per spacing
+    /// interval instead of back-to-back index reads; the first event after a
+    /// quiet period still reads immediately.
     func refreshSessionIndexAfterActivity() {
+        guard !hasShutDown else { return }
         guard sessionLoadTask == nil else {
             pendingSessionIndexRefresh = true
             return
         }
-        loadSessions(quiet: true, reuseHistory: true)
+        guard sessionIndexRefreshTask == nil else { return }
+        let delay = Self.activityRefreshDelay(
+            since: lastSessionIndexReadAt, spacing: sessionIndexActivitySpacing, now: Date())
+        guard delay > 0 else {
+            loadSessions(quiet: true)
+            return
+        }
+        sessionIndexRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !Task.isCancelled else { return }
+            self.sessionIndexRefreshTask = nil
+            self.refreshSessionIndexAfterActivity()
+        }
+    }
+
+    static func activityRefreshDelay(since lastRead: Date?, spacing: TimeInterval, now: Date) -> TimeInterval {
+        guard let lastRead else { return 0 }
+        return max(0, spacing - now.timeIntervalSince(lastRead))
     }
 
     static func isUnreadUpdateEvent(_ type: String) -> Bool {

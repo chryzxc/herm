@@ -31,6 +31,8 @@ extension DockModel {
         }
         sessionHistoryLoadedAt = nil
         pendingSessionIndexRefresh = false
+        sessionIndexRefreshTask?.cancel()
+        sessionIndexRefreshTask = nil
         sessionLoadGeneration &+= 1
         sessionLoadTask?.cancel()
         sessionLoadTask = nil
@@ -96,7 +98,9 @@ extension DockModel {
     }
 
     @discardableResult
-    func loadSessions(profileID: String? = nil, quiet: Bool = false, reuseHistory: Bool = false) -> Task<Void, Never>? {
+    func loadSessions(profileID: String? = nil, quiet: Bool = false, reconcileHistory: Bool = false)
+        -> Task<Void, Never>?
+    {
         guard !hasShutDown else { return nil }
         let scope = profileID ?? profileScopeID
         if profileScopeUnavailable, scope == nil {
@@ -114,6 +118,7 @@ extension DockModel {
             guard let self else { return }
             defer {
                 if self.sessionLoadGeneration == generation {
+                    lastSessionIndexReadAt = Date()
                     if isLoadingSessions { isLoadingSessions = false }
                     isPollingSessions = false
                     sessionLoadTask = nil
@@ -137,12 +142,8 @@ extension DockModel {
                 }
                 await migrateLegacyLocalPins()
                 let activityGeneration = sessionActivityGeneration
-                // ponytail: reuse older rows for at most a minute; explicit refresh always reconciles history.
-                let reuseStoredHistory =
-                    (quiet || reuseHistory)
-                    && sessionHistoryLoadedAt.map {
-                        $0.profileID == scope && Date().timeIntervalSince($0.date) < 60
-                    } == true
+                let reuseStoredHistory = Self.canReuseSessionHistory(
+                    loadedAt: sessionHistoryLoadedAt, scope: scope, now: Date(), reconcile: reconcileHistory)
                 let index = try? await Self.fetchSessionIndex(
                     client: sessionRPCClient, profileID: scope, includeHistory: !reuseStoredHistory)
                 guard !self.hasShutDown, self.sessionLoadGeneration == generation, self.profileScopeID == scope else {
@@ -350,6 +351,24 @@ extension DockModel {
             }
             page = try await client.fetchHTTP(path)
         }
+    }
+
+    /// ponytail: external deletions in older pages can linger up to this
+    /// window; the Refresh button reconciles immediately.
+    static let sessionHistoryReuseWindow: TimeInterval = 300
+
+    /// Whether a load may keep the previously walked history and read only the
+    /// first `/api/sessions` page.
+    static func canReuseSessionHistory(
+        loadedAt: (profileID: String?, date: Date)?, scope: String?, now: Date, reconcile: Bool
+    ) -> Bool {
+        guard !reconcile, let loadedAt, loadedAt.profileID == scope else { return false }
+        return now.timeIntervalSince(loadedAt.date) < sessionHistoryReuseWindow
+    }
+
+    /// True when an index read finished within `interval`, so a timer poll adds nothing.
+    func sessionIndexReadRecently(within interval: TimeInterval, now: Date = Date()) -> Bool {
+        lastSessionIndexReadAt.map { now.timeIntervalSince($0) < interval } ?? false
     }
 
     static func fetchSessionIndex(

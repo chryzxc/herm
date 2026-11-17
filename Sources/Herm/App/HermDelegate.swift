@@ -139,6 +139,8 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         // Apply the saved theme's appearance before any Dock window draws.
         _ = DockThemeStore.shared
         _ = NSScrollView.installDockScrollers
+        // Devices Herm booted before a crash or force quit have no tab left to close them.
+        HermesSimulatorBridge.shutdownOwned()
         actionErrorPresenter = DockActionErrorPresenter()
         Task {
             do { try await HermKeychain.restrictAccess(service: "io.github.chryzxc.Herm.gateway") } catch {
@@ -396,6 +398,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         PullRequestWatchStore.shared.stop()
         ReviewDraftStore.shared.flush()
         TerminalWorkspaceStore.shared.shutdown()
+        HermesSimulatorBridge.shutdownOwned()
         QuickDraftStore.shared.flush()
         FilePreviewCenter.shared.flushSaves()
         // This is deliberately explicit: a menu-bar app can terminate without

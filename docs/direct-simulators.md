@@ -129,7 +129,10 @@ Stopped devices appear in the picker and require **Start device**. A sole runnin
 device can connect automatically until the user makes a manual choice. Android
 starts with `-no-window -grpc-use-token`; iOS boots through simctl without opening
 Simulator.app. Boot timeouts leave the virtual device intact; check again before
-retrying. Closing Herm's connection does not shut down the virtual device.
+retrying. Herm records each device it or the `herm-simulator` tool boots in
+`simulator-bridge/owned-devices.json`; closing that tab, quitting Herm, or the next
+launch after a crash shuts those down (`simctl shutdown`, `adb emu kill`). The 60-second
+idle disconnect and devices started outside Herm leave the device running.
 
 The neutral rounded device shell is presentation only, not a model-specific skin.
 It uses the same screen rectangle for drawing, touch, and annotation. Screenshots

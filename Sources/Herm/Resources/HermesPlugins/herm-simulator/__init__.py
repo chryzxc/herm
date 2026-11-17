@@ -144,10 +144,27 @@ def android_inventory():
     return [dict(id=name, name=name, running=name in running) for name in run([emulator, '-list-avds']).splitlines() if name]
 
 
+def own(target, key):
+    """Same ledger as the bridge's devices.own: Herm shuts down only devices it booted, on tab close or quit."""
+    path = Path(os.environ.get('HERM_SIMULATOR_ENV') or Path.home() / 'Library/Application Support/Herm/simulator-bridge') / 'owned-devices.json'
+    try:
+        rows = [r for r in json.loads(path.read_text()) if isinstance(r, dict) and (r.get('platform'), r.get('key')) != (target, key)]
+    except (OSError, ValueError, TypeError):
+        rows = []
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix('.tmp')
+        temporary.write_text(json.dumps(rows + [dict(platform=target, key=key)]))
+        temporary.replace(path)
+    except OSError:
+        pass
+
+
 def launch_ios(device):
     xcrun = executable('xcrun')
     if not device['running']:
         run([xcrun, 'simctl', 'boot', device['id']])
+        own('ios', device['id'])
     run([xcrun, 'simctl', 'bootstatus', device['id'], '-b'], timeout=120)
     return device['id']
 
@@ -159,6 +176,7 @@ def launch_android(device):
         # Direct display/input uses the authenticated local emulator controller.
         child = subprocess.Popen([emulator, '-avd', device['id'], '-no-window', '-grpc-use-token'], stdin=subprocess.DEVNULL,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        own('android', device['id'])
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
         if child and child.poll() is not None:

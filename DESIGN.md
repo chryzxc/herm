@@ -4052,7 +4052,9 @@ click/drag sends touch events and typing sends device key events. Home and Power
 are available on both platforms; Android adds Back and Apps. Debugging and device
 controls appear when a display is connected; setup and failures use the same recovery region. Narrow layouts stack recovery
 actions and scroll long setup instructions. Input is released when focus is lost
-or the connection closes. Closing a tab does not shut down a device.
+or the connection closes. Closing a tab, or quitting Herm, shuts down only devices Herm
+or its Hermes tool booted (recorded in the bridge's `owned-devices.json`); leftovers from a
+crash shut down at the next launch. User-started devices are never shut down.
 
 Android uses authenticated loopback emulator gRPC. iOS uses an owned idb companion
 on a private Unix socket. A 30-second first-frame deadline, bounded packet decoding,

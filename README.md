@@ -980,7 +980,7 @@ Simulator and Emulator tabs show a virtual device's screen live in the session i
 - **Annotate the UI.** Annotate freezes the frame and reads the device's accessibility hierarchy. Click an element or drag a region, write a comment, and **Send** sends the cropped image and the element's label, identifier, role, value, and bounds to the chat (they stay in the draft if the session is busy).
 - **Screenshots and app logs.** Send a screenshot to chat or copy it. **App logs** reads a recent excerpt for your app (Errors or All levels), lets you edit it, and attaches only the reviewed text. Nothing is sent automatically.
 - **3D preview.** The cube icon shows the live screen on a rotatable device; drag or use the arrow keys to tilt, scroll to zoom, Escape to return.
-- **Closing a tab disconnects only.** The virtual device keeps running.
+- **Closing a tab shuts down devices Herm started.** A device Herm or Hermes booted shuts down when you close its tab or quit Herm, and any left behind by a crash shut down at the next launch. Devices you started yourself keep running.
 - **Local backend only for the agent.** Devices run on this Mac, so a remote Hermes cannot launch or drive them; you can still open tabs yourself.
 
 Setup: run `Scripts/setup-simulator-bridge.sh` (plus `brew install facebook/fb/idb-companion` for iOS), with Xcode iOS runtimes or the Android SDK Emulator and an AVD. New bundled plugins are installed disabled: enable them under Integrations → Plugins → Installed, then start a new session or restart when prompted. Existing enabled and disabled choices are retained on upgrades. See [Direct simulator tabs](docs/direct-simulators.md) for details and limitations (single touch, limited hardware-keyboard mapping on iOS).
