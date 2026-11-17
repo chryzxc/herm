@@ -99,6 +99,9 @@ final class SessionPaneStore: ObservableObject {
     nonisolated static let maxColumns = 3
     /// The unsplit primary column keeps this id once split, so it never re-animates in.
     nonisolated static let baseColumnID = "session-pane-base"
+    /// Set by `performDrop` and cleared on the next `dropEntered`, so the late update AppKit
+    /// can deliver after a drop cannot re-arm the tab/column hints.
+    var dropPerformed = false
 
     @MainActor struct Panel: Identifiable {
         var id = UUID().uuidString
@@ -417,9 +420,10 @@ struct SessionPaneDropDelegate: DropDelegate {
     func validateDrop(info: DropInfo) -> Bool { Self.isSessionPaneDrag(info) }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        // AppKit can deliver one more update after `performDrop`; with the button already
-        // released the drag is over, so re-arming the hints would leave them stuck on screen.
-        guard Self.isSessionPaneDrag(info), NSEvent.pressedMouseButtons & 1 != 0 else {
+        // AppKit can deliver one more update after `performDrop`; re-arming the hints then
+        // would leave them stuck on screen. Mouse-button state is not a usable signal here:
+        // it reads released during an AppKit drag session and with trackpad drag gestures.
+        guard Self.isSessionPaneDrag(info), !store.dropPerformed else {
             if target != nil { target = nil }
             return DropProposal(operation: .cancel)
         }
@@ -432,6 +436,10 @@ struct SessionPaneDropDelegate: DropDelegate {
         return DropProposal(operation: .copy)
     }
 
+    func dropEntered(info: DropInfo) {
+        store.dropPerformed = false
+    }
+
     func dropExited(info: DropInfo) {
         withAnimation(animation) { target = nil }
     }
@@ -440,6 +448,7 @@ struct SessionPaneDropDelegate: DropDelegate {
         guard let dropped = target,
             let provider = info.itemProviders(for: [SessionPaneDrag.pasteboardType.rawValue]).first
         else { return false }
+        store.dropPerformed = true
         let store = store
         let animation = animation
         let prepare = prepare
