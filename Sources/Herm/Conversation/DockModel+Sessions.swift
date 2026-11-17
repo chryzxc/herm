@@ -747,6 +747,7 @@ extension DockModel {
             )
         }
         commitStreamingMessage()
+        if !isRefreshingActiveSession { cacheLeavingTranscript() }
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
         }
@@ -1158,7 +1159,20 @@ extension DockModel {
         objectWillChange.send()
     }
 
+    /// Keeps the transcript as the reader left it so returning shows it before the fresh resume lands.
+    func cacheLeavingTranscript() {
+        guard sessionTranscriptLoadState == .ready, sessionTranscriptPreview == nil,
+            let id = sessionStorageID, id != BotService.canonicalBotChatTitle
+        else { return }
+        sessionTranscriptCache.refresh(
+            RestoredTranscript(messages: messages, pendingImages: [], rowIDs: transcriptMessageIDsByRowID),
+            references: storedMessageReferences,
+            for: WorkspaceIdentity.session(profileID: sessionProfileID, sessionID: id))
+    }
+
     func newChat(projectPath: String? = nil) {
+        commitStreamingMessage()
+        cacheLeavingTranscript()
         sessionWorkspace = nil
         pendingWorktreeDirectory = nil
         sessionResumeTask?.cancel()

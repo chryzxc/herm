@@ -57,6 +57,19 @@ final class SessionTranscriptCache {
     }
 
     func store(_ restored: RestoredTranscript, references: [UUID: StoredMessageReference], for key: String) {
+        remove(key)
+        guard let entry = makeEntry(restored, references: references) else { return }
+        insert(entry, for: key)
+    }
+
+    /// Replaces the entry only when the new transcript is cacheable; otherwise the existing one stays.
+    func refresh(_ restored: RestoredTranscript, references: [UUID: StoredMessageReference], for key: String) {
+        guard let entry = makeEntry(restored, references: references) else { return }
+        remove(key)
+        insert(entry, for: key)
+    }
+
+    private func makeEntry(_ restored: RestoredTranscript, references: [UUID: StoredMessageReference]) -> Entry? {
         let messages = Array(restored.messages.suffix(36))
         let ids = Set(messages.map(\.id))
         let cost = messages.reduce(0) { total, message in
@@ -67,20 +80,23 @@ final class SessionTranscriptCache {
                         + (call.args?.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count } ?? 0)
                 }
         }
-        remove(key)
         guard !messages.isEmpty, messages.allSatisfy({ $0.images.isEmpty && !$0.isError }),
             restored.pendingImages.allSatisfy({ $0.fileURLs.allSatisfy(\.isFileURL) }), cost <= maximumCost
         else {
-            return
+            return nil
         }
         let preview = SessionTranscriptPreview(
             messages: messages,
             rowIDs: restored.rowIDs.filter { ids.contains($0.value) },
             references: references.filter { ids.contains($0.key) },
             pendingImages: restored.pendingImages.filter { ids.contains($0.messageID) })
-        entries[key] = Entry(preview: preview, cost: cost)
+        return Entry(preview: preview, cost: cost)
+    }
+
+    private func insert(_ entry: Entry, for key: String) {
+        entries[key] = entry
         order.append(key)
-        totalCost += cost
+        totalCost += entry.cost
         while order.count > maximumEntries || totalCost > maximumCost {
             guard let oldest = order.first else { break }
             remove(oldest)

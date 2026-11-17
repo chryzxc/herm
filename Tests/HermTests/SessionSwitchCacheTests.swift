@@ -168,7 +168,25 @@ struct SessionSwitchCacheTests {
         #expect(model.sessionTranscriptPreview == nil)
     }
 
-    @Test func activityInvalidatesTheCachedTranscript() async throws {
+    @Test func activityWhileAwayStillShowsLastLoadedTranscriptBeforeResume() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        #expect(await model.resumeSession(session("a"), reportFailure: true))
+        let originalIDs = model.messages.map(\.id)
+        #expect(await model.resumeSession(session("b"), reportFailure: true))
+        model.receiveGatewayEvent("message.complete", params: ["session_id": "runtime-a"])
+        rpc.holdNextA = true
+        model.resumeSession(session("a"))
+        try await waitUntil { rpc.held != nil }
+        #expect(model.displayedTranscriptMessages.map(\.id) == originalIDs)
+        #expect(model.displayedTranscriptMessages.map(\.text) == ["question a", "answer a"])
+        #expect(!model.sessionActionsReady)
+        rpc.release()
+        try await waitUntil { model.sessionActionsReady && model.sessionStorageID == "a" }
+    }
+
+    @Test func activityKeepsTheCachedTranscript() async throws {
         let rpc = SessionSwitchRPC()
         let model = makeModel(rpc)
         model.resumeSession(session("a"))
@@ -176,7 +194,37 @@ struct SessionSwitchCacheTests {
         let key = WorkspaceIdentity.session(profileID: nil, sessionID: "a")
         #expect(model.sessionTranscriptCache.value(for: key) != nil)
         model.receiveGatewayEvent("message.start", params: ["session_id": "runtime-a"])
-        #expect(model.sessionTranscriptCache.value(for: key) == nil)
+        #expect(model.sessionTranscriptCache.value(for: key) != nil)
+    }
+
+    @Test func leavingASessionCachesItsCurrentTail() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        #expect(await model.resumeSession(session("a"), reportFailure: true))
+        model.messages.append(ChatMessage(role: .hermes, text: "added while viewing"))
+        #expect(await model.resumeSession(session("b"), reportFailure: true))
+        rpc.holdNextA = true
+        model.resumeSession(session("a"))
+        try await waitUntil { rpc.held != nil }
+        #expect(model.displayedTranscriptMessages.last?.text == "added while viewing")
+        rpc.release()
+        try await waitUntil { model.sessionActionsReady && model.sessionStorageID == "a" }
+    }
+
+    @Test func startingANewChatCachesTheConversationItLeaves() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        #expect(await model.resumeSession(session("a"), reportFailure: true))
+        model.messages.append(ChatMessage(role: .hermes, text: "added before new chat"))
+        model.newChat()
+        rpc.holdNextA = true
+        model.resumeSession(session("a"))
+        try await waitUntil { rpc.held != nil }
+        #expect(model.displayedTranscriptMessages.last?.text == "added before new chat")
+        rpc.release()
+        try await waitUntil { model.sessionActionsReady && model.sessionStorageID == "a" }
     }
 
     @Test func failedRefreshKeepsPreviewAndRetryCanConfirmIt() async throws {
@@ -224,6 +272,9 @@ struct SessionSwitchCacheTests {
         let decoded = ChatMessage(role: .user, text: "image", image: NSImage(size: NSSize(width: 1, height: 1)))
         cache.store(RestoredTranscript(messages: [decoded], pendingImages: []), references: [:], for: "decoded")
         #expect(cache.value(for: "decoded") == nil)
+        cache.store(RestoredTranscript(messages: [newest], pendingImages: []), references: [:], for: "keep")
+        cache.refresh(RestoredTranscript(messages: [decoded], pendingImages: []), references: [:], for: "keep")
+        #expect(cache.value(for: "keep")?.messages.last?.text == "newest")
         let history = (0..<50).map { ChatMessage(role: .user, text: "message \($0)") }
         cache.store(RestoredTranscript(messages: history, pendingImages: []), references: [:], for: "history")
         #expect(cache.value(for: "history")?.messages.count == 36)
