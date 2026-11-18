@@ -5,6 +5,16 @@ import Testing
 
 @MainActor
 struct DockProfilePickerOrderTests {
+    @Test func dragTranslationPicksTheNearestSlotWithinBounds() {
+        #expect(DockProfilePickerReorder.target(start: 2, translation: 0, pitch: 40, count: 5) == 2)
+        #expect(DockProfilePickerReorder.target(start: 2, translation: 19, pitch: 40, count: 5) == 2)
+        #expect(DockProfilePickerReorder.target(start: 2, translation: 21, pitch: 40, count: 5) == 3)
+        #expect(DockProfilePickerReorder.target(start: 2, translation: -61, pitch: 40, count: 5) == 0)
+        #expect(DockProfilePickerReorder.target(start: 2, translation: -500, pitch: 40, count: 5) == 0)
+        #expect(DockProfilePickerReorder.target(start: 2, translation: 500, pitch: 40, count: 5) == 4)
+        #expect(DockProfilePickerReorder.target(start: 0, translation: 80, pitch: 40, count: 0) == 0)
+    }
+
     @Test func draggingMovesBeforeOrAfterAndPersists() {
         let suite = "profile-drag-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
