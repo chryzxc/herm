@@ -49,6 +49,7 @@ struct ConversationPromptRows: View {
     @State private var valuePromptText = ""
     @State private var valuePromptIdentifier = ""
     @FocusState private var approvalCardIsFocused: Bool
+    @State private var approvalKeyboardFocus = false
 
     private var canAnswerApproval: Bool {
         state.matchesApproval(in: model) && model.sessionActionsReady
@@ -206,16 +207,19 @@ struct ConversationPromptRows: View {
             }
         }
         .overlay {
-            if approvalCardIsFocused {
+            if approvalCardIsFocused && approvalKeyboardFocus && !resolved {
                 DockThemeShape(cornerRadius: DockLayout.controlRadius)
                     .stroke(Color.dockAccent, lineWidth: 2)
                     .padding(1)
                     .allowsHitTesting(false)
             }
         }
-        .focusable()
+        .focusable(!resolved)
+        .focusEffectDisabled()
         .focused($approvalCardIsFocused)
-        .simultaneousGesture(TapGesture().onEnded { approvalCardIsFocused = true })
+        .onChange(of: approvalCardIsFocused) { _, focused in
+            approvalKeyboardFocus = focused && NSApp.currentEvent?.type == .keyDown
+        }
         .onKeyPress(keys: [.return, .delete]) { press in
             let key: ApprovalCardKey = press.key == .return ? .returnKey : .deleteKey
             guard
@@ -228,6 +232,9 @@ struct ConversationPromptRows: View {
         }
         .onChange(of: state.approvalText) { _, value in
             if value == nil { approvalCardIsFocused = false }
+        }
+        .onChange(of: resolved) { _, value in
+            if value { approvalCardIsFocused = false }
         }
         .dockButtonSize(.compact)
         .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
