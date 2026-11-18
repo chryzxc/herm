@@ -584,6 +584,9 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     var isInProject = false
     var isMovingSession = false
     var onAddToProject: (HermesSession, SidebarProjectTarget) -> Void = { _, _ in }
+    /// The owning bot, shown beside the title only while the rail lists every profile.
+    var ownerBot: BotSummary? = nil
+    var ownerAvatar: Data? = nil
     @State private var isHovered = false
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
@@ -636,6 +639,8 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             && lhs.projectTargets == rhs.projectTargets
             && lhs.isInProject == rhs.isInProject
             && lhs.isMovingSession == rhs.isMovingSession
+            && lhs.ownerBot == rhs.ownerBot
+            && lhs.ownerAvatar == rhs.ownerAvatar
     }
 
     var body: some View {
@@ -643,8 +648,13 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             statusIndicator
             VStack(alignment: .leading, spacing: DockSidebarListMetrics.titleToPreview) {
                 titleLine
-                if !isEditingTitle, session.sourceBadgeTitle != nil || repository != nil || preview != nil {
+                if !isEditingTitle,
+                    ownerBot != nil || session.sourceBadgeTitle != nil || repository != nil || preview != nil
+                {
                     HStack(spacing: 6) {
+                        if let ownerBot {
+                            SessionProfilePill(bot: ownerBot, imageData: ownerAvatar)
+                        }
                         if let source = session.sourceBadgeTitle {
                             SessionSourcePill(title: source)
                         }
@@ -786,7 +796,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     }
 
     private var tooltip: String {
-        [session.displayTitle, session.sourceBadgeTitle, repositoryName, session.displayPreview]
+        [session.displayTitle, ownerBot?.name, session.sourceBadgeTitle, repositoryName, session.displayPreview]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
@@ -794,6 +804,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
 
     private var accessibilityLabel: String {
         var parts = [session.displayTitle]
+        if let ownerBot { parts.append("Bot: \(ownerBot.name)") }
         if let source = session.sourceBadgeTitle { parts.append("Source: \(source)") }
         if sessionStatus != .none { parts.append(sessionStatus.label) }
         if let repositoryName, !repositoryName.isEmpty { parts.append(repositoryName) }

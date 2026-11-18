@@ -74,7 +74,8 @@ extension DockModel {
             updatedAt: updatedAt,
             messageCount: (row["message_count"] as? NSNumber)?.intValue ?? 0,
             source: row["source"] as? String ?? "",
-            isHidden: row["hidden"] as? Bool ?? false
+            isHidden: row["hidden"] as? Bool ?? false,
+            isPinned: row["pinned"] as? Bool ?? false
         )
     }
 

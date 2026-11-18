@@ -472,7 +472,10 @@ workspace is hidden or Hermes is disconnected.
 The sidebar stacks Pinned, Recents, and Projects for the selected
 bot under its bot header. In the bot picker, use each profile's reorder menu to move
 it up or down. The order is saved locally across restarts without changing the
-selected profile or its conversations. Each section header stays at the top of the scrolling
+selected profile or its conversations. Choose **All profiles** at the top of the
+bot picker to merge every bot's pinned and recent conversations into one list; each
+row then shows a pill with its bot's avatar and name, and opening it switches to
+that bot. Each section header stays at the top of the scrolling
 list until the next section replaces it; rows remain lazily rendered.
 Background polls and runtime notifications refresh the latest history page,
 reusing older loaded sessions for up to a minute. Explicit refreshes and profile

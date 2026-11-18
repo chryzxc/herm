@@ -915,6 +915,10 @@ struct HermesSession: Identifiable, Equatable {
     /// True once this session has completed activity the user has not yet
     /// seen (i.e. it was not the open session when the activity finished).
     let hasUnreadUpdate: Bool
+    /// Hermes' `pinned` flag as the row reported it. The selected profile's
+    /// pins come from `DockModel.pinnedSessions`; this carries other
+    /// profiles' pins from the all-profile scan.
+    let isPinned: Bool
 
     var displayTitle: String {
         title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled chat" : title
@@ -948,6 +952,13 @@ struct HermesSession: Identifiable, Equatable {
 
     var scopedID: ProfileScopedID { ProfileScopedID(profileID: profileID, resourceID: id) }
 
+    func withPinned(_ pinned: Bool, profileID: String?) -> HermesSession {
+        HermesSession(
+            id: id, profileID: profileID, title: title, preview: preview, startedAt: startedAt, updatedAt: updatedAt,
+            messageCount: messageCount, source: source, isHidden: isHidden, isWorking: isWorking,
+            hasUnreadUpdate: hasUnreadUpdate, isPinned: pinned)
+    }
+
     init(
         id: String,
         profileID: String? = nil,
@@ -959,7 +970,8 @@ struct HermesSession: Identifiable, Equatable {
         source: String,
         isHidden: Bool = false,
         isWorking: Bool = false,
-        hasUnreadUpdate: Bool = false
+        hasUnreadUpdate: Bool = false,
+        isPinned: Bool = false
     ) {
         self.id = id
         self.profileID = profileID
@@ -972,6 +984,7 @@ struct HermesSession: Identifiable, Equatable {
         self.isHidden = isHidden
         self.isWorking = isWorking
         self.hasUnreadUpdate = hasUnreadUpdate
+        self.isPinned = isPinned
     }
 }
 

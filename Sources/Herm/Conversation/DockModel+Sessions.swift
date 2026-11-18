@@ -283,18 +283,22 @@ extension DockModel {
 
     /// Toggles Hermes' pin flag through the same `PATCH /api/sessions/{id}`
     /// Hermes Desktop uses, so a pin made here shows up there and in the CLI.
+    /// `isPinned` is the caller's merged view for a chat outside the selected
+    /// profile, whose pin lives in the all-profile scan instead of `pinnedSessions`.
     @discardableResult
-    func toggleSessionPinned(_ session: HermesSession) async -> Bool {
+    func toggleSessionPinned(_ session: HermesSession, isPinned currentlyPinned: Bool? = nil) async -> Bool {
         guard pinningSessionID == nil else { return false }
-        let pinned = !isSessionPinned(session.id)
+        let pinned = !(currentlyPinned ?? isSessionPinned(session.id))
         let scope = profileScopeID
         let profileID = session.profileID ?? scope
+        let ownedByScope = Self.normalizedProfileID(profileID) == Self.normalizedProfileID(scope)
         pinningSessionID = session.id
         defer { pinningSessionID = nil }
         do {
             try await sessionPinService.setPinned(
                 pinned, sessionID: session.id, profileID: profileID, client: sessionRPCClient)
-            guard profileScopeID == scope else { return true }
+            applyAllProfilePin(pinned, to: session, profileID: profileID)
+            guard ownedByScope, profileScopeID == scope else { return true }
             // Reject list snapshots that predate the acknowledged mutation.
             sessionLoadGeneration &+= 1
             sessionLoadTask?.cancel()
@@ -310,6 +314,24 @@ extension DockModel {
             DebugLog.write("model: session pin failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
+    }
+
+    /// Reflects an acknowledged pin in the all-profile scan at once, then
+    /// re-reads it; the scan is otherwise throttled.
+    func applyAllProfilePin(_ pinned: Bool, to session: HermesSession, profileID: String?) {
+        let key = ProfileScopedID(profileID: profileID, resourceID: session.id)
+        func patched(_ rows: [HermesSession]) -> [HermesSession] {
+            var rows = rows.filter { $0.scopedID != key }
+            rows.append(session.withPinned(pinned, profileID: key.profileID))
+            return rows.sorted(by: SidebarAgentGrouping.newestFirst)
+        }
+        switch allBotSessionsState {
+        case .ready(let rows): allBotSessionsState = .ready(patched(rows))
+        case .stale(let rows, let message): allBotSessionsState = .stale(patched(rows), safeMessage: message)
+        case .empty where pinned: allBotSessionsState = .ready(patched([]))
+        case .empty, .loading, .unavailable, .failed: break
+        }
+        loadAllBotSessions(force: true)
     }
 
     /// `/api/sessions` back-fills every pinned row past `limit`, so the recent
