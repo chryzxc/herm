@@ -125,3 +125,15 @@ struct DesktopPluginCompatibilityTests {
         #expect(names.contains("host"))
     }
 }
+
+@Suite struct WorkflowPluginCategoryTests {
+    @Test func bundledKeysNameTheirCategoryFolder() {
+        func plugin(_ key: String) -> WorkflowPlugin {
+            WorkflowPlugin(id: key, name: key, detail: "", enabled: true, removable: false, desktopHalf: false)
+        }
+        #expect(plugin("image_gen/deepinfra").keyCategory == "Image gen")
+        #expect(plugin("model-providers/openrouter").keyCategory == "Model providers")
+        #expect(plugin("whiteboard").keyCategory == nil)
+        #expect(plugin("/odd").keyCategory == nil)
+    }
+}
