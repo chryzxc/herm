@@ -34,7 +34,9 @@ struct SessionDashboard<Conversation: View>: View {
     }
 
     private var snapshot: SessionNavSidebarSnapshot { sidebar.snapshot }
-    private var isCurrent: Bool {
+    private var isCurrent: Bool { isCurrent(snapshot) }
+
+    private func isCurrent(_ snapshot: SessionNavSidebarSnapshot) -> Bool {
         guard model.isHermesConnected else { return false }
         switch snapshot.inputs.sessionProjectionState {
         case .ready, .empty: return true
@@ -54,8 +56,6 @@ struct SessionDashboard<Conversation: View>: View {
         case .ready, .empty: return "All bots and projects · updates every 10 seconds"
         }
     }
-
-    private var sessions: [HermesSession] { SessionDashboardProjection.sessions(in: snapshot) }
 
     var body: some View {
         DockExpandedPage(
@@ -90,11 +90,19 @@ struct SessionDashboard<Conversation: View>: View {
             .frame(minWidth: 540, idealWidth: 760, maxWidth: 760, minHeight: 560, idealHeight: 680, maxHeight: 680)
         }
         .task {
-            baseline()
+            baseline(snapshot)
             if model.sessions.isEmpty { model.loadSessions() }
             control.refreshProjectNavigation()
         }
-        .onChange(of: snapshot.inputs.sessionProjectionState) { _, _ in baseline() }
+        // Not `onChange(of: sessionProjectionState)`: that compared every session on each
+        // DockModel publish, streaming included. Snapshots publish only when inputs change.
+        .onReceive(
+            sidebar.$snapshot.dropFirst().removeDuplicates {
+                $0.inputs.sessionProjectionState == $1.inputs.sessionProjectionState
+            }
+        ) {
+            baseline($0)
+        }
     }
 
     private var sessionList: some View {
@@ -174,9 +182,9 @@ struct SessionDashboard<Conversation: View>: View {
         }
     }
 
-    private func baseline() {
-        guard isCurrent else { return }
-        seen.baseline(profileID: model.profileScopeID, sessions: sessions)
+    private func baseline(_ snapshot: SessionNavSidebarSnapshot) {
+        guard isCurrent(snapshot) else { return }
+        seen.baseline(profileID: model.profileScopeID, sessions: SessionDashboardProjection.sessions(in: snapshot))
     }
 
     private func refresh() {

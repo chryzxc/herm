@@ -4036,6 +4036,8 @@ or unavailable. Working gateway-owned turns offer Stop via
 outline. Errors pass through `safeSummary` and appear in the footer.
 Visible cards read a bounded tail of saved messages without resuming sessions.
 Respond opens a separate conversation sheet; no empty chat pane occupies the grid.
+A click anywhere on the card opens that sheet too, except the reply field and send
+or stop button; the title and request choices keep their own actions.
 New chat starts a fresh conversation with the selected bot in that same sheet,
 keeping the tiles visible behind it. The focused sheet uses a single expanded-page header
 with Open workspace and Close actions, and renders the regular composer and transcript;

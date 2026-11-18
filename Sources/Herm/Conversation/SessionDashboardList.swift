@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Keep transcript publications out of session filtering and grouping.
@@ -7,64 +8,97 @@ struct SessionDashboardBot: Equatable {
     let image: Data?
 }
 
+/// Owns the board projection so it is rebuilt once per snapshot or seen-state
+/// change, and filtered once per search edit, instead of on every render.
+@MainActor
+final class SessionDashboardBoardModel: ObservableObject {
+    @Published private(set) var board = SessionDashboardBoard()
+    @Published private(set) var visible = SessionDashboardVisibleRows()
+    private var query = ""
+    private var project: String?
+    private var cancellables: Set<AnyCancellable> = []
+
+    init(sidebar: SessionNavSidebarModel, seen: SidebarSessionSeenStore = .shared) {
+        rebuild(sidebar.snapshot, seen: seen)
+        // `@Published` emits before it stores, so take the new snapshot from the stream.
+        sidebar.$snapshot.dropFirst()
+            .sink { [weak self] in self?.rebuild($0, seen: seen) }
+            .store(in: &cancellables)
+        // The seen store has no value to hand over; read it once the change lands.
+        seen.$seenAtByKey.dropFirst().receive(on: DispatchQueue.main)
+            .sink { [weak self, weak sidebar] _ in
+                guard let sidebar else { return }
+                self?.rebuild(sidebar.snapshot, seen: seen)
+            }
+            .store(in: &cancellables)
+    }
+
+    func filter(query: String, project: String?) {
+        guard query != self.query || project != self.project else { return }
+        self.query = query
+        self.project = project
+        refilter()
+    }
+
+    private func rebuild(_ snapshot: SessionNavSidebarSnapshot, seen: SidebarSessionSeenStore) {
+        board = SessionDashboardBoard(snapshot: snapshot, seen: seen)
+        refilter()
+    }
+
+    private func refilter() {
+        visible = SessionDashboardVisibleRows(
+            SessionDashboardProjection.filter(board.rows, query: query, project: project))
+    }
+}
+
 struct SessionDashboardList: View, Equatable {
-    @ObservedObject var sidebar: SessionNavSidebarModel
+    /// Not observed: the board is projected once per snapshot in `rebuild`, not on every render.
+    let sidebar: SessionNavSidebarModel
     let selection: SessionDashboardSelection
     let isCurrent: Bool
     let onSelect: (HermesSession) -> Void
-    var client: HermesRPCClientProtocol? = nil
-    var model: DockModel? = nil
-    var tileBots: [String: SessionDashboardBot] = [:]
-    @ObservedObject private var seen = SidebarSessionSeenStore.shared
+    let client: HermesRPCClientProtocol?
+    let model: DockModel?
+    let tileBots: [String: SessionDashboardBot]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var query = ""
     @State private var project: String?
     @State private var section: SessionDashboardSection?
     @State private var collapsed: Set<SessionDashboardSection> = [.recent]
+    @StateObject private var projection: SessionDashboardBoardModel
+    private var board: SessionDashboardBoard { projection.board }
+    private var visible: SessionDashboardVisibleRows { projection.visible }
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
+
+    init(
+        sidebar: SessionNavSidebarModel, selection: SessionDashboardSelection, isCurrent: Bool,
+        onSelect: @escaping (HermesSession) -> Void, client: HermesRPCClientProtocol? = nil,
+        model: DockModel? = nil, tileBots: [String: SessionDashboardBot] = [:]
+    ) {
+        self.sidebar = sidebar
+        self.selection = selection
+        self.isCurrent = isCurrent
+        self.onSelect = onSelect
+        self.client = client
+        self.model = model
+        self.tileBots = tileBots
+        _projection = StateObject(wrappedValue: SessionDashboardBoardModel(sidebar: sidebar))
+    }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.sidebar === rhs.sidebar && lhs.selection == rhs.selection && lhs.isCurrent == rhs.isCurrent
             && lhs.tileBots == rhs.tileBots
     }
 
-    private var snapshot: SessionNavSidebarSnapshot { sidebar.snapshot }
-    private var sessions: [HermesSession] { SessionDashboardProjection.sessions(in: snapshot) }
-
-    private var rows: [SessionDashboardRow] {
-        let sessions = sessions
-        let aliases = SessionDashboardProjection.aliases(in: snapshot)
-        let activeByID = Dictionary(
-            snapshot.inputs.activeSessions.map { (aliases[$0.id] ?? $0.id, $0) },
-            uniquingKeysWith: { first, _ in first })
-        let statuses = Dictionary(
-            sessions.map { session in
-                let summary = activeByID[session.id]
-                let activeID = snapshot.inputs.activeSessionID.map { aliases[$0] ?? $0 }
-                let status = SidebarSessionStatusResolver.resolve(
-                    session: session, summary: summary, activeSessionID: activeID,
-                    activeStatus: snapshot.inputs.activeStatus,
-                    attention: snapshot.attentionDots[session.id] ?? summary.flatMap { snapshot.attentionDots[$0.id] },
-                    seenAt: seen.seenAt(
-                        profileID: session.profileID ?? snapshot.inputs.profileScopeID, sessionID: session.id),
-                    isProfileBaselined: seen.isBaselined(profileID: session.profileID ?? snapshot.inputs.profileScopeID)
-                )
-                return (session.id, status)
-            }, uniquingKeysWith: { first, _ in first })
-        var projects = snapshot.projectNameBySessionID
-        for (alias, id) in aliases where projects[id] == nil { projects[id] = projects[alias] }
-        return SessionDashboardProjection.rows(
-            sessions: sessions, statuses: statuses, projects: projects,
-            query: query, project: project)
-    }
-
     var body: some View {
-        let projected = self.rows
-        let counts = Dictionary(grouping: projected, by: \.section).mapValues(\.count)
-        let rows = projected.filter { section == nil || $0.section == section }
-        let lookup = RowLookup(snapshot: snapshot)
-        let layoutKey = rows.map { "\($0.section.rawValue)/\($0.session.scopedID)" } + collapsed.map(\.rawValue)
-        VStack(spacing: 0) {
+        let counts = visible.counts
+        let groups = SessionDashboardSection.allCases.filter { section == nil || $0 == section }
+        let isEmpty = groups.allSatisfy { visible.members($0).isEmpty }
+        var layoutKey = Hasher()
+        layoutKey.combine(visible.layoutSignature)
+        layoutKey.combine(collapsed)
+        layoutKey.combine(section)
+        return VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
                     searchField
@@ -83,7 +117,7 @@ struct SessionDashboardList: View, Equatable {
             .dockPadding(.horizontal, 20)
             .dockPadding(.vertical, 16)
             ScrollView {
-                if rows.isEmpty {
+                if isEmpty {
                     emptyState(
                         query.isEmpty && project == nil ? "No sessions to show" : "No matching sessions",
                         detail: isCurrent
@@ -97,13 +131,13 @@ struct SessionDashboardList: View, Equatable {
                     columns: [GridItem(.adaptive(minimum: 320), spacing: 16, alignment: .top)],
                     alignment: .leading, spacing: 16
                 ) {
-                    ForEach(SessionDashboardSection.allCases) { group in
-                        let members = rows.filter { $0.section == group }
+                    ForEach(groups) { group in
+                        let members = visible.members(group)
                         if !members.isEmpty {
                             Section {
                                 if !collapsed.contains(group) {
                                     ForEach(members, id: \.session.scopedID) { row in
-                                        sessionRow(row, lookup)
+                                        sessionRow(row)
                                     }
                                 }
                             } header: {
@@ -112,15 +146,17 @@ struct SessionDashboardList: View, Equatable {
                         }
                     }
                 }
+                // Short, and keyed on card order only: live status ticks arrive several
+                // times a second and a long spring kept the whole grid mid-animation.
                 .animation(
-                    DockMotion.isEnabled(reduceMotion: reduceMotion)
-                        ? .spring(response: 0.8, dampingFraction: 0.9) : nil,
-                    value: layoutKey
+                    DockMotion.animation(reduceMotion: reduceMotion, duration: 0.25), value: layoutKey.finalize()
                 )
                 .dockPadding(.horizontal, 20)
                 .dockPadding(.bottom, 20)
             }
         }
+        .onChange(of: query) { _, value in projection.filter(query: value, project: project) }
+        .onChange(of: project) { _, value in projection.filter(query: query, project: value) }
     }
 
     private func sectionHeader(_ group: SessionDashboardSection, members: [SessionDashboardRow]) -> some View {
@@ -141,40 +177,16 @@ struct SessionDashboardList: View, Equatable {
         }
     }
 
-    /// Per-body indexes so each card finds its data without scanning every list.
-    private struct RowLookup {
-        var attention: [String: AttentionItem] = [:]
-        var activity: [String: LatestActivityItem] = [:]
-        var runtimeIDs: [String: [String]] = [:]
-        var live: Set<String> = []
-
-        init(snapshot: SessionNavSidebarSnapshot) {
-            let aliases = SessionDashboardProjection.aliases(in: snapshot)
-            func canonical(_ id: String) -> String { aliases[id] ?? id }
-            for request in snapshot.inputs.attention where request.state == .open {
-                guard let id = request.reference.sessionID.map(canonical), attention[id] == nil else { continue }
-                attention[id] = request
-            }
-            for item in snapshot.inputs.latestActivities where activity[canonical(item.sessionID)] == nil {
-                activity[canonical(item.sessionID)] = item
-            }
-            for (alias, id) in aliases { runtimeIDs[id, default: []].append(alias) }
-            for session in snapshot.inputs.activeSessions
-            where SessionLifecyclePresentation.status(for: session) == .active {
-                live.insert(canonical(session.id))
-            }
-        }
-    }
-
-    private func sessionRow(_ row: SessionDashboardRow, _ lookup: RowLookup) -> some View {
+    private func sessionRow(_ row: SessionDashboardRow) -> some View {
         SessionDashboardCard(
             row: row, isCurrent: isCurrent, isLoadingSession: selection.isLoading,
-            request: lookup.attention[row.id], activity: lookup.activity[row.id],
-            profileID: snapshot.inputs.profileScopeID, client: client,
-            runtimeIDs: lookup.runtimeIDs[row.id] ?? [],
-            isGatewayLive: lookup.live.contains(row.id),
+            request: board.attention[row.id], activity: board.activity[row.id],
+            profileID: board.profileScopeID, client: client,
+            runtimeIDs: board.runtimeIDs[row.id] ?? [],
+            isGatewayLive: board.live.contains(row.id),
             model: model, bot: tileBots[row.session.profileID ?? "default"], onRespond: { onSelect(row.session) }
         )
+        .equatable()
     }
 
     private var searchField: some View {
@@ -185,7 +197,7 @@ struct SessionDashboardList: View, Equatable {
     private var projectFilter: some View {
         DockMenuPicker(title: project ?? "All projects", selection: $project) {
             DockMenuOption("All projects", value: nil as String?)
-            ForEach(Array(Set(snapshot.projectNameBySessionID.values)).sorted(), id: \.self) { name in
+            ForEach(board.projectNames, id: \.self) { name in
                 DockMenuOption(name, value: Optional(name))
             }
         }

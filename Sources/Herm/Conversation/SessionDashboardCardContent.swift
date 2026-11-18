@@ -46,6 +46,17 @@ final class SessionDashboardCardContent: ObservableObject {
         }
     }
 
+    private static var previews: [String: String?] = [:]
+
+    /// `preview` scans for rich surfaces and summarizes; tiles ask on every render.
+    static func cachedPreview(_ value: String) -> String? {
+        if let cached = previews[value] { return cached }
+        if previews.count > 500 { previews.removeAll() }
+        let summary = preview(value)
+        previews[value] = .some(summary)
+        return summary
+    }
+
     static func preview(_ value: String) -> String? {
         if RichDocument.mentionsSurface(value) {
             let text = GenerativeUIIntegration.plainText(value).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,5 +72,49 @@ final class SessionDashboardCardContent: ObservableObject {
         guard let message, let separator = message.range(of: ": ") else { return nil }
         let body = String(message[separator.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
         return body.isEmpty ? nil : GenerativeUIIntegration.plainText(body)
+    }
+}
+
+/// A tile's slice of the shared attention, answer and activity streams. Each tile
+/// reduces them to its own value, so another chat's change does not re-render it,
+/// and it subscribes once while visible instead of on every render.
+@MainActor
+final class SessionDashboardCardLiveState: ObservableObject {
+    @Published private(set) var attention: DockModel.SessionAttention?
+    @Published private(set) var answer: AttentionAnswerState?
+    @Published private(set) var activity: String?
+    private var observedIDs: [String] = []
+    private var cancellables: Set<AnyCancellable> = []
+
+    func observe(_ model: DockModel?, ids: [String]) {
+        guard let model, cancellables.isEmpty || ids != observedIDs else { return }
+        stop()
+        observedIDs = ids
+        let attention: AnyPublisher<DockModel.SessionAttention?, Never> = model.$sessionAttention
+            .map { all in ids.lazy.compactMap { all[$0] }.first }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+        attention.combineLatest(model.$attentionAnswers)
+            .sink { [weak self] attention, answers in
+                self?.apply(attention, answer: attention?.responseTarget.flatMap { answers[$0] })
+            }
+            .store(in: &cancellables)
+        model.sessionActivityLabelChanges
+            .map { labels in ids.lazy.compactMap { labels[$0] }.first }
+            .removeDuplicates()
+            .sink { [weak self] label in
+                guard let self, self.activity != label else { return }
+                self.activity = label
+            }
+            .store(in: &cancellables)
+    }
+
+    private func apply(_ attention: DockModel.SessionAttention?, answer: AttentionAnswerState?) {
+        if self.attention != attention { self.attention = attention }
+        if self.answer != answer { self.answer = answer }
+    }
+
+    func stop() {
+        cancellables.removeAll()
     }
 }
