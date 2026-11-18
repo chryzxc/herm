@@ -10,44 +10,34 @@ extension DockModel {
     func respondToApproval(_ choice: String) {
         guard sessionActionsReady, let sessionID else { return }
         guard !isRespondingToApproval else { return }
-        if let request = sessionAttention[sessionID]?.responseTarget,
-            attentionAnswers[request]?.blocksSubmission == true
-        {
+        guard let record = currentConversationApproval, !record.resolved,
+            let pending = pendingApprovalsBySessionID[sessionID], pending.responseTarget == record.target,
+            pending.serverRequestID == record.serverRequestID, pending.presentation == record.approval
+        else { return }
+        if let request = pending.responseTarget {
+            submitAttention(request, choice: choice, freeText: false, inlineApproval: true)
             return
         }
-        let responseGeneration = sessionResumeGeneration
-        let requestID = approvalDetails?.requestID
-        isRespondingToApproval = true
-        Task {
-            defer {
-                if self.sessionResumeGeneration == responseGeneration,
-                    self.sessionID == sessionID
-                {
-                    self.isRespondingToApproval = false
-                }
-            }
-            do {
-                guard await ApprovalAuthGate.allows(choice) else { return }
-                var params: [String: Any] = ["session_id": sessionID, "choice": choice]
-                if let requestID { params["request_id"] = requestID }
-                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: params)
-                guard self.sessionResumeGeneration == responseGeneration,
-                    self.sessionID == sessionID
-                else { return }
-                resolveApproval(for: sessionID, requestID: requestID)
-            } catch {
-                DebugLog.write(
-                    "model: approval response failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
-            }
-        }
+        respondToLegacyApproval(record, sessionID: sessionID, choice: choice)
     }
 
     /// The notch's one-tap answer for any session's approval or single clarify question.
     /// `freeText` lets a typed reply (notification quick-reply) answer a clarify question outside its listed choices.
     func answerAttention(_ request: AttentionRequest, choice: String, freeText: Bool = false) {
-        guard let attention = sessionAttention[request.sessionID], attention.responseTarget == request,
-            freeText ? attention.status == .needsClarification : attention.choices.contains(choice),
-            attentionAnswers[request]?.blocksSubmission != true
+        submitAttention(request, choice: choice, freeText: freeText, inlineApproval: false)
+    }
+
+    func submitAttention(_ request: AttentionRequest, choice: String, freeText: Bool, inlineApproval: Bool) {
+        guard let attention = sessionAttention[request.sessionID], attention.responseTarget == request else { return }
+        let allowed: Bool
+        if freeText {
+            allowed = attention.status == .needsClarification
+        } else if inlineApproval && attention.status == .needsApproval {
+            allowed = pendingApprovalsBySessionID[request.sessionID]?.presentation.choices.contains(choice) == true
+        } else {
+            allowed = attention.choices.contains(choice)
+        }
+        guard allowed, attentionAnswers[request]?.blocksSubmission != true
         else { return }
         if currentSessionIDs.contains(request.sessionID) || rowSessionID(request.sessionID) == navigationSessionID {
             guard sessionActionsReady, !isRespondingToApproval, !isRespondingToClarification else { return }
@@ -60,6 +50,7 @@ extension DockModel {
                     attentionAnswers[request] = .failed(choice, "Authentication was cancelled.")
                     return
                 }
+                guard sessionAttention[request.sessionID]?.responseTarget == request else { return }
                 var params: [String: Any]
                 let method: String
                 if attention.status == .needsApproval {
@@ -363,11 +354,21 @@ extension DockModel {
     /// Reconciles an approval answered through another surface, such as Inbox.
     /// Responses for other sessions clear their retained request without
     /// altering the visible conversation.
-    func resolveApproval(for resolvedSessionID: String, requestID: String? = nil, resumesWork: Bool = true) {
+    func resolveApproval(
+        for resolvedSessionID: String, requestID: String? = nil, resumesWork: Bool = true, recordID: UUID? = nil
+    ) {
         if let requestID {
             guard let pending = pendingApprovalsBySessionID[resolvedSessionID],
                 pending.presentation.requestID == requestID || pending.serverRequestID == requestID
             else { return }
+        }
+        if let recordID {
+            guard let pending = pendingApprovalsBySessionID[resolvedSessionID],
+                conversationApprovalID(sessionID: resolvedSessionID, pending: pending) == recordID
+            else { return }
+        }
+        if let pending = pendingApprovalsBySessionID[resolvedSessionID] {
+            resolveConversationApproval(sessionID: resolvedSessionID, pending: pending, recordID: recordID)
         }
         // A direct Bot relay can pause in its own Bot Chat session while the
         // foreground conversation remains selected. Resolve that activity by

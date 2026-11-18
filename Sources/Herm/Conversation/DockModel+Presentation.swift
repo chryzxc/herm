@@ -173,6 +173,7 @@ extension DockModel {
         let presentation: ApprovalPresentation
         let responseTarget: AttentionRequest?
         let serverRequestID: String?
+        let profileID: String?
     }
 
     struct PendingClarification: Equatable {

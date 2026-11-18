@@ -35,6 +35,8 @@ struct ConversationTranscriptSnapshot: Equatable {
         let approvalTitle: String?
         let approvalText: String?
         let respondingToApproval: Bool
+        let conversationApproval: ConversationApproval?
+        let approvalAnswer: AttentionAnswerState?
         let clarification: String?
         let choices: [String]
         let multiSelect: Bool
@@ -167,6 +169,7 @@ final class ConversationTranscriptSource: ObservableObject {
         observe(model.$status)
         observe(model.$activeBotProfileID)
         observe(model.$sessionProfileID)
+        observe(model.$profileScopeID)
         observe(model.$compactingSessionID)
         observe(model.activityPresentation.$revision)
         observe(model.$botActivityRevision)
@@ -176,6 +179,8 @@ final class ConversationTranscriptSource: ObservableObject {
         observe(model.$approvalText)
         observe(model.$approvalDetails)
         observe(model.$isRespondingToApproval)
+        observe(model.$conversationApprovals)
+        observe(model.$attentionAnswers)
         observe(model.$clarificationQuestion)
         observe(model.$clarificationChoices)
         observe(model.$clarificationMultiSelect)
@@ -347,6 +352,10 @@ final class ConversationTranscriptSource: ObservableObject {
                 compactingID: model.compactingSessionID, approval: model.approvalDetails,
                 approvalTitle: model.approvalTitle, approvalText: model.approvalText,
                 respondingToApproval: model.isRespondingToApproval,
+                conversationApproval: preview == nil ? model.currentConversationApproval : nil,
+                approvalAnswer: preview == nil
+                    ? model.currentConversationApproval?.target.flatMap { model.attentionAnswers[$0] }
+                        ?? model.currentConversationApproval?.legacyAnswer : nil,
                 clarification: model.clarificationQuestion, choices: model.clarificationChoices,
                 multiSelect: model.clarificationMultiSelect, clarificationProgress: model.clarificationProgress,
                 clarificationRequestID: model.clarificationRequestID,

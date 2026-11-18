@@ -88,13 +88,15 @@ struct ConversationTranscriptView: View, Equatable {
                     ScrollView {
                         VStack(spacing: 0) {
                             VStack(spacing: 0) {
-                                if snapshot.messages.isEmpty && snapshot.context.status != .working {
+                                if snapshot.messages.isEmpty && snapshot.context.conversationApproval == nil
+                                    && snapshot.context.status != .working
+                                {
                                     StartupAssistantView(
                                         hermFaceID: conversationHermFaceID, isActive: hostVisible && animatesEmptyState
                                     )
                                     .frame(maxWidth: .infinity)
                                     .frame(minHeight: max(300, viewport.size.height - 16))
-                                } else if snapshot.messages.isEmpty {
+                                } else if snapshot.messages.isEmpty && snapshot.context.conversationApproval == nil {
                                     DockLoadingState(
                                         title: "Loading conversation…", minHeight: max(300, viewport.size.height - 16))
                                 }
@@ -140,8 +142,13 @@ struct ConversationTranscriptView: View, Equatable {
                                     }
                                     .id(message.id)
                                 }
+                                if model.sessionActionsReady || snapshot.context.conversationApproval != nil {
+                                    ConversationPromptRows(
+                                        model: model, conversationMetrics: conversationMetrics,
+                                        conversationApproval: snapshot.context.conversationApproval,
+                                        approvalAnswer: snapshot.context.approvalAnswer, transcriptMode: true)
+                                }
                                 if model.sessionActionsReady {
-                                    ConversationPromptRows(model: model, conversationMetrics: conversationMetrics)
                                     botHandoffRow
                                         .animation(.spring(response: 0.45, dampingFraction: 0.8), value: workingCrewIDs)
                                 }

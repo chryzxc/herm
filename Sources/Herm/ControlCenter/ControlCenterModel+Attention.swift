@@ -23,18 +23,15 @@ extension ControlCenterModel {
             defer { finishAction(actionID) }
             do {
                 switch action {
-                case .approve:
+                case .approve, .deny:
                     guard let rpc, let dockModel, let sessionID = reference.sessionID, !sessionID.isEmpty else {
                         return
                     }
-                    _ = try await rpc.respondToApproval(sessionID: sessionID, choice: "once")
-                    dockModel.resolveApproval(for: sessionID)
-                case .deny:
-                    guard let rpc, let dockModel, let sessionID = reference.sessionID, !sessionID.isEmpty else {
-                        return
-                    }
-                    _ = try await rpc.respondToApproval(sessionID: sessionID, choice: "deny")
-                    dockModel.resolveApproval(for: sessionID)
+                    guard
+                        try await respondToControlApproval(
+                            rpc: rpc, model: dockModel, sessionID: sessionID,
+                            choice: action == .approve ? ApprovalChoice.once : ApprovalChoice.deny)
+                    else { return }
                 case .respond:
                     let response = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     guard !response.isEmpty else { return }
@@ -65,6 +62,44 @@ extension ControlCenterModel {
             } catch {
                 lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
+        }
+    }
+
+    private func respondToControlApproval(
+        rpc: HermesControlRPC, model: DockModel, sessionID: String, choice: String
+    ) async throws -> Bool {
+        let pending = model.pendingApprovalsBySessionID[sessionID]
+        let recordID = pending.flatMap { model.conversationApprovalID(sessionID: sessionID, pending: $0) }
+        let record = recordID.flatMap { id in model.conversationApprovals.first { $0.id == id } }
+        let answer = record?.target.flatMap { model.attentionAnswers[$0] } ?? record?.legacyAnswer
+        guard answer?.blocksSubmission != true else { return false }
+        func setAnswer(_ answer: AttentionAnswerState) {
+            if let target = record?.target {
+                model.attentionAnswers[target] = answer
+            } else if let recordID {
+                model.setLegacyApprovalAnswer(answer, id: recordID)
+            }
+        }
+        setAnswer(.sending(choice))
+        do {
+            let result = try await rpc.respondToApproval(sessionID: sessionID, choice: choice)
+            guard model.pendingApprovalsBySessionID[sessionID] == pending,
+                pending.flatMap({ model.conversationApprovalID(sessionID: sessionID, pending: $0) }) == recordID
+            else { return false }
+            guard let resolved = result["resolved"] as? Int, resolved >= 0 else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            if let recordID {
+                model.resolveApproval(for: sessionID, resumesWork: resolved > 0, recordID: recordID)
+            }
+            return true
+        } catch {
+            if model.pendingApprovalsBySessionID[sessionID] == pending,
+                pending.flatMap({ model.conversationApprovalID(sessionID: sessionID, pending: $0) }) == recordID
+            {
+                setAnswer(.failure(error, choice: choice))
+            }
+            throw error
         }
     }
 
