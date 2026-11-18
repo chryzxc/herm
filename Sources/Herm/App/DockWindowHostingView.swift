@@ -114,7 +114,10 @@ enum DockScrollActivity {
     private static var lastScrollTimestamp: TimeInterval = -.infinity
     private static let monitor: Any? = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
         let timestamp = event.timestamp
-        MainActor.assumeIsolated { lastScrollTimestamp = timestamp }
+        MainActor.assumeIsolated {
+            lastScrollTimestamp = timestamp
+            HermPerformanceRecorder.mark("scrollWheel")
+        }
         return event
     }
 

@@ -632,7 +632,8 @@ extension DockPopover {
                                         selected, to: target, model: model, control: controlCenter,
                                         store: workspaceStore)
                                 }
-                            }
+                            },
+                            isShownInPane: SessionPaneStore.shared.shownSessionIDs.contains(session.id)
                         )
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)

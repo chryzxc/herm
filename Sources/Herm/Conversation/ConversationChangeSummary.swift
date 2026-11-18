@@ -41,7 +41,39 @@ enum ConversationChangeSummary {
         return files(in: messages[start...index].flatMap(\.activity))
     }
 
+    /// Every transcript body evaluation asks each mounted row for its turn's
+    /// files; re-splitting completed diffs each time is pure waste because a
+    /// completed call's preview never changes. Keyed by call id plus preview size
+    /// and hash, so reused ids with different previews never share an entry.
+    private struct CacheKey: Hashable {
+        let calls: [String]
+        let sizes: [Int]
+        let hashes: [Int]
+    }
+
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var cache: [CacheKey: [File]] = [:]
+    static let cacheLimit = 256
+
     static func files(in calls: [ActiveToolCall]) -> [File] {
+        let diffs = calls.filter { $0.isComplete && $0.diffPreview != nil }
+        guard !diffs.isEmpty else { return [] }
+        let key = CacheKey(
+            calls: diffs.map(\.id), sizes: diffs.map { $0.diffPreview?.utf8.count ?? 0 },
+            hashes: diffs.map { $0.diffPreview?.hashValue ?? 0 })
+        cacheLock.lock()
+        let cached = cache[key]
+        cacheLock.unlock()
+        if let cached { return cached }
+        let result = parseFiles(in: diffs)
+        cacheLock.lock()
+        if cache.count >= cacheLimit { cache.removeAll(keepingCapacity: true) }
+        cache[key] = result
+        cacheLock.unlock()
+        return result
+    }
+
+    private static func parseFiles(in calls: [ActiveToolCall]) -> [File] {
         var files: [File] = []
         for call in calls where call.isComplete {
             guard let diff = call.diffPreview else { continue }

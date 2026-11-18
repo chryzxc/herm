@@ -223,6 +223,10 @@ final class ConversationTranscriptSource: ObservableObject {
 
     func refresh() {
         guard isActive else { return }
+        HermPerformanceRecorder.measure("transcript_snapshot", as: "transcriptSnapshot") { refreshSnapshot() }
+    }
+
+    private func refreshSnapshot() {
         let hasPreview = model.sessionTranscriptPreview != nil
         if showingPreview && !hasPreview && model.sessionActionsReady {
             coordinator.promotePreview(model: model)
@@ -246,7 +250,13 @@ final class ConversationTranscriptSource: ObservableObject {
         let next = Self.makeSnapshot(
             model: model, bots: bots, actions: actions, voice: voice, range: coordinator.mountedRange,
             generation: coordinator.generation)
-        guard next != snapshot else { return }
+        guard next != snapshot else {
+            // A refresh that changes nothing was triggered by an unrelated
+            // publisher (often another running session); counted to find them.
+            HermPerformanceRecorder.mark("transcript.snapshotUnchanged")
+            return
+        }
+        HermPerformanceRecorder.mark("transcript.snapshotPublished")
         publicationCount += 1
         snapshot = next
         prefetch()

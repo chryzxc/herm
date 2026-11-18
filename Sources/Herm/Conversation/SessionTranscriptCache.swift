@@ -120,6 +120,7 @@ extension DockModel {
         _ stage: String, startedAt: UInt64, extra: String = "", generation: Int? = nil, token: String? = nil
     ) {
         let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000
+        HermPerformanceRecorder.recordSessionOpen(stage: stage, milliseconds: milliseconds)
         DebugLog.writePerformance(
             "session_switch token=\(token ?? sessionSwitchToken) generation=\(generation ?? sessionResumeGeneration) stage=\(stage) ms=\(milliseconds) \(extra)"
         )

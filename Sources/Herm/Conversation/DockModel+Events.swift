@@ -11,6 +11,23 @@ extension DockModel {
     /// session. Own unread state at this shared boundary so attention from a
     /// different session cannot appear in Control without reaching the menu bar.
     func receiveGatewayEvent(_ type: String, params: [String: Any]) {
+        guard HermPerformanceRecorder.active else { return handleGatewayEvent(type, params: params) }
+        // Profiling only: split main-thread event cost between the open chat and
+        // the other running sessions, since every session's events land here.
+        let metric = gatewayEventMetric(params: params)
+        HermPerformanceRecorder.mark(metric)
+        HermPerformanceRecorder.measure("gateway_event", as: metric) { handleGatewayEvent(type, params: params) }
+    }
+
+    private func gatewayEventMetric(params: [String: Any]) -> String {
+        let payload = params["payload"] as? [String: Any]
+        guard let owner = (params["session_id"] as? String) ?? (payload?["session_id"] as? String) else {
+            return "events.unscoped"
+        }
+        return currentSessionIDs.contains(owner) ? "events.current" : "events.background"
+    }
+
+    private func handleGatewayEvent(_ type: String, params: [String: Any]) {
         guard acceptGatewayEvent(type: type, params: params) else { return }
         if type == "approval.request" {
             let payload = params["payload"] as? [String: Any] ?? [:]

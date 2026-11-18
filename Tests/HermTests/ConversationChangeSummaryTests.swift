@@ -26,6 +26,16 @@ struct ConversationChangeSummaryTests {
             isComplete: complete, diffPreview: diff)
     }
 
+    @Test func cachedFilesNeverLeakAcrossDifferentPreviewsWithTheSameCallID() {
+        let first = ConversationChangeSummary.files(in: [call("same", diff: "a/x → b/x\n-old\n+new")])
+        let second = ConversationChangeSummary.files(in: [call("same", diff: "a/y → b/y\n-old\n+new")])
+        #expect(first.map(\.path) == ["x"])
+        #expect(second.map(\.path) == ["y"])
+        #expect(ConversationChangeSummary.files(in: [call("same", diff: "a/x → b/x\n-old\n+new")]) == first)
+        #expect(
+            ConversationChangeSummary.files(in: [call("same", diff: "a/x → b/x\n-old\n+new", complete: false)]).isEmpty)
+    }
+
     @Test func groupsRenderedDiffsByFileWithoutInventingChanges() {
         let changes = ConversationChangeSummary.files(in: [
             call(

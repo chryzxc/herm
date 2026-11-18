@@ -89,8 +89,15 @@ final class ConversationPerformanceMonitor {
     }
 
     func recordTranscriptEvaluation() { transcriptEvaluations += 1 }
-    func recordPageTransaction() { pageTransactions += 1 }
-    func recordAnchorCorrection() { anchorCorrections += 1 }
+    func recordPageTransaction() {
+        pageTransactions += 1
+        HermPerformanceRecorder.mark("transcript.page")
+    }
+
+    func recordAnchorCorrection() {
+        anchorCorrections += 1
+        HermPerformanceRecorder.mark("transcript.anchorCorrection")
+    }
 
     func recordModelPublication() {
         modelPublications += 1

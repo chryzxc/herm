@@ -82,6 +82,7 @@ struct ConversationTranscriptView: View, Equatable {
     var body: some View {
         let snapshot = source.snapshot
         let _ = coordinator.performance.recordTranscriptEvaluation()
+        let _ = HermPerformanceRecorder.countBody("ConversationTranscriptView")
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottom) {

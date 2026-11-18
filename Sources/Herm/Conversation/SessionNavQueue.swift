@@ -736,6 +736,7 @@ struct SessionNavQueue: View, Equatable {
             SessionNavProjectList(
                 groups: projects,
                 selectedSessionID: navigationState.selectedProjectSessionID,
+                shownSessionIDs: sessionPanes.shownSessionIDs,
                 activeSessionID: sidebarSnapshot.inputs.activeSessionID,
                 attentionDots: sidebarSnapshot.attentionDots,
                 sessionStatuses: statuses,
@@ -1000,7 +1001,8 @@ struct SessionNavQueue: View, Equatable {
             isMovingSession: model.movingSessionToProjectID != nil,
             onAddToProject: moveToProject,
             ownerBot: owner,
-            ownerAvatar: owner.flatMap { botMode.avatarImages[$0.id] }
+            ownerAvatar: owner.flatMap { botMode.avatarImages[$0.id] },
+            isShownInPane: sessionPanes.shownSessionIDs.contains(session.id)
         )
         .equatable()
     }
@@ -1090,7 +1092,8 @@ struct SessionNavQueue: View, Equatable {
             isInProject: sidebarSnapshot.projectNameBySessionID[session.id] != nil,
             onAddToProject: moveToProject,
             ownerBot: owner,
-            ownerAvatar: owner.flatMap { botMode.avatarImages[$0.id] }
+            ownerAvatar: owner.flatMap { botMode.avatarImages[$0.id] },
+            isShownInPane: sessionPanes.shownSessionIDs.contains(session.id)
         )
         .equatable()
     }
