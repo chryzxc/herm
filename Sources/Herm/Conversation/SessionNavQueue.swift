@@ -655,6 +655,7 @@ struct SessionNavQueue: View, Equatable {
             SessionNavProjectList(
                 groups: projects,
                 selectedSessionID: navigationState.selectedProjectSessionID,
+                shownSessionIDs: sessionPanes.shownSessionIDs,
                 activeSessionID: sidebarSnapshot.inputs.activeSessionID,
                 attentionDots: sidebarSnapshot.attentionDots,
                 sessionStatuses: statuses,
@@ -912,7 +913,8 @@ struct SessionNavQueue: View, Equatable {
             projectTargets: sidebarSnapshot.projectTargets(forSessionID: session.id),
             isInProject: sidebarSnapshot.projectNameBySessionID[session.id] != nil,
             isMovingSession: model.movingSessionToProjectID != nil,
-            onAddToProject: moveToProject
+            onAddToProject: moveToProject,
+            isShownInPane: sessionPanes.shownSessionIDs.contains(session.id)
         )
         .equatable()
     }
@@ -999,7 +1001,8 @@ struct SessionNavQueue: View, Equatable {
             isPinning: sidebarSnapshot.inputs.pinningSessionID == session.id,
             projectTargets: sidebarSnapshot.projectTargets(forSessionID: session.id),
             isInProject: sidebarSnapshot.projectNameBySessionID[session.id] != nil,
-            onAddToProject: moveToProject
+            onAddToProject: moveToProject,
+            isShownInPane: sessionPanes.shownSessionIDs.contains(session.id)
         )
         .equatable()
     }

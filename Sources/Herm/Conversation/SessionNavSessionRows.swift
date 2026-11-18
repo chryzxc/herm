@@ -159,6 +159,7 @@ struct ProjectDisclosureState: Equatable {
 struct SessionNavProjectList: View {
     let groups: [SessionNavConversationGroup]
     let selectedSessionID: String?
+    var shownSessionIDs: Set<String> = []
     let activeSessionID: String?
     let attentionDots: [String: SessionAttentionDot]
     let sessionStatuses: [String: SidebarSessionStatus]
@@ -414,7 +415,8 @@ struct SessionNavProjectList: View {
             projectTargets: projectTargets(session.id),
             isInProject: true,
             isMovingSession: isMovingSession,
-            onAddToProject: onAddToProject
+            onAddToProject: onAddToProject,
+            isShownInPane: shownSessionIDs.contains(session.id)
         )
         .equatable()
     }
@@ -584,6 +586,9 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     var isInProject = false
     var isMovingSession = false
     var onAddToProject: (HermesSession, SidebarProjectTarget) -> Void = { _, _ in }
+    /// Shown in a split pane. Passed in rather than observed per row: one
+    /// pane-store publication used to invalidate every mounted sidebar row.
+    var isShownInPane = false
     @State private var isHovered = false
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
@@ -594,11 +599,9 @@ struct SessionNavSidebarSessionRow: View, Equatable {
 
     private static let rowHeight = DockSidebarListMetrics.sessionRowHeight
 
-    @ObservedObject private var sessionPanes = SessionPaneStore.shared
-
     /// Split view shows several sessions at once; each one on screen reads as selected.
     private var isSelected: Bool {
-        session.id == selectedSessionID || sessionPanes.shownSessionIDs.contains(session.id)
+        session.id == selectedSessionID || isShownInPane
     }
 
     private var pendingAction: ProjectSessionPendingAction? {
@@ -636,9 +639,11 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             && lhs.projectTargets == rhs.projectTargets
             && lhs.isInProject == rhs.isInProject
             && lhs.isMovingSession == rhs.isMovingSession
+            && lhs.isShownInPane == rhs.isShownInPane
     }
 
     var body: some View {
+        let _ = HermPerformanceRecorder.countBody("SessionNavSidebarSessionRow")
         HStack(alignment: .firstTextBaseline, spacing: 4) {
             statusIndicator
             VStack(alignment: .leading, spacing: DockSidebarListMetrics.titleToPreview) {
