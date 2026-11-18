@@ -5,6 +5,26 @@ import Testing
 
 @MainActor
 struct DockProfilePickerOrderTests {
+    @Test func draggingMovesBeforeOrAfterAndPersists() {
+        let suite = "profile-drag-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let bots = ["a", "b", "c"].map { id in
+            BotSummary(
+                id: id, name: id, title: nil, description: nil, model: nil,
+                isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+                isHidden: false, hasAvatar: false, isDefault: false)
+        }
+        let order = DockProfilePickerOrder(defaults: defaults)
+        order.move("a", relativeTo: "c", after: true, in: bots)
+        #expect(order.ordered(bots).map(\.id) == ["b", "c", "a"])
+        order.move("a", relativeTo: "b", after: false, in: bots)
+        #expect(DockProfilePickerOrder(defaults: defaults).ordered(bots).map(\.id) == ["a", "b", "c"])
+        order.move("a", relativeTo: "missing", after: false, in: bots)
+        order.move("a", relativeTo: "a", after: true, in: bots)
+        #expect(order.ordered(bots).map(\.id) == ["a", "b", "c"])
+    }
+
     @Test func movesAndPersistsWithoutChangingProfiles() {
         let suite = "profile-order-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

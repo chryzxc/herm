@@ -1807,8 +1807,9 @@ The 56pt header bar holds the Bot switcher (avatar, name over role,
 chevrons-up-down when more than one Bot is visible). While a Bot's saved avatar is
 still loading, the avatar slot shows a small spinner instead of a stand-in face; a
 Bot whose avatar Hermes cannot serve shows its face. Each profile in the switcher
-has an accessible reorder menu with Move up and Move down actions; unavailable
-moves are disabled. The local order survives restarts without changing selection
+has a drag handle; rows animate into their new order while dragging, unless Reduce
+Motion is enabled. The focused handle also supports arrow keys and accessibility
+adjustment. The local order survives restarts without changing selection
 or conversations. A labeled New chat button
 sits above Pinned in the session list. Top-level
 destinations (Today, Inbox, Kanban, the Tools group, and the Quota and

@@ -470,8 +470,8 @@ bot’s loaded Recents, including conversations under Show more. Badge calculati
 cached independently of transcript updates; status polling pauses while the
 workspace is hidden or Hermes is disconnected.
 The sidebar stacks Pinned, Recents, and Projects for the selected
-bot under its bot header. In the bot picker, use each profile's reorder menu to move
-it up or down. The order is saved locally across restarts without changing the
+bot under its bot header. In the bot picker, drag a profile's handle to reorder it,
+or focus the handle and use the arrow keys. The order is saved locally across restarts without changing the
 selected profile or its conversations. Choose **All profiles** at the top of the
 bot picker to merge every bot's pinned and recent conversations into one list; each
 row then shows a pill with its bot's avatar and name, and opening it switches to
