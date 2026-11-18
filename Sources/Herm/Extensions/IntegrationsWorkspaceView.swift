@@ -37,7 +37,7 @@ struct IntegrationsWorkspaceView: View {
                 DockMenu {
                     DockMenuSection("Configure profile") {
                         profileOption("Launch profile", nil)
-                        ForEach(state.profiles) { profile in profileOption(profile.name, profile.id) }
+                        ForEach(state.profiles) { profile in profileOption(profile.name, profile.id, bot: profile) }
                     }
                 } label: {
                     DockIconLabel(state.profileName, icon: .user)
@@ -55,11 +55,12 @@ struct IntegrationsWorkspaceView: View {
         .dockButtonSize(.compact)
     }
 
-    private func profileOption(_ title: String, _ id: String?) -> some View {
+    private func profileOption(_ title: String, _ id: String?, bot: BotSummary? = nil) -> some View {
         Button {
             Task { await state.useProfile(id) }
         } label: {
-            HStack {
+            HStack(spacing: 8) {
+                if let bot { BotMenuAvatar(bot: bot) }
                 Text(title)
                 if state.profileID == id { DockIcon(.check) }
             }

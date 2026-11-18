@@ -436,7 +436,7 @@ struct SessionNavQueue: View, Equatable {
                 ZStack {
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(
                         style.selectedFill)
-                    DockIcon(.ghost, size: 15, color: style.secondaryText)
+                    DockIcon(.robot, size: 15, color: style.secondaryText)
                 }
                 .frame(width: 28, height: 28)
             }
