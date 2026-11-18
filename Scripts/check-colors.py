@@ -25,8 +25,9 @@ def sources(root):
         relative = path.relative_to(root).as_posix()
         if path.suffix not in {".swift", ".js", ".css", ".html"} or relative in CENTRAL:
             continue
-        # Vendored third-party code ships with a sibling LICENSE (for example Resources/Mermaid.LICENSE).
-        if path.with_suffix(".LICENSE").exists():
+        # Vendored third-party code ships with a sibling LICENSE (for example Resources/Mermaid.LICENSE),
+        # or a LICENSE in its own folder (the Desktop plugin host built from Hermes Desktop).
+        if path.with_suffix(".LICENSE").exists() or (path.parent / "LICENSE").exists():
             continue
         # Preserve line numbers while ignoring standalone comments.
         text = "\n".join("" if line.lstrip().startswith(("//", "/*", "*")) else line

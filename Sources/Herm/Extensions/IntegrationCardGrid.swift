@@ -19,47 +19,35 @@ struct IntegrationInventoryRow<Icon: View>: View {
     var official = false
     var stars: Int?
     var update = false
+    /// Hermes' grouping for the item (a plugin's category folder or catalog category).
+    var category: String?
+    /// Static fact about the item, shown as plain metadata (e.g. whether a Desktop page opens in Herm).
+    var tag: String?
     let selected: Bool
     let action: () -> Void
     @ViewBuilder let icon: Icon
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
                     icon.accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                            .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                            .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                         if !detail.isEmpty {
                             Text(detail).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                                .lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
+                                .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                     DockIcon(.caretRight, size: 12, color: .dockMetadataText)
                 }
                 Spacer(minLength: 0)
-                DockChipFlow(spacing: 8) {
-                    if let status {
-                        HStack(spacing: 5) {
-                            DockStatusDot(tone: status.0, size: 6)
-                            Text(status.1)
-                        }
-                    }
-                    if builtin { Text("Built-in") }
-                    if official { Text("Official") }
-                    if let stars {
-                        Label(stars.formatted(.number.notation(.compactName)), systemImage: "star")
-                            .monospacedDigit().help("\(stars) GitHub stars")
-                    }
-                    if update {
-                        Label("Update available", systemImage: "arrow.up.circle").foregroundStyle(Color.dockAccent)
-                    }
-                }
-                .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                footer
             }
             .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
             .dockCard(padding: 14, isActive: selected)
             .contentShape(DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane))
         }
@@ -67,8 +55,54 @@ struct IntegrationInventoryRow<Icon: View>: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityLabel("Show details for \(title)")
         .accessibilityValue(
-            [status?.1, builtin ? "Built-in" : nil, update ? "Update available" : nil]
-                .compactMap { $0 }.joined(separator: ", "))
+            [
+                status?.1, category, builtin ? "Built-in" : nil, official ? "Official" : nil, tag,
+                stars.map { "\($0) GitHub stars" }, update ? "Update available" : nil,
+            ]
+            .compactMap { $0 }.joined(separator: ", "))
+    }
+
+    /// State first, then what the item is (category pill, source), then popularity at the trailing edge.
+    private var footer: some View {
+        HStack(alignment: .center, spacing: 8) {
+            DockChipFlow(spacing: 8) {
+                if let status {
+                    HStack(spacing: 5) {
+                        DockStatusDot(tone: status.0, size: 6, pulses: status.0 == .working)
+                        Text(status.1).contentTransition(.opacity)
+                    }
+                }
+                if let category {
+                    Text(category).foregroundStyle(Color.dockSecondaryText).dockPill(compact: true)
+                }
+                if official { Text("Official") }
+                if builtin { Text("Built-in") }
+                if let tag { Text(tag) }
+                if update {
+                    Label("Update available", systemImage: "arrow.up.circle").foregroundStyle(Color.dockAccent)
+                        .transition(.opacity)
+                }
+            }
+            Spacer(minLength: 0)
+            if let stars { IntegrationStars(count: stars) }
+        }
+        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion), value: status?.1)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion), value: update)
+    }
+}
+
+/// GitHub stars as a compact count; the exact number is in the tooltip.
+struct IntegrationStars: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 3) {
+            DockIcon(.star, size: 11, color: .dockMetadataText)
+            Text(count.formatted(.number.notation(.compactName))).monospacedDigit()
+        }
+        .fixedSize()
+        .help("\(count.formatted()) GitHub stars")
     }
 }
 

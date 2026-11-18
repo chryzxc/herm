@@ -344,9 +344,17 @@ final class HermesGateway: NSObject {
         }
     }
 
-    /// Relay delivery can wait for an entire agent turn, unlike control RPCs.
-    static func requestTimeout(for method: String) -> TimeInterval {
-        method == HermesFeatureIDs.ID.botRelayDeliver.rawValue ? 1500 : 15
+    /// Relay delivery can wait for an entire agent turn, unlike control RPCs. `plugins.manage` resolves the
+    /// live catalog and every plugin's settings (past 15 s on a cold gateway); its install/update actions
+    /// also clone and security-scan a repository before replying.
+    static func requestTimeout(for method: String, params: [String: Any] = [:]) -> TimeInterval {
+        switch method {
+        case HermesFeatureIDs.ID.botRelayDeliver.rawValue: return 1500
+        case HermesFeatureIDs.ID.pluginsManage.rawValue:
+            let action = params["action"] as? String ?? ""
+            return ["install", "update", "update_all", "install_desktop"].contains(action) ? 300 : 45
+        default: return 15
+        }
     }
 
     private func send(method: String, params: [String: Any]) async throws -> HermesGatewayResponse {
@@ -360,7 +368,7 @@ final class HermesGateway: NSObject {
         return try await withCheckedThrowingContinuation { continuation in
             pending[id] = continuation
             timeoutTasks[id] = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(Self.requestTimeout(for: method)))
+                try? await Task.sleep(for: .seconds(Self.requestTimeout(for: method, params: params)))
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     guard let self, let waiting = self.pending.removeValue(forKey: id) else { return }

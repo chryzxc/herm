@@ -3,44 +3,60 @@ import Testing
 @testable import Herm
 
 struct DockRailDestinationTests {
+    private typealias Item = DockRailItem
+
     @Test func defaultPinsKeepTheRailCompact() {
-        #expect(DockRailDestination.pins(DockRailDestination.defaultPins) == [.automations, .calendar])
+        #expect(Item.pins(DockRailDestination.defaultPins) == [.builtIn(.automations), .builtIn(.calendar)])
     }
 
     @Test func pinningAndUnpinningRoundTripsWithoutLosingOtherChoices() {
         let original = DockRailDestination.defaultPins
-        let pinned = DockRailDestination.toggling(.github, in: original)
-        #expect(DockRailDestination.pins(pinned) == [.github, .automations, .calendar])
-        #expect(DockRailDestination.toggling(.github, in: pinned) == original)
-        #expect(DockRailDestination.toggling(.artifacts, in: "") == "artifacts")
-        #expect(DockRailDestination.toggling(.artifacts, in: "artifacts") == "")
+        let pinned = Item.toggling(.builtIn(.github), in: original)
+        #expect(Item.pins(pinned) == [.builtIn(.github), .builtIn(.automations), .builtIn(.calendar)])
+        #expect(Item.toggling(.builtIn(.github), in: pinned) == original)
+        #expect(Item.toggling(.builtIn(.artifacts), in: "") == "artifacts")
+        #expect(Item.toggling(.builtIn(.artifacts), in: "artifacts") == "")
     }
 
     @Test func stalePreferencesAreIgnoredAndDuplicatesNormalized() {
-        #expect(DockRailDestination.pins("unknown,artifacts,artifacts") == [.artifacts])
-        #expect(DockRailDestination.toggling(.usage, in: "unknown,artifacts,artifacts") == "artifacts,usage")
+        #expect(Item.pins("unknown,artifacts,artifacts,plugin:") == [.builtIn(.artifacts)])
+        #expect(Item.toggling(.builtIn(.usage), in: "unknown,artifacts,artifacts") == "artifacts,usage")
     }
 
     @Test func botsPinsPreservePreferencesAndOrder() {
-        let bots = DockRailDestination(rawValue: "bots")
-        #expect(bots != nil)
-        #expect(DockRailDestination.ordered("unknown,bots,github,bots").map(\.rawValue) == ["bots", "github"])
-        #expect(!DockRailDestination.pins(DockRailDestination.defaultPins).contains { $0.rawValue == "bots" })
-        if let bots {
-            let pinned = DockRailDestination.toggling(bots, in: DockRailDestination.defaultPins)
-            #expect(pinned == "automations,calendar,bots")
-            let reordered = DockRailDestination.moving(bots, to: 0, in: DockRailDestination.ordered(pinned))
-            #expect(DockRailDestination.raw(reordered) == "bots,automations,calendar")
-            #expect(DockRailDestination.toggling(bots, in: pinned) == DockRailDestination.defaultPins)
-            #expect(bots.tab?.rawValue == "Bots")
-        }
+        let bots = Item.builtIn(.bots)
+        #expect(Item(rawValue: "bots") == bots)
+        #expect(Item.ordered("unknown,bots,github,bots") == [bots, .builtIn(.github)])
+        #expect(!Item.pins(DockRailDestination.defaultPins).contains(bots))
+        let pinned = Item.toggling(bots, in: DockRailDestination.defaultPins)
+        #expect(pinned == "automations,calendar,bots")
+        #expect(Item.raw(Item.moving(bots, to: 0, in: Item.ordered(pinned))) == "bots,automations,calendar")
+        #expect(Item.toggling(bots, in: pinned) == DockRailDestination.defaultPins)
+        #expect(DockRailDestination.bots.tab?.rawValue == "Bots")
     }
 
     @Test func userOrderIsPreservedAndMovesClamp() {
-        let items = DockRailDestination.ordered("artifacts,github,automations")
-        #expect(items == [.artifacts, .github, .automations])
-        #expect(DockRailDestination.moving(.artifacts, to: 2, in: items) == [.github, .automations, .artifacts])
-        #expect(DockRailDestination.moving(.artifacts, to: 9, in: items) == [.github, .automations, .artifacts])
-        #expect(DockRailDestination.toggling(.usage, in: "artifacts,github") == "artifacts,github,usage")
+        let items = Item.ordered("artifacts,github,automations")
+        #expect(items == [.builtIn(.artifacts), .builtIn(.github), .builtIn(.automations)])
+        #expect(
+            Item.moving(.builtIn(.artifacts), to: 2, in: items)
+                == [.builtIn(.github), .builtIn(.automations), .builtIn(.artifacts)])
+        #expect(
+            Item.moving(.builtIn(.artifacts), to: 9, in: items)
+                == [.builtIn(.github), .builtIn(.automations), .builtIn(.artifacts)])
+        #expect(Item.toggling(.builtIn(.usage), in: "artifacts,github") == "artifacts,github,usage")
+    }
+
+    @Test func pluginPinsRoundTripBesideBuiltIns() {
+        let raw = Item.toggling(.plugin("whiteboard"), in: "calendar")
+        #expect(raw == "calendar,plugin:whiteboard")
+        #expect(Item.ordered(raw) == [.builtIn(.calendar), .plugin("whiteboard")])
+        #expect(Item.toggling(.plugin("whiteboard"), in: raw) == "calendar")
+    }
+
+    @Test func reorderingTheVisibleRailKeepsHiddenPluginPins() {
+        let raw = "calendar,plugin:gone,github"
+        let saved = Item.raw(visible: [.builtIn(.github), .builtIn(.calendar)], keepingHiddenFrom: raw)
+        #expect(saved == "github,calendar,plugin:gone")
     }
 }

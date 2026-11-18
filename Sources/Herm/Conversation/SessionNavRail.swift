@@ -154,8 +154,9 @@ struct SessionNavRail: View {
     @State private var showsSkinMenu = false
     @State private var showsDensityMenu = false
     @AppStorage(DockWorkspaceScale.preferenceKey) private var textSize = DockWorkspaceScale.defaultTextSize
-    @State private var dragOrder: [DockRailDestination]?
-    @State private var draggingItem: DockRailDestination?
+    @ObservedObject private var desktopPlugins = DesktopPluginStore.shared
+    @State private var dragOrder: [DockRailItem]?
+    @State private var draggingItem: DockRailItem?
     @State private var dragOffset: CGFloat = 0
     @State private var dragStartIndex = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -165,6 +166,7 @@ struct SessionNavRail: View {
     let onOpenGlobal: (ControlTab) -> Void
     let onOpenArtifacts: () -> Void
     let onOpenGitHub: (GitHubWorkspaceSection) -> Void
+    let onOpenPlugin: (String) -> Void
     let isFullscreen: Bool
     var isHermesConnected = true
     var hermesConnectionIssue: String?
@@ -187,11 +189,11 @@ struct SessionNavRail: View {
                     ForEach(dragOrder ?? orderedPins) { item in
                         let isDragging = draggingItem == item
                         destination(
-                            item.title, icon: item.icon, isSelected: isSelected(item),
-                            style: style
+                            title(item), icon: icon(item), isSelected: isSelected(item),
+                            glyph: pluginGlyph(item, size: 17), style: style
                         ) { open(item) }
                         .contextMenu {
-                            Button("Unpin \(item.title) from sidebar", icon: .pushPinSlash) { togglePin(item) }
+                            Button("Unpin \(title(item)) from sidebar", icon: .pushPinSlash) { togglePin(item) }
                         }
                         .scaleEffect(isDragging ? 1.12 : 1)
                         .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 8, y: 3)
@@ -201,7 +203,7 @@ struct SessionNavRail: View {
                     }
                     destination(
                         "More destinations", icon: .dotsThree,
-                        isSelected: DockRailDestination.allCases.contains { !pins.contains($0) && isSelected($0) },
+                        isSelected: menuItems.contains { !pins.contains($0) && isSelected($0) },
                         style: style
                     ) { showsDestinations.toggle() }
                     .dockPopover(isPresented: $showsDestinations, arrowEdge: .trailing) {
@@ -237,25 +239,59 @@ struct SessionNavRail: View {
         .dockShellChrome()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Herm navigation")
+        .task { await desktopPlugins.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await desktopPlugins.refresh() }
+        }
     }
 
     private func destination(
-        _ title: String, icon: Ph, isSelected: Bool, showsUpdateBadge: Bool = false, style: DockThemePalette,
-        action: @escaping () -> Void
+        _ title: String, icon: Ph, isSelected: Bool, showsUpdateBadge: Bool = false, glyph: Text? = nil,
+        style: DockThemePalette, action: @escaping () -> Void
     ) -> some View {
         DockRailButton(
-            title: title, icon: icon, isSelected: isSelected, showsUpdateBadge: showsUpdateBadge, style: style,
-            action: action)
+            title: title, icon: icon, isSelected: isSelected, showsUpdateBadge: showsUpdateBadge, glyph: glyph,
+            style: style, action: action)
     }
 
-    private var pins: Set<DockRailDestination> { DockRailDestination.pins(pinnedDestinations) }
-    private var orderedPins: [DockRailDestination] { DockRailDestination.ordered(pinnedDestinations) }
+    private var pins: Set<DockRailItem> { DockRailItem.pins(pinnedDestinations) }
+    /// Pins the rail can show now; a plugin that is uninstalled keeps its pin, hidden.
+    private var orderedPins: [DockRailItem] { DockRailItem.ordered(pinnedDestinations).filter(isAvailable) }
+    /// Built-in destinations, then the installed Desktop plugin pages that run in Herm.
+    private var menuItems: [DockRailItem] {
+        DockRailDestination.allCases.map(DockRailItem.builtIn) + desktopPlugins.pages.map { .plugin($0.id) }
+    }
+
+    private func isAvailable(_ item: DockRailItem) -> Bool {
+        guard case .plugin(let id) = item else { return true }
+        return desktopPlugins.pages.contains { $0.id == id }
+    }
+
+    private func title(_ item: DockRailItem) -> String {
+        switch item {
+        case .builtIn(let destination): destination.title
+        case .plugin(let id): desktopPlugins.plugin(id)?.name ?? id
+        }
+    }
+
+    private func icon(_ item: DockRailItem) -> Ph {
+        switch item {
+        case .builtIn(let destination): destination.icon
+        case .plugin: .puzzlePiece
+        }
+    }
+
+    /// The plugin's own sidebar icon when Herm can draw it; the puzzle `icon(item)` otherwise.
+    private func pluginGlyph(_ item: DockRailItem, size: CGFloat) -> Text? {
+        guard case .plugin(let id) = item else { return nil }
+        return DesktopPluginIcon.glyph(desktopPlugins.plugin(id)?.codicon, size: size)
+    }
 
     /// One rail slot: button height plus the stack spacing.
     private static let slotHeight: CGFloat = 42
 
     /// The lifted button follows the pointer while its neighbours spring aside.
-    private func reorderGesture(for item: DockRailDestination) -> some Gesture {
+    private func reorderGesture(for item: DockRailItem) -> some Gesture {
         DragGesture(minimumDistance: 6, coordinateSpace: .global)
             .onChanged { value in
                 var order = dragOrder ?? orderedPins
@@ -269,7 +305,7 @@ struct SessionNavRail: View {
                     max(dragStartIndex + Int((value.translation.height / Self.slotHeight).rounded()), 0),
                     order.count - 1)
                 if target != current {
-                    order = DockRailDestination.moving(item, to: target, in: order)
+                    order = DockRailItem.moving(item, to: target, in: order)
                     withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.78)) {
                         dragOrder = order
                     }
@@ -282,34 +318,34 @@ struct SessionNavRail: View {
                 withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8)) {
                     dragOffset = 0
                     draggingItem = nil
-                    pinnedDestinations = DockRailDestination.raw(order)
+                    pinnedDestinations = DockRailItem.raw(visible: order, keepingHiddenFrom: pinnedDestinations)
                 }
                 dragOrder = nil
             }
     }
 
-    private func isSelected(_ item: DockRailDestination) -> Bool {
+    private func isSelected(_ item: DockRailItem) -> Bool {
         switch item {
-        case .github: isGitHubActive
-        case .artifacts: navigationState.selection.selection == .artifacts
-        default: item.tab.map { navigationState.selection.isGlobalSelected($0) } ?? false
+        case .plugin(let id): navigationState.selection.selection == .plugin(id)
+        case .builtIn(.github): isGitHubActive
+        case .builtIn(.artifacts): navigationState.selection.selection == .artifacts
+        case .builtIn(let destination):
+            destination.tab.map { navigationState.selection.isGlobalSelected($0) } ?? false
         }
     }
 
-    private func togglePin(_ item: DockRailDestination) {
-        pinnedDestinations = DockRailDestination.toggling(item, in: pinnedDestinations)
+    private func togglePin(_ item: DockRailItem) {
+        pinnedDestinations = DockRailItem.toggling(item, in: pinnedDestinations)
     }
 
-    private func open(_ item: DockRailDestination) {
+    private func open(_ item: DockRailItem) {
         showsDestinations = false
         switch item {
-        case .github:
-            onOpenGitHub(navigationState.selectedGitHubSection)
-        case .artifacts: onOpenArtifacts()
-        default:
-            if let tab = item.tab {
-                onOpenGlobal(tab)
-            }
+        case .plugin(let id): onOpenPlugin(id)
+        case .builtIn(.github): onOpenGitHub(navigationState.selectedGitHubSection)
+        case .builtIn(.artifacts): onOpenArtifacts()
+        case .builtIn(let destination):
+            if let tab = destination.tab { onOpenGlobal(tab) }
         }
     }
 
@@ -417,17 +453,25 @@ struct SessionNavRail: View {
     private var destinationMenu: some View {
         ScrollView {
             VStack(spacing: 2) {
-                ForEach(DockRailDestination.allCases) { item in
+                ForEach(menuItems) { item in
                     HStack(spacing: 4) {
                         Button {
                             open(item)
                         } label: {
                             HStack(spacing: 10) {
-                                DockIcon(
-                                    item.icon, size: 16, weight: isSelected(item) ? .fill : .regular,
-                                    color: isSelected(item) ? .dockPrimaryText : .dockSecondaryText)
-                                Text(item.title).dockFont(.body)
+                                let color: Color = isSelected(item) ? .dockPrimaryText : .dockSecondaryText
+                                if let glyph = pluginGlyph(item, size: 16) {
+                                    glyph.foregroundStyle(color).frame(width: 16)
+                                } else {
+                                    DockIcon(
+                                        icon(item), size: 16, weight: isSelected(item) ? .fill : .regular,
+                                        color: color)
+                                }
+                                Text(title(item)).dockFont(.body).lineLimit(1)
                                 Spacer(minLength: 8)
+                                if case .plugin = item {
+                                    DesktopPluginBadge()
+                                }
                             }
                             .dockPadding(8)
                             .contentShape(Rectangle())
@@ -447,7 +491,7 @@ struct SessionNavRail: View {
                         }
                         .buttonStyle(.dockHover)
                         .help(pins.contains(item) ? "Unpin from sidebar" : "Pin to sidebar")
-                        .accessibilityLabel("\(pins.contains(item) ? "Unpin" : "Pin") \(item.title)")
+                        .accessibilityLabel("\(pins.contains(item) ? "Unpin" : "Pin") \(title(item))")
                         .accessibilityValue(pins.contains(item) ? "Pinned" : "Unpinned")
                     }
                     .dockSelectionBackground(
@@ -456,7 +500,7 @@ struct SessionNavRail: View {
                 }
             }.dockPadding(8)
         }
-        .frame(width: 260, height: min(440, CGFloat(DockRailDestination.allCases.count) * 38 + 16))
+        .frame(width: 260, height: min(440, CGFloat(menuItems.count) * 38 + 16))
         .foregroundStyle(Color.dockPrimaryText)
         .background(Color.dockCanvas)
         .dockThemedRoot()

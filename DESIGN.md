@@ -1454,7 +1454,8 @@ SKILL.md previews render through `MarkdownMessageView` with frontmatter removed.
 The same Integrations modal lists Hermes plugins (`plugins.manage`: enable, disable, remove
 user installs) and hosted connectors (`connectors.*`, account owner: connect via the browser
 link Hermes mints, disconnect per account). Plugins that ship a Hermes Desktop UI half say so;
-Herm cannot host that panel, but the plugin's agent tools still load. Plugin settings save
+Herm can run their pages (see below) but not their panes, themes or composer slots, and the
+plugin's agent tools load either way. Plugin settings save
 plain fields through `plugins.manage settings` and secret fields through `PUT /api/env`;
 secrets are never read back, only shown as saved. The catalog installer (from
 `/api/dashboard/plugins/catalog`) hides non-macOS entries and Desktop-only packages (category
@@ -3930,6 +3931,23 @@ The first visit opens Skills; later visits restore the last category. Search,
 selection, discovery scope, and plugin filters stay separate per category in memory.
 Only the category preference is persisted; Hermes owns all inventories and settings.
 New bundled plugins are installed disabled; users enable them in Plugins → Installed.
+Plugin cards with a Hermes Desktop half carry a plain tag: **Page in Herm**,
+**Needs a newer Herm**, **Desktop-only**, **Not checked** or, in a build that ships without the
+plugin host, **Page unavailable** (such pages are never offered). The inspector lists any Desktop
+SDK names that Herm lacks. Desktop plugins without an agent plugin still get a card.
+Installed and Discover plugins share one card: a one-line name, a two-line description, then
+a footer with status, a neutral category pill, source marks (Official, Built-in), the Desktop
+tag and the update label, with GitHub stars at the trailing edge. Installed cards take their
+category, tier and stars from the catalog listing they came from, so the catalog loads on
+both scopes. Stars are fetched once an hour at most and shared across visits. Detail headers
+repeat the category pill and stars, and catalog plugins keep their GitHub and Docs links
+after install.
+Every inventory builds 30 cards at a time, since Hermes returns whole lists. A **Show N more**
+action and a "Showing X of Y" count follow the last card. Section label counts stay totals, and
+the page resets on any category, scope, search, filter or sort change.
+Installing keeps the Discover selection: the card reads **Installing…** and the drawer swaps
+the Install action for indeterminate install progress. Once Hermes confirms, Plugins switches
+to Installed with the new plugin selected, instead of dropping the selection.
 Version replacements retain the existing enabled choice, and restart guidance remains explicit.
 
 One shared title row provides profile selection, Refresh, and a fixed status subtitle.
@@ -4147,6 +4165,25 @@ icon to unpin it. Pins persist locally and are shared by floating and window mod
 Existing visibility settings still hide disabled destinations without erasing their pins.
 The menu indicates an active unpinned destination, and Settings update badges remain
 visible through More. Connection and window-switch actions stay directly accessible.
+
+Installed Hermes Desktop plugin pages that Herm can run, with no switch in Herm,
+follow the built-in destinations in More. Each row carries a **Plugin** pill and the same
+pin control. Rows and pinned rail buttons draw the codicon the plugin declares for its Desktop
+sidebar entry, using the codicon font bundled with the plugin host; a plugin without one, or a
+build without the host, uses the puzzle piece. A plugin page opens as a `DockExpandedPage`
+that shows the same **Plugin** pill right after the plugin name. Its header subtitle holds only loading
+state and plugin notices, and is empty once the page is ready. Load or run failures stay in the same container, with a Reload
+action; a page that never reports ready fails after 20 seconds instead of loading forever.
+Pins of uninstalled plugins stay stored but are hidden.
+
+The page runs Hermes Desktop's own components, restyled through the same CSS variables a
+Desktop theme paints: the color seeds and shadcn tokens (text, accent, on-accent ink, canvas,
+surfaces, controls, borders, inputs, focus rings, destructive, success), the sans font for
+rounded, serif and monospaced skins, and `--radius-scalar` so Desktop's corners match the skin's
+control radius. Herm repaints them, with Light or Dark appearance, when the skin or the system appearance changes. Set
+only variables. Never target Desktop's classes or elements, which change between Hermes
+releases. CSS a plugin ships for its own markup keeps its look. Glass stays a native material
+and does not carry into the page.
 
 ### Generative visualization refinements
 

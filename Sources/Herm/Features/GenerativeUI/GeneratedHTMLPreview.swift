@@ -383,11 +383,7 @@ struct GeneratedHTMLWebView: NSViewRepresentable {
                 urlSchemeTask.didFailWithError(URLError(.unsupportedURL))
                 return
             }
-            func css(_ color: Color) -> String {
-                guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return "inherit" }
-                return
-                    "rgba(\(Int(rgb.redComponent * 255)),\(Int(rgb.greenComponent * 255)),\(Int(rgb.blueComponent * 255)),\(rgb.alphaComponent))"
-            }
+            func css(_ color: Color) -> String { color.cssValue }
             let accents = DockAccentColor.allCases.map { family in
                 "--herm-\(family):\(css(family.fill));--herm-\(family)-ink:\(css(family.color));"
             }.joined()

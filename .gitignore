@@ -40,3 +40,6 @@ __pycache__/
 docs/benchmarks/
 docs/previews/
 patches/
+
+# Built from Hermes Desktop by Scripts/build-desktop-plugin-host.sh
+Sources/Herm/Resources/DesktopPluginHost/sdk/
