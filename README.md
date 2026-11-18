@@ -457,6 +457,7 @@ Workspace pages share Calendar’s top titlebar treatment, with sidebar toggles 
 beside the traffic lights. Chat uses three full-height panes: the session list,
 conversation, and inspector. The session title uses the available header space,
 with actions inside the conversation pane; the inspector's tabs extend to the top of its own pane.
+The Bots and Sessions switch responds across each tab, not just its label.
 The session sidebar places **New chat** above Pinned. Navigation distinguishes Chats (speech bubbles), Integrations (puzzle piece), and
 Artifacts (stacked files), while keeping the Bots ghost icon. Chats shows a small
 spinner for running sessions and a count of completed chats with unread updates
