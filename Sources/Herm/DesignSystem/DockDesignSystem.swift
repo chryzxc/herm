@@ -705,8 +705,12 @@ struct DockMotionSchedule: TimelineSchedule {
         // Whole ticks divided by the rate: correctly rounded, so every view and
         // every dividing rate computes bit-identical instants.
         var tick = (startDate.timeIntervalSinceReferenceDate * rate).rounded(.down)
+        let metric = "motionTick@\(Int(rate))Hz"
         return AnyIterator {
             defer { tick += 1 }
+            // Profiling only: publication-free seconds that still drop frames
+            // are often these ticks re-rendering the window.
+            if Thread.isMainThread { MainActor.assumeIsolated { HermPerformanceRecorder.mark(metric) } }
             return Date(timeIntervalSinceReferenceDate: tick / rate)
         }
     }

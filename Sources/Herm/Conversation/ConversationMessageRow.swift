@@ -200,6 +200,7 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     var body: some View {
+        let _ = HermPerformanceRecorder.countBody("ConversationMessageRow")
         #if DEBUG
             let _ = evaluation?("message", -1)
         #endif

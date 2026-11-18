@@ -380,6 +380,33 @@ struct HermPerformanceRecorderTests {
         #expect(HermPerformanceRecorder.droppedFrames(delta: 0.1, expected: frame) == 11)
         #expect(HermPerformanceRecorder.droppedFrames(delta: 0, expected: frame) == 0)
     }
+
+    @Test func publicationOriginStartsAfterTheLastCombineFrame() {
+        // sink closure (Herm) → Combine → map closure (Herm) → Combine setter → DockModel setter → callers
+        let stack: [UInt] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        let images: [PublicationOrigins.Image] = [
+            .herm, .combine, .herm, .combine, .combine, .herm, .other, .herm, .herm, .herm,
+        ]
+        #expect(PublicationOrigins.originFrames(stack: stack, images: images) == [6, 8, 9, 10])
+        #expect(PublicationOrigins.originFrames(stack: [1, 2], images: [.other, .herm]) == [2])
+        #expect(PublicationOrigins.originFrames(stack: [1], images: [.combine]).isEmpty)
+    }
+
+    @Test func originsRankBySampleCountAndKeepRawAddressesWithoutSymbols() {
+        var origins = PublicationOrigins()
+        origins.record("DockModel", stack: [])
+        let rendered = origins.render(symbols: [:])
+        #expect(rendered.contains("DockModel (1 sampled):"))
+        #expect(rendered.contains("1× (no Herm frame)"))
+        #expect(
+            PublicationOrigins.shortSymbol("DockModel.status.setter (in Herm) (DockModel.swift:12)")
+                == "DockModel.status.setter DockModel.swift:12")
+    }
+
+    @Test func rankedWorkOrdersByCost() {
+        #expect(HermPerformanceRecorder.rankedWork(["a": 1, "b": 3.25], limit: 2) == "b=3.2ms a=1.0ms")
+        #expect(HermPerformanceRecorder.ranked([:], limit: 2) == "-")
+    }
 }
 
 struct WorkspaceMessageKeyTests {

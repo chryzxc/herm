@@ -697,3 +697,69 @@ Verification: `MarkdownScrollLayoutInvalidationTests` (2 tests) red before the
 observer change on `!container.needsLayout`, green after; the chat hot-path,
 render-optimisation, render-cache, scroll-observer, scroll-refresh, manual-scroll
 and scroll-fixture suites passed; `make build` and `make guard` passed.
+
+## Multi-session attribution — 18 November 2026
+
+The heaviness is reported while several sessions run at once. The newest capture
+(`2026-11-16T11-43-37Z`) was made on build `19dee7b5`, 37 commits behind `main`.
+It predates `#212`, `#214`, `#229` and `#243`. It also recorded
+`low_power=true` on AC power, which throttles the CPU.
+
+In that capture, seconds with no publications and no counted bodies still lost
+30–50% of their callbacks. The main thread was in `NSHostingView.layout` and
+AttributeGraph updates, with hover and cursor updates, and almost no time in
+Herm frames. The recorder could not say what invalidated the graph, or whether
+the open chat or the background sessions caused it. This change adds that
+attribution:
+
+- **Scenario context per second.** The timeline adds `running=N`, which is the
+  number of sessions working. It also adds `ctx:` marks:
+  - `events.current` / `events.background` / `events.unscoped`: gateway events
+    handled on the main thread, split by whether they belong to the open chat.
+    Their cost is recorded as work under the same names.
+  - `transcript.snapshotPublished` / `transcript.snapshotUnchanged`: transcript
+    refreshes that changed nothing. These are often triggered by another
+    session's publishers.
+  - `transcript.page` and `transcript.anchorCorrection`.
+  - `scrollWheel`.
+  - `session_open.<stage>`.
+  - `motionTick@<rate>Hz`: shared animation-clock ticks, each of which
+    re-renders the window. These explain publication-free seconds that still
+    drop frames.
+- **Session opens.** `recordSessionSwitch` stages (`resume`, `parse`,
+  `history_project`, `cached_layout`, `fresh_layout`) now appear in the report
+  with their timings, not only in `Herm.log`.
+- **Publication origins.** For `DockModel`, `ControlCenterModel`, `botMode`,
+  `sessionNavNavigation` and `workspaceStore`, each publication's call stack is
+  cut after the last Combine frame. The first four Herm frames are kept: the
+  `@Published` setter and its callers. At most 6,000 samples are kept, and they
+  are symbolicated with `atos` when the report is saved. A stripped build shows
+  raw addresses instead.
+- **Work and bodies.** New counters cover `transcriptSnapshot`,
+  `ConversationTranscriptView`, `ConversationMessageRow`, `TurnActivityView` and
+  `SessionNavSidebarSessionRow`. Gateway events, transcript snapshots and session
+  opens also emit `OSSignposter` intervals in Instruments' Points of Interest
+  lane, so a Time Profiler run lines up with the report.
+
+Fixes in the same change:
+
+- `ConversationChangeSummary.files(in:)` is memoized. A completed tool call's
+  diff preview never changes, but every transcript body evaluation re-split it
+  for each mounted turn. The cache key is call id plus the preview's size and
+  hash.
+- `SessionNavSidebarSessionRow` no longer observes `SessionPaneStore` itself.
+  Each pane-store publication used to invalidate every mounted row. Parents now
+  pass `isShownInPane`, and it is part of the row's equality.
+
+`HoverPausingScrollView` keeps its scroll-phase hit-testing toggle. The
+captured stacks show SwiftUI hover updates during scroll, and that toggle is
+what suppresses them in the sidebar.
+
+Next capture: a current `main` build, Low Power Mode off, with three or more
+sessions working, stack samples on. Within the 30 seconds, open two sessions,
+scroll the sidebar, then scroll a long chat. Read `running=` and the
+`events.background` work, the `transcript.snapshotUnchanged` count and the
+`motionTick` rates for each lossy second. Then read the top publication origins.
+
+Verification: `ConversationChangeSummaryTests` and `HermPerformanceRecorderTests`.
+No live capture was taken for this change.

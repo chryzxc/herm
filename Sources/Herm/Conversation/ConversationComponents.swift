@@ -1007,6 +1007,7 @@ struct TurnActivityView: View, Equatable {
     }
 
     var body: some View {
+        let _ = HermPerformanceRecorder.countBody("TurnActivityView")
         #if DEBUG
             let _ = evaluation?("turn-activity", 0)
         #endif
