@@ -200,7 +200,7 @@ struct SessionNavSidebarSnapshot: Equatable {
     }
 
     private static func conversationGroups(inputs: Inputs) -> [SessionNavConversationGroup] {
-        let recentSessions = inputs.sessions.sorted { sessionDate($0) > sessionDate($1) }
+        let recentSessions = SidebarAgentGrouping.sortedNewestFirst(inputs.sessions, tieBreakByID: false)
         var groups: [SessionNavConversationGroup] = []
         var assigned = Set<String>()
 
@@ -249,7 +249,7 @@ struct SessionNavSidebarSnapshot: Equatable {
                 )
                 assigned.insert(summary.id)
             }
-            let sessions = sessionsByID.values.sorted { sessionDate($0) > sessionDate($1) }
+            let sessions = SidebarAgentGrouping.sortedNewestFirst(sessionsByID.values, tieBreakByID: true)
             groups.append(
                 SessionNavConversationGroup(
                     id: "project:\(project.id)",
@@ -292,14 +292,8 @@ struct SessionNavSidebarSnapshot: Equatable {
                 )
             }
         }
-        let unlinked = unlinkedByID.values
-            .filter { !assigned.contains($0.id) }
-            .sorted { lhs, rhs in
-                let lhsDate = sessionDate(lhs)
-                let rhsDate = sessionDate(rhs)
-                if lhsDate != rhsDate { return lhsDate > rhsDate }
-                return lhs.id < rhs.id
-            }
+        let unlinked = SidebarAgentGrouping.sortedNewestFirst(
+            unlinkedByID.values.filter { !assigned.contains($0.id) }, tieBreakByID: true)
         if !unlinked.isEmpty {
             groups.append(
                 SessionNavConversationGroup(
@@ -324,17 +318,9 @@ struct SessionNavSidebarSnapshot: Equatable {
     }
 
     private static func deduplicatedConversations(groups: [SessionNavConversationGroup]) -> [HermesSession] {
-        Dictionary(
-            groups.flatMap(\.sessions).map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        .values
-        .sorted { lhs, rhs in
-            let lhsDate = sessionDate(lhs)
-            let rhsDate = sessionDate(rhs)
-            if lhsDate != rhsDate { return lhsDate > rhsDate }
-            return lhs.id < rhs.id
-        }
+        SidebarAgentGrouping.sortedNewestFirst(
+            Dictionary(groups.flatMap(\.sessions).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }).values,
+            tieBreakByID: true)
     }
 
     private static func attentionDots(inputs: Inputs) -> [String: SessionAttentionDot] {

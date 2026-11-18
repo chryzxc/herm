@@ -18,7 +18,23 @@ enum SidebarAgentGrouping {
             byKey[ProfileScopedID(profileID: owner(session, scopeProfileID: scopeProfileID), resourceID: session.id)] =
                 session
         }
-        return byKey.values.sorted(by: newestFirst)
+        return sortedNewestFirst(byKey.values, tieBreakByID: true)
+    }
+
+    /// Orders sessions by `lastUpdatedAt`, newest first; ties go by id, or keep
+    /// input order. Rail rebuilds sort hundreds of rows, often in scrambled
+    /// dictionary order; sorting precomputed keys instead of the sessions
+    /// keeps every comparison from copying an 11-field value.
+    static func sortedNewestFirst<Rows: Sequence>(_ sessions: Rows, tieBreakByID: Bool) -> [HermesSession]
+    where Rows.Element == HermesSession {
+        let rows = Array(sessions)
+        let dates = rows.map { $0.lastUpdatedAt ?? .distantPast }
+        let ids = tieBreakByID ? rows.map(\.id) : []
+        return rows.indices.sorted { lhs, rhs in
+            if dates[lhs] != dates[rhs] { return dates[lhs] > dates[rhs] }
+            if tieBreakByID, ids[lhs] != ids[rhs] { return ids[lhs] < ids[rhs] }
+            return lhs < rhs
+        }.map { rows[$0] }
     }
 
     static func newestFirst(_ lhs: HermesSession, _ rhs: HermesSession) -> Bool {
