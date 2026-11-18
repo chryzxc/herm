@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.4.0](https://github.com/chryzxc/herm/compare/v0.3.0...v0.4.0) (2026-11-18)
+
+
+### Features
+
+* add an all profiles scope to the session sidebar ([c21c325](https://github.com/chryzxc/herm/commit/c21c3251283083a7c3976ee68d1a3ead37ecee88))
+* add an all profiles scope to the session sidebar ([faa6733](https://github.com/chryzxc/herm/commit/faa67331ff1fa8ed6d4908a7f83274f51471c793))
+* allow reordering profiles in the picker ([a3827ec](https://github.com/chryzxc/herm/commit/a3827ec8f4c0b88125cdc6ed3a4b24f6730f3dbe))
+* attribute multi-session hitches in performance captures ([ba08c9f](https://github.com/chryzxc/herm/commit/ba08c9fb85d28dd411b2e7a0e83c5af41ebc90e6))
+* **bots:** robot icon and profile avatars ([8a34fb7](https://github.com/chryzxc/herm/commit/8a34fb77442f87ea8587762086cda6a2c68a8af0))
+* **bots:** robot icon and profile avatars ([6102507](https://github.com/chryzxc/herm/commit/61025073fd4961762507cd82e82600cebbb886e4))
+* **conversation:** retain approval requests in conversations ([b1fc5fb](https://github.com/chryzxc/herm/commit/b1fc5fb8d8a94460797bcc66d66098887d767716))
+* **conversation:** show approvals in conversations ([46e97a4](https://github.com/chryzxc/herm/commit/46e97a4d589b30c73bfdc835bb3243fe39e43699))
+* host hermes desktop plugin pages ([2abc366](https://github.com/chryzxc/herm/commit/2abc3668a30fb234118a33276f6ffe0b23bfc9ed))
+* **profiles:** add animated drag handle for profile reordering ([fae15cb](https://github.com/chryzxc/herm/commit/fae15cb61d5657dcf85019ab3f021916a36ec2ad))
+* **profiles:** add animated drag handle for profile reordering ([8df1682](https://github.com/chryzxc/herm/commit/8df168217ed2aeec856bc1565db0358ee114d973))
+* **profiles:** allow reordering in the picker ([e3fa6f2](https://github.com/chryzxc/herm/commit/e3fa6f2fec466f3e4fc8cab25228d2acd8151f38))
+
+
+### Bug Fixes
+
+* allow creating and switching kanban boards ([766073d](https://github.com/chryzxc/herm/commit/766073df0a52789e30f302e1b0534b7d20cb42c6))
+* allow creating and switching kanban boards ([48cabd2](https://github.com/chryzxc/herm/commit/48cabd269f4693308f61753b2bca7a165b583566))
+* **approvals:** remove sticky focus outline from approval cards ([7d2bfd4](https://github.com/chryzxc/herm/commit/7d2bfd40f7b861118fe0e2095416e8969d8b67e2))
+* **approvals:** remove sticky focus outline from approval cards ([03da79d](https://github.com/chryzxc/herm/commit/03da79df915e14fe63fb68efd1a9fc91d9056a8c))
+* attach multiple pdfs in the chat composer ([29c85de](https://github.com/chryzxc/herm/commit/29c85dec3e8a4fb107d56937179fbff6fa84a835))
+* attach multiple pdfs in the chat composer ([04021b7](https://github.com/chryzxc/herm/commit/04021b70dedfc13079b682c119602b83874aae19)), closes [#240](https://github.com/chryzxc/herm/issues/240)
+* **compaction:** reconcile manual compression status ([c6a0264](https://github.com/chryzxc/herm/commit/c6a02649d62f1fb13ad9352661f8b87ab86774c0))
+* expand chat scope tab hit areas ([ac67afe](https://github.com/chryzxc/herm/commit/ac67afe11442b64181d64094fbdb8f7520133802))
+* expand chat scope tab hit areas ([1a437af](https://github.com/chryzxc/herm/commit/1a437af8302719c1225fb77d8ca37cd3407b8db1))
+* load kanban boards through the dashboard api ([42f8329](https://github.com/chryzxc/herm/commit/42f832916f862cd93e97b371d640be4ec21054a3))
+* load kanban boards through the dashboard api ([4d8cc5a](https://github.com/chryzxc/herm/commit/4d8cc5a2d164e8243d1b1463e170ccb6d832d110))
+* load plugin catalog on first visit and align integration actions ([f63d8e4](https://github.com/chryzxc/herm/commit/f63d8e47a1ac375c742173b7b9681ca104d55193))
+* load plugin catalog on first visit and center integration action rows ([548817a](https://github.com/chryzxc/herm/commit/548817ac31b971bcd506d34256d77a6267af8996))
+* make profile picker drag reorder work without a focus ring ([d80a2c0](https://github.com/chryzxc/herm/commit/d80a2c04a4b2d4826800daff993ca0398c742650))
+* make profile picker drag reorder work without a focus ring ([38f8637](https://github.com/chryzxc/herm/commit/38f86376e5dfa7daa3059988cf1c25e343c7a4cf))
+* make user message bubble hug its content ([95dcd5d](https://github.com/chryzxc/herm/commit/95dcd5dc34f412e9953db9e42493a7e0ae4b7a3a))
+* make user message bubble hug its content ([8e4ca77](https://github.com/chryzxc/herm/commit/8e4ca773ab817d9a47cd7a7247b9275ba7f39114))
+* reconcile manual compaction status ([bef7889](https://github.com/chryzxc/herm/commit/bef7889af7d7772200fd349a5d3892569813c6a3))
+* remove approval cards from the chat once decided ([9da5466](https://github.com/chryzxc/herm/commit/9da5466b076e5d3c7e4d9cf13eaa1de4c877f95b))
+* remove hover bounce and lift ([2e16ec0](https://github.com/chryzxc/herm/commit/2e16ec02b482d71ca1560130b81782bf7fd7a383))
+* repair failing tests on main and reopen new inbox approvals ([c5279fb](https://github.com/chryzxc/herm/commit/c5279fb9b2d34661054d9b1e917a46ea0d41034e))
+* separate automation sessions from conversations ([b9796ba](https://github.com/chryzxc/herm/commit/b9796bae4bdcf7cf48bd50b15611fd66742e7446))
+* **sessions:** separate automation from conversations ([c9d6b93](https://github.com/chryzxc/herm/commit/c9d6b93dd9dc3bfa53a13f7ac461d147c4d05851))
+* show session refresh as a spinner beside Loaded sessions ([#241](https://github.com/chryzxc/herm/issues/241)) ([08a3f12](https://github.com/chryzxc/herm/commit/08a3f129281f120df02e11c0f1c97f513d89c734))
+* **sidebar:** show automations as a separate reorderable section ([714e0f7](https://github.com/chryzxc/herm/commit/714e0f7460f821b7b35e21dc10224c757853bcdd))
+* **sidebar:** show automations as a separate reorderable section ([e58f67c](https://github.com/chryzxc/herm/commit/e58f67c11a0b9ffbf9e3b43cb778e9ce0d6ff075))
+* tighten composer spacing and keep the folder bar reserve ([eb35576](https://github.com/chryzxc/herm/commit/eb35576fd68793348c692425f4edfa1975c4df96))
+* tighten composer spacing and keep the folder bar reserve ([fdddec1](https://github.com/chryzxc/herm/commit/fdddec15d254c6d43f2d2fb69fd6637cbc0f070c))
+* **ui:** remove hover lift and scaling ([ee60028](https://github.com/chryzxc/herm/commit/ee60028885674bdf981546f4ca15ce649d1df409))
+
+
+### Performance Improvements
+
+* attribute multi-session chat hitches and trim per-row work ([3e392a7](https://github.com/chryzxc/herm/commit/3e392a7efbb4a24024f05933713abce42dae27f0))
+* cache merged all-profile pins and build the pinned list once per rail pass ([48018e9](https://github.com/chryzxc/herm/commit/48018e9b1a4214ede27ead04d3c0421361ac5c90))
+* cut per-tick markdown work while scrolling chats ([a5a9ed5](https://github.com/chryzxc/herm/commit/a5a9ed585aaf8b8a991f4bfcb1980249cee12924))
+* cut per-tick markdown work while scrolling chats ([5233ab0](https://github.com/chryzxc/herm/commit/5233ab0919bb5920318e8738a5552b355ca7943b))
+* hold decorative motion while scrolling ([3f0589e](https://github.com/chryzxc/herm/commit/3f0589e7a0aacf0bd95a95d329d311cae8027da2))
+* hold decorative motion while scrolling ([e4950ce](https://github.com/chryzxc/herm/commit/e4950cea492fb4cfc08028904e46e0256c2a40de))
+* memoize turn change-summary diff parsing ([2326aae](https://github.com/chryzxc/herm/commit/2326aae2cbd6a7c7abb250e69f00672e0c525240))
+* pass split-pane state into sidebar rows instead of observing per row ([96aeb04](https://github.com/chryzxc/herm/commit/96aeb04d63aa1a88ffc8ebfec3aefecaf8452ea5))
+* project chats board once per change and open chats from the whole card ([e852844](https://github.com/chryzxc/herm/commit/e8528442226e72546794919ae0cd4ca9582c6303))
+* project chats board once per change and open chats from the whole card ([8f73c4d](https://github.com/chryzxc/herm/commit/8f73c4d646cdb4c67b989a200f8950d35c0d6aff))
+* reduce browser tab redraws ([101662a](https://github.com/chryzxc/herm/commit/101662a04f5dd0aa0b4370c9c490754704c60210))
+* remove main-thread hitches in panel interactions ([#243](https://github.com/chryzxc/herm/issues/243)) ([1c43a14](https://github.com/chryzxc/herm/commit/1c43a1490c1bfd87d17dc08f589822b6a25c8553))
+* skip agent browser publishes for unchanged page events ([369a190](https://github.com/chryzxc/herm/commit/369a190d3510b3177eadfaffac8ab420ec04a0db))
+* stop the browser tab redrawing on every chat delta ([4f10cd6](https://github.com/chryzxc/herm/commit/4f10cd621f250b8f0da4ab5191b21b78e4e8cb20))
+* stop voice turns publishing the chat model on every delta ([e10416a](https://github.com/chryzxc/herm/commit/e10416af309b89277db796b0a1255234261e4db8))
+* stop voice turns publishing the chat model on every delta ([0a9337e](https://github.com/chryzxc/herm/commit/0a9337ec71985d3227090f09ea7e72c1086349a2))
+
 ## [0.3.0](https://github.com/chryzxc/herm/compare/v0.2.1...v0.3.0) (2026-11-17)
 
 
