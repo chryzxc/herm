@@ -678,7 +678,7 @@ final class AgentBrowser: ObservableObject {
             ], session: sid)
     }
 
-    private func handle(_ method: String, _ params: [String: Any], _ session: String?) {
+    func handle(_ method: String, _ params: [String: Any], _ session: String?) {
         pointerTracker?.receive(method, params: params, session: session)
         switch method {
         case "Target.targetCreated", "Target.targetInfoChanged":
@@ -691,7 +691,8 @@ final class AgentBrowser: ObservableObject {
                 return
             }
             if let index = pages.firstIndex(where: { $0.id == page.id }) {
-                pages[index] = page
+                // Chrome repeats targetInfoChanged for loads and favicon updates that change nothing listed.
+                if pages[index] != page { pages[index] = page }
             } else {
                 pages.append(page)
                 // Follow a tab Hermes opens for the chat on screen; another chat's stays in the tab strip.
@@ -719,16 +720,14 @@ final class AgentBrowser: ObservableObject {
         case "Page.frameNavigated":
             guard let frame = params["frame"] as? [String: Any], frame["parentId"] == nil else { return }
             mainFrameID = frame["id"] as? String
-            consoleErrors = []
-            if let index = pages.firstIndex(where: { $0.id == activeTargetID }), let url = frame["url"] as? String {
-                pages[index].url = frame["unreachableUrl"] as? String ?? (url + (frame["urlFragment"] as? String ?? ""))
+            if !consoleErrors.isEmpty { consoleErrors = [] }
+            if let url = frame["url"] as? String {
+                setActivePageURL(frame["unreachableUrl"] as? String ?? (url + (frame["urlFragment"] as? String ?? "")))
             }
             refreshHistory()
         case "Page.navigatedWithinDocument", "Page.frameStoppedLoading":
             guard params["frameId"] as? String == mainFrameID else { return }
-            if let url = params["url"] as? String, let index = pages.firstIndex(where: { $0.id == activeTargetID }) {
-                pages[index].url = url
-            }
+            if let url = params["url"] as? String { setActivePageURL(url) }
             refreshHistory()
         case "Page.javascriptDialogOpening":
             dialog = Dialog(
@@ -772,6 +771,12 @@ final class AgentBrowser: ObservableObject {
         default:
             break
         }
+    }
+
+    /// Mutating a @Published array element publishes even when the value is unchanged.
+    private func setActivePageURL(_ url: String) {
+        guard let index = pages.firstIndex(where: { $0.id == activeTargetID }), pages[index].url != url else { return }
+        pages[index].url = url
     }
 
     /// Unlists a tab; if it was on screen, the view moves to the newest remaining one.
