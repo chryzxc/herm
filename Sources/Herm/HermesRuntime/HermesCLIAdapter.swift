@@ -270,6 +270,11 @@ final class HermesCLIAdapter {
         if includeArchived { words.append("--all") }
         return try await run(words)
     }
+    /// `boards` is filesystem-only in Hermes and ignores `--board`, so the
+    /// words never carry a task-routing board.
+    func kanbanCreateBoard(slug: String, name: String) async throws -> HermesCLIResult {
+        try await run(["hermes", "kanban", "boards", "create", "--name=\(name)", "--", slug])
+    }
     func kanbanDiagnostics(boardSlug: String? = nil, severity: String? = nil, taskID: String? = nil) async throws
         -> HermesCLIResult
     {

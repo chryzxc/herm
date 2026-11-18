@@ -125,4 +125,14 @@ struct KanbanBoardPresentationTests {
         }
         #expect(KanbanLane.ready.status == "ready")
     }
+
+    @Test func boardSlugFollowsHermesSlugRules() {
+        #expect(ControlCenterModel.kanbanBoardSlug(for: "Client Launch") == "client-launch")
+        #expect(ControlCenterModel.kanbanBoardSlug(for: "  Café / Ops__2026 ") == "cafe-ops__2026")
+        #expect(ControlCenterModel.kanbanBoardSlug(for: "--_Leading") == "leading")
+        #expect(ControlCenterModel.kanbanBoardSlug(for: "!!!") == nil)
+        #expect(ControlCenterModel.kanbanBoardSlug(for: String(repeating: "a", count: 70))?.count == 64)
+        let truncated = ControlCenterModel.kanbanBoardSlug(for: String(repeating: "a", count: 63) + " b")
+        #expect(truncated == String(repeating: "a", count: 63))
+    }
 }

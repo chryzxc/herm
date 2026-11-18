@@ -1052,6 +1052,7 @@ Dragging a card smoothly fades its source and highlights valid destination lanes
 - Drag cards between Triage, Todo, and Ready, or use **Move to** in the always-visible three-dot menu. Done and Blocked drops require their supported action and confirmation; Running, Review, and Scheduled are managed by Hermes. Details remains available from the loaded card summary.
 - Dragging lifts the full card under your pointer and leaves a faint placeholder; cancel returns it to its original position. Confirmed lane updates ease into place.
 - Use the lane carets to collapse columns into labeled rails and expand them again. Select a card to read its description and activity in the inspector.
+- The board menu in the toolbar switches boards and, on Hermes versions that support it, offers **New board…**. Herm derives the board's slug from its name, creates it with Hermes, and opens it. Hermes Agent shares boards across every profile, so the menu already lists every profile's boards.
 - Filters for status, assignee, "mine", and session are passed to Hermes.
 - While open, the board refreshes every five seconds with live work and every fifteen seconds otherwise. Board and filter changes made during a refresh load the latest selection automatically.
 - Large boards format card descriptions as cards become visible; refreshes update changed cards without rebuilding unchanged card content.

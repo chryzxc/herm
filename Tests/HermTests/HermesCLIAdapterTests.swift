@@ -151,6 +151,11 @@ struct HermesCLIAdapterTests {
         _ = try await adapter.kanbanBoards(includeArchived: true)
         #expect(client.commands.last == "'hermes' 'kanban' 'boards' 'list' '--json' '--all'")
 
+        _ = try await adapter.kanbanCreateBoard(slug: "client-board", name: "--Client's board")
+        #expect(
+            client.commands.last
+                == "'hermes' 'kanban' 'boards' 'create' '--name=--Client'\\''s board' '--' 'client-board'")
+
         _ = try await adapter.kanbanList(boardSlug: "client-board")
         #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client-board&include_archived=false"])
     }
