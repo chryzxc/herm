@@ -814,7 +814,7 @@ struct GroupChatView: View {
                     )
                     if !event.text.isEmpty || !files.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            DockChipFlow(spacing: 6) {
+                            DockChipFlow(spacing: 6, hugsContent: true) {
                                 ForEach(files) { file in
                                     UserMessageAttachmentRow(
                                         name: file.name, url: store.localAttachmentURLs[roomID + ":" + file.id])
