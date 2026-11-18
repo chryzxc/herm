@@ -410,6 +410,7 @@ actor SessionAgentStateWriter {
     private var isCommitScheduled = false
     private var lastEncoded: Data?
     private var lastCommittedStates: [String: SessionAgentState]?
+    private var hasSweptTemporaryFiles = false
 
     init(store: SessionAgentStateStore) { self.store = store }
 
@@ -463,6 +464,12 @@ actor SessionAgentStateWriter {
         // The actor already runs off the main thread; writing here keeps writes
         // in commit order, which detached write tasks did not guarantee.
         store.saveEncoded(data)
+        // Swept after the first real save, not at launch, so a model that never
+        // persists (such as a test's) never touches the folder.
+        if !hasSweptTemporaryFiles {
+            hasSweptTemporaryFiles = true
+            store.removeStaleTemporaryFiles()
+        }
     }
 }
 

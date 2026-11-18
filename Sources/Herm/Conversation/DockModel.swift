@@ -563,7 +563,6 @@ final class DockModel: ObservableObject {
         self.agentStateStore = agentStateStore
         self.agentStateWriter = SessionAgentStateWriter(store: agentStateStore)
         self.agentStateBySessionID = agentStateStore.load()
-        Task.detached(priority: .background) { agentStateStore.removeStaleTemporaryFiles() }
         let botActivityStore = BotActivityStore(fileURL: botActivityFileURL)
         self.botActivityStore = botActivityStore
         self.botActivityWriter = BotActivityWriter(store: botActivityStore)
