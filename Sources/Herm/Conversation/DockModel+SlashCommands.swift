@@ -176,9 +176,35 @@ extension DockModel {
                 guard self.sessionResumeGeneration == generation else { return }
                 switch command.name {
                 case "compress", "compact":
-                    // session.compress, not slash.exec: the worker times out on large sessions.
-                    _ = try await interruptRPC.compress(sessionID: sessionID, focusTopic: command.arg)
-                    appendSlashOutput("Context compressed.", generation: generation)
+                    // A lost response does not prove the backend stopped; clear only the
+                    // progress owned by this session and explain uncertainty on failure.
+                    var pending = false
+                    defer {
+                        if !pending, self.sessionResumeGeneration == generation, self.compactingSessionID == sessionID {
+                            self.compactingSessionID = nil
+                        }
+                    }
+                    do {
+                        let result = try await interruptRPC.compress(sessionID: sessionID, focusTopic: command.arg)
+                        switch result["status"] as? String {
+                        case "compressed":
+                            appendSlashOutput("Context compressed.", generation: generation)
+                        case "pending":
+                            pending = true
+                            appendSlashOutput("Compaction is still running in the background.", generation: generation)
+                        case "aborted":
+                            appendSlashOutput("Compaction was aborted.", generation: generation, isError: true)
+                        default:
+                            let message =
+                                result["message"] as? String ?? "Compaction completion could not be confirmed."
+                            appendSlashOutput(Self.safeUserDiagnostic(message), generation: generation, isError: true)
+                        }
+                    } catch {
+                        appendSlashOutput(
+                            "`\(key)` could not confirm completion: \(Self.safeUserDiagnostic(error.localizedDescription)). "
+                                + "Compaction may still be running in Hermes.",
+                            generation: generation, isError: true)
+                    }
                 case "title" where !command.arg.isEmpty:
                     _ = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.sessionTitle.rawValue,

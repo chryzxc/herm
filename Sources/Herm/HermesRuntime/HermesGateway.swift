@@ -344,9 +344,14 @@ final class HermesGateway: NSObject {
         }
     }
 
-    /// Relay delivery can wait for an entire agent turn, unlike control RPCs.
+    /// Relay delivery and compaction can wait for model work, unlike control RPCs.
     static func requestTimeout(for method: String) -> TimeInterval {
-        method == HermesFeatureIDs.ID.botRelayDeliver.rawValue ? 1500 : 15
+        switch method {
+        case HermesFeatureIDs.ID.botRelayDeliver.rawValue, HermesFeatureIDs.ID.sessionCompress.rawValue:
+            1500
+        default:
+            15
+        }
     }
 
     private func send(method: String, params: [String: Any]) async throws -> HermesGatewayResponse {
