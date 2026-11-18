@@ -344,12 +344,11 @@ final class HermesGateway: NSObject {
         }
     }
 
-    /// Relay delivery can wait for an entire agent turn, unlike control RPCs. `plugins.manage` resolves the
-    /// live catalog and every plugin's settings (past 15 s on a cold gateway); its install/update actions
-    /// also clone and security-scan a repository before replying.
+    /// Relay delivery and compaction can wait for model work. Plugin management can resolve,
+    /// install or update a catalog and needs a longer budget than ordinary control RPCs.
     static func requestTimeout(for method: String, params: [String: Any] = [:]) -> TimeInterval {
         switch method {
-        case HermesFeatureIDs.ID.botRelayDeliver.rawValue: return 1500
+        case HermesFeatureIDs.ID.botRelayDeliver.rawValue, HermesFeatureIDs.ID.sessionCompress.rawValue: return 1500
         case HermesFeatureIDs.ID.pluginsManage.rawValue:
             let action = params["action"] as? String ?? ""
             return ["install", "update", "update_all", "install_desktop"].contains(action) ? 300 : 45
