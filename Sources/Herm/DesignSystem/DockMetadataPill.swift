@@ -93,26 +93,37 @@ struct DockChipFlow: Layout {
         }
     }
 
+    /// Items in one row share a vertical center, so a 28pt button and shorter
+    /// inline links or pills line up instead of hanging from the row's top.
     private func arrange(width: CGFloat, _ subviews: Subviews) -> (origins: [CGPoint], width: CGFloat, height: CGFloat)
     {
         var origins: [CGPoint] = []
+        var heights: [CGFloat] = []
+        var rowStart = 0
         var x: CGFloat = 0
         var y: CGFloat = 0
         var rowHeight: CGFloat = 0
         var maxX: CGFloat = 0
+        func centerRow() {
+            for index in rowStart..<origins.count { origins[index].y += (rowHeight - heights[index]) / 2 }
+        }
         for subview in subviews {
             let size = subview.sizeThatFits(
                 ProposedViewSize(width: min(width, subview.sizeThatFits(.unspecified).width), height: nil))
             if x > 0, x + size.width > width {
+                centerRow()
+                rowStart = origins.count
                 x = 0
                 y += rowHeight + spacing
                 rowHeight = 0
             }
             origins.append(CGPoint(x: x, y: y))
+            heights.append(size.height)
             x += size.width + spacing
             maxX = max(maxX, x - spacing)
             rowHeight = max(rowHeight, size.height)
         }
+        centerRow()
         return (origins, maxX, y + rowHeight)
     }
 }

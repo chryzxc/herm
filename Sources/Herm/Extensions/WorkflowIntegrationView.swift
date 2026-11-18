@@ -31,7 +31,7 @@ final class WorkflowIntegrationModel: ObservableObject {
     private(set) var catalogByID: [String: WorkflowPluginCatalogEntry] = [:]
     private var catalogLoaded = false
     private var starsLoaded = false
-    private var starsLoading = false
+    private var catalogTask: Task<Void, Never>?
     @Published private(set) var catalogIndex = WorkflowPluginCatalogIndex()
     @Published private(set) var catalogLoading = false
     @Published private(set) var catalogIsStale = false
@@ -518,38 +518,41 @@ final class WorkflowIntegrationModel: ObservableObject {
         }
         return stars
     }
+    /// Several views ask for the catalog at once (the Plugins list, Installed cards, the
+    /// catalog disclosure). They all join one model-owned fetch, so a caller whose view is
+    /// torn down mid-load cannot discard the answer the others are waiting for.
     func loadCatalog(force: Bool = false) async {
-        guard !catalogLoading else { return }
-        if !catalogLoaded || force {
+        if catalogTask == nil, !catalogLoaded || force || !starsLoaded {
+            let fetchCatalog = !catalogLoaded || force
+            catalogTask = Task { [weak self] in
+                await self?.fetchCatalog(includingList: fetchCatalog)
+                self?.catalogTask = nil
+            }
+        }
+        await catalogTask?.value
+    }
+    private func fetchCatalog(includingList: Bool) async {
+        if includingList {
             catalogLoading = true
+            defer { catalogLoading = false }
             status = status.split(separator: "\n").filter { !$0.hasPrefix("Plugin catalog:") }.joined(separator: "\n")
             do {
-                let result = try await service.pluginCatalog()
-                try Task.checkCancellation()
-                catalog = result
+                catalog = try await service.pluginCatalog()
                 catalogLoaded = true
                 catalogIsStale = false
             } catch {
-                catalogLoading = false
-                if !Task.isCancelled {
-                    catalogIsStale = true
-                    status += "\nPlugin catalog: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
-                }
+                catalogIsStale = true
+                status += "\nPlugin catalog: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
                 return
             }
-            catalogLoading = false
         }
-        guard !starsLoaded, !starsLoading, !Task.isCancelled else { return }
+        guard !starsLoaded else { return }
         let slugs = catalog.compactMap(\.githubSlug)
         guard !slugs.isEmpty else {
             starsLoaded = true
             return
         }
-        starsLoading = true
-        defer { starsLoading = false }
-        let result = await starReader(slugs)
-        guard !Task.isCancelled else { return }
-        stars = result
+        stars = await starReader(slugs)
         starsLoaded = true
     }
     /// Plain fields go through `plugins.manage settings`; secrets through Hermes' env store.
