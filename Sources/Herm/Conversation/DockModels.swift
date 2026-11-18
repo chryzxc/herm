@@ -931,8 +931,10 @@ struct HermesSession: Identifiable, Equatable {
         let value = source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch value {
         case "", "herm", "hermes", "local", "cli", "tui", "desktop", "web", "api", "conversation",
-            "project", "projects", "branch", "cron", "cron_output", "unknown", "subagent", "bot_room":
+            "project", "projects", "branch", "unknown", "subagent", "bot_room":
             return nil
+        case "cron": return "Cron"
+        case "cron_output": return "Cron output"
         case "whatsapp", "whatsapp_cloud": return "WhatsApp"
         case "bluebubbles": return "BlueBubbles"
         case "google_chat": return "Google Chat"

@@ -69,7 +69,7 @@ final class SessionUnreadReplies {
     ) async throws -> BotCounts {
         var result = BotCounts(incomplete: incomplete)
         var visited: Set<ProfileScopedID> = []
-        for session in sessions where !session.isHidden {
+        for session in sessions where !session.isHidden && !session.isAutomationSession {
             try Task.checkCancellation()
             guard let profileID = session.profileID ?? scopeProfileID else {
                 result.incomplete = true

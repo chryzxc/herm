@@ -255,14 +255,21 @@ struct SessionUnreadRepliesTests {
         let first = session("one", "a")
         let second = session("two", "a")
         let other = session("one", "b")
-        for item in [first, second, other] {
+        let automation = HermesSession(
+            id: "cron", profileID: "a", title: "Scheduled", preview: "", startedAt: nil,
+            updatedAt: Date(timeIntervalSince1970: 102), messageCount: 2, source: "cron")
+        for item in [first, second, other, automation] {
             seen.markSeen(profileID: item.profileID, sessionID: item.id, at: Date(timeIntervalSince1970: 100))
         }
-        let result = try await SessionUnreadReplies(client: client).botCounts(
-            sessions: [first, first, second, other], scopeProfileID: nil, seenStore: seen, incomplete: true)
+        let service = SessionUnreadReplies(client: client)
+        let result = try await service.botCounts(
+            sessions: [first, first, second, other, automation], scopeProfileID: nil, seenStore: seen, incomplete: true)
         #expect(result.counts == ["a": 2, "b": 1])
         #expect(result.incomplete)
         #expect(client.paths.count == 3)
+        let count = try await service.count(
+            session: automation, profileID: "a", after: Date(timeIntervalSince1970: 100))
+        #expect(count == 2)
     }
 
     @Test func unavailableHistoryDoesNotInventACount() async {
