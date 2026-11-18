@@ -59,7 +59,7 @@ struct QuickMessageTests {
         #expect(request?.1["session_id"] as? String == "current-chat")
         #expect(request?.1["text"] as? String == GenerativeUIIntegration.preparePrompt("Quick request"))
         #expect(model.draft == "Unfinished workspace message")
-        #expect(model.pendingPDFURL == pdf)
+        #expect(model.pendingPDFURLs == [pdf])
         #expect(!rpc.requests.contains { $0.0 == "session.create" || $0.0 == "pdf.attach" })
     }
 

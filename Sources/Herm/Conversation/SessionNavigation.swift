@@ -89,15 +89,16 @@ final class SessionNavigationState: ObservableObject {
     }
 
     let selection = SessionNavigationSelectionState()
-    @Published var recentsType: SessionRecentsType = .conversations
     @Published var showsAllConversations = false
     /// The rail lists every profile's chats instead of the selected one's; a local preference.
     @Published var showsAllProfiles = UserDefaults.standard.bool(forKey: AllProfilesSessions.storageKey) {
         didSet { UserDefaults.standard.set(showsAllProfiles, forKey: AllProfilesSessions.storageKey) }
     }
+    @Published var showsAllAutomations = false
     @Published var selectedTaskID: UUID?
     @Published var selectedSessionID: String?
     @Published var areConversationsExpanded = true
+    @Published var areAutomationsExpanded = true
     @Published var arePinnedExpanded = true
     /// User-chosen order of the rail's sections; a local preference.
     @Published private(set) var sectionOrder: [SessionRailSection] = SessionRailSection.stored()
@@ -227,7 +228,7 @@ final class SessionNavigationState: ObservableObject {
 
 /// A rail section whose header can be dragged to swap places with another.
 enum SessionRailSection: String, CaseIterable, Codable, Transferable {
-    case pinned, recents, projects
+    case pinned, recents, projects, automations
 
     static let storageKey = "herm.sessions.sectionOrder"
     static let pasteboardType = NSPasteboard.PasteboardType("io.github.chryzxc.Herm.session-rail-section")

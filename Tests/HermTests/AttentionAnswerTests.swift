@@ -90,7 +90,7 @@ struct AttentionAnswerTests {
         try await waitUntil { model.sessionAttention["current"] == nil }
         #expect(model.draft == "Workspace draft")
         #expect(model.pendingImages.map(\.id) == [image.id])
-        #expect(model.pendingPDFURL == pdf)
+        #expect(model.pendingPDFURLs == [pdf])
         #expect(model.clarificationQuestion == nil)
         #expect(model.status == .working)
     }

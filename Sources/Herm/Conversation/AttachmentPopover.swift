@@ -101,26 +101,18 @@ enum AttachmentPopoverFileSelection {
         stageImage: (URL) -> Void,
         stagePDF: (URL) -> Void,
         stageFile: (URL) -> Void,
-        reportError: (String) -> Void,
         clearErrors: () -> Void = {}
     ) {
         clearErrors()
-        var pdfURLs: [URL] = []
         for url in urls {
             let pathExtension = url.pathExtension.lowercased()
             if pathExtension == "pdf" {
-                pdfURLs.append(url)
+                stagePDF(url)
             } else if imageExtensions.contains(pathExtension) {
                 stageImage(url)
             } else {
                 stageFile(url)
             }
-        }
-
-        if pdfURLs.count == 1, let pdfURL = pdfURLs.first {
-            stagePDF(pdfURL)
-        } else if pdfURLs.count > 1 {
-            reportError("Select one PDF at a time. Multiple images can still be selected together.")
         }
     }
 }

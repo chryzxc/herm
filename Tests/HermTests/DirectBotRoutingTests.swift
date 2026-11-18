@@ -245,7 +245,7 @@ struct DirectBotRoutingTests {
         let model = model(rpc)
         defer { model.shutdown() }
         pickNexus(in: model)
-        model.pendingPDFURL = URL(fileURLWithPath: "/tmp/mention-document.pdf")
+        model.pendingPDFURLs = [URL(fileURLWithPath: "/tmp/mention-document.pdf")]
 
         model.submitComposerInput(bots: [nexus])
 

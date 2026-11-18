@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 enum ConversationMessageActionKind: String, CaseIterable, Identifiable {
@@ -77,6 +78,10 @@ struct ConversationMessageRow: View, Equatable {
     let forwardContent: ((BotSummary, @escaping () -> Void) -> AnyView)?
     @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
     @State private var sendTarget: BotSummary?
+    /// Flips once, when the in-flight reply gets its first visible text. Until
+    /// then the reply block is not drawn, so a working turn does not leave an
+    /// empty padded band between the activity row and the composer (#236).
+    @State private var streamingHasText = false
     @State private var hoverPresentation: ConversationRowHoverPresentation
     #if DEBUG
         @Environment(\.conversationRowEvaluation) private var evaluation
@@ -350,7 +355,7 @@ struct ConversationMessageRow: View, Equatable {
                             notice: notice, botID: message.botProfileID ?? activeBotProfileID,
                             timeLabel: message.timeLabel, botsByID: botsByID, avatarImages: avatarImages,
                             loadDetail: loadKanbanDetail.map { load in { await load(notice) } })
-                    } else if !message.text.isEmpty || isStreamingMessage
+                    } else if !message.text.isEmpty || (isStreamingMessage && streamingHasText)
                         || !ArtifactService.deliveredFiles(in: message.activity).isEmpty
                     {
                         Group {
@@ -410,11 +415,28 @@ struct ConversationMessageRow: View, Equatable {
                     }
                 }
                 .onHover { hoverPresentation.isHovering = $0 }
+                .onReceive(Self.visibleTextChanges(isStreamingMessage ? streamingText : nil)) {
+                    streamingHasText = $0
+                }
             }
         }
         .dockPadding(.horizontal, metrics.contentInset)
         .dockPadding(.vertical, message.systemEvent != nil || message.kanbanNotice != nil ? 1 : 8)
         .dockPadding(.top, message.role == .user ? 12 : 0)
+    }
+
+    /// Emits only when the reply crosses from blank to visible text, so the row
+    /// re-renders once per turn rather than on every streamed delta.
+    static func visibleTextChanges(_ streaming: StreamingText?) -> AnyPublisher<Bool, Never> {
+        guard let streaming else { return Just(false).eraseToAnyPublisher() }
+        return streaming.$chunks
+            .map { ConversationMessageRow.hasVisibleText($0) }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
+    nonisolated static func hasVisibleText(_ chunks: [StreamingPresentationChunk]) -> Bool {
+        chunks.contains { chunk in chunk.text.contains { !$0.isWhitespace } }
     }
 
     private var steeringLabel: String {

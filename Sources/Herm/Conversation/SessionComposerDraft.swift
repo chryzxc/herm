@@ -10,7 +10,7 @@ struct SessionComposerDraft {
 
     let text: String
     let images: [ImageAttachment]
-    let pdfURL: URL?
+    let pdfURLs: [URL]
     let contexts: [ChatContext]
     let replyQuote: ReplyQuote?
     let attachmentError: String?
@@ -18,7 +18,7 @@ struct SessionComposerDraft {
     var botMentions: [ComposerBotMention] = []
 
     var isEmpty: Bool {
-        text.isEmpty && images.isEmpty && pdfURL == nil && contexts.isEmpty
+        text.isEmpty && images.isEmpty && pdfURLs.isEmpty && contexts.isEmpty
             && replyQuote == nil && attachmentError == nil && pdfError == nil
     }
 }
@@ -34,7 +34,7 @@ extension DockModel {
 
     func saveComposerDraft() {
         let snapshot = SessionComposerDraft(
-            text: draft, images: pendingImages, pdfURL: pendingPDFURL,
+            text: draft, images: pendingImages, pdfURLs: pendingPDFURLs,
             contexts: attachedContexts, replyQuote: replyQuote,
             attachmentError: pendingAttachmentError, pdfError: pendingPDFError, botMentions: composer.botMentions
         )
@@ -50,7 +50,8 @@ extension DockModel {
         // Unchanged published values would invalidate the entire workspace.
         let images = snapshot?.images ?? []
         if !pendingImages.elementsEqual(images, by: { $0.id == $1.id }) { pendingImages = images }
-        if pendingPDFURL != snapshot?.pdfURL { pendingPDFURL = snapshot?.pdfURL }
+        let pdfs = snapshot?.pdfURLs ?? []
+        if pendingPDFURLs != pdfs { pendingPDFURLs = pdfs }
         let contexts = snapshot?.contexts ?? []
         if attachedContexts != contexts { attachedContexts = contexts }
         if replyQuote != snapshot?.replyQuote { replyQuote = snapshot?.replyQuote }

@@ -2,6 +2,15 @@ import XCTest
 @testable import Herm
 
 final class SessionRecentsPresentationTests: XCTestCase {
+    func testNewAutomationSectionAppendsToExistingOrder() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        XCTAssertEqual(SessionRailSection.stored(defaults), [.pinned, .recents, .projects, .automations])
+        defaults.set(["projects", "pinned", "recents"], forKey: SessionRailSection.storageKey)
+        XCTAssertEqual(SessionRailSection.stored(defaults), [.projects, .pinned, .recents, .automations])
+        defaults.set(["automations", "recents", "pinned", "projects"], forKey: SessionRailSection.storageKey)
+        XCTAssertEqual(SessionRailSection.stored(defaults), [.automations, .recents, .pinned, .projects])
+    }
+
     func testMetadataPartitionsSessionsWithoutChangingOrder() {
         let sources = ["conversation", " CRON ", "cron_output", "automation", "unknown"]
         let sessions = sources.enumerated().map { index, source in

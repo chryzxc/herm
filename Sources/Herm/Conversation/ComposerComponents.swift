@@ -132,6 +132,6 @@ extension View {
 /// at the same height everywhere, e.g. across split columns and group chats.
 struct ComposerFolderBarSlot: View {
     var body: some View {
-        Color.clear.frame(height: 22).dockPadding(.vertical, 2).accessibilityHidden(true)
+        Color.clear.frame(height: 28).dockPadding(.vertical, 2).accessibilityHidden(true)
     }
 }

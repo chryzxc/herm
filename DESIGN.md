@@ -1788,7 +1788,7 @@ priority in smaller windows; dividers remain adjustable.
 The desktop conversation list keeps its 300pt minimum while resizing; the
 workspace takes the remaining width when both pane minimums cannot fit.
 Section headings stay on one line and truncate rather than wrapping vertically.
-Pinned, Recents, and Projects use native pinned section headers in the sidebar's
+Pinned, Recents, Projects, and Automations use native pinned section headers in the sidebar's
 single lazy stack. The current section header stays below the fixed search bar
 until the next section pushes it away. Headers are transparent in the list;
 at the scroll viewport edge they use the matching canvas or native window
@@ -1859,12 +1859,14 @@ Messaging origins reported by Hermes use the shared compact source pill beside
 the preview. Known services use their icon; other reported sources use a generic
 message icon. Local and unspecified sources do not show a pill.
 
-The sidebar always shows the bot header and the stacked Pinned,
-Recents, and Projects sections for the selected bot. Recents read every bot's
+The sidebar shows the bot header and the stacked Pinned, Recents, Projects, and
+Automations sections for the selected bot. Automations contains automation sessions
+separately from Recents and is last by default; its disclosure and row limit are
+independent. Saved section ordering remains customizable. Recents read every bot's
 chats from one all-profile sidebar read merged with the selected bot's fresher
-Drag a section header (Pinned, Recents, Projects) onto another to swap their order; the order is a local preference, and the drop target shows an accent line above the header. Bot folders reorder the same way on the Bots list.
 list. Other bots' history is baselined once from that read so first use shows no
-unread flood.
+unread flood. Drag a section header onto another to change their order; the order
+is a local preference. Bot folders reorder the same way on the Bots list.
 
 When more than one Bot is visible, the Bot switcher starts with a fixed
 "All profiles" row (not reorderable) whose mark stacks up to three Bot avatars,
@@ -2497,6 +2499,15 @@ states; filter visibility is not gated by an optional capability when the
 board adapter can apply the filters. Updated, Created, Priority, and Title
 sorts are readable labels backed by stable adapter ordering.
 
+The board menu stays enabled whenever it has boards to list or can create one;
+a single board still opens the menu. When `kanban.boardCreate` is available,
+a divider separates the boards from **New board…**, which opens a 420pt
+`DockModal` holding one name field, a monospaced slug preview, and an inline
+error slot. Create stays disabled until the name produces a valid Hermes slug
+and while the request is pending. After Hermes confirms, the sheet closes,
+the new board is selected, and the inventory refreshes. Boards are global in
+Hermes, not tied to a profile, so the menu does not add a profile scope.
+
 Kanban lanes are flat columns in canonical order. The page header and toolbar
 stay fixed; the board fills the remaining height, scrolls horizontally, and
 each expanded lane scrolls its own cards vertically. Non-empty lanes use a
@@ -2853,7 +2864,10 @@ The header has no mode tabs: Talk, Pull requests and Issues open as inspector
 tabs (see Empty session inspector). The actions menu holds session actions.
 The composer reserves the worktree bar's full 32pt when no bar shows, and split
 columns use the main conversation's metrics, so every column's input sits at the
-same height whether or not it has a folder bar (Bot chats have none). The inspector toggle remains direct from
+same height whether or not it has a folder bar (Bot chats have none). Below that
+reserve the composer keeps an 8pt inset, with 8pt above it. While a turn runs, the
+reply block is not drawn until its first visible text arrives, so the activity
+row sits directly above the composer. The inspector toggle remains direct from
 340pt and moves into the view menu below that. All destinations remain available
 at every width. Controls retain 44pt targets and resizing does not animate.
 The transcript mounts a bounded window of messages and pages earlier or later
@@ -2946,7 +2960,7 @@ steering prompt's status sits in sentence case beside its timestamp. Fenced
 code blocks carry a quiet header with the lowercase language and a Copy action.
 User image attachments sit above the text bubble. Single images fit within 220pt
 in each dimension and retain their aspect ratio without transparent square padding;
-multiple images fill square grid tiles. Clicking a thumbnail opens the full preview. Sent documents show file-type labels inside the message bubble, and composer attachment chips align to the leading edge. PDFs are submitted as original files.
+multiple images fill square grid tiles. Clicking a thumbnail opens the full preview. Sent documents show file-type labels inside the message bubble, and composer attachment chips align to the leading edge. PDFs are submitted as original files. Several PDFs (up to 25 MB each) can be dropped or picked together; each gets its own removable chip, and a rejected PDF is named in the attachment error while the rest still stage.
 Completed assistant
 responses keep a compact action rail permanently visible beneath the content.
 The rail uses compact labelled Copy and Retry actions plus an ellipsis More menu.

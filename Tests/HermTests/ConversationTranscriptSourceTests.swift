@@ -11,7 +11,7 @@ struct ConversationTranscriptSourceTests {
         let message = ChatMessage(role: .user, text: "hello")
         model.messages = [message]
         let snapshot = SessionComposerDraft(
-            text: "hello", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "hello", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         model.pendingSessionSends.append(
             SessionPendingSend(

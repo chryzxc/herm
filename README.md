@@ -469,7 +469,7 @@ beside refresh in the **Recents** header to clear unread updates across the sele
 bot’s loaded Recents, including conversations under Show more. Badge calculations are
 cached independently of transcript updates; status polling pauses while the
 workspace is hidden or Hermes is disconnected.
-The sidebar stacks Pinned, Recents, and Projects for the selected
+The sidebar stacks Pinned, Recents, Projects, and Automations for the selected
 bot under its bot header. In the bot picker, drag a profile's handle to reorder it,
 or focus the handle and use the arrow keys. The order is saved locally across restarts without changing the
 selected profile or its conversations. Choose **All profiles** at the top of the
@@ -662,7 +662,7 @@ The composer’s **@** picker shows each bot’s actual name, with its descripti
 - **Removable context tray** keeps attached PRs, browser pages, files, and conversation excerpts beside the draft. Inspect or remove a chip before sending; attaching context preserves your text.
 - **Steering during a turn**: guidance you type while Herm is working is added to the running turn at the next tool boundary.
 - **Queued messages**: when the current conversation has queued messages, every subsequent send joins the end of that queue, including plain text during a running turn. New submissions also wait behind a redirect still awaiting Hermes' reply. During a turn, text and attachments queue together. Submitting clears the composer immediately while preserving images, PDFs, context, and reply quotes with the message.
-- **Attachments**: files, pasted images, prompt snippets, several images at once, or a single PDF up to 25 MB. PDFs are sent as original files for the agent to read, without requiring `pdftoppm`; sent images show previews and documents show file-type labels. Drop Markdown, text, source, and other files into the composer as removable attachments (up to 8 MB each); uploads require Hermes protected file attachment support. **Files** and **Images** open a native attachment picker; **Folder** opens a directory picker and inserts its path into the draft.
+- **Attachments**: files, pasted images, prompt snippets, several images or PDFs at once (up to 25 MB per PDF). PDFs are sent as original files for the agent to read, without requiring `pdftoppm`; sent images show previews and documents show file-type labels. Drop Markdown, text, source, and other files into the composer as removable attachments (up to 8 MB each); uploads require Hermes protected file attachment support. **Files** and **Images** open a native attachment picker; **Folder** opens a directory picker and inserts its path into the draft.
 - **Video replies** play inline with native playback, seeking, volume, and fullscreen controls. Playback starts when you press Play and stops when the attachment leaves the view. Open and Download remain available; formats or codecs macOS cannot play show an unavailable message.
 - **Model picker** grouped by provider, with search. **Edit available models… → Unselect All** hides every model except the active one; selections are saved locally.
 - Confirmed model switches appear inline in chat with the model, provider, and time. Notices come from Hermes session history and return when you reopen the chat.
@@ -1052,6 +1052,7 @@ Dragging a card smoothly fades its source and highlights valid destination lanes
 - Drag cards between Triage, Todo, and Ready, or use **Move to** in the always-visible three-dot menu. Done and Blocked drops require their supported action and confirmation; Running, Review, and Scheduled are managed by Hermes. Details remains available from the loaded card summary.
 - Dragging lifts the full card under your pointer and leaves a faint placeholder; cancel returns it to its original position. Confirmed lane updates ease into place.
 - Use the lane carets to collapse columns into labeled rails and expand them again. Select a card to read its description and activity in the inspector.
+- The board menu in the toolbar switches boards and, on Hermes versions that support it, offers **New board…**. Herm derives the board's slug from its name, creates it with Hermes, and opens it. Hermes Agent shares boards across every profile, so the menu already lists every profile's boards.
 - Filters for status, assignee, "mine", and session are passed to Hermes.
 - While open, the board refreshes every five seconds with live work and every fifteen seconds otherwise. Board and filter changes made during a refresh load the latest selection automatically.
 - Large boards format card descriptions as cards become visible; refreshes update changed cards without rebuilding unchanged card content.

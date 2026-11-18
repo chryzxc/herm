@@ -203,6 +203,8 @@ struct HermesCapabilityServiceTests {
         #expect(byID["kanban.taskDetails"]?.source == .cli)
         #expect(byID["kanban.taskDetails"]?.access == .readOnly)
         #expect(byID["kanban.boards"]?.isAvailable == true)
+        #expect(byID["kanban.boardCreate"]?.isAvailable == true)
+        #expect(byID["kanban.boardCreate"]?.access == .confirmedMutation)
         #expect(byID["rpc-sessions"]?.source == .gateway)
         #expect(byID["reminders"]?.source == .external)
         #expect(byID["reminders"]?.availability == .available)
@@ -259,6 +261,8 @@ private class CapabilityProbeClient: HermesRPCClientProtocol {
             return ["code": 0, "stdout": "list --json"]
         case "hermes kanban boards list --help":
             return ["code": 0, "stdout": "List all boards\n--json\n--all"]
+        case "hermes kanban boards create --help":
+            return ["code": 0, "stdout": "create slug --name --description --switch"]
         case "hermes kanban boards switch --help":
             return ["code": 0, "stdout": "switch slug\nslug"]
         default:

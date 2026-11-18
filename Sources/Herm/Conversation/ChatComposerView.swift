@@ -184,7 +184,7 @@ struct ChatComposerView: View {
         // Evaluate submission capabilities based on draft text, images, and steering state
         let draftIsEmpty = composer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasComposerContent =
-            !draftIsEmpty || !model.pendingImages.isEmpty || model.pendingPDFURL != nil
+            !draftIsEmpty || !model.pendingImages.isEmpty || !model.pendingPDFURLs.isEmpty
             || !model.attachedContexts.isEmpty
         let isResponding = model.status == .working || model.isSending
         // Mid-turn input redirects the turn, or queues when it can't (attachments, approvals).
@@ -192,7 +192,7 @@ struct ChatComposerView: View {
         let queuedPrompts = model.currentSessionQueuedPrompts
         let queuesAttachments =
             isSteeringTurn
-            && (!model.pendingImages.isEmpty || model.pendingPDFURL != nil
+            && (!model.pendingImages.isEmpty || !model.pendingPDFURLs.isEmpty
                 || !model.attachedContexts.isEmpty || model.replyQuote != nil)
         let submitLabel =
             hasComposerContent && model.status != .needsClarification
@@ -418,33 +418,39 @@ struct ChatComposerView: View {
                             }
                         }
                     }
-                    if let pdfURL = model.pendingPDFURL {
-                        HStack(spacing: 7) {
-                            DockIcon(.fileText)
-                                .foregroundStyle(Color.dockAccent)
-                            Text(pdfURL.lastPathComponent)
-                                .dockFont(.metadata, weight: .medium)
-                                .foregroundStyle(Color.dockPrimaryText)
-                                .lineLimit(1)
-                            Button {
-                                model.removePendingPDF()
-                            } label: {
-                                DockIcon(.x)
-                                    .dockFont(.compactStatus, weight: .bold)
-                                    .foregroundStyle(Color.dockSecondaryText)
-                                    .frame(width: 22, height: 22)
-                                    .contentShape(Rectangle())
+                    if !model.pendingPDFURLs.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(model.pendingPDFURLs, id: \.self) { pdfURL in
+                                    HStack(spacing: 7) {
+                                        DockIcon(.fileText)
+                                            .foregroundStyle(Color.dockAccent)
+                                        Text(pdfURL.lastPathComponent)
+                                            .dockFont(.metadata, weight: .medium)
+                                            .foregroundStyle(Color.dockPrimaryText)
+                                            .lineLimit(1).frame(maxWidth: 240, alignment: .leading)
+                                        Button {
+                                            model.removePendingPDF(pdfURL)
+                                        } label: {
+                                            DockIcon(.x)
+                                                .dockFont(.compactStatus, weight: .bold)
+                                                .foregroundStyle(Color.dockSecondaryText)
+                                                .frame(width: 22, height: 22)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.dockHover)
+                                        .help("Remove PDF")
+                                        .accessibilityLabel("Remove PDF: " + pdfURL.lastPathComponent)
+                                    }
+                                    .dockPadding(.horizontal, 8)
+                                    .dockPadding(.vertical, 5)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                            .dockSurfaceFill(Color.dockSurface)
+                                    )
+                                }
                             }
-                            .buttonStyle(.dockHover)
-                            .help("Remove PDF")
                         }
-                        .dockPadding(.horizontal, 8)
-                        .dockPadding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .dockSurfaceFill(Color.dockSurface)
-                        )
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     ForEach([model.pendingPDFError, model.pendingAttachmentError].compactMap { $0 }, id: \.self) {
                         error in
@@ -758,7 +764,7 @@ struct ChatComposerView: View {
             draft: composer.text,
             profileIDs: botMode.bots.filter { !$0.isHidden }.map(\.id),
             hasAttachments: !model.attachedContexts.isEmpty || !model.pendingImages.isEmpty
-                || model.pendingPDFURL != nil,
+                || !model.pendingPDFURLs.isEmpty,
             isQueued: model.hasQueuedOrRedirectingPrompt
         )
     }
@@ -799,7 +805,6 @@ struct ChatComposerView: View {
             stageImage: model.stageImageFile,
             stagePDF: model.stagePDFFile,
             stageFile: model.stageFile,
-            reportError: model.reportAttachmentError,
             clearErrors: model.clearAttachmentErrors
         )
         isComposerFocused = true
@@ -1210,7 +1215,7 @@ private struct QueuedPromptList: View {
 
     private func label(for prompt: QueuedPrompt) -> String {
         var parts: [String] = []
-        if let pdf = prompt.pdfURL { parts.append("[PDF: \(pdf.lastPathComponent)]") }
+        parts.append(contentsOf: prompt.pdfURLs.map { "[PDF: \($0.lastPathComponent)]" })
         parts.append(contentsOf: prompt.contexts.map { "[\($0.title)]" })
         if !prompt.text.isEmpty {
             parts.append(
