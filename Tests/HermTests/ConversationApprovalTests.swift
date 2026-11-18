@@ -277,9 +277,9 @@ struct ConversationApprovalTests {
         try await waitUntil { source.snapshot.context.approvalAnswer == .sending(ApprovalChoice.once) }
         rpc.response?.resume(returning: ["resolved": 1])
         rpc.response = nil
-        try await waitUntil { source.snapshot.context.conversationApproval?.resolved == true }
-        #expect(source.snapshot.context.conversationApproval?.id == record.id)
-        #expect(source.snapshot.context.conversationApproval?.approval == record.approval)
+        try await waitUntil { model.currentConversationApproval?.resolved == true }
+        try await waitUntil { source.snapshot.context.conversationApproval == nil }
+        #expect(source.snapshot.context.approvalAnswer == nil)
     }
 
     @Test func inlineAcknowledgmentRetainsResolvedCard() async throws {

@@ -2738,7 +2738,7 @@ Group chat action errors use toast notifications without an inline error row abo
 
 ### Conversation workspace
 
-Keep the latest approval in its originating conversation after resolution, with its details and a neutral Resolved badge. Its decisions disappear after resolution; pending and uncertain responses stay in the same card with explicit recovery. The record is process-local and does not alter transcript history.
+Remove the approval card from the conversation as soon as Hermes confirms a decision, whichever surface answered it. Pending and uncertain responses stay in the same card with explicit recovery. The record is process-local and does not alter transcript history.
 
 The composer background-process tray uses a shared disclosure with a terminal icon,
 separate running count or neutral Finished label, and the last running process's

@@ -339,6 +339,7 @@ final class ConversationTranscriptSource: ObservableObject {
             clamped.isEmpty && !messages.isEmpty
             ? ConversationMessageWindow.tailRange(totalCount: messages.count) : clamped
         let streamingID = preview == nil ? model.streamingMessageIDForPresentation : nil
+        let openApproval = model.currentConversationApproval.flatMap { $0.resolved ? nil : $0 }
         let streamingMounted = range.contains { messages[$0].id == streamingID }
         let dispatches = model.botDispatchesByToolCallID
         let workingBots = model.workingBotDispatches
@@ -362,10 +363,10 @@ final class ConversationTranscriptSource: ObservableObject {
                 compactingID: model.compactingSessionID, approval: model.approvalDetails,
                 approvalTitle: model.approvalTitle, approvalText: model.approvalText,
                 respondingToApproval: model.isRespondingToApproval,
-                conversationApproval: preview == nil ? model.currentConversationApproval : nil,
+                // A decided approval leaves the chat; the record stays for alias and Inbox reconciliation.
+                conversationApproval: preview == nil ? openApproval : nil,
                 approvalAnswer: preview == nil
-                    ? model.currentConversationApproval?.target.flatMap { model.attentionAnswers[$0] }
-                        ?? model.currentConversationApproval?.legacyAnswer : nil,
+                    ? openApproval?.target.flatMap { model.attentionAnswers[$0] } ?? openApproval?.legacyAnswer : nil,
                 clarification: model.clarificationQuestion, choices: model.clarificationChoices,
                 multiSelect: model.clarificationMultiSelect, clarificationProgress: model.clarificationProgress,
                 clarificationRequestID: model.clarificationRequestID,
