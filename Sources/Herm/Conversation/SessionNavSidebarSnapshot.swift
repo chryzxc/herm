@@ -94,6 +94,8 @@ struct SessionNavSidebarSnapshot: Equatable {
     /// Every bot's recent chats merged with the selected bot's fresher rows,
     /// newest first. Equals `conversations` until the all-bot scan loads.
     let allBotConversations: [HermesSession]
+    /// Every profile's pins for the "All profiles" scope (`AllProfilesSessions.pinned`).
+    let allProfilePinned: [HermesSession]
     /// Real projects an unlinked conversation can be added to.
     var projectTargets: [SidebarProjectTarget] {
         linkedProjectGroups.compactMap { group in
@@ -117,6 +119,20 @@ struct SessionNavSidebarSnapshot: Equatable {
     init(inputs: Inputs, reusing previous: SessionNavSidebarSnapshot? = nil) {
         self.inputs = inputs
         self.attentionDots = Self.attentionDots(inputs: inputs)
+        let scanned: [HermesSession] =
+            switch inputs.allBotSessionsState {
+            case .ready(let sessions), .stale(let sessions, _): sessions
+            case .loading, .empty, .unavailable, .failed: []
+            }
+        if let previous, previous.inputs.pinnedSessions == inputs.pinnedSessions,
+            previous.inputs.allBotSessionsState == inputs.allBotSessionsState,
+            previous.inputs.profileScopeID == inputs.profileScopeID
+        {
+            self.allProfilePinned = previous.allProfilePinned
+        } else {
+            self.allProfilePinned = AllProfilesSessions.pinned(
+                scopePinned: inputs.pinnedSessions, scanned: scanned, scopeProfileID: inputs.profileScopeID)
+        }
         if let previous, previous.inputs.hasSameConversations(as: inputs) {
             self.linkedProjectGroups = previous.linkedProjectGroups
             self.conversations = previous.conversations
@@ -140,11 +156,6 @@ struct SessionNavSidebarSnapshot: Equatable {
         }
         self.linkedSessionIDs = linkedSessionIDs
         self.projectNameBySessionID = projectNameBySessionID
-        let scanned: [HermesSession] =
-            switch inputs.allBotSessionsState {
-            case .ready(let sessions), .stale(let sessions, _): sessions
-            case .loading, .empty, .unavailable, .failed: []
-            }
         self.allBotConversations = SidebarAgentGrouping.merged(
             all: scanned, scoped: self.conversations, scopeProfileID: inputs.profileScopeID)
     }

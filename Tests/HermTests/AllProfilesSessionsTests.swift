@@ -73,6 +73,25 @@ final class AllProfilesSessionsTests: XCTestCase {
     }
 
     @MainActor
+    func testSnapshotRefreshesMergedPinsWhenOnlyPinsChange() {
+        let scan = [session("b", profile: "coder", at: 30, pinned: true)]
+        var inputs = SessionNavSidebarSnapshot.Inputs(
+            activeSessionID: nil, activeStatus: .idle, profileScopeID: "default", agentDisplayName: "Herm",
+            isLoadingSessions: false, isCreatingSession: false, deletingSessionID: nil, renamingSessionID: nil,
+            updatingSessionVisibilityID: nil, sessions: [], sessionProjectionState: .ready([]),
+            activeSessions: [], projects: [], projectIDBySessionID: [:], projectSessionsByProjectID: [:],
+            projectProfileID: nil, isLoadingProjects: false, isRefreshingProjectNavigation: false,
+            attention: [], latestActivities: [], allBotSessionsState: .ready(scan))
+        let first = SessionNavSidebarSnapshot(inputs: inputs)
+        XCTAssertEqual(first.allProfilePinned.map(\.id), ["b"])
+
+        // Conversations are unchanged, so groups are reused; the pins must not be.
+        inputs.pinnedSessions = [session("a", profile: nil, at: 40)]
+        let next = SessionNavSidebarSnapshot(inputs: inputs, reusing: first)
+        XCTAssertEqual(next.allProfilePinned.map(\.id), ["a", "b"])
+    }
+
+    @MainActor
     func testAllProfileScanKeepsHermesPinnedFlag() throws {
         let body: [String: Any] = [
             "recents": [

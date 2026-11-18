@@ -205,23 +205,10 @@ struct SessionNavQueue: View, Equatable {
         navigationState.showsAllProfiles && visibleBots.count > 1
     }
 
-    private var scannedAllProfileSessions: [HermesSession] {
-        switch sidebarSnapshot.inputs.allBotSessionsState {
-        case .ready(let sessions), .stale(let sessions, _): sessions
-        case .loading, .empty, .unavailable, .failed: []
-        }
-    }
-
-    private var pinnedSessions: [HermesSession] {
-        guard showsAllProfiles else { return sidebarSnapshot.inputs.pinnedSessions }
-        return AllProfilesSessions.pinned(
-            scopePinned: sidebarSnapshot.inputs.pinnedSessions, scanned: scannedAllProfileSessions,
-            scopeProfileID: sidebarSnapshot.inputs.profileScopeID)
-    }
-
+    /// Build once per rail pass and pass it down; each build indexes every loaded row.
     private var pinnedSessionPresentation: PinnedSessionPresentation {
         PinnedSessionPresentation(
-            pinned: pinnedSessions,
+            pinned: showsAllProfiles ? sidebarSnapshot.allProfilePinned : sidebarSnapshot.inputs.pinnedSessions,
             live: showsAllProfiles ? sidebarSnapshot.allBotConversations : sidebarSnapshot.conversations,
             projection: sidebarSnapshot.inputs.sessionProjectionState,
             hasRequestedSessionIndex: navigationState.hasRequestedSessionIndex
@@ -249,10 +236,10 @@ struct SessionNavQueue: View, Equatable {
             session, bots: visibleBots, scopeProfileID: sidebarSnapshot.inputs.profileScopeID)
     }
 
-    private var sidebarSessionStatuses: [String: SidebarSessionStatus] {
+    private func sidebarSessionStatuses(pinned: PinnedSessionPresentation) -> [String: SidebarSessionStatus] {
         // Pins can sit past the recents page, so they need their own status.
         SidebarSessionStatusResolver.statuses(
-            for: sidebarSnapshot.allBotConversations + pinnedSessionPresentation.sessions,
+            for: sidebarSnapshot.allBotConversations + pinned.sessions,
             snapshot: sidebarSnapshot,
             seenStore: sidebarSessionSeenStore,
             fallbackProfileID: model.profileScopeID
@@ -569,12 +556,14 @@ struct SessionNavQueue: View, Equatable {
         let bots = Array(([current].compactMap { $0 } + visibleBots.filter { $0.id != current?.id }).prefix(3))
         let avatar = size * 0.78
         let step = size * 0.28
+        // Matches BotAvatarView's image clip so no corner shows past the disc.
+        let backing = RoundedRectangle(cornerRadius: avatar * 0.28, style: .continuous)
         return ZStack(alignment: .leading) {
             ForEach(Array(bots.enumerated().reversed()), id: \.element.id) { index, bot in
                 // An opaque disc and ring keep each face solid where they overlap.
                 BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: avatar, animated: false)
-                    .background(Circle().fill(style.surface))
-                    .overlay(Circle().stroke(style.surface, lineWidth: 1.5))
+                    .background(backing.fill(style.surface))
+                    .overlay(backing.stroke(style.surface, lineWidth: 1.5))
                     .offset(x: CGFloat(index) * step)
             }
         }
@@ -682,18 +671,18 @@ struct SessionNavQueue: View, Equatable {
         let projects = sidebarSnapshot.linkedProjectGroups
         let allConversations = botScopedConversations(
             showsAllProfiles ? sidebarSnapshot.allBotConversations : sidebarSnapshot.conversations)
-        // Built once per pass; rows previously rebuilt it per row (O(n²)).
-        let statuses = sidebarSessionStatuses
+        // Built once per pass; rows previously rebuilt them per row (O(n²)).
+        let pinned = pinnedSessionPresentation
+        let statuses = sidebarSessionStatuses(pinned: pinned)
 
         // Native sections keep headers visible without geometry tracking or eager row containers.
         return LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
             if isSearchingSessions {
-                sessionSearchResults(statuses: statuses, style: style)
+                sessionSearchResults(pinned: pinned, statuses: statuses, style: style)
             } else {
                 ForEach(navigationState.sectionOrder, id: \.self) { section in
                     switch section {
                     case .pinned:
-                        let pinned = pinnedSessionPresentation
                         if pinned.status != .empty || !pinned.sessions.isEmpty {
                             pinnedOutline(pinned, statuses: statuses, style: style)
                         }
@@ -810,12 +799,14 @@ struct SessionNavQueue: View, Equatable {
     }
 
     @ViewBuilder
-    private func sessionSearchResults(statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
+    private func sessionSearchResults(
+        pinned: PinnedSessionPresentation, statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
         let matches = SessionSidebarSearch.sessions(
             matching: sessionSearchQuery,
             in: botScopedConversations(
                 (showsAllProfiles ? sidebarSnapshot.allBotConversations : sidebarSnapshot.conversations)
-                    + pinnedSessionPresentation.sessions),
+                    + pinned.sessions),
             projects: sidebarSnapshot.projectNameBySessionID)
         HStack(spacing: 6) {
             Text("Loaded sessions · \(matches.count)")
@@ -834,11 +825,11 @@ struct SessionNavQueue: View, Equatable {
         if matches.isEmpty {
             queueEmpty("No matching loaded sessions", style: style)
         }
-        if case .stale(let message) = pinnedSessionPresentation.status {
+        if case .stale(let message) = pinned.status {
             queueEmpty(message, style: style)
-        } else if case .unavailable(let message) = pinnedSessionPresentation.status {
+        } else if case .unavailable(let message) = pinned.status {
             queueEmpty(message, style: style)
-        } else if case .failed(let message) = pinnedSessionPresentation.status {
+        } else if case .failed(let message) = pinned.status {
             queueEmpty(message, style: style)
         }
         ForEach(matches, id: \.[sidebarSection: "search"]) { session in
