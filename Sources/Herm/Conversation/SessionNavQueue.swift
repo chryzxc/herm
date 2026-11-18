@@ -528,58 +528,50 @@ struct SessionNavQueue: View, Equatable {
     }
 
     private func profileSelectorPopover(selectedBot: BotSummary?, style: DockThemePalette) -> some View {
-        let popoverHeight = min(CGFloat(visibleBots.count) * 40 + 12, 360)
-        return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(visibleBots) { option in
-                    Button {
-                        onSelectProfile(option.id)
-                        isProfileSelectorPresented = false
-                    } label: {
-                        HStack(spacing: 9) {
-                            BotAvatarView(
-                                bot: option,
-                                imageData: botMode.avatarImages[option.id],
-                                size: 22
-                            )
-                            Text(option.title.map { "\(option.name) — \($0)" } ?? option.name)
-                                .dockFont(.body, weight: .semibold)
-                                .foregroundStyle(style.primaryText)
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            botActivityBadge(for: [option], style: style)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    // The spinner doubles as "view the running session".
-                                    guard option.isSessionWorking, let worker = option.liveWorkerChat else {
-                                        onSelectProfile(option.id)
-                                        isProfileSelectorPresented = false
-                                        return
-                                    }
-                                    onSelectProfile(option.id)
-                                    onOpenBotChat(option, worker)
-                                    isProfileSelectorPresented = false
-                                }
-                            if option.id == selectedBot?.id {
-                                DockIcon(.check)
-                                    .dockFont(.metadata, weight: .semibold)
-                                    .foregroundStyle(style.accent)
-                            }
-                        }
-                        .dockPadding(.horizontal, 10)
-                        .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.dockHover)
-                    .accessibilityLabel(
-                        botPickerAccessibilityLabel(option, selected: option.id == selectedBot?.id)
+        DockProfilePickerList(bots: visibleBots, order: workspaceStore.profilePickerOrder, style: style) { option in
+            Button {
+                onSelectProfile(option.id)
+                isProfileSelectorPresented = false
+            } label: {
+                HStack(spacing: 9) {
+                    BotAvatarView(
+                        bot: option,
+                        imageData: botMode.avatarImages[option.id],
+                        size: 22
                     )
+                    Text(option.title.map { "\(option.name) — \($0)" } ?? option.name)
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(style.primaryText)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    botActivityBadge(for: [option], style: style)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            // The spinner doubles as "view the running session".
+                            guard option.isSessionWorking, let worker = option.liveWorkerChat else {
+                                onSelectProfile(option.id)
+                                isProfileSelectorPresented = false
+                                return
+                            }
+                            onSelectProfile(option.id)
+                            onOpenBotChat(option, worker)
+                            isProfileSelectorPresented = false
+                        }
+                    if option.id == selectedBot?.id {
+                        DockIcon(.check)
+                            .dockFont(.metadata, weight: .semibold)
+                            .foregroundStyle(style.accent)
+                    }
                 }
+                .dockPadding(.horizontal, 10)
+                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .dockPadding(6)
+            .buttonStyle(.dockHover)
+            .accessibilityLabel(
+                botPickerAccessibilityLabel(option, selected: option.id == selectedBot?.id)
+            )
         }
-        .frame(width: 300, height: popoverHeight)
-        .background(style.background)
     }
 
     private func botPickerAccessibilityLabel(_ bot: BotSummary, selected: Bool) -> String {
