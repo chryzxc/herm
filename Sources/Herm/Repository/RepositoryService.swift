@@ -1344,3 +1344,35 @@ enum RepositoryService {
         }
     }
 }
+
+/// Re-reading an unchanged repository yields equal content with a new
+/// `refreshedAt`; nothing displays that time, so republishing would only
+/// redraw every observer.
+extension RepositorySnapshot {
+    func hasSameContent(as other: Self) -> Bool {
+        var aligned = self
+        aligned.refreshedAt = other.refreshedAt
+        return aligned == other
+    }
+}
+
+extension RepositoryChangeSnapshot {
+    func hasSameContent(as other: Self) -> Bool {
+        repositoryID == other.repositoryID && headRevision == other.headRevision && branch == other.branch
+            && files == other.files && error == other.error
+    }
+}
+
+extension RepositoryWorktreeSummary {
+    func hasSameContent(as other: Self) -> Bool {
+        let snapshotsMatch =
+            switch (snapshot, other.snapshot) {
+            case (nil, nil): true
+            case (let lhs?, let rhs?): lhs.hasSameContent(as: rhs)
+            default: false
+            }
+        return snapshotsMatch && path == other.path && displayName == other.displayName && branch == other.branch
+            && headRevision == other.headRevision && isDetached == other.isDetached && isLocked == other.isLocked
+            && isPrunable == other.isPrunable
+    }
+}
