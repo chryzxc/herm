@@ -24,6 +24,38 @@ struct BrowserFramePerformanceTests {
         #expect(publications == 1)
     }
 
+    @Test func repeatedTargetInfoPublishesOnlyRealChanges() {
+        let browser = AgentBrowser(profileID: "target-publications")
+        var publications = 0
+        let subscription = browser.objectWillChange.sink { publications += 1 }
+        defer { subscription.cancel() }
+        func info(_ title: String) -> [String: Any] {
+            ["targetInfo": ["type": "page", "targetId": "tab", "title": title, "url": "https://example.com/"]]
+        }
+        browser.handle("Target.targetCreated", info("Example"), nil)
+        #expect(publications == 1)
+        for _ in 0..<20 { browser.handle("Target.targetInfoChanged", info("Example"), nil) }
+        #expect(publications == 1)
+        browser.handle("Target.targetInfoChanged", info("Example, renamed"), nil)
+        #expect(publications == 2)
+        #expect(browser.pages.map(\.title) == ["Example, renamed"])
+    }
+
+    /// Chat deltas publish on `DockModel` many times a second; the Browser tab must not redraw for them.
+    @Test func browserViewsDoNotObserveTheChatModel() {
+        let model = DockModel(initialSessionID: "browser-observation")
+        let workspace = SessionBrowserWorkspace(key: SessionBrowserKey(profileID: nil, sessionID: "browser-observation"))
+        let views: [Any] = [
+            SessionBrowserView(model: model, workspace: workspace),
+            AgentBrowserPane(browser: workspace.agent, model: model),
+        ]
+        for view in views {
+            let stored = Mirror(reflecting: view).children.first { $0.label == "model" || $0.label == "_model" }
+            #expect(stored?.label == "model")
+            #expect(stored?.value is DockModel)
+        }
+    }
+
     @Test func losslessFramesDecodeAwayFromTheMainActor() async throws {
         let bitmap = try #require(
             NSBitmapImageRep(

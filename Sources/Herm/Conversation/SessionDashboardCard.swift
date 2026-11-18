@@ -1,7 +1,6 @@
-import Combine
 import SwiftUI
 
-struct SessionDashboardCard: View {
+struct SessionDashboardCard: View, Equatable {
     let row: SessionDashboardRow
     let isCurrent: Bool
     let isLoadingSession: Bool
@@ -19,9 +18,7 @@ struct SessionDashboardCard: View {
     var bot: SessionDashboardBot?
     let onRespond: () -> Void
     @StateObject private var content = SessionDashboardCardContent()
-    @State private var attention: DockModel.SessionAttention?
-    @State private var answer: AttentionAnswerState?
-    @State private var liveActivity: String?
+    @StateObject private var live = SessionDashboardCardLiveState()
     @State private var draft = ""
     @State private var sending = false
     @State private var stopping = false
@@ -30,6 +27,18 @@ struct SessionDashboardCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var replyFocused: Bool
 
+    /// Closures and the unobserved model are left out: a tile re-renders only when its own data changes.
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.row == rhs.row && lhs.isCurrent == rhs.isCurrent && lhs.isLoadingSession == rhs.isLoadingSession
+            && lhs.request == rhs.request && lhs.activity == rhs.activity && lhs.profileID == rhs.profileID
+            && lhs.runtimeIDs == rhs.runtimeIDs && lhs.isGatewayLive == rhs.isGatewayLive && lhs.bot == rhs.bot
+            && lhs.model === rhs.model
+        // `client` is omitted: it only appears on connect, which also flips `isCurrent`.
+    }
+
+    private var attention: DockModel.SessionAttention? { live.attention }
+    private var answer: AttentionAnswerState? { live.answer }
+    private var liveActivity: String? { live.activity }
     private var ids: [String] { [row.id] + runtimeIDs }
     private var engaged: Bool { hovered || replyFocused || !draft.isEmpty }
     private var canSend: Bool {
@@ -43,23 +52,31 @@ struct SessionDashboardCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-            // A fixed four-line slot keeps tiles even without nested scroll bars;
-            // a pending request grows it so its answers are never clipped.
-            update.frame(
-                maxWidth: .infinity, minHeight: 64, maxHeight: attention == nil ? 64 : nil, alignment: .topLeading
-            )
-            .clipped()
+        VStack(alignment: .leading, spacing: 0) {
+            // The tile opens its chat from anywhere but the reply row. The tap sits on
+            // the content itself: behind the card it lost every click to the card fill.
+            // Buttons inside (title, request choices) still take their own clicks first.
+            VStack(alignment: .leading, spacing: 12) {
+                header
+                // A fixed four-line slot keeps tiles even without nested scroll bars;
+                // a pending request grows it so its answers are never clipped.
+                update.frame(
+                    maxWidth: .infinity, minHeight: 64, maxHeight: attention == nil ? 64 : nil,
+                    alignment: .topLeading
+                )
+                .clipped()
+            }
+            .dockPadding(EdgeInsets(top: 16, leading: 16, bottom: 12, trailing: 16))
+            .contentShape(Rectangle())
+            .onTapGesture(perform: open)
             footer
+                .dockPadding(EdgeInsets(top: 0, leading: 16, bottom: 16, trailing: 16))
+                // The field's own surface covers it, so only the margins around it open the chat.
+                .background { Color.clear.contentShape(Rectangle()).onTapGesture(perform: open) }
         }
         .foregroundStyle(Color.dockPrimaryText)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .dockCard(padding: 16, isActive: hovered || replyFocused)
-        // Behind the content, so the reply field and buttons keep their own taps.
-        .background {
-            Color.clear.contentShape(Rectangle()).onTapGesture { if !isLoadingSession { onRespond() } }
-        }
+        .dockCard(padding: 0, isActive: hovered || replyFocused)
         .onHover { hovered = $0 }
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: hovered)
         .animation(nil, value: row.status)
@@ -67,30 +84,14 @@ struct SessionDashboardCard: View {
             guard let client, isCurrent else { return }
             await content.load(session: row.session, profileID: profileID, client: client)
         }
-        .onReceive(attentionChanges) { value in
-            attention = value
-            answer = value?.responseTarget.flatMap { model?.attentionAnswers[$0] }
-        }
-        .onReceive(answerChanges) { all in
-            answer = attention?.responseTarget.flatMap { all[$0] }
-        }
-        .onReceive(activityChanges) { liveActivity = $0 }
+        // Subscribed while on screen only; a lazy grid keeps offscreen tiles around.
+        .onAppear { live.observe(model, ids: ids) }
+        .onDisappear { live.stop() }
+        .onChange(of: runtimeIDs) { _, _ in live.observe(model, ids: ids) }
     }
 
-    // Each tile reduces the shared model streams to its own value, so a change to
-    // another chat's state does not touch every tile.
-    private var attentionChanges: AnyPublisher<DockModel.SessionAttention?, Never> {
-        let ids = ids
-        return model?.$sessionAttention.map { all in ids.lazy.compactMap { all[$0] }.first }
-            .removeDuplicates().eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()
-    }
-    private var answerChanges: AnyPublisher<[AttentionRequest: AttentionAnswerState], Never> {
-        model?.$attentionAnswers.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()
-    }
-    private var activityChanges: AnyPublisher<String?, Never> {
-        let ids = ids
-        return model?.sessionActivityLabelChanges.map { labels in ids.lazy.compactMap { labels[$0] }.first }
-            .removeDuplicates().eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()
+    private func open() {
+        if !isLoadingSession { onRespond() }
     }
 
     @ViewBuilder
@@ -101,8 +102,8 @@ struct SessionDashboardCard: View {
             } else if let request {
                 Text(request.title).dockFont(.body, weight: .semibold).lineLimit(1)
                 Text(request.detail).dockFont(.body).lineLimit(3)
-            } else if let preview = content.text ?? SessionDashboardCardContent.preview(row.session.preview) {
-                Text(Self.inlineMarkdown(preview)).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+            } else if let preview = content.text ?? SessionDashboardCardContent.cachedPreview(row.session.preview) {
+                Text(Self.renderedPreview(preview)).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(4).help(preview)
             } else {
                 Text(content.error == nil ? "No saved update yet." : "Latest reply unavailable.")
@@ -266,6 +267,17 @@ struct SessionDashboardCard: View {
     }
 
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
+
+    private static var renderedPreviews: [String: AttributedString] = [:]
+
+    /// Markdown parsing is the costliest part of a tile; lazy grids re-create tiles on every scroll.
+    static func renderedPreview(_ text: String) -> AttributedString {
+        if let cached = renderedPreviews[text] { return cached }
+        if renderedPreviews.count > 500 { renderedPreviews.removeAll() }
+        let rendered = inlineMarkdown(text)
+        renderedPreviews[text] = rendered
+        return rendered
+    }
 
     /// Keeps links and emphasis from the reply while flattening block structure into tile text.
     static func inlineMarkdown(_ text: String) -> AttributedString {

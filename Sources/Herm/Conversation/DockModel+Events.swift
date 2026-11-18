@@ -851,7 +851,9 @@ extension DockModel {
             isAwaitingClarificationResume = false
             completeLiveReasoning()
             if streamingMessageIsVisionNotice { return }
-            if voiceState.isNativeConversationActive {
+            // Only the first delta changes the telemetry; mutating the @Published
+            // struct on every delta redrew every DockModel observer at the token rate.
+            if voiceState.isNativeConversationActive, voiceTelemetry.firstResponseAt == nil {
                 voiceTelemetry.receivedResponse()
             }
             streamingMessageBuffer.append(delta)

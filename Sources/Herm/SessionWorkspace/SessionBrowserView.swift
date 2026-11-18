@@ -146,7 +146,9 @@ enum BrowserPageMessage {
 /// send-page and console errors.
 struct SessionBrowserView: View {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
-    @ObservedObject var model: DockModel
+    /// Not observed: the page only acts on the model. Observing it redrew the toolbar
+    /// (three `ViewThatFits` layouts) and the live canvas on every chat delta.
+    let model: DockModel
     let workspace: SessionBrowserWorkspace
     let isPrimary: Bool
     @AppStorage("sessionInspector.browserViewport") private var viewportRaw = 0

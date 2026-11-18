@@ -25,7 +25,7 @@ struct ControlTabBadgeStateTests {
         if let bots = ControlTab(rawValue: "Bots") {
             #expect(badges.count(for: bots) == 0)
             #expect(!badges.isUrgent(for: bots))
-            #expect(bots.icon == .ghost)
+            #expect(bots.icon == .robot)
         } else {
             Issue.record("Bots global destination is missing")
         }

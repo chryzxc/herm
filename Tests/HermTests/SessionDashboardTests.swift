@@ -121,6 +121,53 @@ struct SessionDashboardTests {
             ).map(\.id) == ["two"])
     }
 
+    @Test func filteringProjectedRowsMatchesFilteringWhileProjecting() {
+        let sessions = [session("one", date: 3), session("two", date: 2), session("three", date: 1)]
+        let projects = ["one": "Herm", "two": "Website"]
+        let all = SessionDashboardProjection.rows(sessions: sessions, statuses: [:], projects: projects)
+        for (query, project) in [("", nil), (" REVIEW ", "Herm"), ("website", nil), ("missing", nil)]
+            as [(String, String?)]
+        {
+            #expect(
+                SessionDashboardProjection.filter(all, query: query, project: project)
+                    == SessionDashboardProjection.rows(
+                        sessions: sessions, statuses: [:], projects: projects, query: query, project: project))
+        }
+    }
+
+    @Test func layoutSignatureChangesOnlyWhenCardsMove() {
+        let rows = SessionDashboardProjection.rows(
+            sessions: [session("one", date: 2), session("two", date: 1)], statuses: [:], projects: [:])
+        let same = SessionDashboardVisibleRows(rows)
+        #expect(SessionDashboardVisibleRows(rows).layoutSignature == same.layoutSignature)
+        #expect(SessionDashboardVisibleRows(rows.reversed()).layoutSignature != same.layoutSignature)
+        let moved = [SessionDashboardRow(session: rows[0].session, status: .working, project: nil), rows[1]]
+        #expect(SessionDashboardVisibleRows(moved).layoutSignature != same.layoutSignature)
+        #expect(SessionDashboardVisibleRows(moved).counts == [.working: 1, .recent: 1])
+    }
+
+    @Test @MainActor func boardModelRebuildsOnSnapshotAndFiltersWithoutReprojecting() {
+        let suite = "DashboardBoardModel.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = DockModel(defaults: defaults)
+        defer { model.shutdown() }
+        model.sessions = [session("one", date: 2), session("two", date: 1)]
+        let sidebar = SessionNavSidebarModel(
+            model: model, control: ControlCenterModel(),
+            store: WorkspaceStore(fileURL: URL(fileURLWithPath: "/tmp/dashboard-board-\(UUID()).json")))
+        let board = SessionDashboardBoardModel(sidebar: sidebar, seen: SidebarSessionSeenStore(defaults: defaults))
+        #expect(board.visible.members(.recent).map(\.id) == ["one", "two"])
+
+        model.sessions.append(session("three", date: 3))
+        sidebar.refresh()
+        #expect(board.visible.members(.recent).map(\.id) == ["three", "one", "two"])
+
+        board.filter(query: "Work two", project: nil)
+        #expect(board.visible.members(.recent).map(\.id) == ["two"])
+        #expect(board.board.rows.count == 3)
+    }
+
     @Test func lateLoadsCannotEnableRepliesForAnotherSessionOrProfile() {
         var selection = SessionDashboardSelection()
         let first = selection.begin(session("first", profile: "bot"))

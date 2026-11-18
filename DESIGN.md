@@ -608,7 +608,7 @@ visible at rest in their quiet color.
 
 **Navigation identity.** Chats keeps its speech bubbles; Integrations uses a puzzle piece
 for configuration, and Artifacts uses stacked files for saved outputs across
-the rail, compact navigation, and inspector. Preserve the Bots ghost glyph.
+the rail, compact navigation, and inspector. Bots uses the robot glyph.
 The Chats rail button overlays a compact badge without changing its footprint:
 the shared running spinner plus the unread completed-session count (capped at
 99+), independently visible. Deduplicate pinned/index rows, omit hidden sessions,
@@ -1864,6 +1864,18 @@ chats from one all-profile sidebar read merged with the selected bot's fresher
 Drag a section header (Pinned, Recents, Projects) onto another to swap their order; the order is a local preference, and the drop target shows an accent line above the header. Bot folders reorder the same way on the Bots list.
 list. Other bots' history is baselined once from that read so first use shows no
 unread flood.
+
+When more than one Bot is visible, the Bot switcher starts with a fixed
+"All profiles" row (not reorderable) whose mark stacks up to three Bot avatars,
+the selected Bot in front. Each avatar sits on an opaque surface disc so the
+overlap never shows through. The choice is a local preference. It merges every
+Bot's pins into one Pinned section and every Bot's chats into Recents and
+search. The selected Bot's pins come from its own pinned list; other Bots' pins
+come from the all-profile read's `pinned` flag. Pin keys are profile-scoped. In
+this scope each row's second line starts with a compact profile pill (14pt
+avatar and Bot name in `.dockPill(compact:)`) before the source and repository
+identity. Opening a row switches to its owning profile and keeps the merged
+scope. Picking a single Bot leaves the merged scope.
 
 Session activity uses `session.active_list`, not the REST index’s recent-write
 flag. The visible sidebar refreshes activity every ten seconds for the selected
@@ -4036,6 +4048,8 @@ or unavailable. Working gateway-owned turns offer Stop via
 outline. Errors pass through `safeSummary` and appear in the footer.
 Visible cards read a bounded tail of saved messages without resuming sessions.
 Respond opens a separate conversation sheet; no empty chat pane occupies the grid.
+A click anywhere on the card opens that sheet too, except the reply field and send
+or stop button; the title and request choices keep their own actions.
 New chat starts a fresh conversation with the selected bot in that same sheet,
 keeping the tiles visible behind it. The focused sheet uses a single expanded-page header
 with Open workspace and Close actions, and renders the regular composer and transcript;

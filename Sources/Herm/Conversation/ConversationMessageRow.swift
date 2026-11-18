@@ -226,7 +226,7 @@ struct ConversationMessageRow: View, Equatable {
                     )
                     if !userText.isEmpty || !attachments.names.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            DockChipFlow(spacing: 6) {
+                            DockChipFlow(spacing: 6, hugsContent: true) {
                                 ForEach(Array(attachments.files.enumerated()), id: \.offset) { index, file in
                                     // attachmentURLs holds one URL per pending label, in label order.
                                     let pendingIndex = attachments.files[..<index].filter(\.isPendingLabel).count

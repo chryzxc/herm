@@ -678,7 +678,7 @@ final class AgentBrowser: ObservableObject {
             ], session: sid)
     }
 
-    private func handle(_ method: String, _ params: [String: Any], _ session: String?) {
+    func handle(_ method: String, _ params: [String: Any], _ session: String?) {
         pointerTracker?.receive(method, params: params, session: session)
         switch method {
         case "Target.targetCreated", "Target.targetInfoChanged":
@@ -691,7 +691,8 @@ final class AgentBrowser: ObservableObject {
                 return
             }
             if let index = pages.firstIndex(where: { $0.id == page.id }) {
-                pages[index] = page
+                // Chrome repeats targetInfoChanged for loads and favicon updates that change nothing listed.
+                if pages[index] != page { pages[index] = page }
             } else {
                 pages.append(page)
                 // Follow a tab Hermes opens for the chat on screen; another chat's stays in the tab strip.
@@ -719,16 +720,14 @@ final class AgentBrowser: ObservableObject {
         case "Page.frameNavigated":
             guard let frame = params["frame"] as? [String: Any], frame["parentId"] == nil else { return }
             mainFrameID = frame["id"] as? String
-            consoleErrors = []
-            if let index = pages.firstIndex(where: { $0.id == activeTargetID }), let url = frame["url"] as? String {
-                pages[index].url = frame["unreachableUrl"] as? String ?? (url + (frame["urlFragment"] as? String ?? ""))
+            if !consoleErrors.isEmpty { consoleErrors = [] }
+            if let url = frame["url"] as? String {
+                setActivePageURL(frame["unreachableUrl"] as? String ?? (url + (frame["urlFragment"] as? String ?? "")))
             }
             refreshHistory()
         case "Page.navigatedWithinDocument", "Page.frameStoppedLoading":
             guard params["frameId"] as? String == mainFrameID else { return }
-            if let url = params["url"] as? String, let index = pages.firstIndex(where: { $0.id == activeTargetID }) {
-                pages[index].url = url
-            }
+            if let url = params["url"] as? String { setActivePageURL(url) }
             refreshHistory()
         case "Page.javascriptDialogOpening":
             dialog = Dialog(
@@ -772,6 +771,12 @@ final class AgentBrowser: ObservableObject {
         default:
             break
         }
+    }
+
+    /// Mutating a @Published array element publishes even when the value is unchanged.
+    private func setActivePageURL(_ url: String) {
+        guard let index = pages.firstIndex(where: { $0.id == activeTargetID }), pages[index].url != url else { return }
+        pages[index].url = url
     }
 
     /// Unlists a tab; if it was on screen, the view moves to the newest remaining one.
@@ -1889,7 +1894,10 @@ private struct AgentCanvasView: NSViewRepresentable {
 /// The Browser tab in agent mode: live view, failure state, and what Hermes is doing.
 struct AgentBrowserPane: View {
     @ObservedObject var browser: AgentBrowser
-    @ObservedObject var model: DockModel
+    /// Not observed: only the active browser call is shown, and `browserActivityID` names it.
+    /// Observing the whole model redrew the pane on every chat delta.
+    let model: DockModel
+    @State private var step: (icon: Ph, title: String, detail: String?)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -1942,6 +1950,9 @@ struct AgentBrowserPane: View {
         .animation(.dockEase(duration: 0.2), value: browser.userHasControl)
         .animation(.dockEase(duration: 0.16), value: browser.dialog)
         .background(Color.dockCanvas)
+        // A call's description is fixed when it starts (args arrive only at completion),
+        // so the active call's ID changing is the only time the step changes.
+        .onReceive(model.$browserActivityID) { _ in step = model.activeBrowserCall.map(ToolStep.describe) }
     }
 
     private var palette: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
@@ -1964,10 +1975,6 @@ struct AgentBrowserPane: View {
         .dockPadding(.vertical, 4)
         .dockHUDPanel()
         .accessibilityElement(children: .contain)
-    }
-
-    private var step: (icon: Ph, title: String, detail: String?)? {
-        model.activeBrowserCall.map(ToolStep.describe)
     }
 
     /// Live status for the page Hermes is driving, drawn as a theme HUD panel.

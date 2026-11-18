@@ -460,8 +460,8 @@ beside the traffic lights. Chat uses three full-height panes: the session list,
 conversation, and inspector. The session title uses the available header space,
 with actions inside the conversation pane; the inspector's tabs extend to the top of its own pane.
 The Bots and Sessions switch responds across each tab, not just its label.
-The session sidebar places **New chat** above Pinned. Navigation distinguishes Chats (speech bubbles), Integrations (puzzle piece), and
-Artifacts (stacked files), while keeping the Bots ghost icon. Chats shows a small
+The session sidebar places **New chat** above Pinned. Navigation distinguishes Chats (speech bubbles), Integrations (puzzle piece),
+Artifacts (stacked files), and Bots (a robot). Chats shows a small
 spinner for running sessions and a count of completed chats with unread updates
 for the selected bot. Both appear together when work is running and results await
 review; opening a completed chat clears its unread badge. Use **Mark all as read**
@@ -472,7 +472,10 @@ workspace is hidden or Hermes is disconnected.
 The sidebar stacks Pinned, Recents, and Projects for the selected
 bot under its bot header. In the bot picker, use each profile's reorder menu to move
 it up or down. The order is saved locally across restarts without changing the
-selected profile or its conversations. Each section header stays at the top of the scrolling
+selected profile or its conversations. Choose **All profiles** at the top of the
+bot picker to merge every bot's pinned and recent conversations into one list; each
+row then shows a pill with its bot's avatar and name, and opening it switches to
+that bot. Each section header stays at the top of the scrolling
 list until the next section replaces it; rows remain lazily rendered.
 Background polls and runtime notifications refresh the latest history page,
 reusing older loaded sessions for up to a minute. Explicit refreshes and profile

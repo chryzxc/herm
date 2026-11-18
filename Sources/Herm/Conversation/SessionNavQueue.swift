@@ -200,27 +200,46 @@ struct SessionNavQueue: View, Equatable {
         sidebar.snapshot
     }
 
+    /// "All profiles" needs another bot to list; with one bot it is the same list.
+    private var showsAllProfiles: Bool {
+        navigationState.showsAllProfiles && visibleBots.count > 1
+    }
+
+    /// Build once per rail pass and pass it down; each build indexes every loaded row.
     private var pinnedSessionPresentation: PinnedSessionPresentation {
         PinnedSessionPresentation(
-            pinned: sidebarSnapshot.inputs.pinnedSessions,
-            live: sidebarSnapshot.conversations,
+            pinned: showsAllProfiles ? sidebarSnapshot.allProfilePinned : sidebarSnapshot.inputs.pinnedSessions,
+            live: showsAllProfiles ? sidebarSnapshot.allBotConversations : sidebarSnapshot.conversations,
             projection: sidebarSnapshot.inputs.sessionProjectionState,
             hasRequestedSessionIndex: navigationState.hasRequestedSessionIndex
         )
     }
 
     private func isPinned(_ session: HermesSession) -> Bool {
-        sidebarSnapshot.inputs.pinnedSessions.contains { $0.id == session.id }
+        guard showsAllProfiles else {
+            return sidebarSnapshot.inputs.pinnedSessions.contains { $0.id == session.id }
+        }
+        return AllProfilesSessions.isPinned(
+            session, scopePinned: sidebarSnapshot.inputs.pinnedSessions,
+            scopeProfileID: sidebarSnapshot.inputs.profileScopeID)
     }
 
     private func togglePin(_ session: HermesSession) {
-        Task { await model.toggleSessionPinned(session) }
+        let pinned = isPinned(session)
+        Task { await model.toggleSessionPinned(session, isPinned: pinned) }
     }
 
-    private var sidebarSessionStatuses: [String: SidebarSessionStatus] {
+    /// The owning bot's pill, only when the rail mixes profiles.
+    private func ownerBot(_ session: HermesSession) -> BotSummary? {
+        guard showsAllProfiles else { return nil }
+        return AllProfilesSessions.ownerBot(
+            session, bots: visibleBots, scopeProfileID: sidebarSnapshot.inputs.profileScopeID)
+    }
+
+    private func sidebarSessionStatuses(pinned: PinnedSessionPresentation) -> [String: SidebarSessionStatus] {
         // Pins can sit past the recents page, so they need their own status.
         SidebarSessionStatusResolver.statuses(
-            for: sidebarSnapshot.allBotConversations + pinnedSessionPresentation.sessions,
+            for: sidebarSnapshot.allBotConversations + pinned.sessions,
             snapshot: sidebarSnapshot,
             seenStore: sidebarSessionSeenStore,
             fallbackProfileID: model.profileScopeID
@@ -420,13 +439,16 @@ struct SessionNavQueue: View, Equatable {
     }
 
     private func profileHeader(style: DockThemePalette) -> some View {
-        let bot = selectedBot
-        let name = bot?.name ?? sidebarSnapshot.inputs.agentDisplayName
-        let subtitle = bot?.title
+        let allProfiles = showsAllProfiles
+        let bot = allProfiles ? nil : selectedBot
+        let name = allProfiles ? "All profiles" : bot?.name ?? sidebarSnapshot.inputs.agentDisplayName
+        let subtitle = allProfiles ? "\(visibleBots.count) bots" : bot?.title
         let label = subtitle.map { "\(name) — \($0)" } ?? name
         let isSwitchable = visibleBots.count > 1
         let identity = HStack(spacing: 9) {
-            if let bot, botMode.isAvatarPending(bot) {
+            if allProfiles {
+                allProfilesMark(size: 28, style: style)
+            } else if let bot, botMode.isAvatarPending(bot) {
                 // Startup: the avatar is still loading, so hold its slot instead of a stand-in face.
                 ProgressView().controlSize(.small).frame(width: 28, height: 28)
                     .accessibilityLabel("Loading \(bot.name)'s avatar")
@@ -436,7 +458,7 @@ struct SessionNavQueue: View, Equatable {
                 ZStack {
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(
                         style.selectedFill)
-                    DockIcon(.ghost, size: 15, color: style.secondaryText)
+                    DockIcon(.robot, size: 15, color: style.secondaryText)
                 }
                 .frame(width: 28, height: 28)
             }
@@ -455,7 +477,7 @@ struct SessionNavQueue: View, Equatable {
             Spacer(minLength: 0)
             if isSwitchable {
                 // Other Bots' activity, so it is visible without opening the switcher.
-                botActivityBadge(for: visibleBots.filter { $0.id != bot?.id }, style: style)
+                botActivityBadge(for: allProfiles ? [] : visibleBots.filter { $0.id != bot?.id }, style: style)
                 DockIcon(.caretUpDown, size: 12, color: style.metadataText)
             }
         }
@@ -528,51 +550,109 @@ struct SessionNavQueue: View, Equatable {
         }
     }
 
-    private func profileSelectorPopover(selectedBot: BotSummary?, style: DockThemePalette) -> some View {
-        DockProfilePickerList(bots: visibleBots, order: workspaceStore.profilePickerOrder, style: style) { option in
-            Button {
-                onSelectProfile(option.id)
-                isProfileSelectorPresented = false
-            } label: {
-                HStack(spacing: 9) {
-                    BotAvatarView(
-                        bot: option,
-                        imageData: botMode.avatarImages[option.id],
-                        size: 22
-                    )
-                    Text(option.title.map { "\(option.name) — \($0)" } ?? option.name)
-                        .dockFont(.body, weight: .semibold)
-                        .foregroundStyle(style.primaryText)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    botActivityBadge(for: [option], style: style)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            // The spinner doubles as "view the running session".
-                            guard option.isSessionWorking, let worker = option.liveWorkerChat else {
-                                onSelectProfile(option.id)
-                                isProfileSelectorPresented = false
-                                return
-                            }
-                            onSelectProfile(option.id)
-                            onOpenBotChat(option, worker)
-                            isProfileSelectorPresented = false
-                        }
-                    if option.id == selectedBot?.id {
-                        DockIcon(.check)
-                            .dockFont(.metadata, weight: .semibold)
-                            .foregroundStyle(style.accent)
-                    }
-                }
-                .dockPadding(.horizontal, 10)
-                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                .contentShape(Rectangle())
+    /// The selected bot's avatar in front, with the next bots peeking behind it.
+    private func allProfilesMark(size: CGFloat, style: DockThemePalette) -> some View {
+        let current = selectedBot
+        let bots = Array(([current].compactMap { $0 } + visibleBots.filter { $0.id != current?.id }).prefix(3))
+        let avatar = size * 0.78
+        let step = size * 0.28
+        // Matches BotAvatarView's image clip so no corner shows past the disc.
+        let backing = RoundedRectangle(cornerRadius: avatar * 0.28, style: .continuous)
+        return ZStack(alignment: .leading) {
+            ForEach(Array(bots.enumerated().reversed()), id: \.element.id) { index, bot in
+                // An opaque disc and ring keep each face solid where they overlap.
+                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: avatar, animated: false)
+                    .background(backing.fill(style.surface))
+                    .overlay(backing.stroke(style.surface, lineWidth: 1.5))
+                    .offset(x: CGFloat(index) * step)
             }
-            .buttonStyle(.dockHover)
-            .accessibilityLabel(
-                botPickerAccessibilityLabel(option, selected: option.id == selectedBot?.id)
-            )
         }
+        .frame(width: avatar + CGFloat(max(bots.count - 1, 0)) * step, height: size, alignment: .leading)
+        .accessibilityHidden(true)
+    }
+
+    private func selectProfile(_ profileID: String) {
+        navigationState.showsAllProfiles = false
+        onSelectProfile(profileID)
+    }
+
+    private func profileSelectorPopover(selectedBot: BotSummary?, style: DockThemePalette) -> some View {
+        let allProfiles = showsAllProfiles
+        return DockProfilePickerList(
+            bots: visibleBots, order: workspaceStore.profilePickerOrder, style: style, showsHeader: true,
+            header: { allProfilesPickerRow(isSelected: allProfiles, style: style) },
+            row: { option in
+                Button {
+                    selectProfile(option.id)
+                    isProfileSelectorPresented = false
+                } label: {
+                    HStack(spacing: 9) {
+                        BotAvatarView(
+                            bot: option,
+                            imageData: botMode.avatarImages[option.id],
+                            size: 22
+                        )
+                        Text(option.title.map { "\(option.name) — \($0)" } ?? option.name)
+                            .dockFont(.body, weight: .semibold)
+                            .foregroundStyle(style.primaryText)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        botActivityBadge(for: [option], style: style)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                // The spinner doubles as "view the running session".
+                                guard option.isSessionWorking, let worker = option.liveWorkerChat else {
+                                    selectProfile(option.id)
+                                    isProfileSelectorPresented = false
+                                    return
+                                }
+                                selectProfile(option.id)
+                                onOpenBotChat(option, worker)
+                                isProfileSelectorPresented = false
+                            }
+                        if !allProfiles, option.id == selectedBot?.id {
+                            DockIcon(.check)
+                                .dockFont(.metadata, weight: .semibold)
+                                .foregroundStyle(style.accent)
+                        }
+                    }
+                    .dockPadding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.dockHover)
+                .accessibilityLabel(
+                    botPickerAccessibilityLabel(option, selected: !allProfiles && option.id == selectedBot?.id)
+                )
+            })
+    }
+
+    private func allProfilesPickerRow(isSelected: Bool, style: DockThemePalette) -> some View {
+        Button {
+            navigationState.showsAllProfiles = true
+            model.loadAllBotSessions(force: true)
+            isProfileSelectorPresented = false
+        } label: {
+            HStack(spacing: 9) {
+                allProfilesMark(size: 22, style: style)
+                Text("All profiles")
+                    .dockFont(.body, weight: .semibold)
+                    .foregroundStyle(style.primaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                botActivityBadge(for: visibleBots, style: style)
+                if isSelected {
+                    DockIcon(.check)
+                        .dockFont(.metadata, weight: .semibold)
+                        .foregroundStyle(style.accent)
+                }
+            }
+            .dockPadding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockHover)
+        .accessibilityLabel(isSelected ? "All profiles, selected" : "Show conversations from all profiles")
     }
 
     private func botPickerAccessibilityLabel(_ bot: BotSummary, selected: Bool) -> String {
@@ -589,19 +669,20 @@ struct SessionNavQueue: View, Equatable {
     /// selection independent from every neighbouring destination.
     private func globalRailBar(style: DockThemePalette) -> some View {
         let projects = sidebarSnapshot.linkedProjectGroups
-        let allConversations = botScopedConversations(sidebarSnapshot.conversations)
-        // Built once per pass; rows previously rebuilt it per row (O(n²)).
-        let statuses = sidebarSessionStatuses
+        let allConversations = botScopedConversations(
+            showsAllProfiles ? sidebarSnapshot.allBotConversations : sidebarSnapshot.conversations)
+        // Built once per pass; rows previously rebuilt them per row (O(n²)).
+        let pinned = pinnedSessionPresentation
+        let statuses = sidebarSessionStatuses(pinned: pinned)
 
         // Native sections keep headers visible without geometry tracking or eager row containers.
         return LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
             if isSearchingSessions {
-                sessionSearchResults(statuses: statuses, style: style)
+                sessionSearchResults(pinned: pinned, statuses: statuses, style: style)
             } else {
                 ForEach(navigationState.sectionOrder, id: \.self) { section in
                     switch section {
                     case .pinned:
-                        let pinned = pinnedSessionPresentation
                         if pinned.status != .empty || !pinned.sessions.isEmpty {
                             pinnedOutline(pinned, statuses: statuses, style: style)
                         }
@@ -719,10 +800,14 @@ struct SessionNavQueue: View, Equatable {
     }
 
     @ViewBuilder
-    private func sessionSearchResults(statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
+    private func sessionSearchResults(
+        pinned: PinnedSessionPresentation, statuses: [String: SidebarSessionStatus], style: DockThemePalette
+    ) -> some View {
         let matches = SessionSidebarSearch.sessions(
             matching: sessionSearchQuery,
-            in: botScopedConversations(sidebarSnapshot.conversations + pinnedSessionPresentation.sessions),
+            in: botScopedConversations(
+                (showsAllProfiles ? sidebarSnapshot.allBotConversations : sidebarSnapshot.conversations)
+                    + pinned.sessions),
             projects: sidebarSnapshot.projectNameBySessionID)
         HStack(spacing: 6) {
             Text("Loaded sessions · \(matches.count)")
@@ -741,11 +826,11 @@ struct SessionNavQueue: View, Equatable {
         if matches.isEmpty {
             queueEmpty("No matching loaded sessions", style: style)
         }
-        if case .stale(let message) = pinnedSessionPresentation.status {
+        if case .stale(let message) = pinned.status {
             queueEmpty(message, style: style)
-        } else if case .unavailable(let message) = pinnedSessionPresentation.status {
+        } else if case .unavailable(let message) = pinned.status {
             queueEmpty(message, style: style)
-        } else if case .failed(let message) = pinnedSessionPresentation.status {
+        } else if case .failed(let message) = pinned.status {
             queueEmpty(message, style: style)
         }
         ForEach(matches, id: \.[sidebarSection: "search"]) { session in
@@ -839,7 +924,7 @@ struct SessionNavQueue: View, Equatable {
     private func botScopedConversations(_ base: [HermesSession]) -> [HermesSession] {
         let mainChats = BotMentions.mainChatSessionIDs
         let base = base.filter { !mainChats.contains($0.id) }
-        guard base.contains(where: { $0.source == "hermes-bot" }) else { return base }
+        guard !showsAllProfiles, base.contains(where: { $0.source == "hermes-bot" }) else { return base }
         let selectedID = selectedBot?.id
         return base.filter { session in
             guard session.source == "hermes-bot" else { return true }
@@ -877,7 +962,8 @@ struct SessionNavQueue: View, Equatable {
     private func plainConversationSessionRow(
         _ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        SessionNavSidebarSessionRow(
+        let owner = ownerBot(session)
+        return SessionNavSidebarSessionRow(
             session: session,
             selectedSessionID: isSessionSelected(session) ? session.id : nil,
             sessionStatus: statuses[session.id] ?? .none,
@@ -914,6 +1000,8 @@ struct SessionNavQueue: View, Equatable {
             isInProject: sidebarSnapshot.projectNameBySessionID[session.id] != nil,
             isMovingSession: model.movingSessionToProjectID != nil,
             onAddToProject: moveToProject,
+            ownerBot: owner,
+            ownerAvatar: owner.flatMap { botMode.avatarImages[$0.id] },
             isShownInPane: sessionPanes.shownSessionIDs.contains(session.id)
         )
         .equatable()
@@ -974,7 +1062,8 @@ struct SessionNavQueue: View, Equatable {
     private func pinnedSessionRow(
         _ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        SessionNavSidebarSessionRow(
+        let owner = ownerBot(session)
+        return SessionNavSidebarSessionRow(
             session: session,
             selectedSessionID: isSessionSelected(session) ? session.id : nil,
             sessionStatus: statuses[session.id] ?? .none,
@@ -1002,6 +1091,8 @@ struct SessionNavQueue: View, Equatable {
             projectTargets: sidebarSnapshot.projectTargets(forSessionID: session.id),
             isInProject: sidebarSnapshot.projectNameBySessionID[session.id] != nil,
             onAddToProject: moveToProject,
+            ownerBot: owner,
+            ownerAvatar: owner.flatMap { botMode.avatarImages[$0.id] },
             isShownInPane: sessionPanes.shownSessionIDs.contains(session.id)
         )
         .equatable()

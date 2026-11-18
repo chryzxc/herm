@@ -75,26 +75,109 @@ enum SessionDashboardProjection {
         sessions: [HermesSession], statuses: [String: SidebarSessionStatus],
         projects: [String: String], query: String = "", project: String? = nil
     ) -> [SessionDashboardRow] {
-        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         var seen = Set<ProfileScopedID>()
-        return sessions.compactMap { session in
-            guard seen.insert(session.scopedID).inserted, !session.isHidden,
-                project == nil || projects[session.id] == project
-            else { return nil }
-            let name = projects[session.id]
-            guard
-                query.isEmpty
-                    || [session.displayTitle, session.displayPreview ?? "", name ?? ""]
-                        .contains(where: { $0.localizedCaseInsensitiveContains(query) })
-            else { return nil }
+        let rows = sessions.compactMap { session -> SessionDashboardRow? in
+            guard seen.insert(session.scopedID).inserted, !session.isHidden else { return nil }
             return SessionDashboardRow(
-                session: session, status: statuses[session.id] ?? .none, project: name)
+                session: session, status: statuses[session.id] ?? .none, project: projects[session.id])
         }.sorted {
             let left = $0.sortDate
             let right = $1.sortDate
             return left == right ? $0.id < $1.id : left > right
         }
+        return filter(rows, query: query, project: project)
     }
+
+    /// Search and project filters only narrow already-projected rows, so typing never re-resolves statuses.
+    static func filter(_ rows: [SessionDashboardRow], query: String, project: String?) -> [SessionDashboardRow] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty || project != nil else { return rows }
+        return rows.filter { row in
+            guard project == nil || row.project == project else { return false }
+            return query.isEmpty
+                || [row.session.displayTitle, row.session.displayPreview ?? "", row.project ?? ""]
+                    .contains(where: { $0.localizedCaseInsensitiveContains(query) })
+        }
+    }
+}
+
+/// The board's projection of one sidebar snapshot. It is rebuilt only when the
+/// snapshot or seen state changes, never per render: resolving every session's
+/// status on each body pass stalled scrolling with a thousand-plus chats.
+@MainActor
+struct SessionDashboardBoard {
+    /// Every visible session, sorted, before search and project filters.
+    private(set) var rows: [SessionDashboardRow] = []
+    private(set) var attention: [String: AttentionItem] = [:]
+    private(set) var activity: [String: LatestActivityItem] = [:]
+    private(set) var runtimeIDs: [String: [String]] = [:]
+    private(set) var live: Set<String> = []
+    private(set) var projectNames: [String] = []
+    private(set) var profileScopeID: String?
+
+    init() {}
+
+    init(snapshot: SessionNavSidebarSnapshot, seen: SidebarSessionSeenStore) {
+        let inputs = snapshot.inputs
+        let aliases = SessionDashboardProjection.aliases(in: snapshot)
+        func canonical(_ id: String) -> String { aliases[id] ?? id }
+        let sessions = SessionDashboardProjection.sessions(in: snapshot)
+        let activeByID = Dictionary(
+            inputs.activeSessions.map { (canonical($0.id), $0) }, uniquingKeysWith: { first, _ in first })
+        let activeID = inputs.activeSessionID.map(canonical)
+        var statuses: [String: SidebarSessionStatus] = [:]
+        statuses.reserveCapacity(sessions.count)
+        for session in sessions where statuses[session.id] == nil {
+            let summary = activeByID[session.id]
+            let owner = session.profileID ?? inputs.profileScopeID
+            statuses[session.id] = SidebarSessionStatusResolver.resolve(
+                session: session, summary: summary, activeSessionID: activeID,
+                activeStatus: inputs.activeStatus,
+                attention: snapshot.attentionDots[session.id] ?? summary.flatMap { snapshot.attentionDots[$0.id] },
+                seenAt: seen.seenAt(profileID: owner, sessionID: session.id),
+                isProfileBaselined: seen.isBaselined(profileID: owner))
+        }
+        var projects = snapshot.projectNameBySessionID
+        for (alias, id) in aliases where projects[id] == nil { projects[id] = projects[alias] }
+        rows = SessionDashboardProjection.rows(sessions: sessions, statuses: statuses, projects: projects)
+
+        for request in inputs.attention where request.state == .open {
+            guard let id = request.reference.sessionID.map(canonical), attention[id] == nil else { continue }
+            attention[id] = request
+        }
+        for item in inputs.latestActivities where activity[canonical(item.sessionID)] == nil {
+            activity[canonical(item.sessionID)] = item
+        }
+        for (alias, id) in aliases { runtimeIDs[id, default: []].append(alias) }
+        for session in inputs.activeSessions where SessionLifecyclePresentation.status(for: session) == .active {
+            live.insert(canonical(session.id))
+        }
+        projectNames = Set(snapshot.projectNameBySessionID.values).sorted()
+        profileScopeID = inputs.profileScopeID
+    }
+}
+
+/// Filtered rows grouped by section, with a cheap signature of their order
+/// so the grid animates only when cards actually move.
+struct SessionDashboardVisibleRows {
+    private(set) var bySection: [SessionDashboardSection: [SessionDashboardRow]] = [:]
+    private(set) var layoutSignature = 0
+    var isEmpty: Bool { bySection.isEmpty }
+
+    init() {}
+
+    init(_ rows: [SessionDashboardRow]) {
+        bySection = Dictionary(grouping: rows, by: \.section)
+        var hasher = Hasher()
+        for row in rows {
+            hasher.combine(row.section)
+            hasher.combine(row.session.scopedID)
+        }
+        layoutSignature = hasher.finalize()
+    }
+
+    func members(_ section: SessionDashboardSection) -> [SessionDashboardRow] { bySection[section] ?? [] }
+    var counts: [SessionDashboardSection: Int] { bySection.mapValues(\.count) }
 }
 
 /// A completed load must still belong to the selected row before enabling replies.

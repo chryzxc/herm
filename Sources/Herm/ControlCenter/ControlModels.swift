@@ -1860,7 +1860,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .usage: .pulse
         case .calendar: .calendarBlank
         case .integrations: .puzzlePiece
-        case .bots: .ghost
+        case .bots: .robot
         }
     }
 
