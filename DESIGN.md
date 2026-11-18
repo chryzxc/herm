@@ -608,7 +608,7 @@ visible at rest in their quiet color.
 
 **Navigation identity.** Chats keeps its speech bubbles; Integrations uses a puzzle piece
 for configuration, and Artifacts uses stacked files for saved outputs across
-the rail, compact navigation, and inspector. Preserve the Bots ghost glyph.
+the rail, compact navigation, and inspector. Bots uses the robot glyph.
 The Chats rail button overlays a compact badge without changing its footprint:
 the shared running spinner plus the unread completed-session count (capped at
 99+), independently visible. Deduplicate pinned/index rows, omit hidden sessions,
