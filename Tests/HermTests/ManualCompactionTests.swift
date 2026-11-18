@@ -34,6 +34,8 @@ struct ManualCompactionTests {
         #expect(HermesGateway.requestTimeout(for: "session.compress") == 1500)
         #expect(HermesGateway.requestTimeout(for: "session.title") == 15)
         #expect(HermesGateway.requestTimeout(for: "bot.relay.deliver") == 1500)
+        #expect(HermesGateway.requestTimeout(for: "plugins.manage", params: ["action": "install"]) == 300)
+        #expect(HermesGateway.requestTimeout(for: "plugins.manage", params: ["action": "list"]) == 45)
     }
 
     @Test(arguments: ["compress", "compact"])

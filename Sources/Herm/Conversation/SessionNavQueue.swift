@@ -58,6 +58,7 @@ struct SessionNavQueue: View, Equatable {
             let id: String
             let updatedAt: Date?
             let isHidden: Bool
+            let isAutomation: Bool
         }
         // Sets/dictionaries are order-independent without per-body string formatting and sorting.
         let sessions: Set<Row>
@@ -78,7 +79,7 @@ struct SessionNavQueue: View, Equatable {
                 sessions.map {
                     BotUnreadRequest.Row(
                         profileID: $0.profileID ?? model.profileScopeID ?? "", id: $0.id,
-                        updatedAt: $0.lastUpdatedAt, isHidden: $0.isHidden)
+                        updatedAt: $0.lastUpdatedAt, isHidden: $0.isHidden, isAutomation: $0.isAutomationSession)
                 }),
             seen: sidebarSessionSeenStore.seenAtByKey,
             incomplete: incomplete)
@@ -528,58 +529,50 @@ struct SessionNavQueue: View, Equatable {
     }
 
     private func profileSelectorPopover(selectedBot: BotSummary?, style: DockThemePalette) -> some View {
-        let popoverHeight = min(CGFloat(visibleBots.count) * 40 + 12, 360)
-        return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(visibleBots) { option in
-                    Button {
-                        onSelectProfile(option.id)
-                        isProfileSelectorPresented = false
-                    } label: {
-                        HStack(spacing: 9) {
-                            BotAvatarView(
-                                bot: option,
-                                imageData: botMode.avatarImages[option.id],
-                                size: 22
-                            )
-                            Text(option.title.map { "\(option.name) — \($0)" } ?? option.name)
-                                .dockFont(.body, weight: .semibold)
-                                .foregroundStyle(style.primaryText)
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            botActivityBadge(for: [option], style: style)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    // The spinner doubles as "view the running session".
-                                    guard option.isSessionWorking, let worker = option.liveWorkerChat else {
-                                        onSelectProfile(option.id)
-                                        isProfileSelectorPresented = false
-                                        return
-                                    }
-                                    onSelectProfile(option.id)
-                                    onOpenBotChat(option, worker)
-                                    isProfileSelectorPresented = false
-                                }
-                            if option.id == selectedBot?.id {
-                                DockIcon(.check)
-                                    .dockFont(.metadata, weight: .semibold)
-                                    .foregroundStyle(style.accent)
-                            }
-                        }
-                        .dockPadding(.horizontal, 10)
-                        .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.dockHover)
-                    .accessibilityLabel(
-                        botPickerAccessibilityLabel(option, selected: option.id == selectedBot?.id)
+        DockProfilePickerList(bots: visibleBots, order: workspaceStore.profilePickerOrder, style: style) { option in
+            Button {
+                onSelectProfile(option.id)
+                isProfileSelectorPresented = false
+            } label: {
+                HStack(spacing: 9) {
+                    BotAvatarView(
+                        bot: option,
+                        imageData: botMode.avatarImages[option.id],
+                        size: 22
                     )
+                    Text(option.title.map { "\(option.name) — \($0)" } ?? option.name)
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(style.primaryText)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    botActivityBadge(for: [option], style: style)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            // The spinner doubles as "view the running session".
+                            guard option.isSessionWorking, let worker = option.liveWorkerChat else {
+                                onSelectProfile(option.id)
+                                isProfileSelectorPresented = false
+                                return
+                            }
+                            onSelectProfile(option.id)
+                            onOpenBotChat(option, worker)
+                            isProfileSelectorPresented = false
+                        }
+                    if option.id == selectedBot?.id {
+                        DockIcon(.check)
+                            .dockFont(.metadata, weight: .semibold)
+                            .foregroundStyle(style.accent)
+                    }
                 }
+                .dockPadding(.horizontal, 10)
+                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .dockPadding(6)
+            .buttonStyle(.dockHover)
+            .accessibilityLabel(
+                botPickerAccessibilityLabel(option, selected: option.id == selectedBot?.id)
+            )
         }
-        .frame(width: 300, height: popoverHeight)
-        .background(style.background)
     }
 
     private func botPickerAccessibilityLabel(_ bot: BotSummary, selected: Bool) -> String {
@@ -613,7 +606,8 @@ struct SessionNavQueue: View, Equatable {
                             pinnedOutline(pinned, statuses: statuses, style: style)
                         }
                     case .recents:
-                        conversationOutline(allConversations, statuses: statuses, style: style)
+                        conversationOutline(
+                            navigationState.recentsType.matching(allConversations), statuses: statuses, style: style)
                     case .projects:
                         projectsOutline(projects, statuses: statuses, style: style)
                     }
@@ -831,12 +825,14 @@ struct SessionNavQueue: View, Equatable {
     private func markAllSessionsRead(_ conversations: [HermesSession]) {
         let all = SessionDashboardProjection.sessions(in: sidebarSnapshot)
         // Stamp "now": reply timestamps can run ahead of a stale index `updatedAt`.
-        model.markSessionsRead(all + conversations, seenStore: sidebarSessionSeenStore, at: .now)
-        botUnreadCounts = [:]
+        model.markSessionsRead(
+            navigationState.recentsType.matching(all + conversations), seenStore: sidebarSessionSeenStore, at: .now)
+        if navigationState.recentsType == .conversations { botUnreadCounts = [:] }
     }
 
     private func hasUnread(_ conversations: [HermesSession], _ statuses: [String: SidebarSessionStatus]) -> Bool {
-        conversations.contains { statuses[$0.id] == .unreadComplete } || botUnreadCounts.values.contains { $0 > 0 }
+        conversations.contains { statuses[$0.id] == .unreadComplete }
+            || (navigationState.recentsType == .conversations && botUnreadCounts.values.contains { $0 > 0 })
     }
 
     private func botScopedConversations(_ base: [HermesSession]) -> [HermesSession] {
@@ -1067,9 +1063,18 @@ struct SessionNavQueue: View, Equatable {
         _ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
         if navigationState.areConversationsExpanded {
+            DockMenuPicker(title: navigationState.recentsType.title, selection: $navigationState.recentsType) {
+                DockMenuOption("Conversations", value: SessionRecentsType.conversations)
+                DockMenuOption("Automation", value: SessionRecentsType.automation)
+            }
+            .accessibilityIdentifier("sidebar-session-type")
+            .dockPadding(.leading, 20)
             if conversations.isEmpty {
                 queueEmpty(
-                    sidebarSnapshot.inputs.isLoadingSessions ? "Loading conversations…" : "No saved conversations",
+                    sidebarSnapshot.inputs.isLoadingSessions
+                        ? "Loading conversations…"
+                        : (navigationState.recentsType == .automation
+                            ? "No automation sessions" : "No saved conversations"),
                     style: style
                 )
                 .dockPadding(.leading, 20)

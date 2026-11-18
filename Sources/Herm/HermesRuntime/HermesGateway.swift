@@ -344,13 +344,15 @@ final class HermesGateway: NSObject {
         }
     }
 
-    /// Relay delivery and compaction can wait for model work, unlike control RPCs.
-    static func requestTimeout(for method: String) -> TimeInterval {
+    /// Relay delivery and compaction can wait for model work. Plugin management can resolve,
+    /// install or update a catalog and needs a longer budget than ordinary control RPCs.
+    static func requestTimeout(for method: String, params: [String: Any] = [:]) -> TimeInterval {
         switch method {
-        case HermesFeatureIDs.ID.botRelayDeliver.rawValue, HermesFeatureIDs.ID.sessionCompress.rawValue:
-            1500
-        default:
-            15
+        case HermesFeatureIDs.ID.botRelayDeliver.rawValue, HermesFeatureIDs.ID.sessionCompress.rawValue: return 1500
+        case HermesFeatureIDs.ID.pluginsManage.rawValue:
+            let action = params["action"] as? String ?? ""
+            return ["install", "update", "update_all", "install_desktop"].contains(action) ? 300 : 45
+        default: return 15
         }
     }
 
@@ -365,7 +367,7 @@ final class HermesGateway: NSObject {
         return try await withCheckedThrowingContinuation { continuation in
             pending[id] = continuation
             timeoutTasks[id] = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(Self.requestTimeout(for: method)))
+                try? await Task.sleep(for: .seconds(Self.requestTimeout(for: method, params: params)))
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     guard let self, let waiting = self.pending.removeValue(forKey: id) else { return }

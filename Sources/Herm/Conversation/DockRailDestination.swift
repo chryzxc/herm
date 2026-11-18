@@ -37,8 +37,39 @@ enum DockRailDestination: String, CaseIterable, Identifiable {
         default: tab?.icon ?? .dotsThree
         }
     }
+}
 
-    /// Pinned destinations in the order the user arranged them.
+/// One rail slot: a built-in destination or a Desktop plugin page. Pins persist as one comma-separated
+/// string; plugin pins are `plugin:<id>`, so existing built-in pins read unchanged.
+enum DockRailItem: Hashable, Identifiable {
+    case builtIn(DockRailDestination)
+    case plugin(String)
+
+    static let pluginPrefix = "plugin:"
+
+    init?(rawValue: String) {
+        if rawValue.hasPrefix(Self.pluginPrefix) {
+            let id = String(rawValue.dropFirst(Self.pluginPrefix.count))
+            guard !id.isEmpty else { return nil }
+            self = .plugin(id)
+        } else if let destination = DockRailDestination(rawValue: rawValue) {
+            self = .builtIn(destination)
+        } else {
+            return nil
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .builtIn(let destination): destination.rawValue
+        case .plugin(let id): Self.pluginPrefix + id
+        }
+    }
+
+    var id: String { rawValue }
+
+    /// Pinned items in the order the user arranged them. A plugin pin survives while the plugin is
+    /// missing or off; the rail hides it, and it returns when the plugin does.
     static func ordered(_ raw: String) -> [Self] {
         var seen = Set<Self>()
         return raw.split(separator: ",").compactMap { Self(rawValue: String($0)) }.filter { seen.insert($0).inserted }
@@ -61,5 +92,11 @@ enum DockRailDestination: String, CaseIterable, Identifiable {
         items.remove(at: from)
         items.insert(item, at: min(max(index, 0), items.count))
         return items
+    }
+
+    /// Saves a reordered visible rail without dropping pins that are hidden right now.
+    static func raw(visible: [Self], keepingHiddenFrom raw: String) -> String {
+        let shown = Set(visible)
+        return Self.raw(visible + ordered(raw).filter { !shown.contains($0) })
     }
 }

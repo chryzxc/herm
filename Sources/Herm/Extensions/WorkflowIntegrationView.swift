@@ -14,10 +14,21 @@ final class WorkflowIntegrationModel: ObservableObject {
     @Published private(set) var checkingSkillUpdates = false
     /// Skill or plugin id Hermes is updating right now; drives the inline progress.
     @Published private(set) var updatingItem: String?
+    /// Catalog name Hermes is installing right now; drives the inline progress.
+    @Published private(set) var installingItem: String?
+    /// Installed plugin key to reveal once an install lands; the view clears it after selecting it.
+    @Published var justInstalled: String?
     /// Plugin id whose last update was refused pending the user's approval of a wider capability set.
     @Published var pluginUpdateConsent: String?
     @Published var connectors: [WorkflowConnector] = []
-    @Published var catalog: [WorkflowPluginCatalogEntry] = [] { didSet { rebuildCatalogIndex() } }
+    @Published var catalog: [WorkflowPluginCatalogEntry] = [] {
+        didSet {
+            catalogByID = Dictionary(catalog.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            rebuildCatalogIndex()
+        }
+    }
+    /// `catalog` by listing id, so each card's lookup does not rescan the catalog.
+    private(set) var catalogByID: [String: WorkflowPluginCatalogEntry] = [:]
     private var catalogLoaded = false
     private var starsLoaded = false
     private var starsLoading = false
@@ -51,7 +62,7 @@ final class WorkflowIntegrationModel: ObservableObject {
     @Published var unsupported = Set<String>()
     init(
         client: HermesRPCClientProtocol, profileID: String?,
-        starReader: @escaping @MainActor ([String]) async -> [String: Int] = HermesWorkflowRPC.githubStars
+        starReader: @escaping @MainActor ([String]) async -> [String: Int] = WorkflowIntegrationModel.cachedGitHubStars
     ) {
         self.client = client
         self.starReader = starReader
@@ -353,10 +364,13 @@ final class WorkflowIntegrationModel: ObservableObject {
                     status = HermesDiagnosticsService.safeSummary(reason)
                     return
                 case .unchanged:
+                    // The update badge may have been stale; read the list again so it clears.
+                    await refresh(section: .plugins)
                     status = "\(item.detail) is already up to date."
                     return
                 case .updated(let restart):
-                    await refreshPlugins()
+                    // A fresh generation, so no read that started before the update can overwrite it.
+                    await refresh(section: .plugins)
                     guard status.isEmpty else { return }
                     if catalogLoaded { await loadCatalog(force: true) }
                     status =
@@ -371,12 +385,20 @@ final class WorkflowIntegrationModel: ObservableObject {
                 status =
                     "\(item.detail) \(action == "Enable toolset" ? "enabled" : "disabled"). Changes apply to new sessions."
                 return
-            case "Remove plugin", "Install plugin":
-                if action == "Remove plugin" {
-                    try await service.removePlugin(item.detail)
-                } else {
-                    try await service.installPlugin(catalogName: item.id)
-                }
+            case "Install plugin":
+                installingItem = item.id
+                defer { installingItem = nil }
+                try await service.installPlugin(catalogName: item.id)
+                status = ""
+                loadedSections = []
+                await refreshPlugins()
+                guard status.isEmpty else { return }
+                justInstalled = plugins.first { $0.catalogName == item.id || $0.name == item.id }?.id
+                status = "\(item.detail) installed. New sessions can use it."
+                if catalogLoaded { await loadCatalog(force: true) }
+                return
+            case "Remove plugin":
+                try await service.removePlugin(item.detail)
                 status = ""
                 loadedSections = []
                 await refreshPlugins()
@@ -483,6 +505,18 @@ final class WorkflowIntegrationModel: ObservableObject {
     }
     private func rebuildCatalogIndex() {
         catalogIndex = WorkflowPluginCatalogIndex(catalog: catalog, installed: Set(plugins.map(\.name)), stars: stars)
+    }
+    /// GitHub stars outlive one Capabilities visit: one fetch per hour for the same repositories.
+    /// A partial answer (rate limit, a repository GitHub no longer has) is kept for two minutes only.
+    private static var starCache: (slugs: Set<String>, stars: [String: Int], expires: Date)?
+    static func cachedGitHubStars(_ slugs: [String]) async -> [String: Int] {
+        if let cache = starCache, Date() < cache.expires, cache.slugs.isSuperset(of: slugs) { return cache.stars }
+        let stars = await HermesWorkflowRPC.githubStars(slugs)
+        if !stars.isEmpty {
+            let complete = Set(slugs).isSubset(of: stars.keys)
+            starCache = (Set(slugs), stars, Date().addingTimeInterval(complete ? 3600 : 120))
+        }
+        return stars
     }
     func loadCatalog(force: Bool = false) async {
         guard !catalogLoading else { return }
@@ -606,14 +640,22 @@ struct WorkflowIntegrationView: View {
         /// Hermes reports a newer version upstream.
         var update = false
         var logoURL: URL?
+        /// Installed plugins: Hermes' category, when it reports one.
+        var category: String?
+        /// Plugins tab: whether the plugin's Hermes Desktop page opens in Herm.
+        var tag: String?
     }
     let destination: IntegrationDestination
     let workspace: IntegrationsWorkspaceState?
     /// Non-nil renders the full-page Capabilities surface with tabs instead of the modal.
     var pageSection: Binding<Section>?
     @StateObject private var model: WorkflowIntegrationModel
+    @ObservedObject private var desktopPlugins = DesktopPluginStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
+    /// Cards built so far. Hermes returns whole inventories, so paging bounds the views built at once.
+    @State private var shownCount = Self.pageSize
+    private static let pageSize = 30
     @State private var request: (String, WorkflowIntegrationItem)?
     @State private var selectedServer: WorkflowIntegrationItem?
     @State private var customName = ""
@@ -710,6 +752,7 @@ struct WorkflowIntegrationView: View {
             model.activeSection = pageSection?.wrappedValue
             if workspace == nil { await model.load(pageSection?.wrappedValue) }
         }
+        .task(id: pageSection?.wrappedValue == .plugins) { await desktopPlugins.refresh() }
         .onChange(of: hasPendingEdits) { _, value in
             workspace?.isDirty = value
             if value { browsing.showsDetail = true }
@@ -935,17 +978,28 @@ struct WorkflowIntegrationView: View {
                 }
             }
         } library: {
+            let totals = Dictionary(grouping: list, by: \.group).mapValues(\.count)
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(grouped(list), id: \.0) { name, rows in
+                    ForEach(grouped(Array(list.prefix(shownCount))), id: \.0) { name, rows in
                         if !name.isEmpty {
-                            DockSectionLabel(title: name.uppercased(), count: rows.count).dockPadding(.top, 6)
+                            DockSectionLabel(title: name.uppercased(), count: totals[name] ?? rows.count)
+                                .dockPadding(.top, 6)
                         }
                         IntegrationInventoryList {
                             ForEach(rows) { entry in
                                 card(entry, selected: browsing.showsDetail && entry.id == current?.id)
                             }
                         }
+                    }
+                    if list.count > shownCount {
+                        HStack(spacing: 12) {
+                            Button("Show \(min(Self.pageSize, list.count - shownCount)) more") {
+                                shownCount += Self.pageSize
+                            }.buttonStyle(.dockSecondary)
+                            Text("Showing \(shownCount) of \(list.count)").dockFont(.metadata)
+                                .foregroundStyle(Color.dockMetadataText).monospacedDigit()
+                        }.dockPadding(.top, 8)
                     }
                     if list.isEmpty {
                         if browsing.statusFilter != .all && !inventory.isEmpty {
@@ -955,6 +1009,9 @@ struct WorkflowIntegrationView: View {
                         }
                     }
                 }.dockPadding(.bottom, 14)
+            }
+            .onChange(of: "\(section)|\(discover)|\(filter)|\(category)|\(browsing.statusFilter)|\(byStars)") {
+                shownCount = Self.pageSize
             }
         } inspector: {
             VStack(spacing: 0) {
@@ -1000,12 +1057,21 @@ struct WorkflowIntegrationView: View {
             browsing.showsDetail = false
         }
         .onChange(of: list.map(\.id)) { _, ids in
-            if let selection, !ids.contains(selection) {
+            // An install moves its row from Discover to Installed; `justInstalled` reselects it there.
+            if let selection, !ids.contains(selection), model.installingItem == nil {
                 self.selection = nil
                 browsing.showsDetail = false
             }
         }
-        .task(id: discover && section == .plugins) { if discover && section == .plugins { await model.loadCatalog() } }
+        // Installed cards also read the catalog, for their category, tier and stars.
+        .task(id: section == .plugins) { if section == .plugins { await model.loadCatalog() } }
+        .onChange(of: model.justInstalled) { _, key in
+            guard let key else { return }
+            model.justInstalled = nil
+            discover = false
+            selection = key
+            browsing.showsDetail = true
+        }
         .task(id: section == .skills && model.loadedSections.contains(.skills) ? model.service.profileID ?? "" : nil) {
             if section == .skills, model.loadedSections.contains(.skills), model.skillUpdates == nil {
                 await model.checkSkillUpdates()
@@ -1139,7 +1205,8 @@ struct WorkflowIntegrationView: View {
                 return model.catalogIndex.matches(filter, category: category, byStars: byStars).map {
                     Entry(
                         id: $0.id, title: $0.title, subtitle: $0.detail, group: category.isEmpty ? $0.category : "",
-                        stars: $0.githubSlug.flatMap { model.stars[$0] }, official: $0.official)
+                        stars: $0.githubSlug.flatMap { model.stars[$0] }, official: $0.official,
+                        category: WorkflowPlugin.categoryLabel($0.category))
                 }
             default:
                 rows = model.servers.filter { !$0.installed }.map {
@@ -1163,6 +1230,10 @@ struct WorkflowIntegrationView: View {
         return out
     }
     private var catalogCategories: [String] { model.catalogIndex.categories }
+    /// The catalog listing an install came from; only known once the catalog has been fetched.
+    private func catalogEntry(for plugin: WorkflowPlugin) -> WorkflowPluginCatalogEntry? {
+        model.catalogByID[plugin.catalogName.isEmpty ? plugin.name : plugin.catalogName]
+    }
     /// ForEach needs unique ids; Hermes can list a name twice (e.g. a skill in two categories).
     private func unique(_ rows: [Entry]) -> [Entry] {
         var seen = Set<String>()
@@ -1187,11 +1258,25 @@ struct WorkflowIntegrationView: View {
                 Entry(id: $0.id, title: $0.name, subtitle: $0.detail, badge: connectorBadge($0), logoURL: $0.logoURL)
             }
         case .plugins:
-            return model.plugins.map {
-                Entry(
-                    id: $0.id, title: $0.name, subtitle: $0.detail, on: $0.enabled, builtin: $0.source == "bundled",
-                    update: $0.hasCatalogUpdate)
+            let agent = model.plugins.map { plugin in
+                let listing = catalogEntry(for: plugin)
+                return Entry(
+                    id: plugin.id, title: plugin.name, subtitle: plugin.detail, on: plugin.enabled,
+                    stars: listing?.githubSlug.flatMap { model.stars[$0] }, official: listing?.official == true,
+                    builtin: plugin.source == "bundled", update: plugin.hasCatalogUpdate,
+                    category: plugin.keyCategory ?? listing.map { WorkflowPlugin.categoryLabel($0.category) },
+                    tag: desktopPlugin(for: plugin).map(desktopTag))
             }
+            // Desktop halves with no agent plugin row (installed straight into desktop-plugins/). Until the
+            // agent inventory loads, those rows would pass for the whole installed list, so wait for it.
+            guard model.loadedSections.contains(.plugins) else { return agent }
+            let matched = Set(model.plugins.compactMap { desktopPlugin(for: $0)?.id })
+            let desktopOnly = desktopPlugins.plugins.filter { !matched.contains($0.id) }.map {
+                Entry(
+                    id: Self.desktopEntryPrefix + $0.id, title: $0.name, subtitle: $0.description ?? "",
+                    tag: desktopTag($0))
+            }
+            return agent + desktopOnly
         case .mcp:
             return model.servers.filter(\.installed).map {
                 Entry(
@@ -1219,9 +1304,11 @@ struct WorkflowIntegrationView: View {
             title: entry.title, detail: entry.subtitle == entry.title ? "" : entry.subtitle,
             status: model.updatingItem == entry.id
                 ? (.working, "Updating…")
-                : entry.badge ?? entry.on.map { $0 ? (.complete, "Enabled") : (.inactive, "Disabled") },
+                : model.installingItem == entry.id && discover
+                    ? (.working, "Installing…")
+                    : entry.badge ?? entry.on.map { $0 ? (.complete, "Enabled") : (.inactive, "Disabled") },
             builtin: entry.builtin, official: entry.official, stars: entry.stars, update: entry.update,
-            selected: selected,
+            category: entry.category, tag: entry.tag, selected: selected,
             action: {
                 selection = entry.id
                 browsing.showsDetail = true
@@ -1243,26 +1330,38 @@ struct WorkflowIntegrationView: View {
             DockChipFlow(spacing: 6) {
                 ForEach(pills.indices, id: \.self) { DockStatusPill(tone: pills[$0].0, text: pills[$0].1) }
                 if entry.builtin { IntegrationBuiltinPill() }
+                if let category = entry.category {
+                    Text(category).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).dockPill()
+                }
+                if let stars = entry.stars {
+                    IntegrationStars(count: stars).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                }
             }
         }
     }
-    /// Hermes reports no byte or step progress for updates, so this stays indeterminate rather than invent a percentage.
-    private func updateProgress(_ name: String) -> some View {
+    /// Hermes reports no byte or step progress for installs or updates, so this stays indeterminate
+    /// rather than invent a percentage.
+    private func updateProgress(_ name: String, installing: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                DockIcon(.arrowCircleUp, size: 14, color: .dockAccent)
-                Text("Updating \(name)…").dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                DockIcon(installing ? .downloadSimple : .arrowCircleUp, size: 14, color: .dockAccent)
+                Text("\(installing ? "Installing" : "Updating") \(name)…").dockFont(.body, weight: .semibold)
+                    .foregroundStyle(Color.dockPrimaryText)
                 Spacer(minLength: 0)
             }
             ProgressView().progressViewStyle(.linear).tint(Color.dockAccent)
-            Text("Hermes is fetching, security-scanning and installing the new version. This can take a minute.")
-                .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                installing
+                    ? "Hermes is fetching, security-scanning and installing it. This can take a minute."
+                    : "Hermes is fetching, security-scanning and installing the new version. This can take a minute."
+            )
+            .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .dockCard(padding: 12)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Updating \(name)")
+        .accessibilityLabel("\(installing ? "Installing" : "Updating") \(name)")
     }
     private func skillSource(_ name: String) -> String {
         guard let updates = model.skillUpdates else { return "" }
@@ -1332,35 +1431,16 @@ struct WorkflowIntegrationView: View {
             switch section {
             case .skills: action("Install skill", WorkflowIntegrationItem(id: entry.id, detail: entry.subtitle))
             case .plugins:
-                DockChipFlow(spacing: 8) {
-                    action("Install plugin", WorkflowIntegrationItem(id: entry.id, detail: entry.title))
-                    if let plugin = model.catalog.first(where: { $0.id == entry.id }) {
-                        if let repo = plugin.repo {
-                            Button {
-                                ExternalOpen.open(repo)
-                            } label: {
-                                Label {
-                                    Text(plugin.githubSlug == nil ? "Source" : "GitHub")
-                                } icon: {
-                                    DockIcon(.githubLogo, size: 12)
-                                }
-                            }.buttonStyle(.dockLink)
-                        }
-                        if let docs = plugin.docs, docs != plugin.repo {
-                            Button {
-                                ExternalOpen.open(docs)
-                            } label: {
-                                Label {
-                                    Text("Docs")
-                                } icon: {
-                                    DockIcon(.bookOpen, size: 12)
-                                }
-                            }.buttonStyle(.dockLink)
-                        }
+                if model.installingItem == entry.id {
+                    updateProgress(entry.title, installing: true)
+                } else {
+                    DockChipFlow(spacing: 8) {
+                        action("Install plugin", WorkflowIntegrationItem(id: entry.id, detail: entry.title))
+                        if let plugin = model.catalogByID[entry.id] { catalogLinks(plugin) }
                     }
                 }
-                if let plugin = model.catalog.first(where: { $0.id == entry.id }) {
-                    catalogDetails(plugin, stars: entry.stars)
+                if let plugin = model.catalogByID[entry.id] {
+                    catalogDetails(plugin)
                 }
             default:
                 if let server = model.servers.first(where: { $0.id == entry.id }) { action("Add server", server) }
@@ -1475,6 +1555,9 @@ struct WorkflowIntegrationView: View {
                         pills: [enabledPill(plugin.enabled)]
                             + (plugin.hasCatalogUpdate ? [(.review, "Update available")] : []),
                         plugin.detail)
+                    if let listing = catalogEntry(for: plugin) {
+                        DockChipFlow(spacing: 12) { catalogLinks(listing) }
+                    }
                     if model.updatingItem == plugin.id {
                         updateProgress(plugin.name)
                     } else if plugin.hasCatalogUpdate {
@@ -1514,13 +1597,20 @@ struct WorkflowIntegrationView: View {
                         ("Source", plugin.source), ("Package", plugin.id),
                         ("Pinned revision", String(plugin.pinnedRevision.prefix(12))),
                     ])
-                    if plugin.desktopHalf {
+                    if let page = desktopPlugin(for: plugin) {
+                        desktopPagePanel(page)
+                    } else if plugin.desktopHalf {
                         DockCallout(
                             tone: .info, icon: .info, title: "Desktop panel unavailable",
                             message: "Its Hermes Desktop panel can't run in Herm; the plugin's agent tools still load."
                         ) { EmptyView() }
                     }
                     if !plugin.settings.isEmpty { panel("SETTINGS") { settingsForm(plugin) } }
+                } else if entry.id.hasPrefix(Self.desktopEntryPrefix),
+                    let page = desktopPlugins.plugin(String(entry.id.dropFirst(Self.desktopEntryPrefix.count)))
+                {
+                    inspectorHeader(entry, pills: [], page.description ?? "A Hermes Desktop plugin.")
+                    desktopPagePanel(page)
                 }
             case .mcp:
                 if let server = model.servers.first(where: { $0.id == entry.id }) {
@@ -1568,13 +1658,38 @@ struct WorkflowIntegrationView: View {
             }
         }
     }
-    private func catalogDetails(_ plugin: WorkflowPluginCatalogEntry, stars: Int?) -> some View {
-        let rows = [
-            ("Category", plugin.category.capitalized), ("Tier", plugin.official ? "Official" : "Community"),
-            ("Maintainer", plugin.maintainer), ("Version", plugin.version), ("Package", plugin.id),
-            ("GitHub stars", stars.map { $0.formatted() } ?? ""),
-        ].filter { !$0.1.isEmpty }
-        return quickDetails(rows)
+    /// Source and docs links a catalog listing carries, for both Discover and Installed details.
+    @ViewBuilder
+    private func catalogLinks(_ plugin: WorkflowPluginCatalogEntry) -> some View {
+        if let repo = plugin.repo {
+            Button {
+                ExternalOpen.open(repo)
+            } label: {
+                Label {
+                    Text(plugin.githubSlug == nil ? "Source" : "GitHub")
+                } icon: {
+                    DockIcon(.githubLogo, size: 12)
+                }
+            }.buttonStyle(.dockLink)
+        }
+        if let docs = plugin.docs, docs != plugin.repo {
+            Button {
+                ExternalOpen.open(docs)
+            } label: {
+                Label {
+                    Text("Docs")
+                } icon: {
+                    DockIcon(.bookOpen, size: 12)
+                }
+            }.buttonStyle(.dockLink)
+        }
+    }
+    private func catalogDetails(_ plugin: WorkflowPluginCatalogEntry) -> some View {
+        // Category and stars sit in the header pills.
+        quickDetails([
+            ("Tier", plugin.official ? "Official" : "Community"), ("Maintainer", plugin.maintainer),
+            ("Version", plugin.version), ("Package", plugin.id),
+        ])
     }
     /// SKILL.md opens with YAML frontmatter, which reads as noise once rendered.
     private static func withoutFrontmatter(_ text: String) -> String {
@@ -1669,12 +1784,54 @@ struct WorkflowIntegrationView: View {
             }
         }
     }
+    private static let desktopEntryPrefix = "desktop-plugin:"
+    /// The Desktop half of an agent plugin; Desktop names its folder after the package id or name.
+    private func desktopPlugin(for plugin: WorkflowPlugin) -> HermesDesktopPlugin? {
+        desktopPlugins.plugin(matching: plugin.id) ?? desktopPlugins.plugin(matching: plugin.name)
+    }
+    private func desktopTag(_ plugin: HermesDesktopPlugin) -> String {
+        switch plugin.compatibility {
+        case .runsInHerm: "Page in Herm"
+        case .needs: "Needs a newer Herm"
+        case .desktopOnly: "Desktop-only"
+        case .unknown: "Not checked"
+        case .hostMissing: "Page unavailable"
+        }
+    }
+    /// Why a plugin's Hermes Desktop page can't open in Herm; a page that can is already in More destinations.
+    @ViewBuilder private func desktopPagePanel(_ page: HermesDesktopPlugin) -> some View {
+        switch page.compatibility {
+        case .runsInHerm:
+            EmptyView()
+        case .needs(let names):
+            DockCallout(
+                tone: .warning, icon: .warning, title: "Page can't open in Herm yet",
+                message: "It uses Hermes Desktop features Herm doesn't provide: \(names.joined(separator: ", "))."
+            ) { EmptyView() }
+        case .desktopOnly:
+            DockCallout(
+                tone: .info, icon: .info, title: "No page to open",
+                message:
+                    "It only changes Hermes Desktop itself, such as panes or themes, so there is nothing to show in Herm."
+            ) { EmptyView() }
+        case .unknown:
+            DockCallout(
+                tone: .info, icon: .info, title: "Not checked",
+                message: "Herm couldn't read which Hermes Desktop features this plugin uses."
+            ) { EmptyView() }
+        case .hostMissing:
+            DockCallout(
+                tone: .warning, icon: .warning, title: "Page unavailable in this build",
+                message: "This build of Herm doesn't include the Hermes Desktop plugin host, so the page can't open."
+            ) { EmptyView() }
+        }
+    }
     private func pluginRow(_ plugin: WorkflowPlugin) -> some View {
         let item = WorkflowIntegrationItem(id: plugin.id, detail: plugin.name)
         return VStack(alignment: .leading, spacing: 0) {
             row(
                 plugin.name, plugin.detail,
-                note: plugin.desktopHalf
+                note: plugin.desktopHalf && desktopPlugin(for: plugin)?.compatibility != .runsInHerm
                     ? "Its Hermes Desktop panel isn't available in Herm; agent tools still load." : nil
             ) {
                 if !plugin.settings.isEmpty {

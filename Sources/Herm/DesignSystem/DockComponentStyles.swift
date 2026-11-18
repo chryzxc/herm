@@ -715,9 +715,7 @@ struct DockHoverModifier: ViewModifier {
     }
 }
 
-/// Drop-in for `.plain`/`.borderless`: same layout; hover lifts the label's own
-/// pixels (and press dims them) so it never paints outside the visible control
-/// when the hit area is larger than the artwork.
+/// Drop-in for `.plain`/`.borderless` with hover feedback and press dimming.
 struct DockHoverButtonStyle: ButtonStyle {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1064,11 +1062,14 @@ struct DockPageHeader<Trailing: View>: View {
     let sidebarCollapsed: Binding<Bool>?
     /// Pages that replace a list column (chat tiles) get an action that brings it back instead of a toggle.
     let onShowList: (() -> Void)?
+    /// A static label right after the title, such as a pill naming the page's kind.
+    let titleAccessory: AnyView?
     @ViewBuilder let trailing: () -> Trailing
 
     init(
         title: String,
         subtitle: String,
+        titleAccessory: AnyView? = nil,
         onRefresh: (() -> Void)? = nil,
         isRefreshing: Bool = false,
         sidebarCollapsed: Binding<Bool>? = nil,
@@ -1085,6 +1086,7 @@ struct DockPageHeader<Trailing: View>: View {
         self.windowBottomPadding = windowBottomPadding
         self.sidebarCollapsed = sidebarCollapsed
         self.onShowList = onShowList
+        self.titleAccessory = titleAccessory
         self.trailing = trailing
     }
 
@@ -1100,9 +1102,12 @@ struct DockPageHeader<Trailing: View>: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .dockFont(.pageTitle)
-                .foregroundStyle(Color.dockPrimaryText)
+            HStack(spacing: 8) {
+                Text(title)
+                    .dockFont(.pageTitle)
+                    .foregroundStyle(Color.dockPrimaryText)
+                titleAccessory
+            }
             Text(subtitle)
                 .dockFont(.compactStatus, weight: .regular)
                 .foregroundStyle(Color.dockMetadataText)
@@ -1148,6 +1153,7 @@ struct DockPageHeader<Trailing: View>: View {
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
                 .layoutPriority(1)
+            titleAccessory?.fixedSize()
             Text(subtitle)
                 .dockFont(.body)
                 .foregroundStyle(Color.dockMetadataText)
@@ -1234,6 +1240,7 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
     /// Pages beside a list column get its toggle before the title.
     var sidebarCollapsed: Binding<Bool>? = nil
     var onShowList: (() -> Void)? = nil
+    var titleAccessory: AnyView? = nil
     var showsClose = true
     var close: (() -> Void)? = nil
     @ViewBuilder var trailing: () -> Trailing
@@ -1243,7 +1250,7 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
     init(
         title: String, subtitle: String, help: String? = nil, onRefresh: (() -> Void)? = nil,
         isRefreshing: Bool = false, sidebarCollapsed: Binding<Bool>? = nil, onShowList: (() -> Void)? = nil,
-        showsClose: Bool = true,
+        titleAccessory: AnyView? = nil, showsClose: Bool = true,
         close: @escaping () -> Void,
         @ViewBuilder trailing: @escaping () -> Trailing, @ViewBuilder content: @escaping () -> Content
     ) {
@@ -1254,6 +1261,7 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
         self.isRefreshing = isRefreshing
         self.sidebarCollapsed = sidebarCollapsed
         self.onShowList = onShowList
+        self.titleAccessory = titleAccessory
         self.showsClose = showsClose
         self.close = close
         self.trailing = trailing
@@ -1263,8 +1271,8 @@ struct DockExpandedPage<Trailing: View, Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             DockPageHeader(
-                title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing,
-                sidebarCollapsed: sidebarCollapsed, onShowList: onShowList
+                title: title, subtitle: subtitle, titleAccessory: titleAccessory, onRefresh: onRefresh,
+                isRefreshing: isRefreshing, sidebarCollapsed: sidebarCollapsed, onShowList: onShowList
             ) {
                 HStack(spacing: 8) {
                     trailing()
@@ -1928,6 +1936,7 @@ struct DockTabSegment<Label: View>: View {
                 .dockPadding(.horizontal, inset)
                 .frame(maxWidth: fillsWidth ? .infinity : nil)
                 .frame(height: height)
+                .contentShape(Rectangle())
                 .dockSelectionBackground(
                     shape, active: isSelected,
                     fill: DockThemeStyle.current.material == .glass
@@ -1942,7 +1951,6 @@ struct DockTabSegment<Label: View>: View {
                         lineWidth: DockLayout.outline))
         }
         .buttonStyle(.dockHover)
-        .contentShape(shape)
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18), value: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

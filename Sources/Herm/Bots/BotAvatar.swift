@@ -88,8 +88,6 @@ struct BotAvatarView: View {
                 standalone(herm: herm, mood: face)
             }
         }
-        .scaleEffect(greets ? 1.08 : 1)
-        .animation(.spring(response: 0.3, dampingFraction: 0.55), value: greets)
         .onHover { hovering = $0 }
         .opacity(bot.isHidden ? 0.45 : 1)
     }

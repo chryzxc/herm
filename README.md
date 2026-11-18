@@ -167,6 +167,8 @@ Activity rows in the side notch and top island have no background fill at rest, 
 
 Conversation approvals, clarification choices, and secret/login requests share a compact neutral card with explicit status, labeled inputs, and grouped actions that stack in narrow panes. Multi-select answers show their selected state; submitting keeps an in-place progress indicator and disables duplicate responses.
 
+The latest conversation approval stays visible as resolved after it is answered in the conversation or notch. This presentation is kept in memory for the current Herm process, not reconstructed after restart.
+
 Choose **Quick message** in either Tasks view to start a new session without opening the workspace. Hover a session row to reveal **Reply** and compose directly beneath it; its reserved slot keeps the title stable. Reply stays visible while composing or navigating with the keyboard, and the reveal respects Reduce Motion. Replies stay tied to that session, and neither action changes the workspace’s selected chat. The compact composer keeps its own draft, preserves workspace attachments, and stays open while typing; **Close** or Escape leaves it. Failed sends keep the text for retry. Kanban rows show the assigned bot’s stored avatar or its existing fallback identity.
 
 Choose a finished session row to peek at its **Latest completed reply** inside the notch. Copy an excerpt, open or reveal generated files, reply to that session, or open it in the workspace. Reading leaves the selected workspace chat alone. A deliberate selection marks the matching completion reviewed after its content loads; hovering does not. New results offer **Update** while the displayed excerpt remains stable.
@@ -457,6 +459,7 @@ Workspace pages share Calendar’s top titlebar treatment, with sidebar toggles 
 beside the traffic lights. Chat uses three full-height panes: the session list,
 conversation, and inspector. The session title uses the available header space,
 with actions inside the conversation pane; the inspector's tabs extend to the top of its own pane.
+The Bots and Sessions switch responds across each tab, not just its label.
 The session sidebar places **New chat** above Pinned. Navigation distinguishes Chats (speech bubbles), Integrations (puzzle piece), and
 Artifacts (stacked files), while keeping the Bots ghost icon. Chats shows a small
 spinner for running sessions and a count of completed chats with unread updates
@@ -467,7 +470,9 @@ bot’s loaded Recents, including conversations under Show more. Badge calculati
 cached independently of transcript updates; status polling pauses while the
 workspace is hidden or Hermes is disconnected.
 The sidebar stacks Pinned, Recents, and Projects for the selected
-bot under its bot header. Each section header stays at the top of the scrolling
+bot under its bot header. In the bot picker, use each profile's reorder menu to move
+it up or down. The order is saved locally across restarts without changing the
+selected profile or its conversations. Each section header stays at the top of the scrolling
 list until the next section replaces it; rows remain lazily rendered.
 Background polls and runtime notifications refresh the latest history page,
 reusing older loaded sessions for up to a minute. Explicit refreshes and profile
@@ -1115,6 +1120,8 @@ limited to two concurrent requests.
 Integrations loads each category on first use and keeps its inventory in memory until Refresh or a profile change. Plugins entry and Refresh read only the plugin inventory; its profile picker reads only profile names, and plugin changes refresh only Plugins while invalidating other tabs for their next visit. Plugin catalogs become browsable before optional GitHub star counts finish. Catalog sorting and search text are prepared when source data changes; selection and filtering reuse that index. Empty catalogs are remembered, overlapping catalog reads are coalesced, and Refresh explicitly retries the catalog. Quick-view inspectors show runtime-provided plugin versions, source and pinned revision, toolset setup and tool counts, connector policy and account state, and MCP transport and required key names. Skills show their profile and a rendered SKILL.md preview; versions are shown only where Hermes supplies them.
 
 Plugins and hub-installed skills show **New version available** when Hermes reports one. Plugins read `update_available` from `plugins.manage`, and **Check for update** asks Hermes directly. Skills are checked once per profile with `hermes skills check`, and Installed Skills has a **Check for updates** button. Updating shows an indeterminate progress card because Hermes reports no step progress. Plugin updates that request new capabilities ask for consent first, and updates blocked by Hermes' security scan say so. Locally edited skills are never overwritten. Hermes has no update path for toolsets, connectors or MCP servers. Detail panes close with an icon-only X in the top-right corner.
+
+**Hermes Desktop plugin pages.** Herm can run the page of a Hermes Desktop plugin (for example, [hermes-whiteboard](https://github.com/Adolanium/hermes-whiteboard), installed with `hermes plugins install`) when every Desktop SDK feature the page imports is available in Herm. Each plugin card in Integrations → Plugins is tagged **Page in Herm**, **Needs a newer Herm** or **Desktop-only** (or **Page unavailable** in a build without the plugin host). A page that runs in Herm appears automatically in the **…** destinations menu with its own Desktop sidebar icon and a **Plugin** pill, where you can pin it like a built-in destination. Pages use Hermes Desktop's own SDK and components, restyled through Desktop's own theme variables: Herm's skin supplies their colors, borders, focus rings, corner radius, font and Light or Dark mode. A plugin's own custom CSS keeps its look. Plugin pages run in a sandboxed web view with no network access of their own, so web fonts a plugin requests fall back to local ones. They reach Hermes only through Herm's connection, limited to RPC calls and the plugin's own `/api/plugins/<id>` routes. Herm doesn't host plugin panes, themes or composer slots. A page that fails to load says why, with a Reload action. Release builds bundle the host, built from a Hermes checkout with `Scripts/build-desktop-plugin-host.sh` (needs `bun`). See [the ADR](docs/adr/0001-desktop-plugin-pages.md).
 
 Settings groups navigation into **App**, **Agent**, **Tools & access**, and **Activity & maintenance**. Find startup and keyboard shortcuts in **General**; backend connections in **Gateway**; themes, sidebar visibility, notch display, and the companion in **Appearance**; alerts in **Notifications**; and app/agent updates in **Updates**. **Files & terminal** brings the working directory, execution backend, and shell settings together. Each page includes a short description, and compact windows use the same grouped category menu.
 

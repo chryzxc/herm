@@ -95,6 +95,26 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "source_sha=$SHA" >> "$GITHUB_OUTPUT"
 
+      # Plugin pages run Hermes Desktop's own SDK, built from the Hermes revision Herm was checked
+      # against. Herm hides plugin pages when the host is missing, so a failed build ships a DMG
+      # without them rather than blocking the release; the failed step flags it.
+      - name: Build the Desktop plugin host
+        if: steps.version.outputs.skip != 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          HERMES="$RUNNER_TEMP/hermes-agent"
+          git init -q "$HERMES"
+          git -C "$HERMES" fetch -q --depth 1 https://github.com/NousResearch/hermes-agent \
+            "$(cat Scripts/desktop-plugin-host/HERMES_REVISION)"
+          git -C "$HERMES" checkout -q FETCH_HEAD
+          brew install -q node oven-sh/bun/bun
+          npx --yes pnpm@12.15.0 --dir "$HERMES" install --frozen-lockfile --ignore-scripts
+          Scripts/build-desktop-plugin-host.sh "$HERMES"
+          # The checked-in manifest must describe the host that ships.
+          git diff --exit-code Sources/Herm/Resources/DesktopPluginHost/sdk-exports.json
+
       - name: Build versioned DMG
         if: steps.version.outputs.skip != 'true'
         env:

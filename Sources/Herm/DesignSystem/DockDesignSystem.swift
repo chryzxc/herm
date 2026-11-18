@@ -350,18 +350,25 @@ struct DockRailButton: View {
     let icon: Ph
     let isSelected: Bool
     var showsUpdateBadge = false
+    /// A font glyph drawn in place of `icon`, such as a Desktop plugin's own icon.
+    var glyph: Text? = nil
     let style: DockThemePalette
     let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         let shape = DockThemeShape(cornerRadius: DockControlMetrics.cornerRadius)
+        let color =
+            isSelected && style.theme.style.selection == .invert
+            ? style.background : isSelected || isHovering ? style.primaryText : style.secondaryText
         Button(action: action) {
-            DockIcon(
-                icon, size: 17, weight: isSelected ? .fill : .regular,
-                color: isSelected && style.theme.style.selection == .invert
-                    ? style.background : isSelected || isHovering ? style.primaryText : style.secondaryText
-            )
+            Group {
+                if let glyph {
+                    glyph.foregroundStyle(color)
+                } else {
+                    DockIcon(icon, size: 17, weight: isSelected ? .fill : .regular, color: color)
+                }
+            }
             .scaleEffect(isSelected ? 1.08 : 1)
             .frame(width: 38, height: 38)
             .dockSelectionBackground(shape, active: isSelected, fill: style.selectedFill, theme: style.theme)

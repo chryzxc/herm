@@ -122,8 +122,10 @@ final class WorkspaceStore: ObservableObject {
         save()
     }
 
+    let profilePickerOrder: DockProfilePickerOrder
     private let fileURL: URL
-    init(fileURL: URL? = nil) {
+    init(fileURL: URL? = nil, profilePickerDefaults: UserDefaults = .standard) {
+        self.profilePickerOrder = DockProfilePickerOrder(defaults: profilePickerDefaults)
         let supportRoot =
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(

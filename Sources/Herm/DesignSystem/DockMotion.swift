@@ -15,12 +15,7 @@ enum DockMotion {
     }
 
     static func hoverOffset(isHovered: Bool, isPressed: Bool, isEnabled: Bool, reduceMotion: Bool) -> CGFloat {
-        guard isHovered, !isPressed, isEnabled, Self.isEnabled(reduceMotion: reduceMotion) else { return 0 }
-        switch DockThemeStyle.current.motion {
-        case .float: return -1
-        case .bouncy: return -1.5
-        case .glide, .snap, .mechanical: return 0
-        }
+        0
     }
 
     static var revealDistance: CGFloat {

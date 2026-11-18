@@ -5,6 +5,25 @@ import Testing
 
 @MainActor
 struct WorkspaceStoreTests {
+    @Test func profileOrderSurvivesStoreReconstruction() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let suite = "profile-order-store-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let bots = ["a", "b"].map { id in
+            BotSummary(
+                id: id, name: id, title: nil, description: nil, model: nil,
+                isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+                isHidden: false, hasAvatar: false, isDefault: id == "a")
+        }
+        let first = WorkspaceStore(fileURL: fixture.fileURL, profilePickerDefaults: defaults)
+        first.profilePickerOrder.move("b", by: -1, in: bots)
+        let second = WorkspaceStore(fileURL: fixture.fileURL, profilePickerDefaults: defaults)
+        #expect(second.profilePickerOrder.ordered(bots) == [bots[1], bots[0]])
+        #expect(first.tasks.isEmpty && second.tasks.isEmpty)
+    }
+
     @Test func oneHermesSessionOwnsOneWorkspaceTask() throws {
         let fixture = try WorkspaceFixture()
         defer { fixture.remove() }

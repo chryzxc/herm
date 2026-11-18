@@ -12,7 +12,7 @@ struct DockMotionTests {
         }
     }
 
-    @Test func hoverLiftRespectsMotionAndControlState() {
+    @Test func hoverDoesNotMoveControls() {
         let savedTheme = DockThemeRuntime.current
         defer { DockThemeRuntime.current = savedTheme }
         for theme in DockThemeID.allCases {
@@ -22,11 +22,7 @@ struct DockMotionTests {
                     for reduced in [false, true] {
                         let offset = DockMotion.hoverOffset(
                             isHovered: true, isPressed: pressed, isEnabled: !disabled, reduceMotion: reduced)
-                        if disabled || pressed || reduced || !theme.style.animates {
-                            #expect(offset == 0)
-                        } else {
-                            #expect(offset >= -1.5 && offset <= 0)
-                        }
+                        #expect(offset == 0)
                     }
                 }
             }
@@ -37,11 +33,11 @@ struct DockMotionTests {
         DockThemeRuntime.current = .glass
         #expect(
             DockMotion.hoverOffset(
-                isHovered: true, isPressed: false, isEnabled: true, reduceMotion: false) == -1)
+                isHovered: true, isPressed: false, isEnabled: true, reduceMotion: false) == 0)
         DockThemeRuntime.current = .clay
         #expect(
             DockMotion.hoverOffset(
-                isHovered: true, isPressed: false, isEnabled: true, reduceMotion: false) == -1.5)
+                isHovered: true, isPressed: false, isEnabled: true, reduceMotion: false) == 0)
     }
 
     @Test func pressEffectsRespectDisabledControlsAndMotionPreferences() {

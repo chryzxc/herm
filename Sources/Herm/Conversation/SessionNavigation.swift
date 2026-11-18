@@ -36,6 +36,8 @@ enum SessionNavigationSelection: Equatable {
     case task(UUID)
     case global(ControlTab)
     case artifacts
+    /// A Desktop plugin page, by plugin id.
+    case plugin(String)
     case bots
     case pullRequests
     case issues
@@ -50,6 +52,7 @@ final class SessionNavigationSelectionState: ObservableObject {
     func selectTask(_ id: UUID) { selection = .task(id) }
     func selectGlobal(_ tab: ControlTab) { selection = .global(tab) }
     func selectArtifacts() { selection = .artifacts }
+    func selectPlugin(_ id: String) { selection = .plugin(id) }
     func selectBots() { selection = .bots }
     func selectPullRequests() { selection = .pullRequests }
     func selectIssues() { selection = .issues }
@@ -86,6 +89,7 @@ final class SessionNavigationState: ObservableObject {
     }
 
     let selection = SessionNavigationSelectionState()
+    @Published var recentsType: SessionRecentsType = .conversations
     @Published var showsAllConversations = false
     @Published var selectedTaskID: UUID?
     @Published var selectedSessionID: String?
@@ -181,6 +185,12 @@ final class SessionNavigationState: ObservableObject {
 
     func selectArtifacts() {
         selection.selectArtifacts()
+        selectedTaskID = nil
+        selectedSessionID = nil
+    }
+
+    func selectPlugin(_ id: String) {
+        selection.selectPlugin(id)
         selectedTaskID = nil
         selectedSessionID = nil
     }

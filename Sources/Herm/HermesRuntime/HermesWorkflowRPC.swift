@@ -27,6 +27,8 @@ struct WorkflowPlugin: Identifiable, Equatable {
     var pinnedRevision = ""
     /// Hermes saw a newer git commit for this install.
     var updateAvailable = false
+    /// Catalog entry this was installed from, when Hermes recorded one.
+    var catalogName = ""
 }
 enum WorkflowPluginUpdate: Equatable {
     case updated(restart: Bool)
@@ -35,6 +37,17 @@ enum WorkflowPluginUpdate: Equatable {
     case blocked(String)
 }
 extension WorkflowPlugin {
+    /// Bundled plugins live in category folders, and Hermes keys them by that path (`image_gen/fal`).
+    /// Nil for keys without a folder, such as user installs.
+    var keyCategory: String? {
+        guard let slash = id.lastIndex(of: "/"), slash != id.startIndex else { return nil }
+        return Self.categoryLabel(String(id[..<slash]))
+    }
+    /// A category slug as a label: `image_gen` and `model-providers` read `Image gen`, `Model providers`.
+    static func categoryLabel(_ slug: String) -> String {
+        let words = slug.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
+        return words.prefix(1).uppercased() + words.dropFirst()
+    }
     /// The catalog lists a different version than the one installed.
     var hasCatalogUpdate: Bool {
         updateAvailable || !version.isEmpty && !catalogVersion.isEmpty && version != catalogVersion
@@ -444,7 +457,8 @@ final class HermesWorkflowRPC {
                 version: $0["version"] as? String ?? "", source: $0["source"] as? String ?? "",
                 status: status, catalogVersion: $0["catalog_version"] as? String ?? "",
                 pinnedRevision: $0["pinned_sha"] as? String ?? "",
-                updateAvailable: $0["update_available"] as? Bool == true)
+                updateAvailable: $0["update_available"] as? Bool == true,
+                catalogName: $0["catalog_name"] as? String ?? "")
         }
     }
     static func pluginSetting(_ row: [String: Any]) -> WorkflowPluginSetting? {

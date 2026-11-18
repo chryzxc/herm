@@ -167,6 +167,9 @@ extension DockPopover {
             case .artifacts:
                 sessionNavNavigation.selectArtifacts()
                 fullscreenSurface = .artifacts
+            case .plugin(let id):
+                sessionNavNavigation.selectPlugin(id)
+                fullscreenSurface = .plugin(id)
             case .bots: openBotsPage()
             case .pullRequests, .issues:
                 let section = destination.gitHubSection ?? (destination.surface == .issues ? .issues : .pullRequests)
@@ -295,6 +298,15 @@ extension DockPopover {
         )
     }
 
+    /// What a Desktop plugin page reaches: Herm's own Hermes connection and its session navigation.
+    var desktopPluginHost: DesktopPluginBridge.Host {
+        DesktopPluginBridge.Host(client: model.controlRPCClient, events: model.eventRouter) { id in
+            guard model.sessions.contains(where: { $0.id == id }) else { return false }
+            navigate(to: NavigationDestination(surface: .conversation, tab: nil, sessionID: id))
+            return true
+        }
+    }
+
     var fullscreenGlobalSurface: some View {
         Group {
             if fullscreenSurface == .chatGrid {
@@ -372,6 +384,9 @@ extension DockPopover {
                     model.resumeSession(session)
                 }
                 .id("fullscreen-artifacts")
+            } else if case .plugin(let id) = fullscreenSurface {
+                DesktopPluginPage(pluginID: id, store: .shared, host: desktopPluginHost)
+                    .id("fullscreen-plugin-\(id)")
             } else {
                 fullscreenGlobalControlSurface
             }

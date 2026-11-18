@@ -10,6 +10,16 @@ spec.loader.exec_module(buttons)
 
 
 class ButtonContractTests(unittest.TestCase):
+    def test_tab_segment_hit_shape_covers_the_sized_button_label(self):
+        source = (Path(__file__).resolve().parent.parent / 'Sources/Herm/DesignSystem/DockComponentStyles.swift').read_text()
+        segment = source.split('struct DockTabSegment<', 1)[1].split('struct DockChatsScopeSwitch:', 1)[0]
+        self.assertIn(
+            '.frame(maxWidth: fillsWidth ? .infinity : nil)\n'
+            '                .frame(height: height)\n'
+            '                .contentShape(Rectangle())',
+            segment,
+        )
+
     def test_rejects_press_style_on_text_actions_and_inherited_groups(self):
         for source in [
             'Button("Save") {}.buttonStyle(.dockPress)',

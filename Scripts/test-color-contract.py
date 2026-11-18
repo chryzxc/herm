@@ -33,6 +33,16 @@ class ColorContractTests(unittest.TestCase):
             (folder / "New.swift").write_text("Circle().fill(Color.dockSuccessFill)\nDockAccentColor.teal.fill")
             self.assertEqual(colors.sources(root), {})
 
+    def test_licensed_vendor_folder_is_skipped_but_its_neighbors_are_not(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            vendor = root / "Sources/Herm/Resources/Vendor"
+            vendor.mkdir(parents=True)
+            (vendor / "LICENSE").write_text("MIT")
+            (vendor / "lib.css").write_text("a { color: #112233 }")
+            (vendor.parent / "own.css").write_text("a { color: #112233 }")
+            self.assertEqual(list(colors.sources(root)), ["Sources/Herm/Resources/own.css"])
+
     def test_exception_does_not_allow_another_use_or_file(self):
         allowed = {"Logo.swift": {"Color.blue": 1}}
         self.assertFalse(colors.violations({"Logo.swift": "Color.blue"}, allowed))

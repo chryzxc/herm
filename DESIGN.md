@@ -141,12 +141,10 @@ keep their own accent hue. Clay, Dusk, Storm, and Glass use restrained depth so
 adjacent controls do not merge into broad shadows. E-Ink and Swiss retain their
 minimal geometry and monochrome/editorial composition.
 
-Floating skins lift enabled actions by 1pt on hover; springy skins lift by 1.5pt.
-Pressing settles the lift and uses the existing skin-specific compression. Surface
+Enabled actions retain stationary hover feedback. Pressing uses the existing skin-specific compression. Surface
 reveals drift 5pt for floating skins, 7pt for springy skins, and 3pt for quiet skins;
 mechanical and snap skins fade without travel. These are rendering transforms,
-not layout changes. Reduce Motion, disabled controls, and no-motion skins suppress
-hover movement; settled surfaces do not animate continuously.
+not layout changes. Settled surfaces do not animate continuously.
 
 ### Color roles
 
@@ -380,8 +378,7 @@ Shared tab tracks carry their themed selection artwork
 between choices with matched geometry (0.22s). Only artwork moves; text, hit targets,
 and destination views retain identity. Navigation glyphs grow by 8% on selection;
 icon-only rail destinations retain the shared selected surface. Shared hover controls
-lift by the skin's existing 1–1.5pt hover distance on floating/bouncy skins, returning
-on press. Navigation rows ease their selection in place (0.18s). Expanded
+retain stationary hover feedback. Navigation rows ease their selection in place (0.18s). Expanded
 page content, modal bodies, and loading placeholders use one subtle 6pt rise and
 fade on first appearance (0.22s); headers and layout footprints stay fixed.
 These effects animate only presentation, retain view identity, and never delay
@@ -1454,7 +1451,8 @@ SKILL.md previews render through `MarkdownMessageView` with frontmatter removed.
 The same Integrations modal lists Hermes plugins (`plugins.manage`: enable, disable, remove
 user installs) and hosted connectors (`connectors.*`, account owner: connect via the browser
 link Hermes mints, disconnect per account). Plugins that ship a Hermes Desktop UI half say so;
-Herm cannot host that panel, but the plugin's agent tools still load. Plugin settings save
+Herm can run their pages (see below) but not their panes, themes or composer slots, and the
+plugin's agent tools load either way. Plugin settings save
 plain fields through `plugins.manage settings` and secret fields through `PUT /api/env`;
 secrets are never read back, only shown as saved. The catalog installer (from
 `/api/dashboard/plugins/catalog`) hides non-macOS entries and Desktop-only packages (category
@@ -1808,7 +1806,10 @@ Only the narrow single-workspace layout switches between those panes.
 The 56pt header bar holds the Bot switcher (avatar, name over role,
 chevrons-up-down when more than one Bot is visible). While a Bot's saved avatar is
 still loading, the avatar slot shows a small spinner instead of a stand-in face; a
-Bot whose avatar Hermes cannot serve shows its face. A labeled New chat button
+Bot whose avatar Hermes cannot serve shows its face. Each profile in the switcher
+has an accessible reorder menu with Move up and Move down actions; unavailable
+moves are disabled. The local order survives restarts without changing selection
+or conversations. A labeled New chat button
 sits above Pinned in the session list. Top-level
 destinations (Today, Inbox, Kanban, the Tools group, and the Quota and
 Settings footer) are `DockNavRow`s. Settings shows the "Update" pill when a
@@ -2709,6 +2710,8 @@ side by side with no cut-out border.
 Group chat action errors use toast notifications without an inline error row above the composer. The group composer reuses the main chat composer chrome (`composerCard`, `composerTray`, `composerColumn`, `ComposerFolderBarSlot`, `ComposerControlLabel`, `ComposerSubmitLabel`), so its input sits at the same position and size as a session composer. When `groups.capabilities` lists `groups.attachment.upload`, the **+** popover adds Files and Images, and files dropped or pasted onto the editor upload through the same `ComposerInputEditor(onDropFiles:)` path as sessions; uploaded files show as removable chips above the controls (Send waits for uploads), and sent messages use the main chat's user-message chrome (`UserMessageImages`, `UserMessageAttachmentRow`, `.userMessageBubble()`): images read back with `groups.attachment.download` sit above the bubble and open the image preview, other files (and images Hermes refuses) are named rows inside it, and a timestamp and copy action sit underneath. Group actions (thread, Edit Group…, Disband…) sit at the trailing edge of the toolbar, including in a tab column where the tab row carries them. Edit Group renames the room in place and edits members with the New Group Chat checklist (`GroupMemberPicker`); Hermes fixes a room's members at creation, so a changed roster says so and creates a new group (the old one and its history stay). Groups with bots from another Mac keep their members read-only. A group chat opened from Bots accepts a dropped session like any chat: the room becomes the first column's tab and the session opens as a tab or new column beside it. Bot, group and session rows in the sidebar take their insets and gaps from `DockSidebarListMetrics`, so the Bots list spaces rows exactly like Recents, including the shared `titleToPreview` gap between a row title and its last message. The Bots | Sessions switch is a full-width tab track (`DockChatsScopeSwitch`) at the top of each list: above the bot picker in Sessions, above the search field in Bots, not in the title strip. In Sessions, New chat is an icon button (tooltip "New chat") to the right of the search field, mirroring the Bots + menu.
 
 ### Conversation workspace
+
+Keep the latest approval in its originating conversation after resolution, with its details and a neutral Resolved badge. Its decisions disappear after resolution; pending and uncertain responses stay in the same card with explicit recovery. The record is process-local and does not alter transcript history.
 
 The composer background-process tray uses a shared disclosure with a terminal icon,
 separate running count or neutral Finished label, and the last running process's
@@ -3930,6 +3933,23 @@ The first visit opens Skills; later visits restore the last category. Search,
 selection, discovery scope, and plugin filters stay separate per category in memory.
 Only the category preference is persisted; Hermes owns all inventories and settings.
 New bundled plugins are installed disabled; users enable them in Plugins → Installed.
+Plugin cards with a Hermes Desktop half carry a plain tag: **Page in Herm**,
+**Needs a newer Herm**, **Desktop-only**, **Not checked** or, in a build that ships without the
+plugin host, **Page unavailable** (such pages are never offered). The inspector lists any Desktop
+SDK names that Herm lacks. Desktop plugins without an agent plugin still get a card.
+Installed and Discover plugins share one card: a one-line name, a two-line description, then
+a footer with status, a neutral category pill, source marks (Official, Built-in), the Desktop
+tag and the update label, with GitHub stars at the trailing edge. Installed cards take their
+category, tier and stars from the catalog listing they came from, so the catalog loads on
+both scopes. Stars are fetched once an hour at most and shared across visits. Detail headers
+repeat the category pill and stars, and catalog plugins keep their GitHub and Docs links
+after install.
+Every inventory builds 30 cards at a time, since Hermes returns whole lists. A **Show N more**
+action and a "Showing X of Y" count follow the last card. Section label counts stay totals, and
+the page resets on any category, scope, search, filter or sort change.
+Installing keeps the Discover selection: the card reads **Installing…** and the drawer swaps
+the Install action for indeterminate install progress. Once Hermes confirms, Plugins switches
+to Installed with the new plugin selected, instead of dropping the selection.
 Version replacements retain the existing enabled choice, and restart guidance remains explicit.
 
 One shared title row provides profile selection, Refresh, and a fixed status subtitle.
@@ -4147,6 +4167,25 @@ icon to unpin it. Pins persist locally and are shared by floating and window mod
 Existing visibility settings still hide disabled destinations without erasing their pins.
 The menu indicates an active unpinned destination, and Settings update badges remain
 visible through More. Connection and window-switch actions stay directly accessible.
+
+Installed Hermes Desktop plugin pages that Herm can run, with no switch in Herm,
+follow the built-in destinations in More. Each row carries a **Plugin** pill and the same
+pin control. Rows and pinned rail buttons draw the codicon the plugin declares for its Desktop
+sidebar entry, using the codicon font bundled with the plugin host; a plugin without one, or a
+build without the host, uses the puzzle piece. A plugin page opens as a `DockExpandedPage`
+that shows the same **Plugin** pill right after the plugin name. Its header subtitle holds only loading
+state and plugin notices, and is empty once the page is ready. Load or run failures stay in the same container, with a Reload
+action; a page that never reports ready fails after 20 seconds instead of loading forever.
+Pins of uninstalled plugins stay stored but are hidden.
+
+The page runs Hermes Desktop's own components, restyled through the same CSS variables a
+Desktop theme paints: the color seeds and shadcn tokens (text, accent, on-accent ink, canvas,
+surfaces, controls, borders, inputs, focus rings, destructive, success), the sans font for
+rounded, serif and monospaced skins, and `--radius-scalar` so Desktop's corners match the skin's
+control radius. Herm repaints them, with Light or Dark appearance, when the skin or the system appearance changes. Set
+only variables. Never target Desktop's classes or elements, which change between Hermes
+releases. CSS a plugin ships for its own markup keeps its look. Glass stays a native material
+and does not carry into the page.
 
 ### Generative visualization refinements
 
