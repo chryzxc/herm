@@ -75,6 +75,9 @@ final class ControlCenterModel: ObservableObject {
     @Published var kanbanStats: KanbanStatsSummary?
     @Published var kanbanAssignees: [String] = []
     @Published var kanbanBoards: [KanbanBoardSummary] = []
+    /// True once the board inventory loaded over the Kanban dashboard API,
+    /// which also accepts board creation.
+    @Published var kanbanBoardsUseHTTP = false
     @Published var selectedKanbanBoardSlug: String?
     @Published var kanbanFilter = KanbanListFilter()
     @Published var journeyNodes: [HermesJourneyNode] = []

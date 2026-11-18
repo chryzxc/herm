@@ -265,6 +265,22 @@ final class HermesCLIAdapter {
     func kanbanStats(boardSlug: String? = nil) async throws -> HermesCLIResult {
         try await run(kanbanWords(boardSlug: boardSlug, action: "stats") + ["--json"])
     }
+    /// Lists boards through the Kanban dashboard API, the same surface that
+    /// loads the board itself, so the board menu does not depend on the
+    /// `shell.exec` capability probe. The rows keep the CLI's JSON shape.
+    func kanbanBoardsOverHTTP(includeArchived: Bool = false) async throws -> HermesCLIResult {
+        let path = includeArchived ? "/api/plugins/kanban/boards?include_archived=true" : "/api/plugins/kanban/boards"
+        guard let boards = try await rpc.fetchHTTP(path)["boards"] as? [[String: Any]] else {
+            throw HermesCLIError.failed("Hermes Kanban returned no board inventory.")
+        }
+        let data = try JSONSerialization.data(withJSONObject: boards)
+        return HermesCLIResult(stdout: String(decoding: data, as: UTF8.self), stderr: "", succeeded: true)
+    }
+    /// Creates a board through the Kanban dashboard API (`POST /boards`).
+    func kanbanCreateBoardOverHTTP(slug: String, name: String) async throws -> HermesCLIResult {
+        _ = try await rpc.sendHTTP("POST", path: "/api/plugins/kanban/boards", body: ["slug": slug, "name": name])
+        return HermesCLIResult(stdout: "", stderr: "", succeeded: true)
+    }
     func kanbanBoards(includeArchived: Bool = false) async throws -> HermesCLIResult {
         var words = ["hermes", "kanban", "boards", "list", "--json"]
         if includeArchived { words.append("--all") }

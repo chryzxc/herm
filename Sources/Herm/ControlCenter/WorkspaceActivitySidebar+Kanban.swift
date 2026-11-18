@@ -243,7 +243,7 @@ extension WorkspaceActivitySidebar {
                         }
                     }
                 }
-                if control.capabilityAvailable("kanban.boardCreate") {
+                if control.canCreateKanbanBoard {
                     Divider()
                     Button("New board…") { isShowingKanbanBoardCreate = true }
                 }

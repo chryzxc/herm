@@ -468,15 +468,32 @@ extension ControlCenterModel {
         return hasCLI && !sessionID.isEmpty
     }
 
+    var canCreateKanbanBoard: Bool {
+        kanbanBoardsUseHTTP || capabilityAvailable("kanban.boardCreate")
+    }
+
     func refreshKanbanBoards() {
-        guard let cli, capabilityAvailable("kanban.boards") else { return }
+        guard let cli else { return }
         guard beginAction(refreshKanbanBoardsActionID) else { return }
         let generation = UUID()
         kanbanBoardsGeneration = generation
+        let cliListingAvailable = capabilityAvailable("kanban.boards")
         Task {
             defer { finishAction(refreshKanbanBoardsActionID) }
             do {
-                let result = try await cli.kanbanBoards()
+                let result: HermesCLIResult
+                if let http = try? await cli.kanbanBoardsOverHTTP() {
+                    result = http
+                    kanbanBoardsUseHTTP = true
+                } else if cliListingAvailable {
+                    result = try await cli.kanbanBoards()
+                    kanbanBoardsUseHTTP = false
+                } else {
+                    guard generation == kanbanBoardsGeneration else { return }
+                    kanbanBoardsUseHTTP = false
+                    lastError = "Hermes Kanban boards are unavailable."
+                    return
+                }
                 guard generation == kanbanBoardsGeneration else { return }
                 guard result.succeeded else {
                     lastError =
@@ -538,7 +555,7 @@ extension ControlCenterModel {
     /// Creates a board through Hermes and selects it. Returns a user-facing
     /// error, or nil once Hermes confirmed the board.
     func createKanbanBoard(name: String) async -> String? {
-        guard let cli, capabilityAvailable("kanban.boardCreate") else {
+        guard let cli, canCreateKanbanBoard else {
             return "This Hermes Agent cannot create Kanban boards."
         }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -551,7 +568,10 @@ extension ControlCenterModel {
                 : "“\(existing.name)” already uses “\(slug)”. Choose another name."
         }
         do {
-            let result = try await cli.kanbanCreateBoard(slug: slug, name: cleanName)
+            let result =
+                kanbanBoardsUseHTTP
+                ? try await cli.kanbanCreateBoardOverHTTP(slug: slug, name: cleanName)
+                : try await cli.kanbanCreateBoard(slug: slug, name: cleanName)
             guard result.succeeded else {
                 let detail = Self.safeUserDiagnostic(result.stderr)
                 return detail.isEmpty ? "Hermes Kanban could not create the board." : detail
