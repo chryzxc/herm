@@ -28,8 +28,8 @@ struct ConversationWorkspaceMetrics: Equatable {
                 userMessageWidthFraction: 0.72,
                 composerInset: 20,
                 composerMaxWidth: 760,
-                composerTopInset: 16,
-                composerBottomInset: 24,
+                composerTopInset: 8,
+                composerBottomInset: 8,
                 usesCompactToolbarLabels: false
             )
         }
@@ -40,8 +40,8 @@ struct ConversationWorkspaceMetrics: Equatable {
             userMessageWidthFraction: 0.84,
             composerInset: usesContextChatInsets ? 16 : 12,
             composerMaxWidth: 760,
-            composerTopInset: 12,
-            composerBottomInset: 18,
+            composerTopInset: 8,
+            composerBottomInset: 8,
             usesCompactToolbarLabels: true
         )
     }
