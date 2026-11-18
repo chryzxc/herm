@@ -25,15 +25,23 @@ struct ConversationPromptRows: View {
     var showsClarification = true
     var exclusive = false
     let state: ConversationPromptState
+    let conversationApproval: ConversationApproval?
+    let approvalAnswer: AttentionAnswerState?
+    let transcriptMode: Bool
 
     init(
         model: DockModel, conversationMetrics: ConversationWorkspaceMetrics,
-        showsClarification: Bool = true, exclusive: Bool = false
+        showsClarification: Bool = true, exclusive: Bool = false,
+        conversationApproval: ConversationApproval? = nil, approvalAnswer: AttentionAnswerState? = nil,
+        transcriptMode: Bool = false
     ) {
         self.model = model
         self.conversationMetrics = conversationMetrics
         self.showsClarification = showsClarification
         self.exclusive = exclusive
+        self.conversationApproval = conversationApproval
+        self.approvalAnswer = approvalAnswer
+        self.transcriptMode = transcriptMode
         state = ConversationPromptState(model: model)
     }
 
@@ -42,9 +50,16 @@ struct ConversationPromptRows: View {
     @State private var valuePromptIdentifier = ""
     @FocusState private var approvalCardIsFocused: Bool
 
+    private var canAnswerApproval: Bool {
+        state.matchesApproval(in: model) && model.sessionActionsReady
+            && (conversationApproval == nil || model.currentConversationApproval?.id == conversationApproval?.id)
+    }
+
     var body: some View {
         Group {
-            if let approval = state.approvalText {
+            if let record = conversationApproval {
+                approvalRow(record.approval)
+            } else if !transcriptMode, let approval = state.approvalText {
                 approvalRow(
                     state.approval
                         ?? ApprovalPresentation(
@@ -76,12 +91,20 @@ struct ConversationPromptRows: View {
         .onChange(of: state.question) { _, _ in clarificationSelection = [] }
     }
     func approvalRow(_ approval: ApprovalPresentation) -> some View {
-        let isPending = state.approvalPending
+        let resolved = conversationApproval?.resolved == true
+        let isPending = state.approvalPending || approvalAnswer?.blocksSubmission == true
         let choices = approval.choices
+        let badge: String =
+            switch approvalAnswer {
+            case .uncertain: "Delivery uncertain"
+            case .checking: "Checking…"
+            case .failed: "Not sent"
+            default: resolved ? "Resolved" : isPending ? "Sending…" : "Needs approval"
+            }
         let alwaysAllowCaption = ApprovalPresentation.alwaysAllowCaption(for: approval)
         return DockCallout(
             tone: .warning, icon: .shieldWarning, title: "Approval required", message: approval.title,
-            badge: isPending ? "Sending…" : "Needs approval"
+            badge: resolved ? "Resolved" : badge
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 ScrollView(.vertical) {
@@ -103,61 +126,83 @@ struct ConversationPromptRows: View {
                     DockCalloutDisclosure(title: "Scope and limits", text: reason)
                 }
 
-                DockCalloutActions {
-                    if choices.contains(ApprovalChoice.once) {
-                        Button {
-                            if state.matchesApproval(in: model) { model.respondToApproval(ApprovalChoice.once) }
-                        } label: {
-                            HStack(spacing: 8) {
-                                DockActionLabel(
-                                    title: "Allow once", pendingTitle: "Allowing…", isPending: isPending,
-                                    tint: .dockPrimaryText
-                                )
-                                Spacer(minLength: 4)
-                                approvalKeyHint("Return")
+                if !resolved {
+                    DockCalloutActions {
+                        if choices.contains(ApprovalChoice.once) {
+                            Button {
+                                if canAnswerApproval { model.respondToApproval(ApprovalChoice.once) }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    DockActionLabel(
+                                        title: "Allow once", pendingTitle: "Allowing…", isPending: isPending,
+                                        tint: .dockPrimaryText
+                                    )
+                                    Spacer(minLength: 4)
+                                    approvalKeyHint("Return")
+                                }
                             }
+                            .buttonStyle(DockPrimaryButtonStyle())
                         }
-                        .buttonStyle(DockPrimaryButtonStyle())
-                    }
-                    if choices.contains(ApprovalChoice.session) {
-                        Button {
-                            if state.matchesApproval(in: model) { model.respondToApproval(ApprovalChoice.session) }
-                        } label: {
-                            Text("Allow this session")
+                        if choices.contains(ApprovalChoice.session) {
+                            Button {
+                                if canAnswerApproval { model.respondToApproval(ApprovalChoice.session) }
+                            } label: {
+                                Text("Allow this session")
+                            }
+                            .buttonStyle(DockSecondaryButtonStyle())
+                            .help("Don't ask again for this command until the session ends.")
                         }
-                        .buttonStyle(DockSecondaryButtonStyle())
-                        .help("Don't ask again for this command until the session ends.")
-                    }
-                    if choices.contains(ApprovalChoice.always) {
-                        Button {
-                            if state.matchesApproval(in: model) { model.respondToApproval(ApprovalChoice.always) }
-                        } label: {
-                            Text("Always allow")
+                        if choices.contains(ApprovalChoice.always) {
+                            Button {
+                                if canAnswerApproval { model.respondToApproval(ApprovalChoice.always) }
+                            } label: {
+                                Text("Always allow")
+                            }
+                            .buttonStyle(DockSecondaryButtonStyle())
+                            .help(alwaysAllowCaption)
                         }
-                        .buttonStyle(DockSecondaryButtonStyle())
-                        .help(alwaysAllowCaption)
-                    }
-                    Button(role: .destructive) {
-                        if state.matchesApproval(in: model) { model.respondToApproval(ApprovalChoice.deny) }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text("Deny")
-                            Spacer(minLength: 4)
-                            approvalKeyHint("Delete")
+                        if choices.contains(ApprovalChoice.deny) {
+                            Button(role: .destructive) {
+                                if canAnswerApproval { model.respondToApproval(ApprovalChoice.deny) }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Text("Deny")
+                                    Spacer(minLength: 4)
+                                    approvalKeyHint("Delete")
+                                }
+                            }
+                            .buttonStyle(DockSecondaryButtonStyle())
                         }
                     }
-                    .buttonStyle(DockSecondaryButtonStyle())
-                }
-                .disabled(isPending)
+                    .disabled(isPending || !model.sessionActionsReady)
 
-                Text(
-                    approval.smartDenied
-                        ? "Hermes' safety check blocked this. You can override it once."
-                        : choices.contains(ApprovalChoice.always) ? alwaysAllowCaption : "Herm asks again next time."
-                )
-                .dockFont(.body)
-                .foregroundStyle(Color.dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
+                    if let answer = approvalAnswer {
+                        Text(answer.message)
+                            .dockFont(.body)
+                            .foregroundStyle(Color.dockMetadataText)
+                        if case .uncertain = answer, let record = conversationApproval {
+                            Button("Check request") {
+                                guard model.currentConversationApproval?.id == record.id else { return }
+                                if let target = record.target {
+                                    model.recheckAttention(target)
+                                } else {
+                                    model.recheckLegacyApproval(record.id)
+                                }
+                            }
+                            .buttonStyle(DockSecondaryButtonStyle())
+                        }
+                    }
+
+                    Text(
+                        approval.smartDenied
+                            ? "Hermes' safety check blocked this. You can override it once."
+                            : choices.contains(ApprovalChoice.always)
+                                ? alwaysAllowCaption : "Herm asks again next time."
+                    )
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockMetadataText)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .overlay {
@@ -175,8 +220,8 @@ struct ConversationPromptRows: View {
             let key: ApprovalCardKey = press.key == .return ? .returnKey : .deleteKey
             guard
                 let choice = ApprovalCardKeyAction.choice(
-                    for: key, isFocused: approvalCardIsFocused, isPending: isPending),
-                choices.contains(choice), state.matchesApproval(in: model)
+                    for: key, isFocused: approvalCardIsFocused, isPending: isPending || resolved),
+                choices.contains(choice), canAnswerApproval
             else { return .ignored }
             model.respondToApproval(choice)
             return .handled

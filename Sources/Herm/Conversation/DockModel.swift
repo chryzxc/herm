@@ -103,6 +103,7 @@ final class DockModel: ObservableObject {
     @Published var approvalText: String?
     /// Full request (reason, offered choices, request id) behind `approvalTitle`/`approvalText`.
     @Published var approvalDetails: ApprovalPresentation?
+    @Published var conversationApprovals: [ConversationApproval] = []
     var pendingApprovalsBySessionID: [String: PendingApproval] = [:] {
         didSet { refreshSessionAttention() }
     }

@@ -12,6 +12,19 @@ extension DockModel {
     /// different session cannot appear in Control without reaching the menu bar.
     func receiveGatewayEvent(_ type: String, params: [String: Any]) {
         guard acceptGatewayEvent(type: type, params: params) else { return }
+        if type == "approval.request" {
+            let payload = params["payload"] as? [String: Any] ?? [:]
+            if let owner = (params["session_id"] as? String) ?? (payload["session_id"] as? String) ?? sessionID {
+                let approval = ApprovalPresentation.from(payload: payload)
+                let target = attentionTarget(sessionID: owner, requestID: approval.requestID, params: params)
+                let profile = attentionProfile(sessionID: owner, params: params)
+                let pending = PendingApproval(
+                    title: approval.title, detail: approval.detail, presentation: approval,
+                    responseTarget: target, serverRequestID: payload["server_request_id"] as? String,
+                    profileID: profile)
+                guard captureConversationApproval(pending, sessionID: owner, profileID: profile) else { return }
+            }
+        }
         let noticePayload = params["payload"] as? [String: Any] ?? [:]
         if type == "message.complete" || type == "error",
             let owner = (params["session_id"] as? String) ?? (noticePayload["session_id"] as? String)
@@ -374,7 +387,8 @@ extension DockModel {
             detail: approval.detail,
             presentation: approval,
             responseTarget: attentionTarget(sessionID: ownerSessionID, requestID: approval.requestID, params: params),
-            serverRequestID: payload["server_request_id"] as? String
+            serverRequestID: payload["server_request_id"] as? String,
+            profileID: attentionProfile(sessionID: ownerSessionID, params: params)
         )
         let aliases = pendingApprovalAliasesBySessionID[ownerSessionID] ?? [ownerSessionID]
         for alias in aliases {
@@ -387,6 +401,7 @@ extension DockModel {
             sessionIDs
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+        addResolvedApprovalAliases(Set(identities))
         guard let approval = identities.compactMap({ pendingApprovalsBySessionID[$0] }).first else {
             approvalTitle = nil
             approvalText = nil
@@ -400,6 +415,7 @@ extension DockModel {
         for identity in identities {
             aliases.formUnion(pendingApprovalAliasesBySessionID[identity] ?? [])
         }
+        addConversationApprovalAliases(aliases, pending: approval)
         for identity in aliases {
             pendingApprovalsBySessionID[identity] = approval
             pendingApprovalAliasesBySessionID[identity] = aliases
@@ -498,13 +514,18 @@ extension DockModel {
 
     func attentionTarget(sessionID: String, requestID: String?, params: [String: Any]) -> AttentionRequest? {
         guard let requestID, !requestID.isEmpty else { return nil }
+        return AttentionRequest(
+            sessionID: sessionID, profileID: attentionProfile(sessionID: sessionID, params: params),
+            requestID: requestID)
+    }
+
+    func attentionProfile(sessionID: String, params: [String: Any]) -> String? {
         let payload = params["payload"] as? [String: Any] ?? [:]
-        let profile =
+        return
             (params["profile"] as? String) ?? (payload["profile"] as? String) ?? quickSessionOwners[sessionID]?
             .profileID
             ?? sessions.first(where: { $0.id == sessionID })?.profileID
             ?? (currentSessionIDs.contains(sessionID) ? sessionProfileID ?? profileScopeID : nil)
-        return AttentionRequest(sessionID: sessionID, profileID: profile, requestID: requestID)
     }
 
     static func pendingClarification(from params: [String: Any]) -> PendingClarification {

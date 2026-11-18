@@ -282,9 +282,9 @@ extension DockPopover {
     /// The same prompt rows the chat shows, floated on the voice stage.
     @ViewBuilder
     var voicePromptCard: some View {
-        ConversationPromptRows(
+        VoiceConversationPromptRows(
             model: model, conversationMetrics: conversationMetrics,
-            showsClarification: showsVoiceClarificationCard, exclusive: true
+            showsClarification: showsVoiceClarificationCard
         )
     }
 
