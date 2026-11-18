@@ -121,7 +121,9 @@ struct DockPopover: View {
     @StateObject var speechInput = SpeechInput()
     @StateObject var voiceOutput = VoiceOutput()
     @StateObject var micLevelMeter = MicLevelMeter()
-    @StateObject var messageActionState = ConversationMessageActionState()
+    /// Not observed here: the transcript source subscribes to its pending
+    /// actions, so a copy or reaction click no longer rebuilds every pane.
+    @State var messageActionState = ConversationMessageActionState()
     @StateObject var workspaceStore = WorkspaceStore()
     @StateObject var agentUpdateService = HermesUpdateService.shared
     /// Not observed here: panes that show workflow state observe it themselves,
@@ -134,7 +136,9 @@ struct DockPopover: View {
     @StateObject var gitHubInspector = GitHubInspectorStore()
     @StateObject var pullRequestChatLinks = PullRequestChatLinkStore()
     @State var chatContextRouter = ChatContextRouter()
-    @StateObject var repositoryPreferences = CommandCenterPreferencesStore.shared
+    /// Not observed here: the root only passes it to refreshes, and pin or
+    /// collapse changes otherwise redrew every pane.
+    var repositoryPreferences: CommandCenterPreferencesStore { .shared }
     @ObservedObject var dockThemeStore = DockThemeStore.shared
     @StateObject var sessionNavNavigation = SessionNavigationState()
     @State var issueChatInsetSessionID: String?
