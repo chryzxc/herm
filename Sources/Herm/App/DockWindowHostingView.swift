@@ -125,6 +125,12 @@ enum DockScrollActivity {
         _ = monitor
         return timestamp - lastScrollTimestamp < settleInterval
     }
+
+    /// Seconds until a live scroll counts as settled; 0 when none is live.
+    static func remainingSettle(at timestamp: TimeInterval) -> TimeInterval {
+        _ = monitor
+        return max(0, lastScrollTimestamp + settleInterval - timestamp)
+    }
 }
 
 @MainActor

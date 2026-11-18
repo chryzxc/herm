@@ -33,3 +33,17 @@ extension DockMotionScheduleTests {
 extension Double {
     fileprivate func isApproximatelyEqual(to other: Double) -> Bool { abs(self - other) < 1e-6 }
 }
+
+extension DockMotionScheduleTests {
+    @Test func liveScrollHoldsTheClockUntilItSettlesOnTheSharedGrid() {
+        let rate = 30.0
+        #expect(DockMotionSchedule.tick(3_000, rate: rate, now: 100, heldFor: 0) == 3_000)
+        let held = DockMotionSchedule.tick(3_000, rate: rate, now: 100, heldFor: 0.15)
+        #expect(held == 3_005)
+        #expect(held / rate >= 100.15)
+        // A clock already past the settle time keeps its own tick.
+        #expect(DockMotionSchedule.tick(3_010, rate: rate, now: 100, heldFor: 0.15) == 3_010)
+        // Slower clocks resume on whole ticks of their own rate.
+        #expect(DockMotionSchedule.tick(1_500, rate: 15, now: 100, heldFor: 0.15) == 1_503)
+    }
+}

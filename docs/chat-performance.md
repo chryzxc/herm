@@ -642,6 +642,22 @@ re-rendered the root. The root then updated three nested split-pane hosting view
 Not measured: paired before/after captures on battery and on charger. Follow the
 comparison method in the previous section.
 
+## Decorative motion during scroll — 18 November 2026
+
+A 23 s scroll capture on a 120 Hz display, in Low Power Mode with no running
+sessions, lost 31% of frames. The one 30 Hz clock was the edge notch's
+blocked-card pulse, and it ticked through every second, even idle ones. With
+running sessions, each working indicator adds its own ticks, and each tick
+re-renders its host while the scroll is trying to draw.
+
+- `DockMotionSchedule` holds every decorative clock while a scroll is live
+  (`DockScrollActivity.remainingSettle`). It resumes on the shared tick grid
+  150 ms after the last wheel or momentum event.
+- The notch pulses at 15 Hz when its only animated mark is the blocked pulse.
+  It keeps 30 Hz for the working mark.
+
+Not measured: a paired capture with several running sessions.
+
 ## Markdown scroll layout invalidation — 16 November 2026
 
 Scrolling a chat stays rough after the sidebar and publication coalescing work,

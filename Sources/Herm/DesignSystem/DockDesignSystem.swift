@@ -708,11 +708,27 @@ struct DockMotionSchedule: TimelineSchedule {
         let metric = "motionTick@\(Int(rate))Hz"
         return AnyIterator {
             defer { tick += 1 }
-            // Profiling only: publication-free seconds that still drop frames
-            // are often these ticks re-rendering the window.
-            if Thread.isMainThread { MainActor.assumeIsolated { HermPerformanceRecorder.mark(metric) } }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    // Profiling only: publication-free seconds that still drop frames
+                    // are often these ticks re-rendering the window.
+                    HermPerformanceRecorder.mark(metric)
+                    tick = Self.tick(
+                        tick, rate: rate, now: Date().timeIntervalSinceReferenceDate,
+                        heldFor: DockScrollActivity.remainingSettle(at: ProcessInfo.processInfo.systemUptime))
+                }
+            }
             return Date(timeIntervalSinceReferenceDate: tick / rate)
         }
+    }
+
+    /// Decorative motion holds still while a scroll is live: every tick
+    /// re-renders its host, and with several working sessions those renders
+    /// compete with scroll frames. The next tick moves past the settle time,
+    /// staying on the shared grid so held clocks resume together.
+    static func tick(_ tick: Double, rate: Double, now: TimeInterval, heldFor hold: TimeInterval) -> Double {
+        guard hold > 0 else { return tick }
+        return max(tick, ((now + hold) * rate).rounded(.up))
     }
 
     /// 0...1 progress through a loop of `period` seconds.
