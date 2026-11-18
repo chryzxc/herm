@@ -45,7 +45,7 @@ extension DockModel {
         guard !request.isEmpty,
             !isUpdatingSessionModel,
             !isRestoringSession,
-            !clearsComposer || (pendingImages.isEmpty && pendingPDFURL == nil),
+            !clearsComposer || (pendingImages.isEmpty && pendingPDFURLs.isEmpty),
             let currentSessionID = sessionID,
             !currentSessionID.isEmpty,
             let originSessionID = sessionStorageID ?? sessionID,
@@ -151,7 +151,7 @@ extension DockModel {
         composerMentionBots = recipients
         composerMentionProfiles = roster.map(\.id)
         if !selected.isEmpty {
-            guard attachedContexts.isEmpty, pendingImages.isEmpty, pendingPDFURL == nil else {
+            guard attachedContexts.isEmpty, pendingImages.isEmpty, pendingPDFURLs.isEmpty else {
                 reportAttachmentError(
                     "Bot messages support text only. Remove attachments and context. Your draft is kept.")
                 return
@@ -165,7 +165,7 @@ extension DockModel {
         }
         if attachedContexts.isEmpty,
             ComposerMentionPresentation.canDirectRouteBot(
-                hasImages: !pendingImages.isEmpty, hasPDF: pendingPDFURL != nil),
+                hasImages: !pendingImages.isEmpty, hasPDF: !pendingPDFURLs.isEmpty),
             let request = ComposerMentionPresentation.botRelayRequest(in: draft, profileIDs: recipients.map(\.id)),
             let bot = recipients.first(where: { $0.id == request.profileID })
         {

@@ -440,7 +440,7 @@ extension ConversationTranscriptSource {
                     let prompt = self.model.messages[..<index].last(where: { $0.role == .user })
                 else { return }
                 self.model.send(
-                    QueuedPrompt(sessionID: sessionID, text: prompt.text, images: [], pdfURL: nil))
+                    QueuedPrompt(sessionID: sessionID, text: prompt.text, images: [], pdfURLs: []))
             }
         case .pin:
             actions.run(message.id, action: kind) { [model] in

@@ -82,7 +82,7 @@ final class DockModel: ObservableObject {
     @Published var pendingImages: [ImageAttachment] = []
     /// Context chips prepended to the next prompt (Kanban cards, PRs, issues).
     @Published var attachedContexts: [ChatContext] = []
-    @Published var pendingPDFURL: URL?
+    @Published var pendingPDFURLs: [URL] = []
     @Published var pendingPDFError: String?
     @Published var extractingImageTextIDs: Set<UUID> = []
     @Published var pendingAttachmentError: String?

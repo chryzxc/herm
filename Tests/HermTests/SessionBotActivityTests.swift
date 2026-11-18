@@ -324,11 +324,11 @@ struct SessionBotActivityTests {
         let model = DockModel(
             initialSessionID: "origin", botActivityFileURL: pdfURL.appendingPathExtension("activity.json"))
         model.stagePDFFile(at: pdfURL)
-        #expect(model.pendingPDFURL == pdfURL)
+        #expect(model.pendingPDFURLs == [pdfURL])
 
         model.newChat()
 
-        #expect(model.pendingPDFURL == nil)
+        #expect(model.pendingPDFURLs.isEmpty)
         #expect(model.pendingPDFError == nil)
         model.shutdown()
     }

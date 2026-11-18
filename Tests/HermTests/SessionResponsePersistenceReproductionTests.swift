@@ -81,7 +81,7 @@ struct SessionResponsePersistenceReproductionTests {
         try await waitFor { rpc.effortContinuation != nil }
 
         let snapshot = SessionComposerDraft(
-            text: "recovered destination draft", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "recovered destination draft", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         let owner = SessionComposerDraft.Key(profileID: model.composerDraftKey.profileID, sessionID: "other")
         model.pendingSessionSends.append(
@@ -202,7 +202,7 @@ struct SessionResponsePersistenceReproductionTests {
             SessionPendingSend(
                 id: UUID(), owner: model.composerDraftKey,
                 snapshot: SessionComposerDraft(
-                    text: "Repeated prompt", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+                    text: "Repeated prompt", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
                     attachmentError: nil, pdfError: nil), message: pending, baselineRowID: 7))
         let visible = model.reconcilePendingSends(for: model.composerDraftKey, restored: [old], rowIDs: [7: old.id])
         expect(visible.unmatchedMessages.contains { $0.id == pending.id })
@@ -213,7 +213,7 @@ struct SessionResponsePersistenceReproductionTests {
         let model = DockModel(rpcClient: ResponsePersistenceRPCClient())
         defer { model.delegationMonitoringTask?.cancel() }
         let snapshot = SessionComposerDraft(
-            text: "unconfirmed", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "unconfirmed", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         model.pendingSessionSends.append(
             SessionPendingSend(
@@ -229,7 +229,7 @@ struct SessionResponsePersistenceReproductionTests {
         defer { model.delegationMonitoringTask?.cancel() }
         let owner = model.composerDraftKey
         let snapshot = SessionComposerDraft(
-            text: "same", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "same", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         let first = ChatMessage(role: .user, text: "same")
         let second = ChatMessage(role: .user, text: "same")
@@ -258,7 +258,7 @@ struct SessionResponsePersistenceReproductionTests {
         let message = ChatMessage(role: .user, text: "stored prompt")
         let tail = ChatMessage(role: .hermes, text: "tail")
         let snapshot = SessionComposerDraft(
-            text: message.text, images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: message.text, images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         model.messages = [message, tail]
         model.pendingSessionSends.append(
@@ -278,7 +278,7 @@ struct SessionResponsePersistenceReproductionTests {
         defer { model.delegationMonitoringTask?.cancel() }
         let owner = model.composerDraftKey
         let snapshot = SessionComposerDraft(
-            text: "same", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "same", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         let first = UUID()
         let second = UUID()
@@ -302,7 +302,7 @@ struct SessionResponsePersistenceReproductionTests {
         defer { model.delegationMonitoringTask?.cancel() }
         let owner = model.composerDraftKey
         let snapshot = SessionComposerDraft(
-            text: "same", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "same", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         for _ in 0..<2 {
             model.pendingSessionSends.append(
@@ -323,7 +323,7 @@ struct SessionResponsePersistenceReproductionTests {
         let owner = model.composerDraftKey
         let other = SessionComposerDraft.Key(profileID: owner.profileID, sessionID: "other")
         let snapshot = SessionComposerDraft(
-            text: "same", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "same", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         let first = UUID()
         let second = UUID()
@@ -360,7 +360,7 @@ struct SessionResponsePersistenceReproductionTests {
         defer { model.delegationMonitoringTask?.cancel() }
         model.sessionStorageID = "shared"
         let snapshot = SessionComposerDraft(
-            text: "same", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "same", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         var owners: [SessionComposerDraft.Key] = []
         var ids: [UUID] = []
@@ -388,7 +388,7 @@ struct SessionResponsePersistenceReproductionTests {
         let model = DockModel(rpcClient: ResponsePersistenceRPCClient())
         defer { model.delegationMonitoringTask?.cancel() }
         let snapshot = SessionComposerDraft(
-            text: "pending", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "pending", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         let message = ChatMessage(role: .user, text: "pending")
         model.pendingSessionSends.append(
@@ -411,7 +411,7 @@ struct SessionResponsePersistenceReproductionTests {
         let owner = model.composerDraftKey
         let other = SessionComposerDraft.Key(profileID: owner.profileID, sessionID: "other")
         let snapshot = SessionComposerDraft(
-            text: "receipt", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "receipt", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         let id = UUID()
         let message = ChatMessage(role: .user, text: snapshot.text)
@@ -434,7 +434,7 @@ struct SessionResponsePersistenceReproductionTests {
         defer { model.delegationMonitoringTask?.cancel() }
         #expect(await model.resumeSession(session("origin"), reportFailure: true))
         let snapshot = SessionComposerDraft(
-            text: "legacy", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "legacy", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         let id = UUID()
         let optimistic = ChatMessage(role: .user, text: "legacy")
@@ -467,7 +467,7 @@ struct SessionResponsePersistenceReproductionTests {
         defer { model.delegationMonitoringTask?.cancel() }
         #expect(await model.resumeSession(session("origin"), reportFailure: true))
         let snapshot = SessionComposerDraft(
-            text: "legacy", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "legacy", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         let optimistic = ChatMessage(role: .user, text: "legacy")
         model.pendingSessionSends.append(
@@ -490,7 +490,7 @@ struct SessionResponsePersistenceReproductionTests {
         #expect(await model.resumeSession(session("origin"), reportFailure: true))
         let owner = model.composerDraftKey
         let snapshot = SessionComposerDraft(
-            text: "same", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "same", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         let first = ChatMessage(role: .user, text: "same")
         let second = ChatMessage(role: .user, text: "same")
@@ -531,7 +531,7 @@ struct SessionResponsePersistenceReproductionTests {
         defer { model.delegationMonitoringTask?.cancel() }
         #expect(await model.resumeSession(session("origin"), reportFailure: true))
         let snapshot = SessionComposerDraft(
-            text: "check me", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "check me", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         let message = ChatMessage(role: .user, text: snapshot.text)
         model.messages.append(message)
@@ -555,7 +555,7 @@ struct SessionResponsePersistenceReproductionTests {
         defer { model.delegationMonitoringTask?.cancel() }
         #expect(await model.resumeSession(session("origin"), reportFailure: true))
         let snapshot = SessionComposerDraft(
-            text: "check me", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "check me", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         model.pendingSessionSends.append(
             SessionPendingSend(
@@ -575,7 +575,7 @@ struct SessionResponsePersistenceReproductionTests {
         #expect(await model.resumeSession(session("origin"), reportFailure: true))
         let payload = "Question\n\n@file:/tmp/reference.txt"
         let snapshot = SessionComposerDraft(
-            text: "Question", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "Question", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         model.pendingSessionSends.append(
             SessionPendingSend(
@@ -599,7 +599,7 @@ struct SessionResponsePersistenceReproductionTests {
             SessionPendingSend(
                 id: UUID(), owner: model.composerDraftKey,
                 snapshot: SessionComposerDraft(
-                    text: prompt, images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+                    text: prompt, images: [], pdfURLs: [], contexts: [], replyQuote: nil,
                     attachmentError: nil, pdfError: nil),
                 message: ChatMessage(role: .user, text: prompt), baselineRowID: 0,
                 submittedText: prompt, phase: .acknowledged))
@@ -626,7 +626,7 @@ struct SessionResponsePersistenceReproductionTests {
         defer { model.delegationMonitoringTask?.cancel() }
         #expect(await model.resumeSession(session("origin"), reportFailure: true))
         let snapshot = SessionComposerDraft(
-            text: "pending", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "pending", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         for _ in 0..<256 {
             model.pendingSessionSends.append(
@@ -635,11 +635,11 @@ struct SessionResponsePersistenceReproductionTests {
                     message: ChatMessage(role: .user, text: "pending"), baselineRowID: 0))
         }
         let pdf = URL(fileURLWithPath: "/tmp/queued.pdf")
-        let queued = QueuedPrompt(sessionID: "origin", text: "queued", images: [], pdfURL: pdf)
+        let queued = QueuedPrompt(sessionID: "origin", text: "queued", images: [], pdfURLs: [pdf])
         model.queuedPrompts = [queued]
         model.drainQueuedPromptIfIdle()
         expect(model.queuedPrompts.first?.id == queued.id)
-        expect(model.queuedPrompts.first?.pdfURL == pdf)
+        expect(model.queuedPrompts.first?.pdfURLs == [pdf])
         expect(!rpc.requests.contains { $0.method == "prompt.submit" })
     }
 
@@ -649,7 +649,7 @@ struct SessionResponsePersistenceReproductionTests {
         defer { model.delegationMonitoringTask?.cancel() }
         #expect(await model.resumeSession(session("origin"), reportFailure: true))
         let snapshot = SessionComposerDraft(
-            text: "older", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "older", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         model.pendingSessionSends.append(
             SessionPendingSend(
@@ -666,20 +666,20 @@ struct SessionResponsePersistenceReproductionTests {
         defer { model.delegationMonitoringTask?.cancel() }
         #expect(await model.resumeSession(session("origin"), reportFailure: true))
         let snapshot = SessionComposerDraft(
-            text: "older", images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+            text: "older", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
         model.pendingSessionSends.append(
             SessionPendingSend(
                 id: UUID(), owner: model.composerDraftKey, snapshot: snapshot,
                 message: ChatMessage(role: .user, text: "older"), baselineRowID: 0, phase: .notSent))
         model.draft = "newer"
-        model.pendingPDFURL = URL(fileURLWithPath: "/tmp/newer.pdf")
+        model.pendingPDFURLs = [URL(fileURLWithPath: "/tmp/newer.pdf")]
         model.attachedContexts = [ChatContext(id: "new", title: "New", body: "context")]
         model.replyQuote = ReplyQuote(author: "Herm", text: "quote")
         model.draft = ""
         model.restorePendingSendIfPossible(for: model.composerDraftKey)
         expect(model.draft.isEmpty && !model.composerIsEmptyForRecovery)
-        model.pendingPDFURL = nil
+        model.pendingPDFURLs = []
         model.attachedContexts = []
         model.restorePendingSendIfPossible(for: model.composerDraftKey)
         expect(model.draft.isEmpty && !model.composerIsEmptyForRecovery)

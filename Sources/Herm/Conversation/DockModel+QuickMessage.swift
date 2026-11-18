@@ -122,7 +122,7 @@ extension DockModel {
         if let target, currentSessionIDs.contains(target.id),
             target.profileID == nil || target.profileID == sessionProfileID
         {
-            send(QueuedPrompt(sessionID: target.id, text: clean, images: [], pdfURL: nil), onSubmission: completion)
+            send(QueuedPrompt(sessionID: target.id, text: clean, images: [], pdfURLs: []), onSubmission: completion)
             return
         }
         let profile = target?.profileID ?? profileID ?? profileScopeID

@@ -19,7 +19,7 @@ struct SavedPromptLibrary: View {
                 Button(saving ? "Saving…" : "Save current draft") { save() }.buttonStyle(.dockPrimary)
                     .disabled(
                         saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || (model.draft.isEmpty && model.pendingImages.isEmpty && model.pendingPDFURL == nil
+                            || (model.draft.isEmpty && model.pendingImages.isEmpty && model.pendingPDFURLs.isEmpty
                                 && model.attachedContexts.isEmpty)
                     )
             }
@@ -60,7 +60,7 @@ struct SavedPromptLibrary: View {
     private func save() {
         let text = model.draft
         let images = model.pendingImages
-        let pdf = model.pendingPDFURL
+        let pdfs = model.pendingPDFURLs
         let contexts = model.attachedContexts
         let profile = model.profileScopeID
         let savedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -76,7 +76,7 @@ struct SavedPromptLibrary: View {
                     else { throw QuickDraftError.message("An image could not be saved.") }
                     record.files.append(try await store.pasteImage(png))
                 }
-                if let pdf { record.files.append(try await QuickDraftFile.capture(pdf)) }
+                for pdf in pdfs { record.files.append(try await QuickDraftFile.capture(pdf)) }
                 for context in contexts {
                     if let url = context.attachmentURL { record.files.append(try await QuickDraftFile.capture(url)) }
                 }
@@ -97,10 +97,6 @@ struct SavedPromptLibrary: View {
                     throw QuickDraftError.message("A saved image is unavailable. Select it again.")
                 }
                 return image
-            }
-            guard !record.files.contains(where: { $0.kind == .pdf }) || model.pendingPDFURL == nil else {
-                throw QuickDraftError.message(
-                    "The composer already has a PDF. Keep it or remove it before restoring this prompt.")
             }
             var imageIndex = 0
             for (file, url) in zip(record.files, urls) {

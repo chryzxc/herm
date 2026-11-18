@@ -47,8 +47,10 @@ extension DockModel {
         DebugLog.write("model: picked image \(url.lastPathComponent)")
     }
 
+    /// Adds a PDF beside any already staged. A rejection names its file and stays
+    /// visible while the rest of a multi-file selection keeps staging.
     func stagePDFFile(at url: URL) {
-        pendingPDFError = nil
+        let name = url.lastPathComponent
         guard url.pathExtension.lowercased() == "pdf" else {
             pendingPDFError = "Only PDF files can be attached as documents."
             return
@@ -56,14 +58,14 @@ extension DockModel {
         guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
             let size = values.fileSize
         else {
-            pendingPDFError = "The PDF size could not be read."
+            pendingPDFError = "The size of \(name) could not be read."
             return
         }
         guard size <= 25 * 1024 * 1024 else {
-            pendingPDFError = "PDF attachments are limited to 25 MB."
+            pendingPDFError = "\(name) was not attached: PDF attachments are limited to 25 MB."
             return
         }
-        pendingPDFURL = url
+        if !pendingPDFURLs.contains(url) { pendingPDFURLs.append(url) }
     }
 
     func stageFile(at url: URL) {
@@ -109,8 +111,8 @@ extension DockModel {
         pendingPDFError = nil
     }
 
-    func removePendingPDF() {
-        pendingPDFURL = nil
+    func removePendingPDF(_ url: URL) {
+        pendingPDFURLs.removeAll { $0 == url }
         pendingPDFError = nil
     }
 
