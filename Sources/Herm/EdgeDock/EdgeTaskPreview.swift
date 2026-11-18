@@ -818,7 +818,7 @@ private struct EdgeTaskHoverContent<Content: View>: View {
     }
 }
 
-/// The preview's one footer action: a quiet row that lifts on hover, with an
+/// The preview's one footer action: a quiet row with hover feedback and an
 /// optional keyboard hint. Replaces accent text links so the footer reads as
 /// part of the panel rather than a web link.
 struct EdgePreviewFooterButton: View {

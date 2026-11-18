@@ -1099,8 +1099,6 @@ private struct BotAvatarGeneratorTip: View {
                 ForEach(faces, id: \.0) { id, name in
                     VStack(spacing: 4) {
                         BotFaceMark(id: id, size: 48, mood: hovered == id ? .happy : .idle)
-                            .scaleEffect(hovered == id ? 1.12 : 1)
-                            .animation(.spring(response: 0.3, dampingFraction: 0.55), value: hovered)
                             .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
                             .onTapGesture {
                                 guard pending.isEmpty, let i = samples.firstIndex(of: id) else { return }
