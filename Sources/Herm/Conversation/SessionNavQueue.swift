@@ -729,14 +729,22 @@ struct SessionNavQueue: View, Equatable {
             matching: sessionSearchQuery,
             in: botScopedConversations(sidebarSnapshot.conversations + pinnedSessionPresentation.sessions),
             projects: sidebarSnapshot.projectNameBySessionID)
-        Text("Loaded sessions · \(matches.count)")
-            .dockFont(.body, weight: .semibold)
-            .foregroundStyle(style.secondaryText)
-            .dockPadding(8)
+        HStack(spacing: 6) {
+            Text("Loaded sessions · \(matches.count)")
+                .dockFont(.body, weight: .semibold)
+                .foregroundStyle(style.secondaryText)
+            // Fixed-size slot so a routine refresh never shifts the list below
+            // or reads as activity inside a conversation row.
+            ProgressView()
+                .controlSize(.mini)
+                .frame(width: 12, height: 12)
+                .opacity(sidebarSnapshot.inputs.isLoadingSessions ? 1 : 0)
+                .accessibilityLabel("Refreshing sessions")
+                .accessibilityHidden(!sidebarSnapshot.inputs.isLoadingSessions)
+        }
+        .dockPadding(8)
         if matches.isEmpty {
-            queueEmpty(
-                sidebarSnapshot.inputs.isLoadingSessions ? "Loading conversations…" : "No matching loaded sessions",
-                style: style)
+            queueEmpty("No matching loaded sessions", style: style)
         }
         if case .stale(let message) = pinnedSessionPresentation.status {
             queueEmpty(message, style: style)
