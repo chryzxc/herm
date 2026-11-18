@@ -24,6 +24,21 @@ struct BrowserFramePerformanceTests {
         #expect(publications == 1)
     }
 
+    /// Chat deltas publish on `DockModel` many times a second; the Browser tab must not redraw for them.
+    @Test func browserViewsDoNotObserveTheChatModel() {
+        let model = DockModel(initialSessionID: "browser-observation")
+        let workspace = SessionBrowserWorkspace(key: SessionBrowserKey(profileID: nil, sessionID: "browser-observation"))
+        let views: [Any] = [
+            SessionBrowserView(model: model, workspace: workspace),
+            AgentBrowserPane(browser: workspace.agent, model: model),
+        ]
+        for view in views {
+            let stored = Mirror(reflecting: view).children.first { $0.label == "model" || $0.label == "_model" }
+            #expect(stored?.label == "model")
+            #expect(stored?.value is DockModel)
+        }
+    }
+
     @Test func losslessFramesDecodeAwayFromTheMainActor() async throws {
         let bitmap = try #require(
             NSBitmapImageRep(

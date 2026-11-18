@@ -1889,7 +1889,10 @@ private struct AgentCanvasView: NSViewRepresentable {
 /// The Browser tab in agent mode: live view, failure state, and what Hermes is doing.
 struct AgentBrowserPane: View {
     @ObservedObject var browser: AgentBrowser
-    @ObservedObject var model: DockModel
+    /// Not observed: only the active browser call is shown, and `browserActivityID` names it.
+    /// Observing the whole model redrew the pane on every chat delta.
+    let model: DockModel
+    @State private var step: (icon: Ph, title: String, detail: String?)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -1942,6 +1945,9 @@ struct AgentBrowserPane: View {
         .animation(.dockEase(duration: 0.2), value: browser.userHasControl)
         .animation(.dockEase(duration: 0.16), value: browser.dialog)
         .background(Color.dockCanvas)
+        // A call's description is fixed when it starts (args arrive only at completion),
+        // so the active call's ID changing is the only time the step changes.
+        .onReceive(model.$browserActivityID) { _ in step = model.activeBrowserCall.map(ToolStep.describe) }
     }
 
     private var palette: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
@@ -1964,10 +1970,6 @@ struct AgentBrowserPane: View {
         .dockPadding(.vertical, 4)
         .dockHUDPanel()
         .accessibilityElement(children: .contain)
-    }
-
-    private var step: (icon: Ph, title: String, detail: String?)? {
-        model.activeBrowserCall.map(ToolStep.describe)
     }
 
     /// Live status for the page Hermes is driving, drawn as a theme HUD panel.
