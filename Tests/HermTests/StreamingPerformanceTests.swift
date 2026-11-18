@@ -281,6 +281,30 @@ struct StreamingPerformanceTests {
         withExtendedLifetime(cancellable) {}
     }
 
+    @Test func voiceTurnDeltasPublishTelemetryOnlyForTheFirstResponse() {
+        let sessionID = "voice-stream-silence"
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "voice-stream-silence-\(UUID().uuidString).json"),
+            initialSessionID: sessionID
+        )
+        // Paused keeps the turn a native voice conversation without starting speech.
+        model.voiceState = .paused
+        model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": ["model": "test"]])
+        model.receiveGatewayEvent("message.delta", params: ["session_id": sessionID, "payload": ["delta": "First"]])
+        #expect(model.voiceTelemetry.firstResponseAt != nil)
+        var publishes = 0
+        let cancellable = model.objectWillChange.sink { _ in publishes += 1 }
+
+        for index in 0..<1_000 {
+            model.receiveGatewayEvent(
+                "message.delta", params: ["session_id": sessionID, "payload": ["delta": " \(index)"]])
+        }
+
+        #expect(publishes == 0)
+        withExtendedLifetime(cancellable) {}
+    }
+
     @Test func visionErrorSplitAcrossFlushesIsStillDetected() {
         let sessionID = "vision-split"
         let model = DockModel(initialSessionID: sessionID)
