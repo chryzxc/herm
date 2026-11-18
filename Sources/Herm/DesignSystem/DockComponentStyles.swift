@@ -1928,6 +1928,7 @@ struct DockTabSegment<Label: View>: View {
                 .dockPadding(.horizontal, inset)
                 .frame(maxWidth: fillsWidth ? .infinity : nil)
                 .frame(height: height)
+                .contentShape(Rectangle())
                 .dockSelectionBackground(
                     shape, active: isSelected,
                     fill: DockThemeStyle.current.material == .glass
@@ -1942,7 +1943,6 @@ struct DockTabSegment<Label: View>: View {
                         lineWidth: DockLayout.outline))
         }
         .buttonStyle(.dockHover)
-        .contentShape(shape)
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18), value: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
