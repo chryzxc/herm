@@ -2500,7 +2500,10 @@ board adapter can apply the filters. Updated, Created, Priority, and Title
 sorts are readable labels backed by stable adapter ordering.
 
 The board menu stays enabled whenever it has boards to list or can create one;
-a single board still opens the menu. When `kanban.boardCreate` is available,
+a single board still opens the menu. The inventory loads from the Kanban
+dashboard API (`GET /api/plugins/kanban/boards`) before the CLI listing, so a
+failed shell capability probe cannot leave the menu on "Board inventory
+unavailable". When that API answered or `kanban.boardCreate` is available,
 a divider separates the boards from **New board…**, which opens a 420pt
 `DockModal` holding one name field, a monospaced slug preview, and an inline
 error slot. Create stays disabled until the name produces a valid Hermes slug

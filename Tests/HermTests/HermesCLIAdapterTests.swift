@@ -160,6 +160,22 @@ struct HermesCLIAdapterTests {
         #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client-board&include_archived=false"])
     }
 
+    @Test func boardInventoryAndCreationUseTheKanbanDashboardAPI() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        let inventory = try await adapter.kanbanBoardsOverHTTP()
+        #expect(client.httpPaths == ["/api/plugins/kanban/boards"])
+        #expect(client.commands.isEmpty)
+        #expect(ControlCenterModel.parseKanbanBoards(inventory.stdout).map(\.slug) == ["default", "archived-board"])
+
+        _ = try await adapter.kanbanCreateBoardOverHTTP(slug: "client-launch", name: "Client Launch")
+        #expect(client.httpWrites.last?.method == "POST")
+        #expect(client.httpWrites.last?.path == "/api/plugins/kanban/boards")
+        #expect(client.httpWrites.last?.body["slug"] as? String == "client-launch")
+        #expect(client.httpWrites.last?.body["name"] as? String == "Client Launch")
+    }
+
     @Test func kanbanBoardScopeSafelyEncodesQueryReservedCharacters() async throws {
         let client = CLITestRPCClient()
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
