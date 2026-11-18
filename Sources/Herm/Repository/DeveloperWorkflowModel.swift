@@ -227,7 +227,7 @@ final class DeveloperWorkflowModel: ObservableObject {
         let token = UUID()
         generation = token
         isRefreshing = true
-        error = nil
+        publish(\.error, nil)
         async let snapshot = RepositoryService.inspect(path: path)
         async let changes = RepositoryService.changeSnapshot(path: path)
         async let worktrees = RepositoryService.worktrees(path: path)
@@ -243,19 +243,21 @@ final class DeveloperWorkflowModel: ObservableObject {
         guard token == generation, path == activePath else { return }
         let (resolvedCommits, resolvedStashes) = await (recentCommits, stashEntries)
         guard token == generation, path == activePath else { return }
-        stashes = resolvedStashes ?? []
-        stashesError = resolvedStashes == nil ? "Could not refresh stashes. Refresh to try again." : nil
-        if let resolvedCommits { commits = resolvedCommits }
-        commitsError = resolvedCommits == nil ? "Could not refresh commits. Refresh to try again." : nil
+        // Watcher refreshes mostly re-read unchanged state; publishing equal
+        // values still redrew every observer once per property.
+        publish(\.stashes, resolvedStashes ?? [])
+        publish(\.stashesError, resolvedStashes == nil ? "Could not refresh stashes. Refresh to try again." : nil)
+        if let resolvedCommits { publish(\.commits, resolvedCommits) }
+        publish(\.commitsError, resolvedCommits == nil ? "Could not refresh commits. Refresh to try again." : nil)
         let githubRepositoryChanged = githubRepository != resolvedGitHubRemote
-        repository = resolvedSnapshot
-        repositoryFingerprint = resolvedFingerprint
-        githubRepository = resolvedGitHubRemote
-        self.changes = resolvedChanges
-        sourceControlError = resolvedChanges.error
-        if let resolvedWorktrees { self.worktrees = resolvedWorktrees }
-        worktreesUnavailable = resolvedWorktrees == nil
-        self.branches = resolvedBranches
+        publish(\.repository, resolvedSnapshot) { $0.hasSameContent(as: $1) }
+        publish(\.repositoryFingerprint, resolvedFingerprint)
+        publish(\.githubRepository, resolvedGitHubRemote)
+        publish(\.changes, resolvedChanges, unchangedWhen: Self.sameChanges)
+        publish(\.sourceControlError, resolvedChanges.error)
+        if let resolvedWorktrees { publish(\.worktrees, resolvedWorktrees, unchangedWhen: Self.sameWorktrees) }
+        publish(\.worktreesUnavailable, resolvedWorktrees == nil)
+        publish(\.branches, resolvedBranches)
         if githubRepositoryChanged {
             githubPullRequests = []
             githubError = nil
@@ -666,10 +668,10 @@ final class DeveloperWorkflowModel: ObservableObject {
         watchedFingerprints[id] = fingerprint
         if id == repository.repositoryID, activePath == path {
             generation = UUID()
-            repository = snapshot
-            changes = refreshedChanges
-            review = refreshedReview
-            reviewedFileIDs = []
+            publish(\.repository, snapshot) { $0.hasSameContent(as: $1) }
+            publish(\.changes, refreshedChanges, unchangedWhen: Self.sameChanges)
+            publish(\.review, refreshedReview)
+            publish(\.reviewedFileIDs, [])
         }
         let notice = RepositoryChangeNotice(
             repositoryID: id, displayName: URL(fileURLWithPath: path).lastPathComponent,
@@ -697,6 +699,32 @@ final class DeveloperWorkflowModel: ObservableObject {
             try? await UNUserNotificationCenter.current().add(
                 UNNotificationRequest(identifier: "hermes.repository.\(id)", content: content, trigger: nil))
         }
+    }
+
+    /// Assigns only a changed value: `@Published` fires on every assignment.
+    private func publish<Value: Equatable>(
+        _ keyPath: ReferenceWritableKeyPath<DeveloperWorkflowModel, Value>, _ value: Value
+    ) {
+        publish(keyPath, value, unchangedWhen: ==)
+    }
+
+    private static func sameChanges(_ lhs: RepositoryChangeSnapshot?, _ rhs: RepositoryChangeSnapshot?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): true
+        case (let lhs?, let rhs?): lhs.hasSameContent(as: rhs)
+        default: false
+        }
+    }
+
+    private static func sameWorktrees(_ lhs: [RepositoryWorktreeSummary], _ rhs: [RepositoryWorktreeSummary]) -> Bool {
+        lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0.hasSameContent(as: $1) }
+    }
+
+    private func publish<Value>(
+        _ keyPath: ReferenceWritableKeyPath<DeveloperWorkflowModel, Value>, _ value: Value,
+        unchangedWhen isUnchanged: (Value, Value) -> Bool
+    ) {
+        if !isUnchanged(self[keyPath: keyPath], value) { self[keyPath: keyPath] = value }
     }
 
     private func updateBaselineStatus(

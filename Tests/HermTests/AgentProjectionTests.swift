@@ -179,7 +179,7 @@ struct AgentProjectionTests {
         #expect(model.agentActivities.isEmpty)
     }
 
-    @Test func sessionAgentStateSurvivesModelRelaunch() {
+    @Test func sessionAgentStateSurvivesModelRelaunch() async {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("session-agent-state-\(UUID().uuidString).json")
         let activity = AgentActivity(
@@ -197,6 +197,7 @@ struct AgentProjectionTests {
         firstLaunch.sessionAgents = firstLaunch.activeSubagents
         firstLaunch.agentActivities = [activity]
         firstLaunch.cacheAgentState(for: "persistent-session")
+        await firstLaunch.agentStateCommit?.value
 
         let secondLaunch = DockModel(sessionAgentStateFileURL: storeURL)
         #expect(secondLaunch.restoreAgentState(for: "persistent-session"))

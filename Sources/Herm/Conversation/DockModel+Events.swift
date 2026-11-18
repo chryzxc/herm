@@ -906,7 +906,6 @@ extension DockModel {
             }
             if let sessionStorageID {
                 cacheAgentState(for: sessionStorageID)
-                Task { await agentStateWriter.flush() }
             }
             // A stopped turn keeps its queue; Enter on an empty composer sends it.
             if !wasInterrupting || sendQueuedPromptAfterInterrupt {

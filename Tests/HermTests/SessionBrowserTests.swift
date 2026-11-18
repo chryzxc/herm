@@ -7,6 +7,13 @@ import WebKit
 
 @MainActor
 struct SessionBrowserTests {
+    @Test func onlyRealPagesCountAsLoaded() {
+        // Suspending an unloaded tab must not load about:blank: that launches a web process.
+        #expect(!SessionBrowserWorkspace.hasLoadedPage(nil))
+        #expect(!SessionBrowserWorkspace.hasLoadedPage(URL(string: "about:blank")))
+        #expect(SessionBrowserWorkspace.hasLoadedPage(URL(string: "https://example.com")))
+    }
+
     @Test func copiedSignInsOnlyReachTheirOwnSite() throws {
         let cookie = { (domain: String) in
             BrowserCookie(cdp: ["name": "sid", "value": "v", "domain": domain, "path": "/", "secure": true])!

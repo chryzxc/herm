@@ -441,6 +441,8 @@ final class DockModel: ObservableObject {
     var agentStateBySessionID: [String: SessionAgentState] = [:]
     let agentStateStore: SessionAgentStateStore
     let agentStateWriter: SessionAgentStateWriter
+    /// The latest ordered agent-state commit; tests await it before relaunching.
+    var agentStateCommit: Task<Void, Never>?
     var sessionResumeGeneration = 0
     let sessionTranscriptCache = SessionTranscriptCache()
     @Published var sessionTranscriptPreview: SessionTranscriptPreview?

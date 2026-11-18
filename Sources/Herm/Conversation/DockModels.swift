@@ -309,6 +309,32 @@ struct SessionAgentState: Equatable, Codable {
     let synthesizedSubagentIDs: Set<String>
 }
 
+/// The archive is re-encoded whole on every write, so it keeps only the
+/// sessions with the most recent agent activity. Unbounded, it grew past
+/// 1,600 sessions and 12 MB, and every encode stalled the thread running it.
+enum SessionAgentStateRetention {
+    static let maximumSessionCount = 300
+
+    nonisolated static func lastActivity(_ state: SessionAgentState) -> Date {
+        var latest = Date.distantPast
+        for call in state.activeToolCalls { latest = max(latest, call.completedAt ?? call.startedAt) }
+        for event in state.recentEvents { latest = max(latest, event.timestamp) }
+        for activity in state.agentActivities { latest = max(latest, activity.timestamp) }
+        return latest
+    }
+
+    nonisolated static func pruned(
+        _ states: [String: SessionAgentState], limit: Int = maximumSessionCount
+    ) -> [String: SessionAgentState] {
+        guard states.count > limit else { return states }
+        let kept = Set(
+            states.map { (id: $0.key, date: lastActivity($0.value)) }
+                .sorted { $0.date != $1.date ? $0.date > $1.date : $0.id < $1.id }
+                .prefix(limit).map(\.id))
+        return states.filter { kept.contains($0.key) }
+    }
+}
+
 private struct SessionAgentStateArchive: Codable {
     let schemaVersion: Int
     let states: [String: SessionAgentState]
@@ -339,7 +365,24 @@ struct SessionAgentStateStore {
             let archive = try? JSONDecoder.sessionAgentState.decode(SessionAgentStateArchive.self, from: data),
             archive.schemaVersion == 1
         else { return [:] }
-        return archive.states
+        return SessionAgentStateRetention.pruned(archive.states)
+    }
+
+    /// Atomic writes stage through `<name>.sb-*` siblings, and a process killed
+    /// mid-write leaves them behind. Only files untouched for an hour are
+    /// removed, so an in-flight write is never disturbed.
+    func removeStaleTemporaryFiles(now: Date = .now) {
+        let prefix = fileURL.lastPathComponent + ".sb-"
+        guard
+            let entries = try? FileManager.default.contentsOfDirectory(
+                at: fileURL.deletingLastPathComponent(), includingPropertiesForKeys: [.contentModificationDateKey])
+        else { return }
+        for entry in entries where entry.lastPathComponent.hasPrefix(prefix) {
+            let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate
+            guard let modified, now.timeIntervalSince(modified) > 3600 else { continue }
+            try? FileManager.default.removeItem(at: entry)
+        }
     }
 
     func save(_ states: [String: SessionAgentState]) {
@@ -367,10 +410,18 @@ actor SessionAgentStateWriter {
     private var isCommitScheduled = false
     private var lastEncoded: Data?
     private var lastCommittedStates: [String: SessionAgentState]?
+    private var hasSweptTemporaryFiles = false
 
     init(store: SessionAgentStateStore) { self.store = store }
 
-    /// Throttled, not debounced: every write re-encodes all sessions (~0.5 MB),
+    /// Enqueues and commits at once, off the main actor. Session switches and
+    /// turn ends use this instead of a synchronous store save.
+    func commitNow(_ states: [String: SessionAgentState]) {
+        enqueue(states)
+        commit()
+    }
+
+    /// Throttled, not debounced: every write re-encodes all retained sessions,
     /// and a trailing 250 ms debounce still fired twice a second through agent
     /// runs, dirtying 2 GB of disk in minutes. `flush()` covers session
     /// switches and quit.
@@ -400,17 +451,24 @@ actor SessionAgentStateWriter {
             self.pending = nil
             return
         }
-        guard let data = try? JSONEncoder.sessionAgentState.encode(SessionAgentStateArchive(states: pending)) else {
+        guard
+            let data = try? JSONEncoder.sessionAgentState.encode(
+                SessionAgentStateArchive(states: SessionAgentStateRetention.pruned(pending)))
+        else {
             return
         }
         lastCommittedStates = pending
         self.pending = nil
         guard data != lastEncoded else { return }
         lastEncoded = data
-        // Write to disk on a background thread to avoid blocking the main thread
-        // during atomic writes of large session state files (440KB+).
-        Task.detached(priority: .background) { [store = self.store] in
-            store.saveEncoded(data)
+        // The actor already runs off the main thread; writing here keeps writes
+        // in commit order, which detached write tasks did not guarantee.
+        store.saveEncoded(data)
+        // Swept after the first real save, not at launch, so a model that never
+        // persists (such as a test's) never touches the folder.
+        if !hasSweptTemporaryFiles {
+            hasSweptTemporaryFiles = true
+            store.removeStaleTemporaryFiles()
         }
     }
 }

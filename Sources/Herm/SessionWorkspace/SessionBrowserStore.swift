@@ -114,15 +114,22 @@ final class SessionBrowserWorkspace: ObservableObject {
     }
 
     /// The closed Browser tab unloads its page. The agent Chrome is the profile's and keeps running.
+    /// Loading `about:blank` into a view that never loaded a page launches a
+    /// WebKit content process (and its font registration) only to show nothing.
     func suspend() {
         primary.web.stopLoading()
+        guard Self.hasLoadedPage(primary.web.url) else { return }
         primary.web.load(URLRequest(url: URL(string: "about:blank")!))
     }
 
     /// A tab, loaded page or pending link the user could lose. Without one, quitting loses nothing.
     var isInUse: Bool {
-        let loaded = { (url: String?) in url.map { !$0.isEmpty && !$0.hasPrefix("about:") } ?? false }
-        return !extras.isEmpty || loaded(primary.web.url?.absoluteString)
+        !extras.isEmpty || Self.hasLoadedPage(primary.web.url)
+    }
+
+    nonisolated static func hasLoadedPage(_ url: URL?) -> Bool {
+        guard let url = url?.absoluteString else { return false }
+        return !url.isEmpty && !url.hasPrefix("about:")
     }
 
     func open(_ url: URL) {

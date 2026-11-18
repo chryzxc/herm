@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 import Testing
@@ -360,6 +361,29 @@ struct SourceControlTests {
         #expect(
             await RepositoryService.createStash(path: root.path, message: "bad\0message", includeUntracked: false)
                 != nil)
+    }
+
+    @MainActor @Test func unchangedRefreshPublishesOnlyTheRefreshingFlag() async throws {
+        let root = try repository()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try write("one\n", "file.txt", in: root)
+        _ = try git(root, ["add", "."])
+        _ = try git(root, ["commit", "-qm", "Initial"])
+        let workflow = DeveloperWorkflowModel()
+        let control = ControlCenterModel()
+        let suite = "SourceControlTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = CommandCenterPreferencesStore(defaults: defaults)
+        await workflow.setActiveRepository(path: root.path, preferences: preferences, control: control)
+
+        var publications = 0
+        let subscription = workflow.objectWillChange.sink { publications += 1 }
+        await workflow.refresh(preferences: preferences, control: control)
+        subscription.cancel()
+
+        // isRefreshing turning on and off; equal re-read state must not publish.
+        #expect(publications == 2, "published \(publications) times")
     }
 
     @MainActor @Test func stashMutationsRefreshWorkflowAndClearOnRepositorySwitch() async throws {
