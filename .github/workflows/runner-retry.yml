@@ -1,0 +1,69 @@
+name: Retry starved macOS runs
+
+# GitHub cancels a job it cannot place on a hosted macOS runner after about 15 minutes
+# ("not acquired by Runner"). Such a run never started, so rerun it until a runner picks it up.
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  checks: read
+  contents: read
+
+concurrency:
+  group: runner-retry
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Rerun runs that never got a runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MAX_ATTEMPTS: "8"
+        shell: bash
+        run: |
+          set -euo pipefail
+          since=$(date -u -d '-24 hours' +%Y-%m-%dT%H:%M:%SZ)
+
+          # A job starved for a runner ends cancelled, with no steps, and GitHub annotates why.
+          starved() {
+            local run=$1 attempt=$2 job
+            for job in $(gh api "repos/$REPO/actions/runs/$run/attempts/$attempt/jobs" \
+                -q '.jobs[] | select(.conclusion == "cancelled" and (.steps | length) == 0) | .id' \
+                2>/dev/null | grep -E '^[0-9]+$' || true); do
+              if gh api "repos/$REPO/check-runs/$job/annotations" -q '.[].message' 2>/dev/null \
+                  | grep -q 'not acquired by Runner'; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          # Newest finished run per group: the nightly and main CI only matter for their latest
+          # commit, while each stable DMG dispatch is its own release.
+          candidates() {
+            gh api "repos/$REPO/actions/workflows/$1/runs?created=>=$since&per_page=50" -q "
+              [.workflow_runs[] | select($2)]
+              | group_by(if .event == \"workflow_dispatch\" then .id else .event end)
+              | map(max_by(.created_at))[]
+              | select(.status == \"completed\" and (.conclusion == \"cancelled\" or .conclusion == \"failure\"))
+              | \"\(.id) \(.run_attempt)\"" 2>/dev/null || echo "::warning::could not list $1 runs" >&2
+          }
+
+          { candidates release-dmg.yml 'true'
+            candidates ci.yml '.event == "push" and .head_branch == "main"'
+          } | { grep -E '^[0-9]+ [0-9]+$' || true; } | while read -r run attempt; do
+            if (( attempt >= MAX_ATTEMPTS )); then
+              echo "run $run: giving up after $attempt attempts"
+            elif starved "$run" "$attempt"; then
+              echo "run $run: attempt $attempt never got a runner; rerunning"
+              gh api -X POST "repos/$REPO/actions/runs/$run/rerun-failed-jobs" >/dev/null \
+                || echo "::warning::rerun of $run failed"
+            fi
+          done
