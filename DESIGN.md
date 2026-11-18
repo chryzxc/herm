@@ -2852,7 +2852,10 @@ The header has no mode tabs: Talk, Pull requests and Issues open as inspector
 tabs (see Empty session inspector). The actions menu holds session actions.
 The composer reserves the worktree bar's full 32pt when no bar shows, and split
 columns use the main conversation's metrics, so every column's input sits at the
-same height whether or not it has a folder bar (Bot chats have none). The inspector toggle remains direct from
+same height whether or not it has a folder bar (Bot chats have none). Below that
+reserve the composer keeps an 8pt inset, with 8pt above it. While a turn runs, the
+reply block is not drawn until its first visible text arrives, so the activity
+row sits directly above the composer. The inspector toggle remains direct from
 340pt and moves into the view menu below that. All destinations remain available
 at every width. Controls retain 44pt targets and resizing does not animate.
 The transcript mounts a bounded window of messages and pages earlier or later

@@ -245,6 +245,23 @@ struct ConversationRenderOptimizationTests {
         #expect(document.sections.map(\.source).joined() == body)
     }
 
+    @Test func blankStreamingReplyStaysCollapsedUntilVisibleText() {
+        func chunk(_ text: String) -> StreamingPresentationChunk {
+            StreamingPresentationChunk(id: 0, text: text, revision: 0, isMutableTail: true, context: .markdown)
+        }
+        #expect(!ConversationMessageRow.hasVisibleText([]))
+        #expect(!ConversationMessageRow.hasVisibleText([chunk(" \n\t")]))
+        #expect(ConversationMessageRow.hasVisibleText([chunk(" \n"), chunk("Hi")]))
+    }
+
+    @Test func composerKeepsFolderBarSpaceWithTightInsets() {
+        for fullscreen in [true, false] {
+            let metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: fullscreen)
+            #expect(metrics.composerTopInset == 8)
+            #expect(metrics.composerBottomInset == 8)
+        }
+    }
+
     @Test func streamingChunkSectionsRemainOneToOneWithChunks() {
         let chunks = [
             StreamingPresentationChunk(
