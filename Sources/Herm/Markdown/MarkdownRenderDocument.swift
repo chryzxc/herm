@@ -1243,18 +1243,29 @@ enum NativeMarkdownAttributedTextBuilder {
 @MainActor
 extension NSTextView {
     func addMarkdownLinkCursorRects() {
-        guard let storage = textStorage, let layoutManager, let textContainer else { return }
+        for rect in markdownLinkRects() { addCursorRect(rect, cursor: .pointingHand) }
+    }
+
+    /// Line rects of the links in `characterRange` (all text when nil), in
+    /// view coordinates. Finding them lays out the text around each link, so
+    /// callers that reset often should limit the range and cache.
+    func markdownLinkRects(in characterRange: NSRange? = nil) -> [CGRect] {
+        guard let storage = textStorage, let layoutManager, let textContainer else { return [] }
         let origin = textContainerOrigin
-        storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+        var rects: [CGRect] = []
+        let all = NSRange(location: 0, length: storage.length)
+        let searched = characterRange.map { NSIntersectionRange($0, all) } ?? all
+        storage.enumerateAttribute(.link, in: searched) { value, range, _ in
             guard value != nil else { return }
             let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             layoutManager.enumerateEnclosingRects(
                 forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
                 in: textContainer
             ) { rect, _ in
-                self.addCursorRect(rect.offsetBy(dx: origin.x, dy: origin.y), cursor: .pointingHand)
+                rects.append(rect.offsetBy(dx: origin.x, dy: origin.y))
             }
         }
+        return rects
     }
 
     /// Cursor rects only run in the key window, and Herm's panel is
@@ -1313,6 +1324,9 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
         container.lineFragmentPadding = 0
         let layout = NSLayoutManager()
+        // Mounting a section during scroll then lays out only the text it draws
+        // instead of the whole section; height measurement still lays out all.
+        layout.allowsNonContiguousLayout = true
         let storage = NSTextStorage()
         layout.addTextContainer(container)
         storage.addLayoutManager(layout)
@@ -1389,6 +1403,7 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         defaultParagraphStyle = typingAttributes[.paragraphStyle] as? NSParagraphStyle
         let installStarted = DispatchTime.now().uptimeNanoseconds
         textStorage?.setAttributedString(output.string)
+        textRevision &+= 1
         let installed = DispatchTime.now().uptimeNanoseconds
         DebugLog.writePerformance(
             "markdown_text_update styling_ms=\(Double(installStarted - stylingStarted) / 1_000_000) install_ms=\(Double(installed - installStarted) / 1_000_000) utf16=\(output.string.length)"
@@ -1406,10 +1421,39 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
 
     /// NSTextView's own link cursor is lost when hosted in SwiftUI, so the
     /// pointing hand is registered explicitly over each link's line rects.
+    /// AppKit resets cursor rects whenever an ancestor moves, which is every
+    /// transcript scroll tick. Layout is non-contiguous, so only links in the
+    /// visible text are measured; measuring all of them would lay out the
+    /// whole section. The rects are kept until the text, geometry or visible
+    /// text changes.
     override func resetCursorRects() {
         super.resetCursorRects()
-        addMarkdownLinkCursorRects()
+        let visible = visibleRect
+        guard !visible.isEmpty, let layoutManager, let textContainer else { return }
+        let origin = textContainerOrigin
+        let glyphs = layoutManager.glyphRange(
+            forBoundingRect: visible.offsetBy(dx: -origin.x, dy: -origin.y), in: textContainer)
+        let characters = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        let key = LinkRectKey(
+            textRevision: textRevision, containerSize: textContainer.size, origin: origin, characters: characters)
+        if linkRects?.key != key {
+            linkRectComputationCount += 1
+            linkRects = (key, markdownLinkRects(in: characters))
+        }
+        for rect in linkRects?.rects ?? [] where rect.intersects(visible) {
+            addCursorRect(rect, cursor: .pointingHand)
+        }
     }
+
+    private struct LinkRectKey: Equatable {
+        var textRevision: Int
+        var containerSize: NSSize
+        var origin: NSPoint
+        var characters: NSRange
+    }
+    private var textRevision = 0
+    private var linkRects: (key: LinkRectKey, rects: [CGRect])?
+    private(set) var linkRectComputationCount = 0
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -1534,7 +1578,43 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
 /// block never stalls conversation scrolling.
 @MainActor
 final class NativeMarkdownHorizontalScrollView: NSScrollView {
+    /// What a tile depends on. AppKit marks every nested scroll view for
+    /// layout when its position in the window moves, so each transcript scroll
+    /// tick re-tiled every code block although none of these had changed.
+    struct TileInputs: Equatable {
+        var size: NSSize
+        var documentSize: NSSize
+        var scrollerStyle: NSScroller.Style
+        var insetTop: CGFloat
+        var insetLeft: CGFloat
+        var insetBottom: CGFloat
+        var insetRight: CGFloat
+        var inWindow: Bool
+    }
+
     private var forwardsCurrentGesture = false
+    private var tiledInputs: TileInputs?
+    private(set) var tileCount = 0
+
+    private var tileInputs: TileInputs {
+        TileInputs(
+            size: bounds.size, documentSize: documentView?.frame.size ?? .zero, scrollerStyle: scrollerStyle,
+            insetTop: contentInsets.top, insetLeft: contentInsets.left, insetBottom: contentInsets.bottom,
+            insetRight: contentInsets.right, inWindow: window != nil)
+    }
+
+    override func layout() {
+        let inputs = tileInputs
+        guard inputs != tiledInputs else { return }
+        super.layout()
+        tiledInputs = tileInputs
+    }
+
+    override func tile() {
+        tileCount += 1
+        super.tile()
+        tiledInputs = nil
+    }
 
     override func scrollWheel(with event: NSEvent) {
         let beginsGesture = event.phase.contains(.began) || event.phase.contains(.mayBegin)
@@ -1565,7 +1645,7 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
             weight: .regular)
     }
     private let languageLabel = NSTextField(labelWithString: "")
-    private var copyButton = NSView()
+    private let copyButton = NativeMarkdownCopyButton()
     private let headerDivider = NSView()
     private let scrollView = NativeMarkdownHorizontalScrollView()
     private let textView = NativeMarkdownTextSectionView()
@@ -1599,14 +1679,14 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         layer?.masksToBounds = true
         languageLabel.font = labelFont
         languageLabel.lineBreakMode = .byTruncatingTail
-        // The shared copy control: icon swaps to a drawn check on click.
-        copyButton = NSHostingView(
-            rootView: DockCopyButton(
-                label: "Copy", accessibilityLabel: "Copy code", presentation: .icon, iconSize: 13,
-                color: Color(nsColor: NativeMarkdownPalette().secondary)
-            ) { [weak self] in self?.copyCode(nil) }
-            .buttonStyle(.plain))
+        // The copy icon swaps to a drawn check on click, like DockCopyButton.
+        copyButton.configure(
+            iconSize: 13, color: NativeMarkdownPalette().secondary, confirmationColor: NSColor(Color.dockSuccess))
+        copyButton.onCopy = { [weak self] in self?.copyCode(nil) }
         headerDivider.wantsLayer = true
+        // Safe-area insets track window geometry, so every outer scroll tick
+        // would re-tile this nested scroll view.
+        scrollView.automaticallyAdjustsContentInsets = false
         scrollView.drawsBackground = false
         scrollView.hasHorizontalScroller = true
         scrollView.hasVerticalScroller = false
@@ -1700,8 +1780,9 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         NSPasteboard.general.setString(text, forType: .string)
         copyResetTask?.cancel()
         copyResetTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? await Task.sleep(for: .seconds(NativeMarkdownCopyButton.confirmationInterval))
             guard !Task.isCancelled else { return }
+            self?.copyButton.setConfirmation(false)
             self?.copyResetTask = nil
             self?.onInteractionEnded?()
         }
@@ -1728,6 +1809,7 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
         layer?.borderColor = palette.border.cgColor
         headerDivider.layer?.backgroundColor = palette.border.cgColor
         languageLabel.textColor = palette.metadata
+        copyButton.configure(iconSize: 13, color: palette.secondary, confirmationColor: NSColor(Color.dockSuccess))
         let (body, opensBlock) = Self.parsedCode(code)
         self.opensBlock = opensBlock
         codeBody = body
