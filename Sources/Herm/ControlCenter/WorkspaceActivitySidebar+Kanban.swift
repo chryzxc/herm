@@ -224,7 +224,9 @@ extension WorkspaceActivitySidebar {
         HStack(spacing: 8) {
             DockMenu {
                 if control.kanbanBoards.isEmpty {
-                    Text("Board inventory unavailable")
+                    Text(
+                        control.isActionPending(control.refreshKanbanBoardsActionID)
+                            ? "Loading boards…" : "Board inventory unavailable")
                 } else {
                     ForEach(control.kanbanBoards.filter { !$0.archived }) { board in
                         Button {
@@ -241,6 +243,10 @@ extension WorkspaceActivitySidebar {
                         }
                     }
                 }
+                if control.capabilityAvailable("kanban.boardCreate") {
+                    Divider()
+                    Button("New board…") { isShowingKanbanBoardCreate = true }
+                }
             } label: {
                 kanbanToolbarChip(
                     control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.name
@@ -251,8 +257,7 @@ extension WorkspaceActivitySidebar {
             }
             .buttonStyle(.dockHover)
             .fixedSize()
-            .disabled(control.kanbanBoards.count < 2 || control.isKanbanRefreshPending)
-            .help("Select Kanban board")
+            .help("Select or create a Kanban board")
 
             kanbanFilterControls
 

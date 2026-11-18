@@ -47,6 +47,7 @@ enum HermesFeatureIDs {
         case kanbanFilters = "kanban.filters"
         case kanbanAssignees = "kanban.assignees"
         case kanbanBoards = "kanban.boards"
+        case kanbanBoardCreate = "kanban.boardCreate"
         case kanbanCreate = "kanban.create"
         case kanbanComplete = "kanban.complete"
         case kanbanBlock = "kanban.block"

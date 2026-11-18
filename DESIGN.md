@@ -2496,6 +2496,15 @@ states; filter visibility is not gated by an optional capability when the
 board adapter can apply the filters. Updated, Created, Priority, and Title
 sorts are readable labels backed by stable adapter ordering.
 
+The board menu stays enabled whenever it has boards to list or can create one;
+a single board still opens the menu. When `kanban.boardCreate` is available,
+a divider separates the boards from **New board…**, which opens a 420pt
+`DockModal` holding one name field, a monospaced slug preview, and an inline
+error slot. Create stays disabled until the name produces a valid Hermes slug
+and while the request is pending. After Hermes confirms, the sheet closes,
+the new board is selected, and the inventory refreshes. Boards are global in
+Hermes, not tied to a profile, so the menu does not add a profile scope.
+
 Kanban lanes are flat columns in canonical order. The page header and toolbar
 stay fixed; the board fills the remaining height, scrolls horizontally, and
 each expanded lane scrolls its own cards vertically. Non-empty lanes use a

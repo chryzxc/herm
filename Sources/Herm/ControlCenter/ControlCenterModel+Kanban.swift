@@ -518,6 +518,53 @@ extension ControlCenterModel {
         }
     }
 
+    /// A Hermes board slug for a display name: lowercase ASCII letters, digits,
+    /// hyphens and underscores, at most 64 characters, not starting with `-`/`_`.
+    nonisolated static func kanbanBoardSlug(for name: String) -> String? {
+        let folded = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased()
+        var slug = ""
+        for scalar in folded.unicodeScalars {
+            if ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar) || scalar == "_" {
+                slug.unicodeScalars.append(scalar)
+            } else if !slug.hasSuffix("-") {
+                slug.append("-")
+            }
+        }
+        let trimmed = String(slug.drop { $0 == "-" || $0 == "_" }.prefix(64))
+        let result = trimmed.hasSuffix("-") ? String(trimmed.dropLast()) : trimmed
+        return result.isEmpty ? nil : result
+    }
+
+    /// Creates a board through Hermes and selects it. Returns a user-facing
+    /// error, or nil once Hermes confirmed the board.
+    func createKanbanBoard(name: String) async -> String? {
+        guard let cli, capabilityAvailable("kanban.boardCreate") else {
+            return "This Hermes Agent cannot create Kanban boards."
+        }
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let slug = Self.kanbanBoardSlug(for: cleanName) else {
+            return "Enter a board name with at least one letter or number."
+        }
+        if let existing = kanbanBoards.first(where: { $0.slug == slug }) {
+            return existing.archived
+                ? "An archived board already uses “\(slug)”. Choose another name."
+                : "“\(existing.name)” already uses “\(slug)”. Choose another name."
+        }
+        do {
+            let result = try await cli.kanbanCreateBoard(slug: slug, name: cleanName)
+            guard result.succeeded else {
+                let detail = Self.safeUserDiagnostic(result.stderr)
+                return detail.isEmpty ? "Hermes Kanban could not create the board." : detail
+            }
+        } catch {
+            return HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+        }
+        // Inventory refresh keeps an explicit selection once the board is listed.
+        selectKanbanBoard(slug: slug)
+        refreshKanbanBoards()
+        return nil
+    }
+
     func selectKanbanBoard(_ board: KanbanBoardSummary) {
         guard !board.archived else { return }
         selectKanbanBoard(slug: board.slug)

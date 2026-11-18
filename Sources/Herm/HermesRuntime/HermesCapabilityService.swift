@@ -263,6 +263,10 @@ final class HermesCapabilityService {
                 ("kanbanStats", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban stats --help"]),
                 ("kanbanAssignees", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban assignees --help"]),
                 ("kanbanBoards", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban boards list --help"]),
+                (
+                    "kanbanBoardCreate", HermesFeatureIDs.ID.shellExec,
+                    ["command": "hermes kanban boards create --help"]
+                ),
                 ("kanbanCreate", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban create --help"]),
                 ("kanbanComplete", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban complete --help"]),
                 ("kanbanBlock", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban block --help"]),
@@ -316,6 +320,7 @@ final class HermesCapabilityService {
         let kanbanStats = results["kanbanStats"] ?? nil
         let kanbanAssignees = results["kanbanAssignees"] ?? nil
         let kanbanBoards = results["kanbanBoards"] ?? nil
+        let kanbanBoardCreate = results["kanbanBoardCreate"] ?? nil
         let kanbanCreate = results["kanbanCreate"] ?? nil
         let kanbanComplete = results["kanbanComplete"] ?? nil
         let kanbanBlock = results["kanbanBlock"] ?? nil
@@ -566,6 +571,11 @@ final class HermesCapabilityService {
                 access: .readOnly,
                 requiredHelpTerms: ["list", "--json"]
             ),
+            cliCapability(
+                id: HermesFeatureIDs.ID.kanbanBoardCreate.rawValue, title: "Create Kanban board",
+                commandResult: kanbanBoardCreate,
+                recovery: "This Hermes version does not expose Kanban board creation.", access: .confirmedMutation,
+                requiredHelpTerms: ["slug", "--name"]),
             cliCapability(
                 id: HermesFeatureIDs.ID.kanbanCreate.rawValue, title: "Create Kanban task", commandResult: kanbanCreate,
                 recovery: "This Hermes version does not expose Kanban task creation.", access: .confirmedMutation,

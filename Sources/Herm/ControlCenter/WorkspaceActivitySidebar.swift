@@ -78,6 +78,7 @@ struct WorkspaceActivitySidebar: View {
     @State var kanbanTitle = ""
     @State var kanbanBody = ""
     @State var isShowingKanbanComposer = false
+    @State var isShowingKanbanBoardCreate = false
     @State var isShowingKanbanConfirmation = false
     @State var kanbanChangeRequest: KanbanChangeRequest?
     @State var isShowingKanbanChangeConfirmation = false
@@ -251,6 +252,9 @@ struct WorkspaceActivitySidebar: View {
                 ) { updated in
                     control.mutateKanban(updated)
                 }
+            }
+            .dockSheet(isPresented: $isShowingKanbanBoardCreate) {
+                KanbanBoardCreateSheet(control: control)
             }
             .dockSheet(item: $cronEditJob) { job in
                 CronEditEditor(job: job, control: control)
