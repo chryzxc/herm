@@ -483,6 +483,12 @@ extension DockPopover {
                 }
             },
             onOpenGitHub: { section in leaveIntegrations { selectGitHubSection(section) } },
+            onOpenPlugin: { id in
+                leaveIntegrations {
+                    sessionNavNavigation.selectPlugin(id)
+                    fullscreenSurface = .plugin(id)
+                }
+            },
             isFullscreen: isFullscreen,
             isHermesConnected: model.isHermesConnected,
             hermesConnectionIssue: model.hermesConnectionIssue,
@@ -570,7 +576,7 @@ extension DockPopover {
 
     var isGlobalSurfaceActive: Bool {
         switch fullscreenSurface {
-        case .global, .artifacts, .pullRequests, .issues, .chatGrid: true
+        case .global, .artifacts, .plugin, .pullRequests, .issues, .chatGrid: true
         case .conversation, .bots: false
         }
     }

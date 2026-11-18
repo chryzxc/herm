@@ -4148,6 +4148,25 @@ Existing visibility settings still hide disabled destinations without erasing th
 The menu indicates an active unpinned destination, and Settings update badges remain
 visible through More. Connection and window-switch actions stay directly accessible.
 
+Installed Hermes Desktop plugin pages that Herm can run, with no switch in Herm,
+follow the built-in destinations in More. Each row carries a **Plugin** pill and the same
+pin control. Rows and pinned rail buttons draw the codicon the plugin declares for its Desktop
+sidebar entry, using the codicon font bundled with the plugin host; a plugin without one, or a
+build without the host, uses the puzzle piece. A plugin page opens as a `DockExpandedPage`
+that shows the same **Plugin** pill right after the plugin name. Its header subtitle holds only loading
+state and plugin notices, and is empty once the page is ready. Load or run failures stay in the same container, with a Reload
+action; a page that never reports ready fails after 20 seconds instead of loading forever.
+Pins of uninstalled plugins stay stored but are hidden.
+
+The page runs Hermes Desktop's own components, restyled through the same CSS variables a
+Desktop theme paints: the color seeds and shadcn tokens (text, accent, on-accent ink, canvas,
+surfaces, controls, borders, inputs, focus rings, destructive, success), the sans font for
+rounded, serif and monospaced skins, and `--radius-scalar` so Desktop's corners match the skin's
+control radius. Herm repaints them, with Light or Dark appearance, when the skin or the system appearance changes. Set
+only variables. Never target Desktop's classes or elements, which change between Hermes
+releases. CSS a plugin ships for its own markup keeps its look. Glass stays a native material
+and does not carry into the page.
+
 ### Generative visualization refinements
 
 Native generated charts use the shared categorical palette, unit-aware legends,

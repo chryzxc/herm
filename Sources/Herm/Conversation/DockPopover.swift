@@ -171,6 +171,8 @@ struct DockPopover: View {
         case conversation, pullRequests, issues, chatGrid
         case global
         case artifacts
+        /// A Desktop plugin page, by plugin id.
+        case plugin(String)
         case bots
     }
     @AppStorage(ChatViewSettings.gridViewKey) var prefersChatGrid = false
