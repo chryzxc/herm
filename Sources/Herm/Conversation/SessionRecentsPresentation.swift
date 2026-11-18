@@ -3,7 +3,7 @@ import Foundation
 enum SessionRecentsType: Hashable {
     case conversations, automation
 
-    var title: String { self == .conversations ? "Conversations" : "Automation" }
+    var rowName: String { self == .conversations ? "conversations" : "automations" }
 
     func matching(_ sessions: [HermesSession]) -> [HermesSession] {
         sessions.filter { $0.isAutomationSession == (self == .automation) }

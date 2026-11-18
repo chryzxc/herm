@@ -469,7 +469,7 @@ beside refresh in the **Recents** header to clear unread updates across the sele
 bot’s loaded Recents, including conversations under Show more. Badge calculations are
 cached independently of transcript updates; status polling pauses while the
 workspace is hidden or Hermes is disconnected.
-The sidebar stacks Pinned, Recents, and Projects for the selected
+The sidebar stacks Pinned, Recents, Projects, and Automations for the selected
 bot under its bot header. In the bot picker, use each profile's reorder menu to move
 it up or down. The order is saved locally across restarts without changing the
 selected profile or its conversations. Choose **All profiles** at the top of the

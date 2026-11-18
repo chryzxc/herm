@@ -1788,7 +1788,7 @@ priority in smaller windows; dividers remain adjustable.
 The desktop conversation list keeps its 300pt minimum while resizing; the
 workspace takes the remaining width when both pane minimums cannot fit.
 Section headings stay on one line and truncate rather than wrapping vertically.
-Pinned, Recents, and Projects use native pinned section headers in the sidebar's
+Pinned, Recents, Projects, and Automations use native pinned section headers in the sidebar's
 single lazy stack. The current section header stays below the fixed search bar
 until the next section pushes it away. Headers are transparent in the list;
 at the scroll viewport edge they use the matching canvas or native window
@@ -1858,12 +1858,14 @@ Messaging origins reported by Hermes use the shared compact source pill beside
 the preview. Known services use their icon; other reported sources use a generic
 message icon. Local and unspecified sources do not show a pill.
 
-The sidebar always shows the bot header and the stacked Pinned,
-Recents, and Projects sections for the selected bot. Recents read every bot's
+The sidebar shows the bot header and the stacked Pinned, Recents, Projects, and
+Automations sections for the selected bot. Automations contains automation sessions
+separately from Recents and is last by default; its disclosure and row limit are
+independent. Saved section ordering remains customizable. Recents read every bot's
 chats from one all-profile sidebar read merged with the selected bot's fresher
-Drag a section header (Pinned, Recents, Projects) onto another to swap their order; the order is a local preference, and the drop target shows an accent line above the header. Bot folders reorder the same way on the Bots list.
 list. Other bots' history is baselined once from that read so first use shows no
-unread flood.
+unread flood. Drag a section header onto another to change their order; the order
+is a local preference. Bot folders reorder the same way on the Bots list.
 
 When more than one Bot is visible, the Bot switcher starts with a fixed
 "All profiles" row (not reorderable) whose mark stacks up to three Bot avatars,

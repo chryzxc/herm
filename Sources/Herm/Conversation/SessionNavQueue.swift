@@ -688,9 +688,14 @@ struct SessionNavQueue: View, Equatable {
                         }
                     case .recents:
                         conversationOutline(
-                            navigationState.recentsType.matching(allConversations), statuses: statuses, style: style)
+                            SessionRecentsType.conversations.matching(allConversations), type: .conversations,
+                            statuses: statuses, style: style)
                     case .projects:
                         projectsOutline(projects, statuses: statuses, style: style)
+                    case .automations:
+                        conversationOutline(
+                            SessionRecentsType.automation.matching(allConversations), type: .automation,
+                            statuses: statuses, style: style)
                     }
                 }
                 SessionRailEndDropZone(state: navigationState)
@@ -887,13 +892,19 @@ struct SessionNavQueue: View, Equatable {
         }
     }
 
-    private func conversationExpansionButton(style: DockThemePalette) -> some View {
-        Button {
-            navigationState.showsAllConversations.toggle()
+    private func conversationExpansionButton(type: SessionRecentsType, style: DockThemePalette) -> some View {
+        let showingAll =
+            type == .automation ? navigationState.showsAllAutomations : navigationState.showsAllConversations
+        return Button {
+            if type == .automation {
+                navigationState.showsAllAutomations.toggle()
+            } else {
+                navigationState.showsAllConversations.toggle()
+            }
         } label: {
             HStack(spacing: 6) {
-                Text(navigationState.showsAllConversations ? "Show recent conversations" : "Show more conversations")
-                DockIcon(navigationState.showsAllConversations ? .caretUp : .caretDown)
+                Text(showingAll ? "Show recent \(type.rowName)" : "Show more \(type.rowName)")
+                DockIcon(showingAll ? .caretUp : .caretDown)
                     .dockFont(.metadata, weight: .bold)
             }
             .dockFont(.control)
@@ -908,17 +919,19 @@ struct SessionNavQueue: View, Equatable {
     /// while it is open) must not leak into this Bot's list. Main chats live
     /// on the Bots page, never here.
     /// The header badge counts every bot's sessions, so "mark all" must too.
-    private func markAllSessionsRead(_ conversations: [HermesSession]) {
+    private func markAllSessionsRead(_ conversations: [HermesSession], type: SessionRecentsType) {
         let all = SessionDashboardProjection.sessions(in: sidebarSnapshot)
         // Stamp "now": reply timestamps can run ahead of a stale index `updatedAt`.
         model.markSessionsRead(
-            navigationState.recentsType.matching(all + conversations), seenStore: sidebarSessionSeenStore, at: .now)
-        if navigationState.recentsType == .conversations { botUnreadCounts = [:] }
+            type.matching(all + conversations), seenStore: sidebarSessionSeenStore, at: .now)
+        if type == .conversations { botUnreadCounts = [:] }
     }
 
-    private func hasUnread(_ conversations: [HermesSession], _ statuses: [String: SidebarSessionStatus]) -> Bool {
+    private func hasUnread(
+        _ conversations: [HermesSession], _ statuses: [String: SidebarSessionStatus], type: SessionRecentsType
+    ) -> Bool {
         conversations.contains { statuses[$0.id] == .unreadComplete }
-            || (navigationState.recentsType == .conversations && botUnreadCounts.values.contains { $0 > 0 })
+            || (type == .conversations && botUnreadCounts.values.contains { $0 > 0 })
     }
 
     private func botScopedConversations(_ base: [HermesSession]) -> [HermesSession] {
@@ -1108,27 +1121,30 @@ struct SessionNavQueue: View, Equatable {
     /// Section rows remain lazy; only the header is pinned by the rail.
     @ViewBuilder
     private func conversationOutline(
-        _ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette
+        _ conversations: [HermesSession], type: SessionRecentsType,
+        statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
+        let expanded =
+            type == .automation ? $navigationState.areAutomationsExpanded : $navigationState.areConversationsExpanded
         Section {
-            conversationRows(conversations, statuses: statuses, style: style)
+            conversationRows(conversations, type: type, statuses: statuses, style: style)
                 .sessionSidebarFadesUnderStickyHeader()
         } header: {
             DockSectionHeader(
-                title: "Recents",
+                title: type == .automation ? "Automations" : "Recents",
                 count: conversations.count,
-                isExpanded: $navigationState.areConversationsExpanded,
+                isExpanded: expanded,
                 style: style
             ) {
-                if hasUnread(conversations, statuses) {
+                if hasUnread(conversations, statuses, type: type) {
                     DockIconButton(icon: .checks, label: "Mark all as read", size: 24, style: style) {
-                        markAllSessionsRead(conversations)
+                        markAllSessionsRead(conversations, type: type)
                     }
                 }
                 DockIconButton(
                     icon: .arrowsClockwise,
                     label: sidebarSnapshot.inputs.isLoadingSessions
-                        ? "Refreshing conversations…" : "Refresh conversations",
+                        ? "Refreshing \(type.rowName)…" : "Refresh \(type.rowName)",
                     isBusy: sidebarSnapshot.inputs.isLoadingSessions,
                     size: 24,
                     style: style
@@ -1137,15 +1153,15 @@ struct SessionNavQueue: View, Equatable {
                     controlCenter.refreshProjectNavigation()
                 }
             }
-            .sessionRailReorder(.recents, state: navigationState)
+            .sessionRailReorder(type == .automation ? .automations : .recents, state: navigationState)
             .frame(maxWidth: .infinity)
             .dockPadding(.top, style.sectionSpacing)
-            .dockPadding(.bottom, navigationState.areConversationsExpanded ? 2 : 0)
+            .dockPadding(.bottom, expanded.wrappedValue ? 2 : 0)
             .contextMenu {
                 Button("Mark all as read") {
-                    markAllSessionsRead(conversations)
+                    markAllSessionsRead(conversations, type: type)
                 }
-                .disabled(!hasUnread(conversations, statuses))
+                .disabled(!hasUnread(conversations, statuses, type: type))
             }
             .sessionSidebarStickyBackground()
             .accessibilityAddTraits(.isHeader)
@@ -1154,27 +1170,22 @@ struct SessionNavQueue: View, Equatable {
 
     @ViewBuilder
     private func conversationRows(
-        _ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette
+        _ conversations: [HermesSession], type: SessionRecentsType,
+        statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        if navigationState.areConversationsExpanded {
-            DockMenuPicker(title: navigationState.recentsType.title, selection: $navigationState.recentsType) {
-                DockMenuOption("Conversations", value: SessionRecentsType.conversations)
-                DockMenuOption("Automation", value: SessionRecentsType.automation)
-            }
-            .accessibilityIdentifier("sidebar-session-type")
-            .dockPadding(.leading, 20)
+        if type == .automation ? navigationState.areAutomationsExpanded : navigationState.areConversationsExpanded {
             if conversations.isEmpty {
                 queueEmpty(
                     sidebarSnapshot.inputs.isLoadingSessions
-                        ? "Loading conversations…"
-                        : (navigationState.recentsType == .automation
+                        ? "Loading \(type.rowName)…"
+                        : (type == .automation
                             ? "No automation sessions" : "No saved conversations"),
                     style: style
                 )
                 .dockPadding(.leading, 20)
             } else {
                 let visibleSessions =
-                    navigationState.showsAllConversations
+                    (type == .automation ? navigationState.showsAllAutomations : navigationState.showsAllConversations)
                     ? conversations
                     : Array(conversations.prefix(10))
                 ForEach(visibleSessions, id: \.[sidebarSection: "conversations"]) { session in
@@ -1182,7 +1193,7 @@ struct SessionNavQueue: View, Equatable {
                 }
             }
             if conversations.count > 10 {
-                conversationExpansionButton(style: style)
+                conversationExpansionButton(type: type, style: style)
                     .dockPadding(.leading, 12)
             }
         }
