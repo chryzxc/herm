@@ -39,3 +39,25 @@ struct SessionSourcePill: View {
         .help("Session from \(title)")
     }
 }
+
+/// The bot that owns a conversation in the all-profiles list: avatar and
+/// name, the same identity a bot reply shows in the chat.
+struct SessionProfilePill: View {
+    let bot: BotSummary
+    let imageData: Data?
+
+    var body: some View {
+        HStack(spacing: 4) {
+            BotAvatarView(bot: bot, imageData: imageData, size: 14, animated: false, orbits: false)
+            Text(bot.name)
+                .dockFont(.metadata, weight: .medium)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .foregroundStyle(Color.dockSecondaryText)
+        .dockPill(compact: true)
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Bot: \(bot.name)")
+    }
+}

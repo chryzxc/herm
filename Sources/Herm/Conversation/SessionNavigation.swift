@@ -91,6 +91,10 @@ final class SessionNavigationState: ObservableObject {
     let selection = SessionNavigationSelectionState()
     @Published var recentsType: SessionRecentsType = .conversations
     @Published var showsAllConversations = false
+    /// The rail lists every profile's chats instead of the selected one's; a local preference.
+    @Published var showsAllProfiles = UserDefaults.standard.bool(forKey: AllProfilesSessions.storageKey) {
+        didSet { UserDefaults.standard.set(showsAllProfiles, forKey: AllProfilesSessions.storageKey) }
+    }
     @Published var selectedTaskID: UUID?
     @Published var selectedSessionID: String?
     @Published var areConversationsExpanded = true

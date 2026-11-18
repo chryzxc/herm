@@ -1865,6 +1865,18 @@ Drag a section header (Pinned, Recents, Projects) onto another to swap their ord
 list. Other bots' history is baselined once from that read so first use shows no
 unread flood.
 
+When more than one Bot is visible, the Bot switcher starts with a fixed
+"All profiles" row (not reorderable) whose mark stacks up to three Bot avatars,
+the selected Bot in front. Each avatar sits on an opaque surface disc so the
+overlap never shows through. The choice is a local preference. It merges every
+Bot's pins into one Pinned section and every Bot's chats into Recents and
+search. The selected Bot's pins come from its own pinned list; other Bots' pins
+come from the all-profile read's `pinned` flag. Pin keys are profile-scoped. In
+this scope each row's second line starts with a compact profile pill (14pt
+avatar and Bot name in `.dockPill(compact:)`) before the source and repository
+identity. Opening a row switches to its owning profile and keeps the merged
+scope. Picking a single Bot leaves the merged scope.
+
 Session activity uses `session.active_list`, not the REST index’s recent-write
 flag. The visible sidebar refreshes activity every ten seconds for the selected
 profile, including unopened Bot sessions and pins. Successful live snapshots
