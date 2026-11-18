@@ -41,16 +41,22 @@ final class ChatRailActivityModel: ObservableObject {
         _ snapshot: SessionNavSidebarSnapshot,
         seenStore: SidebarSessionSeenStore, isConnected: Bool
     ) -> ChatRailActivity {
+        let sessions = (snapshot.conversations + snapshot.inputs.pinnedSessions).filter {
+            // Bot main chats belong to the Bots page, not the Chats badge.
+            !$0.isHidden && !BotMentions.mainChatSessionIDs.contains($0.id)
+        }
+        let automation = Dictionary(
+            sessions.map { ($0.id, $0.isAutomationSession) }, uniquingKeysWith: { first, _ in first })
         let statuses = SidebarSessionStatusResolver.statuses(
-            for: (snapshot.conversations + snapshot.inputs.pinnedSessions).filter {
-                // Bot main chats belong to the Bots page, not the Chats badge.
-                !$0.isHidden && !BotMentions.mainChatSessionIDs.contains($0.id)
-            },
+            for: sessions,
             snapshot: snapshot, seenStore: seenStore,
             fallbackProfileID: snapshot.inputs.profileScopeID
         )
         return ChatRailActivity(
-            statuses: Array(statuses.values),
+            statuses: statuses.map { id, status in
+                status == .unreadComplete && automation[id] == true
+                    ? .none : status
+            },
             foregroundWorking: snapshot.inputs.activeStatus == .working,
             isConnected: isConnected)
     }

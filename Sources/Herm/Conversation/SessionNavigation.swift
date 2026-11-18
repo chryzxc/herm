@@ -89,6 +89,7 @@ final class SessionNavigationState: ObservableObject {
     }
 
     let selection = SessionNavigationSelectionState()
+    @Published var recentsType: SessionRecentsType = .conversations
     @Published var showsAllConversations = false
     @Published var selectedTaskID: UUID?
     @Published var selectedSessionID: String?

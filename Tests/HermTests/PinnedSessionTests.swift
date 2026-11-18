@@ -151,9 +151,11 @@ final class PinnedSessionTests: XCTestCase {
             ["id": "other", "source": "custom_channel", "pinned": true],
             ["id": "conversation", "source": "conversation", "pinned": true],
             ["id": "project", "source": "projects", "pinned": true],
+            ["id": "scheduled", "source": "cron", "pinned": true],
         ]
         let index = try await DockModel.fetchSessionIndex(client: client, profileID: nil)
         let labels = Dictionary(uniqueKeysWithValues: index.pinned.map { ($0.id, $0.sourceBadgeTitle) })
+        XCTAssertEqual(labels["scheduled"]!, "Cron")
         XCTAssertEqual(labels["discord"]!, "Discord")
         XCTAssertEqual(labels["slack"]!, "Slack")
         XCTAssertEqual(labels["whatsapp"]!, "WhatsApp")
