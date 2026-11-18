@@ -203,7 +203,7 @@ struct SessionComposerDraftTests {
         let attachment = ImageAttachment(
             image: image, fileURL: URL(fileURLWithPath: "/draft/image.png"))
         model.pendingImages = [attachment]
-        model.pendingPDFURL = URL(fileURLWithPath: "/draft/document.pdf")
+        model.pendingPDFURLs = [URL(fileURLWithPath: "/draft/document.pdf")]
         model.attachedContexts = [
             ChatContext(id: "notes", title: "Notes", body: "Read these notes")
         ]
@@ -320,7 +320,7 @@ struct SessionComposerDraftTests {
         let quote = ReplyQuote(author: "Herm", text: "Earlier reply")
         model.draft = "  Continue with @notes\n"
         model.pendingImages = [image]
-        model.pendingPDFURL = pdfURL
+        model.pendingPDFURLs = [pdfURL]
         model.attachedContexts = [context]
         model.replyQuote = quote
         model.pendingAttachmentError = "Choose the missing file again."
@@ -331,7 +331,7 @@ struct SessionComposerDraftTests {
         #expect(await model.resumeSession(sessionB, reportFailure: true))
         #expect(model.draft.isEmpty)
         #expect(model.pendingImages.isEmpty)
-        #expect(model.pendingPDFURL == nil)
+        #expect(model.pendingPDFURLs.isEmpty)
         #expect(model.attachedContexts.isEmpty)
         #expect(model.replyQuote == nil)
         #expect(model.pendingAttachmentError == nil)
@@ -345,7 +345,7 @@ struct SessionComposerDraftTests {
         #expect(model.sessionID == "runtime-3")
         #expect(model.draft == "  Continue with @notes\n")
         #expect(model.pendingImages.map(\.id) == [image.id])
-        #expect(model.pendingPDFURL == pdfURL)
+        #expect(model.pendingPDFURLs == [pdfURL])
         #expect(model.attachedContexts == [context])
         #expect(model.replyQuote == quote)
         #expect(model.pendingAttachmentError == "Choose the missing file again.")
@@ -555,19 +555,19 @@ struct SessionComposerDraftTests {
         let image = ImageAttachment(
             image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: url, ownsTemporaryFile: true)
         model.pendingImages = [image]
-        model.pendingPDFURL = URL(fileURLWithPath: "/tmp/document.pdf")
+        model.pendingPDFURLs = [URL(fileURLWithPath: "/tmp/document.pdf")]
         model.attachedContexts = [ChatContext(id: "notes", title: "Notes", body: "Notes")]
         model.replyQuote = ReplyQuote(author: "Herm", text: "Reply")
         model.newChat()
         #expect(await model.resumeSession(original, reportFailure: true))
         model.removePendingImage(image)
-        model.removePendingPDF()
+        model.removePendingPDF(URL(fileURLWithPath: "/tmp/document.pdf"))
         model.attachedContexts = []
         model.replyQuote = nil
         model.newChat()
         #expect(await model.resumeSession(original, reportFailure: true))
         #expect(model.pendingImages.isEmpty)
-        #expect(model.pendingPDFURL == nil)
+        #expect(model.pendingPDFURLs.isEmpty)
         #expect(model.attachedContexts.isEmpty)
         #expect(model.replyQuote == nil)
         #expect(!FileManager.default.fileExists(atPath: url.path))

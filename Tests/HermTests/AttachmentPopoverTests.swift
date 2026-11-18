@@ -43,20 +43,16 @@ struct AttachmentPopoverTests {
         var stagedFiles: [URL] = []
         var stagedImages: [URL] = []
         var stagedPDFs: [URL] = []
-        var errors: [String] = []
-
         AttachmentPopoverFileSelection.process(
             files,
             stageImage: { stagedImages.append($0) },
             stagePDF: { stagedPDFs.append($0) },
-            stageFile: { stagedFiles.append($0) },
-            reportError: { errors.append($0) }
+            stageFile: { stagedFiles.append($0) }
         )
 
         #expect(stagedImages.isEmpty)
         #expect(stagedPDFs.isEmpty)
         #expect(stagedFiles == files)
-        #expect(errors.isEmpty)
     }
 
     @Test @MainActor func markdownDropStagesOneRemovableFileContext() throws {
@@ -68,7 +64,7 @@ struct AttachmentPopoverTests {
         try Data("# Read me".utf8).write(to: url)
         AttachmentPopoverFileSelection.process(
             [url, url], stageImage: model.stageImageFile,
-            stagePDF: model.stagePDFFile, stageFile: model.stageFile, reportError: model.reportAttachmentError)
+            stagePDF: model.stagePDFFile, stageFile: model.stageFile)
         let context = try #require(model.attachedContexts.first)
         #expect(model.attachedContexts.count == 1)
         #expect(context.kind == .file)
@@ -117,7 +113,7 @@ struct AttachmentPopoverTests {
             AttachmentPopoverFileSelection.process(
                 AttachmentPopoverFileSelection.fileURLs(from: pasteboard),
                 stageImage: model.stageImageFile, stagePDF: model.stagePDFFile,
-                stageFile: model.stageFile, reportError: model.reportAttachmentError)
+                stageFile: model.stageFile)
             #expect(model.pendingImages.isEmpty)
             var finished = false
             var submissionError: String?
@@ -163,12 +159,63 @@ struct AttachmentPopoverTests {
             [pdfURL],
             stageImage: model.stageImageFile,
             stagePDF: model.stagePDFFile,
-            stageFile: model.stageFile,
-            reportError: model.reportAttachmentError
+            stageFile: model.stageFile
         )
 
-        #expect(model.pendingPDFURL == pdfURL)
+        #expect(model.pendingPDFURLs == [pdfURL])
         #expect(model.pendingAttachmentError == nil)
+    }
+
+    @Test @MainActor func droppingSeveralPDFsStagesEachAndUploadsEach() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let pdfs = ["first.pdf", "second.pdf", "third.pdf"].map { directory.appendingPathComponent($0) }
+        for pdf in pdfs { try Data("%PDF-1.4".utf8).write(to: pdf) }
+        let rpc = ComposerFileAttachmentRPC(supported: true)
+        let model = DockModel(
+            sessionAgentStateFileURL: directory.appendingPathComponent("state.json"),
+            defaults: UserDefaults(suiteName: "AttachmentMultiPDF-\(UUID())")!,
+            approvalSoundPlayer: {}, initialSessionID: "pdf-session", rpcClient: rpc)
+
+        AttachmentPopoverFileSelection.process(
+            pdfs + [pdfs[0]], stageImage: model.stageImageFile, stagePDF: model.stagePDFFile,
+            stageFile: model.stageFile, clearErrors: model.clearAttachmentErrors)
+
+        #expect(model.pendingPDFURLs == pdfs)
+        #expect(model.pendingPDFError == nil)
+        #expect(model.pendingAttachmentError == nil)
+        model.removePendingPDF(pdfs[1])
+        #expect(model.pendingPDFURLs == [pdfs[0], pdfs[2]])
+
+        var finished = false
+        model.send(onSubmission: { _ in finished = true })
+        for _ in 0..<200 where !finished { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(finished)
+        let uploads = rpc.calls.filter { $0.0 == "file.attach" }.map { $0.1["name"] as? String }
+        #expect(uploads == ["first.pdf", "third.pdf"])
+        let submitted = rpc.calls.first { $0.0 == "prompt.submit" }?.1["text"] as? String
+        #expect(submitted?.contains("@file:first.pdf\n@file:third.pdf") == true)
+        #expect(model.pendingPDFURLs.isEmpty)
+    }
+
+    @Test @MainActor func oversizedPDFInASelectionIsNamedWhileTheOthersStage() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let large = directory.appendingPathComponent("large.pdf")
+        let small = directory.appendingPathComponent("small.pdf")
+        try Data(repeating: 0, count: 25 * 1024 * 1024 + 1).write(to: large)
+        try Data("%PDF-1.4".utf8).write(to: small)
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: "AttachmentOversizedPDF-\(UUID())")!, approvalSoundPlayer: {})
+
+        AttachmentPopoverFileSelection.process(
+            [large, small], stageImage: model.stageImageFile, stagePDF: model.stagePDFFile,
+            stageFile: model.stageFile, clearErrors: model.clearAttachmentErrors)
+
+        #expect(model.pendingPDFURLs == [small])
+        #expect(model.pendingPDFError == "large.pdf was not attached: PDF attachments are limited to 25 MB.")
     }
 
     @Test @MainActor func failedImageStagingPublishesAnActionableError() throws {
@@ -185,8 +232,7 @@ struct AttachmentPopoverTests {
             [imageURL],
             stageImage: model.stageImageFile,
             stagePDF: model.stagePDFFile,
-            stageFile: model.stageFile,
-            reportError: model.reportAttachmentError
+            stageFile: model.stageFile
         )
 
         #expect(model.pendingImages.isEmpty)
@@ -221,7 +267,6 @@ struct AttachmentPopoverTests {
             stageImage: model.stageImageFile,
             stagePDF: model.stagePDFFile,
             stageFile: model.stageFile,
-            reportError: model.reportAttachmentError,
             clearErrors: model.clearAttachmentErrors
         )
 
@@ -276,7 +321,7 @@ private final class ComposerFileAttachmentRPC: HermesRPCClientProtocol {
         calls.append((method, params))
         switch method {
         case "gateway.capabilities": return ["per_session_exclusive_submit": supported]
-        case "file.attach": return ["attached": true, "ref_text": "@file:README.md"]
+        case "file.attach": return ["attached": true, "ref_text": "@file:" + (params["name"] as? String ?? "")]
         case "prompt.submit": return ["status": "streaming"]
         default: return [:]
         }

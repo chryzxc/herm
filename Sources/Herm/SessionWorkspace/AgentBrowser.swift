@@ -1019,7 +1019,7 @@ final class AgentBrowser: ObservableObject {
             QueuedPrompt(
                 sessionID: sessionID,
                 text: "I've finished that step in the browser myself.\(page) Continue where you left off.",
-                images: [], pdfURL: nil))
+                images: [], pdfURLs: []))
     }
 
     func goBack() {

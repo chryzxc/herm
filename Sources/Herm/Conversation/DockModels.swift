@@ -1008,7 +1008,7 @@ struct QueuedPrompt: Identifiable {
     let sessionID: String
     var text: String
     let images: [ImageAttachment]
-    let pdfURL: URL?
+    var pdfURLs: [URL] = []
     var contexts: [ChatContext] = []
     var replyQuote: ReplyQuote? = nil
     var botMentions: [ComposerBotMention] = []

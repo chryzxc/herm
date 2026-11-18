@@ -100,7 +100,8 @@ extension DockModel {
     }
 
     var composerIsEmptyForRecovery: Bool {
-        draft.isEmpty && pendingImages.isEmpty && pendingPDFURL == nil && attachedContexts.isEmpty && replyQuote == nil
+        draft.isEmpty && pendingImages.isEmpty && pendingPDFURLs.isEmpty && attachedContexts.isEmpty
+            && replyQuote == nil
     }
 
     static func interruptWasAccepted(_ response: [String: Any]) -> Bool {

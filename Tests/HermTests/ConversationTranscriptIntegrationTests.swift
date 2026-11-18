@@ -295,7 +295,7 @@ struct ConversationTranscriptIntegrationTests {
             SessionPendingSend(
                 id: UUID(), owner: model.composerDraftKey,
                 snapshot: SessionComposerDraft(
-                    text: pending.text, images: [], pdfURL: nil, contexts: [], replyQuote: nil,
+                    text: pending.text, images: [], pdfURLs: [], contexts: [], replyQuote: nil,
                     attachmentError: nil, pdfError: nil), message: pending, baselineRowID: 10))
         try await fixture.settle()
         let geometry = try #require(fixture.controller.geometry)

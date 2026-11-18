@@ -12,11 +12,11 @@ extension DockModel {
         let originalText = queued?.text ?? draft
         let prompt = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachedImages = queued?.images ?? pendingImages
-        let attachedPDF = queued == nil ? pendingPDFURL : queued?.pdfURL
+        let attachedPDFs = queued == nil ? pendingPDFURLs : queued?.pdfURLs ?? []
         let contexts = queued == nil ? attachedContexts : queued?.contexts ?? []
         let botMentions = ComposerBotMention.rebasing(
             queued?.botMentions ?? composer.botMentions, from: originalText, to: prompt)
-        guard !prompt.isEmpty || !attachedImages.isEmpty || attachedPDF != nil || !contexts.isEmpty,
+        guard !prompt.isEmpty || !attachedImages.isEmpty || !attachedPDFs.isEmpty || !contexts.isEmpty,
             !isSending,
             sessionActionsReady,
             !isUpdatingSessionModel, !isUpdatingSessionFast,
@@ -39,7 +39,7 @@ extension DockModel {
             return
         }
 
-        if attachedImages.isEmpty, attachedPDF == nil, contexts.isEmpty, let command = ComposerSlashCommand(prompt) {
+        if attachedImages.isEmpty, attachedPDFs.isEmpty, contexts.isEmpty, let command = ComposerSlashCommand(prompt) {
             if queued == nil {
                 draft = ""
                 replyQuote = nil
@@ -55,8 +55,8 @@ extension DockModel {
             let quote = queued == nil ? replyQuote : queued?.replyQuote
             let quoted = quote?.composing(prompt)
             text = ChatContext.prompt(ComposerCompletion.pathifyingBareRefs(quoted ?? prompt), contexts: contexts)
-        } else if attachedPDF != nil {
-            text = attachedImages.isEmpty ? "[document]" : "[attachments]"
+        } else if !attachedPDFs.isEmpty {
+            text = attachedImages.isEmpty && attachedPDFs.count == 1 ? "[document]" : "[attachments]"
         } else {
             text = "[image]"
         }
@@ -84,13 +84,13 @@ extension DockModel {
         }
         sessionStopAttempts[sendOwner] = nil
         let snapshot = SessionComposerDraft(
-            text: originalText, images: attachedImages, pdfURL: attachedPDF, contexts: contexts,
+            text: originalText, images: attachedImages, pdfURLs: attachedPDFs, contexts: contexts,
             replyQuote: queued == nil ? replyQuote : queued?.replyQuote,
             attachmentError: pendingAttachmentError, pdfError: pendingPDFError, botMentions: botMentions)
         if queued == nil {
             draft = ""
             pendingImages = []
-            pendingPDFURL = nil
+            pendingPDFURLs = []
             attachedContexts = []
             replyQuote = nil
             clearAttachmentErrors()
@@ -105,12 +105,12 @@ extension DockModel {
                 contexts: visibleContexts)
         let attachmentLabels =
             contexts.compactMap { context in context.attachmentURL.map { "[File: \($0.lastPathComponent)]" } }
-            + (attachedPDF.map { ["[PDF: \($0.lastPathComponent)]"] } ?? [])
+            + attachedPDFs.map { "[PDF: \($0.lastPathComponent)]" }
         let transcriptText = (attachmentLabels + [visibleText]).filter { !$0.isEmpty }.joined(separator: "\n")
         let sentMessage = ChatMessage(
             role: .user, text: transcriptText, images: attachedImages.map(\.image),
             botMentions: ComposerBotMention.rebasing(botMentions, from: prompt, to: transcriptText),
-            attachmentURLs: contexts.compactMap(\.attachmentURL) + (attachedPDF.map { [$0] } ?? []))
+            attachmentURLs: contexts.compactMap(\.attachmentURL) + attachedPDFs)
         messages.append(sentMessage)
         let sendID = UUID()
         pendingSessionSends.append(
@@ -159,7 +159,7 @@ extension DockModel {
                 touchSession(sessionID: promptSessionID, at: Date(), preview: text)
 
                 var fileReferences: [String] = []
-                if attachedPDF != nil || contexts.contains(where: { $0.attachmentURL != nil }) {
+                if !attachedPDFs.isEmpty || contexts.contains(where: { $0.attachmentURL != nil }) {
                     let capabilities = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.gatewayCapabilities.rawValue, params: [:])
                     guard capabilities["per_session_exclusive_submit"] as? Bool == true else {
@@ -190,7 +190,7 @@ extension DockModel {
                     }
                     fileReferences.append(reference)
                 }
-                if let attachedPDF {
+                for attachedPDF in attachedPDFs {
                     let encoded = try await AttachmentPayload.encoded(at: attachedPDF, maximumBytes: 25 * 1024 * 1024)
                     guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else {
                         return
@@ -371,7 +371,7 @@ extension DockModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let sessionID, !sessionID.isEmpty else { return }
         guard !hasQueuedOrRedirectingPrompt,
-            pendingImages.isEmpty, pendingPDFURL == nil, attachedContexts.isEmpty, replyQuote == nil,
+            pendingImages.isEmpty, pendingPDFURLs.isEmpty, attachedContexts.isEmpty, replyQuote == nil,
             !text.isEmpty, status == .working, ComposerSlashCommand(text) == nil
         else {
             queueDraft()
@@ -461,7 +461,7 @@ extension DockModel {
                 }
                 let index = queuedPrompts.firstIndex { $0.sessionID == queueSessionID } ?? queuedPrompts.endIndex
                 queuedPrompts.insert(
-                    QueuedPrompt(sessionID: queueSessionID, text: text, images: [], pdfURL: nil), at: index)
+                    QueuedPrompt(sessionID: queueSessionID, text: text, images: [], pdfURLs: []), at: index)
                 // Replies share the event stream, so a turn end would already have
                 // landed: still working here means the end was missed. Settle it so
                 // the prompt sends now instead of waiting on a turn that is gone.
@@ -490,7 +490,7 @@ extension DockModel {
         let text = prompt.text.trimmingCharacters(in: .whitespacesAndNewlines)
         return sessionActionsReady && status == .working && sessionID != nil && !isRedirectInFlight
             && !text.isEmpty
-            && prompt.images.isEmpty && prompt.pdfURL == nil && prompt.contexts.isEmpty
+            && prompt.images.isEmpty && prompt.pdfURLs.isEmpty && prompt.contexts.isEmpty
             && prompt.replyQuote == nil && ComposerSlashCommand(text) == nil
             && prompt.botRecipient == nil
     }
@@ -523,22 +523,22 @@ extension DockModel {
     func queueDraft() {
         guard sessionActionsReady, let sessionID = queuedPromptSessionID else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !pendingImages.isEmpty || pendingPDFURL != nil || !attachedContexts.isEmpty else {
+        guard !text.isEmpty || !pendingImages.isEmpty || !pendingPDFURLs.isEmpty || !attachedContexts.isEmpty else {
             return
         }
         let request = ComposerMentionPresentation.botRelayRequest(in: text, profileIDs: composerMentionBots.map(\.id))
         let recipient =
-            pendingImages.isEmpty && pendingPDFURL == nil && attachedContexts.isEmpty
+            pendingImages.isEmpty && pendingPDFURLs.isEmpty && attachedContexts.isEmpty
             ? composerMentionBots.first(where: { $0.id == request?.profileID }) : nil
         queuedPrompts.append(
             QueuedPrompt(
-                sessionID: sessionID, text: text, images: pendingImages, pdfURL: pendingPDFURL,
+                sessionID: sessionID, text: text, images: pendingImages, pdfURLs: pendingPDFURLs,
                 contexts: attachedContexts, replyQuote: replyQuote,
                 botMentions: ComposerBotMention.rebasing(composer.botMentions, from: draft, to: text),
                 botRecipient: recipient))
         draft = ""
         pendingImages = []
-        pendingPDFURL = nil
+        pendingPDFURLs = []
         attachedContexts = []
         replyQuote = nil
         clearAttachmentErrors()
@@ -581,7 +581,7 @@ extension DockModel {
             return mention
         }
         pendingImages.append(contentsOf: prompt.images)
-        if pendingPDFURL == nil { pendingPDFURL = prompt.pdfURL }
+        pendingPDFURLs.append(contentsOf: prompt.pdfURLs.filter { !pendingPDFURLs.contains($0) })
         attachedContexts.append(contentsOf: prompt.contexts)
         if replyQuote == nil { replyQuote = prompt.replyQuote }
     }
@@ -619,7 +619,7 @@ extension DockModel {
         } else if isSending, sessionID != nil {
             steerDraft()
         } else if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, pendingImages.isEmpty,
-            pendingPDFURL == nil, attachedContexts.isEmpty
+            pendingPDFURLs.isEmpty, attachedContexts.isEmpty
         {
             drainQueuedPromptIfIdle()
         } else {

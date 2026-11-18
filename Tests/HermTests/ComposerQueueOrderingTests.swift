@@ -480,12 +480,12 @@ struct ComposerQueueOrderingTests {
         model.submitComposerInput()
 
         #expect(model.pendingImages.isEmpty)
-        #expect(model.pendingPDFURL == nil)
+        #expect(model.pendingPDFURLs.isEmpty)
         #expect(model.attachedContexts.isEmpty)
         #expect(model.replyQuote == nil)
         #expect(model.currentSessionQueuedPrompts.last?.text == "Later message")
         #expect(model.currentSessionQueuedPrompts.last?.images.map(\.id) == [attachment.id])
-        #expect(model.currentSessionQueuedPrompts.last?.pdfURL == pdfURL)
+        #expect(model.currentSessionQueuedPrompts.last?.pdfURLs == [pdfURL])
         #expect(!model.messages.contains { $0.role == .user && $0.text == "Later message" })
         if hasEarlierMessage {
             complete(model)
@@ -525,7 +525,7 @@ struct ComposerQueueOrderingTests {
 
         #expect(model.draft.isEmpty)
         #expect(model.pendingImages.isEmpty)
-        #expect(model.pendingPDFURL == nil)
+        #expect(model.pendingPDFURLs.isEmpty)
         let deadline = Date().addingTimeInterval(2)
         while client.pendingImageAttachment == nil, Date() < deadline {
             try await Task.sleep(for: .milliseconds(10))
@@ -540,6 +540,6 @@ struct ComposerQueueOrderingTests {
         try await waitForSubmissions(1, client: client)
         #expect(model.draft == "Next draft")
         #expect(model.pendingImages.map(\.id) == [nextImage.id])
-        #expect(model.pendingPDFURL == pdfURL)
+        #expect(model.pendingPDFURLs == [pdfURL])
     }
 }
