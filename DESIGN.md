@@ -141,12 +141,10 @@ keep their own accent hue. Clay, Dusk, Storm, and Glass use restrained depth so
 adjacent controls do not merge into broad shadows. E-Ink and Swiss retain their
 minimal geometry and monochrome/editorial composition.
 
-Floating skins lift enabled actions by 1pt on hover; springy skins lift by 1.5pt.
-Pressing settles the lift and uses the existing skin-specific compression. Surface
+Enabled actions retain stationary hover feedback. Pressing uses the existing skin-specific compression. Surface
 reveals drift 5pt for floating skins, 7pt for springy skins, and 3pt for quiet skins;
 mechanical and snap skins fade without travel. These are rendering transforms,
-not layout changes. Reduce Motion, disabled controls, and no-motion skins suppress
-hover movement; settled surfaces do not animate continuously.
+not layout changes. Settled surfaces do not animate continuously.
 
 ### Color roles
 
@@ -380,8 +378,7 @@ Shared tab tracks carry their themed selection artwork
 between choices with matched geometry (0.22s). Only artwork moves; text, hit targets,
 and destination views retain identity. Navigation glyphs grow by 8% on selection;
 icon-only rail destinations retain the shared selected surface. Shared hover controls
-lift by the skin's existing 1–1.5pt hover distance on floating/bouncy skins, returning
-on press. Navigation rows ease their selection in place (0.18s). Expanded
+retain stationary hover feedback. Navigation rows ease their selection in place (0.18s). Expanded
 page content, modal bodies, and loading placeholders use one subtle 6pt rise and
 fade on first appearance (0.22s); headers and layout footprints stay fixed.
 These effects animate only presentation, retain view identity, and never delay

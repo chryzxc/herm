@@ -715,9 +715,7 @@ struct DockHoverModifier: ViewModifier {
     }
 }
 
-/// Drop-in for `.plain`/`.borderless`: same layout; hover lifts the label's own
-/// pixels (and press dims them) so it never paints outside the visible control
-/// when the hit area is larger than the artwork.
+/// Drop-in for `.plain`/`.borderless` with hover feedback and press dimming.
 struct DockHoverButtonStyle: ButtonStyle {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
