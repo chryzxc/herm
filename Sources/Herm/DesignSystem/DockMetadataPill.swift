@@ -75,10 +75,13 @@ struct DockMetadataPillColor {
 /// Wraps chips onto as many rows as the width needs.
 struct DockChipFlow: Layout {
     var spacing: CGFloat = DockSpacing.tight
+    /// Report the width the chips occupy instead of the whole proposal, so a
+    /// container (a message bubble) hugs its content. An empty flow is zero wide.
+    var hugsContent = false
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let rows = arrange(width: proposal.width ?? .infinity, subviews)
-        return CGSize(width: proposal.width ?? rows.width, height: rows.height)
+        return CGSize(width: hugsContent ? rows.width : proposal.width ?? rows.width, height: rows.height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
