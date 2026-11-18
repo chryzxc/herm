@@ -1,7 +1,5 @@
+import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
-
-private let profileDragType = UTType(exportedAs: "io.github.chryzxc.Herm.profile-picker-drag", conformingTo: .data)
 
 struct DockProfilePickerList<Header: View, Row: View>: View {
     let bots: [BotSummary]
@@ -11,7 +9,8 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     var showsHeader = false
     @ViewBuilder var header: () -> Header
     @ViewBuilder let row: (BotSummary) -> Row
-    @State private var draggingID: String?
+    /// The row being dragged, the index it started from, and the pointer's travel.
+    @State private var drag: (id: String, start: Int, translation: CGFloat)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -27,27 +26,11 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
                             .foregroundStyle(style.secondaryText)
                             .frame(width: 28, height: 38)
                             .contentShape(Rectangle())
-                            .modifier(DockDragCursor(isEnabled: true, isDragging: false))
-                            .onDrag {
-                                draggingID = bot.id
-                                let provider = NSItemProvider()
-                                provider.registerDataRepresentation(
-                                    forTypeIdentifier: profileDragType.identifier, visibility: .ownProcess
-                                ) {
-                                    completion in
-                                    completion(Data(bot.id.utf8), nil)
-                                    return nil
-                                }
-                                return provider
-                            }
-                            .focusable()
-                            .onMoveCommand { direction in
-                                switch direction {
-                                case .up: move(bot.id, by: -1)
-                                case .down: move(bot.id, by: 1)
-                                default: break
-                                }
-                            }
+                            .modifier(DockDragCursor(isEnabled: true, isDragging: drag?.id == bot.id))
+                            // A gesture, not `.onDrag`: an item-provider drag never starts from
+                            // inside the popover's scroll view, and a focusable handle only drew a
+                            // focus ring on click.
+                            .gesture(reorderGesture(for: bot.id, at: index, count: ordered.count))
                             .accessibilityElement()
                             .accessibilityLabel("Reorder \(bot.name)")
                             .accessibilityValue("\(index + 1) of \(ordered.count)")
@@ -58,19 +41,57 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
                                 @unknown default: break
                                 }
                             }
-                            .help("Drag to reorder; use arrow keys when focused")
+                            .help("Drag to reorder")
                     }
-                    .onDrop(
-                        of: [profileDragType],
-                        delegate: ProfilePickerDropDelegate(
-                            targetID: bot.id, draggingID: $draggingID, order: order, bots: bots,
-                            reduceMotion: reduceMotion))
+                    .modifier(
+                        LiftedRow(
+                            isLifted: drag?.id == bot.id,
+                            offset: liftOffset(for: bot.id, at: index), style: style))
                 }
             }
             .dockPadding(6)
         }
         .frame(width: 300, height: min(CGFloat(bots.count + (showsHeader ? 1 : 0)) * 40 + 12, 360))
         .background(style.background)
+    }
+
+    /// Row height (38) plus stack spacing (2).
+    private static var rowPitch: CGFloat { 40 }
+
+    /// Keeps the lifted row under the pointer while the list reflows around it.
+    private func liftOffset(for id: String, at index: Int) -> CGFloat {
+        guard let drag, drag.id == id else { return 0 }
+        return drag.translation - CGFloat(index - drag.start) * Self.rowPitch
+    }
+
+    private func reorderGesture(for id: String, at index: Int, count: Int) -> some Gesture {
+        // Distance 0 lifts the row as soon as the handle is held. Global space: the
+        // handle moves with its row, so local translation would oscillate.
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { value in
+                NSCursor.closedHand.set()
+                if drag?.id != id {
+                    withAnimation(liftAnimation) { drag = (id, index, 0) }
+                }
+                guard let start = drag?.start else { return }
+                drag?.translation = value.translation.height
+                let target = DockProfilePickerReorder.target(
+                    start: start, translation: value.translation.height, pitch: Self.rowPitch, count: count)
+                guard var current = order.ordered(bots).firstIndex(where: { $0.id == id }) else { return }
+                while current != target {
+                    let step = target > current ? 1 : -1
+                    move(id, by: step)
+                    current += step
+                }
+            }
+            .onEnded { _ in
+                withAnimation(liftAnimation) { drag = nil }
+                NSCursor.openHand.set()
+            }
+    }
+
+    private var liftAnimation: Animation? {
+        reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.78)
     }
 
     private func move(_ id: String, by offset: Int) {
@@ -82,27 +103,31 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     }
 }
 
-private struct ProfilePickerDropDelegate: DropDelegate {
-    let targetID: String
-    @Binding var draggingID: String?
-    let order: DockProfilePickerOrder
-    let bots: [BotSummary]
-    let reduceMotion: Bool
+/// Raises the row being dragged above its neighbours and lets it follow the pointer;
+/// releasing springs it back into its new slot.
+private struct LiftedRow: ViewModifier {
+    let isLifted: Bool
+    let offset: CGFloat
+    let style: DockThemePalette
 
-    func validateDrop(info: DropInfo) -> Bool { draggingID != nil }
-
-    func dropEntered(info: DropInfo) {
-        guard let draggingID, draggingID != targetID else { return }
-        let ids = order.ordered(bots).map(\.id)
-        guard let source = ids.firstIndex(of: draggingID), let target = ids.firstIndex(of: targetID) else { return }
-        let move = { order.move(draggingID, relativeTo: targetID, after: source < target, in: bots) }
-        if reduceMotion { move() } else { withAnimation(.dockEase(duration: 0.2), move) }
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(style.surface4)
+                    .opacity(isLifted ? 1 : 0)
+            )
+            .scaleEffect(isLifted ? 1.03 : 1)
+            .offset(y: offset)
+            .zIndex(isLifted ? 1 : 0)
     }
+}
 
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .copy) }
-    func performDrop(info: DropInfo) -> Bool {
-        draggingID = nil
-        return true
+enum DockProfilePickerReorder {
+    /// The index a row dragged `translation` points from `start` lands on.
+    static func target(start: Int, translation: CGFloat, pitch: CGFloat, count: Int) -> Int {
+        guard count > 0, pitch > 0 else { return start }
+        return min(max(start + Int((translation / pitch).rounded()), 0), count - 1)
     }
 }
 
