@@ -764,7 +764,8 @@ struct SessionConversationIsolationTests {
         send("reasoning.complete")
         send("tool.start", ["id": "t1", "name": "terminal", "context": "swift test"])
         #expect(model.streamingTurnActivity.map(\.name) == [ActiveToolCall.thinkingName, "terminal"])
-        #expect(model.streamingTurnActivity[1].isComplete == false)
+        // Index guarded: a failed expectation above must not crash the whole test process.
+        #expect(model.streamingTurnActivity.dropFirst().first?.isComplete == false)
 
         // A second model call in the same turn resets activeToolCalls but
         // must not drop what already happened.

@@ -254,7 +254,7 @@ final class ControlCenterModel: ObservableObject {
     let capabilityService = HermesCapabilityService()
     let diagnosticsService = HermesDiagnosticsService()
     var remindersAdapter: AppleRemindersAdapter?
-    let presentationDefaults = UserDefaults.standard
+    let presentationDefaults: UserDefaults
     let providerNicknameStore = ProviderNicknameStore()
     static let providerQuotaOrderKey = "dock.quota.displayOrder"
     let presentationKey = "hermes.control.attention.presentation.v1"
@@ -277,8 +277,12 @@ final class ControlCenterModel: ObservableObject {
         didSet { applyProviderQuotaPresentation() }
     }
 
-    init(rpc: HermesControlRPC? = nil, capabilities: [CapabilityState] = []) {
+    init(
+        rpc: HermesControlRPC? = nil, capabilities: [CapabilityState] = [],
+        presentationDefaults: UserDefaults = .standard
+    ) {
         self.rpc = rpc
+        self.presentationDefaults = presentationDefaults
         self.cli = rpc.map(HermesCLIAdapter.init)
         self.capabilities = capabilities
         if !capabilities.isEmpty {

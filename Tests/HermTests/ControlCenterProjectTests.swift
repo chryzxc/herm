@@ -2009,8 +2009,14 @@ private final class SessionKanbanCacheClient: HermesRPCClientProtocol {
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         if path.hasPrefix("/api/plugins/kanban/boards") {
-            return ["boards": [["slug": "default", "name": "Default", "is_current": true, "archived": false]]]
+            return [
+                "boards": [
+                    ["slug": "default", "name": "Default", "is_current": true, "archived": false],
+                    ["slug": "unrelated", "name": "Unrelated", "is_current": false, "archived": false],
+                ]
+            ]
         }
+        if path.hasPrefix("/api/plugins/kanban/board?board=unrelated") { return ["columns": []] }
         if path == "/api/plugins/kanban/board?board=default&include_archived=true" {
             return [
                 "columns": [

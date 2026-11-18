@@ -56,7 +56,8 @@ struct ConversationApprovalTests {
     func controlApprovalWithoutConversationRecordStillResponds(action: AttentionAction) async throws {
         let rpc = ConversationApprovalRPC()
         let model = makeModel(rpc)
-        let control = ControlCenterModel(rpc: HermesControlRPC(client: rpc))
+        let control = ControlCenterModel(
+            rpc: HermesControlRPC(client: rpc), presentationDefaults: UserDefaults(suiteName: UUID().uuidString)!)
         control.dockModel = model
         control.ingestEvent(
             "approval.request", params: ["session_id": "background", "payload": ["command": "git status"]])
@@ -73,7 +74,8 @@ struct ConversationApprovalTests {
     @Test func controlApprovalWithoutRecordDoesNotResolveNewRequest() async throws {
         let rpc = ConversationApprovalRPC()
         let model = makeModel(rpc)
-        let control = ControlCenterModel(rpc: HermesControlRPC(client: rpc))
+        let control = ControlCenterModel(
+            rpc: HermesControlRPC(client: rpc), presentationDefaults: UserDefaults(suiteName: UUID().uuidString)!)
         control.dockModel = model
         control.ingestEvent("approval.request", params: ["session_id": "background", "payload": ["command": "first"]])
         let item = try #require(control.attention.first { $0.reference.sessionID == "background" })
@@ -92,7 +94,8 @@ struct ConversationApprovalTests {
     @Test func controlApprovalWithoutRecordRejectsMalformedAcknowledgment() async throws {
         let rpc = ConversationApprovalRPC()
         let model = makeModel(rpc)
-        let control = ControlCenterModel(rpc: HermesControlRPC(client: rpc))
+        let control = ControlCenterModel(
+            rpc: HermesControlRPC(client: rpc), presentationDefaults: UserDefaults(suiteName: UUID().uuidString)!)
         control.dockModel = model
         control.ingestEvent("approval.request", params: ["session_id": "background", "payload": ["command": "first"]])
         let item = try #require(control.attention.first { $0.reference.sessionID == "background" })
@@ -117,7 +120,8 @@ struct ConversationApprovalTests {
                 "approval.request", params: ["session_id": "current", "payload": ["command": "git status"]])
         }
         let record = try #require(model.currentConversationApproval)
-        let control = ControlCenterModel(rpc: HermesControlRPC(client: rpc))
+        let control = ControlCenterModel(
+            rpc: HermesControlRPC(client: rpc), presentationDefaults: UserDefaults(suiteName: UUID().uuidString)!)
         control.dockModel = model
         let item = AttentionItem(
             id: "approval", reference: .init(source: .hermesApproval, sourceID: "current", sessionID: "current"),
@@ -156,7 +160,8 @@ struct ConversationApprovalTests {
         let model = makeModel(rpc)
         model.receiveGatewayEvent(
             "approval.request", params: ["session_id": "current", "payload": ["command": "git status"]])
-        let control = ControlCenterModel(rpc: HermesControlRPC(client: rpc))
+        let control = ControlCenterModel(
+            rpc: HermesControlRPC(client: rpc), presentationDefaults: UserDefaults(suiteName: UUID().uuidString)!)
         control.dockModel = model
         let item = AttentionItem(
             id: "approval", reference: .init(source: .hermesApproval, sourceID: "current", sessionID: "current"),
@@ -429,5 +434,24 @@ struct ConversationApprovalTests {
         model.recheckLegacyApproval(old.id)
         #expect(!rpc.requests.contains { $0.0 == "approval.pending" })
         #expect(model.pendingApprovalsBySessionID["current"]?.presentation.requestID == "replacement")
+    }
+}
+
+extension ConversationApprovalTests {
+    @Test func newApprovalReopensAfterAnEarlierDecisionInTheSameSession() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let control = ControlCenterModel(presentationDefaults: defaults)
+        control.ingestEvent("approval.request", params: ["session_id": "background", "payload": ["command": "first"]])
+        var item = try #require(control.attention.first { $0.reference.sessionID == "background" })
+        item.state = .resolved
+        control.knownAttention[item.id] = item
+        control.persistPresentationState()
+        control.rebuildAttention()
+        #expect(control.attention.isEmpty)
+        // A relaunch restores the earlier decision; Hermes' next request must still surface.
+        let restored = ControlCenterModel(presentationDefaults: defaults)
+        restored.ingestEvent(
+            "approval.request", params: ["session_id": "background", "payload": ["command": "second"]])
+        #expect(restored.attention.first { $0.reference.sessionID == "background" }?.detail == "second")
     }
 }

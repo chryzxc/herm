@@ -9,6 +9,8 @@ struct KanbanRefreshTests {
     func navigationDuringRefreshLoadsTheLatestBoard(firstReadFails: Bool) async throws {
         let client = SuspendedKanbanClient()
         client.failFirstRead = firstReadFails
+        client.inventories = [["old"]]
+        client.laterInventory = ["old", "other", "latest"]
         let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
         control.refreshVisibleKanban()
         try await waitUntil { client.inventoryStarted }
@@ -32,6 +34,9 @@ struct KanbanRefreshTests {
 
     @Test func filterChangesDuringRefreshKeepOnlyTheLatestRequest() async throws {
         let client = SuspendedKanbanClient()
+        // Two aggregate passes read inventory; the later board-inventory refresh finds the
+        // dashboard API unavailable, so only the coalesced filter reads reach a board.
+        client.inventories = [["old"], ["old"]]
         let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
         control.refreshVisibleKanban(filter: KanbanListFilter(status: "done"))
         try await waitUntil { client.inventoryStarted }
@@ -62,6 +67,11 @@ private final class SuspendedKanbanClient: HermesRPCClientProtocol {
     var inventoryStarted = false
     var holdInventory = true
     var failFirstRead = false
+    /// Inventory responses in request order; `laterInventory` answers the rest, or nil
+    /// reports the dashboard API unavailable.
+    var inventories: [[String]] = []
+    var laterInventory: [String]?
+    private var inventoryReads = 0
 
     func connect() async throws {}
     func close() {}
@@ -73,12 +83,17 @@ private final class SuspendedKanbanClient: HermesRPCClientProtocol {
         paths.append(path)
         if path == "/api/plugins/kanban/boards" {
             inventoryStarted = true
+            let read = inventoryReads
+            inventoryReads += 1
             while holdInventory { try await Task.sleep(for: .milliseconds(5)) }
             if failFirstRead {
                 failFirstRead = false
                 throw URLError(.cannotConnectToHost)
             }
-            return ["boards": [["slug": "old", "archived": false]]]
+            guard let boards = read < inventories.count ? inventories[read] : laterInventory else {
+                throw URLError(.resourceUnavailable)
+            }
+            return ["boards": boards.map { ["slug": $0, "archived": false] }]
         }
         return [
             "columns": [

@@ -167,6 +167,10 @@ extension ControlCenterModel {
         switch type {
         case "approval.request":
             let approval = ApprovalPresentation.from(payload: payload)
+            // A new request reopens the session's item; an earlier decision must not hide it.
+            if let state = knownAttention["approval:\(sessionID)"]?.state, state == .resolved || state == .dismissed {
+                knownAttention.removeValue(forKey: "approval:\(sessionID)")
+            }
             upsertAttention(
                 AttentionItem(
                     id: "approval:\(sessionID)",
