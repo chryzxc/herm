@@ -29,4 +29,14 @@ final class DockProfilePickerOrder: ObservableObject {
         ids = moved + ids.filter { !moved.contains($0) }
         defaults.set(ids, forKey: key)
     }
+
+    func move(_ id: String, relativeTo target: String, after: Bool, in bots: [BotSummary]) {
+        var moved = ordered(bots).map(\.id)
+        guard id != target, let source = moved.firstIndex(of: id), moved.contains(target) else { return }
+        moved.remove(at: source)
+        guard let destination = moved.firstIndex(of: target) else { return }
+        moved.insert(id, at: destination + (after ? 1 : 0))
+        ids = moved + ids.filter { !moved.contains($0) }
+        defaults.set(ids, forKey: key)
+    }
 }
