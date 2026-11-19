@@ -1,17 +1,22 @@
 import SwiftUI
 
 enum NotchDisplayStyle: String, CaseIterable, Identifiable {
-    case dots, line, ring, icons, count
+    case dots, line, ring, icons, count, bots
 
     static let defaultsKey = "hermes.notch.display-style"
     static let enabledKey = "hermes.notch.enabled"
     static let defaultStyle = NotchDisplayStyle.count
+    /// The saved choice, for sizing code outside a view's `@AppStorage`.
+    static var stored: Self {
+        UserDefaults.standard.string(forKey: defaultsKey).flatMap(Self.init(rawValue:)) ?? defaultStyle
+    }
     var id: String { rawValue }
     /// Icons and Count would look identical to a bare working state, so preview what sets them apart.
     var previewActivity: EdgeNotchActivity {
         switch self {
         case .icons: .init(status: .idle, unread: true)
         case .count: .init(status: .working, workingCount: 3)
+        case .bots: .init(status: .working, workingBotIDs: [""])
         default: .init(status: .working)
         }
     }
@@ -23,46 +28,58 @@ enum NotchDisplayStyle: String, CaseIterable, Identifiable {
         case .ring: "Ring"
         case .icons: "Icons"
         case .count: "Count"
+        case .bots: "Bots"
         }
     }
 }
 
-struct NotchDisplaySettings: View {
-    @AppStorage(NotchDisplayStyle.defaultsKey) private var style: NotchDisplayStyle = .defaultStyle
-    @AppStorage("hermes.notch.side") private var side: EdgeDockSide = .right
-    @AppStorage(NotchDisplayStyle.enabledKey) private var enabled = true
+/// The notch preferences shared by Settings and the gear menu's Notch
+/// submenu. Both surfaces draw these same controls on the same keys; only
+/// the surrounding layout differs.
+enum NotchPreferenceControls {
+    struct ShowToggle: View {
+        @AppStorage(NotchDisplayStyle.enabledKey) private var enabled = true
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SettingsPreferenceRow(
-                title: "Show notch", detail: "Turn the screen-edge activity indicator off entirely."
-            ) {
-                Toggle("Show notch", isOn: $enabled)
-                    .labelsHidden().toggleStyle(.dockSwitch).controlSize(.small).tint(Color.dockAccent)
-            }
-            SettingsPreferenceRow(
-                title: "Notch position", detail: "Dock on a screen edge, or as an island around the camera."
-            ) {
-                DockSegmentedPicker(
-                    selection: Binding(get: { side == .top }, set: { side = $0 ? .top : .right }),
-                    options: [(false, "Side"), (true, "Top island")])
-            }
-            SettingsPreferenceRow(
-                title: "Notch status display", detail: "Choose how activity appears on the screen edge."
-            ) { EmptyView() }
-            HStack(spacing: 12) {
+        var body: some View {
+            Toggle("Show notch", isOn: $enabled)
+                .labelsHidden().toggleStyle(.dockSwitch).controlSize(.small).tint(Color.dockAccent)
+        }
+    }
+
+    struct PositionPicker: View {
+        @AppStorage("hermes.notch.side") private var side: EdgeDockSide = .right
+
+        var body: some View {
+            DockSegmentedPicker(
+                selection: Binding(get: { side == .top }, set: { side = $0 ? .top : .right }),
+                options: [(false, "Side"), (true, "Top island")])
+        }
+    }
+
+    /// One button per style, each with its live preview. Settings lays them
+    /// out in a row, the gear menu in a column.
+    struct StylePicker: View {
+        var axis: Axis = .horizontal
+        @AppStorage(NotchDisplayStyle.defaultsKey) private var style: NotchDisplayStyle = .defaultStyle
+
+        var body: some View {
+            let layout =
+                axis == .horizontal ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 2))
+            layout {
                 ForEach(NotchDisplayStyle.allCases) { option in
                     Button {
                         style = option
                     } label: {
                         HStack(spacing: 8) {
                             EdgeNotchStatusIndicator(activity: option.previewActivity, style: option)
-                                .frame(width: 28, height: 44)
+                                .frame(width: 28, height: axis == .horizontal ? 44 : 28)
                             Text(option.title)
                                 .dockFont(.body, weight: .medium)
+                            if axis == .vertical { Spacer(minLength: 0) }
                         }
                         .foregroundStyle(style == option ? Color.dockAccent : Color.dockSecondaryText)
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .dockPadding(.horizontal, axis == .vertical ? 8 : 0)
+                        .frame(maxWidth: .infinity, minHeight: axis == .horizontal ? 44 : 34)
                         .background(
                             style == option ? Color.dockAccentMuted : Color.clear, in: RoundedRectangle(cornerRadius: 8)
                         )
@@ -74,8 +91,52 @@ struct NotchDisplaySettings: View {
                 }
             }
             .accessibilityLabel("Working animation previews")
-            .dockPadding(.bottom, 8)
         }
+    }
+}
+
+struct NotchDisplaySettings: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SettingsPreferenceRow(
+                title: "Show notch", detail: "Turn the screen-edge activity indicator off entirely."
+            ) { NotchPreferenceControls.ShowToggle() }
+            SettingsPreferenceRow(
+                title: "Notch position", detail: "Dock on a screen edge, or as an island around the camera."
+            ) { NotchPreferenceControls.PositionPicker() }
+            SettingsPreferenceRow(
+                title: "Notch status display", detail: "Choose how activity appears on the screen edge."
+            ) { EmptyView() }
+            NotchPreferenceControls.StylePicker()
+                .dockPadding(.bottom, 8)
+        }
+    }
+}
+
+/// The gear menu's Notch submenu: the Settings controls, stacked to fit a menu.
+struct NotchQuickMenu: View {
+    @AppStorage(NotchDisplayStyle.enabledKey) private var enabled = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("Show notch").dockFont(.body)
+                Spacer(minLength: 0)
+                NotchPreferenceControls.ShowToggle()
+            }
+            .dockPadding(.horizontal, 8).dockPadding(.top, 4)
+            Group {
+                NotchPreferenceControls.PositionPicker()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .dockPadding(.horizontal, 8)
+                Color.dockBorderLight.frame(height: 0.5).dockPadding(.vertical, 2)
+                NotchPreferenceControls.StylePicker(axis: .vertical)
+            }
+            .disabled(!enabled)
+            .opacity(enabled ? 1 : 0.45)
+        }
+        .dockPadding(6)
+        .frame(width: 220)
     }
 }
 
@@ -114,18 +175,33 @@ struct EdgeNotchStatusIndicator: View {
 
     var body: some View {
         // A blocked-only pulse is a slow 2s breath; 15Hz keeps it smooth at half the renders.
-        TimelineView(.dockMotion(rate: activity.working ? 30 : 15, paused: !animates)) { timeline in
+        TimelineView(.dockMotion(rate: activity.working ? 30 : 15, paused: !animates || style == .bots)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             let layout = axis == .vertical ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
             layout {
-                if part != .badges { mark(primary, t) }
+                // A state change swaps the mark in place with a short scale-fade, never a jump cut.
+                if part != .badges {
+                    if style == .bots, primary == .working, activity.workingBotIDs.count > 1 {
+                        // One face per working Bot, like the Bot picker's running list.
+                        ForEach(activity.workingBotIDs, id: \.self) { id in
+                            mark(.working, t, botID: id).transition(Self.swap)
+                        }
+                    } else {
+                        mark(primary, t).id(primary).transition(Self.swap)
+                    }
+                }
                 if part != .primary {
-                    ForEach(Array(badges.enumerated()), id: \.offset) { mark($0.element, t) }
+                    ForEach(badges, id: \.self) { mark($0, t).transition(Self.swap) }
                 }
             }
+            .animation(reduceMotion ? nil : .dockEase(duration: 0.22), value: primary)
+            .animation(reduceMotion ? nil : .dockEase(duration: 0.22), value: badges)
+            .animation(reduceMotion ? nil : .dockEase(duration: 0.22), value: activity.workingBotIDs)
         }
         .accessibilityHidden(true)
     }
+
+    private static let swap = AnyTransition.scale(scale: 0.6).combined(with: .opacity)
 
     /// 0...1 sine wave; resting at full when motion is off.
     private func wave(_ t: Double, period: Double) -> Double {
@@ -146,7 +222,7 @@ struct EdgeNotchStatusIndicator: View {
         }
     }
 
-    private func mark(_ m: Mark, _ t: Double) -> some View {
+    private func mark(_ m: Mark, _ t: Double, botID: String? = nil) -> some View {
         let c = color(m)
         let level = m == .blocked ? 0.45 + 0.55 * wave(t, period: 2) : m == .idle ? 0.35 : 1
         return Group {
@@ -156,6 +232,7 @@ struct EdgeNotchStatusIndicator: View {
             case .ring: ring(m, c, level, t)
             case .icons: chip(m, c, level, t)
             case .count: chip(m, c, level, t, number: activity.workingCount)
+            case .bots: bot(m, c, t, id: botID)
             }
         }
         .frame(width: Self.slot, height: Self.slot)
@@ -205,6 +282,55 @@ struct EdgeNotchStatusIndicator: View {
         }
     }
 
+    /// The Bot behind each state, playing the same `BotStatusMotion` as every
+    /// other Bot surface. `live` keeps it moving with Herm in the background,
+    /// since the notch carries status. Warnings and the finished count use
+    /// the shared activity mark and badge, which hold still.
+    @ViewBuilder
+    private func bot(_ m: Mark, _ c: Color, _ t: Double, id botID: String? = nil) -> some View {
+        let size: CGFloat = 22
+        let id: String =
+            switch m {
+            case .working: botID ?? activity.workingBotIDs.first ?? ""
+            case .blocked: activity.blockedBotID ?? ""
+            case .done: activity.finishedBotID ?? ""
+            default: ""
+            }
+        let clarify = activity.status == .needsClarification
+        let mood: BotMood =
+            switch m {
+            case .working: .tool
+            case .blocked: clarify ? .clarify : .approval
+            case .done: .done
+            case .offline: .offline
+            case .idle: .sleepy
+            }
+        let face = BotFaceMark(id: id, size: size, animated: !reduceMotion, mood: mood, live: true)
+            .botStatusMotion(
+                reduceMotion ? .resting : BotStatusMotion(mood: mood), size: size, live: true,
+                cue: activity.finishedCount
+            )
+            .opacity(m == .offline || m == .idle ? 0.55 : 1)
+        // Face and badge share one box that fits the 28pt rail and the island
+        // ear, so nothing hangs past the screen edge or the menu bar.
+        ZStack(alignment: .topTrailing) {
+            face.frame(
+                width: Self.botBox, height: Self.botBox,
+                alignment: m == .blocked || m == .done ? .bottomLeading : .center)
+            switch m {
+            case .blocked:
+                DockActivityIndicator(state: clarify ? .clarification : .approval, role: .badge)
+            case .done:
+                EdgeNotchFinishedBadge(count: max(1, activity.finishedCount))
+            default:
+                EmptyView()
+            }
+        }
+        .frame(width: Self.botBox, height: Self.botBox)
+    }
+
+    private static let botBox: CGFloat = 27
+
     /// Tinted disc with a glyph; working swaps the glyph for a rotating arc.
     private func chip(_ m: Mark, _ c: Color, _ level: Double, _ t: Double, number: Int = 0) -> some View {
         let symbol: String? =
@@ -232,5 +358,32 @@ struct EdgeNotchStatusIndicator: View {
                 Image(systemName: symbol).dockFont(size: 9, weight: .bold).foregroundStyle(c.opacity(level))
             }
         }
+    }
+}
+
+/// The Bots style's finished count. It pops when another result lands.
+private struct EdgeNotchFinishedBadge: View {
+    let count: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Text(count > 9 ? "9+" : "\(count)")
+            .dockFont(size: 10, weight: .bold).monospacedDigit()
+            .foregroundStyle(DockAccentColor.green.onFill)
+            .contentTransition(.numericText())
+            .dockPadding(.horizontal, 3)
+            // The activity mark's badge size, ringed in canvas like it.
+            .frame(minWidth: 15, minHeight: 15)
+            .background(DockAccentColor.green.fill, in: Capsule())
+            .background(Color.dockOpaqueCanvas, in: Capsule().inset(by: -1.5))
+            .keyframeAnimator(initialValue: CGFloat(1), trigger: count) { badge, scale in
+                badge.scaleEffect(scale)
+            } keyframes: { _ in
+                KeyframeTrack(\.self) {
+                    SpringKeyframe(reduceMotion ? 1 : 1.45, duration: 0.18)
+                    SpringKeyframe(1, duration: 0.35, spring: .bouncy)
+                }
+            }
+            .animation(reduceMotion ? nil : .dockEase(duration: 0.25), value: count)
     }
 }

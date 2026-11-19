@@ -67,9 +67,12 @@ struct BotAvatarView: View {
     var mood: BotMood?
     /// Overrides the Bot's live busy state; a busy Herm face shows the tool ring.
     var orbits: Bool?
+    /// Off when a wrapper already drives the pose (the chat's working Bot).
+    var statusMotion = true
     @Environment(\.dockBotIndicatorFrame) private var indicatorFrame
     @Environment(\.dockBotIndicatorLive) private var indicatorLive
     @Environment(\.dockWorkspaceScale) private var workspaceScale
+    @Environment(\.botActivity) private var activity
     @State private var hovering = false
 
     /// Follows the interface scale like text and icons.
@@ -78,7 +81,14 @@ struct BotAvatarView: View {
     var body: some View {
         let herm = Self.showsHermFace(imageData, id: bot.id)
         let greets = animated && hovering
-        let face = mood ?? (greets ? .happy : bot.isHidden ? .sleepy : (orbits ?? bot.isWorkingNow) ? .tool : .idle)
+        let face =
+            mood
+            ?? (greets
+                ? .happy
+                : bot.isHidden
+                    ? .sleepy
+                    : orbits.map { $0 ? .tool : .idle } ?? activity?.mood(for: bot.id)
+                        ?? (bot.isWorkingNow ? .tool : .idle))
         Group {
             if let indicatorFrame {
                 canvas(herm: herm, mood: face, frame: indicatorFrame)
@@ -86,6 +96,7 @@ struct BotAvatarView: View {
                 DockBotFrameClock { canvas(herm: herm, mood: face, frame: $0) }
             } else {
                 standalone(herm: herm, mood: face)
+                    .botStatusMotion(statusMotion && animated ? BotStatusMotion(mood: face) : .resting, size: points)
             }
         }
         .onHover { hovering = $0 }
@@ -257,13 +268,11 @@ struct BotWorkingAvatarView: View {
             let reacting = frame.moves && age >= 0 && age < BotWorkingPose.reactionDuration
             let pose = frame.moves ? currentPose(at: frame.date) : .rest
             ZStack {
-                BotAvatarView(
-                    bot: bot, imageData: imageData, size: size, animated: frame.moves,
-                    orbits: true
-                )
-                .scaleEffect(x: pose.scaleX, y: pose.scaleY)
-                .rotationEffect(.degrees(pose.rotation))
-                .offset(x: size * pose.reach, y: -size * 0.2 * pose.lift)
+                pose.applied(
+                    to: BotAvatarView(
+                        bot: bot, imageData: imageData, size: size, animated: frame.moves,
+                        orbits: true, statusMotion: false),
+                    size: size)
                 // Echo the real activity glyph as the Bot reaches toward the rows above.
                 DockIcon(activityIcon, size: 12, color: .dockAccent)
                     .dockPadding(3)
@@ -334,12 +343,13 @@ private struct BotMotion<Content: View>: View {
     let id: String
     let animated: Bool
     let busy: Bool
+    var live = false
     @ViewBuilder let content: (BotFacePose) -> Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var focus = HermFocus.shared
 
     var body: some View {
-        if animated && busy && !reduceMotion && DockThemeStyle.current.animates && focus.engaged {
+        if animated && busy && !reduceMotion && DockThemeStyle.current.animates && (live || focus.engaged) {
             let phase = Double(BotAvatarPresentation.seed(for: id) % 1000) / 100
             TimelineView(.dockMotion(rate: 15)) { context in
                 content(.at(context.date.timeIntervalSinceReferenceDate + phase, busy: true))
@@ -602,12 +612,14 @@ struct BotFaceMark: View {
     var mood: BotMood?
     /// Live faces follow the app skin; previews pass the skin they show.
     var theme: DockThemeID?
+    /// A status carrier (the notch) keeps moving while Herm is in the background.
+    var live = false
     @ObservedObject private var themeStore = DockThemeStore.shared
 
     var body: some View {
         let theme = theme ?? themeStore.selectedThemeID
         let mood = self.mood ?? (busy ? .tool : .idle)
-        BotMotion(id: id, animated: animated, busy: mood.moves) { pose in
+        BotMotion(id: id, animated: animated, busy: mood.moves, live: live) { pose in
             Canvas { ctx, _ in
                 ctx.translateBy(x: size * 0.2, y: size * 0.2)
                 Self.draw(in: &ctx, id: id, size: size, mood: mood, pose: pose, theme: theme)

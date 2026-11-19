@@ -72,7 +72,7 @@ struct SessionNavConversationSessionRow: View, Equatable {
                     isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate, session: session)
                 if let attentionDot, attentionDot != .success, !(attentionDot == .failure && session.isWorking) {
                     if let state = attentionDot.activityState {
-                        DockActivityIndicator(state: state, size: 10, unreadDot: true)
+                        DockActivityIndicator(state: state, unreadDot: true)
                     } else {
                         Circle().fill(attentionDot.color).frame(width: 6, height: 6)
                     }

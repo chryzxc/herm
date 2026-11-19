@@ -309,7 +309,7 @@ struct SidebarSessionStatusIndicator: View {
         if status == .unreadComplete || status == .none {
             SessionUnreadReplyBadge(session: session, showUnavailable: status == .unreadComplete)
         } else if let state = status.activityState {
-            DockActivityIndicator(state: state, size: 12, unreadDot: true)
+            DockActivityIndicator(state: state, unreadDot: true)
         }
     }
 }

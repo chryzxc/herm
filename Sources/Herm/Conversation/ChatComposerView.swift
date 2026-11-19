@@ -1267,7 +1267,7 @@ private struct PinnedWorkStrip: View {
                         VStack(spacing: 4) {
                             ForEach(tasks) { task in
                                 HStack(spacing: 6) {
-                                    DockActivityIndicator(state: .running, size: 12)
+                                    DockActivityIndicator(state: .running)
                                     Text(task.prompt).lineLimit(1).truncationMode(.tail)
                                         .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                                     Text("background").dockFont(.compactStatus, weight: .regular, design: .monospaced)

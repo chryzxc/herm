@@ -74,6 +74,39 @@ extension DockModel {
         let pinnedIndex = pinnedSessions.firstIndex { $0.id == sessionID }
         if let recentIndex, let row = updated(sessions[recentIndex]) { sessions[recentIndex] = row }
         if let pinnedIndex, let row = updated(pinnedSessions[pinnedIndex]) { pinnedSessions[pinnedIndex] = row }
+        // Other Bots' rows live in the all-Bot scan; patch them too so the Bot
+        // activity board flips at the event, not at the next scan. Mid-turn
+        // events repeat `isWorking: true`, so look up first and only copy the
+        // scan when a row actually changes.
+        var foundInScan = false
+        switch allBotSessionsState {
+        case .ready(var rows):
+            if let index = rows.firstIndex(where: { $0.id == sessionID }) {
+                foundInScan = true
+                if let row = updated(rows[index]) {
+                    rows[index] = row
+                    allBotSessionsState = .ready(rows)
+                }
+            }
+        case .stale(var rows, let message):
+            if let index = rows.firstIndex(where: { $0.id == sessionID }) {
+                foundInScan = true
+                if let row = updated(rows[index]) {
+                    rows[index] = row
+                    allBotSessionsState = .stale(rows, safeMessage: message)
+                }
+            }
+        case .loading, .empty, .unavailable, .failed: break
+        }
+        // A session no list holds yet (another Bot's new chat): ask the roster
+        // now rather than at the next 10s poll, at most every 3s.
+        if isWorking == true, recentIndex == nil, pinnedIndex == nil, !foundInScan {
+            let now = Date()
+            if unknownSessionRosterRefreshAt.map({ now.timeIntervalSince($0) >= 3 }) ?? true {
+                unknownSessionRosterRefreshAt = now
+                Task { await botMode.refreshNow(minimumInterval: 3) }
+            }
+        }
         if let unread, recentIndex != nil || pinnedIndex != nil {
             var unreadIDs = Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? [])
             if unread { unreadIDs.insert(sessionID) } else { unreadIDs.remove(sessionID) }

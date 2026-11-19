@@ -118,7 +118,7 @@ struct SessionDashboardCard: View, Equatable {
                 if row.status == .unreadComplete {
                     SessionUnreadReplyBadge(session: row.session, showUnavailable: false)
                 } else if isCurrent, let state = row.status.activityState {
-                    DockActivityIndicator(state: state, size: 12, unreadDot: true)
+                    DockActivityIndicator(state: state, unreadDot: true)
                 }
                 // "Ready to review" is already the section heading; repeating it on every tile is noise.
                 if !isCurrent || (row.status != .none && row.status != .unreadComplete) {

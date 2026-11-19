@@ -177,7 +177,12 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         dockWindow = window
         dockPanel?.openWindow = { [weak window] in window?.open() }
         dockPanel?.isWindowOpen = { [weak window] in window?.isOpen == true }
-        window.onReturnToFloating = { [weak self] in self?.dockPanel?.showFromNotification() }
+        // The floating panel grows out of the notch; with the notch off there is
+        // no way back to it once closed, so returning to it turns the notch on.
+        window.onReturnToFloating = { [weak self] in
+            UserDefaults.standard.set(true, forKey: NotchDisplayStyle.enabledKey)
+            self?.dockPanel?.showFromNotification()
+        }
         if UserDefaults.standard.bool(forKey: DockWindowController.wasOpenKey) { window.open() }
         NSApp.applicationIconImage = DockAppBrand.icon
         if ScrollPerformanceFixture.isRequested {

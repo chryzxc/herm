@@ -113,7 +113,9 @@ final class DockModel: ObservableObject {
         didSet { refreshSessionAttention() }
     }
 
-    @Published var sessionAttention: [String: SessionAttention] = [:]
+    @Published var sessionAttention: [String: SessionAttention] = [:] {
+        didSet { syncBotActivitySignals() }
+    }
     @Published var attentionAnswers: [AttentionRequest: AttentionAnswerState] = [:]
 
     var pendingClarificationAliasesBySessionID: [String: Set<String>] = [:]
@@ -138,7 +140,9 @@ final class DockModel: ObservableObject {
     @Published var clarificationResponseError: String?
     @Published var isRespondingToClarification = false
     @Published var isRespondingToApproval = false
-    @Published var sessions: [HermesSession] = []
+    @Published var sessions: [HermesSession] = [] {
+        didSet { syncBotActivitySignals() }
+    }
     /// What each session is doing right now (its latest tool), read from the
     /// global gateway stream so sessions that are not open can show it too.
     // Only the edge dock consumes these; background tools must not invalidate
@@ -185,14 +189,22 @@ final class DockModel: ObservableObject {
     @Published var updatingSessionVisibilityID: String?
     /// Sessions carrying Hermes' durable pin flag (`sessions.pinned`) — the
     /// same flag Hermes Desktop's Pinned section and `hermes sessions pin` use.
-    @Published var pinnedSessions: [HermesSession] = []
+    @Published var pinnedSessions: [HermesSession] = [] {
+        didSet { syncBotActivitySignals() }
+    }
     @Published var pinningSessionID: String?
     /// The conversation a `session.workspace.move` is in flight for.
     @Published var movingSessionToProjectID: String?
     /// Recent sessions across every bot profile, for the agent-grouped sidebar.
-    @Published var allBotSessionsState: HermesProjectionState<[HermesSession]> = .loading
+    @Published var allBotSessionsState: HermesProjectionState<[HermesSession]> = .loading {
+        didSet { syncBotActivitySignals() }
+    }
     var allBotSessionsTask: Task<Void, Never>?
     var allBotSessionsLoadedAt: Date?
+    /// Coalesces Bot activity signal syncs into one pass per main-actor turn.
+    var botActivitySyncPending = false
+    /// Throttles roster reads asked for by sessions no list holds yet.
+    var unknownSessionRosterRefreshAt: Date?
     let sessionPinService = HermesSessionPinService()
     var actionErrors = DockActionErrorCenter.shared
     @Published var renamingSessionID: String?

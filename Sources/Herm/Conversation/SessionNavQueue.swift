@@ -374,6 +374,7 @@ struct SessionNavQueue: View, Equatable {
             botsSwitchButton(style: style)
                 .dockPadding(.horizontal, 12)
                 .dockPadding(.top, 8)
+                .dockPadding(.bottom, 12)
             // Header: identity. Window chrome lives in the footer.
             HStack(spacing: 2) {
                 if !isDockedWindow {
@@ -382,8 +383,9 @@ struct SessionNavQueue: View, Equatable {
                 }
                 profileHeader(style: style)
             }
-            .dockPadding(.horizontal, 6)
-            .frame(height: DockWorkspaceScale.spacing(56, scale: workspaceScale))
+            // Picker edges line up with the tabs and search; sidebar buttons keep their 6pt inset.
+            .dockPadding(.leading, isDockedWindow ? 12 : 6)
+            .dockPadding(.trailing, 12)
             .overlay(alignment: .bottomLeading) {
                 if !botMode.activityBanner.isEmpty {
                     BotActivityBanner(events: botMode.activityBanner)
@@ -400,6 +402,7 @@ struct SessionNavQueue: View, Equatable {
                 DockIconButton(icon: .notePencil, label: "New chat", style: style, action: onNewConversation)
             }
             .dockPadding(.horizontal, 12)
+            .dockPadding(.top, 12)
             .dockPadding(.bottom, 2)
 
             HoverPausingScrollView {
@@ -441,7 +444,7 @@ struct SessionNavQueue: View, Equatable {
     private func profileHeader(style: DockThemePalette) -> some View {
         let allProfiles = showsAllProfiles
         let bot = allProfiles ? nil : selectedBot
-        let name = allProfiles ? "All profiles" : bot?.name ?? sidebarSnapshot.inputs.agentDisplayName
+        let name = allProfiles ? "All" : bot?.name ?? sidebarSnapshot.inputs.agentDisplayName
         let subtitle = allProfiles ? "\(visibleBots.count) bots" : bot?.title
         let label = subtitle.map { "\(name) — \($0)" } ?? name
         let isSwitchable = visibleBots.count > 1
@@ -514,60 +517,61 @@ struct SessionNavQueue: View, Equatable {
     /// Running activity and unread sessions are independent signals.
     @ViewBuilder
     private func botActivityBadge(for bots: [BotSummary], style: DockThemePalette) -> some View {
-        // Working is time-based (heartbeat age), so re-evaluate on a slow
-        // local tick; the roster itself republishes only when it changes.
-        TimelineView(.periodic(from: .now, by: 15)) { _ in
-            // Sessions only: main-chat work shows on the Bots page instead.
-            let workingBots = bots.filter(\.isSessionWorking)
-            let working = workingBots.count
-            let unread = bots.reduce(0) { $0 + botUnreadCounts[$1.id, default: 0] }
-            let unreadLabel = unread > 99 ? "99+" : "\(unread)\(botUnreadIncomplete ? "+" : "")"
-            let unreadDescription =
-                botUnreadIncomplete
-                ? (unread > 0 ? "At least \(unread) unread sessions" : "Unread session count unavailable")
-                : "\(unread) unread \(unread == 1 ? "session" : "sessions")"
-            let summary = (workingBots.map { "\($0.name) is running" } + [unreadDescription]).joined(separator: "\n")
-            HStack(spacing: 6) {
-                if working > 0 {
-                    HStack(spacing: 4) {
-                        DockActivityIndicator(state: .running, size: 12)
-                        if bots.count > 1 { Text("\(working)").dockFont(.compactStatus, weight: .bold) }
-                    }
-                    .foregroundStyle(DockActivityState.running.color)
+        // One board decides status for the picker and the notch alike; it
+        // re-resolves on every session event and roster poll.
+        let board = botMode.activity
+        let blockedBots = bots.filter { board.status(of: $0.id) == .blocked }
+        let workingBots = bots.filter { board.status(of: $0.id) == .working }
+        let working = workingBots.count
+        let unread = bots.reduce(0) { $0 + botUnreadCounts[$1.id, default: 0] }
+        let unreadLabel = unread > 99 ? "99+" : "\(unread)\(botUnreadIncomplete ? "+" : "")"
+        let unreadDescription =
+            botUnreadIncomplete
+            ? (unread > 0 ? "At least \(unread) unread sessions" : "Unread session count unavailable")
+            : "\(unread) unread \(unread == 1 ? "session" : "sessions")"
+        let summary =
+            (blockedBots.map { "\($0.name) is waiting on you" }
+            + workingBots.map { "\($0.name) is running" } + [unreadDescription]).joined(separator: "\n")
+        HStack(spacing: 6) {
+            if !blockedBots.isEmpty {
+                HStack(spacing: 4) {
+                    DockActivityIndicator(state: .approval)
+                    if bots.count > 1 { Text("\(blockedBots.count)").dockFont(.compactStatus, weight: .bold) }
                 }
-                if unread > 0 {
-                    Text(unreadLabel)
-                        .dockFont(.compactStatus, weight: .semibold)
-                        .monospacedDigit()
-                        .foregroundStyle(DockAccentColor.unreadBadgeText)
-                        .dockPill(tint: DockAccentColor.unreadBadgeFill, solid: true, compact: true)
-                        .lineLimit(1)
-                        .fixedSize()
-                }
+                .foregroundStyle(DockActivityState.approval.color)
             }
-            .help(summary)
-            .accessibilityLabel(summary.replacingOccurrences(of: "\n", with: ", "))
+            if working > 0 {
+                HStack(spacing: 4) {
+                    DockActivityIndicator(state: .running)
+                    if bots.count > 1 { Text("\(working)").dockFont(.compactStatus, weight: .bold) }
+                }
+                .foregroundStyle(DockActivityState.running.color)
+            }
+            if unread > 0 {
+                Text(unreadLabel)
+                    .dockFont(.compactStatus, weight: .semibold)
+                    .monospacedDigit()
+                    .foregroundStyle(DockAccentColor.unreadBadgeText)
+                    .dockPill(tint: DockAccentColor.unreadBadgeFill, solid: true, compact: true)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
         }
+        .help(summary)
+        .accessibilityLabel(summary.replacingOccurrences(of: "\n", with: ", "))
     }
 
     /// The selected bot's avatar in front, with the next bots peeking behind it.
     private func allProfilesMark(size: CGFloat, style: DockThemePalette) -> some View {
         let current = selectedBot
         let bots = Array(([current].compactMap { $0 } + visibleBots.filter { $0.id != current?.id }).prefix(3))
-        let avatar = size * 0.78
-        let step = size * 0.28
-        // Matches BotAvatarView's image clip so no corner shows past the disc.
-        let backing = RoundedRectangle(cornerRadius: avatar * 0.28, style: .continuous)
-        return ZStack(alignment: .leading) {
-            ForEach(Array(bots.enumerated().reversed()), id: \.element.id) { index, bot in
-                // An opaque disc and ring keep each face solid where they overlap.
-                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: avatar, animated: false)
-                    .background(backing.fill(style.surface))
-                    .overlay(backing.stroke(style.surface, lineWidth: 1.5))
-                    .offset(x: CGFloat(index) * step)
+        // One row, side by side: no overlap, so no backing disc is needed.
+        return HStack(spacing: 2) {
+            ForEach(bots) { bot in
+                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: size * 0.72, animated: false)
             }
         }
-        .frame(width: avatar + CGFloat(max(bots.count - 1, 0)) * step, height: size, alignment: .leading)
+        .frame(height: size)
         .accessibilityHidden(true)
     }
 
@@ -601,7 +605,9 @@ struct SessionNavQueue: View, Equatable {
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 // The spinner doubles as "view the running session".
-                                guard option.isSessionWorking, let worker = option.liveWorkerChat else {
+                                guard botMode.activity.status(of: option.id) == .working,
+                                    let worker = option.liveWorkerChat
+                                else {
                                     selectProfile(option.id)
                                     isProfileSelectorPresented = false
                                     return
@@ -635,7 +641,7 @@ struct SessionNavQueue: View, Equatable {
         } label: {
             HStack(spacing: 9) {
                 allProfilesMark(size: 22, style: style)
-                Text("All profiles")
+                Text("All")
                     .dockFont(.body, weight: .semibold)
                     .foregroundStyle(style.primaryText)
                     .lineLimit(1)

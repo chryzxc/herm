@@ -268,6 +268,12 @@ final class EdgeDockController: NSObject {
                 if self.state.bots != inventory.bots { self.state.bots = inventory.bots }
                 if self.state.avatarImages != avatars { self.state.avatarImages = avatars }
             }.store(in: &subscriptions)
+        model.botMode.$activity
+            .receive(on: RunLoop.main)
+            .sink { [weak self] board in
+                guard let self, self.state.botActivity != board else { return }
+                self.state.botActivity = board
+            }.store(in: &subscriptions)
         NotificationCenter.default.publisher(for: .hermBotActivity)
             .compactMap { $0.userInfo?["events"] as? [BotActivityEvent] }
             .receive(on: RunLoop.main)
@@ -1307,9 +1313,23 @@ struct EdgeNotchActivity: Equatable {
     var kanbanNeedsAttention = false
     var kanbanHasUpdate = false
     var agentUpdatePhase: HermesUpdatePhase = .idle
+    /// The Bots style's faces. Working lists every Bot at work, up to three:
+    /// working task rows first, then the roster Bots the Bot picker counts as
+    /// running. Blocked and finished name the first live task's Bot. Empty
+    /// means the task's Bot is not known.
+    var workingBotIDs: [String] = []
+    var blockedBotID: String?
+    var finishedBotID: String?
+    /// Live tasks finished with a result not yet opened; the Bots badge number.
+    var finishedCount = 0
     /// Marks the status indicator stacks: the primary plus finished/blocked extras.
     var markCount: Int {
         working ? 1 + (hasUpdate ? 1 : 0) + (attention ? 1 : 0) : hasUpdate && attention ? 2 : 1
+    }
+    /// Stacked slots for `style`: the Bots style gives each working Bot its own face.
+    func slots(for style: NotchDisplayStyle) -> (primary: Int, extras: Int) {
+        let primary = working && style == .bots ? max(1, workingBotIDs.count) : 1
+        return (primary, markCount - 1)
     }
     var hasUpdate: Bool { unread || backgroundCompleted || responseCompleted || kanbanHasUpdate }
     var quiet: Bool { !working && !attention && !hasUpdate && status == .idle }
@@ -1321,6 +1341,7 @@ struct EdgeNotchActivity: Equatable {
 
     var working: Bool {
         status == .working || runningCount > 0 || workingCount > 0 || kanbanRunningCount > 0
+            || !workingBotIDs.isEmpty
             || agentUpdatePhase.ambientStatus?.isRunning == true
     }
     var attention: Bool {
@@ -1352,6 +1373,25 @@ struct EdgeNotchActivity: Equatable {
         if backgroundCompleted { return .checkCircle }
         if responseCompleted || kanbanHasUpdate { return .dot }
         return status == .offline ? .wifiSlash : .sidebarSimple
+    }
+    /// Fills the Bots style's faces from the notch's task rows, then the
+    /// shared Bot activity board the Bot picker reads too.
+    mutating func applyBots(from tasks: [EdgeNotchTask], board: BotActivityBoard = BotActivityBoard()) {
+        let live = tasks.filter(\.isStatusCurrent)
+        func profile(_ task: EdgeNotchTask) -> String {
+            task.session?.profileID ?? task.profileID ?? task.attentionRequest?.profileID ?? ""
+        }
+        func bot(_ phase: EdgeNotchTask.Phase) -> String? {
+            live.first { $0.phase == phase }.map(profile)
+        }
+        var working: [String] = []
+        for id in live.filter({ $0.phase == .working }).map(profile) + board.working where !working.contains(id) {
+            working.append(id)
+        }
+        workingBotIDs = Array(working.prefix(3))
+        blockedBotID = bot(.attention) ?? board.blocked.first
+        finishedBotID = bot(.finished) ?? board.finished.first
+        finishedCount = live.filter { $0.phase == .finished }.count
     }
 }
 
@@ -1796,6 +1836,8 @@ final class EdgeNotchState: ObservableObject {
     @Published var quickResult: String?
     @Published var deliveryAnswers: [EdgeDeliveryQuestion: AttentionAnswerState] = [:]
     @Published var bots: [BotSummary] = []
+    /// Who is working, blocked or done; shared with the Bot picker.
+    @Published var botActivity = BotActivityBoard()
     @Published var avatarImages: [String: Data] = [:]
     @Published var expanded = false
     @Published var hasPet = false
@@ -1854,6 +1896,7 @@ final class EdgeNotchState: ObservableObject {
         result.kanbanNeedsAttention = cards.contains { $0.phase == .attention }
         result.workingCount = tasks.filter { $0.isStatusCurrent && $0.phase == .working }.count
         result.kanbanHasUpdate = cards.contains { $0.phase == .finished }
+        result.applyBots(from: tasks, board: botActivity)
         return result
     }
     var showsSeparateWork: Bool { railActivity.working && (railActivity.hasUpdate || railActivity.attention) }
@@ -1873,13 +1916,19 @@ final class EdgeNotchState: ObservableObject {
     static let petFootprint: CGFloat = 48
     /// The collapsed rail grows with the number of stacked marks (24pt each, 6pt apart, room for the shoulders).
     var railHeight: CGFloat { expanded ? 136 : collapsedRailHeight }
-    var collapsedRailHeight: CGFloat { max(96, CGFloat(railActivity.markCount) * 30 + 56) }
+    var collapsedRailHeight: CGFloat {
+        let slots = railActivity.slots(for: .stored)
+        return max(96, CGFloat(slots.primary + slots.extras) * 30 + 56)
+    }
     var panelHeight: CGFloat { (expanded ? openSize.height : railHeight) + petReserve }
     /// The camera housing the top island wraps (drawn when the screen has none).
     @Published var notchSize = CGSize(width: EdgeNotchMetrics.fallbackWidth, height: 32)
     /// The right ear holds the primary mark, the left the extras; both match the
     /// wider one so the island stays centered on the camera.
-    var islandEar: CGFloat { CGFloat(max(1, railActivity.markCount - 1)) * 30 + 20 }
+    var islandEar: CGFloat {
+        let slots = railActivity.slots(for: .stored)
+        return CGFloat(max(1, slots.primary, slots.extras)) * 30 + 20
+    }
     /// The shell at rest: the rail bar on an edge, the pill around the notch on top.
     var collapsedSize: CGSize {
         side == .top
@@ -2034,6 +2083,7 @@ struct EdgeNotchView: View {
             .offset(y: state.side == .top ? 0 : state.windowTop - (open ? state.openTop : state.collapsedTop))
         }
         .clipped()
+        .environment(\.botActivity, state.botActivity)
         .onReceive(controlCenter.notchPresentationChanges) { _ in controlPresentationRevision &+= 1 }
         // Rail growth (more stacked marks) uses the same spring as the open/close morph.
         .animation(morph, value: state.collapsedSize)

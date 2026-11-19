@@ -591,10 +591,13 @@ struct EdgeTaskPreview: View {
         .accessibilityLabel(isReplying ? "Close reply" : "Reply to \(task.title)")
     }
 
+    /// Row avatars (and the status mark standing in for one) share this column.
+    static let avatarSize: CGFloat = 34
+
     @ViewBuilder
-    private func statusMark(_ task: EdgeNotchTask, size: CGFloat = 12) -> some View {
+    private func statusMark(_ task: EdgeNotchTask, role: DockActivityIndicator.Role = .row) -> some View {
         if let state = task.activityState {
-            DockActivityIndicator(state: state, size: size)
+            DockActivityIndicator(state: state, role: role)
         } else {
             DockStatusDot(tone: task.tone, pulses: true, muted: true)
         }
@@ -638,15 +641,14 @@ struct EdgeTaskPreview: View {
                 let bot = bots.bot(for: assignee)
                 Group {
                     if let bot {
-                        BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 26)
+                        BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: Self.avatarSize)
                     } else {
-                        KanbanAssigneeInitialAvatar(assignee: assignee, size: 26)
+                        KanbanAssigneeInitialAvatar(assignee: assignee, size: Self.avatarSize)
                     }
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    statusMark(task, size: 11)
-                        .background(Circle().fill(Color.dockOpaqueCanvas).dockPadding(-1))
-                        .offset(x: 3, y: 3)
+                    statusMark(task, role: .badge)
+                        .offset(x: 4, y: 4)
                 }
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 .accessibilityLabel("Assigned to \(bot?.name ?? assignee)")
@@ -655,20 +657,22 @@ struct EdgeTaskPreview: View {
                 // spinner: a working Herm face already orbits.
                 let working = task.tone == .working
                 BotAvatarView(
-                    bot: bot, imageData: avatarImages[bot.id], size: 26, mood: BotMood(ask: task.activityState),
+                    bot: bot, imageData: avatarImages[bot.id], size: Self.avatarSize,
+                    mood: BotMood(ask: task.activityState),
                     orbits: working
                 )
                 .overlay(alignment: .bottomTrailing) {
                     if !working || !BotAvatarView.showsHermFace(avatarImages[bot.id], id: bot.id) {
-                        statusMark(task, size: 11)
-                            .background(Circle().fill(Color.dockOpaqueCanvas).dockPadding(-1))
-                            .offset(x: 3, y: 3)
+                        statusMark(task, role: .badge)
+                            .offset(x: 4, y: 4)
                     }
                 }
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 .accessibilityLabel("\(bot.name), \(task.displayStatus)")
             } else {
+                // Same column as the avatars, so titles line up across rows.
                 statusMark(task)
+                    .frame(width: Self.avatarSize, height: Self.avatarSize)
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             }
             VStack(alignment: .leading, spacing: 3) {

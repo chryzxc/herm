@@ -106,7 +106,7 @@ struct TodoPlanTaskList: View {
         return HStack(alignment: .top, spacing: 10) {
             Group {
                 if active && isWorking && motion != nil {
-                    DockActivityIndicator(state: .running, size: 14, tint: Color.dockAccent)
+                    DockActivityIndicator(state: .running, tint: Color.dockAccent)
                 } else if active {
                     Circle().trim(from: 0, to: 0.7)
                         .stroke(Color.dockAccent, style: StrokeStyle(lineWidth: 2, lineCap: .round))

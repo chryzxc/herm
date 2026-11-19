@@ -94,11 +94,13 @@ struct ChatRailButton: View {
     private var badge: some View {
         HStack(spacing: 2) {
             if chatActivity.isWorking {
-                DockActivityIndicator(state: .running, size: 9, animates: isVisible && style.theme.style.animates)
-                    .dockPadding(.horizontal, 3)
-                    .frame(minWidth: 14, minHeight: 14)
-                    .background(Capsule().fill(style.sidebarBackground))
-                    .overlay(Capsule().strokeBorder(style.secondaryText.opacity(0.3), lineWidth: 0.5))
+                DockActivityIndicator(
+                    state: .running, role: .compact, animates: isVisible && style.theme.style.animates
+                )
+                .dockPadding(.horizontal, 3)
+                .frame(minWidth: 14, minHeight: 14)
+                .background(Capsule().fill(style.sidebarBackground))
+                .overlay(Capsule().strokeBorder(style.secondaryText.opacity(0.3), lineWidth: 0.5))
             }
             if chatActivity.unreadCount > 0 { UnreadCountPill(label: chatActivity.unreadBadgeLabel) }
         }

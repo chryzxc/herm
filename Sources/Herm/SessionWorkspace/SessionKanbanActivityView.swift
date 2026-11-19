@@ -232,7 +232,7 @@ struct SessionKanbanActivityView: View {
                                     .dockFont(.body, weight: .semibold)
                                     .foregroundStyle(Color.dockPrimaryText)
                                 Spacer(minLength: 4)
-                                if bot.isRecentlyActive {
+                                if bot.isRecentlyActive || botMode.activity.isBusy(bot.id) {
                                     Text("ACTIVE NOW")
                                         .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                                         .foregroundStyle(Color.dockSuccess)
