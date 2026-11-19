@@ -1256,7 +1256,9 @@ rail geometry or its interactions.
 uses the neutral face. Working shows one face per Bot at work, up to three:
 working task rows first, then every Bot `BotActivityBoard` marks working,
 so a Bot running elsewhere still appears. The rail and island ears grow by one
-slot per extra face. Blocked and finished show the first live task's Bot, else
+slot per extra face. Each island ear fits only its own marks, so a lone badge
+never sits beside an empty slot; the island shifts sideways to keep the gap on
+the camera. Blocked and finished show the first live task's Bot, else
 the board's. `BotActivityBoard` (on `BotModeModel.activity`) is the single
 working/blocked/finished/idle answer the notch and the Bot picker both read. It
 merges the roster heartbeat, every live gateway session (mapped to its Bot

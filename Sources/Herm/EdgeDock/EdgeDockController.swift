@@ -1284,7 +1284,7 @@ final class EdgeDockController: NSObject {
         let home =
             state.side == .top
             ? NSPoint(
-                x: placement.screenFrame.midX + state.collapsedSize.width / 2 + 4,
+                x: placement.screenFrame.midX + state.islandShellOffset + state.islandShellWidth / 2 + 4,
                 y: placement.screenFrame.maxY - state.notchSize.height - 44)
             : NSPoint(x: state.side == .right ? target.maxX - 44 : target.minX, y: target.minY)
         petWindow?.update(home: home, screen: placement.visibleFrame, visible: !workspacePresented, side: state.side)
@@ -1923,12 +1923,21 @@ final class EdgeNotchState: ObservableObject {
     var panelHeight: CGFloat { (expanded ? openSize.height : railHeight) + petReserve }
     /// The camera housing the top island wraps (drawn when the screen has none).
     @Published var notchSize = CGSize(width: EdgeNotchMetrics.fallbackWidth, height: 32)
-    /// The right ear holds the primary mark, the left the extras; both match the
-    /// wider one so the island stays centered on the camera.
-    var islandEar: CGFloat {
+    /// The right ear holds the primary mark, the left the extras. Each fits its
+    /// own marks, so a lone badge never sits beside an empty slot.
+    var islandEars: (left: CGFloat, right: CGFloat) {
         let slots = railActivity.slots(for: .stored)
-        return CGFloat(max(1, slots.primary, slots.extras)) * 30 + 20
+        func ear(_ count: Int) -> CGFloat { CGFloat(max(1, count)) * 30 + 20 }
+        return (ear(slots.extras) + Self.islandBadgeInset, ear(slots.primary))
     }
+    /// Badged faces sit bottom-leading in their box, so the left ear pads its
+    /// outer edge to keep them off the shell's shoulder.
+    static let islandBadgeInset: CGFloat = 6
+    /// The window stays centered on the camera at the wider ear on both sides;
+    /// the drawn island uses the real ears and shifts by this to keep the gap on the camera.
+    var islandEar: CGFloat { max(islandEars.left, islandEars.right) }
+    var islandShellOffset: CGFloat { (islandEars.right - islandEars.left) / 2 }
+    var islandShellWidth: CGFloat { notchSize.width + islandEars.left + islandEars.right }
     /// The shell at rest: the rail bar on an edge, the pill around the notch on top.
     var collapsedSize: CGSize {
         side == .top
@@ -2022,7 +2031,7 @@ struct EdgeNotchView: View {
                                         removal: .opacity.animation(.easeIn(duration: 0.1))))
                     } else if state.side == .top {
                         EdgeIslandRail(
-                            activity: state.railActivity, notchWidth: state.notchSize.width, ear: state.islandEar,
+                            activity: state.railActivity, notchWidth: state.notchSize.width, ears: state.islandEars,
                             height: state.notchSize.height, action: openDock
                         )
                         .contextMenu { railMenu }
@@ -2037,7 +2046,9 @@ struct EdgeNotchView: View {
                 // the shape (non-animated), and tying the shape to it made the
                 // preview pop to full size instead of growing with the spring.
                 .frame(
-                    width: open ? state.openSize.width : state.collapsedSize.width,
+                    width: open
+                        ? state.openSize.width
+                        : state.side == .top ? state.islandShellWidth : state.collapsedSize.width,
                     height: open ? state.openSize.height : state.collapsedSize.height,
                     alignment: state.side.alignment
                 )
@@ -2068,7 +2079,9 @@ struct EdgeNotchView: View {
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 6)
                         .onChanged { _ in onDrag(false) }
-                        .onEnded { _ in onDrag(true) })
+                        .onEnded { _ in onDrag(true) }
+                )
+                .offset(x: !open && state.side == .top ? state.islandShellOffset : 0)
                 if state.hasPet && !state.externalPet {
                     HermesNotchPetButton(pet: controlCenter.pet, mirrored: state.side == .left)
                         .frame(maxWidth: .infinity, alignment: state.side == .left ? .leading : .trailing)
@@ -2087,6 +2100,7 @@ struct EdgeNotchView: View {
         .onReceive(controlCenter.notchPresentationChanges) { _ in controlPresentationRevision &+= 1 }
         // Rail growth (more stacked marks) uses the same spring as the open/close morph.
         .animation(morph, value: state.collapsedSize)
+        .animation(morph, value: state.islandShellWidth)
         .animation(morph, value: state.openSize)
         .onAppear { open = state.expanded }
         .onChange(of: state.expanded) { _, expanded in

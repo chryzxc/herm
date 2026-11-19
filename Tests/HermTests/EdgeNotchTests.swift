@@ -295,12 +295,30 @@ struct EdgeNotchTests {
         let state = EdgeNotchState()
         state.side = .top
         state.notchSize = CGSize(width: 200, height: 32)
-        #expect(state.collapsedSize == CGSize(width: 200 + 50 * 2, height: 32))
+        #expect(state.collapsedSize == CGSize(width: 200 + 56 * 2, height: 32))
+        #expect(state.islandShellWidth == CGFloat(200 + 56 + 50))
         #expect(state.panelSize == state.collapsedSize)
         state.expanded = true
         #expect(
             state.panelSize
                 == CGSize(width: EdgeNotchState.islandSize.width, height: EdgeNotchState.islandSize.height + 32))
+    }
+
+    @MainActor @Test func islandEarsFitTheirOwnMarks() {
+        let state = EdgeNotchState()
+        state.side = .top
+        state.notchSize = CGSize(width: 200, height: 32)
+        state.activity.status = .needsApproval
+        state.activity.unread = true
+        let slots = state.railActivity.slots(for: .stored)
+        #expect(
+            state.islandEars.left == CGFloat(max(1, slots.extras)) * 30 + 20 + EdgeNotchState.islandBadgeInset)
+        #expect(state.islandEars.right == CGFloat(max(1, slots.primary)) * 30 + 20)
+        #expect(state.islandShellWidth == 200 + state.islandEars.left + state.islandEars.right)
+        // The window stays centered at the wider ear; the shell shifts so the gap stays on the camera.
+        #expect(state.collapsedSize.width == 200 + state.islandEar * 2)
+        let cameraCenter = state.islandShellOffset - state.islandShellWidth / 2 + state.islandEars.left + 100
+        #expect(cameraCenter == 0)
     }
 
     @MainActor @Test func quietNotchDoesNotExposePassiveLabelsOrLargeRail() {

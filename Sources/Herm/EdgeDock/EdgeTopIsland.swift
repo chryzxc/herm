@@ -6,7 +6,7 @@ struct EdgeIslandRail: View {
     @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .defaultStyle
     let activity: EdgeNotchActivity
     let notchWidth: CGFloat
-    let ear: CGFloat
+    let ears: (left: CGFloat, right: CGFloat)
     let height: CGFloat
     let action: () -> Void
 
@@ -15,10 +15,11 @@ struct EdgeIslandRail: View {
             HStack(spacing: 0) {
                 // Extras (finished/blocked) left, the primary status right.
                 EdgeNotchStatusIndicator(activity: activity, style: displayStyle, axis: .horizontal, part: .badges)
-                    .frame(width: ear, height: height)
+                    .dockPadding(.leading, EdgeNotchState.islandBadgeInset)
+                    .frame(width: ears.left, height: height)
                 Color.clear.frame(width: notchWidth, height: height)
                 EdgeNotchStatusIndicator(activity: activity, style: displayStyle, axis: .horizontal, part: .primary)
-                    .frame(width: ear, height: height)
+                    .frame(width: ears.right, height: height)
             }
             .contentShape(Rectangle())
         }
