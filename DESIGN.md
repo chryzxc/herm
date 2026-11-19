@@ -2738,6 +2738,9 @@ Group chat action errors use toast notifications without an inline error row abo
 
 ### Conversation workspace
 
+Reserve the session rail's actual width in both density settings, including for the
+transcript, composer, welcome and floating controls; density only tightens visual spacing.
+
 Remove the approval card from the conversation as soon as Hermes confirms a decision, whichever surface answered it. Pending and uncertain responses stay in the same card with explicit recovery. The record is process-local and does not alter transcript history.
 
 The composer background-process tray uses a shared disclosure with a terminal icon,

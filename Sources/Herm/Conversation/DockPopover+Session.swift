@@ -701,7 +701,7 @@ extension DockPopover {
     @ViewBuilder
     func conversation(trailingContentInset: CGFloat) -> some View {
         if speechInput.isRecording {
-            voiceMode.dockPadding(.trailing, trailingContentInset)
+            voiceMode.padding(.trailing, trailingContentInset)
         } else {
             chatScroll(trailingContentInset: trailingContentInset)
         }

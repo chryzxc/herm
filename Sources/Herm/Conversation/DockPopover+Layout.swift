@@ -197,7 +197,7 @@ extension DockPopover {
             // animated: AppKit panes draw above the fading stage anyway, and
             // animating a full split relayout stutters.
             if isVoiceImmersive && sessionWorkspaceMode == .voice {
-                immersiveVoiceStage.dockPadding(.top, titlebarInset)
+                immersiveVoiceStage.padding(.top, titlebarInset)
                     .transition(.asymmetric(insertion: .opacity, removal: .identity))
             } else {
                 layoutContent.transition(.identity)
@@ -722,7 +722,7 @@ extension DockPopover {
                                             )
                                             .id(sessionWorkspaceIdentity)
                                             .frame(width: railWidth - DockSpacing.section)
-                                            .dockPadding(.trailing, DockSpacing.section)
+                                            .padding(.trailing, DockSpacing.section)
                                         }
                                     }
                             }
@@ -799,7 +799,7 @@ extension DockPopover {
                     )
                 }
             )
-            .dockPadding(.trailing, railWidth)
+            .padding(.trailing, railWidth)
         }
         .overlay(alignment: .top) {
             VStack(spacing: 4) {
@@ -810,7 +810,7 @@ extension DockPopover {
                 }
                 ChatQuotaBanner(control: controlCenter, metrics: conversationMetrics)
             }
-            .dockPadding(.trailing, railWidth)
+            .padding(.trailing, railWidth)
         }
     }
 }

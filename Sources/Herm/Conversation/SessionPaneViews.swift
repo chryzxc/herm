@@ -104,7 +104,7 @@ struct SessionPaneRow<Primary: View>: View {
                                     SessionPaneDropHint(
                                         title: "Add as tab", icon: .plus, isActive: isTabTarget(slot)
                                     )
-                                    .dockPadding(.top, headerHeight)
+                                    .padding(.top, headerHeight)
                                     .frame(width: widths[index] * (isLast(index) ? 1 - zone : 1))
                                 }
                             }
@@ -141,7 +141,7 @@ struct SessionPaneRow<Primary: View>: View {
             .overlay(alignment: .trailing) {
                 if target != nil, zone > 0 {
                     SessionPaneDropHint(title: "New column", icon: .columnsPlusRight, isActive: isNewColumnTarget)
-                        .dockPadding(.top, headerHeight)
+                        .padding(.top, headerHeight)
                         .frame(width: (widths.last ?? 0) * zone)
                 }
             }
@@ -447,7 +447,7 @@ struct SessionPaneRoomDrop: ViewModifier {
                             )
                             .frame(width: geometry.size.width * zone)
                         }
-                        .dockPadding(.top, headerHeight)
+                        .padding(.top, headerHeight)
                     }
                 }
                 .onDrop(

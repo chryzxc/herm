@@ -184,7 +184,7 @@ struct ConversationTranscriptView: View, Equatable {
                             .dockPadding(.vertical, 12)
                             .frame(maxWidth: conversationMetrics.readingWidth)
                             .frame(maxWidth: .infinity)
-                            .dockPadding(.trailing, trailingContentInset)
+                            .padding(.trailing, trailingContentInset)
                             Color.clear.frame(height: 1).id("conversation-bottom")
                         }
                         .background {
@@ -214,7 +214,7 @@ struct ConversationTranscriptView: View, Equatable {
                     ) {
                         coordinator.jumpToLatest(animated: true, reduceMotion: reduceMotion)
                     }
-                    .dockPadding(.trailing, trailingContentInset)
+                    .padding(.trailing, trailingContentInset)
                     let showsMap =
                         snapshot.navigatorItems.count >= MessageNavigator.minimumMessagesToShowNavigator
                         && viewport.size.width - trailingContentInset >= 820

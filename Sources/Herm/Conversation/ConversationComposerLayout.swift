@@ -13,7 +13,7 @@ struct ConversationComposerLayout<Transcript: View, Composer: View>: View {
         ConversationComposerPlacement(progress: showsWelcome ? 0 : 1) {
             StartupAssistantView(hermFaceID: hermFaceID, isActive: showsWelcome)
                 .fixedSize(horizontal: false, vertical: true)
-                .dockPadding(.trailing, trailingContentInset)
+                .padding(.trailing, trailingContentInset)
                 .dockPadding(.bottom, 12)
                 .opacity(showsWelcome ? 1 : 0)
                 .accessibilityHidden(!showsWelcome)

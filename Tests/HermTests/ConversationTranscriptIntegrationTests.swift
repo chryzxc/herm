@@ -63,6 +63,7 @@ struct ConversationTranscriptIntegrationTests {
     struct Root: View {
         let parent: Parent
         let evaluations: RowEvaluations
+        var scale: CGFloat = 1
         var body: some View {
             #if DEBUG
                 parent.environment(
@@ -71,9 +72,11 @@ struct ConversationTranscriptIntegrationTests {
                         if name == "message" { evaluations.messageBodies += 1 }
                         if name == "timeline-canvas" { evaluations.timelineCanvases += 1 }
                         if name == "turn-activity" { evaluations.activityBodies += 1 }
-                    })
+                    }
+                )
+                .environment(\.dockWorkspaceScale, scale)
             #else
-                parent
+                parent.environment(\.dockWorkspaceScale, scale)
             #endif
         }
     }
@@ -93,7 +96,8 @@ struct ConversationTranscriptIntegrationTests {
         init(
             source: String? = nil, streaming: Bool = false, messages: [ChatMessage]? = nil,
             includeTimeline: Bool = false, trailingContentInset: CGFloat = 0,
-            rpcClient: HermesRPCClientProtocol? = nil, initialUnreadIndex: Int? = nil
+            rpcClient: HermesRPCClientProtocol? = nil, initialUnreadIndex: Int? = nil,
+            scale: CGFloat = 1
         ) {
             timeline = includeTimeline ? SessionTraceModel() : nil
             coordinator = ConversationTranscriptCoordinator(controller: controller)
@@ -131,7 +135,8 @@ struct ConversationTranscriptIntegrationTests {
             )
             host = NSHostingView(
                 rootView: Root(
-                    parent: Parent(model: model, transcript: view, timeline: timeline), evaluations: evaluations))
+                    parent: Parent(model: model, transcript: view, timeline: timeline), evaluations: evaluations,
+                    scale: scale))
             host.sizingOptions = []
             host.frame = NSRect(x: 0, y: 0, width: includeTimeline ? 1040 : 640, height: 600)
             window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -234,9 +239,9 @@ struct ConversationTranscriptIntegrationTests {
         #expect(fixture.coordinator.pendingPage == nil)
     }
 
-    @Test(arguments: [CGFloat(220), CGFloat(360)])
-    func railSpaceKeepsTheNativeScrollbarAtTheOuterEdge(railWidth: CGFloat) async throws {
-        let fixture = Fixture(trailingContentInset: railWidth)
+    @Test(arguments: [CGFloat(220), CGFloat(360)], [CGFloat(1.1), CGFloat(0.96)])
+    func railSpaceKeepsTheNativeScrollbarAtTheOuterEdge(railWidth: CGFloat, scale: CGFloat) async throws {
+        let fixture = Fixture(trailingContentInset: railWidth, scale: scale)
         defer { fixture.window.orderOut(nil) }
         try await fixture.settle()
         let scroll = try #require(fixture.controller.clipView?.superview as? NSScrollView)
