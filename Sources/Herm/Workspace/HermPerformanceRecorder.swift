@@ -112,6 +112,13 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
         shared.second.workMilliseconds[name, default: 0] += (CACurrentMediaTime() - start) * 1000
     }
 
+    static func recordWork(_ name: @autoclosure () -> String, milliseconds: Double) {
+        guard active else { return }
+        let name = name()
+        shared.second.bodies[name, default: 0] += 1
+        shared.second.workMilliseconds[name, default: 0] += milliseconds
+    }
+
     /// Counts a scenario event (for example a background-session gateway event) in the current second.
     static func mark(_ name: String, count: Int = 1) {
         guard active else { return }

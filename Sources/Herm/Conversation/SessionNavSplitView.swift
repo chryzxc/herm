@@ -56,9 +56,9 @@ struct SessionNavSplitView<Queue: View, Workspace: View, Inspector: View>: NSVie
 
     @MainActor
     final class Coordinator: NSObject, NSSplitViewDelegate {
-        let queueHost = splitPaneHost()
-        let workspaceHost = splitPaneHost()
-        let inspectorHost = splitPaneHost()
+        let queueHost = splitPaneHost(role: "queue")
+        let workspaceHost = splitPaneHost(role: "workspace")
+        let inspectorHost = splitPaneHost(role: "inspector")
         weak var splitView: NSSplitView?
         var hasSetInitialPositions = false
 
@@ -239,8 +239,8 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         let minimumLeadingWidth: CGFloat
         let maximumLeadingWidth: CGFloat?
         let minimumTrailingWidth: CGFloat
-        let leadingHost = splitPaneHost()
-        let trailingHost = splitPaneHost()
+        let leadingHost = splitPaneHost(role: "panelLeading")
+        let trailingHost = splitPaneHost(role: "panelTrailing")
         weak var splitView: NSSplitView?
         var hasSetInitialPosition = false
         var leadingWidth: Binding<CGFloat>?
