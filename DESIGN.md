@@ -1240,7 +1240,9 @@ what needs me, and what finished that I have not opened?
 **Rail.** Idle is a quiet, theme-colored 22 × 72pt silhouette with a 44pt-wide
 hit target and no passive lifecycle label. It keeps this contour in every
 activity state. Settings → Appearance offers three persisted status displays:
-Dots (default), Vertical line, and Ring, with working-animation previews.
+Dots, Vertical line, and Ring, with working-animation previews. Bots is the
+default; existing installs switch to it once on first launch after it ships,
+and any style chosen afterwards sticks.
 Dots breathe during work; the line sweeps vertically and the ring rotates.
 Settled states hold still. Attention and updates retain a separate dot above
 ongoing work, so neither hides it. Idle is subdued, offline is hollow, updates

@@ -648,3 +648,31 @@ struct BotStatusMotionTests {
         #expect(BotStatusMotion.finished.pose(at: 5, hopAge: BotWorkingPose.reactionDuration).lift == 0)
     }
 }
+
+struct NotchBotsStyleIntroductionTests {
+    private func defaults() -> UserDefaults {
+        let name = "NotchBotsStyleIntroductionTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        return defaults
+    }
+
+    @Test func freshInstallsDefaultToBots() {
+        #expect(NotchDisplayStyle.defaultStyle == .bots)
+    }
+
+    @Test func anEarlierChoiceSwitchesToBotsOnce() {
+        let defaults = defaults()
+        defaults.set(NotchDisplayStyle.ring.rawValue, forKey: NotchDisplayStyle.defaultsKey)
+        NotchDisplayStyle.introduceBotsStyle(in: defaults)
+        #expect(defaults.string(forKey: NotchDisplayStyle.defaultsKey) == NotchDisplayStyle.bots.rawValue)
+    }
+
+    @Test func aChoiceMadeAfterTheSwitchSticks() {
+        let defaults = defaults()
+        NotchDisplayStyle.introduceBotsStyle(in: defaults)
+        defaults.set(NotchDisplayStyle.dots.rawValue, forKey: NotchDisplayStyle.defaultsKey)
+        NotchDisplayStyle.introduceBotsStyle(in: defaults)
+        #expect(defaults.string(forKey: NotchDisplayStyle.defaultsKey) == NotchDisplayStyle.dots.rawValue)
+    }
+}

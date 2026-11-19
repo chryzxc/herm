@@ -5,7 +5,17 @@ enum NotchDisplayStyle: String, CaseIterable, Identifiable {
 
     static let defaultsKey = "hermes.notch.display-style"
     static let enabledKey = "hermes.notch.enabled"
-    static let defaultStyle = NotchDisplayStyle.count
+    static let defaultStyle = NotchDisplayStyle.bots
+    /// Set once Bots has been introduced, so the switch runs a single time.
+    static let botsIntroducedKey = "hermes.notch.bots-introduced"
+
+    /// Moves everyone onto the Bots style once, so people who picked another
+    /// style see the new one. Any choice made after that sticks.
+    static func introduceBotsStyle(in defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: botsIntroducedKey) else { return }
+        defaults.set(NotchDisplayStyle.bots.rawValue, forKey: defaultsKey)
+        defaults.set(true, forKey: botsIntroducedKey)
+    }
     /// The saved choice, for sizing code outside a view's `@AppStorage`.
     static var stored: Self {
         UserDefaults.standard.string(forKey: defaultsKey).flatMap(Self.init(rawValue:)) ?? defaultStyle

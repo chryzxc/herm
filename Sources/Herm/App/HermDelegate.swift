@@ -139,6 +139,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         // Apply the saved theme's appearance before any Dock window draws.
         _ = DockThemeStore.shared
         _ = NSScrollView.installDockScrollers
+        NotchDisplayStyle.introduceBotsStyle()
         // Devices Herm booted before a crash or force quit have no tab left to close them.
         HermesSimulatorBridge.shutdownOwned()
         actionErrorPresenter = DockActionErrorPresenter()
