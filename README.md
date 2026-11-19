@@ -478,9 +478,14 @@ row then shows a pill with its bot's avatar and name, and opening it switches to
 that bot. Each section header stays at the top of the scrolling
 list until the next section replaces it; rows remain lazily rendered.
 Background polls and runtime notifications refresh the latest history page,
-reusing older loaded sessions for up to a minute. Explicit refreshes and profile
-changes reconcile the full saved history immediately.
-One Hermes request loads recent chats for all bots.
+reusing older loaded sessions for up to a minute. Explicit refreshes reconcile
+the full saved history immediately.
+One Hermes request loads recent chats for all bots. Switching to a bot shows its
+conversations at once: the list Herm last showed for that bot, or on a first visit
+its rows from that all-bot request. Hermes is then re-read quietly in the
+background. Returning to a bot reopens the chat it was left on, at the same
+reading position when that transcript is still cached. Retained lists stay keyed
+to their own profile and are cleared when the Hermes sign-in changes.
 Startup restoration shares the sidebar's session load, so reopening the latest
 conversation preserves the complete recent list without a manual refresh.
 

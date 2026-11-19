@@ -168,6 +168,9 @@ final class DockModel: ObservableObject {
     /// ranking per 100 sessions; only cold start, a profile switch, an explicit
     /// refresh, or an expired window pays for it.
     var sessionHistoryLoadedAt: (profileID: String?, date: Date)?
+    /// Each visited profile's last conversation list and open chat, by
+    /// profile ID, so switching back shows it while Hermes is re-read.
+    var retainedProfileSessions: [String: RetainedProfileSessions] = [:]
     /// When the last session index read finished, for spacing activity refreshes.
     var lastSessionIndexReadAt: Date?
     /// One deferred read that absorbs a burst of completion/database events.
@@ -618,6 +621,7 @@ final class DockModel: ObservableObject {
                         return
                     }
                     self.sessionTranscriptCache.removeAll()
+                    self.retainedProfileSessions.removeAll()
                     self.sessionTranscriptPreview = nil
                     self.sessionResumeTask?.cancel()
                     self.sessionResumeWorkTask?.cancel()

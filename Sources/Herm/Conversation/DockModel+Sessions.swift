@@ -12,16 +12,21 @@ extension DockModel {
     }
 
     /// Re-home the foreground session surface and profile-owned conversation
-    /// index. The old projection is cleared before the target request starts;
-    /// late responses are rejected by the generation guard below.
-    func setProfileScope(_ profileID: String?) {
+    /// index. The outgoing list is retained under its own profile and replaced
+    /// by the target's retained (or preloaded) list, else cleared; the target
+    /// is then re-read, quietly when something is already shown. Late
+    /// responses are rejected by the generation guard in `loadSessions`.
+    /// Returns the chat that was open when the target profile was last left.
+    @discardableResult
+    func setProfileScope(_ profileID: String?) -> HermesSession? {
         let normalized = profileID?.trimmingCharacters(in: .whitespacesAndNewlines)
         let next = normalized?.isEmpty == false ? normalized : nil
         let nextUnavailable = next == nil
         guard profileScopeID != next || profileScopeUnavailable != nextUnavailable else {
             if sessionProfileID == nil { sessionProfileID = next }
-            return
+            return nil
         }
+        retainCurrentProfileSessions()
         profileScopeID = next
         profileScopeUnavailable = nextUnavailable
         if let next {
@@ -29,7 +34,8 @@ extension DockModel {
         } else {
             defaults.removeObject(forKey: profileScopeKey)
         }
-        sessionHistoryLoadedAt = nil
+        let shown = next.flatMap(profileSessionsToShow(for:))
+        sessionHistoryLoadedAt = shown?.historyLoadedAt.map { (next, $0) }
         pendingSessionIndexRefresh = false
         sessionIndexRefreshTask?.cancel()
         sessionIndexRefreshTask = nil
@@ -38,11 +44,17 @@ extension DockModel {
         sessionLoadTask = nil
         isLoadingSessions = false
         isPollingSessions = false
-        sessions = []
-        sessionProjectionState = .loading
+        sessions = shown?.sessions ?? []
+        pinnedSessions = shown?.pinnedSessions ?? []
+        if let shown {
+            sessionProjectionState = shown.sessions.isEmpty ? .empty : .ready(shown.sessions)
+        } else {
+            sessionProjectionState = .loading
+        }
         // Keep the outgoing session profile until its draft has been saved.
         newChat()
-        loadSessions()
+        loadSessions(quiet: shown != nil)
+        return shown?.openSession
     }
 
     func artifactSessions() async throws -> (sessions: [HermesSession], isIncomplete: Bool) {
@@ -246,6 +258,7 @@ extension DockModel {
             SessionBrowserStore.shared.delete(
                 SessionBrowserKey(profileID: session.profileID ?? profileScopeID, sessionID: session.id))
             sessions.removeAll { $0.id == session.id }
+            forgetRetainedSession(session.id, profileID: session.profileID ?? profileScopeID)
             DebugLog.write("model: deleted saved session \(session.id)")
             return true
         } catch {
@@ -268,6 +281,7 @@ extension DockModel {
             var params: [String: Any] = ["session_id": session.id, "hidden": hidden]
             if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
             _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionSetHidden.rawValue, params: params)
+            invalidateRetainedHistory(profileID: session.profileID ?? profileScopeID)
             loadSessions()
             return true
         } catch {
@@ -298,6 +312,7 @@ extension DockModel {
             try await sessionPinService.setPinned(
                 pinned, sessionID: session.id, profileID: profileID, client: sessionRPCClient)
             applyAllProfilePin(pinned, to: session, profileID: profileID)
+            applyRetainedPin(pinned, to: session, profileID: profileID)
             guard ownedByScope, profileScopeID == scope else { return true }
             // Reject list snapshots that predate the acknowledged mutation.
             sessionLoadGeneration &+= 1
@@ -513,6 +528,7 @@ extension DockModel {
                 try await HermesCLIAdapter(rpc: HermesControlRPC(client: sessionRPCClient)).renameSavedSession(
                     sessionID: session.id, title: cleanTitle, profileID: session.profileID ?? profileScopeID)
             }
+            invalidateRetainedHistory(profileID: session.profileID ?? profileScopeID)
             loadSessions()
             return true
         } catch {
