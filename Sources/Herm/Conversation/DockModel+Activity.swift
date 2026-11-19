@@ -100,7 +100,7 @@ extension DockModel {
         }
         // A session no list holds yet (another Bot's new chat): ask the roster
         // now rather than at the next 10s poll, at most every 3s.
-        if isWorking == true, recentIndex == nil, pinnedIndex == nil, !foundInScan {
+        if isBotModeLoaded, isWorking == true, recentIndex == nil, pinnedIndex == nil, !foundInScan {
             let now = Date()
             if unknownSessionRosterRefreshAt.map({ now.timeIntervalSince($0) >= 3 }) ?? true {
                 unknownSessionRosterRefreshAt = now

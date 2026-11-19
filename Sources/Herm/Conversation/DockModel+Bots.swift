@@ -2,6 +2,8 @@ extension DockModel {
     func makeBotMode() -> BotModeModel {
         let bots = BotModeModel()
         bots.bind(to: controlRPCClient, capabilityAvailable: false)
+        isBotModeLoaded = true
+        syncBotActivitySignals()
         return bots
     }
 
@@ -17,6 +19,7 @@ extension DockModel {
 
     func flushBotActivitySignals() {
         botActivitySyncPending = false
+        guard isBotModeLoaded else { return }
         var rows: [BotSessionSignal] = []
         var seen = Set<String>()
         func add(_ sessions: [HermesSession]) {

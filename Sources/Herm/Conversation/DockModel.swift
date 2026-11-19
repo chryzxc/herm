@@ -206,6 +206,9 @@ final class DockModel: ObservableObject {
     var allBotSessionsLoadedAt: Date?
     /// Coalesces Bot activity signal syncs into one pass per main-actor turn.
     var botActivitySyncPending = false
+    /// `botMode` is lazy and binding it starts group-chat and roster reads,
+    /// so session events never create it; it syncs once when it is built.
+    var isBotModeLoaded = false
     /// Throttles roster reads asked for by sessions no list holds yet.
     var unknownSessionRosterRefreshAt: Date?
     let sessionPinService = HermesSessionPinService()
