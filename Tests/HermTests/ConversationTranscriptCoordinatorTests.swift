@@ -150,6 +150,61 @@ struct ConversationTranscriptCoordinatorTests {
         #expect(coordinator.pendingPage == nil)
     }
 
+    @Test func aPartialPageWaitsForHalfAPageUntilTheReaderNearsTheEdge() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        let document = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 7_500))
+        scroll.documentView = document
+        controller.clipView = scroll.contentView
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500)
+        coordinator.jump(to: 250)
+        coordinator.receiveLayout(layout(coordinator))
+        let original = coordinator.mountedRange
+        // 500 points of mounted content remain below: inside the reveal distance, not urgent.
+        controller.shiftVisibleTop(by: 6_400)
+        var ready = 3
+        coordinator.pageReadiness = { _, _ in .init(count: ready, preparedPage: nil) }
+        coordinator.userMoved(try #require(controller.geometry), delta: 12)
+        #expect(coordinator.mountedRange == original)
+        #expect(coordinator.pendingPage == nil)
+        #expect(coordinator.hasHistoryRequest)
+        // Half a page mounts as one transaction.
+        ready = ConversationMessageWindow.minimumPartialPage
+        coordinator.retryPreparedPage()
+        #expect(coordinator.mountedRange.upperBound == original.upperBound + ready)
+        #expect(coordinator.pendingPage != nil)
+    }
+
+    @Test func partialPagePolicyMountsWholePagesHalfPagesAndUrgentRows() {
+        let policy = ConversationMessageWindow.mountsPartialPage
+        #expect(!policy(0, true, 0, 600))
+        #expect(policy(2, true, 500, 600))
+        #expect(policy(ConversationMessageWindow.minimumPartialPage, false, 500, 600))
+        #expect(!policy(1, false, 300, 600))
+        #expect(policy(1, false, 299, 600))
+    }
+
+    @Test func repinningMidGestureCompactsOnlyOnceTheScrollSettles() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        let document = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 6_600))
+        scroll.documentView = document
+        controller.clipView = scroll.contentView
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500)
+        coordinator.jump(to: 490, afterLayout: {})
+        coordinator.receiveLayout(layout(coordinator))
+        let widened = coordinator.mountedRange
+        #expect(widened.upperBound == 500 && widened.count > ConversationMessageWindow.initialLimit)
+        controller.shiftVisibleTop(by: 6_000)
+        coordinator.userMoved(try #require(controller.geometry), delta: 12)
+        #expect(coordinator.presentation.isAtBottom)
+        #expect(coordinator.mountedRange == widened)
+        coordinator.settled(try #require(controller.geometry))
+        #expect(coordinator.mountedRange == ConversationMessageWindow.compactedRange(totalCount: 500))
+    }
+
     @Test func historyDoesNotMountAnUnpreparedPageAfterOneSecond() async throws {
         let controller = ConversationScrollController()
         let coordinator = ConversationTranscriptCoordinator(controller: controller)

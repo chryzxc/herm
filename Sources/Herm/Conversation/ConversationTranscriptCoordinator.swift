@@ -92,6 +92,8 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     var onPreparationCancelled: () -> Void = {}
     var onPreparationInvalidated: () -> Void = {}
     private var navigationAfterLayout: (@MainActor () -> Void)?
+    /// The reader repinned to the bottom of a widened window during a gesture.
+    private var compactsWhenSettled = false
 
     init(controller: ConversationScrollController = ConversationScrollController()) {
         self.controller = controller
@@ -131,6 +133,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         countedMessagesRevision = nil
         consumedPrependGeneration = 0
         rowViewports = []
+        compactsWhenSettled = false
         presentation.reset()
         awaitingRestore = nil
         if let sessionID, let saved = savedAnchors.removeValue(forKey: sessionID) {
@@ -205,7 +208,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         if historyRequest != nil { preparingDirection = 0 }
         if delta < 0 { presentation.isAtBottom = false }
         if delta > 0, geometry.distanceToBottom <= ConversationScrollMetrics.pastEndTolerance {
-            updatePosition(geometry)
+            updatePosition(geometry, compacts: false)
         }
         checkEdge(geometry, direction: delta)
     }
@@ -220,7 +223,9 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             }.map(\.target))
     }
 
-    private func updatePosition(_ geometry: ConversationScrollGeometry) {
+    /// Compaction unmounts most of the window, so a reader who repins
+    /// mid-gesture compacts once the scroll settles, not under momentum.
+    private func updatePosition(_ geometry: ConversationScrollGeometry, compacts: Bool = true) {
         let wasAtBottom = presentation.isAtBottom
         presentation.updatePosition(
             geometry,
@@ -229,6 +234,15 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             wasAtBottom: wasAtBottom, isAtBottom: presentation.isAtBottom,
             range: mountedRange, totalCount: totalCount
         ) {
+            compactsWhenSettled = true
+        }
+        if !presentation.isAtBottom { compactsWhenSettled = false }
+        let compactsNow =
+            compacts && compactsWhenSettled
+            && ConversationMessageWindow.isLiveTail(mountedRange, totalCount: totalCount)
+            && mountedRange.count > ConversationMessageWindow.initialLimit
+        if compacts { compactsWhenSettled = false }
+        if compactsNow {
             invalidate()
             setRange(ConversationMessageWindow.compactedRange(totalCount: totalCount))
             followTail()
@@ -324,7 +338,12 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             direction < 0
             ? range.lowerBound - max(request.target.lowerBound, request.target.upperBound - ready)
             : min(request.target.upperBound, request.target.lowerBound + ready) - range.upperBound
-        guard available > 0 else {
+        guard
+            ConversationMessageWindow.mountsPartialPage(
+                available: available, isFullyReady: ready == request.target.count,
+                edgeDistance: direction < 0 ? geometry.visibleTop : geometry.distanceToBottom,
+                visibleHeight: geometry.visibleHeight)
+        else {
             preparingDirection = direction
             return
         }
