@@ -133,6 +133,22 @@ enum ConversationMessageWindow {
         return max(newLower, 0)..<newUpper
     }
 
+    /// Smallest partial page worth its own mount while the reader still has
+    /// content to scroll through.
+    static let minimumPartialPage = pageSize / 2
+
+    /// Whether a partially prepared history request mounts now. Every mount is
+    /// a full transaction (snapshot, transcript layout, anchor correction), and
+    /// preparation reports progress per message, so mounting each ready row as
+    /// it lands turned one page into several hitches. A partial prefix waits
+    /// for half a page unless the reader is within half a viewport of the edge.
+    static func mountsPartialPage(
+        available: Int, isFullyReady: Bool, edgeDistance: CGFloat, visibleHeight: CGFloat
+    ) -> Bool {
+        guard available > 0 else { return false }
+        return isFullyReady || available >= minimumPartialPage || edgeDistance < visibleHeight / 2
+    }
+
     /// True only when the window is open to the very newest message. Reading
     /// anywhere else is "not at bottom" even when the mounted window is
     /// shorter than the viewport — streaming-scroll guards, unread counting,

@@ -3,13 +3,17 @@ import SwiftUI
 
 final class DockWindowHostingView<Content: View>: NSHostingView<Content> {
     override var mouseDownCanMoveWindow: Bool { false }
+    /// Names this host in performance captures (`hostLayout.<role>`).
+    var performanceRole = "root"
 
     // Nested split-pane hosts relayout whenever the root re-renders; time it so
     // performance captures show whether that cascade is behind a dropped frame.
     override func layout() {
         let start = ProcessInfo.processInfo.systemUptime
+        DockHostLayoutTiming.begin()
         super.layout()
         HermPerformanceRecorder.recordWork("hostLayout", since: start)
+        DockHostLayoutTiming.end(role: performanceRole, since: start)
     }
 
     private let hoverGate = DockHoverGate()
@@ -133,9 +137,33 @@ enum DockScrollActivity {
     }
 }
 
+/// `hostLayout` counts a nested host inside its parent's time too. This
+/// records each host's own (self) time per role, so a capture names the pane
+/// that re-lays out every frame instead of one overlapping total.
 @MainActor
-func splitPaneHost() -> NSHostingView<AnyView> {
+enum DockHostLayoutTiming {
+    private static var childSeconds: [TimeInterval] = []
+
+    static func begin() { childSeconds.append(0) }
+
+    /// Returns the host's self time: its layout minus nested hosts' layouts.
+    @discardableResult
+    static func end(
+        role: String, since start: TimeInterval, now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> TimeInterval {
+        let total = now - start
+        let nested = childSeconds.popLast() ?? 0
+        if !childSeconds.isEmpty { childSeconds[childSeconds.count - 1] += total }
+        let own = max(0, total - nested)
+        HermPerformanceRecorder.recordWork("hostLayout.\(role)", milliseconds: own * 1000)
+        return own
+    }
+}
+
+@MainActor
+func splitPaneHost(role: String = "pane") -> NSHostingView<AnyView> {
     let host = DockWindowHostingView(rootView: AnyView(EmptyView()))
+    host.performanceRole = role
     // The split view places panes by frame; don't publish SwiftUI's
     // intrinsic/min/max size as constraints for the outer layout to solve.
     host.sizingOptions = []

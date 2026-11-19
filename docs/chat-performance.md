@@ -642,6 +642,33 @@ re-rendered the root. The root then updated three nested split-pane hosting view
 Not measured: paired before/after captures on battery and on charger. Follow the
 comparison method in the previous section.
 
+## History page batching — 19 November 2026
+
+A 23 s capture on a 60 Hz display, in Low Power Mode with one running session,
+lost 32% of frames. The worst seconds were the ones that paged history: up to
+eight page transactions a second, each with its own anchor correction, and
+26–45 dropped frames in each of those seconds. Preparation reports progress per
+message, and every report mounted the ready prefix, so one eight-message page
+landed as several single-row transactions. Each transaction republishes the
+snapshot, re-lays out the mounted transcript and corrects the anchor.
+
+- A partially prepared request mounts only half a page or more
+  (`ConversationMessageWindow.mountsPartialPage`). It still mounts what is ready
+  when the reader is within half a viewport of the edge, or when the whole
+  request is ready.
+- Repinning to the bottom of a widened window compacts it after the scroll
+  settles, not under momentum.
+- A held decorative clock re-checks every 0.5 s instead of every 150 ms
+  (`DockMotionSchedule.heldRecheck`). It still renders each time it fires.
+- `hostLayout` counts a nested pane host inside its parent's time as well.
+  Captures now also report self time for each host as `hostLayout.<role>`
+  (root, queue, workspace, inspector, panelLeading, panelTrailing). That shows
+  which pane re-lays out about 11 times per frame in idle seconds. The capture
+  recorded about 650 layouts a second with no scrolling or publications. The
+  notch's two 30 Hz indicators run in their own panel and are not counted.
+
+Not measured: a paired capture after these changes.
+
 ## Decorative motion during scroll — 18 November 2026
 
 A 23 s scroll capture on a 120 Hz display, in Low Power Mode with no running
