@@ -549,10 +549,9 @@ struct ControlCenterProjectTests {
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
         model.setProjectProfile("profile-a")
 
-        for _ in 0..<1_000 where model.projects.count < 2 {
-            await Task.yield()
-        }
-        #expect(model.projects.count == 2)
+        let loaded = Date().addingTimeInterval(5)
+        while model.projects.count < 2, Date() < loaded { try await Task.sleep(for: .milliseconds(5)) }
+        try #require(model.projects.count == 2)
 
         try await Task.sleep(for: .milliseconds(100))
         model.selectProject(forPath: "/work/created")
@@ -569,10 +568,10 @@ struct ControlCenterProjectTests {
         let conversation = DockModel(rpcClient: client)
         control.setProjectProfile("profile-a")
 
-        for _ in 0..<1_000 where control.projects.count < 2 {
-            await Task.yield()
-        }
-        #expect(control.projects.count == 2)
+        // Time-bounded, not a yield count: loaded CI runners need more turns.
+        let loaded = Date().addingTimeInterval(5)
+        while control.projects.count < 2, Date() < loaded { try await Task.sleep(for: .milliseconds(5)) }
+        try #require(control.projects.count == 2)
 
         control.openProject(control.projects.first { $0.id == "other" }!)
         #expect(control.selectedProjectID == "other")
@@ -591,11 +590,9 @@ struct ControlCenterProjectTests {
         control.selectProject(forPath: "/work/created")
         control.focus(sessionID: createdSessionID)
 
-        for _ in 0..<1_000 {
-            if control.projectSessions.contains(where: { $0.id == createdSessionID }) {
-                break
-            }
-            await Task.yield()
+        let focused = Date().addingTimeInterval(5)
+        while !control.projectSessions.contains(where: { $0.id == createdSessionID }), Date() < focused {
+            try await Task.sleep(for: .milliseconds(5))
         }
         try await Task.sleep(for: .milliseconds(100))
 

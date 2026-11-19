@@ -372,27 +372,29 @@ struct WorkflowRoadmapTests {
         #expect(!model.catalogLoading)
     }
 
-    @Test func catalogCoalescesConcurrentReadsAndDiscardsCancelledResponses() async {
+    @Test func catalogCoalescesConcurrentReadsAndOutlivesALeavingCaller() async throws {
         let client = WorkflowFixture()
         client.blockCatalog = true
         client.replies["GET"] = ["entries": [["name": "memory"]]]
         let model = WorkflowIntegrationModel(client: client, profileID: nil) { _ in [:] }
         let first = Task { await model.loadCatalog() }
-        for _ in 0..<200 {
-            if client.catalogContinuation != nil { break }
-            await Task.yield()
-        }
-        await model.loadCatalog()
+        // A deadline, never an unbounded wait: a missed handoff fails instead of hanging the shard.
+        let deadline = Date().addingTimeInterval(5)
+        while client.catalogContinuation == nil, Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        try #require(client.catalogContinuation != nil)
+        let second = Task { await model.loadCatalog() }
+        for _ in 0..<20 { await Task.yield() }
         #expect(client.calls.count == 1)
+        // Leaving the page cancels its caller, not the shared read the other caller still awaits.
         first.cancel()
         client.catalogContinuation?.resume()
         await first.value
-        #expect(model.catalog.isEmpty)
-        #expect(!model.catalogLoading)
-        client.blockCatalog = false
-        await model.loadCatalog()
-        #expect(client.calls.count == 2)
+        await second.value
+        #expect(client.calls.count == 1)
         #expect(model.catalog.map(\.id) == ["memory"])
+        #expect(!model.catalogLoading)
+        await model.loadCatalog()
+        #expect(client.calls.count == 1)
     }
 
     @Test func catalogIndexExcludesInstalledDuplicatesAndPreservesSearchAndRanking() {
