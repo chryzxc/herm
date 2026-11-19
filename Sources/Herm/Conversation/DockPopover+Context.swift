@@ -255,12 +255,19 @@ extension DockPopover {
             controlCenter.setProjectProfile(selected)
             return
         }
-        model.setProfileScope(selected)
+        let returningSession = model.setProfileScope(selected)
         controlCenter.setProjectProfile(selected)
         sessionNavNavigation.clearSelection()
         clearSessionSurfaceSelections()
         cachedProjectName = nil
         cachedSessionRepositoryPath = nil
+        // Returning to a profile reopens the chat it was left on; the
+        // transcript cache and saved reading anchor make that immediate. A
+        // caller that opens a specific chat right after replaces this resume.
+        if let returningSession {
+            if fullscreenSurface == .conversation { sessionNavNavigation.selectSession(returningSession.id) }
+            model.resumeSession(returningSession)
+        }
     }
 
     var fullscreenGlobalControlSurface: some View {
