@@ -492,6 +492,7 @@ The session rail shows beside the transcript and composer by default; use the
 stacked-cards **Hide session rail** button beside Conversation actions to hide it. The rail and its toggle hide
 when the conversation column is narrower than 800pt, including when opening or resizing
 the third panel leaves too little space. Widening the column restores the chosen visibility.
+Both density settings reserve the rail's full width so it does not cover chat content.
 The card is titled **Session overview** when no repository is selected.
 Its sections summarize pending questions and approvals, the session task plan,
 delegated subagents, workspace checkpoints (with diff and a confirmed restore),
