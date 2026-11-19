@@ -41,56 +41,72 @@ enum NotchPreferenceControls {
         @AppStorage(NotchDisplayStyle.enabledKey) private var enabled = true
 
         var body: some View {
-            Toggle("Show notch", isOn: $enabled)
-                .labelsHidden().toggleStyle(.dockSwitch).controlSize(.small).tint(Color.dockAccent)
+            // `.dockSwitch` always draws its label, so the switch carries none;
+            // each surface names it beside the switch.
+            Toggle(isOn: $enabled) { EmptyView() }
+                .toggleStyle(.dockSwitch).controlSize(.small).tint(Color.dockAccent)
+                .accessibilityLabel("Show notch")
         }
     }
 
     struct PositionPicker: View {
+        /// The gear menu's shorter, full-width track.
+        var compact = false
         @AppStorage("hermes.notch.side") private var side: EdgeDockSide = .right
 
         var body: some View {
             DockSegmentedPicker(
                 selection: Binding(get: { side == .top }, set: { side = $0 ? .top : .right }),
-                options: [(false, "Side"), (true, "Top island")])
+                options: [(false, "Side"), (true, "Top island")], height: compact ? 22 : 30)
         }
     }
 
-    /// One button per style, each with its live preview. Settings lays them
-    /// out in a row, the gear menu in a column.
+    /// One tile per style, each with its live preview. Settings lays them out
+    /// in a row; the gear menu packs the same tiles into a compact grid.
     struct StylePicker: View {
-        var axis: Axis = .horizontal
+        var compact = false
         @AppStorage(NotchDisplayStyle.defaultsKey) private var style: NotchDisplayStyle = .defaultStyle
 
         var body: some View {
-            let layout =
-                axis == .horizontal ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 2))
-            layout {
-                ForEach(NotchDisplayStyle.allCases) { option in
-                    Button {
-                        style = option
-                    } label: {
-                        HStack(spacing: 8) {
-                            EdgeNotchStatusIndicator(activity: option.previewActivity, style: option)
-                                .frame(width: 28, height: axis == .horizontal ? 44 : 28)
-                            Text(option.title)
-                                .dockFont(.body, weight: .medium)
-                            if axis == .vertical { Spacer(minLength: 0) }
-                        }
-                        .foregroundStyle(style == option ? Color.dockAccent : Color.dockSecondaryText)
-                        .dockPadding(.horizontal, axis == .vertical ? 8 : 0)
-                        .frame(maxWidth: .infinity, minHeight: axis == .horizontal ? 44 : 34)
-                        .background(
-                            style == option ? Color.dockAccentMuted : Color.clear, in: RoundedRectangle(cornerRadius: 8)
-                        )
-                        .contentShape(Rectangle())
+            Group {
+                if compact {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
+                        ForEach(NotchDisplayStyle.allCases) { option in tile(option) }
                     }
-                    .buttonStyle(.dockHover)
-                    .accessibilityLabel(option.title)
-                    .accessibilityAddTraits(style == option ? .isSelected : [])
+                } else {
+                    HStack(spacing: 12) {
+                        ForEach(NotchDisplayStyle.allCases) { option in tile(option) }
+                    }
                 }
             }
             .accessibilityLabel("Working animation previews")
+        }
+
+        private func tile(_ option: NotchDisplayStyle) -> some View {
+            let selected = style == option
+            return Button {
+                style = option
+            } label: {
+                HStack(spacing: compact ? 6 : 8) {
+                    // The indicator draws in a fixed 20pt slot; the compact tile
+                    // scales it to the text line without clipping the Bots face.
+                    EdgeNotchStatusIndicator(activity: option.previewActivity, style: option)
+                        .scaleEffect(compact ? 0.8 : 1)
+                        .frame(width: compact ? 18 : 28, height: compact ? 18 : 44)
+                    Text(option.title)
+                        .dockFont(.body, weight: .medium)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                .foregroundStyle(selected ? Color.dockAccent : Color.dockSecondaryText)
+                .dockPadding(.horizontal, compact ? 6 : 0)
+                .frame(maxWidth: .infinity, minHeight: compact ? 30 : 44)
+                .background(selected ? Color.dockAccentMuted : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.dockHover)
+            .accessibilityLabel(option.title)
+            .accessibilityAddTraits(selected ? .isSelected : [])
         }
     }
 }
@@ -113,30 +129,40 @@ struct NotchDisplaySettings: View {
     }
 }
 
-/// The gear menu's Notch submenu: the Settings controls, stacked to fit a menu.
+/// The gear menu's Notch submenu: the Settings section in compact form, with
+/// the same controls on the same keys.
 struct NotchQuickMenu: View {
     @AppStorage(NotchDisplayStyle.enabledKey) private var enabled = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("Show notch").dockFont(.body)
-                Spacer(minLength: 0)
-                NotchPreferenceControls.ShowToggle()
-            }
-            .dockPadding(.horizontal, 8).dockPadding(.top, 4)
+        VStack(alignment: .leading, spacing: 8) {
+            row("Show notch") { NotchPreferenceControls.ShowToggle() }
             Group {
-                NotchPreferenceControls.PositionPicker()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .dockPadding(.horizontal, 8)
-                Color.dockBorderLight.frame(height: 0.5).dockPadding(.vertical, 2)
-                NotchPreferenceControls.StylePicker(axis: .vertical)
+                row("Position") { NotchPreferenceControls.PositionPicker(compact: true) }
+                VStack(alignment: .leading, spacing: 6) {
+                    title("Status display").dockPadding(.horizontal, 6)
+                    NotchPreferenceControls.StylePicker(compact: true)
+                }
             }
             .disabled(!enabled)
             .opacity(enabled ? 1 : 0.45)
         }
-        .dockPadding(6)
-        .frame(width: 220)
+        .dockPadding(8)
+        .frame(width: 340)
+    }
+
+    private func title(_ text: String) -> some View {
+        Text(text).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+    }
+
+    private func row<Control: View>(_ text: String, @ViewBuilder control: () -> Control) -> some View {
+        HStack(spacing: 8) {
+            title(text)
+            Spacer(minLength: 8)
+            control()
+        }
+        .dockPadding(.horizontal, 6)
+        .frame(minHeight: 26)
     }
 }
 
