@@ -494,7 +494,7 @@ struct WorktreePicker: View {
                     .lineLimit(1).truncationMode(.middle)
             }
             if isCreatingTask {
-                DockActivityIndicator(state: .running, size: 10)
+                DockActivityIndicator(state: .running, role: .compact)
             } else if worktrees.count > 1 || canStartTask || worktreesUnavailable {
                 DockIcon(.caretUpDown).dockFont(.compactStatus, weight: .regular).foregroundStyle(
                     Color.dockMetadataText)

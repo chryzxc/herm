@@ -494,4 +494,185 @@ struct EdgeNotchTests {
         #expect(rows[0].session?.profileID == "forge" && rows[0].profileID == "forge")
         #expect(rows[1].phase == .finished && rows[1].detail == "Forge · Build green")
     }
+
+    @Test func botsStyleNamesTheBotPerStateAndCountsFinished() {
+        func task(_ id: String, _ phase: EdgeNotchTask.Phase, profile: String?, live: Bool = true) -> EdgeNotchTask {
+            EdgeNotchTask(
+                id: id, title: id, phase: phase, statusLabel: "", detail: nil, updatedAt: nil,
+                isCurrent: false, isStatusCurrent: live, session: nil, profileID: profile)
+        }
+        var activity = EdgeNotchActivity()
+        activity.applyBots(from: [
+            task("w", .working, profile: "coder"), task("b", .attention, profile: "ops"),
+            task("f1", .finished, profile: "writer"), task("f2", .finished, profile: nil),
+            task("stale", .finished, profile: "old", live: false),
+        ])
+        #expect(activity.workingBotIDs == ["coder"])
+        #expect(activity.blockedBotID == "ops")
+        #expect(activity.finishedBotID == "writer")
+        #expect(activity.finishedCount == 2)
+        activity.applyBots(from: [task("f", .finished, profile: nil)])
+        #expect(activity.workingBotIDs.isEmpty)
+        #expect(activity.finishedBotID == "")
+        #expect(activity.finishedCount == 1)
+    }
+
+    @Test func botsStyleShowsEveryWorkingBotLikeTheBotPicker() {
+        let roster = ["nexus", "coder", "idle", "ghost", "chat", "fourth"].map {
+            BotActivityBoardTests.bot(
+                $0, sessions: $0 != "idle" && $0 != "chat", chat: $0 == "chat", hidden: $0 == "ghost")
+        }
+        let board = BotActivityBoard.resolve(roster: roster, live: [:], signals: BotActivitySignals())
+        let task = EdgeNotchTask(
+            id: "w", title: "w", phase: .working, statusLabel: "", detail: nil, updatedAt: nil,
+            isCurrent: false, isStatusCurrent: true, session: nil, profileID: "coder")
+        var activity = EdgeNotchActivity()
+        activity.applyBots(from: [task], board: board)
+        // Task rows first, then the shared board, deduplicated and capped at three.
+        #expect(activity.workingBotIDs == ["coder", "nexus", "chat"])
+        #expect(activity.working)
+        #expect(activity.slots(for: .bots).primary == 3)
+        #expect(activity.slots(for: .count).primary == 1)
+
+        var boardOnly = EdgeNotchActivity()
+        boardOnly.applyBots(
+            from: [],
+            board: .resolve(
+                roster: [BotActivityBoardTests.bot("nexus", sessions: true)], live: [:],
+                signals: BotActivitySignals()))
+        #expect(boardOnly.working && boardOnly.workingBotIDs == ["nexus"])
+    }
+}
+
+struct BotActivityBoardTests {
+    static func bot(
+        _ id: String, sessions: Bool = false, chat: Bool = false, hidden: Bool = false, recent: String? = nil
+    ) -> BotSummary {
+        var bot = BotSummary(
+            id: id, name: id, title: nil, description: nil, model: nil, isActive: false, chat: nil,
+            recentSession: recent.map { BotChatReference(sessionID: $0, profileID: id, title: nil, lastActive: nil) },
+            avatarURL: nil, preview: nil, lastActive: nil, isHidden: hidden, hasAvatar: false, isDefault: false)
+        bot.sessionsBusy = sessions
+        bot.mainChatBusy = chat
+        return bot
+    }
+
+    static func session(_ id: String, profile: String?, working: Bool = false, unread: Bool = false)
+        -> BotSessionSignal
+    {
+        BotSessionSignal(id: id, profileID: profile, isWorking: working, hasUnreadUpdate: unread)
+    }
+
+    @Test func liveSessionsBeyondEachBotsLatestChatStillCount() {
+        // Hermes' live list names no profile; session rows map it to its Bot.
+        let board = BotActivityBoard.resolve(
+            roster: [Self.bot("nexus", recent: "n-latest"), Self.bot("coder")],
+            live: ["n-older": .working, "c-1": .waiting],
+            signals: BotActivitySignals(sessions: [
+                Self.session("n-older", profile: "nexus"), Self.session("c-1", profile: "coder"),
+            ]))
+        #expect(board.working == ["nexus"])
+        #expect(board.blocked == ["coder"])
+    }
+
+    @Test func sessionEventsFlipStatusBeforeTheNextRosterPoll() {
+        let roster = [Self.bot("nexus"), Self.bot("coder"), Self.bot("scout")]
+        let board = BotActivityBoard.resolve(
+            roster: roster, live: [:],
+            signals: BotActivitySignals(
+                sessions: [
+                    Self.session("a", profile: "nexus", working: true),
+                    Self.session("b", profile: "coder", unread: true),
+                ],
+                attention: ["s": "scout"]))
+        #expect(board.working == ["nexus"])
+        #expect(board.finished == ["coder"])
+        #expect(board.blocked == ["scout"])
+    }
+
+    @Test func streamedPreviewAndTimestampChangesLeaveTheSignalEqual() {
+        func row(preview: String, at seconds: TimeInterval, working: Bool) -> HermesSession {
+            HermesSession(
+                id: "a", profileID: "nexus", title: "", preview: preview, startedAt: nil,
+                updatedAt: Date(timeIntervalSince1970: seconds), messageCount: 0, source: "", isHidden: false,
+                isWorking: working, hasUnreadUpdate: false)
+        }
+        // Streaming must not re-resolve the board; only status fields count.
+        #expect(
+            BotSessionSignal(row(preview: "a", at: 1, working: true))
+                == BotSessionSignal(row(preview: "ab", at: 2, working: true)))
+        #expect(
+            BotSessionSignal(row(preview: "a", at: 1, working: true))
+                != BotSessionSignal(row(preview: "a", at: 1, working: false)))
+    }
+
+    @Test func blockedOutranksWorkingAndHiddenBotsStayOut() {
+        let board = BotActivityBoard.resolve(
+            roster: [Self.bot("nexus", sessions: true), Self.bot("ghost", sessions: true, hidden: true)],
+            live: [:],
+            signals: BotActivitySignals(attention: ["x": nil], scopeProfileID: "nexus"))
+        #expect(board.status(of: "nexus") == .blocked)
+        #expect(board.status(of: "ghost") == .idle)
+        #expect(board.order == ["nexus"])
+    }
+
+    @Test func liveStatusParsesWaitingAsBlockedAndKeepsTheStrongest() {
+        let parsed = BotService.parseLiveSessions([
+            ["session_key": "a", "status": "working"], ["session_key": "a", "status": "waiting"],
+            ["session_key": "b", "status": "idle"], ["status": "working"],
+        ])
+        #expect(parsed == ["a": .waiting, "b": .idle])
+    }
+}
+
+struct BotStatusMotionTests {
+    @Test func moodsMapToOneSharedChoreography() {
+        #expect(BotStatusMotion(mood: .tool) == .working)
+        #expect(BotStatusMotion(mood: .thinking) == .working)
+        #expect(BotStatusMotion(mood: .approval) == .blocked)
+        #expect(BotStatusMotion(mood: .clarify) == .blocked)
+        #expect(BotStatusMotion(mood: .done) == .finished)
+        #expect(BotStatusMotion(mood: .listening) == .resting)
+        #expect(BotStatusMotion(mood: .idle) == .resting)
+    }
+
+    @Test func blockedShakesThenHoldsStill() {
+        #expect(BotStatusMotion.blocked.pose(at: 0.1).rotation != 0)
+        #expect(BotStatusMotion.blocked.pose(at: 1.2).rotation == 0)
+        #expect(BotStatusMotion.blocked.pose(at: 2.1).rotation != 0)
+    }
+
+    @Test func finishedHopsOnlyWhileTheReactionRuns() {
+        #expect(BotStatusMotion.finished.pose(at: 5).lift == 0)
+        #expect(BotStatusMotion.finished.pose(at: 5, hopAge: 0.5).lift > 0)
+        #expect(BotStatusMotion.finished.pose(at: 5, hopAge: BotWorkingPose.reactionDuration).lift == 0)
+    }
+}
+
+struct NotchBotsStyleIntroductionTests {
+    private func defaults() -> UserDefaults {
+        let name = "NotchBotsStyleIntroductionTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        return defaults
+    }
+
+    @Test func freshInstallsDefaultToBots() {
+        #expect(NotchDisplayStyle.defaultStyle == .bots)
+    }
+
+    @Test func anEarlierChoiceSwitchesToBotsOnce() {
+        let defaults = defaults()
+        defaults.set(NotchDisplayStyle.ring.rawValue, forKey: NotchDisplayStyle.defaultsKey)
+        NotchDisplayStyle.introduceBotsStyle(in: defaults)
+        #expect(defaults.string(forKey: NotchDisplayStyle.defaultsKey) == NotchDisplayStyle.bots.rawValue)
+    }
+
+    @Test func aChoiceMadeAfterTheSwitchSticks() {
+        let defaults = defaults()
+        NotchDisplayStyle.introduceBotsStyle(in: defaults)
+        defaults.set(NotchDisplayStyle.dots.rawValue, forKey: NotchDisplayStyle.defaultsKey)
+        NotchDisplayStyle.introduceBotsStyle(in: defaults)
+        #expect(defaults.string(forKey: NotchDisplayStyle.defaultsKey) == NotchDisplayStyle.dots.rawValue)
+    }
 }

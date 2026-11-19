@@ -30,13 +30,14 @@ enum DockActivityState: Int, Comparable, CaseIterable, Sendable {
         }
     }
 
-    /// Glyph knocked out of the solid disc.
-    var mark: Ph {
+    /// Bold glyph drawn in the state's color on its tinted disc. SF Symbols,
+    /// because Phosphor's filled set boxes these glyphs in a square.
+    var symbol: String {
         switch self {
-        case .approval: .exclamationMark
-        case .clarification: .question
-        case .failed: .x
-        case .running, .done: .check
+        case .approval: "exclamationmark"
+        case .clarification: "questionmark"
+        case .failed: "xmark"
+        case .running, .done: "checkmark"
         }
     }
 
@@ -51,10 +52,32 @@ enum DockActivityState: Int, Comparable, CaseIterable, Sendable {
 }
 
 /// Spinner for running, a filled glyph for everything else. Fixed footprint so
-/// titles stay aligned whether or not a state is showing.
+/// titles stay aligned whether or not a state is showing. Sizes live in `Role`,
+/// never at the call site, so a state reads the same everywhere it appears.
 struct DockActivityIndicator: View {
+    /// Where the mark sits. Each role owns its size and treatment.
+    enum Role {
+        /// Spinner in a dense rail or tab strip.
+        case compact
+        /// Beside a title or label.
+        case inline
+        /// Pinned to an avatar's corner; carries a canvas ring to separate it.
+        case badge
+        /// Stands in for a row's avatar in the leading column.
+        case row
+
+        var size: CGFloat {
+            switch self {
+            case .compact: 10
+            case .inline: 14
+            case .badge: 15
+            case .row: 20
+            }
+        }
+    }
+
     let state: DockActivityState
-    var size: CGFloat = 12
+    var role: Role = .inline
     /// Overrides the state's color (e.g. on an accent-filled surface).
     var tint: Color?
     /// Only a session that finished work with news you haven't seen shows a dot instead of the check.
@@ -62,19 +85,32 @@ struct DockActivityIndicator: View {
     var animates = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var size: CGFloat { role.size }
+
     var body: some View {
         Group {
             if state == .done, unreadDot {
                 Circle().fill(tint ?? state.color).frame(width: size * 0.6, height: size * 0.6)
             } else if state.icon != nil {
-                // Solid disc with a knocked-out glyph so nothing behind it shows through.
-                Circle().fill(tint ?? state.color).dockPadding(size * 0.06)
-                    .overlay { DockIcon(state.mark, size: size * 0.65, weight: .fill, color: .dockCanvas) }
+                // Tinted disc, hairline ring, bold glyph in the state's color:
+                // the glyph names the state, the hue only reinforces it.
+                let color = tint ?? state.color
+                ZStack {
+                    Circle().fill(Color.dockOpaqueCanvas)
+                    Circle().fill(color.opacity(0.22))
+                    Circle().strokeBorder(color.opacity(0.6), lineWidth: 1)
+                    Image(systemName: state.symbol)
+                        .font(.system(size: size * 0.5, weight: .heavy))
+                        .foregroundStyle(color)
+                }
             } else {
                 spinner(tint ?? state.color)
             }
         }
         .frame(width: size, height: size)
+        .background {
+            if role == .badge { Circle().fill(Color.dockOpaqueCanvas).dockPadding(-1.5) }
+        }
         .help(state.label)
         .accessibilityLabel(state.label)
     }

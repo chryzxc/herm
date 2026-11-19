@@ -31,7 +31,7 @@ struct SessionActivityGlyph: View {
 
     var body: some View {
         if isWorking {
-            DockActivityIndicator(state: .running, size: 10)
+            DockActivityIndicator(state: .running, role: .compact)
         } else if hasUnreadUpdate, let session {
             SessionUnreadReplyBadge(session: session)
         }
@@ -153,6 +153,7 @@ struct SessionNavRail: View {
     @State private var showsViewMenu = false
     @State private var showsSkinMenu = false
     @State private var showsDensityMenu = false
+    @State private var showsNotchMenu = false
     @AppStorage(DockWorkspaceScale.preferenceKey) private var textSize = DockWorkspaceScale.defaultTextSize
     @ObservedObject private var desktopPlugins = DesktopPluginStore.shared
     @State private var dragOrder: [DockRailItem]?
@@ -365,6 +366,8 @@ struct SessionNavRail: View {
                 .dockPopover(isPresented: $showsSkinMenu, arrowEdge: .trailing) { skinMenu }
             viewMenuRow("Density", selected: false, hasSubmenu: true) { showsDensityMenu.toggle() }
                 .dockPopover(isPresented: $showsDensityMenu, arrowEdge: .trailing) { densityMenu }
+            viewMenuRow("Notch", selected: false, hasSubmenu: true) { showsNotchMenu.toggle() }
+                .dockPopover(isPresented: $showsNotchMenu, arrowEdge: .trailing) { NotchQuickMenu() }
             if let onOpenWindow {
                 Color.dockBorderLight.frame(height: 0.5).dockPadding(.vertical, 4)
                 viewMenuRow(isDockedWindow ? "Switch to floating" : "Switch to window", selected: false) {

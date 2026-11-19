@@ -317,6 +317,7 @@ struct DockPopover: View {
             .onReceive(controlCenter.workspacePresentationChanges) { _ in controlPresentationRevision &+= 1 }
             .onReceive(developerWorkflow.rootPresentationChanges) { _ in workflowPresentationRevision &+= 1 }
             .environment(\.dockWorkspaceScale, CGFloat(DockWorkspaceScale.supportedTextSize(textSize)))
+            .environment(\.botActivity, botMode.activity)
             .background(
                 HermCommandRegistration(
                     handlers: HermCommandHandlers(

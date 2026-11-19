@@ -425,6 +425,14 @@ controls do not compress. Existing skin-specific feedback curves remain in use.
   pauses while Herm is neither the active app nor holding a key panel; every
   animated frame re-renders the whole window. Spinners and the notch work
   marker keep running because they carry status.
+- Bot status motion is one choreography, `BotStatusMotion` in
+  `Bots/BotStatusMotion.swift`, used by every avatar that shows a status
+  (chat working Bot, notch, quick preview, sidebar rows, activity panel).
+  Working runs the reach, tilt and hop loop. Approval or clarify shakes at the
+  top of every 2s beat. Done hops once when a Bot finishes, or again when
+  another result lands. Never pose a status Bot by hand at a call site.
+  `BotAvatarView` applies it already; a bare `BotFaceMark` with a status mood
+  adds `.botStatusMotion`.
 
 ### Components
 
@@ -441,6 +449,7 @@ and `DockComponentStyles.swift`.
 | Icon button | `DockIconButton(icon:label:isProminent:isBusy:size:style:action:)` | Icon-only actions in header bars (28pt) and section headers (24pt) |
 | Copy button | `DockCopyButton(_:label:accessibilityLabel:presentation:iconSize:color:confirmationColor:)` | Copy actions that confirm in place with a temporary check; use icon, text, or icon-and-text presentation to preserve the surrounding control treatment |
 | Status dot | `DockStatusDot(tone:size:pulses:)` | State beside a title; `pulses` only on live rows |
+| Activity mark | `DockActivityIndicator(state:role:)` | Running, done, approval, question, failed. `role` sets size: `.compact` 10pt rail spinner, `.inline` 14pt beside a title, `.badge` 15pt on an avatar corner with a canvas ring, `.row` 20pt in the 34pt notch avatar column. Never pass a size at the call site |
 | Status pill | `DockStatusPill(tone:text:symbol:)` | A standalone state, such as an inspector status or an offline marker |
 | Signage card | `.dockSignageCard(tone:emphasized:highlighted:)` | One unit of work in a list: a session, task, or bot |
 | Shimmer track | `DockShimmerTrack(tone:)` | Indeterminate progress under a working card |
@@ -1231,7 +1240,9 @@ what needs me, and what finished that I have not opened?
 **Rail.** Idle is a quiet, theme-colored 22 × 72pt silhouette with a 44pt-wide
 hit target and no passive lifecycle label. It keeps this contour in every
 activity state. Settings → Appearance offers three persisted status displays:
-Dots (default), Vertical line, and Ring, with working-animation previews.
+Dots, Vertical line, and Ring, with working-animation previews. Bots is the
+default; existing installs switch to it once on first launch after it ships,
+and any style chosen afterwards sticks.
 Dots breathe during work; the line sweeps vertically and the ring rotates.
 Settled states hold still. Attention and updates retain a separate dot above
 ongoing work, so neither hides it. Idle is subdued, offline is hollow, updates
@@ -1239,6 +1250,40 @@ use the success tone, and attention pulses in the warning tone. Hover reveals
 the full text, and the button's accessibility label always names the status.
 Reduce Motion holds every work marker still. Changing style never changes the
 rail geometry or its interactions.
+
+**Bots display.** Each mark is the face of the Bot behind it; an unknown Bot
+uses the neutral face. Working shows one face per Bot at work, up to three:
+working task rows first, then every Bot `BotActivityBoard` marks working,
+so a Bot running elsewhere still appears. The rail and island ears grow by one
+slot per extra face. Blocked and finished show the first live task's Bot, else
+the board's. `BotActivityBoard` (on `BotModeModel.activity`) is the single
+working/blocked/finished/idle answer the notch and the Bot picker both read. It
+merges the roster heartbeat, every live gateway session (mapped to its Bot
+through session rows, not only the Bot's latest chat, with `waiting` as
+blocked), session events and pending approvals, so status changes at the event
+rather than at the next roster poll. The roots (`DockPopover`, the notch) inject it
+as `\.botActivity`, so every `BotAvatarView` face, Bots roster row ("Working",
+"Waiting on you") and roster filter reads the same status; Bot surfaces never
+re-derive it from roster flags. Session lists change on every streamed event,
+so the board only sees each session's id, profile, working and unread fields
+and resyncs at most once per main-actor turn. Each face plays the shared
+`BotStatusMotion`, exactly as in the chat, and keeps moving while Herm is in
+the background because the notch carries status. Working blinks, scans and
+loops the reach, tilt and hop with its tool ring turning. Blocked shakes every
+2s and carries the compact activity mark. Finished hops once per new result
+and shows a success count badge of live finished tasks (9+ caps it), which pops
+when the count changes. Offline and idle show a dimmed sleeping face. Changing
+state cross-fades the mark in place. Under Reduce Motion the faces hold still
+and only the mark and badge carry state.
+
+**Notch off.** Settings can hide the notch. Returning from the native window
+to the floating panel turns the notch back on, because the panel grows out of
+the notch and has no other way back once closed.
+
+**Notch quick menu.** The rail's gear menu has a Notch submenu with the same
+show toggle, Side/Top island picker and style picker as Settings. Both draw
+`NotchPreferenceControls` on the same keys; the menu stacks the style picker
+in a column and dims position and style while the notch is off.
 
 The generated workstation-and-side-dock icon is shared by the notch and the app
 bundle. Sparkles are not used as app identity. The compact, preview, and
@@ -1869,9 +1914,8 @@ unread flood. Drag a section header onto another to change their order; the orde
 is a local preference. Bot folders reorder the same way on the Bots list.
 
 When more than one Bot is visible, the Bot switcher starts with a fixed
-"All profiles" row (not reorderable) whose mark stacks up to three Bot avatars,
-the selected Bot in front. Each avatar sits on an opaque surface disc so the
-overlap never shows through. The choice is a local preference. It merges every
+"All" row (not reorderable) whose mark lines up to three Bot avatars in
+one row, the selected Bot first, with no overlap or backing. The choice is a local preference. It merges every
 Bot's pins into one Pinned section and every Bot's chats into Recents and
 search. The selected Bot's pins come from its own pinned list; other Bots' pins
 come from the all-profile read's `pinned` flag. Pin keys are profile-scoped. In

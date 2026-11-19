@@ -222,11 +222,15 @@ struct DockMenuChoices<Value: Hashable, Content: View>: View {
 struct DockSegmentedPicker<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [(value: Value, title: String)]
+    /// Menus pass a shorter segment.
+    var height: CGFloat = 30
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(options.indices, id: \.self) { index in
-                DockTabButton(title: options[index].title, isSelected: selection == options[index].value) {
+                DockTabButton(
+                    title: options[index].title, isSelected: selection == options[index].value, height: height
+                ) {
                     selection = options[index].value
                 }
             }

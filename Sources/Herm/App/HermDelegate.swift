@@ -139,6 +139,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         // Apply the saved theme's appearance before any Dock window draws.
         _ = DockThemeStore.shared
         _ = NSScrollView.installDockScrollers
+        NotchDisplayStyle.introduceBotsStyle()
         // Devices Herm booted before a crash or force quit have no tab left to close them.
         HermesSimulatorBridge.shutdownOwned()
         actionErrorPresenter = DockActionErrorPresenter()
@@ -177,7 +178,12 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         dockWindow = window
         dockPanel?.openWindow = { [weak window] in window?.open() }
         dockPanel?.isWindowOpen = { [weak window] in window?.isOpen == true }
-        window.onReturnToFloating = { [weak self] in self?.dockPanel?.showFromNotification() }
+        // The floating panel grows out of the notch; with the notch off there is
+        // no way back to it once closed, so returning to it turns the notch on.
+        window.onReturnToFloating = { [weak self] in
+            UserDefaults.standard.set(true, forKey: NotchDisplayStyle.enabledKey)
+            self?.dockPanel?.showFromNotification()
+        }
         if UserDefaults.standard.bool(forKey: DockWindowController.wasOpenKey) { window.open() }
         NSApp.applicationIconImage = DockAppBrand.icon
         if ScrollPerformanceFixture.isRequested {

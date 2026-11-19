@@ -256,7 +256,7 @@ coordinates on Retina and standard-resolution screens.
 
 A typical workflow: start a long task in chat, collapse the workspace, and keep working. When the notch turns amber, hover over it to see which session needs approval, click that session, approve, and collapse again. When the task finishes, the notch tells you.
 
-Choose **Dots**, **Vertical line**, **Ring**, **Icons** (a status icon, with an unread mark for finished replies), or **Count** (the number of working sessions) in **Settings → Appearance → Notch**. The same page switches the notch between a screen **Side** and a **Top island** around the camera. Count is the default. The selection applies immediately and is saved across launches. The vertical line sweeps while work runs; the ring rotates. All notch animations respect **Reduce Motion**.
+Choose **Dots**, **Vertical line**, **Ring**, **Icons** (a status icon, with an unread mark for finished replies), **Count** (the number of working sessions), or **Bots** (the face of the Bot that is working, blocked, or finished, with a badge counting finished results) in **Settings → Appearance → Notch**, or from the gear menu's **Notch** submenu. Both switch the notch between a screen **Side** and a **Top island** around the camera. Count is the default. The selection applies immediately and is saved across launches. The vertical line sweeps while work runs; the ring rotates. All notch animations respect **Reduce Motion**. If you hide the notch, switching from the window back to the floating panel shows it again, since the panel opens from the notch.
 
 ## Features
 
@@ -472,7 +472,7 @@ workspace is hidden or Hermes is disconnected.
 The sidebar stacks Pinned, Recents, Projects, and Automations for the selected
 bot under its bot header. In the bot picker, drag a profile's handle to reorder it,
 or focus the handle and use the arrow keys. The order is saved locally across restarts without changing the
-selected profile or its conversations. Choose **All profiles** at the top of the
+selected profile or its conversations. Choose **All** at the top of the
 bot picker to merge every bot's pinned and recent conversations into one list; each
 row then shows a pill with its bot's avatar and name, and opening it switches to
 that bot. Each section header stays at the top of the scrolling

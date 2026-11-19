@@ -23,16 +23,28 @@ final class BotService {
     init(client: HermesRPCClientProtocol) { self.client = client }
     var integrationClient: HermesRPCClientProtocol { client }
 
-    /// Stored session id -> busy, for sessions live in the gateway process.
-    func liveBusy() async -> [String: Bool] {
+    /// Stored session id -> live status, for sessions live in the gateway process.
+    func liveSessions() async -> [String: BotLiveSessionStatus] {
         guard
             let rows = try? await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])[
                 "sessions"] as? [[String: Any]]
         else { return [:] }
+        return Self.parseLiveSessions(rows)
+    }
+
+    /// A session reported twice keeps its strongest status (waiting > working > idle).
+    nonisolated static func parseLiveSessions(_ rows: [[String: Any]]) -> [String: BotLiveSessionStatus] {
+        func rank(_ status: BotLiveSessionStatus) -> Int {
+            switch status {
+            case .waiting: 2
+            case .working: 1
+            case .idle: 0
+            }
+        }
         return Dictionary(
             rows.compactMap { row in
-                (row["session_key"] as? String).map { ($0, (row["status"] as? String ?? "idle") != "idle") }
-            }, uniquingKeysWith: { $0 || $1 })
+                (row["session_key"] as? String).map { ($0, BotLiveSessionStatus(wire: row["status"] as? String)) }
+            }, uniquingKeysWith: { rank($0) >= rank($1) ? $0 : $1 })
     }
 
     func list() async -> BotInventory {
@@ -53,8 +65,9 @@ final class BotService {
             pluginRows != nil
             && (botPlugin == nil || botPlugin?["status"] as? String == "enabled")
         guard roster.availability == .ready else { return roster }
-        let live = await liveBusy()
-        guard !live.isEmpty else { return roster }
+        let statuses = await liveSessions()
+        guard !statuses.isEmpty else { return roster }
+        let live = statuses.mapValues { $0 != .idle }
         return BotInventory(
             availability: roster.availability,
             bots: roster.bots.map { bot in
@@ -67,7 +80,7 @@ final class BotService {
                 let states = [bot.mainChatBusy].compactMap { $0 } + sessionStates
                 bot.liveBusy = states.isEmpty ? nil : states.contains(true)
                 return bot
-            }, diagnostic: roster.diagnostic, isPluginEnabled: roster.isPluginEnabled)
+            }, diagnostic: roster.diagnostic, isPluginEnabled: roster.isPluginEnabled, liveSessions: statuses)
     }
 
     /// Profile-only inventory for pickers that do not need plugin or live-session state.
@@ -728,7 +741,10 @@ final class BotModeModel: ObservableObject {
     @Published private(set) var inventory = BotInventory(
         availability: .unavailable, bots: [], diagnostic: "Bot inventory is unavailable.")
     {
-        didSet { rebuildRosterIndex() }
+        didSet {
+            rebuildRosterIndex()
+            resolveActivity()
+        }
     }
     /// O(1) roster lookup for per-row transcript rendering; rebuilt whenever
     /// the inventory is replaced.
@@ -736,6 +752,10 @@ final class BotModeModel: ObservableObject {
     /// Bumped on every roster or avatar change so transcript rows can compare
     /// bot attribution with an O(1) integer instead of dictionary contents.
     private(set) var rosterRevision = 0
+    /// Who is working, blocked or done: the one source the Bot picker and
+    /// the notch read. Republishes only when a Bot's status changes.
+    @Published private(set) var activity = BotActivityBoard()
+    private var activitySignals = BotActivitySignals()
     @Published private(set) var isRefreshing = false
     private var isPolling = false
     private var lastInventoryAttempt: Date?
@@ -916,8 +936,25 @@ final class BotModeModel: ObservableObject {
             if !events.isEmpty { announce(events) }
         }
         resolveSelectedProfile()
+        // Every poll re-resolves, so a heartbeat that aged out clears too.
+        resolveActivity()
         if force { isRefreshing = false } else { isPolling = false }
         await loadAvatars()
+    }
+
+    /// Session events (turn started, finished, waiting on you) land here the
+    /// moment Herm sees them, ahead of the next roster poll.
+    func updateActivitySignals(_ signals: BotActivitySignals) {
+        guard signals != activitySignals else { return }
+        activitySignals = signals
+        resolveActivity()
+    }
+
+    private func resolveActivity() {
+        let board = BotActivityBoard.resolve(
+            roster: inventory.availability == .ready ? inventory.bots : [], live: inventory.liveSessions,
+            signals: activitySignals)
+        if board != activity { activity = board }
     }
 
     /// Chooses a stable Hermes profile ID, never a display name. Hidden Bots
@@ -1019,7 +1056,7 @@ final class BotModeModel: ObservableObject {
     }
 
     var activeNowBots: [BotSummary] {
-        inventory.bots.filter { $0.isRecentlyActive || $0.isWorkingNow }
+        inventory.bots.filter { $0.isRecentlyActive || activity.isBusy($0.id) }
     }
 
     /// Reasoning effort and fallback chain per bot for the roster cards;

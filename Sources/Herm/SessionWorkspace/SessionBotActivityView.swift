@@ -145,6 +145,7 @@ private struct BotActivityRow: View {
                         BotAvatarView(bot: bot, imageData: avatar, size: 34, mood: BotMood(activity: record.state))
                     } else {
                         BotFaceMark(id: record.botID, size: 34, animated: true, mood: BotMood(activity: record.state))
+                            .botStatusMotion(BotStatusMotion(mood: BotMood(activity: record.state)), size: 34)
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(record.botName)

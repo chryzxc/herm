@@ -153,6 +153,9 @@ struct BotInventory: Equatable, Sendable {
     let bots: [BotSummary]
     let diagnostic: String
     var isPluginEnabled = false
+    /// Every session the gateway reports live, by stored session ID; the
+    /// activity board maps them to Bots beyond each Bot's latest session.
+    var liveSessions: [String: BotLiveSessionStatus] = [:]
 }
 
 /// Compact, truthful strings for the Bot roster. The page may show canonical

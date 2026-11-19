@@ -43,7 +43,7 @@ struct BotActivityBanner: View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(events) { event in
                 HStack(spacing: 6) {
-                    DockActivityIndicator(state: event.finished ? .done : .running, size: 12)
+                    DockActivityIndicator(state: event.finished ? .done : .running)
                     Text(event.text)
                         .dockFont(.metadata, weight: .medium)
                         .foregroundStyle(Color.dockPrimaryText)

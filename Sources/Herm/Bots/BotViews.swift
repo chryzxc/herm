@@ -350,7 +350,7 @@ struct BotRosterPage: View {
 
     private var shownBots: [BotSummary] {
         model.filteredBots.filter { bot in
-            (showsHiddenBots || !bot.isHidden) && activityFilter.includes(bot)
+            (showsHiddenBots || !bot.isHidden) && activityFilter.includes(bot, board: model.activity)
         }
     }
 
@@ -789,11 +789,11 @@ enum BotRosterActivityFilter: String, CaseIterable, Identifiable {
     var id: Self { self }
     var title: String { rawValue.capitalized }
 
-    func includes(_ bot: BotSummary) -> Bool {
+    func includes(_ bot: BotSummary, board: BotActivityBoard) -> Bool {
         switch self {
         case .all: true
-        case .active: bot.isRecentlyActive || bot.isWorkingNow
-        case .working: bot.isWorkingNow
+        case .active: bot.isRecentlyActive || board.isBusy(bot.id)
+        case .working: board.isBusy(bot.id)
         }
     }
 }
@@ -848,6 +848,7 @@ struct SessionNavBotRow: View, Equatable {
     var isDeleting = false
     @FocusState private var isFocused: Bool
     @State private var isHovering = false
+    @Environment(\.botActivity) private var board
 
     init(
         bot: BotSummary, avatarData: Data? = nil, runtime: BotRuntimeConfig? = nil, counts: BotCapabilityCounts? = nil,
@@ -973,7 +974,12 @@ struct SessionNavBotRow: View, Equatable {
         return lines.joined(separator: "\n")
     }
 
-    private var isActive: Bool { bot.isWorkingNow || bot.isRecentlyActive }
+    /// The shared board's status; the roster flags only outside a Herm root.
+    private var status: BotActivityStatus {
+        board?.status(of: bot.id) ?? (bot.isWorkingNow ? .working : .idle)
+    }
+    private var isBusy: Bool { status >= .working }
+    private var isActive: Bool { isBusy || bot.isRecentlyActive }
 
     private var activity: some View {
         Text(BotRosterPresentation.activity(for: bot))
@@ -992,11 +998,15 @@ struct SessionNavBotRow: View, Equatable {
                     .help(modelHelp)
             }
             Spacer(minLength: 8)
-            if isActive {
-                DockActivityIndicator(state: .running, size: 10)
+            if status == .blocked {
+                DockActivityIndicator(state: .approval, role: .compact)
+            } else if isActive {
+                DockActivityIndicator(state: .running, role: .compact)
             }
             Group {
-                if bot.isWorkingNow {
+                if status == .blocked {
+                    Text("Waiting on you")
+                } else if isBusy {
                     Text("Working")
                 } else if let lastActive = bot.lastActive {
                     Text(lastActive, format: .relative(presentation: .named, unitsStyle: .abbreviated))

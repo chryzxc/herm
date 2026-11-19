@@ -559,15 +559,13 @@ struct BotChatsPage: View, Equatable {
         Group {
             HStack(spacing: 8) {
                 // The face animates while the bot works; the row draws no spinner.
-                BotAvatarView(
-                    bot: bot, imageData: bots.avatarImages[bot.id], size: 34, orbits: bot.isMainChatWorking
-                )
-                .overlay(alignment: .bottomTrailing) {
-                    if !isSelected, let session = bot.chat?.unreadSession(title: bot.name) {
-                        SessionUnreadReplyBadge(session: session, showUnavailable: false)
-                            .offset(x: 5, y: 4)
+                BotAvatarView(bot: bot, imageData: bots.avatarImages[bot.id], size: 34)
+                    .overlay(alignment: .bottomTrailing) {
+                        if !isSelected, let session = bot.chat?.unreadSession(title: bot.name) {
+                            SessionUnreadReplyBadge(session: session, showUnavailable: false)
+                                .offset(x: 5, y: 4)
+                        }
                     }
-                }
                 VStack(alignment: .leading, spacing: DockSidebarListMetrics.titleToPreview) {
                     HStack(spacing: 6) {
                         Text(bot.name)

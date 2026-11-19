@@ -4,4 +4,37 @@ extension DockModel {
         bots.bind(to: controlRPCClient, capabilityAvailable: false)
         return bots
     }
+
+    /// Feeds the Bot activity board the session state Herm tracks from
+    /// gateway events, so a Bot's status flips without waiting for a poll.
+    /// Session lists mutate on every streamed event; this coalesces a burst
+    /// into one pass on the next main-actor turn.
+    func syncBotActivitySignals() {
+        guard !botActivitySyncPending else { return }
+        botActivitySyncPending = true
+        Task { @MainActor [weak self] in self?.flushBotActivitySignals() }
+    }
+
+    func flushBotActivitySignals() {
+        botActivitySyncPending = false
+        var rows: [BotSessionSignal] = []
+        var seen = Set<String>()
+        func add(_ sessions: [HermesSession]) {
+            rows.reserveCapacity(rows.count + sessions.count)
+            for session in sessions where seen.insert(session.id).inserted { rows.append(BotSessionSignal(session)) }
+        }
+        // Event-patched lists first, so a stale scan row never overrides them.
+        add(sessions)
+        add(pinnedSessions)
+        switch allBotSessionsState {
+        case .ready(let all), .stale(let all, _): add(all)
+        case .loading, .empty, .unavailable, .failed: break
+        }
+        var attention: [String: String?] = [:]
+        for (sessionID, request) in sessionAttention {
+            attention[rowSessionID(sessionID)] = request.responseTarget?.profileID
+        }
+        botMode.updateActivitySignals(
+            BotActivitySignals(sessions: rows, attention: attention, scopeProfileID: profileScopeID))
+    }
 }

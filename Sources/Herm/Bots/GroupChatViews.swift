@@ -49,7 +49,7 @@ struct GroupChatSidebarRow: View {
                         .help("More group actions")
                         .accessibilityLabel("More actions for \(room.name)")
                     } else if let activity {
-                        DockActivityIndicator(state: activity, size: 12, unreadDot: true)
+                        DockActivityIndicator(state: activity, unreadDot: true)
                     } else {
                         Text(SidebarSessionTime.short(date))
                             .dockFont(.metadata)
