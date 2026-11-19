@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.5.0](https://github.com/chryzxc/herm/compare/v0.4.0...v0.5.0) (2026-11-19)
+
+
+### Features
+
+* make bots the default notch style and switch existing installs once ([0d9d656](https://github.com/chryzxc/herm/commit/0d9d656d8d96ea260ad3e249f640ab27b78ca745))
+* retain and preload conversations across profile switches ([1d4f917](https://github.com/chryzxc/herm/commit/1d4f917d048b482ac64435762c0097b616bde210))
+* retain and preload conversations across profile switches ([e262027](https://github.com/chryzxc/herm/commit/e26202711ca167a0e3f248f7ba885dfde679b364))
+* show working bots in the notch from one shared activity board ([b80e675](https://github.com/chryzxc/herm/commit/b80e675b82a5e5b4f538cd70c9bb4fe6ca2a8af0))
+* show working bots in the notch from one shared activity board ([cef57d1](https://github.com/chryzxc/herm/commit/cef57d1fc7330f9cfa8a26abeb66d492d99f3caf))
+
+
+### Bug Fixes
+
+* compact the notch quick menu to mirror its settings section ([a11b74d](https://github.com/chryzxc/herm/commit/a11b74d445019d019a9ec4d105acaa6f95660f48))
+* **conversation:** preserve compact layout clearance ([5a2367a](https://github.com/chryzxc/herm/commit/5a2367a08b8ca1223cf93a82a9c09baf2b695f28))
+* **conversation:** preserve compact layout clearance ([da4c02b](https://github.com/chryzxc/herm/commit/da4c02b9c112681fdf3eba49f975600cdbabe6de))
+* fit each notch island ear to its own marks ([bb64820](https://github.com/chryzxc/herm/commit/bb64820e5a1c6b4f965e43442c5e88e696ce41dc))
+* keep session events from building bot mode early ([9440f0e](https://github.com/chryzxc/herm/commit/9440f0ea8d885ee803fca786dc733fa000072d6e))
+* keep the notch's finished bot moving until opened ([ed63a00](https://github.com/chryzxc/herm/commit/ed63a00e7be14aee1f6a26e5fb5e8c8e8ada5cd0))
+
+
+### Performance Improvements
+
+* batch history pages during scroll ([56d7801](https://github.com/chryzxc/herm/commit/56d7801af1670265432b340a4be92b490ce76c4d))
+* batch partial history pages and compact after scroll settles ([42e86c5](https://github.com/chryzxc/herm/commit/42e86c5f8c1cf93aa011f399109eb38ecaaf319c))
+* re-check held decorative motion every half second ([b012524](https://github.com/chryzxc/herm/commit/b012524572520f2b325848af0c0bede1e81960c2))
+* record per-pane host layout self time in captures ([edee465](https://github.com/chryzxc/herm/commit/edee465a4ee9d19fc66b0d574955ac9404519842))
+
 ## [0.4.0](https://github.com/chryzxc/herm/compare/v0.3.0...v0.4.0) (2026-11-18)
 
 
