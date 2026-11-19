@@ -647,6 +647,14 @@ struct BotStatusMotionTests {
         #expect(BotStatusMotion.finished.pose(at: 5, hopAge: 0.5).lift > 0)
         #expect(BotStatusMotion.finished.pose(at: 5, hopAge: BotWorkingPose.reactionDuration).lift == 0)
     }
+
+    @Test func liveFinishedNudgesUntilOpened() {
+        #expect(BotStatusMotion.finished.loops(live: true))
+        #expect(!BotStatusMotion.finished.loops())
+        #expect(BotStatusMotion.finished.pose(at: 0.5, live: true).lift > 0)
+        #expect(BotStatusMotion.finished.pose(at: 3, live: true).lift == 0)
+        #expect(BotStatusMotion.finished.pose(at: BotStatusMotion.finishedNudgePeriod + 0.5, live: true).lift > 0)
+    }
 }
 
 struct NotchBotsStyleIntroductionTests {

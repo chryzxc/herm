@@ -16,13 +16,23 @@ enum BotStatusMotion: Equatable {
         }
     }
 
-    /// Moves on the clock; finished moves only during its one-shot hop.
-    var loops: Bool { self == .working || self == .blocked }
+    /// Moves on the clock; finished moves only during its hop, except on a
+    /// status carrier (`live`), where an unopened result keeps nudging.
+    func loops(live: Bool = false) -> Bool { self == .working || self == .blocked || (live && self == .finished) }
+
+    /// How often a live finished Bot re-hops while its result waits unopened.
+    static let finishedNudgePeriod: TimeInterval = 6
 
     /// The pose `t` seconds into this state. A finished hop in flight wins.
-    func pose(at t: TimeInterval, hopAge: TimeInterval? = nil, variation: Int = 0) -> BotWorkingPose {
+    func pose(at t: TimeInterval, hopAge: TimeInterval? = nil, variation: Int = 0, live: Bool = false)
+        -> BotWorkingPose
+    {
         if let hopAge, hopAge >= 0, hopAge < BotWorkingPose.reactionDuration {
             return .reaction(at: hopAge, variation: variation)
+        }
+        if live, self == .finished {
+            let cycle = max(0, t).truncatingRemainder(dividingBy: Self.finishedNudgePeriod)
+            return cycle < BotWorkingPose.reactionDuration ? .reaction(at: cycle, variation: variation) : .rest
         }
         switch self {
         case .working:
@@ -70,13 +80,13 @@ private struct BotStatusMotionModifier: ViewModifier {
     private var moves: Bool { !reduceMotion && DockThemeStyle.current.animates && (live || focus.engaged) }
 
     func body(content: Content) -> some View {
-        let running = moves && (motion.loops || hopAt != nil)
+        let running = moves && (motion.loops(live: live) || hopAt != nil)
         TimelineView(.dockMotion(rate: 30, paused: !running)) { context in
             let pose =
                 running
                 ? motion.pose(
                     at: context.date.timeIntervalSince(startedAt),
-                    hopAge: hopAt.map { context.date.timeIntervalSince($0) }, variation: cue)
+                    hopAge: hopAt.map { context.date.timeIntervalSince($0) }, variation: cue, live: live)
                 : .rest
             pose.applied(to: content, size: size)
         }

@@ -430,7 +430,8 @@ controls do not compress. Existing skin-specific feedback curves remain in use.
   (chat working Bot, notch, quick preview, sidebar rows, activity panel).
   Working runs the reach, tilt and hop loop. Approval or clarify shakes at the
   top of every 2s beat. Done hops once when a Bot finishes, or again when
-  another result lands. Never pose a status Bot by hand at a call site.
+  another result lands; in the notch, which carries status, it also hops when
+  it appears and repeats every 6s until the result is opened. Never pose a status Bot by hand at a call site.
   `BotAvatarView` applies it already; a bare `BotFaceMark` with a status mood
   adds `.botStatusMotion`.
 
