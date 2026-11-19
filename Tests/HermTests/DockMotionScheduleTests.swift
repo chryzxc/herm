@@ -39,11 +39,14 @@ extension DockMotionScheduleTests {
         let rate = 30.0
         #expect(DockMotionSchedule.tick(3_000, rate: rate, now: 100, heldFor: 0) == 3_000)
         let held = DockMotionSchedule.tick(3_000, rate: rate, now: 100, heldFor: 0.15)
-        #expect(held == 3_005)
-        #expect(held / rate >= 100.15)
-        // A clock already past the settle time keeps its own tick.
-        #expect(DockMotionSchedule.tick(3_010, rate: rate, now: 100, heldFor: 0.15) == 3_010)
+        // A held tick re-renders when it fires, so it waits past the settle time.
+        #expect(held == 3_015)
+        #expect(held / rate >= 100 + DockMotionSchedule.heldRecheck)
+        // A long remaining hold is honored in full.
+        #expect(DockMotionSchedule.tick(3_000, rate: rate, now: 100, heldFor: 1) == 3_030)
+        // A clock already past the held time keeps its own tick.
+        #expect(DockMotionSchedule.tick(3_020, rate: rate, now: 100, heldFor: 0.15) == 3_020)
         // Slower clocks resume on whole ticks of their own rate.
-        #expect(DockMotionSchedule.tick(1_500, rate: 15, now: 100, heldFor: 0.15) == 1_503)
+        #expect(DockMotionSchedule.tick(1_500, rate: 15, now: 100, heldFor: 0.15) == 1_508)
     }
 }

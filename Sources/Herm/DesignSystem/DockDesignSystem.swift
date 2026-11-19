@@ -725,10 +725,15 @@ struct DockMotionSchedule: TimelineSchedule {
     /// Decorative motion holds still while a scroll is live: every tick
     /// re-renders its host, and with several working sessions those renders
     /// compete with scroll frames. The next tick moves past the settle time,
-    /// staying on the shared grid so held clocks resume together.
+    /// staying on the shared grid so held clocks resume together. A held
+    /// tick still renders when it fires, so it waits at least `heldRecheck`:
+    /// re-checking at the 150 ms settle time kept every clock near 7 Hz
+    /// through a long scroll.
+    static let heldRecheck: TimeInterval = 0.5
+
     static func tick(_ tick: Double, rate: Double, now: TimeInterval, heldFor hold: TimeInterval) -> Double {
         guard hold > 0 else { return tick }
-        return max(tick, ((now + hold) * rate).rounded(.up))
+        return max(tick, ((now + max(hold, heldRecheck)) * rate).rounded(.up))
     }
 
     /// 0...1 progress through a loop of `period` seconds.
