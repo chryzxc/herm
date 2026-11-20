@@ -113,41 +113,36 @@ struct SessionDashboardCard: View, Equatable {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Button(action: onRespond) {
+                    Text(row.session.displayTitle)
+                        .dockFont(.navigation, weight: .semibold)
+                        .lineLimit(2, reservesSpace: true)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.dockHover)
+                .disabled(isLoadingSession)
+                .help("Open \(row.session.displayTitle)")
+                if let date = row.session.lastUpdatedAt {
+                    Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
+                        .dockFont(.metadata).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            }
             HStack(spacing: 6) {
                 if row.status == .unreadComplete {
                     SessionUnreadReplyBadge(session: row.session, showUnavailable: false)
                 } else if isCurrent, let state = row.status.activityState {
                     DockActivityIndicator(state: state, unreadDot: true)
                 }
-                // "Ready to review" is already the section heading; repeating it on every tile is noise.
                 if !isCurrent || (row.status != .none && row.status != .unreadComplete) {
-                    Text(statusText).dockFont(.body, weight: .medium).lineLimit(1)
+                    Text(statusText).lineLimit(1).layoutPriority(1)
                 }
                 if isWorking, let label = liveActivity ?? activity?.activityName {
-                    Text("·")
-                    Text(label).dockFont(.body).lineLimit(1)
+                    Text(label).lineLimit(1)
                 }
-                Spacer(minLength: 4)
-                if let date = row.session.lastUpdatedAt {
-                    Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-                        .dockFont(.body).foregroundStyle(Color.dockMetadataText).lineLimit(1)
-                }
-            }
-            .foregroundStyle(Color.dockSecondaryText)
-            Button(action: onRespond) {
-                Text(row.session.displayTitle)
-                    .dockFont(.navigation, weight: .semibold)
-                    .lineLimit(2, reservesSpace: true)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            // The whole tile is the target and lights up on hover; an underlined link per tile is loud.
-            .buttonStyle(.dockHover)
-            .disabled(isLoadingSession)
-            .help("Open \(row.session.displayTitle)")
-            // Reserved even without a project so every tile has the same height.
-            HStack(spacing: 10) {
                 if let bot {
                     HStack(spacing: 6) {
                         BotAvatarView(bot: bot.summary, imageData: bot.image, size: 16, animated: false)

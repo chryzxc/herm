@@ -652,12 +652,12 @@ Tiles are grouped into **Needs you** (approval, question, failure), **In progres
 unread states as Chats. The status filter shows each group's count; you can also filter
 by project or search titles and previews.
 
-Tiles have a compact status and age row, a two-line linked title, project context,
+Tiles lead with the chat title and age, followed by a compact line for status, bot and project,
 and a readable preview of the most recent saved reply (read from the latest eight
 messages without activating the session). Click anywhere on a tile to open its chat.
 Working tiles show the current tool and keep a steady order while they run.
-Search and project controls sit above the status filters, which scroll at narrow
-widths. Reply fields and tile outlines highlight keyboard focus and follow the
+On wide boards the filters share one row. In narrow windows the status filters
+scroll beneath search and project selection. Reply fields and tile outlines highlight keyboard focus and follow the
 selected skin. Cards appear and change status without fading. The header uses consistently
 sized compact controls, a layout menu, bot avatars in the picker and its choices,
 and New chat at the trailing edge. From a tile you can:

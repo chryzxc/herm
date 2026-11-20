@@ -4430,9 +4430,8 @@ without overwriting the preferred layout. The grid's page title is Chats, with N
 control and no modal Close action. There is no bot picker: tiles show every bot's chats at once. Use `DockExpandedPage`
 for the title row and a full-width adaptive grid (320pt minimum card width, no maximum so
 columns always fill the row; 16pt gaps) under collapsible `DockSectionHeader` groups with counts;
-Recent starts collapsed. A quiet two-row toolbar puts a skin-shaped search field
-and project `DockMenuPicker` above the `DockSegmentedPicker` status filters and
-counts. Status filters scroll horizontally when the full set cannot fit. Header
+Recent starts collapsed. The toolbar aligns search and project selection on the left and status filters on the right.
+At narrower widths, the status filters move below search. Status filters scroll horizontally when the full set cannot fit. Header
 controls use a single outlined layout menu with a grid icon and Tiles label,
 with List and Tiles choices and a checkmark for the current layout. There is no
 tab strip or selection bar. New chat with a plus icon follows. When several bots exist, each tile
@@ -4446,11 +4445,9 @@ avatars with a selection check in the choices. It reuses sidebar avatar images
 and deterministic fallback faces, with skin-owned shapes and semantic colors.
 A manual refresh keeps loaded tiles current; only a failed refresh marks them not current.
 
-Cards lead with a compact status row: `DockActivityIndicator`, actionable status,
-current tool when working, relative age, and an open `DockIconButton`. Recent
-sessions omit passive idle labels. Below it, a full-width, two-line semibold title
-uses `.dockLink` to open the conversation sheet, with project metadata on its own
-line when available. A fixed 64pt update slot shows up to four lines of the latest
+Cards lead with a two-line semibold conversation title and a trailing relative age.
+A compact metadata row groups the unread badge or activity indicator, actionable status,
+current tool, bot and project. Recent sessions omit passive idle labels. A fixed 64pt update slot shows up to four lines of the latest
 reply as inline Markdown (links kept), with full text on hover and no nested scroll.
 A pending `DockModel.sessionAttention` request grows this area so answer buttons
 are never clipped (first choice `.dockPrimary`, others `.dockSecondary`, Deny
@@ -4472,7 +4469,7 @@ not send a message or discard its unsent draft. Profile changes dismiss the shee
 Cards use shared surface and border tokens, skin-owned pane geometry, and 16pt insets. Hover
 gently changes the surface and border over 160ms; cards do not lift. Status
 changes appear immediately without a fade. Card positions use stable profile/session
-identities and a damped 800ms spring (0.9 damping) when refreshes reorder them. Running
+identities and update immediately when refreshes reorder them. Running
 cards sort by start time, not last update, so polling never reshuffles them. All
 sections share one grid; a card changing section is re-created in its new slot rather
 than gliding, so no outgoing copy keeps a stale status. Insertions and removals appear
@@ -4480,7 +4477,7 @@ immediately without fading or scaling. Reduce Motion and skins without animation
 disable movement. Clicking anywhere on a card opens its chat; there is no separate open
 button, and the reply field, Stop and approval buttons keep their own clicks. Runtime aliases reconcile to saved session keys,
 so one conversation has one card without merging unrelated chats with matching titles.
-Filters retain their two-row hierarchy across widths. Reply actions stay in the
+Filters wrap beneath search when space is tight. Reply actions stay in the
 footer; generated replies use their readable text projection.
 The title subtitle owns loading and stale notices, keeping content geometry stable.
 

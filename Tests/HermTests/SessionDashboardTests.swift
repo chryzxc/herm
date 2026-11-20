@@ -135,14 +135,12 @@ struct SessionDashboardTests {
         }
     }
 
-    @Test func layoutSignatureChangesOnlyWhenCardsMove() {
+    @Test func visibleGroupsPreserveCardOrder() {
         let rows = SessionDashboardProjection.rows(
             sessions: [session("one", date: 2), session("two", date: 1)], statuses: [:], projects: [:])
-        let same = SessionDashboardVisibleRows(rows)
-        #expect(SessionDashboardVisibleRows(rows).layoutSignature == same.layoutSignature)
-        #expect(SessionDashboardVisibleRows(rows.reversed()).layoutSignature != same.layoutSignature)
+        #expect(SessionDashboardVisibleRows(rows).members(.recent) == rows)
+        #expect(SessionDashboardVisibleRows(rows.reversed()).members(.recent) == Array(rows.reversed()))
         let moved = [SessionDashboardRow(session: rows[0].session, status: .working, project: nil), rows[1]]
-        #expect(SessionDashboardVisibleRows(moved).layoutSignature != same.layoutSignature)
         #expect(SessionDashboardVisibleRows(moved).counts == [.working: 1, .recent: 1])
     }
 

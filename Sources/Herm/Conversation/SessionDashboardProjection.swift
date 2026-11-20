@@ -157,23 +157,14 @@ struct SessionDashboardBoard {
     }
 }
 
-/// Filtered rows grouped by section, with a cheap signature of their order
-/// so the grid animates only when cards actually move.
 struct SessionDashboardVisibleRows {
     private(set) var bySection: [SessionDashboardSection: [SessionDashboardRow]] = [:]
-    private(set) var layoutSignature = 0
     var isEmpty: Bool { bySection.isEmpty }
 
     init() {}
 
     init(_ rows: [SessionDashboardRow]) {
         bySection = Dictionary(grouping: rows, by: \.section)
-        var hasher = Hasher()
-        for row in rows {
-            hasher.combine(row.section)
-            hasher.combine(row.session.scopedID)
-        }
-        layoutSignature = hasher.finalize()
     }
 
     func members(_ section: SessionDashboardSection) -> [SessionDashboardRow] { bySection[section] ?? [] }

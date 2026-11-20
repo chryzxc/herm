@@ -60,7 +60,6 @@ struct SessionDashboardList: View, Equatable {
     let client: HermesRPCClientProtocol?
     let model: DockModel?
     let tileBots: [String: SessionDashboardBot]
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var query = ""
     @State private var project: String?
     @State private var section: SessionDashboardSection?
@@ -94,23 +93,22 @@ struct SessionDashboardList: View, Equatable {
         let counts = visible.counts
         let groups = SessionDashboardSection.allCases.filter { section == nil || $0 == section }
         let isEmpty = groups.allSatisfy { visible.members($0).isEmpty }
-        var layoutKey = Hasher()
-        layoutKey.combine(visible.layoutSignature)
-        layoutKey.combine(collapsed)
-        layoutKey.combine(section)
         return VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    searchField
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    searchField.frame(width: 240)
                     projectFilter
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 16)
+                    statusFilter(counts).fixedSize()
                 }
-                ViewThatFits(in: .horizontal) {
-                    statusFilter(counts)
-                    ScrollView(.horizontal) {
-                        statusFilter(counts)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        searchField
+                        projectFilter
+                        Spacer(minLength: 0)
                     }
-                    .scrollIndicators(.hidden)
+                    ScrollView(.horizontal) { statusFilter(counts) }
+                        .scrollIndicators(.hidden)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -146,11 +144,6 @@ struct SessionDashboardList: View, Equatable {
                         }
                     }
                 }
-                // Short, and keyed on card order only: live status ticks arrive several
-                // times a second and a long spring kept the whole grid mid-animation.
-                .animation(
-                    DockMotion.animation(reduceMotion: reduceMotion, duration: 0.25), value: layoutKey.finalize()
-                )
                 .dockPadding(.horizontal, 20)
                 .dockPadding(.bottom, 20)
             }
