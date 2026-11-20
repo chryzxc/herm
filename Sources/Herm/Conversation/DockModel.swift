@@ -32,6 +32,9 @@ final class DockModel: ObservableObject {
     var interruptionCoordinator: HermInterruptionCoordinator?
     var completionNoticeIDs: [String: String] = [:]
     var quickSessionOwners: [String: QuickDestination] = [:]
+    /// Set on the main model only: returns true when a detached window took the session,
+    /// so no opener (Spotlight, notch, history, task rows) shows it in two places.
+    var focusDetachedSession: ((String) -> Bool)?
     /// Hermes keeps a runtime alive after Herm switches away; its approval and
     /// clarify requests carry only the runtime sid, so rows need the durable id.
     var storageIDsByRuntimeID: [String: String] = [:]

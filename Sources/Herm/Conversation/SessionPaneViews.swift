@@ -574,6 +574,9 @@ private struct SessionPanelView<Header: View>: View {
                     let index = store.panels.firstIndex(where: { $0.id == panel.id })
                 else { return }
                 store.open(SessionPaneDrag(room: room).destination, target: .tab(index))
+            } onPopOut: {
+                // Detaching closes this tab; the room then lives in its window.
+                if let tab = panel.selected { ConversationWindowStore.shared.open(tab) }
             }
             .id(roomID)
         } else {
@@ -593,21 +596,43 @@ private struct SessionPanelView<Header: View>: View {
 
     @Environment(\.chatContextRouter) private var router
 
-    @ViewBuilder
     private var sessionContent: some View {
-        // One loading state at a time: the transcript has its own, so the column never
+        SessionPaneChatContent(
+            chat: chat, control: control, bots: bots, metrics: metrics, contentID: panel.selectedID
+        ) {
+            store.retry(panel.id)
+        }
+    }
+}
+
+/// A projected conversation in its loaded, failed, or loading state; shared by split
+/// columns and detached conversation windows.
+struct SessionPaneChatContent: View {
+    @ObservedObject var chat: EdgeQuickConversationModel
+    let control: ControlCenterModel
+    let bots: BotModeModel
+    let metrics: ConversationWorkspaceMetrics
+    /// Rebuilds the chat (scroll position, search) when the shown session changes.
+    var contentID: String?
+    var accessories = SessionPaneChatAccessories()
+    let onRetry: () -> Void
+
+    var body: some View {
+        // One loading state at a time: the transcript has its own, so the pane never
         // overlays a second one on top of it.
         if let conversation = chat.conversation, !chat.loadFailed,
             !(chat.isLoading && conversation.messages.isEmpty)
         {
-            SessionPaneChat(model: conversation, control: control, bots: bots, metrics: metrics)
-                .id(panel.selectedID)
+            SessionPaneChat(
+                model: conversation, control: control, bots: bots, metrics: metrics, accessories: accessories
+            )
+            .id(contentID)
         } else if chat.loadFailed {
             VStack(spacing: 6) {
                 Text("Conversation unavailable").dockFont(.body, weight: .semibold)
                 Text("Hermes couldn't load this session.")
                     .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                Button("Retry") { store.retry(panel.id) }
+                Button("Retry", action: onRetry)
                     .buttonStyle(.dockSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -615,6 +640,15 @@ private struct SessionPanelView<Header: View>: View {
             DockLoadingState(title: "Loading conversation…")
         }
     }
+}
+
+/// What a chat outside the main window adds beyond a split column's transcript and composer.
+struct SessionPaneChatAccessories {
+    var openQuota: () -> Void = {}
+    var worktreeBar: (DockModel) -> WorktreePicker? = { _ in nil }
+    /// A window of its own takes ⌘F, the quota banner and session-scoped previews; split
+    /// columns leave those to the main conversation beside them.
+    var isStandalone = false
 }
 
 /// Transcript and composer for an inactive column, mirroring the PR floating chat.
@@ -628,13 +662,19 @@ struct SessionPaneChat: View {
     @State private var searching = false
     @State private var jumpID: UUID?
     @State private var image: ChatImagePreview?
+    @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
     let metrics: ConversationWorkspaceMetrics
+    let accessories: SessionPaneChatAccessories
 
-    init(model: DockModel, control: ControlCenterModel, bots: BotModeModel, metrics: ConversationWorkspaceMetrics) {
+    init(
+        model: DockModel, control: ControlCenterModel, bots: BotModeModel, metrics: ConversationWorkspaceMetrics,
+        accessories: SessionPaneChatAccessories = SessionPaneChatAccessories()
+    ) {
         self.model = model
         self.control = control
         self.bots = bots
         self.metrics = metrics
+        self.accessories = accessories
     }
 
     var body: some View {
@@ -645,10 +685,26 @@ struct SessionPaneChat: View {
                 isShowingMessageSearch: $searching, pinnedMessageJumpID: $jumpID, selectedChatImage: $image
             )
             .equatable()
+            .environment(
+                \.sessionPreviewWorkspace,
+                accessories.isStandalone ? WorkspaceIdentity.session(model) : previewWorkspace
+            )
             .frame(maxHeight: .infinity)
             ChatComposerView(
                 model: model, composer: model.composer, speechInput: speech, botMode: bots,
-                onStop: { model.stop() }, metrics: metrics, controlCenter: control)
+                onStop: { model.stop() }, metrics: metrics, controlCenter: control,
+                openQuota: accessories.openQuota, worktreeBar: accessories.worktreeBar(model))
+        }
+        .overlay(alignment: .top) {
+            if accessories.isStandalone { ChatQuotaBanner(control: control, metrics: metrics) }
+        }
+        .background {
+            if accessories.isStandalone {
+                // As in the main chat, search has no visible button; this keeps ⌘F working.
+                Button("") { searching.toggle() }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
+            }
         }
 
         .dockSheet(item: $image) { ChatImagePreviewModal(image: $0.image) }

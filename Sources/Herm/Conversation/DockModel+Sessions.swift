@@ -603,6 +603,7 @@ extension DockModel {
     }
 
     func resumeSession(_ session: HermesSession, profileID: String? = nil) {
+        if focusDetachedSession?(session.id) == true { return }
         let selectedAt = DispatchTime.now().uptimeNanoseconds
         sessionResumeTask?.cancel()
         sessionResumeWorkTask?.cancel()

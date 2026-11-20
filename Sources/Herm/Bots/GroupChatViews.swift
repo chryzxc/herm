@@ -12,6 +12,9 @@ struct GroupChatSidebarRow: View {
     let onOpen: () -> Void
     /// Opens another room, e.g. the new group an edit with changed members creates.
     var onOpenRoom: (String) -> Void = { _ in }
+    /// Opens the room in a split column, or in its own floating window; nil hides the action.
+    var onSplit: (() -> Void)?
+    var onPopOut: (() -> Void)?
     @State private var isHovered = false
     @State private var isEditing = false
     @State private var isConfirmingDisband = false
@@ -95,6 +98,13 @@ struct GroupChatSidebarRow: View {
     /// Hermes rooms support rename, stop and disband; there is no archive.
     @ViewBuilder
     private var actions: some View {
+        if let onSplit {
+            Button("Open in Split View", icon: .columnsPlusRight, action: onSplit).disabled(isSelected)
+        }
+        if let onPopOut {
+            Button("Pop Out Conversation", icon: .arrowSquareOut, action: onPopOut)
+        }
+        if onSplit != nil || onPopOut != nil { Divider() }
         Button("Edit Group…", icon: .pencilSimple) { isEditing = true }
         if isWorking {
             Button("Stop All Turns", icon: .stop) { Task { await store.stop(room.id) } }
@@ -520,6 +530,8 @@ struct GroupChatView: View {
     var onOpenRoom: (String) -> Void = { _ in }
     /// Opens a member bot's own chat from its hover card.
     var onOpenBot: ((BotSummary) -> Void)? = nil
+    /// Detaches the room into its own floating window; nil (inside that window) hides it.
+    var onPopOut: (() -> Void)?
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var voiceOutput = VoiceOutput()
@@ -798,6 +810,7 @@ struct GroupChatView: View {
                         }
                     }
                 }
+                if let onPopOut { Button("Pop out conversation", action: onPopOut) }
                 Button("Edit Group…") { isEditing = true }
                 Button("Disband…", role: .destructive) { isConfirmingDisband = true }
             } label: {

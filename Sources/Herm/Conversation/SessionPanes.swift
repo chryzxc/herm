@@ -24,7 +24,7 @@ extension SessionPaneDrag {
 
     /// A group chat room. Rooms are not Hermes sessions; the tab id carries the room id.
     init(room: GroupRoom) {
-        self.init(sessionID: QuickDestination.groupRoomPrefix + room.id, profileID: nil, title: room.name)
+        self.init(sessionID: QuickDestination.groupRoomTabID(room.id), profileID: nil, title: room.name)
     }
 
     /// A Bot's canonical chat; nil until Hermes has created it (the roster then only knows its title).
@@ -38,6 +38,8 @@ extension QuickDestination {
     // ponytail: rooms ride the session-keyed tab model behind an id prefix; give tabs a
     // real kind if more non-session tab types appear.
     static let groupRoomPrefix = "group-room:"
+    /// The tab (and detached-window) id that stands for a group room.
+    static func groupRoomTabID(_ roomID: String) -> String { groupRoomPrefix + roomID }
     var groupRoomID: String? {
         guard let id = sessionID, id.hasPrefix(Self.groupRoomPrefix) else { return nil }
         return String(id.dropFirst(Self.groupRoomPrefix.count))
@@ -122,8 +124,12 @@ final class SessionPaneStore: ObservableObject {
 
     var activePanel: Panel? { panels.indices.contains(activeIndex) ? panels[activeIndex] : nil }
 
-    /// Sessions on screen in any column; the sidebar highlights all of them.
-    var shownSessionIDs: Set<String> { Set(panels.compactMap(\.selectedID)) }
+    /// Conversations detached into their own windows, mirrored from `ConversationWindowStore`
+    /// so the sidebar views that observe this store redraw when one opens or closes.
+    @Published var detachedSessionIDs: Set<String> = []
+
+    /// Sessions on screen in any column or detached window; the sidebar highlights all of them.
+    var shownSessionIDs: Set<String> { Set(panels.compactMap(\.selectedID)).union(detachedSessionIDs) }
 
     /// Share of the last column, at its trailing edge, that opens a new column; 0 when full.
     nonisolated static func newColumnZone(columnCount: Int) -> CGFloat {
@@ -210,6 +216,8 @@ final class SessionPaneStore: ObservableObject {
     }
 
     func open(_ destination: QuickDestination, target: SessionPaneTarget) {
+        // A detached conversation lives in its own window; bring that forward instead.
+        if let id = destination.sessionID, ConversationWindowStore.shared.focus(sessionID: id) { return }
         guard let runtime, let id = destination.sessionID,
             let resolution = Self.resolve(
                 sessionID: id, primaryID: runtime.navigationSessionID,
@@ -285,6 +293,15 @@ final class SessionPaneStore: ObservableObject {
             runtime.resumeSession(session, profileID: session.profileID)
         }
         collapseIfUnsplit()
+    }
+
+    /// Every session with a tab in any column, selected or not.
+    var projectedSessionIDs: Set<String> { Set(panels.flatMap { $0.tabs.compactMap(\.sessionID) }) }
+
+    /// Closes a session's tab wherever it is; used when it detaches into its own window.
+    func closeSession(_ sessionID: String) {
+        guard let panel = panels.first(where: { $0.tabs.contains { $0.sessionID == sessionID } }) else { return }
+        closeTab(sessionID, in: panel.id)
     }
 
     func closeTab(_ sessionID: String, in panelID: String) {

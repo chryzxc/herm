@@ -127,6 +127,45 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         Self.current = self
     }
 
+    /// Detached conversation windows project sessions through the shared gateway; the
+    /// store learns where each conversation is shown so it lives in one place only.
+    private func configureConversationWindows() {
+        let store = ConversationWindowStore.shared
+        let panes = SessionPaneStore.shared
+        store.makeWindow = { [model, controlCenter, weak store] destination in
+            ConversationWindowController(
+                destination: destination, runtime: model, controlCenter: controlCenter,
+                cascadeIndex: store?.windowCount ?? 0)
+        }
+        store.mainSessionID = { [weak model] in model?.navigationSessionID }
+        store.leaveMain = { [weak model] in model?.newChat() }
+        // Whichever main workspace is in use (full window or floating panel) answers.
+        store.showQuota = { [weak self] in
+            if let window = self?.dockWindow, window.isOpen { window.showQuota() } else { self?.dockPanel?.showQuota() }
+        }
+        store.openMainChat = { [weak self, weak model] path, draft in
+            guard let self, let model else { return }
+            model.newChat(projectPath: path)
+            model.pendingWorktreeDirectory = path
+            if !draft.isEmpty { model.composer.text = draft }
+            if let window = self.dockWindow, window.isOpen {
+                window.open()
+            } else {
+                self.dockPanel?.showFromNotification()
+            }
+            model.requestComposerFocus()
+        }
+        model.focusDetachedSession = { [weak store] in store?.focus(sessionID: $0) ?? false }
+        store.columnSessionIDs = { [weak panes] in panes?.projectedSessionIDs ?? [] }
+        store.removeFromColumn = { [weak panes] in panes?.closeSession($0) }
+        model.$sessions
+            .sink { [weak store] in store?.retitle(from: $0) }
+            .store(in: &keepAwakeObservers)
+        store.$detachedSessionIDs.removeDuplicates()
+            .sink { [weak panes] in panes?.detachedSessionIDs = $0 }
+            .store(in: &keepAwakeObservers)
+    }
+
     func showSettings() {
         if let dockWindow, dockWindow.isOpen {
             dockWindow.showSettings()
@@ -185,6 +224,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
             self?.dockPanel?.showFromNotification()
         }
         if UserDefaults.standard.bool(forKey: DockWindowController.wasOpenKey) { window.open() }
+        configureConversationWindows()
         NSApp.applicationIconImage = DockAppBrand.icon
         if ScrollPerformanceFixture.isRequested {
             let fixture = ScrollPerformanceFixture.standard

@@ -45,6 +45,11 @@ final class DockWindowController: NSObject, NSWindowDelegate {
         presentation.settingsRequest &+= 1
     }
 
+    func showQuota() {
+        open()
+        presentation.quotaRequest &+= 1
+    }
+
     func showKanban(_ task: KanbanTaskSummary) {
         controlCenter.revealKanbanTask(task)
         open()

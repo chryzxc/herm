@@ -141,6 +141,8 @@ struct DockPopover: View {
     var repositoryPreferences: CommandCenterPreferencesStore { .shared }
     @ObservedObject var dockThemeStore = DockThemeStore.shared
     @StateObject var sessionNavNavigation = SessionNavigationState()
+    /// Registers this workspace's way of leaving a conversation that detaches into a window.
+    @State var conversationWindowHandlerID = UUID()
     @State var issueChatInsetSessionID: String?
     @State var pendingIssueChatInsets = false
     @State var sessionWorkspaceMode: SessionWorkspaceMode = .chat
@@ -315,6 +317,12 @@ struct DockPopover: View {
                 if sessionWorkspaceMode == .voice { modelPresentationRevision &+= 1 }
             }
             .onReceive(controlCenter.workspacePresentationChanges) { _ in controlPresentationRevision &+= 1 }
+            .onReceive(ConversationWindowStore.shared.$detachedSessionIDs) { detached in
+                // A room lives in one place: popping out the shown room leaves the Bots page on its list.
+                if !openGroupRoomID.isEmpty, detached.contains(QuickDestination.groupRoomTabID(openGroupRoomID)) {
+                    openGroupRoomID = ""
+                }
+            }
             .onReceive(developerWorkflow.rootPresentationChanges) { _ in workflowPresentationRevision &+= 1 }
             .environment(\.dockWorkspaceScale, CGFloat(DockWorkspaceScale.supportedTextSize(textSize)))
             .environment(\.botActivity, botMode.activity)
@@ -370,8 +378,18 @@ struct DockPopover: View {
                     model.startDelegationMonitoring()
                 }
             }
-            .onDisappear { model.presentationDemand.update(presentationHostID, visible: false) }
+            .onDisappear {
+                model.presentationDemand.update(presentationHostID, visible: false)
+                ConversationWindowStore.shared.removeLeaveMainHandler(conversationWindowHandlerID)
+            }
             .onAppear {
+                // Detaching the open conversation leaves this workspace on a new chat, as
+                // tearing a tab out of a browser leaves the window on another page.
+                // The store clears the shared model; each workspace only drops its selection
+                // and stays on whatever page it shows.
+                ConversationWindowStore.shared.addLeaveMainHandler(conversationWindowHandlerID) {
+                    sessionNavNavigation.beginNewConversation()
+                }
                 registerPerformanceSources()
                 sessionPanes.runtime = model
                 model.onPickedProjectSessionCreated = { groupPickedProjectSession(storageID: $0, path: $1) }

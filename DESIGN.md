@@ -3391,6 +3391,46 @@ In-chat approvals, clarification requests, input prompts, and errors use the sha
 neutral callout surface with a tone-colored icon and status. Decision actions use
 compact button sizing and wrap when the available width requires it.
 
+#### Pop-out conversation windows
+
+**Pop Out Conversation** (session, Bot and group-room row context menus; **Pop out conversation** in the session "Conversation
+actions" menus) detaches a conversation into its own small floating window
+(`ConversationWindowController`, default 420×600pt; resizing stops at 320×360pt). A
+conversation lives in one place: detaching the main conversation clears the
+main chat to a new one without leaving the current page, and detaching a split tab closes that tab. The
+window holds only the transcript and composer (`SessionPaneChatContent`, the
+same view as a split column) with the main chat's composer and transcript features:
+the folder and worktree bar under the composer (listing the session's own
+worktrees through `ConversationWorktreeState`, never `DeveloperWorkflowModel.shared`;
+opening a worktree in a new chat and creating a task worktree start that chat in
+the main window carrying the window's draft, and moving the chat moves this session), ⌘F search, the quota
+chip and banner, and session-scoped previews. Outside a Git folder the composer
+drops the empty folder-bar slot. There is no inspector. It sits
+under a compact title row (an empty `.unifiedCompact` toolbar centers the traffic
+lights; the 12pt semibold session title sits on their line, and a metadata
+`dockPill` names another profile); there is no sidebar, inspector or
+header menu. It floats above other apps (also over full-screen apps), keeps a per-session
+frame (re-centered on the pointer's screen if the saved frame is mostly
+offscreen; new windows cascade 24pt), and follows renames. Picking a detached
+session in the sidebar, or opening it in split view, focuses its window instead,
+and the sidebar keeps it highlighted. Closing the window stops projecting the
+session without interrupting its turn; an unsent draft and any queued follow-up
+prompts are discarded. Deleting the session in Herm closes its window. Every
+opener of the main conversation (history, Spotlight, notch, task rows) focuses a
+detached window instead of resuming the session in the main model.
+
+On the Bots page, a Bot row and the Bot chat's header menu pop out its main chat
+(the row item is disabled until Hermes has created it) as a session window. A
+group-room row's menu leads with **Open in Split View** (disabled while the room
+is already shown) and **Pop Out Conversation**, then a divider before the room
+actions; the room header's actions menu (Bots page and split column) also has
+**Pop out conversation**. A detached room renders `ConversationPopoutRoomView`
+(`GroupChatView` on the shared `GroupChatStore`); the room's own toolbar is the
+window's title row (live avatars, name and members on the traffic lights' line,
+thread and room actions trailing, without a pop-out item). Popping out the room the Bots page shows returns the page to its
+list, tapping a detached room focuses its window, disbanding it closes the
+window, and a group an edit creates opens in its own window.
+
 ### Explorer
 
 Explorer is a dedicated, cardless source workspace. Its navigator starts at

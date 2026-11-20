@@ -135,3 +135,16 @@ struct ComposerFolderBarSlot: View {
         Color.clear.frame(height: 28).dockPadding(.vertical, 2).accessibilityHidden(true)
     }
 }
+
+/// Whether the composer holds the empty folder-bar slot. Split columns and group chats keep it
+/// so inputs line up side by side; a lone pop-out window has nothing to line up with.
+private struct ComposerReservesFolderBarKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var composerReservesFolderBar: Bool {
+        get { self[ComposerReservesFolderBarKey.self] }
+        set { self[ComposerReservesFolderBarKey.self] = newValue }
+    }
+}
