@@ -892,6 +892,60 @@ Instruments trace on a Release build. Debug (`-Onone`) builds run this
 SwiftUI and projection work several times slower; judge smoothness on a
 Release build.
 
+### Rechecking the scroll and refresh changes
+
+Use the same conversation, window dimensions, display refresh rate, and power mode for each comparison. Record steady scrolling first. Then open Activity and repeat the scroll while a reply streams. Repeat with several working sessions to distinguish session-event processing from viewport work.
+
+Timing-only captures include callback gaps, host layout, and publication counts. Enable stack samples in a separate recording for publication origins and stalled-frame stacks. The Office scene also records stationary animation and label layout as separate work totals while a recording is active.
+
+The current changes reuse Markdown prefix geometry, suppress hover during live scrolling on macOS 14, and skip a shared Control Center refresh when reopening a recently refreshed sidebar. New frame-pacing measurements for these changes are pending.
+
+The follow-up adds `markdown.viewport` and `markdown.linkCursorRects` to the
+recorder and skips custom cursor geometry for sections without links. Session
+switches refresh the selected session’s projections. Sidebar refreshes reuse a
+capability probe for up to one minute. Repeated success with
+unchanged data updates the internal freshness timestamp without publishing.
+The simulator stops producing frames while hidden, and its native display
+receives same-size frames directly. Diff highlighting batches text edits, the
+Timeline cache uses each turn’s activity, row-only updates preserve session
+indexes, and Calendar keeps one EventKit event query in flight.
+
+Transcript Markdown documents share clip-view observation. Streaming keeps
+only the short suffix needed to detect a phrase split across flushes. The
+Timeline reuses historical call indexes by transcript revision, and Kanban
+dragging scans only the destination lane up to the drop slot. Control Center
+reuses client-wide capability results and verifies process support from the
+focused session’s own process listing. New frame-pacing measurements are pending.
+
+Long streamed replies keep their rendered body during completion. Final Markdown
+parses off the main actor, and native layout reuses matching stable-section heights.
+Stored system notes also parse off the main actor after the history fetch. Navigator
+previews refresh on demand and reuse each unchanged message's entry. Split panes
+keep their hosting roots and defer content changes while hidden. Large generated
+tables reuse filtered and sorted rows and mount near the viewport. Activity event
+reads follow visible consumers, read receipts publish once per batch, and PTY
+output uses ordered batches of up to 8 KiB with a yield between deliveries.
+
+Under CPU contention, macOS pointer moves share one pending hover delivery per
+window, and the desktop split skips an unchanged navigation pane. Final reply
+preparation checks the work budget between TextKit chunks and keeps matching
+mounted sections through completion. Kanban attribution walks decoded tool fields
+without encoding another copy of the payload. Quiet session-index reads wait for
+input to settle and merge immutable inputs off the main actor. The merge retries
+against newer session metadata before it can publish. Speculative transcript
+preloads use utility priority and wait for input between requests.
+
+The two November 21 recordings found that the leading split hosts accounted
+for 64–77% of measured hosting layout time, including scroll periods with no
+model publications. Frame-sized pane hosts now service constraint updates before
+their own layout while the wheel event targets them. AppKit still handles regular
+constraint requests outside the gesture and for the other panes. In an isolated
+AppKit fixture with both splits, 30 scroll steps took 60 root and 60 outer-workspace
+layouts before the change and 30 each after it. The conversation laid out 30 times
+and showed the same 30 new rows in both runs. Neither the Chats list nor the
+inspector laid out. Pane visibility changes use the layout scheduled by their
+frame changes. New captures name each of these hosts separately.
+
 ### Performance contract
 
 `make perf-contract` (part of `make guard`) rejects, in `Sources/Herm`:
