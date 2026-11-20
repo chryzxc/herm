@@ -40,22 +40,52 @@ struct CalendarWorkspaceView: View {
         return DateInterval(start: start, end: end)
     }
 
-    private var items: [CalendarItem] {
-        system.items.filter { $0.sourceID.map { !hidden.contains($0) } ?? true }
-            + CalendarAgenda.automationItems(control.cronJobs)
-            + CalendarAgenda.taskItems(control.globalKanbanTasks)
+    private struct AgendaInputs: Equatable {
+        let events: [CalendarItem]
+        let jobs: [CronSummary]
+        let tasks: [KanbanTaskSummary]
+        let hidden: String
+        let query: String
+        let filter: CalendarAgenda.Filter
+        let today: Date
+        let range: DateInterval
+        let calendar: Calendar
     }
+    @MainActor private final class AgendaCache {
+        var inputs: AgendaInputs?
+        var full: [Date: [CalendarItem]] = [:]
+        var filtered: [Date: [CalendarItem]] = [:]
 
-    private var visibleItems: [CalendarItem] {
-        CalendarAgenda.filtered(items, query: query, kind: itemFilter)
+        func update(_ next: AgendaInputs) {
+            guard inputs != next else { return }
+            let excluded = Set(next.hidden.split(separator: "\n").map(String.init))
+            let items =
+                next.events.filter { $0.sourceID.map { !excluded.contains($0) } ?? true }
+                + CalendarAgenda.automationItems(next.jobs)
+                + CalendarAgenda.taskItems(next.tasks, now: next.today, calendar: next.calendar)
+            full = CalendarAgenda.build(items, in: next.range, calendar: next.calendar)
+            filtered =
+                next.filter == .all && next.query.isEmpty
+                ? full
+                : CalendarAgenda.build(
+                    CalendarAgenda.filtered(items, query: next.query, kind: next.filter), in: next.range,
+                    calendar: next.calendar)
+            inputs = next
+        }
     }
+    @State private var cache = AgendaCache()
 
     private var isFiltering: Bool {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || itemFilter != .all
     }
 
     var body: some View {
-        let agenda = CalendarAgenda.build(visibleItems, in: range, calendar: calendar)
+        let _ = cache.update(
+            AgendaInputs(
+                events: system.items, jobs: control.cronJobs, tasks: control.globalKanbanTasks,
+                hidden: hiddenRaw, query: query, filter: itemFilter, today: today, range: range, calendar: calendar))
+        let agenda = cache.filtered
+        let fullDay = cache.full[selected] ?? []
         VStack(alignment: .leading, spacing: 16) {
             toolbar
             searchControls
@@ -69,7 +99,7 @@ struct CalendarWorkspaceView: View {
                                 calendarPane(agenda).frame(height: max(560, proxy.size.height))
                             }
                         }
-                        detail(agenda).frame(width: 340)
+                        detail(agenda, fullDayItems: fullDay).frame(width: 340)
                     }
                 } else {
                     ScrollView {
@@ -81,7 +111,7 @@ struct CalendarWorkspaceView: View {
                                     height: proxy.size.width < 560
                                         ? (scope == .month ? 440 : 240) : (scope == .month ? 600 : 420))
                             }
-                            detail(agenda, stacked: true).frame(height: 380)
+                            detail(agenda, fullDayItems: fullDay, stacked: true).frame(height: 380)
                         }
                     }
                 }
@@ -494,9 +524,10 @@ struct CalendarWorkspaceView: View {
 
     // MARK: Detail
 
-    private func detail(_ agenda: [Date: [CalendarItem]], stacked: Bool = false) -> some View {
+    private func detail(_ agenda: [Date: [CalendarItem]], fullDayItems: [CalendarItem], stacked: Bool = false)
+        -> some View
+    {
         let dayItems = agenda[selected] ?? []
-        let fullDayItems = CalendarAgenda.build(items, in: range, calendar: calendar)[selected] ?? []
         let overlaps = CalendarAgenda.overlappingEventIDs(fullDayItems)
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {

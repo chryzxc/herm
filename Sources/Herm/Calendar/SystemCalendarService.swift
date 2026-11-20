@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import EventKit
 import SwiftUI
 
@@ -25,21 +26,25 @@ final class SystemCalendarService: ObservableObject {
     var stillRefused: Bool { anyDenied }
 
     private lazy var store = EKEventStore()
+    private var revision: UInt64 = 0
+    private var reloadTask: Task<Void, Never>?
+    private var remindersRequest: Any?
     private var range: DateInterval?
     /// The user's "Show Mac Calendar" choice. Off means EventKit is not read at all.
     private var isEnabled = true
-    private var observer: NSObjectProtocol?
+    private var observer: AnyCancellable?
 
     var allGranted: Bool { eventAccess == .granted && reminderAccess == .granted }
     var anyDenied: Bool { eventAccess == .denied || reminderAccess == .denied }
 
     init() {
         readAccess()
-        observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) {
-            [weak self] _ in
-            Task { @MainActor in self?.reload() }
-        }
+        observer = NotificationCenter.default.publisher(for: .EKEventStoreChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.reload() }
     }
+
+    deinit { reloadTask?.cancel() }
 
     /// Only from an explicit "Connect" tap; never on launch.
     func requestAccess() async {
@@ -121,23 +126,49 @@ final class SystemCalendarService: ObservableObject {
     }
 
     private func reload() {
+        revision &+= 1
+        if let remindersRequest {
+            store.cancelFetchRequest(remindersRequest)
+            self.remindersRequest = nil
+        }
         guard isEnabled else {
             sources = []
             items = []
             return
         }
-        guard let range else { return }
-        var sources: [Source] = []
-        var events: [CalendarItem] = []
-        if eventAccess == .granted {
-            let calendars = store.calendars(for: .event)
-            sources += calendars.map {
-                Source(
-                    id: $0.calendarIdentifier, title: $0.title, color: Color(cgColor: $0.cgColor), isReminders: false)
+        guard range != nil, reloadTask == nil else { return }
+        reloadTask = Task { [weak self] in
+            while !Task.isCancelled, let request = self?.eventRequest {
+                let (sources, events) = request.readEvents ? await Self.readEvents(request.range) : ([], [])
+                guard let self else { return }
+                // EventKit's synchronous event query cannot be interrupted. Read only the newest
+                // range after it finishes so fast navigation never queues a series of old reads.
+                guard revision == request.revision else { continue }
+                loadReminders(in: request.range, sources: sources, events: events, revision: request.revision)
+                break
             }
-            let predicate = store.predicateForEvents(withStart: range.start, end: range.end, calendars: calendars)
-            events = store.events(matching: predicate).map(Self.item)
+            self?.reloadTask = nil
         }
+    }
+
+    private var eventRequest: (range: DateInterval, revision: UInt64, readEvents: Bool)? {
+        guard isEnabled, let range else { return nil }
+        return (range, revision, eventAccess == .granted)
+    }
+
+    nonisolated private static func readEvents(_ range: DateInterval) async -> ([Source], [CalendarItem]) {
+        guard !Task.isCancelled else { return ([], []) }
+        let store = EKEventStore()
+        let calendars = store.calendars(for: .event)
+        let sources = calendars.map {
+            Source(id: $0.calendarIdentifier, title: $0.title, color: Color(cgColor: $0.cgColor), isReminders: false)
+        }
+        let predicate = store.predicateForEvents(withStart: range.start, end: range.end, calendars: calendars)
+        return (sources, store.events(matching: predicate).map(Self.item))
+    }
+
+    private func loadReminders(in range: DateInterval, sources: [Source], events: [CalendarItem], revision: UInt64) {
+        var sources = sources
         guard reminderAccess == .granted else {
             self.sources = sources
             items = events
@@ -150,11 +181,12 @@ final class SystemCalendarService: ObservableObject {
         self.sources = sources
         let predicate = store.predicateForIncompleteReminders(
             withDueDateStarting: range.start, ending: range.end, calendars: lists)
-        store.fetchReminders(matching: predicate) { reminders in
+        remindersRequest = store.fetchReminders(matching: predicate) { [weak self] reminders in
             let fetched = (reminders ?? []).compactMap(Self.item)
             Task { @MainActor [weak self] in
                 // A newer range may have been requested while this one was fetching.
-                guard let self, self.isEnabled, self.range == range else { return }
+                guard let self, self.revision == revision else { return }
+                self.remindersRequest = nil
                 self.items = events + fetched
             }
         }
