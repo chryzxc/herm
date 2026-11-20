@@ -23,10 +23,10 @@ struct PinnedSessionPresentation: Equatable {
     ) {
         let liveByID = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         switch projection {
-        case .ready, .empty, .stale:
+        case .ready, .empty, .stale, .loading:
             sessions = pinned.map { liveByID[$0.id] ?? $0 }
                 .sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
-        case .loading, .unavailable, .failed:
+        case .unavailable, .failed:
             sessions = []
         }
         switch projection {

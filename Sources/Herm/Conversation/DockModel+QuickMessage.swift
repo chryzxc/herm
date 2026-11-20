@@ -22,6 +22,8 @@ extension DockModel {
         runtimeModelOptionsTask?.cancel()
         sessionPreviewImageTask?.cancel()
         sessionTranscriptImageTask?.cancel()
+        allBotSessionsTask?.cancel()
+        sessionTranscriptPreloadTask?.cancel()
         gatewayAuthenticationObserver = nil
         sessionTranscriptCache.removeAll()
         sessionLoadTask?.cancel()
