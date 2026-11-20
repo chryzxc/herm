@@ -272,7 +272,10 @@ extension DockModel {
                 redirectTurn(with: spoken, sessionID: sessionID)
             } else {
                 queuedPrompts.append(
-                    QueuedPrompt(sessionID: queuedPromptSessionID ?? sessionID, text: spoken, images: [], pdfURLs: []))
+                    QueuedPrompt(
+                        sessionID: queuedPromptSessionID ?? sessionID, text: spoken, images: [],
+                        profileID: Self.normalizedProfileID(sessionProfileID ?? profileScopeID),
+                        mentionProfiles: composerMentionProfiles))
                 drainQueuedPromptIfIdle()
             }
             return

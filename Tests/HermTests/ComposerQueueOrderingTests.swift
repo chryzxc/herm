@@ -176,6 +176,95 @@ struct ComposerQueueOrderingTests {
         #expect(client.requests.contains { $0.method == "session.redirect" })
     }
 
+    @Test func backgroundCompletionSendsItsOwnQueueInOrder() async throws {
+        let client = ComposerQueueRPCClient()
+        let model = model(client)
+        model.sessionStorageID = "saved-chat"
+        model.sessionProfileID = "original-profile"
+        model.storageIDsByRuntimeID["composer-order"] = "saved-chat"
+        parkFirstMessage(model)
+        let pdf = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
+        try Data("%PDF-1.7".utf8).write(to: pdf)
+        defer { try? FileManager.default.removeItem(at: pdf) }
+        model.pendingPDFURLs = [pdf]
+        model.draft = "Later message"
+        model.queueDraft()
+
+        model.newChat()
+        model.sessionID = "other-runtime"
+        model.sessionProfileID = "other-profile"
+        model.status = .working
+        model.isSending = true
+        model.draft = "Another conversation's draft"
+
+        model.receiveGatewayEvent(
+            "message.complete",
+            params: ["session_id": "composer-order", "payload": ["session_id": "other-runtime", "text": "Done"]])
+        #expect(model.queuedPrompts.count == 2)
+        complete(model)
+        try await waitForSubmissions(1, client: client)
+        #expect(client.submitted == ["Earlier message"])
+        #expect(model.queuedPrompts.map(\.text) == ["Later message"])
+
+        complete(model)
+        try await waitForSubmissions(2, client: client)
+        #expect(client.submitted == ["Earlier message", "Later message\n\n@file:document.pdf"])
+        let attachment = try #require(client.requests.first { $0.method == "file.attach" })
+        #expect(attachment.params["session_id"] as? String == "composer-order")
+        #expect(attachment.params["profile"] as? String == "original-profile")
+        for submission in client.requests where submission.method == "prompt.submit" {
+            #expect(submission.params["session_id"] as? String == "composer-order")
+            #expect(submission.params["profile"] as? String == "original-profile")
+        }
+        #expect(model.sessionID == "other-runtime")
+        #expect(model.messages.isEmpty)
+        #expect(model.draft == "Another conversation's draft")
+        #expect(model.isSending)
+    }
+
+    @Test func backgroundQueueWaitsForRedirectReply() async throws {
+        let client = ComposerQueueRPCClient()
+        client.holdRedirect = true
+        defer { client.finishRedirect(status: "rejected") }
+        let model = model(client)
+        model.status = .working
+        model.isSending = true
+        model.draft = "Redirect first"
+        model.submitComposerInput()
+        let deadline = Date().addingTimeInterval(2)
+        while client.pendingRedirect == nil, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(client.pendingRedirect != nil)
+        model.draft = "Later message"
+        model.queueDraft()
+        model.newChat()
+
+        complete(model)
+        #expect(client.submitted.isEmpty)
+        client.finishRedirect(status: "rejected")
+
+        try await waitForSubmissions(1, client: client)
+        #expect(client.submitted == ["Redirect first"])
+        complete(model)
+        try await waitForSubmissions(2, client: client)
+        #expect(client.submitted == ["Redirect first", "Later message"])
+    }
+
+    @Test func backgroundCompletionAfterStopKeepsQueuedMessages() async throws {
+        let client = ComposerQueueRPCClient()
+        let model = model(client)
+        parkFirstMessage(model)
+        let stop = try #require(model.stop())
+        await stop.value
+        model.newChat()
+
+        complete(model)
+
+        #expect(model.queuedPrompts.map(\.text) == ["Earlier message"])
+        #expect(client.submitted.isEmpty)
+    }
+
     // Herm missed the turn end, so it still shows working; Hermes rejects the
     // steer because nothing runs. The prompt must send, not re-queue forever.
     @Test func steerRejectedForAMissedTurnEndSendsThePromptAsTheNextTurn() async throws {

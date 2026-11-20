@@ -154,7 +154,7 @@ extension DockModel {
 
     var hasQueuedOrRedirectingPrompt: Bool {
         !currentSessionQueuedPrompts.isEmpty
-            || queuedPromptSessionID.map { redirectingPrompts[$0] != nil } == true
+            || queuedPromptSessionID.map { redirectingPrompts[$0] != nil || queuedSubmissions[$0] != nil } == true
     }
 
     var currentSessionQueuedPrompts: [QueuedPrompt] {

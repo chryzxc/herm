@@ -3341,6 +3341,9 @@ work or file reads. Restore publishes the final editor text once and leaves
 unchanged attachment fields alone; snapshots reuse existing text and image storage.
 When the current conversation has queued input, subsequent composer sends join
 the queue in order; plain text must not redirect the live turn past queued messages.
+An offscreen turn advances its own message queue one item at a time on completion.
+The send uses that conversation’s runtime and profile without switching the visible transcript.
+Queued slash commands and direct Bot relays wait for their conversation to reopen.
 Attach is icon-only; model and reasoning context remain available at
 normal widths, while the send/steer action retains the strongest emphasis.
 Streaming, approvals, clarifications, voice state, and errors may use semantic

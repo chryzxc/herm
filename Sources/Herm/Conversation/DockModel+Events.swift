@@ -28,6 +28,24 @@ extension DockModel {
     }
 
     private func handleGatewayEvent(_ type: String, params: [String: Any]) {
+        let noticePayload = params["payload"] as? [String: Any] ?? [:]
+        let eventSessionID = (params["session_id"] as? String) ?? (noticePayload["session_id"] as? String)
+        let settlesTurn = type == "message.complete" || type == "error"
+        let queueCompletionOwner =
+            settlesTurn
+            ? eventSessionID.flatMap { owner -> String? in
+                guard
+                    Self.eventBelongsToSession(
+                        type: type, envelopeSessionID: params["session_id"] as? String, eventSessionID: owner,
+                        payload: noticePayload, currentSessionID: owner, agents: [])
+                else { return nil }
+                if let sequence = (params["seq"] as? NSNumber)?.intValue,
+                    let latest = highestGatewaySequenceBySessionID[owner], sequence <= latest
+                {
+                    return nil
+                }
+                return owner
+            } : nil
         guard acceptGatewayEvent(type: type, params: params) else { return }
         if type == "approval.request" {
             let payload = params["payload"] as? [String: Any] ?? [:]
@@ -42,15 +60,14 @@ extension DockModel {
                 guard captureConversationApproval(pending, sessionID: owner, profileID: profile) else { return }
             }
         }
-        let noticePayload = params["payload"] as? [String: Any] ?? [:]
-        if type == "message.complete" || type == "error",
-            let owner = (params["session_id"] as? String) ?? (noticePayload["session_id"] as? String)
-        {
+        if let owner = queueCompletionOwner {
             for (key, pending) in redirectingPrompts
             where key == rowSessionID(owner) || pending.runtimeSessionID == owner {
                 var redirect = pending
                 redirect.completedTurns += 1
-                if interruptState == .requesting, currentSessionIDs.contains(owner) {
+                if sessionStopAttempts.contains(where: { stopOwner, attempt in
+                    stopOwner.sessionID == key && attempt.outcome != .failed
+                }) {
                     redirect.wasInterrupted = true
                 }
                 // Hermes owns one follow-up after the original turn.
@@ -117,8 +134,6 @@ extension DockModel {
         reconcileDirectBotLifecycle(type: type, params: params)
         capturePendingApproval(type: type, params: params)
         capturePendingClarification(type: type, params: params)
-        let eventPayload = params["payload"] as? [String: Any] ?? [:]
-        let eventSessionID = (params["session_id"] as? String) ?? (eventPayload["session_id"] as? String)
         if type == "approval.expire", let eventSessionID {
             let requestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
             resolveApproval(for: eventSessionID, requestID: requestID)
@@ -126,7 +141,7 @@ extension DockModel {
         if type == "message.start" || type == "message.complete" || type == "sessions.changed" {
             touchSession(
                 sessionID: eventSessionID,
-                at: dateValue(params["timestamp"]) ?? dateValue(eventPayload["timestamp"]) ?? Date())
+                at: dateValue(params["timestamp"]) ?? dateValue(noticePayload["timestamp"]) ?? Date())
         }
         if let eventSessionID, type == "message.start" || Self.isMidTurnEvent(type) {
             let ownerID = rowSessionID(eventSessionID)
@@ -140,7 +155,7 @@ extension DockModel {
             }
         }
         if let eventSessionID {
-            updateSessionActivityLabel(sessionID: eventSessionID, type: type, payload: eventPayload)
+            updateSessionActivityLabel(sessionID: eventSessionID, type: type, payload: noticePayload)
         }
         // `sessions.changed` is a notification, not a new session snapshot.
         // Re-read the authoritative index after a turn completes so titles,
@@ -162,6 +177,18 @@ extension DockModel {
                     SidebarSessionSeenStore.shared.markSeen(profileID: profileID, sessionID: rowID)
                 }
             }
+        }
+        if let eventSessionID = queueCompletionOwner {
+            let owner = rowSessionID(eventSessionID)
+            if let sendID = queuedSubmissions[owner],
+                pendingSessionSends.contains(where: { $0.id == sendID && $0.phase == .submitting }),
+                !sessionStopAttempts.contains(where: { key, attempt in
+                    key.sessionID == owner && attempt.outcome == .accepted && attempt.tailPending
+                })
+            {
+                queuedSubmissions[owner] = nil
+            }
+            drainBackgroundQueuedPrompt(runtimeID: eventSessionID)
         }
         handleEvent(type, params: params)
         if type == "message.start" || type == "message.complete" || type == "error",
@@ -299,7 +326,11 @@ extension DockModel {
                     result: reply.isEmpty ? nil : reply)
                 inFlightBotActivities.removeValue(forKey: activity.activityID)
             }
-            if !currentSessionIDs.contains(eventSessionID) { drainQueuedPromptIfIdle() }
+            if !currentSessionIDs.contains(eventSessionID),
+                mentions.contains(where: { currentSessionIDs.contains($0.originSessionID) })
+            {
+                drainQueuedPromptIfIdle()
+            }
         default:
             break
         }

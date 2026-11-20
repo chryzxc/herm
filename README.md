@@ -1039,7 +1039,7 @@ Setup: run `Scripts/setup-simulator-bridge.sh` (plus `brew install facebook/fb/i
 - Create a project, set it active, archive it, or delete it when the installed Hermes runtime exposes the corresponding project methods.
 - Keep queued messages and attachments with their session when switching conversations or starting a new chat. Reopening a session restores its queue, including when Hermes assigns a new runtime session ID.
 - Edit a queued message to move it, attachments included, back into the composer; sending it again adds it to the end of the queue.
-- Queued messages advance automatically when the active turn settles. Voice mode sends the next message after reply audio drains; an explicit Stop keeps the remaining queue for you to resume.
+- Queued chat messages advance automatically when their session’s turn settles, including while you view another conversation. Voice mode sends the next message after reply audio drains; an explicit Stop keeps the remaining queue for you to resume.
 - Share conversation pins with the Hermes CLI and Desktop rather than maintaining a separate pin list.
 
 ### Bots

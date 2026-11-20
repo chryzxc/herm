@@ -107,6 +107,7 @@ final class DockModel: ObservableObject {
     /// blocked approval, or a turn that ended first). Not yet submitted, so
     /// removable; sent one per turn once Hermes settles (desktop parity).
     @Published var queuedPrompts: [QueuedPrompt] = []
+    var queuedSubmissions: [String: UUID] = [:]
     // Hold newer input until a redirect resolves or its Hermes-queued follow-up finishes.
     @Published var redirectingPrompts: [String: RedirectingPrompt] = [:]
     /// Resume may replace the runtime handle; unsent prompts belong to the

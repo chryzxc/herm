@@ -1025,6 +1025,8 @@ struct QueuedPrompt: Identifiable {
     var replyQuote: ReplyQuote? = nil
     var botMentions: [ComposerBotMention] = []
     var botRecipient: BotSummary? = nil
+    var profileID: String? = nil
+    var mentionProfiles: [String] = []
 }
 
 struct ImageAttachment: Identifiable {

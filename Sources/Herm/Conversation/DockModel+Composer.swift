@@ -8,7 +8,11 @@ import UserNotifications
 extension DockModel {
     /// Sends the composer draft, or a queued prompt without touching the draft.
     /// The optional callback reports RPC submission, not completion of the turn.
-    func send(_ queued: QueuedPrompt? = nil, onSubmission: ((String?) -> Void)? = nil) {
+    func send(
+        _ queued: QueuedPrompt? = nil, queueRuntimeID: String? = nil, onSubmission: ((String?) -> Void)? = nil
+    ) {
+        let queueOwner = queueRuntimeID.flatMap { _ in queued?.sessionID }
+        let isForeground = queueRuntimeID == nil || queueRuntimeID == sessionID
         let originalText = queued?.text ?? draft
         let prompt = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachedImages = queued?.images ?? pendingImages
@@ -17,11 +21,10 @@ extension DockModel {
         let botMentions = ComposerBotMention.rebasing(
             queued?.botMentions ?? composer.botMentions, from: originalText, to: prompt)
         guard !prompt.isEmpty || !attachedImages.isEmpty || !attachedPDFs.isEmpty || !contexts.isEmpty,
-            !isSending,
-            sessionActionsReady,
-            !isUpdatingSessionModel, !isUpdatingSessionFast,
-            !isRestoringSession,
-            sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession)
+            !isForeground
+                || (!isSending && sessionActionsReady && !isUpdatingSessionModel && !isUpdatingSessionFast
+                    && !isRestoringSession
+                    && (sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession)))
         else { return }
 
         if queued == nil, hasQueuedOrRedirectingPrompt {
@@ -60,13 +63,26 @@ extension DockModel {
         } else {
             text = "[image]"
         }
-        let isVoiceTurn = voiceState.isNativeConversationActive && voiceSessionID == sessionID
-        let richContext = generationContext()
+        let isVoiceTurn = isForeground && voiceState.isNativeConversationActive && voiceSessionID == sessionID
+        let capturedDestination = queueOwner.map {
+            QuickDestination(
+                profileID: queued?.profileID, sessionID: $0,
+                title: (isForeground ? currentSessionTitle : nil) ?? "Session")
+        }
+        let richContext = generationContext(for: capturedDestination)
+        let mentionProfiles = queueOwner == nil ? composerMentionProfiles : queued?.mentionProfiles ?? []
         let submittedText = GenerativeUIIntegration.preparePrompt(
-            ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles), context: richContext
+            ComposerMentionPresentation.annotatedPrompt(text, profileIDs: mentionProfiles), context: richContext
         )
-        let sessionBeforeSend = sessionID
-        let sendOwner = composerDraftKey
+        let sessionBeforeSend = queueRuntimeID ?? sessionID
+        let sendOwner =
+            isForeground
+            ? composerDraftKey : SessionComposerDraft.Key(profileID: queued?.profileID, sessionID: queueOwner)
+        let profile = queueOwner == nil ? sessionProfileID ?? profileScopeID : queued?.profileID
+        func scoped(_ params: [String: Any]) -> [String: Any] {
+            guard let profile else { return params }
+            return params.merging(["profile": profile]) { _, captured in captured }
+        }
 
         let botActivityID = sessionBeforeSend.flatMap { eventSessionID in
             inFlightBotActivities.values.first { $0.botChatSessionID == eventSessionID }?.activityID
@@ -74,19 +90,21 @@ extension DockModel {
         let sendGeneration = sessionResumeGeneration
         guard pendingSessionSends.count < 256 else {
             if let queued { queuedPrompts.insert(queued, at: 0) }
-            messages.append(
-                ChatMessage(
-                    role: .hermes,
-                    text: "Too many messages await confirmation. Check your conversations before sending."
-                ))
-            onSubmission?("Too many messages await confirmation. Check your conversations before sending.")
+            let message = "Too many messages await confirmation. Check your conversations before sending."
+            if isForeground {
+                messages.append(ChatMessage(role: .hermes, text: message))
+            } else {
+                actionErrors.report("Could not send queued message", message: message)
+            }
+            onSubmission?(message)
             return
         }
         sessionStopAttempts[sendOwner] = nil
         let snapshot = SessionComposerDraft(
             text: originalText, images: attachedImages, pdfURLs: attachedPDFs, contexts: contexts,
             replyQuote: queued == nil ? replyQuote : queued?.replyQuote,
-            attachmentError: pendingAttachmentError, pdfError: pendingPDFError, botMentions: botMentions)
+            attachmentError: queued == nil ? pendingAttachmentError : nil,
+            pdfError: queued == nil ? pendingPDFError : nil, botMentions: botMentions)
         if queued == nil {
             draft = ""
             pendingImages = []
@@ -111,25 +129,37 @@ extension DockModel {
             role: .user, text: transcriptText, images: attachedImages.map(\.image),
             botMentions: ComposerBotMention.rebasing(botMentions, from: prompt, to: transcriptText),
             attachmentURLs: contexts.compactMap(\.attachmentURL) + attachedPDFs)
-        messages.append(sentMessage)
+        if isForeground { messages.append(sentMessage) }
         let sendID = UUID()
+        if let queueOwner { queuedSubmissions[queueOwner] = sendID }
         pendingSessionSends.append(
             SessionPendingSend(
                 id: sendID, owner: sendOwner, snapshot: snapshot, message: sentMessage,
-                baselineRowID: transcriptMessageIDsByRowID.keys.max() ?? 0))
+                baselineRowID: isForeground ? transcriptMessageIDsByRowID.keys.max() ?? 0 : nil))
 
-        status = .working
-        isSending = true
-        if let sessionID { turnStartedAtBySession[sessionID] = Date() }
-        if voiceState.isNativeConversationActive, !isVoicePromptActive {
-            nativeVoiceCapture.receivedTranscript(hasText: true)
-            voiceState = .thinking
+        if isForeground {
+            status = .working
+            isSending = true
+            if let sessionID { turnStartedAtBySession[sessionID] = Date() }
+            if voiceState.isNativeConversationActive, !isVoicePromptActive {
+                nativeVoiceCapture.receivedTranscript(hasText: true)
+                voiceState = .thinking
+            }
         }
         DebugLog.write("model: send started (\(prompt.count) characters, images: \(attachedImages.count))")
 
         Task {
+            @MainActor func ownsForeground(_ runtimeID: String?) -> Bool {
+                self.sessionResumeGeneration == sendGeneration && self.sessionID == runtimeID
+            }
+            @MainActor func canSubmit(to runtimeID: String?) -> Bool {
+                guard !hasShutDown else { return false }
+                if let queueOwner { return queuedSubmissions[queueOwner] == sendID }
+                return ownsForeground(runtimeID)
+            }
             var submissionReported = false
             defer {
+                if let queueOwner, queuedSubmissions[queueOwner] == sendID { queuedSubmissions[queueOwner] = nil }
                 if !submissionReported {
                     if let pending = pendingSessionSends.first(where: { $0.id == sendID }), pending.phase == .preparing
                     {
@@ -140,19 +170,15 @@ extension DockModel {
             }
             do {
                 try await sessionRPCClient.connect()
-                guard self.sessionResumeGeneration == sendGeneration,
-                    self.sessionID == sessionBeforeSend
-                else { return }
-                if sessionID == nil || pendingWorktreeDirectory != nil {
-                    _ = try await createAuthorizedSession(source: HermesFeatureIDs.sessionSource)
+                guard canSubmit(to: sessionBeforeSend) else { return }
+                var targetSessionID = sessionBeforeSend
+                if ownsForeground(sessionBeforeSend), sessionID == nil || pendingWorktreeDirectory != nil {
+                    targetSessionID = try await createAuthorizedSession(source: HermesFeatureIDs.sessionSource)
                 }
-                guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
-                // Keep this operation bound to the session selected above. A
-                // late resume must not redirect a prompt into another chat.
-                let promptSessionID = sessionID
-                guard self.sessionResumeGeneration == sendGeneration,
-                    self.sessionID == promptSessionID
-                else { return }
+                guard let promptSessionID = targetSessionID else {
+                    throw HermesGateway.GatewayError.malformedResponse
+                }
+                guard canSubmit(to: promptSessionID) else { return }
                 if sessionBeforeSend == nil, let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }) {
                     pendingSessionSends[index].owner = composerDraftKey
                 }
@@ -171,12 +197,10 @@ extension DockModel {
                 for context in contexts {
                     guard let url = context.attachmentURL else { continue }
                     let encoded = try await AttachmentPayload.encoded(at: url, maximumBytes: 8 * 1024 * 1024)
-                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else {
-                        return
-                    }
+                    guard canSubmit(to: promptSessionID) else { return }
                     let attached = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.fileAttach.rawValue,
-                        params: scopedSessionParams([
+                        params: scoped([
                             "session_id": promptSessionID,
                             "data_url": "data:application/octet-stream;base64," + encoded,
                             "name": url.lastPathComponent,
@@ -192,12 +216,10 @@ extension DockModel {
                 }
                 for attachedPDF in attachedPDFs {
                     let encoded = try await AttachmentPayload.encoded(at: attachedPDF, maximumBytes: 25 * 1024 * 1024)
-                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else {
-                        return
-                    }
+                    guard canSubmit(to: promptSessionID) else { return }
                     let result = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.fileAttach.rawValue,
-                        params: scopedSessionParams([
+                        params: scoped([
                             "session_id": promptSessionID,
                             "data_url": "data:application/pdf;base64," + encoded,
                             "name": attachedPDF.lastPathComponent,
@@ -216,17 +238,15 @@ extension DockModel {
                     ? submittedText
                     : GenerativeUIIntegration.preparePrompt(
                         ComposerMentionPresentation.annotatedPrompt(
-                            text + "\n\n" + fileReferences.joined(separator: "\n"), profileIDs: composerMentionProfiles),
+                            text + "\n\n" + fileReferences.joined(separator: "\n"), profileIDs: mentionProfiles),
                         context: richContext
                     )
                 for attachedImage in attachedImages {
                     let base64 = try await AttachmentPayload.encoded(at: attachedImage.fileURL)
-                    guard self.sessionResumeGeneration == sendGeneration,
-                        self.sessionID == promptSessionID
-                    else { return }
+                    guard canSubmit(to: promptSessionID) else { return }
                     let attachResult = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.imageAttachBytes.rawValue,
-                        params: scopedSessionParams([
+                        params: scoped([
                             "session_id": promptSessionID,
                             "content_base64": base64,
                             "filename": attachedImage.fileName,
@@ -242,32 +262,30 @@ extension DockModel {
 
                 }
 
-                guard self.sessionResumeGeneration == sendGeneration,
-                    self.sessionID == promptSessionID
-                else { return }
+                guard canSubmit(to: promptSessionID) else { return }
                 let baselineAttempt = UUID()
-                let baselineOrigin = QuickDestination(
-                    profileID: sessionProfileID, sessionID: navigationSessionID ?? promptSessionID,
-                    title: currentSessionTitle ?? "Session")
-                var baselineDirectory = sessionWorkspace?.cwd ?? createdSessionProjectPaths[promptSessionID]
+                let baselineOrigin =
+                    capturedDestination
+                    ?? QuickDestination(
+                        profileID: sessionProfileID, sessionID: navigationSessionID ?? promptSessionID,
+                        title: currentSessionTitle ?? "Session")
+                var baselineDirectory =
+                    (ownsForeground(promptSessionID) ? sessionWorkspace?.cwd : nil)
+                    ?? createdSessionProjectPaths[promptSessionID]
                 if baselineDirectory == nil {
                     let origin = HermesSession(
-                        id: navigationSessionID ?? promptSessionID, profileID: sessionProfileID,
-                        title: currentSessionTitle ?? "Session", preview: "", startedAt: nil, messageCount: 0,
+                        id: baselineOrigin.sessionID ?? promptSessionID, profileID: baselineOrigin.profileID,
+                        title: baselineOrigin.title, preview: "", startedAt: nil, messageCount: 0,
                         source: HermesFeatureIDs.sessionSource)
                     baselineDirectory = try? await HermesWorkflowRPC(
-                        client: controlRPCClient, profileID: sessionProfileID
+                        client: controlRPCClient, profileID: baselineOrigin.profileID
                     ).sessionDirectory(origin)
-                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else {
-                        return
-                    }
+                    guard canSubmit(to: promptSessionID) else { return }
                 }
                 if let directory = baselineDirectory {
                     await DeveloperWorkflowModel.shared.captureTurnBaseline(
                         origin: baselineOrigin, path: directory, attemptID: baselineAttempt)
-                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else {
-                        return
-                    }
+                    guard canSubmit(to: promptSessionID) else { return }
                 }
                 if let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }) {
                     pendingSessionSends[index].phase = .submitting
@@ -276,7 +294,7 @@ extension DockModel {
                 }
                 let acknowledgment = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.promptSubmit.rawValue,
-                    params: scopedSessionParams([
+                    params: scoped([
                         "session_id": promptSessionID,
                         "text": isVoiceTurn ? VoicePrompts.conversationPrompt(outgoingText) : outgoingText,
                         "voice_turn": isVoiceTurn, "queued": queued != nil,
@@ -298,9 +316,7 @@ extension DockModel {
                 submissionReported = true
                 onSubmission?(
                     accepted ? nil : "Herm could not confirm submission. Check the conversation before retrying.")
-                guard self.sessionResumeGeneration == sendGeneration,
-                    self.sessionID == promptSessionID
-                else { return }
+                guard ownsForeground(promptSessionID) else { return }
 
                 if acknowledgment["voice_stopped"] as? Bool == true { finishVoiceStopSubmission() }
                 DebugLog.write("model: prompt submitted")
@@ -321,7 +337,10 @@ extension DockModel {
                 // into whichever conversation the user opened meanwhile.
                 guard self.sessionResumeGeneration == sendGeneration,
                     sessionBeforeSend == nil || self.sessionID == sessionBeforeSend
-                else { return }
+                else {
+                    if queueOwner != nil { actionErrors.report("Could not send queued message", error: error) }
+                    return
+                }
                 DebugLog.write("model: send failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
 
                 for context in contexts
@@ -356,6 +375,7 @@ extension DockModel {
                 isSending = false
                 submissionReported = true
                 onSubmission?(message)
+                if let queueOwner, queuedSubmissions[queueOwner] == sendID { queuedSubmissions[queueOwner] = nil }
                 if !transportFailure { drainQueuedPromptIfIdle() }
             }
         }
@@ -389,6 +409,8 @@ extension DockModel {
         let submittedText = ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles)
         let steeringGeneration = sessionResumeGeneration
         let queueSessionID = queuedPromptSessionID ?? sessionID
+        let queueProfile = Self.normalizedProfileID(sessionProfileID ?? profileScopeID)
+        let mentionProfiles = composerMentionProfiles
         redirectingPrompts[queueSessionID] = RedirectingPrompt(runtimeSessionID: sessionID)
         // Redirect cancels the model request, so its completion can race the
         // RPC response: record the correction first, below what already
@@ -436,9 +458,21 @@ extension DockModel {
             } else {
                 self.redirectingPrompts.removeValue(forKey: queueSessionID)
             }
-            guard self.sessionResumeGeneration == steeringGeneration,
-                self.sessionID == sessionID
-            else { return }
+            let isForeground = self.sessionResumeGeneration == steeringGeneration && self.sessionID == sessionID
+            if !isForeground {
+                if redirectStatus != "redirected", redirectStatus != "queued" {
+                    requeueRedirect(
+                        text, sessionID: queueSessionID, profileID: queueProfile, mentionProfiles: mentionProfiles)
+                }
+                if redirect.completedTurns > 0, !redirect.wasInterrupted {
+                    if queuedPromptSessionID == queueSessionID {
+                        drainQueuedPromptIfIdle()
+                    } else {
+                        drainBackgroundQueuedPrompt(runtimeID: sessionID)
+                    }
+                }
+                return
+            }
             switch redirectStatus {
             case "redirected":
                 DebugLog.write("model: turn redirected")
@@ -459,9 +493,8 @@ extension DockModel {
                         || ($0.id == resumedRowID && $0.id != streamingMessageID && $0.text.isEmpty
                             && $0.activity.isEmpty)
                 }
-                let index = queuedPrompts.firstIndex { $0.sessionID == queueSessionID } ?? queuedPrompts.endIndex
-                queuedPrompts.insert(
-                    QueuedPrompt(sessionID: queueSessionID, text: text, images: [], pdfURLs: []), at: index)
+                requeueRedirect(
+                    text, sessionID: queueSessionID, profileID: queueProfile, mentionProfiles: mentionProfiles)
                 // Replies share the event stream, so a turn end would already have
                 // landed: still working here means the end was missed. Settle it so
                 // the prompt sends now instead of waiting on a turn that is gone.
@@ -472,6 +505,14 @@ extension DockModel {
                 drainQueuedPromptAfterRedirect(redirect)
             }
         }
+    }
+
+    private func requeueRedirect(_ text: String, sessionID: String, profileID: String?, mentionProfiles: [String]) {
+        let index = queuedPrompts.firstIndex { $0.sessionID == sessionID } ?? queuedPrompts.endIndex
+        queuedPrompts.insert(
+            QueuedPrompt(
+                sessionID: sessionID, text: text, images: [], profileID: profileID, mentionProfiles: mentionProfiles),
+            at: index)
     }
 
     /// A stopped turn keeps its queue, except a Send now held back by this redirect.
@@ -535,7 +576,8 @@ extension DockModel {
                 sessionID: sessionID, text: text, images: pendingImages, pdfURLs: pendingPDFURLs,
                 contexts: attachedContexts, replyQuote: replyQuote,
                 botMentions: ComposerBotMention.rebasing(composer.botMentions, from: draft, to: text),
-                botRecipient: recipient))
+                botRecipient: recipient, profileID: Self.normalizedProfileID(sessionProfileID ?? profileScopeID),
+                mentionProfiles: composerMentionProfiles))
         draft = ""
         pendingImages = []
         pendingPDFURLs = []
@@ -551,17 +593,39 @@ extension DockModel {
         cleanupImageAttachments(queuedPrompts.remove(at: index).images)
     }
 
-    /// Sends the oldest queued prompt of the open session, one per settled turn.
     func drainQueuedPromptIfIdle() {
         guard sessionActionsReady, !isSending, status == .idle, !isRestoringSession, !isUpdatingSessionModel,
             !isUpdatingSessionFast,
             pendingBotMentions.isEmpty,
             !nativeVoiceCapture.isAwaitingPlaybackDrain,
-            sessionID != nil, let sessionID = queuedPromptSessionID,
-            redirectingPrompts[sessionID] == nil,
-            let index = queuedPrompts.firstIndex(where: { $0.sessionID == sessionID })
+            let sessionID, let owner = queuedPromptSessionID
         else { return }
-        send(queuedPrompts.remove(at: index))
+        drainQueuedPrompt(owner: owner, runtimeID: sessionID)
+    }
+
+    func drainBackgroundQueuedPrompt(runtimeID: String) {
+        let owner = rowSessionID(runtimeID)
+        guard owner != queuedPromptSessionID,
+            !sessionStopAttempts.contains(where: { key, attempt in
+                key.sessionID == owner && attempt.outcome != .failed
+            }),
+            !inFlightBotActivities.values.contains(where: { $0.originSessionID == owner })
+        else { return }
+        drainQueuedPrompt(owner: owner, runtimeID: runtimeID)
+    }
+
+    private func drainQueuedPrompt(owner: String, runtimeID: String) {
+        guard !hasShutDown, queuedSubmissions[owner] == nil, redirectingPrompts[owner] == nil,
+            let index = queuedPrompts.firstIndex(where: { $0.sessionID == owner })
+        else { return }
+        let prompt = queuedPrompts[index]
+        let usesSelectedConversation =
+            prompt.botRecipient != nil
+            || (prompt.images.isEmpty && prompt.pdfURLs.isEmpty && prompt.contexts.isEmpty
+                && ComposerSlashCommand(prompt.text) != nil)
+        if usesSelectedConversation, runtimeID != sessionID { return }
+        queuedPrompts.remove(at: index)
+        send(prompt, queueRuntimeID: usesSelectedConversation ? nil : runtimeID)
     }
 
     /// Appends outside text (Services menu) to the composer without sending it.
