@@ -517,7 +517,6 @@ struct CalendarWorkspaceView: View {
                         router.attach(CalendarAgenda.dayContext(selected, items: fullDayItems), to: nil)
                     }
                     .buttonStyle(.dockSecondary)
-                    .controlSize(.small)
                     .help("Start a new chat with this day's agenda attached")
                 }
             }
@@ -599,10 +598,8 @@ struct CalendarWorkspaceView: View {
                     }
                     .disabled(system.isRequestingAccess)
                     .buttonStyle(.dockPrimary)
-                    .controlSize(.small)
                     Button("Not now") { useSystem = false }
                         .buttonStyle(.dockSecondary)
-                        .controlSize(.small)
                         .help("Hide this. Turn it on later from the Calendars menu.")
                     Spacer(minLength: 8)
                     // Existing refusals are changed in System Settings.
@@ -729,7 +726,6 @@ struct CalendarWorkspaceView: View {
                     && CalendarAgenda.prepSchedule(before: item.start, leadMinutes: 15) != nil
                 Button("Schedule prep…") { prepItem = item }
                     .buttonStyle(.dockSecondary)
-                    .controlSize(.small)
                     .disabled(!canSchedule)
                     .help(
                         control.cronControlAvailable
@@ -770,7 +766,6 @@ struct CalendarWorkspaceView: View {
     private func createTaskButton(_ item: CalendarItem) -> some View {
         DockAsyncButton("Create Kanban task") { await createTask(item) }
             .buttonStyle(.dockSecondary)
-            .controlSize(.small)
             .disabled(!control.capabilityAvailable("kanban.create"))
             .help(
                 control.capabilityAvailable("kanban.create")

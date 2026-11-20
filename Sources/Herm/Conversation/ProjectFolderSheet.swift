@@ -46,14 +46,14 @@ struct ProjectFolderSheet: View {
                                 .middle)
                     }
                     Spacer(minLength: 8)
-                    Button("Change…", action: chooseFolder).buttonStyle(.dockSecondary).controlSize(.small)
+                    Button("Change…", action: chooseFolder).buttonStyle(.dockSecondary)
                 }
             } else {
                 VStack(spacing: 6) {
                     Image(systemName: "arrow.down.to.line").dockFont(size: 17).foregroundStyle(
                         isDropTargeted ? Color.dockAccent : Color.dockMetadataText)
                     Text("Drop a folder here").dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)
-                    Button("Choose…", action: chooseFolder).buttonStyle(.dockSecondary).controlSize(.small)
+                    Button("Choose…", action: chooseFolder).buttonStyle(.dockSecondary)
                 }
                 .frame(maxWidth: .infinity)
             }

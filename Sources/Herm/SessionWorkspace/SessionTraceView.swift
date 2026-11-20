@@ -380,7 +380,7 @@ struct SessionTraceCanvas: View {
             }
         }
         .dockPadding(.horizontal, 8).frame(minWidth: 110, maxWidth: .infinity).frame(height: 26)
-        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 6))
+        .dockWell(.raised)
         .background {
             Button("Search steps") { searchFocused = true }
                 .keyboardShortcut("f", modifiers: .command).hidden()
@@ -1095,7 +1095,7 @@ struct SessionTraceCanvas: View {
             }
         }
         .dockPadding(10)
-        .background(Color.dockSurface4, in: RoundedRectangle(cornerRadius: 8))
+        .dockWell(.sunken)
     }
 
     /// Owner agent and the tool's file or command context, when they add something.

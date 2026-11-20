@@ -65,11 +65,7 @@ struct SessionSimulatorDebugTools: View {
             }
         }
         .dockPadding(6)
-        .background(Color.dockSurface, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius)
-                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-        }
+        .dockWell(.raised)
     }
 
     private var statusText: String {

@@ -280,7 +280,7 @@ struct GitHubConversationView: View {
                         confirm = true
                     } label: {
                         GitHubActionLabel(title: model.posting ? "Posting…" : "Post comment", isBusy: model.posting)
-                    }.buttonStyle(.dockPrimary).controlSize(.small)
+                    }.buttonStyle(.dockPrimary)
                         .disabled(
                             model.posting || model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                 || model.draft.count > 10_000)

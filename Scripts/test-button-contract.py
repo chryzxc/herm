@@ -33,6 +33,23 @@ class ButtonContractTests(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertTrue(buttons.violations(source))
 
+    def test_rejects_native_control_size_on_herm_text_actions(self):
+        for source in [
+            'Button("Save") {}.buttonStyle(.dockSecondary).controlSize(.small)',
+            'Button("Save") {}.controlSize(.small).buttonStyle(.dockPrimary)',
+        ]:
+            with self.subTest(source=source):
+                self.assertTrue(buttons.violations(source))
+        self.assertEqual(buttons.violations('Button {} label: { ProgressView().controlSize(.mini) }.buttonStyle(.dockPrimary)'), [])
+
+    def test_single_taps_need_an_accessibility_action(self):
+        self.assertTrue(buttons.violations('Row().onTapGesture { open() }'))
+        self.assertTrue(buttons.violations('Row().onTapGesture(perform: open)'))
+        self.assertEqual(buttons.violations('Row().dockTapAction { open() }'), [])
+        self.assertEqual(buttons.violations('Row().onTapGesture(count: 2) { open() }'), [])
+        self.assertEqual(buttons.violations('Row().onTapGesture { open() }.accessibilityAddTraits(.isButton)'), [])
+        self.assertEqual(buttons.violations('Row().onTapGesture { open() }', 'Sources/Herm/DesignSystem/X.swift'), [])
+
     def test_large_sizes_need_a_reviewed_allowance(self):
         source = 'HStack { Button("Record") {}.buttonStyle(.dockPrimary) }.dockButtonSize(.standard)'
         self.assertTrue(buttons.violations(source, 'Sources/Herm/Settings/New.swift'))

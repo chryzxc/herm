@@ -68,11 +68,11 @@ struct SessionDashboardCard: View, Equatable {
             }
             .dockPadding(EdgeInsets(top: 16, leading: 16, bottom: 12, trailing: 16))
             .contentShape(Rectangle())
-            .onTapGesture(perform: open)
+            .dockTapAction(perform: open)
             footer
                 .dockPadding(EdgeInsets(top: 0, leading: 16, bottom: 16, trailing: 16))
                 // The field's own surface covers it, so only the margins around it open the chat.
-                .background { Color.clear.contentShape(Rectangle()).onTapGesture(perform: open) }
+                .background { Color.clear.contentShape(Rectangle()).dockTapAction(perform: open) }
         }
         .foregroundStyle(Color.dockPrimaryText)
         .frame(maxWidth: .infinity, alignment: .topLeading)

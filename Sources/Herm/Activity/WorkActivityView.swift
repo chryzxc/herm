@@ -233,7 +233,6 @@ struct WorkActivityView: View {
             {
                 Button("Today") { load(Date(), select: calendar.startOfDay(for: Date())) }
                     .buttonStyle(.dockSecondary)
-                    .controlSize(.small)
             }
 
             Spacer(minLength: 8)
@@ -414,7 +413,7 @@ private struct CalendarGridCard: View, Equatable {
                                 isFuture: date > today
                             )
                             .equatable()
-                            .dockHoverable().onTapGesture { if selectable { onSelect(date) } }
+                            .dockHoverable().dockTapAction { if selectable { onSelect(date) } }
                         } else {
                             Color.clear.frame(maxWidth: .infinity, minHeight: 56)
                         }

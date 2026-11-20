@@ -38,6 +38,7 @@ struct DockShellFill: View {
 /// Inside the card, left-hand panes (lists, navigation) use `Color.dockCanvas`
 /// so the curve stays visible. Only the rail and title rows use `dockSidebar`.
 struct DockWorkspaceShell<Rail: View, Content: View>: View {
+    @Environment(\.dockWorkspaceScale) private var scale
     let toolbarHeight: CGFloat
     @ViewBuilder let rail: () -> Rail
     @ViewBuilder let content: () -> Content
@@ -45,8 +46,7 @@ struct DockWorkspaceShell<Rail: View, Content: View>: View {
     var body: some View {
         HStack(spacing: 0) {
             rail()
-            let insets = EdgeInsets(
-                top: toolbarHeight, leading: 0, bottom: DockShell.margin, trailing: DockShell.margin)
+            let margin = DockWorkspaceScale.spacing(DockShell.margin, scale: scale)
             content()
                 // Lay out inside the card, not just mask to it, or trailing/bottom content is clipped by the margin.
                 .dockPadding(EdgeInsets(top: 0, leading: 0, bottom: DockShell.margin, trailing: DockShell.margin))
@@ -57,12 +57,12 @@ struct DockWorkspaceShell<Rail: View, Content: View>: View {
                 }
                 .mask(
                     ToolbarRowAndCardShape(
-                        toolbarHeight: toolbarHeight, margin: DockShell.margin, radius: DockShell.radius)
+                        toolbarHeight: toolbarHeight, margin: margin, radius: DockShell.radius)
                 )
                 .overlay {
                     RoundedRectangle(cornerRadius: DockShell.radius, style: .continuous)
                         .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-                        .dockPadding(insets)
+                        .padding(EdgeInsets(top: toolbarHeight, leading: 0, bottom: margin, trailing: margin))
                 }
         }
         .environment(\.dockShellToolbarHeight, toolbarHeight)

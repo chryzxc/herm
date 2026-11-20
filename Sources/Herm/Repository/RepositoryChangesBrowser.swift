@@ -1045,12 +1045,9 @@ struct RepositoryChangesBrowser: View {
     }
 
     private func emptyState(icon: Ph, title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            DockIconLabel(title, icon: icon).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-            Text(detail).dockFont(.body).foregroundStyle(Color.dockMetadataText)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .dockPadding(12)
+        DockEmptyState(title: title, detail: detail, icon: icon)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .dockPadding(12)
 
     }
 }

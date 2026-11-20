@@ -465,7 +465,7 @@ private struct KanbanTaskCard: View, Equatable {
         }
         .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         .dockHoverable()
-        .onTapGesture { onSelect(task) }
+        .dockTapAction { onSelect(task) }
         .gesture(
             DragGesture(minimumDistance: 4, coordinateSpace: .named(KanbanDragController.space))
                 .onChanged { [drag] in drag?.dragChanged(task: task, lane: lane, value: $0) }

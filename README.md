@@ -432,6 +432,8 @@ records the mapping for each app area; `make color-contract` guards future featu
 Solid fills stay the same in Light/Dark; text ink adapts for readable contrast on each
 theme, including Light/Dark, Monochrome, and E-Ink.
 
+The desktop workspace card clears the full toolbar in both density settings.
+
 The expanded floating workspace fills the panel vertically without extra top or bottom shell padding.
 
 PR lists use green for open work; Issues uses blue status icons with neutral state text.

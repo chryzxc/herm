@@ -189,7 +189,7 @@ struct ChatMediaAttachmentCard: View {
         }
         .frame(maxWidth: 420, maxHeight: 420, alignment: .leading)
         .clipShape(shape)
-        .onTapGesture { ArtifactOpener.open(path) }
+        .dockTapAction { ArtifactOpener.open(path) }
     }
 
     private var card: some View {
@@ -244,7 +244,9 @@ struct ChatMediaAttachmentCard: View {
             }
             .fixedSize(horizontal: true, vertical: false)
         }
-        .dockPadding(10)
+        .dockPadding(.vertical, 10)
+        .dockPadding(.leading, 12)
+        .dockPadding(.trailing, 14)
         .background(
             Color.dockSurface2.opacity(grouped ? 0 : 0.55),
             in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)

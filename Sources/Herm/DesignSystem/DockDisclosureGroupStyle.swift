@@ -92,8 +92,8 @@ extension AnyTransition {
 }
 
 private struct DockPanelReveal: AnimatableModifier {
-    var progress: CGFloat
-    var animatableData: CGFloat {
+    nonisolated var progress: CGFloat
+    nonisolated var animatableData: CGFloat {
         get { progress }
         set { progress = newValue }
     }

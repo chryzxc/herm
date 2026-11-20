@@ -528,7 +528,7 @@ struct PullRequestReviewView: View {
                 title: model.pendingAction == .submit ? "Submitting…" : "Submit review",
                 isBusy: model.pendingAction == .submit)
         }
-        .buttonStyle(.dockPrimary).controlSize(.small).fixedSize()
+        .buttonStyle(.dockPrimary).fixedSize()
         .disabled(model.submissionUnavailableReason(record: record, viewer: viewer) != nil)
     }
 

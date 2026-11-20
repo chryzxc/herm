@@ -155,7 +155,6 @@ struct AddPoolAccountSheet: View {
                             .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.dockSecondary)
-                        .controlSize(.small)
                         .help(id)
                         .overlay {
                             DockThemeShape(cornerRadius: DockLayout.controlRadius)

@@ -680,7 +680,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         // the same spacing the Bots list uses (`DockSidebarListMetrics`).
         .dockPadding(.vertical, DockSidebarListMetrics.rowGap)
         // rowFill already tracks hover; a second hover tracker doubled the work per row while scrolling.
-        .onTapGesture { if !isEditingTitle { onSelect(session) } }
+        .dockTapAction { if !isEditingTitle { onSelect(session) } }
         .sessionPaneDraggable(SessionPaneDrag(session: session), isEnabled: !isEditingTitle)
         .focusable(!isEditingTitle)
         .focusEffectDisabled()

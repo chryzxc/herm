@@ -639,7 +639,6 @@ struct CronReportDetailSheet: View {
                             .multilineTextAlignment(.center)
                         Button("Try Again") { load() }
                             .buttonStyle(.dockSecondary)
-                            .controlSize(.small)
                     }
                     .dockPadding(30)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

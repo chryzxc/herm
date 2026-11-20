@@ -223,11 +223,12 @@ struct IntegrationFilterEmptyState: View {
     let clear: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("No integrations match this status").dockFont(.body, weight: .semibold)
-            Text("Choose another status or show the full inventory.")
-                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+        DockEmptyState(
+            title: "No integrations match this status",
+            detail: "Choose another status or show the full inventory."
+        ) {
             Button("Show all statuses", action: clear).buttonStyle(.dockSecondary)
-        }.frame(maxWidth: .infinity, alignment: .leading).dockPadding(20)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).dockPadding(20)
     }
 }

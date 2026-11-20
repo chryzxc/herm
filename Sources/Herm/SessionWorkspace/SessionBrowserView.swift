@@ -197,7 +197,6 @@ struct SessionBrowserView: View {
             Spacer(minLength: 4)
             Button("Retry") { agent.start() }
                 .buttonStyle(DockSecondaryButtonStyle())
-                .controlSize(.small)
         }
         .dockPadding(.horizontal, 10)
         .dockPadding(.vertical, 6)

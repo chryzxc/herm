@@ -857,6 +857,7 @@ title row, `Color.dockSidebar`) around one rounded content card painted with
   use `dockSidebar`.
 - The title-row divider comes from `DockWindowChrome.titleRowSeparator`, which
   draws only on flat skins; the card edge divides the row elsewhere.
+- The card border and mask start below the full title row at both densities.
 - Shell metrics (margin, radius, flat) live in `DockShell`. Change them there.
 - Use `.dockShellPane()` for panes inside the card and `.dockShellChrome()` for rail and title rows.
   `make shell-contract` (part of `make guard`) rejects raw `dockSidebar` and `sidebarBackground` in pages.

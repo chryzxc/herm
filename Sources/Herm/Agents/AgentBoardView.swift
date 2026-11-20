@@ -338,19 +338,8 @@ struct AgentBoardView: View {
     }
 
     private func emptyState(title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            DockIcon(.users)
-                .dockFont(.navigation)
-                .foregroundStyle(Color.dockMetadataText)
-            Text(title)
-                .dockFont(.body, weight: .medium)
-                .foregroundStyle(Color.dockPrimaryText)
-            Text(detail)
-                .dockFont(.body)
-                .foregroundStyle(Color.dockSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .dockPadding(.vertical, 4)
+        DockEmptyState(title: title, detail: detail, icon: .users)
+            .dockPadding(.vertical, 4)
     }
 
     private func expandedActivity(for agent: Agent) -> some View {

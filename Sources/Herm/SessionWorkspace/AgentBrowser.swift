@@ -1972,7 +1972,6 @@ struct AgentBrowserPane: View {
                 .fixedSize()
             Button("Hand back to Herm") { browser.handBack() }
                 .buttonStyle(DockPrimaryButtonStyle())
-                .controlSize(.small)
             DockIconButton(icon: .x, label: "Dismiss", size: 22, style: palette) { browser.userHasControl = false }
         }
         .dockPadding(.leading, 12)
@@ -2002,7 +2001,6 @@ struct AgentBrowserPane: View {
             .animation(.dockEase(duration: 0.18), value: step.title)
             Button("Take over") { browser.takeOver() }
                 .buttonStyle(DockSecondaryButtonStyle())
-                .controlSize(.small)
                 .help("Pause Herm and use the page yourself")
             DockIconButton(icon: .stop, label: "Stop Herm", size: 22, style: palette) { model.stop() }
         }

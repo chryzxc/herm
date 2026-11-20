@@ -383,7 +383,8 @@ struct ChatComposerView: View {
                                     .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                                 }
                             }
-                            .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: model.pendingImages.count)
+                            .animation(
+                                DockMotion.disclosure(reduceMotion: reduceMotion), value: model.pendingImages.count)
                         }
                         .transition(DockMotion.composerTray(reduceMotion: reduceMotion))
                     }
@@ -426,7 +427,8 @@ struct ChatComposerView: View {
                                     .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                                 }
                             }
-                            .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: model.attachedContexts.count)
+                            .animation(
+                                DockMotion.disclosure(reduceMotion: reduceMotion), value: model.attachedContexts.count)
                         }
                         .transition(DockMotion.composerTray(reduceMotion: reduceMotion))
                     }
@@ -463,7 +465,8 @@ struct ChatComposerView: View {
                                     .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                                 }
                             }
-                            .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: model.pendingPDFURLs.count)
+                            .animation(
+                                DockMotion.disclosure(reduceMotion: reduceMotion), value: model.pendingPDFURLs.count)
                         }
                         .transition(DockMotion.composerTray(reduceMotion: reduceMotion))
                     }
@@ -592,9 +595,13 @@ struct ChatComposerView: View {
                                     ) {
                                         ComposerSubmitMark(stop: speechInput.isRecording || showStop ? 1 : 0)
                                             .fill(
-                                                speechInput.isRecording ? Color.dockPrimaryText
-                                                    : showStop ? Color.dockDestructive
-                                                    : canSubmit ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5)
+                                                speechInput.isRecording
+                                                    ? Color.dockPrimaryText
+                                                    : showStop
+                                                        ? Color.dockDestructive
+                                                        : canSubmit
+                                                            ? Color.dockOnAccentText
+                                                            : Color.dockSecondaryText.opacity(0.5)
                                             )
                                             .frame(width: 14, height: 14)
                                             .animation(
@@ -1198,8 +1205,10 @@ private struct QueuedPromptList: View {
                                 .fill(Color.dockAccent)
                                 .frame(height: 2)
                                 .scaleEffect(x: dropTargetID == prompt.id ? 1 : 0, y: 1, anchor: .leading)
-                                .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.14),
-                                           value: dropTargetID == prompt.id)
+                                .animation(
+                                    DockMotion.animation(reduceMotion: reduceMotion, duration: 0.14),
+                                    value: dropTargetID == prompt.id
+                                )
                                 .allowsHitTesting(false)
                                 .accessibilityHidden(true)
                         }

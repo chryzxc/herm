@@ -132,7 +132,9 @@ struct SessionPaneRow<Primary: View>: View {
                         }
                         .frame(height: geometry.size.height)
                         .background(Color.dockOpaqueCanvas)
-                        .transition(DockMotion.reveal(from: end == x ? .leading : .trailing, reduceMotion: reduceMotion))
+                        .transition(
+                            DockMotion.reveal(from: end == x ? .leading : .trailing, reduceMotion: reduceMotion)
+                        )
                         .offset(x: x)
                     }
                 }

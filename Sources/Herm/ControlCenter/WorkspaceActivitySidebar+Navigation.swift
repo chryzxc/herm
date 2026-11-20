@@ -107,7 +107,6 @@ extension WorkspaceActivitySidebar {
                             DockIconLabel("New automation", icon: .plus)
                         }
                         .buttonStyle(.dockSecondary)
-                        .controlSize(.small)
                     }
                 ))
         } else if selectedMode == .core {

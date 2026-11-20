@@ -228,7 +228,6 @@ struct TurnModelSettingsView: View {
             case .notInstalled, .failed:
                 Button(store.phase == .notInstalled ? "Download" : "Retry") { store.install() }
                     .buttonStyle(.dockPrimary)
-                    .controlSize(.small)
             case .downloading(let fraction):
                 HStack(spacing: 8) {
                     ProgressView(value: fraction)

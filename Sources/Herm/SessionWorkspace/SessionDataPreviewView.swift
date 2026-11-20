@@ -189,7 +189,7 @@ struct SessionDataPreviewView: View {
             } else {
                 DockIcon(icon, size: 20, color: .dockSecondaryText)
                     .frame(width: 40, height: 40)
-                    .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius))
+                    .dockWell(.raised)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).dockFont(.pageTitle, weight: .semibold).textSelection(.enabled)

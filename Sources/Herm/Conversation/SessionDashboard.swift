@@ -156,11 +156,8 @@ struct SessionDashboard<Conversation: View>: View {
     }
 
     private func emptyState(_ title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).dockFont(.body, weight: .semibold)
-            Text(detail).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-        }
-        .dockPadding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        DockEmptyState(title: title, detail: detail)
+            .dockPadding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private func newConversation() {

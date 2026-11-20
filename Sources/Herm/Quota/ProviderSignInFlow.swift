@@ -153,7 +153,6 @@ struct ProviderSignInFlow: View {
                             DockIconLabel("Open \(url.host ?? "sign-in page")", icon: .arrowSquareOut)
                         }
                         .buttonStyle(.dockPrimary)
-                        .controlSize(.small)
                         .help(url.absoluteString)
                     } else {
                         Text("Waiting for Hermes to create the sign-in link…")
@@ -270,7 +269,6 @@ struct ProviderSignInFlow: View {
             if let onRetry {
                 Button("Try Again", action: onRetry)
                     .buttonStyle(.dockSecondary)
-                    .controlSize(.small)
             }
         }
     }

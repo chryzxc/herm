@@ -15,6 +15,8 @@ STROKE = re.compile(r'\.stroke\s*\(|stroke\s*:')
 # A surface-filled box without a stroke is still a hand-built well; skeleton bars (.frame) are exempt.
 FILLED_BOX = re.compile(r'(?:RoundedRectangle|DockThemeShape)\s*\([^\n]*?\)\s*\.(?:dockSurfaceFill|fill)\s*\(\s*(?:Color\.)?dockSurface\d?\b(?![^\n]*\.frame\()')
 # Label capsules and meters have shared components (.dockPill, DockProgressBar); a hand-built one drifts.
+# The shape-style form of the same well: `.background(Color.dockSurface2, in: RoundedRectangle(...))`.
+BACKGROUND_BOX = re.compile(r'\.background\(\s*(?:Color\.)?dockSurface\d?\b[^\n]*?,\s*in:\s*(?:RoundedRectangle|DockThemeShape)\s*\(')
 CAPSULE = re.compile(r'\.background\(\s*Capsule\(\)\s*\.fill\(|^\s*Capsule\(\)\s*\.fill\(.*\)\s*$')
 WINDOW = 6
 
@@ -24,7 +26,7 @@ def violations(source):
     lines = source.splitlines()
     found = []
     for i, line in enumerate(lines):
-        if CAPSULE.search(line):
+        if CAPSULE.search(line) or BACKGROUND_BOX.search(line):
             found.append(i + 1)
             continue
         if not SHAPE.search(line):

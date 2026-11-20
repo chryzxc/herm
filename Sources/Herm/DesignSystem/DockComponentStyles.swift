@@ -1675,6 +1675,68 @@ struct DockLoadingState: View {
     }
 }
 
+/// Compact "nothing here" state for a list, panel or section that loaded and is empty:
+/// 12pt semibold title over 12pt secondary detail, an optional leading icon, and an optional
+/// recovery action. Layout around it (padding, centering) belongs to the caller's container.
+struct DockEmptyState<Actions: View>: View {
+    let title: String
+    var detail: String? = nil
+    var icon: Ph? = nil
+    @ViewBuilder var actions: () -> Actions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DockSpacing.tight) {
+            if let icon {
+                DockIcon(icon).foregroundStyle(Color.dockMetadataText).accessibilityHidden(true)
+            }
+            Text(title)
+                .dockFont(.body, weight: .semibold)
+                .foregroundStyle(Color.dockPrimaryText)
+            if let detail {
+                Text(detail)
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if Actions.self != EmptyView.self {
+                HStack(spacing: DockSpacing.control, content: actions).dockPadding(.top, 2)
+            }
+        }
+        .multilineTextAlignment(.leading)
+    }
+}
+
+extension DockEmptyState where Actions == EmptyView {
+    init(title: String, detail: String? = nil, icon: Ph? = nil) {
+        self.init(title: title, detail: detail, icon: icon) { EmptyView() }
+    }
+}
+
+/// An icon-only text action: outlined, or filled while `isProminent` (a toggle that is on).
+/// Square at the group's `dockButtonSize`, so it matches labeled actions in the same row.
+struct DockIconAction: View {
+    let icon: Ph
+    let label: String
+    /// Hover text that explains the action; `label` stays the accessibility name.
+    var help: String? = nil
+    var isProminent = false
+    var iconSize: CGFloat = 14
+    let action: () -> Void
+
+    var body: some View {
+        Group {
+            if isProminent {
+                Button(action: action) { DockIcon(icon, size: iconSize) }.buttonStyle(.dockPrimary)
+            } else {
+                Button(action: action) { DockIcon(icon, size: iconSize) }.buttonStyle(.dockSecondary)
+            }
+        }
+        .dockIconOnlyAction()
+        .help(help ?? label)
+        .accessibilityLabel(label)
+    }
+}
+
 extension ButtonStyle where Self == DockPressButtonStyle {
     static var dockPress: Self { Self() }
 }

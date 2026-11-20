@@ -899,7 +899,7 @@ struct SessionNavBotRow: View, Equatable {
         .disabled(isDeleting)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
-        .dockHoverable().onTapGesture(perform: onSelect)
+        .dockHoverable().dockTapAction(perform: onSelect)
         .onKeyPress(.return) {
             onSelect()
             return .handled
@@ -1110,7 +1110,7 @@ private struct BotAvatarGeneratorTip: View {
                     VStack(spacing: 4) {
                         BotFaceMark(id: id, size: 48, mood: hovered == id ? .happy : .idle)
                             .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
-                            .onTapGesture {
+                            .dockTapAction {
                                 guard pending.isEmpty, let i = samples.firstIndex(of: id) else { return }
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
                                     samples[i] = UUID().uuidString

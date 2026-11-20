@@ -176,31 +176,30 @@ struct FilePreviewPane: View {
 
     /// The document's own tools, top right like the map's: Annotate, then full screen.
     private func documentControls(expanded: Bool) -> some View {
-        let palette = DockThemePalette(theme: DockThemeRuntime.current)
-        return HStack(spacing: 4) {
+        HStack(spacing: 4) {
             if canAnnotate {
-                DockIconButton(
+                DockIconAction(
                     icon: .highlighter, label: isAnnotating ? "Stop annotating" : "Annotate: select text to add notes",
                     help: isAnnotating
                         ? "Stop annotating and return to the rich view. Your unsent notes are kept."
                         : "Annotate: select text to add notes on it. Notes collect as a review you can send to Hermes in one message.",
-                    isProminent: isAnnotating, style: palette
+                    isProminent: isAnnotating
                 ) {
                     withAnimation(.dockEase(duration: 0.15)) { isAnnotating.toggle() }
                 }
                 .accessibilityValue(isAnnotating ? "On" : "Off")
             }
             if !expanded {
-                DockIconButton(
+                DockIconAction(
                     icon: .arrowsOut, label: "Open document full screen",
                     help:
-                        "Open this document in a full-window view for easier reading and annotating. Close it to return here.",
-                    style: palette
+                        "Open this document in a full-window view for easier reading and annotating. Close it to return here."
                 ) {
                     showsFullScreen = true
                 }
             }
         }
+        .dockButtonSize(.compact)
         .dockPadding(10)
     }
 
@@ -876,7 +875,7 @@ struct TextAnnotator: View {
         )
         .contentShape(Rectangle())
         .onHover { hoveredNote = $0 ? annotation.id : (hoveredNote == annotation.id ? nil : hoveredNote) }
-        .onTapGesture { reveal(annotation) }
+        .dockTapAction { reveal(annotation) }
         .help(annotation.quote == nil ? "Edit note" : "Show in document")
     }
 

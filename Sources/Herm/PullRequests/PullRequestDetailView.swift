@@ -395,7 +395,8 @@ struct PullRequestDetailView: View {
                     PullRequestChangeBreakdownView(
                         files: center.filesByID[pr.id], expectedCount: pr.changedFiles,
                         isCurrent: center.filesAreCurrent(for: pr), isLoading: center.isLoadingDetail(for: pr.id),
-                        onReviewFiles: { detailTab = 1 }, embedded: true)
+                        onReviewFiles: { detailTab = 1 }, embedded: true
+                    )
                     .transition(.dockPanelReveal)
                 }
             }
@@ -760,7 +761,8 @@ struct PullRequestDetailView: View {
                         }
                     }
                     .clipped()
-                    .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: reviewPreferences.showsFileTree)
+                    .animation(
+                        DockMotion.disclosure(reduceMotion: reduceMotion), value: reviewPreferences.showsFileTree)
                     ScrollViewReader { proxy in
                         ScrollView(.vertical) {
                             LazyVStack(alignment: .leading, spacing: 10) {
@@ -809,7 +811,6 @@ struct PullRequestDetailView: View {
                 detailRefreshID += 1
             }
             .buttonStyle(.dockSecondary)
-            .controlSize(.small)
             .disabled(center.isLoadingDetail(for: center.selectedID ?? ""))
             .dockPadding(.top, 4)
         }
@@ -954,9 +955,7 @@ struct PullRequestDetailView: View {
                 Text("\(files.count)")
                     .dockFont(.metadata, weight: .regular)
                     .foregroundStyle(Color.dockMetadataText)
-                    .dockPadding(.horizontal, 6)
-                    .frame(height: 18)
-                    .background(Capsule().fill(Color.dockSurface4))
+                    .dockPill()
                 Spacer(minLength: 4)
                 PullRequestDiffStat(
                     additions: files.reduce(0) { $0 + $1.additions }, deletions: files.reduce(0) { $0 + $1.deletions })

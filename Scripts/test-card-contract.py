@@ -21,6 +21,11 @@ class CardContractTests(unittest.TestCase):
     def test_flags_unstroked_surface_boxes(self):
         self.assertTrue(cards.violations('x.background(RoundedRectangle(cornerRadius: 8).fill(Color.dockSurface))'))
 
+    def test_flags_surface_backgrounds_in_shapes(self):
+        self.assertTrue(cards.violations('x.background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 8))'))
+        self.assertTrue(cards.violations('x.background(Color.dockSurface4.opacity(0.5), in: DockThemeShape(theme: t))'))
+        self.assertEqual(cards.violations('x.background(Color.dockAccentMuted, in: RoundedRectangle(cornerRadius: 8))'), [])
+
     def test_flags_hand_built_capsules(self):
         self.assertTrue(cards.violations('x.background(Capsule().fill(Color.dockSurface4))'))
         self.assertTrue(cards.violations('    Capsule().fill(Color.dockBorderLight)'))

@@ -1569,12 +1569,7 @@ extension WorkspaceActivitySidebar {
     }
 
     func emptyState(icon: Ph, title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            DockIcon(icon).foregroundStyle(Color.dockMetadataText)
-            Text(title).dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)
-            Text(detail).dockFont(.body).foregroundStyle(Color.dockSecondaryText).fixedSize(
-                horizontal: false, vertical: true)
-        }
+        DockEmptyState(title: title, detail: detail, icon: icon)
     }
 
     func nativeAgentColor(_ status: String) -> Color {

@@ -744,7 +744,9 @@ extension DockPopover {
                                         .frame(maxWidth: .infinity, alignment: .trailing)
                                         .clipped()
                                         .allowsHitTesting(railWidth > 0)
-                                        .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: isSessionRailVisible)
+                                        .animation(
+                                            DockMotion.disclosure(reduceMotion: reduceMotion),
+                                            value: isSessionRailVisible)
                                     }
                             }
                         }

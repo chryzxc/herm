@@ -452,7 +452,7 @@ private struct SessionActivityLaneLabels: View, Equatable {
                 color: lane.kind == .main ? Color.dockSecondaryText : lane.tone.color
             )
             .frame(width: 18, height: 18)
-            .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 5))
+            .dockWell(.raised)
         }
     }
 }

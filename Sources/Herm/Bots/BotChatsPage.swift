@@ -468,7 +468,7 @@ struct BotChatsPage: View, Equatable {
         .dockPadding(.top, 4)
         .contentShape(Rectangle())
         .onHover { hoveredFolderID = $0 ? folder.id : (hoveredFolderID == folder.id ? nil : hoveredFolderID) }
-        .onTapGesture {
+        .dockTapAction {
             guard renamingFolderID != folder.id else { return }
             withAnimation(reduceMotion ? nil : BotFolderMotion.spring) { folders.toggleCollapsed(folder.id) }
         }
@@ -612,7 +612,7 @@ struct BotChatsPage: View, Equatable {
             .contentShape(Rectangle())
         }
         .onHover { hoveredBotID = $0 ? bot.id : (hoveredBotID == bot.id ? nil : hoveredBotID) }
-        .onTapGesture { open(bot) }
+        .dockTapAction { open(bot) }
         .sessionPaneDraggable(SessionPaneDrag(bot: bot))
         .dockContextMenu {
             Button("Open in Split View", icon: .columnsPlusRight) {

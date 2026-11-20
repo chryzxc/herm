@@ -9,13 +9,11 @@ Sources/Herm/Conversation/ConversationComponents.swift 1
 Sources/Herm/Conversation/ConversationMessageRow.swift 1
 Sources/Herm/Conversation/DockPopover+Transcript.swift 2
 Sources/Herm/Conversation/DockPopover+Voice.swift 1
-Sources/Herm/Conversation/SessionNavSessionRows.swift 2
+Sources/Herm/Conversation/SessionNavSessionRows.swift 1
 Sources/Herm/EdgeDock/EdgeQuotaPreview.swift 4
+Sources/Herm/EdgeDock/EdgeResultPeek.swift 1
 Sources/Herm/EdgeDock/EdgeTaskPreview.swift 1
-Sources/Herm/Office/OfficePreviewView.swift 1
 Sources/Herm/Onboarding/DockOnboardingView.swift 1
-Sources/Herm/PullRequests/PullRequestDetailView.swift 3
 Sources/Herm/Quota/ProviderPeakSchedule.swift 1
-Sources/Herm/Quota/UsageWorkspaceView.swift 1
 Sources/Herm/SessionWorkspace/SessionTraceView.swift 1
 Sources/Herm/Voice/VoiceHUD.swift 2

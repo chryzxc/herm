@@ -238,9 +238,7 @@ struct UsageReportContent: View, Equatable {
                                     .dockFont(.metadata)
                                     .foregroundStyle(Color.dockSecondaryText)
                                     .lineLimit(1)
-                                    .dockPadding(.horizontal, 7)
-                                    .frame(height: 18)
-                                    .background(Capsule().fill(Color.dockCanvas))
+                                    .dockPill()
                                     .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: 1))
                                     .fixedSize()
                             }

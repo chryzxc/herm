@@ -28,7 +28,6 @@ struct PullRequestMergeButton: View {
             }
         }
         .buttonStyle(DockPrimaryButtonStyle(dimsWhenDisabled: false))
-        .controlSize(.small)
         .disabled(!enabled)
         .accessibilityLabel(method.actionTitle)
         .accessibilityHint(help)

@@ -797,7 +797,6 @@ struct ArtifactsInspectorView: View {
                 Button(actionTitle, action: action)
                     .buttonStyle(.dockPrimary)
                     .tint(Color.dockAccent)
-                    .controlSize(.small)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

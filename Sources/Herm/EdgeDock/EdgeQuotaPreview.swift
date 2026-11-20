@@ -626,7 +626,7 @@ struct ChatQuotaBanner: View {
                     .dockPadding(.horizontal, metrics.contentInset)
                     .dockPadding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
-                    .onTapGesture { self.change = nil }
+                    .dockTapAction { self.change = nil }
             }
         }
         .animation(.easeInOut(duration: 0.25), value: change)

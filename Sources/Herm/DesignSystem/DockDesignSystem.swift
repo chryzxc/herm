@@ -246,6 +246,16 @@ struct DockShimmerTrack: View {
 }
 
 extension View {
+    /// Click handler for a row or tile that cannot be a `Button` (it nests controls, drags, or
+    /// carries a context menu). VoiceOver gets a button with the same default action.
+    func dockTapAction(perform action: @escaping () -> Void) -> some View {
+        onTapGesture(perform: action)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { action() }
+    }
+}
+
+extension View {
     /// The floating panel treatment for anything drawn over a scene or edge:
     /// 92% canvas, hairline border, 12pt radius, and a soft drop shadow.
     @ViewBuilder

@@ -53,6 +53,10 @@ for a modal form footer or a high-consequence decision, in the same review.
 The gate also rejects `.dockPress` on title-based actions, text labels, and
 inherited text-action groups. That legacy style is reserved for icon controls
 and content rows; it does not participate in text-action sizing.
+Native `.controlSize` on a Herm text action is rejected too: the Herm styles ignore
+it, so it only misleads readers. A spinner inside a label may still size itself.
+Single-tap `onTapGesture` rows outside `DesignSystem/` need a VoiceOver button trait
+or action nearby; use `.dockTapAction` when the row cannot be a `Button`.
 
 `DockButtonSizingTests` measures actual SwiftUI/AppKit fitting heights across
 priorities, pending/disabled states, native control sizes, and workspace scales.

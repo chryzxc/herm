@@ -16,6 +16,8 @@ LARGE_SIZE_ALLOWED = {
     'Sources/Herm/Gateway/MessagingWorkspaceView.swift': 1,
     'Sources/Herm/Conversation/SessionNavQueue.swift': 1,
 }
+SINGLE_TAP = re.compile(r'\.onTapGesture\s*(?:\(\s*perform\s*:|\{)')
+TAP_ACCESSIBILITY = re.compile(r'\.accessibility(?:AddTraits|Action)\b|\.isButton\b')
 PRESS_STYLE = re.compile(r'\.buttonStyle\s*\(\s*(?:\.dockPress|DockPressButtonStyle\s*\(\s*\))\s*\)')
 
 
@@ -63,6 +65,8 @@ def violations(source, path='Fixture.swift'):
             name = re.search(r'\.\w+\s*$', code[:opening])
             if not name:
                 break
+            if name.group().strip() == '.controlSize':
+                findings.append(name.start())
             cursor = name.start() - 1
         findings += root_geometry(code[cursor + 1:end], cursor + 1)
         if cursor >= 0 and code[cursor] == '}' and cursor in mapping:
@@ -74,7 +78,8 @@ def violations(source, path='Fixture.swift'):
         forward = {start: end for end, start in mapping.items()}
         while modifier := re.match(r'\s*\.(\w+)\s*\(', code[cursor:]):
             opening = cursor + modifier.end() - 1
-            if modifier.group(1) == 'dockButtonSize':
+            # Herm styles ignore native controlSize, so it only misleads readers about the size.
+            if modifier.group(1) in ('dockButtonSize', 'controlSize'):
                 findings.append(cursor + modifier.start())
             if opening not in forward:
                 break
@@ -108,6 +113,14 @@ def violations(source, path='Fixture.swift'):
         if text_label or title_action or container_titles:
             line = source.count(chr(10), 0, style.start()) + 1
             result.append(f'{path}:{line}: error: text actions must use .dockPrimary or .dockSecondary, not .dockPress, which bypasses shared sizing.')
+    if not path.startswith('Sources/Herm/DesignSystem/'):
+        lines = code.split(chr(10))
+        for match in SINGLE_TAP.finditer(code):
+            line = code.count(chr(10), 0, match.start()) + 1
+            # A bare click is invisible to VoiceOver; pair it with a button trait or action.
+            nearby = chr(10).join(lines[max(0, line - 11):line + 10])
+            if not TAP_ACCESSIBILITY.search(nearby):
+                result.append(f'{path}:{line}: error: single-tap rows need a VoiceOver action; use .dockTapAction or a Button.')
     large = list(LARGE_SIZE.finditer(code))
     if path.startswith("Sources/") and len(large) > LARGE_SIZE_ALLOWED.get(path, 0):
         for match in large:

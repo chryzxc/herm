@@ -591,7 +591,7 @@ struct SessionNavQueue: View, Equatable {
                         Spacer(minLength: 8)
                         botActivityBadge(for: [option], style: style)
                             .contentShape(Rectangle())
-                            .onTapGesture {
+                            .dockTapAction {
                                 // The spinner doubles as "view the running session".
                                 guard botMode.activity.status(of: option.id) == .working,
                                     let worker = option.liveWorkerChat

@@ -186,7 +186,6 @@ struct BotProfileEditorSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                     Button("Use Herm Face") { BotFaceMark.png(id: bot.id).map(applyPendingAvatar) }
                         .buttonStyle(.dockSecondary)
-                        .controlSize(.small)
                 }
             }
         }
@@ -196,7 +195,6 @@ struct BotProfileEditorSheet: View {
         HStack(spacing: 8) {
             Button("Upload…") { uploadAvatar() }
                 .buttonStyle(.dockSecondary)
-                .controlSize(.small)
             if model.isImageGenerationAvailable {
                 Button {
                     Task { await generateAvatar() }
@@ -204,7 +202,6 @@ struct BotProfileEditorSheet: View {
                     DockActionLabel(title: "Generate", pendingTitle: "Generating…", isPending: isGeneratingAvatar)
                 }
                 .buttonStyle(.dockSecondary)
-                .controlSize(.small)
                 .disabled(isGeneratingAvatar)
             }
             if bot.hasAvatar || avatarPreview != nil || clearsAvatar {
@@ -214,7 +211,6 @@ struct BotProfileEditorSheet: View {
                     clearsAvatar = true
                 }
                 .buttonStyle(.dockSecondary)
-                .controlSize(.small)
             }
             if clearsAvatar {
                 Text("avatar will be removed").dockFont(.compactStatus, weight: .regular).foregroundStyle(
@@ -318,7 +314,6 @@ struct BotProfileEditorSheet: View {
                 Spacer()
                 Button(showsSoul ? "Hide" : "Edit") { withAnimation { showsSoul.toggle() } }
                     .buttonStyle(.dockSecondary)
-                    .controlSize(.small)
             }
             if showsSoul {
                 TextEditor(text: Binding(get: { detail?.soul ?? "" }, set: { detail?.soul = $0 }))

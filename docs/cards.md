@@ -15,9 +15,10 @@ open-chrome behavior per skin, so a card never needs its own `RoundedRectangle` 
 - Floating HUD surface: `.dockHUDSurface(tint:)`.
 - Tinted label capsule: `.dockPill(tint:)`; neutral chip: `DockMetadataPill`.
 - Thin meters: `DockProgressBar(fraction:tint:)`.
+- Compact empty state: `DockEmptyState(title:detail:icon:actions:)` (12pt semibold title, 12pt detail).
 
 `make card-contract` fails when a file outside `DesignSystem/` fills a rounded shape with a
-`dockSurface*` color (stroked or not) or hand-builds a `Capsule().fill` pill or meter. Legacy
+`dockSurface*` color (stroked or not), uses `.background(dockSurface*, in: RoundedRectangle/DockThemeShape)`, or hand-builds a `Capsule().fill` pill or meter. Legacy
 capsules (selected/stroked/shadowed variants, slider tracks, ghost-fill meters) are counted per
 file in `Scripts/card-contract-allowlist.txt`; counts may only go down. When you convert one, run
 `python3 Scripts/check-card-contract.py --update`. New work must use the shared components, and a
