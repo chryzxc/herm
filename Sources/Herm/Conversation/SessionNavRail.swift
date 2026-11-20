@@ -149,6 +149,7 @@ struct SessionNavRail: View {
     @ObservedObject var navigationState: SessionNavigationState
     @ObservedObject var dockThemeStore: DockThemeStore
     @AppStorage(DockRailDestination.pinsKey) private var pinnedDestinations = DockRailDestination.defaultPins
+    @AppStorage(QuotaRailRing.preferenceKey) private var showsQuotaRings = QuotaRailRing.defaultShown
     @State private var showsDestinations = false
     @State private var showsViewMenu = false
     @State private var showsSkinMenu = false
@@ -209,6 +210,9 @@ struct SessionNavRail: View {
                     ) { showsDestinations.toggle() }
                     .dockPopover(isPresented: $showsDestinations, arrowEdge: .trailing) {
                         destinationMenu
+                    }
+                    if showsQuotaRings {
+                        QuotaRailRings(control: controlCenter) { onOpenGlobal(.quota) }
                     }
                 }
                 .padding(.top, 6)  // room for the chat badge above its icon

@@ -2402,18 +2402,31 @@ struct DockProgressBar: View {
     var track: Color = .dockBorderLight
     /// Keeps a non-zero value visible at tiny fractions.
     var minFill: CGFloat = 0
+    /// Grows from empty when first shown, for meters that report a reading rather than progress.
+    var fillsOnAppear = false
+    var animationDuration: TimeInterval = 0.22
+    @State private var hasAppeared = false
 
     var body: some View {
+        let isEmptyForEntrance = fillsOnAppear && !hasAppeared
         Capsule().fill(track)
             .overlay {
                 DockProgressFill(
-                    fraction: min(1, max(0, fraction)), minimum: minFill, rightToLeft: direction == .rightToLeft
+                    fraction: isEmptyForEntrance ? 0 : min(1, max(0, fraction)),
+                    minimum: isEmptyForEntrance ? 0 : minFill, rightToLeft: direction == .rightToLeft
                 )
-                    .fill(tint)
-                    .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.22), value: fraction)
+                .fill(tint)
+                .animation(
+                    DockMotion.animation(reduceMotion: reduceMotion, duration: animationDuration), value: fraction
+                )
+                .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.6), value: hasAppeared)
             }
             .frame(height: height)
             .accessibilityHidden(true)
+            .task {
+                // After the first frame, so the entrance animates instead of starting full.
+                if fillsOnAppear, !hasAppeared { hasAppeared = true }
+            }
     }
 }
 

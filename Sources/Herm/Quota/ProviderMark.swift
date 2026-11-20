@@ -95,10 +95,12 @@ extension ProviderMark {
 struct ProviderMarkBadge: View {
     let mark: ProviderMark
     var size: CGFloat = 20
+    /// False draws the bare mark, for places that already frame it (such as the rail's quota rings).
+    var tile = true
 
     var body: some View {
         DockThemeShape(cornerRadius: size * 0.28)
-            .fill(Color.dockSurface4)
+            .fill(tile ? Color.dockSurface4 : Color.clear)
             .overlay {
                 switch mark {
                 case .icon(let name):

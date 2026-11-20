@@ -2150,10 +2150,16 @@ opens at the top when the category changes.
 
 ### Quota workspace
 
-Quota is a centered monitoring page (maximum 960pt). A fixed toolbar holds the
-connected/attention/available sentence, a Custom/Health order toggle, an
-auto-refresh menu (Off, 1, 5, or 15 minutes; it runs only while the page is
-open), the last-updated time (warning hue when stale), and refresh.
+Quota is a centered monitoring page (maximum 960pt). A fixed single-row toolbar
+leads with the connected/attention/available sentence over one freshness line
+(last update, the auto-refresh cadence when on, warning hue when stale; the same
+slot shows peak-hour sync progress or failure). Trailing actions are Refresh and
+the Quota options menu (icon buttons at their drawn size, 6pt apart, no 44pt hit
+frame), then the secondary Sync peak hours (pending "Syncing…" in place) and the
+primary Add account. The options menu holds only preferences: Show in sidebar, a
+divider, then an Auto-refresh section listing Off/1/5/15 minutes as checkable
+choices (no submenu; refresh runs only while the page is open). In narrow
+windows the actions wrap below the status.
 
 - **Remote backend.** Display Hermes-reported backend quota and supported
   OpenRouter credit balance without substituting this Mac's backend credentials.
@@ -2206,6 +2212,23 @@ open), the last-updated time (warning hue when stale), and refresh.
   Herm does not own their logins.
 - Disconnected providers appear afterward under Available to connect with
   Connect and website actions.
+- **Sidebar rings.** Show in sidebar (Quota options, on by default) adds one
+  38pt ring button per provider below the rail's pinned destinations, after a
+  hairline, in the shared custom order. Hairline 2pt rings: the outer is the
+  first percentage window (5-hour), the inner the second (weekly), around the
+  bare provider mark; tracks use a faint `dockBorder`, arcs the health colors.
+  Providers without a percentage get no ring. A short radial tick mirrors
+  the Quota page's daily budget marker when it is visible. The Hermes-active
+  pool account has a 7pt accent dot on the outer ring at 45°, with a canvas
+  colored outline to match the card's Active pill. Hovering opens a popover with that provider's card windows (shared
+  `QuotaWindowCell` in its compact type: 13pt figure, 11pt labels) and Open
+  Quota; clicking opens Quota.
+- **Meter motion.** Quota meters (page cards, rail popover) grow from empty on
+  first appearance over 0.6s and ease to each new reading over 0.45s; rail arcs
+  sweep clockwise from 12 o'clock over 0.7s, then ease 0.45s per reading or
+  health-color change. Animations run only when the value actually changes
+  (unchanged polls redraw nothing), and Reduce Motion or a non-animating skin
+  shows final values in place.
 
 Healthy, warning, critical, and unknown states use `dockSuccess`,
 `dockWarning`, `dockDestructive`, and `dockMetadataText`. Missing numeric data

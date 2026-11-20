@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 struct QuotaWorkspaceView: View {
     @ObservedObject var control: ControlCenterModel
     @AppStorage("dock.quota.autoRefreshMinutes") private var autoRefreshMinutes = 0
+    @AppStorage(QuotaRailRing.preferenceKey) private var showsQuotaRings = QuotaRailRing.defaultShown
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var connectTarget: QuotaProviderDescriptor?
     @State private var addingPoolAccount = false
@@ -162,51 +163,100 @@ struct QuotaWorkspaceView: View {
 
     // MARK: Toolbar
 
+    /// One row: what the inventory says on the left, the actions that change it on the right.
+    /// Preferences (auto-refresh, sidebar rings) live in one options menu.
     private var toolbar: some View {
-        VStack(alignment: .leading, spacing: DockSpacing.control) {
-            HStack(spacing: DockSpacing.group) {
-                Text(
-                    QuotaWorkspacePresentation.overviewSentence(
-                        providerCount: control.providerQuotas.count + availableDescriptors.count,
-                        connectedCount: control.providerQuotas.count,
-                        attentionCount: control.providerQuotas.filter(QuotaWorkspacePresentation.needsAttention).count
-                    )
-                )
-                .dockFont(.control)
-                .foregroundStyle(Color.dockSecondaryText)
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-                Spacer(minLength: 0)
-
-                Text(
-                    refreshState?.lastSuccess.map {
-                        "Updated \($0.formatted(.dateTime.hour().minute()))"
-                    } ?? "Not updated yet"
-                )
-                .dockFont(.machineMetadata)
-                .foregroundStyle(refreshState?.isStale == true ? Color.dockWarning : Color.dockMetadataText)
-                .fixedSize()
-                .help(
-                    refreshState?.isStale == true
-                        ? "The last refresh failed; figures are from this time." : "Last successful provider read")
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: DockSpacing.group) {
+                toolbarStatus
+                Spacer(minLength: DockSpacing.group)
+                toolbarActions
             }
-            .frame(minHeight: DockControlMetrics.compactHeight)
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: DockSpacing.group) {
-                    addAccountButton
-                    Spacer(minLength: DockSpacing.group)
-                    quotaRefreshControls
-                }
-                VStack(alignment: .leading, spacing: DockSpacing.control) {
-                    addAccountButton
-                    quotaRefreshControls
-                }
+            VStack(alignment: .leading, spacing: DockSpacing.control) {
+                toolbarStatus
+                toolbarActions
             }
         }
         .dockPadding(.bottom, DockSpacing.group)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+    }
+
+    private var toolbarStatus: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(
+                QuotaWorkspacePresentation.overviewSentence(
+                    providerCount: control.providerQuotas.count + availableDescriptors.count,
+                    connectedCount: control.providerQuotas.count,
+                    attentionCount: control.providerQuotas.filter(QuotaWorkspacePresentation.needsAttention).count
+                )
+            )
+            .dockFont(.control, weight: .medium)
+            .foregroundStyle(Color.dockPrimaryText)
+            .lineLimit(1)
+            .truncationMode(.tail)
+
+            freshnessLine
+        }
+    }
+
+    /// Fixed single-line slot for data freshness and transient peak-sync feedback, so the
+    /// toolbar never changes height.
+    @ViewBuilder
+    private var freshnessLine: some View {
+        Group {
+            if isSyncingPeak {
+                Text("Syncing peak hours…").foregroundStyle(Color.dockMetadataText)
+            } else if let peakSyncError {
+                Text(peakSyncError).foregroundStyle(Color.dockWarning).help(peakSyncError)
+            } else {
+                let updated =
+                    refreshState?.lastSuccess.map { "Updated \($0.formatted(.dateTime.hour().minute()))" }
+                    ?? "Not updated yet"
+                let cadence =
+                    autoRefreshMinutes == 0 ? "" : " · refreshes every \(Self.autoRefreshShort(autoRefreshMinutes))"
+                Text(updated + cadence)
+                    .foregroundStyle(refreshState?.isStale == true ? Color.dockWarning : Color.dockMetadataText)
+                    .help(
+                        refreshState?.isStale == true
+                            ? "The last refresh failed; figures are from this time." : "Last successful provider read")
+            }
+        }
+        .dockFont(.metadata)
+        .lineLimit(1)
+        .truncationMode(.tail)
+    }
+
+    /// Icon actions sit at their drawn size, one tight step apart; a 44pt hit frame around
+    /// each read as a gap. Peak-hour sync is an action, so it stays outside the options menu.
+    private var toolbarActions: some View {
+        HStack(spacing: DockSpacing.tight) {
+            DockIconButton(
+                icon: .arrowsClockwise,
+                label: refreshState?.isRefreshing == true ? "Refreshing provider quota" : "Refresh provider quota",
+                isBusy: refreshState?.isRefreshing == true,
+                style: DockThemePalette(theme: DockThemeRuntime.current)
+            ) { control.refreshProviderQuota() }
+
+            quotaOptionsMenu
+
+            syncPeakButton
+                .dockPadding(.leading, DockSpacing.tight)
+
+            addAccountButton
+        }
+        .fixedSize()
+    }
+
+    private var syncPeakButton: some View {
+        Button(action: syncPeakHours) {
+            DockActionLabel(title: "Sync peak hours", pendingTitle: "Syncing…", isPending: isSyncingPeak)
+        }
+        .buttonStyle(.dockSecondary)
+        .disabled(isSyncingPeak)
+        .fixedSize()
+        .help(
+            peakSyncedAt.map { ProviderPeakSchedule.syncSummary(syncedAt: $0) }
+                ?? "Ask Herm to search the web for current provider peak and off-peak hours.")
     }
 
     private var addAccountButton: some View {
@@ -216,83 +266,47 @@ struct QuotaWorkspaceView: View {
             DockIconLabel("Add account", icon: .plus)
         }
         .buttonStyle(.dockPrimary)
-        .controlSize(.small)
-        .dockHitTarget()
         .fixedSize()
         .help("Add an account to a Hermes credential pool")
     }
 
-    private var quotaRefreshControls: some View {
-        HStack(spacing: DockSpacing.control) {
-            autoRefreshMenu
-
-            Button {
-                guard !isSyncingPeak else { return }
-                isSyncingPeak = true
-                Task {
-                    peakSyncError = await ProviderPeakSchedule.syncFromWeb()
-                    peakSyncedAt = ProviderPeakSchedule.syncedAt
-                    isSyncingPeak = false
-                }
-            } label: {
-                DockIconLabel("Sync peak hours", icon: .arrowsClockwise)
-                    .hidden()
-                    .overlay {
-                        if isSyncingPeak {
-                            DockActionLabel(
-                                title: "Sync peak hours",
-                                pendingTitle: "Syncing…",
-                                isPending: true
-                            )
-                        } else {
-                            DockIconLabel("Sync peak hours", icon: .arrowsClockwise)
-                        }
-                    }
-                    .dockFont(.control)
-                    .foregroundStyle(Color.dockSecondaryText)
-            }
-            .buttonStyle(.dockSecondary)
-            .dockHitTarget()
-            .fixedSize()
-            .disabled(isSyncingPeak)
-            .accessibilityLabel(isSyncingPeak ? "Syncing peak hours" : "Sync peak hours")
-            .help(
-                peakSyncError ?? peakSyncedAt.map { ProviderPeakSchedule.syncSummary(syncedAt: $0) }
-                    ?? "Ask Herm to search the web for current provider peak and off-peak hours.")
-
-            DockIconButton(
-                icon: .arrowsClockwise,
-                label: refreshState?.isRefreshing == true ? "Refreshing provider quota" : "Refresh provider quota",
-                isBusy: refreshState?.isRefreshing == true,
-                style: DockThemePalette(theme: DockThemeRuntime.current)
-            ) { control.refreshProviderQuota() }
-            .dockHitTarget()
-        }
-        .fixedSize()
-    }
-
-    private var autoRefreshMenu: some View {
+    /// Two preferences, each visible at a glance: the sidebar toggle, then every auto-refresh
+    /// interval as a choice, so the current one is checked without opening a submenu.
+    private var quotaOptionsMenu: some View {
         DockMenu {
-            DockMenuChoices(selection: $autoRefreshMinutes) {
-                ForEach(Self.autoRefreshChoices, id: \.self) { minutes in
-                    DockMenuOption(Self.autoRefreshTitle(minutes), value: minutes)
+            Toggle("Show in sidebar", isOn: $showsQuotaRings)
+            Divider()
+            DockMenuSection("Auto-refresh") {
+                DockMenuChoices(selection: $autoRefreshMinutes) {
+                    ForEach(Self.autoRefreshChoices, id: \.self) { minutes in
+                        DockMenuOption(Self.autoRefreshTitle(minutes), value: minutes)
+                    }
                 }
             }
         } label: {
-            HStack(spacing: DockSpacing.tight) {
-                DockIcon(.clock, size: 13, color: Color.dockMetadataText)
-                Text(autoRefreshMinutes == 0 ? "Auto-refresh off" : "Every \(autoRefreshMinutes)m")
-                    .dockFont(.control)
-                    .foregroundStyle(Color.dockSecondaryText)
-                DockIcon(.caretDown, size: 12, color: Color.dockMetadataText)
-            }
-            .dockPadding(.horizontal, DockSpacing.control)
-            .dockHitTarget()
+            DockIconButtonLabel(icon: .slidersHorizontal)
         }
         .fixedSize()
-        .accessibilityLabel("Auto-refresh provider quota")
-        .accessibilityValue(Self.autoRefreshTitle(autoRefreshMinutes))
-        .help("Re-read provider quota automatically while this page is open")
+        .help("Quota options")
+        .accessibilityLabel("Quota options")
+        .accessibilityValue(
+            "Sidebar rings \(showsQuotaRings ? "on" : "off"), auto-refresh \(Self.autoRefreshTitle(autoRefreshMinutes))"
+        )
+    }
+
+    private func syncPeakHours() {
+        guard !isSyncingPeak else { return }
+        isSyncingPeak = true
+        peakSyncError = nil
+        Task {
+            peakSyncError = await ProviderPeakSchedule.syncFromWeb()
+            peakSyncedAt = ProviderPeakSchedule.syncedAt
+            isSyncingPeak = false
+        }
+    }
+
+    private static func autoRefreshShort(_ minutes: Int) -> String {
+        minutes == 1 ? "minute" : "\(minutes) minutes"
     }
 
     private static func autoRefreshTitle(_ minutes: Int) -> String {
@@ -455,7 +469,7 @@ struct QuotaWorkspaceView: View {
                     spacing: 16
                 ) {
                     ForEach(snapshot.windows) { window in
-                        windowCell(window, now: now)
+                        QuotaWindowCell(window: window, now: now)
                     }
                 }
             }
@@ -687,119 +701,8 @@ struct QuotaWorkspaceView: View {
 
     // MARK: Windows
 
-    private func windowCell(_ window: ProviderQuotaWindow, now: Date) -> some View {
-        let color = Self.color(for: window.threshold)
-
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(window.label)
-                    .dockFont(.control)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if let reset = window.resetsAt, reset > now {
-                    Text("Resets in \(QuotaWorkspacePresentation.compactDuration(from: now, to: reset))")
-                        .dockFont(.machineMetadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
-                        .help(reset.formatted(date: .complete, time: .shortened))
-                } else if let reset = window.resetsDisplay {
-                    Text(reset)
-                        .dockFont(.machineMetadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
-                }
-            }
-
-            if let remaining = window.remainingPercent {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("\(Int(remaining.rounded()))%")
-                        .dockFont(.metric)
-                        .foregroundStyle(Self.figureColor(for: window.threshold))
-                    Text("left")
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                    Spacer(minLength: 8)
-                    if let limit = window.limitDisplay {
-                        Text(limit)
-                            .dockFont(.machineMetadata)
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .lineLimit(1)
-                    }
-                }
-                QuotaMeter(
-                    remaining: remaining,
-                    color: color,
-                    budgetMarker: QuotaForecasting.visibleDailyBudgetMarker(for: window, now: now)
-                )
-                .accessibilityLabel("\(window.label), \(Int(remaining.rounded())) percent remaining")
-            } else {
-                Text(window.remainingDisplay ?? "No percentage reported")
-                    .dockFont(.body)
-                    .foregroundStyle(Color.dockSecondaryText)
-                if let limit = window.limitDisplay {
-                    Text(limit)
-                        .dockFont(.machineMetadata)
-                        .foregroundStyle(Color.dockSecondaryText)
-                }
-            }
-
-            windowInsights(window, now: now)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    /// At most two lines explaining what the figure means for today.
-    @ViewBuilder
-    private func windowInsights(_ window: ProviderQuotaWindow, now: Date) -> some View {
-        if let remaining = window.remainingPercent, remaining <= 0 {
-            if let reset = window.resetsAt, reset > now {
-                insight(
-                    "Exhausted until \(reset.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))",
-                    color: .dockDestructive)
-            } else {
-                insight("Exhausted", color: .dockDestructive)
-            }
-        } else {
-            if let forecast = QuotaForecasting.limitForecast(for: window, now: now) {
-                insight(
-                    "Runs out in ~\(QuotaWorkspacePresentation.compactDuration(from: now, to: forecast)) at this pace",
-                    color: window.threshold == .healthy ? .dockSecondaryText : .dockWarning,
-                    icon: .flame
-                )
-                .help(
-                    "Estimated from the average consumption so far this cycle; the provider does not report a depletion time."
-                )
-            }
-            if let daily = QuotaForecasting.dailyAllowance(for: window, now: now) {
-                insight("\(daily)% available today", color: .dockSecondaryText)
-                    .help(
-                        "Even-use budget through today, including unused days carried forward. The marker shows where it ends."
-                    )
-            } else if let delta = QuotaWorkspacePresentation.paceDelta(for: window, now: now), abs(delta) >= 3 {
-                insight(
-                    delta < 0
-                        ? "\(Int(-delta.rounded()))% over even-use pace"
-                        : "\(Int(delta.rounded()))% under even-use pace",
-                    color: delta < 0 ? .dockWarning : .dockSecondaryText
-                )
-                .help("Compared with spending this window evenly until it resets.")
-            }
-        }
-    }
-
     private func peakStatusLine(_ providerID: String, now: Date) -> some View {
         PeakNoticeBadge(quotaID: providerID)
-    }
-
-    private func insight(_ text: String, color: Color, icon: Ph? = nil) -> some View {
-        HStack(spacing: 4) {
-            if let icon { DockIcon(icon, size: 11, color: color == .dockSecondaryText ? .dockMetadataText : color) }
-            Text(text)
-                .dockFont(.metadata)
-                .foregroundStyle(color)
-                .lineLimit(1)
-        }
     }
 
     // MARK: Available providers
@@ -914,7 +817,8 @@ private struct QuotaMeter: View {
             let width = geometry.size.width
             // The taller marker is an overlay so it can't stretch the 6pt capsules.
             DockProgressBar(
-                fraction: remaining / 100, tint: color, height: 6, track: .dockSurface4, minFill: remaining > 0 ? 4 : 0
+                fraction: remaining / 100, tint: color, height: 6, track: .dockSurface4,
+                minFill: remaining > 0 ? 4 : 0, fillsOnAppear: true, animationDuration: 0.45
             )
             .overlay(alignment: .leading) {
                 if let budgetMarker {
@@ -1159,5 +1063,125 @@ struct QuotaWorkspacePresentation {
         let attention = attentionCount == 1 ? "1 needs attention" : "\(attentionCount) need attention"
         let available = availableCount == 1 ? "1 available to connect" : "\(availableCount) available to connect"
         return "\(connected) · \(attention) · \(available)"
+    }
+}
+
+/// One quota window as the Quota page shows it: label and reset, remaining figure, meter, and
+/// up to two insight lines. Shared with the navigation rail's quota popover.
+struct QuotaWindowCell: View {
+    let window: ProviderQuotaWindow
+    let now: Date
+    /// The rail popover's smaller type: a 13pt figure and 11pt labels instead of the page's metric.
+    var isCompact = false
+
+    var body: some View {
+        let color = QuotaWorkspaceView.color(for: window.threshold)
+
+        return VStack(alignment: .leading, spacing: isCompact ? 6 : 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(window.label)
+                    .dockFont(isCompact ? .metadata : .control, weight: isCompact ? .medium : nil)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if let reset = window.resetsAt, reset > now {
+                    Text("Resets in \(QuotaWorkspacePresentation.compactDuration(from: now, to: reset))")
+                        .dockFont(.machineMetadata)
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
+                        .help(reset.formatted(date: .complete, time: .shortened))
+                } else if let reset = window.resetsDisplay {
+                    Text(reset)
+                        .dockFont(.machineMetadata)
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
+                }
+            }
+
+            if let remaining = window.remainingPercent {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(Int(remaining.rounded()))%")
+                        .dockFont(isCompact ? .navigation : .metric, weight: isCompact ? .semibold : nil)
+                        .foregroundStyle(QuotaWorkspaceView.figureColor(for: window.threshold))
+                    Text("left")
+                        .dockFont(.metadata)
+                        .foregroundStyle(Color.dockMetadataText)
+                    Spacer(minLength: 8)
+                    if let limit = window.limitDisplay {
+                        Text(limit)
+                            .dockFont(.machineMetadata)
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .lineLimit(1)
+                    }
+                }
+                QuotaMeter(
+                    remaining: remaining,
+                    color: color,
+                    budgetMarker: QuotaForecasting.visibleDailyBudgetMarker(for: window, now: now)
+                )
+                .accessibilityLabel("\(window.label), \(Int(remaining.rounded())) percent remaining")
+            } else {
+                Text(window.remainingDisplay ?? "No percentage reported")
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockSecondaryText)
+                if let limit = window.limitDisplay {
+                    Text(limit)
+                        .dockFont(.machineMetadata)
+                        .foregroundStyle(Color.dockSecondaryText)
+                }
+            }
+
+            insights
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// At most two lines explaining what the figure means for today.
+    @ViewBuilder
+    private var insights: some View {
+        if let remaining = window.remainingPercent, remaining <= 0 {
+            if let reset = window.resetsAt, reset > now {
+                insight(
+                    "Exhausted until \(reset.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))",
+                    color: .dockDestructive)
+            } else {
+                insight("Exhausted", color: .dockDestructive)
+            }
+        } else {
+            if let forecast = QuotaForecasting.limitForecast(for: window, now: now) {
+                insight(
+                    "Runs out in ~\(QuotaWorkspacePresentation.compactDuration(from: now, to: forecast)) at this pace",
+                    color: window.threshold == .healthy ? .dockSecondaryText : .dockWarning,
+                    icon: .flame
+                )
+                .help(
+                    "Estimated from the average consumption so far this cycle; the provider does not report a depletion time."
+                )
+            }
+            if let daily = QuotaForecasting.dailyAllowance(for: window, now: now) {
+                insight("\(daily)% available today", color: .dockSecondaryText)
+                    .help(
+                        "Even-use budget through today, including unused days carried forward. The marker shows where it ends."
+                    )
+            } else if let delta = QuotaWorkspacePresentation.paceDelta(for: window, now: now), abs(delta) >= 3 {
+                insight(
+                    delta < 0
+                        ? "\(Int(-delta.rounded()))% over even-use pace"
+                        : "\(Int(delta.rounded()))% under even-use pace",
+                    color: delta < 0 ? .dockWarning : .dockSecondaryText
+                )
+                .help("Compared with spending this window evenly until it resets.")
+            }
+        }
+    }
+
+    private func insight(_ text: String, color: Color, icon: Ph? = nil) -> some View {
+        HStack(spacing: 4) {
+            if let icon { DockIcon(icon, size: 11, color: color == .dockSecondaryText ? .dockMetadataText : color) }
+            Text(text)
+                .dockFont(.metadata)
+                .foregroundStyle(color)
+                .lineLimit(1)
+        }
     }
 }

@@ -635,7 +635,11 @@ extension ControlCenterModel {
     }
 
     func isHermesActiveCredential(_ credential: HermesPooledCredential) -> Bool {
-        hermesActiveCredentialKeys.contains("\(credential.provider)/\(credential.id)")
+        hermesActiveCredentialKeys.contains(Self.hermesActiveCredentialKey(credential))
+    }
+
+    nonisolated static func hermesActiveCredentialKey(_ credential: HermesPooledCredential) -> String {
+        "\(credential.provider)/\(credential.id)"
     }
 
     /// Parses `hermes auth list`: `<provider> (N credentials):` headers, then
