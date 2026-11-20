@@ -2240,9 +2240,19 @@ windows the actions wrap below the status.
   Providers without a percentage get no ring. A short radial tick mirrors
   the Quota page's daily budget marker when it is visible. The Hermes-active
   pool account has a 7pt accent dot on the outer ring at 45°, with a canvas
-  colored outline to match the card's Active pill. Hovering opens a popover with that provider's card windows (shared
-  `QuotaWindowCell` in its compact type: 13pt figure, 11pt labels) and Open
-  Quota; clicking opens Quota.
+  colored outline to match the card's Active pill; there is no fill or glow
+  behind the mark. Hovering opens a popover with that provider's card windows
+  (shared `QuotaWindowCell` in its compact type: 13pt figure, 11pt labels) and
+  Open Quota; clicking opens Quota. Dragging a ring reorders it like the
+  pinned destinations (lifted 1.045×, neighbours spring aside, no popover
+  while lifted), and the context menu and VoiceOver actions offer Move up /
+  Move down. Both write the shared Quota order, so the page cards follow;
+  ringless providers keep their slots.
+- **Multi-day sessions.** A window labeled Session or Rolling that resets more
+  than a day out (Codex's account-wide allowance) is a weekly (≤7d) or monthly
+  (≤30d) cycle: it gets the budget marker, pace forecast, and daily allowance
+  on the page, a tick on its ring, and its real label in the ring's VoiceOver
+  value instead of "5-hour".
 - **Meter motion.** Quota meters (page cards, rail popover) grow from empty on
   first appearance over 0.6s and ease to each new reading over 0.45s; rail arcs
   sweep clockwise from 12 o'clock over 0.7s, then ease 0.45s per reading or

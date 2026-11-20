@@ -76,4 +76,13 @@ struct QuotaRailRingTests {
         #expect(rings[0].arcs[0].budget != nil)
         #expect(rings[0].summary == "Session 40% left")
     }
+
+    @Test func reorderingRingsKeepsRinglessProvidersInPlace() {
+        // openrouter has no ring, so it keeps its slot while the rings swap around it.
+        let full = ["codex", "openrouter", "claude", "glm"]
+        #expect(
+            QuotaRailRing.merging(ringOrder: ["glm", "codex", "claude"], into: full)
+                == ["glm", "openrouter", "codex", "claude"])
+        #expect(QuotaRailRing.merging(ringOrder: ["codex", "claude", "glm"], into: full) == full)
+    }
 }

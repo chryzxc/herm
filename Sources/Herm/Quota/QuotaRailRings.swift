@@ -56,6 +56,14 @@ struct QuotaRailRing: Equatable {
         return ((isActive ? ["Active"] : []) + windows).joined(separator: ", ")
     }
 
+    /// The full Quota order after reordering only the providers that have rings: each ring slot in
+    /// `fullOrder` takes the next id from `ringOrder`, and ringless providers keep their slots.
+    static func merging(ringOrder: [String], into fullOrder: [String]) -> [String] {
+        let ringIDs = Set(ringOrder)
+        var next = ringOrder.makeIterator()
+        return fullOrder.map { ringIDs.contains($0) ? (next.next() ?? $0) : $0 }
+    }
+
     static func spokenLabel(_ label: String) -> String {
         switch label {
         case "5h": "5-hour"
@@ -68,9 +76,23 @@ struct QuotaRailRing: Equatable {
 /// The rail's quota group. It observes only the quota list and the active pool accounts, so
 /// unrelated control-center updates do not redraw the rail.
 struct QuotaRailRings: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let control: ControlCenterModel
     let onOpenQuota: () -> Void
     @State private var rings: [QuotaRailRing] = []
+    @State private var dragOrder: [String]?
+    @State private var draggingID: String?
+    @State private var dragOffset: CGFloat = 0
+    @State private var dragStartIndex = 0
+
+    /// One rail slot: the 38pt button plus the stack spacing, matching the pinned destinations.
+    private static let slotHeight: CGFloat = 42
+
+    private var orderedRings: [QuotaRailRing] {
+        guard let dragOrder else { return rings }
+        let byID = Dictionary(rings.map { ($0.provider, $0) }, uniquingKeysWith: { first, _ in first })
+        return dragOrder.compactMap { byID[$0] }
+    }
 
     var body: some View {
         VStack(spacing: 4) {
@@ -79,8 +101,19 @@ struct QuotaRailRings: View {
                     .frame(width: 22, height: DockLayout.hairline)
                     .dockPadding(.vertical, 4)
                     .accessibilityHidden(true)
-                ForEach(rings, id: \.provider) { ring in
-                    QuotaRailRingButton(ring: ring, action: onOpenQuota)
+                let ordered = orderedRings
+                ForEach(ordered, id: \.provider) { ring in
+                    let isDragging = draggingID == ring.provider
+                    QuotaRailRingButton(
+                        ring: ring, isDragging: isDragging,
+                        canMoveUp: ordered.first?.provider != ring.provider,
+                        canMoveDown: ordered.last?.provider != ring.provider,
+                        onMove: { move(ring.provider, by: $0) }, action: onOpenQuota
+                    )
+                    .scaleEffect(isDragging && DockMotion.isEnabled(reduceMotion: reduceMotion) ? 1.045 : 1)
+                    .offset(y: isDragging ? dragOffset : 0)
+                    .zIndex(isDragging ? 1 : 0)
+                    .simultaneousGesture(reorderGesture(for: ring.provider))
                 }
             }
         }
@@ -89,11 +122,68 @@ struct QuotaRailRings: View {
             if next != rings { rings = next }
         }
     }
+
+    /// Same feel as the pinned destinations: the lifted ring follows the pointer while its
+    /// neighbours spring aside. Only the drop writes the shared Quota order.
+    private func reorderGesture(for id: String) -> some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .global)
+            .onChanged { value in
+                var order = dragOrder ?? rings.map(\.provider)
+                guard let current = order.firstIndex(of: id) else { return }
+                if draggingID != id {
+                    draggingID = id
+                    dragOrder = order
+                    dragStartIndex = current
+                }
+                let target = min(
+                    max(dragStartIndex + Int((value.translation.height / Self.slotHeight).rounded()), 0),
+                    order.count - 1)
+                if target != current {
+                    order.remove(at: current)
+                    order.insert(id, at: target)
+                    withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16)) {
+                        dragOrder = order
+                    }
+                }
+                // Keep the ring under the pointer even though its slot moved.
+                dragOffset = value.translation.height - CGFloat(target - dragStartIndex) * Self.slotHeight
+            }
+            .onEnded { _ in
+                let order = dragOrder ?? rings.map(\.provider)
+                withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2)) {
+                    dragOffset = 0
+                    draggingID = nil
+                }
+                save(order)
+                dragOrder = nil
+            }
+    }
+
+    private func move(_ id: String, by offset: Int) {
+        var order = rings.map(\.provider)
+        guard let index = order.firstIndex(of: id), order.indices.contains(index + offset) else { return }
+        order.swapAt(index, index + offset)
+        withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2)) { save(order) }
+    }
+
+    private func save(_ ringOrder: [String]) {
+        let full = control.providerQuotas.map(\.provider)
+        let merged = QuotaRailRing.merging(ringOrder: ringOrder, into: full)
+        guard merged != full else { return }
+        // Show the new order now; the model republishes the same order right after.
+        let byID = Dictionary(rings.map { ($0.provider, $0) }, uniquingKeysWith: { first, _ in first })
+        rings = ringOrder.compactMap { byID[$0] }
+        control.saveProviderQuotaOrder(merged)
+    }
 }
 
 private struct QuotaRailRingButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let ring: QuotaRailRing
+    let isDragging: Bool
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onMove: (Int) -> Void
     let action: () -> Void
     @State private var showsDetail = false
     @State private var isDetailHovered = false
@@ -134,8 +224,21 @@ private struct QuotaRailRingButton: View {
         }
         .buttonStyle(.dockHover)
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2), value: ring.isActive)
+        .contextMenu {
+            Button("Open Quota", icon: .arrowRight) { action() }
+            Divider()
+            Button("Move up", icon: .arrowUp) { onMove(-1) }.disabled(!canMoveUp)
+            Button("Move down", icon: .arrowDown) { onMove(1) }.disabled(!canMoveDown)
+        }
+        .onChange(of: isDragging) { _, dragging in
+            // A lifted ring never opens or keeps its popover.
+            guard dragging else { return }
+            hoverTask?.cancel()
+            showsDetail = false
+        }
         .onHover { inside in
             hoverTask?.cancel()
+            guard !isDragging else { return }
             hoverTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(inside ? 350 : 250))
                 guard !Task.isCancelled else { return }
@@ -146,6 +249,10 @@ private struct QuotaRailRingButton: View {
         .accessibilityLabel("\(ring.displayName) quota")
         .accessibilityValue(ring.summary)
         .accessibilityHint("Opens Quota")
+        .accessibilityActions {
+            if canMoveUp { Button("Move up") { onMove(-1) } }
+            if canMoveDown { Button("Move down") { onMove(1) } }
+        }
     }
 
     private func arcView(_ arc: QuotaRailRing.Arc, diameter: CGFloat) -> some View {
