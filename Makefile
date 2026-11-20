@@ -3,20 +3,25 @@ SHELL := /bin/sh
 PROJECT_ROOT := $(CURDIR)
 SWIFT_FORMAT ?= $(shell xcrun --find swift-format 2>/dev/null)
 
-.PHONY: test build build-release run guard lint format smoke-contract color-contract button-contract card-contract shell-contract theme-surface-contract naming-contract resource-contract design-contract plugin-host-contract icon-contract perf-contract check package
+.PHONY: test build build-release run guard lint format smoke-contract color-contract button-contract card-contract shell-contract theme-surface-contract naming-contract resource-contract design-contract plugin-host-contract icon-contract perf-contract check package plugin-host
 
 test:
 	# Native UI fixtures share the main actor; serialize to keep their deadlines meaningful.
 	. Scripts/appintents.sh && reset_stale_metal_cache && swift test --no-parallel --disable-automatic-resolution
 
-build:
+# Plugin pages only appear in More destinations when the git-ignored host bundle exists.
+plugin-host:
+	@test -f Sources/Herm/Resources/DesktopPluginHost/sdk/sdk.js || Scripts/build-desktop-plugin-host.sh || \
+		echo 'warning: desktop plugin host not built; Hermes Desktop plugins will not appear in Herm.' >&2
+
+build: plugin-host
 	. Scripts/appintents.sh && reset_stale_metal_cache && swift build --disable-automatic-resolution
 
 # Same flags as Scripts/package-app.sh, so packaging reuses this build instead of recompiling.
 build-release:
 	. Scripts/appintents.sh && swift_build_with_appintents -c release --disable-automatic-resolution
 
-run:
+run: plugin-host
 	Scripts/run-debug-app.sh
 
 lint:
