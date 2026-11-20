@@ -242,7 +242,9 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.second.publications[name, default: 0] += 1
-                if attributes { self.origins.record(name, stack: Thread.callStackReturnAddresses.map(\.uintValue)) }
+                if attributes && self.includeStackSamples {
+                    self.origins.record(name, stack: Thread.callStackReturnAddresses.map(\.uintValue))
+                }
             }
         }
         .store(in: &subscriptions)

@@ -804,7 +804,7 @@ attribution:
 - **Session opens.** `recordSessionSwitch` stages (`resume`, `parse`,
   `history_project`, `cached_layout`, `fresh_layout`) now appear in the report
   with their timings, not only in `Herm.log`.
-- **Publication origins.** For `DockModel`, `ControlCenterModel`, `botMode`,
+- **Publication origins (stack sampling enabled).** For `DockModel`, `ControlCenterModel`, `botMode`,
   `sessionNavNavigation` and `workspaceStore`, each publication's call stack is
   cut after the last Combine frame. The first four Herm frames are kept: the
   `@Published` setter and its callers. At most 6,000 samples are kept, and they

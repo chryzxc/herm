@@ -21,7 +21,7 @@ When Hermes supplies edit previews, completed replies show a changes card with e
 
 While browsing chat history, prepared messages appear in order as they become ready, keeping the current reading position stable.
 
-Performance captures record callback timing and workspace updates locally; optional stack samples can add overhead while recording.
+Performance captures record callback timing and workspace updates locally. Enable stack samples to include the call sites responsible for model updates.
 
 Unread session badges and the floating “new messages” control count AI responses only. User messages, tools, activity, system notices, errors, and empty streaming placeholders do not increase the count. Opening an unread session takes you to its first unread reply and marks the captured updates reviewed; a blue-tinted unread divider remains visible for that visit. A session you already viewed since Herm launched reopens where you left it instead; the divider still marks the first unread reply. The Bot picker counts unread sessions per Bot in a red badge, with a plus sign when the available session inventory is incomplete. Scrolling to the latest reply clears the floating count.
 

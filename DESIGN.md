@@ -2054,7 +2054,7 @@ Older Hermes runtimes must show support as unavailable, never local-only pins.
 ### Settings workspace
 
 The macOS Settings command opens the existing Settings workspace in the active Herm surface.
-Performance capture records timing by default and offers optional stack samples.
+Performance capture records timing and publication counts by default. Enabling stack samples adds stalled-frame stacks and publication call sites.
 
 Updates uses a leading-aligned column up to 920pt wide. A Software updates card groups the Herm and Hermes Agent controls, followed by Agent compatibility and the Herm changelog. Release highlights flow from a single column to two as space permits. The version menu opens on the newest documented release. Each dated entry explains where a change appears and what the user can do or expect. A version-specific link opens the full release notes.
 
