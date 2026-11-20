@@ -7,10 +7,18 @@ final class ComposerCompletionController: ObservableObject {
     @Published private(set) var trigger: ComposerCompletionTrigger?
     @Published private(set) var result = ComposerCompletion.Result()
     @Published private(set) var index = 0
+    @Published private(set) var isLoading = false
+
+    var isPresented: Bool {
+        guard let trigger else { return false }
+        if !result.items.isEmpty { return true }
+        if case .slash = trigger { return isLoading }
+        return false
+    }
 
     /// UTF-16 caret the active trigger was detected at.
     private var caret = 0
-    private var task: Task<Void, Never>?
+    private(set) var task: Task<Void, Never>?
     /// Last answer per trigger, shown instantly on reopen. ponytail: unbounded but
     /// one entry per distinct typed token; clear on `configure` if it ever grows.
     private var cache: [ComposerCompletionTrigger: ComposerCompletion.Result] = [:]
@@ -91,6 +99,8 @@ final class ComposerCompletionController: ObservableObject {
                 onOpenChanged(true)
             }
         }
+        isLoading = true
+        onOpenChanged(isPresented)
         task = Task { @MainActor in
             // Same debounce as desktop's live completion adapter, skipped on the
             // opening keystroke so the popover isn't held back by it.
@@ -104,7 +114,8 @@ final class ComposerCompletionController: ObservableObject {
                 result = found
                 index = 0
             }
-            onOpenChanged(!found.items.isEmpty)
+            isLoading = false
+            onOpenChanged(isPresented)
         }
     }
 
@@ -121,6 +132,7 @@ final class ComposerCompletionController: ObservableObject {
         if trigger != nil { trigger = nil }
         if result != ComposerCompletion.Result() { result = ComposerCompletion.Result() }
         if index != 0 { index = 0 }
+        if isLoading { isLoading = false }
         if wasOpen { onOpenChanged(false) }
     }
 
@@ -147,6 +159,10 @@ final class ComposerCompletionController: ObservableObject {
     }
 
     func handleKey(_ key: ComposerCompletionKey) -> Bool {
+        if key == .escape, isPresented {
+            close()
+            return true
+        }
         guard trigger != nil, result.items.indices.contains(index) else { return false }
         let count = result.items.count
         switch key {

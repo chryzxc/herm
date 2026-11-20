@@ -646,6 +646,7 @@ while Herm is open. Switch sessions, pages, or bots and return to continue your
 draft. Drafts are separate for each bot/profile and are cleared when Herm quits.
 Drafts are saved during navigation; typing continues to update only the composer.
 Short drafts keep the composer compact; it grows as text wraps.
+Typing a leading `/` immediately opens the command menu while Hermes loads its commands.
 
 Background processes listed for the current chat can be stopped after confirmation,
 even when the general activity capability probe is unavailable. Process output

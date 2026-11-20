@@ -5,6 +5,61 @@ import Testing
 @testable import Herm
 
 struct ComposerCompletionTests {
+    @MainActor @Test func bareSlashOpensBeforeRuntimeCompletionReturns() throws {
+        let suite = "ComposerSlashOpeningTests-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let rpc = SlashOpeningRPC()
+        let model = DockModel(
+            sessionAgentStateFileURL: directory.appendingPathComponent("agents.json"), defaults: defaults,
+            botActivityFileURL: directory.appendingPathComponent("bots.json"), rpcClient: rpc)
+        defer { model.shutdown() }
+        let controller = ComposerCompletionController()
+        defer { controller.close() }
+        var isOpen = false
+        controller.configure(
+            model: model, botMode: BotModeModel(), text: { "/" }, apply: { _, _ in },
+            onOpenChanged: { isOpen = $0 })
+
+        controller.update(for: "/", caret: 1)
+
+        // No actor suspension: an RPC cannot have supplied rows yet.
+        #expect(controller.trigger == .slash("/"))
+        #expect(rpc.requests == 0)
+        #expect(isOpen)
+        #expect(controller.isPresented)
+        #expect(controller.isLoading)
+        #expect(!controller.handleKey(.down))
+        #expect(!controller.handleKey(.enter))
+        #expect(controller.handleKey(.escape))
+        #expect(!isOpen)
+        #expect(!controller.isPresented)
+        #expect(!controller.isLoading)
+    }
+
+    @MainActor @Test func pendingSlashChangingToSkillUpdatesOpenCallback() throws {
+        let suite = "ComposerSkillTransition-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let model = DockModel(
+            sessionAgentStateFileURL: directory.appendingPathComponent("agents.json"), defaults: defaults,
+            botActivityFileURL: directory.appendingPathComponent("bots.json"), rpcClient: SlashOpeningRPC())
+        defer { model.shutdown() }
+        let controller = ComposerCompletionController()
+        defer { controller.close() }
+        var isOpen = false
+        controller.configure(
+            model: model, botMode: BotModeModel(), text: { "/x /" }, apply: { _, _ in },
+            onOpenChanged: { isOpen = $0 })
+        controller.update(for: "/", caret: 1)
+        #expect(isOpen)
+        controller.update(for: "/x /", caret: 4)
+        #expect(!controller.isPresented)
+        #expect(!isOpen)
+    }
+
     @Test func runtimeDisplayNameRowsKeepThePickersCanonicalBotIdentity() throws {
         let nexus = BotSummary(
             id: "default", name: "Nexus", title: nil, description: nil, model: nil, isActive: true, chat: nil,
@@ -120,5 +175,19 @@ struct ComposerCompletionTests {
             SlashCommandTokens.ranges(in: text).map(ns.substring) == [
                 "/cpipe:run", "/plugin-name:skill_name", "/plugin:group:run", "/help",
             ])
+    }
+}
+
+@MainActor
+private final class SlashOpeningRPC: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    private(set) var requests = 0
+
+    func connect() async throws {}
+    func close() {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        requests += 1
+        return [:]
     }
 }
