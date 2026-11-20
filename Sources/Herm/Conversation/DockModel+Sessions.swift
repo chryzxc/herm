@@ -173,7 +173,14 @@ extension DockModel {
                 }
                 let feedIDs = index?.feedIDs ?? []
                 var seen = Set<String>()
-                let refreshed = (rawSessions + stored).compactMap { Self.parseSession($0, profileID: scope) }
+                let storedModels = Dictionary(
+                    (stored.compactMap { Self.parseSession($0, profileID: scope) }
+                        + (reuseStoredHistory ? sessions : [])).compactMap { row in
+                            row.modelName.map { (row.id, $0) }
+                        }, uniquingKeysWith: { first, _ in first })
+                let refreshed = (rawSessions + stored).compactMap { Self.parseSession($0, profileID: scope) }.map {
+                    row in row.modelName == nil ? row.withModelName(storedModels[row.id]) : row
+                }
                 let loaded = (refreshed + (reuseStoredHistory ? sessions : []))
                     .filter { seen.insert($0.id).inserted }
                     .filter { !feedIDs.contains($0.id) || $0.id == self.navigationSessionID }
@@ -463,7 +470,7 @@ extension DockModel {
                     id: session.id, profileID: session.profileID, title: session.title, preview: session.preview,
                     startedAt: session.startedAt, updatedAt: session.updatedAt, messageCount: session.messageCount,
                     source: session.source, isHidden: session.isHidden, isWorking: true,
-                    hasUnreadUpdate: session.hasUnreadUpdate)
+                    hasUnreadUpdate: session.hasUnreadUpdate, isPinned: session.isPinned, modelName: session.modelName)
             }
         return (pinned, lastActive, feedIDs, working, stored)
     }
@@ -481,7 +488,7 @@ extension DockModel {
             source: session.source,
             isHidden: session.isHidden,
             isWorking: session.isWorking,
-            hasUnreadUpdate: session.hasUnreadUpdate
+            hasUnreadUpdate: session.hasUnreadUpdate, isPinned: session.isPinned, modelName: session.modelName
         )
     }
 
@@ -863,8 +870,12 @@ extension DockModel {
         approvalDetails = nil
         isRespondingToApproval = false
         isRespondingToClarification = false
-        sessionModelOptionID = nil
-        sessionModelValue = nil
+        if !isRefreshingActiveSession {
+            sessionModelOptionID = nil
+            sessionModelValue = session.modelName
+        } else if sessionModelValue == nil {
+            sessionModelValue = session.modelName
+        }
         sessionReasoningVariant = nil
         sessionStorageID = session.id
         let workspaceKey = WorkspaceIdentity.session(profileID: owningProfileID, sessionID: session.id)
@@ -958,9 +969,18 @@ extension DockModel {
             }
             restorePendingApproval(for: [session.id, resolvedSessionID, sessionStorageID])
             persistActiveSessionID(sessionID)
-            let model = (result["model"] as? String) ?? (result["model_name"] as? String)
+            let model = [result["model"] as? String, result["model_name"] as? String]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
             if let model {
                 currentModelName = model
+                if let id = sessionModelOptionID {
+                    let routedModel =
+                        runtimeModelOptions.first(where: { $0.id == id })?.model
+                        ?? id.firstIndex(of: "|").map { String(id[id.index(after: $0)...]) }
+                    if routedModel != model {
+                        sessionModelOptionID = nil
+                    }
+                }
                 sessionModelValue = model
             }
             guard result["messages"] is [[String: Any]] else {

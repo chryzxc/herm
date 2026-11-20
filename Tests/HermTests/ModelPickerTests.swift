@@ -38,6 +38,11 @@ private final class ModelPickerRefreshRPCClient: HermesRPCClientProtocol {
         waiter.resume(returning: Response(response))
     }
 
+    func rejectNext() {
+        guard !waiters.isEmpty else { return }
+        waiters.removeFirst().resume(throwing: TestError.rejected)
+    }
+
     func close() {}
 }
 
@@ -135,6 +140,42 @@ struct ModelPickerTests {
     func refreshFailureRetainsCatalogAsStaleWhenOptionsExist() {
         #expect(ModelPickerView.refreshState(isRefreshing: false, error: "offline", optionCount: 1) == .stale)
         #expect(ModelPickerView.refreshState(isRefreshing: false, error: "offline", optionCount: 0) == .unavailable)
+    }
+
+    @Test(arguments: ["openai", "moa"])
+    @MainActor
+    func reportedModelSurvivesCatalogPendingAndFailureThenUsesRoutedTitle(provider: String) async {
+        let client = ModelPickerRefreshRPCClient()
+        let model = DockModel(initialSessionID: "session-7", rpcClient: client)
+        defer { model.shutdown() }
+        model.sessionModelValue = "reported-model"
+        func picker() -> ModelPickerView {
+            ModelPickerView(
+                options: model.runtimeModelOptions, selectedID: model.sessionModelOptionID,
+                isRefreshing: model.isLoadingRuntimeModelOptions, refreshError: model.runtimeModelOptionsError,
+                onRefresh: {}, onSelect: { _ in }, effortModel: model)
+        }
+        model.refreshRuntimeModelOptions(sessionID: "session-7")
+        while client.requests.isEmpty { await Task.yield() }
+        #expect(model.isLoadingRuntimeModelOptions)
+        #expect(picker().currentModelTitle == "reported-model")
+        #expect(model.sessionModelOptionID == nil)
+        client.rejectNext()
+        while model.isLoadingRuntimeModelOptions { await Task.yield() }
+        #expect(model.runtimeModelOptionsError != nil)
+        #expect(picker().currentModelTitle == "reported-model")
+        #expect(model.sessionModelOptionID == nil)
+
+        model.refreshRuntimeModelOptions(sessionID: "session-7")
+        while client.requests.count < 2 { await Task.yield() }
+        client.releaseNext(with: [
+            "provider": provider, "model": "routed-model",
+            "providers": [["slug": provider, "models": ["routed-model"]]],
+        ])
+        while model.isLoadingRuntimeModelOptions { await Task.yield() }
+        #expect(model.runtimeModelOptionsError == nil)
+        #expect(model.sessionModelOptionID == "\(provider)|routed-model")
+        #expect(picker().currentModelTitle == (provider == "moa" ? "MoA · routed-model" : "routed-model"))
     }
 
     @Test

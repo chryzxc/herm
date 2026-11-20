@@ -151,6 +151,18 @@ struct ModelPickerView: View {
         ).status
     }
 
+    private var reportedModel: String? {
+        guard let value = effortModel?.sessionModelValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !value.isEmpty
+        else { return nil }
+        return value
+    }
+
+    var currentModelTitle: String {
+        selectedOption.map { $0.provider == "moa" ? "MoA · \($0.model)" : $0.model }
+            ?? reportedModel ?? "Select model"
+    }
+
     var body: some View {
         // Anchored to the label's leading edge: its width changes with the model and effort text, and a
         // popover attached to the whole label would slide sideways on every change.
@@ -165,7 +177,7 @@ struct ModelPickerView: View {
                 if let provider = selectedOption?.provider {
                     ProviderMarkBadge(mark: ProviderMark(hermesProvider: provider), size: 16)
                 }
-                Text(selectedOption.map { $0.provider == "moa" ? "MoA · \($0.model)" : $0.model } ?? "Select model")
+                Text(currentModelTitle)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let effortStatus {
@@ -188,7 +200,7 @@ struct ModelPickerView: View {
         .buttonStyle(.dockHover)
         .help([selectedOption?.provider, selectedPeakNotice?.text].compactMap { $0 }.joined(separator: " · "))
         .accessibilityLabel(
-            "Select model\(effortStatus == nil ? "" : " and effort"), currently \(selectedOption?.displayName ?? "none")"
+            "Select model\(effortStatus == nil ? "" : " and effort"), currently \(selectedOption?.displayName ?? reportedModel ?? "none")"
                 + (effortStatus.map { ", effort \($0)" } ?? "")
                 + (effortModel?.sessionID != nil && effortModel?.sessionFastEnabled == true ? ", Fast enabled" : "")
         )
@@ -394,9 +406,16 @@ struct ModelPickerView: View {
     }
 
     private var selectedOption: HermesModelOption? {
-        if let match = options.first(where: { $0.id == selectedID }) { return match }
+        if let match = options.first(where: { $0.id == selectedID }),
+            !match.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return match
+        }
         // Hermes' default may sit outside the explicit catalog; still name it.
         guard let selectedID, let bar = selectedID.firstIndex(of: "|") else { return nil }
+        guard !selectedID[..<bar].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            !selectedID[selectedID.index(after: bar)...].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
         return HermesModelOption(
             provider: String(selectedID[..<bar]),
             model: String(selectedID[selectedID.index(after: bar)...]))

@@ -28,7 +28,8 @@ extension DockModel {
                         id: session.id, profileID: session.profileID, title: session.title, preview: session.preview,
                         startedAt: session.startedAt, updatedAt: session.updatedAt, messageCount: session.messageCount,
                         source: session.source, isHidden: session.isHidden, isWorking: true,
-                        hasUnreadUpdate: session.hasUnreadUpdate)
+                        hasUnreadUpdate: session.hasUnreadUpdate, isPinned: session.isPinned,
+                        modelName: session.modelName)
                 }
                 let updatedAt: Date?
                 if let observedDate = observed.lastUpdatedAt, observedDate > (session.lastUpdatedAt ?? .distantPast) {
@@ -49,7 +50,7 @@ extension DockModel {
                     // A successful live snapshot also clears missed completion events.
                     // Preserve stream state only when that snapshot is unavailable.
                     isWorking: working.map { $0.contains(session.id) } ?? observed.isWorking,
-                    hasUnreadUpdate: observed.hasUnreadUpdate
+                    hasUnreadUpdate: observed.hasUnreadUpdate, isPinned: session.isPinned, modelName: session.modelName
                 )
             }
     }
@@ -75,7 +76,8 @@ extension DockModel {
             messageCount: (row["message_count"] as? NSNumber)?.intValue ?? 0,
             source: row["source"] as? String ?? "",
             isHidden: row["hidden"] as? Bool ?? false,
-            isPinned: row["pinned"] as? Bool ?? false
+            isPinned: row["pinned"] as? Bool ?? false,
+            modelName: row["model"] as? String
         )
     }
 
