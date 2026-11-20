@@ -504,12 +504,14 @@ struct ChatComposerView: View {
 
                             // Right Toolbar Group: Thinking depth selector menu & circular submit button
                             HStack(alignment: .center, spacing: 8) {
-                                if let controlCenter {
-                                    ChatQuotaChip(
-                                        control: controlCenter, openQuota: openQuota,
-                                        selectedProvider: selectedModelOptionID?.components(separatedBy: "|").first)
+                                if !model.isRestoringSession && model.sessionActionsReady {
+                                    if let controlCenter, let selectedModelOptionID {
+                                        ChatQuotaChip(
+                                            control: controlCenter, openQuota: openQuota,
+                                            selectedProvider: selectedModelOptionID.components(separatedBy: "|").first)
+                                    }
+                                    SessionContextRing(model: model)
                                 }
-                                SessionContextRing(model: model)
 
                                 if !speechInput.isRecording {
                                     Button {
