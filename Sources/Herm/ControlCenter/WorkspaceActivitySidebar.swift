@@ -91,8 +91,6 @@ struct WorkspaceActivitySidebar: View {
     @State var expandedCronReportIDs: Set<String> = []
     @State var isShowingAllSkills = false
     @State var expandedSettingsCapabilityCategories: Set<CapabilityCategory> = [.core]
-    @State var isAgentUpdateExpanded = true
-    @State var isAppUpdateExpanded = true
     @ObservedObject var appUpdater = HermAppUpdater.shared
     @State var isInsightsExpanded = false
     @State var isCapabilitiesExpanded = true

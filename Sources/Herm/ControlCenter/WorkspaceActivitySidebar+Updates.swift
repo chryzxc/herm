@@ -5,6 +5,27 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension WorkspaceActivitySidebar {
+    var updatesContent: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingsSection(title: "Software updates", subtitle: "", tint: .dockAccent) {
+                HStack(spacing: 8) {
+                    Text("Herm").dockFont(.navigation, weight: .semibold)
+                    if let version = appUpdater.currentVersion {
+                        Text(version).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                    }
+                    DockBuildBadge(build: .current, includesCommit: true)
+                }
+                appUpdateSection.onAppear { appUpdater.checkIfStale() }
+                Divider()
+                agentUpdateSection
+            }
+            SettingsSection(title: "Agent compatibility", subtitle: "", tint: .dockAccent) {
+                HermesCompatibilitySettings(installedVersion: agentUpdateService.installed?.displayVersion)
+            }
+            HermChangelogView()
+        }
+    }
+
     var appUpdateSection: some View {
         let (status, color): (String, Color) =
             switch appUpdater.phase {
@@ -65,18 +86,16 @@ extension WorkspaceActivitySidebar {
                         .foregroundStyle(Color.dockAccent)
                 }
             }
-            Group {
-                if appUpdater.phase == .downloading {
-                    if appUpdater.downloadStage == "Downloading", let fraction = appUpdater.downloadFraction {
-                        DockProgressBar(fraction: fraction)
-                    } else {
-                        DockShimmerTrack(tone: .working)
+            Color.clear.frame(height: 4)
+                .overlay {
+                    if appUpdater.phase == .downloading {
+                        if appUpdater.downloadStage == "Downloading", let fraction = appUpdater.downloadFraction {
+                            DockProgressBar(fraction: fraction)
+                        } else {
+                            DockShimmerTrack(tone: .working)
+                        }
                     }
-                } else {
-                    Color.clear
                 }
-            }
-            .frame(height: 4)
             HStack {
                 Text(
                     "Source  ·  \(HermAppUpdater.repository)"
@@ -84,14 +103,13 @@ extension WorkspaceActivitySidebar {
                 )
                 .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
-                Spacer(minLength: 0)
-                Button("Release page") {
+                Button("Releases on GitHub") {
                     let fallback = "https://github.com/\(HermAppUpdater.repository)/releases"
                     if let url = appUpdater.latest?.pageURL ?? URL(string: fallback) {
                         NSWorkspace.shared.open(url)
                     }
                 }
-                .buttonStyle(.dockSecondary)
+                .buttonStyle(.dockLink)
             }
         }
     }
@@ -100,7 +118,7 @@ extension WorkspaceActivitySidebar {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text("Hermes Agent")
-                    .dockFont(.navigation, weight: .medium)
+                    .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
                 if agentUpdateService.phase == .checking {
@@ -129,10 +147,10 @@ extension WorkspaceActivitySidebar {
             case .checking: agentUpdateIdleContent
             case .upToDate:
                 agentUpdateCheckedContent(
-                    statusText: "UP TO DATE", statusColor: .dockSecondaryText, showsUpdateButton: false)
+                    statusText: "Up to date", statusColor: .dockSecondaryText, showsUpdateButton: false)
             case .updateAvailable:
                 agentUpdateCheckedContent(
-                    statusText: "UPDATE AVAILABLE", statusColor: .dockWarning, showsUpdateButton: true)
+                    statusText: "Update available", statusColor: .dockWarning, showsUpdateButton: true)
             case .checkFailed(let reason): agentUpdateCheckFailedContent(reason)
             case .updating: agentUpdateProgressContent
             case .updateSucceeded: agentUpdateSucceededContent
@@ -162,72 +180,43 @@ extension WorkspaceActivitySidebar {
 
     func agentUpdateCheckedContent(statusText: String, statusColor: Color, showsUpdateButton: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let installed = agentUpdateService.installed {
-                HStack(spacing: 8) {
-                    Text("Installed")
-                        .dockFont(.body, weight: .medium)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(width: 76, alignment: .leading)
-                    Text(installed.displayVersion)
-                        .dockFont(.body, weight: .medium)
-                        .foregroundStyle(Color.dockPrimaryText)
-                    if let method = agentUpdateService.installMethod {
-                        Text("·  \(method)")
-                            .dockFont(.body)
-                            .foregroundStyle(Color.dockMetadataText)
-                    }
-                }
-                .lineLimit(1)
-            }
-            if let latest = agentUpdateService.latest {
-                HStack(spacing: 8) {
-                    Text("Latest release")
-                        .dockFont(.body, weight: .medium)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(width: 76, alignment: .leading)
-                    Text(
-                        latest.displayVersion
-                            + (latest.publishedAt.map { "  ·  " + HumanDateFormatting.dateAndTime($0) } ?? "")
-                    )
-                    .dockFont(.body, weight: .medium)
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    if let page = latest.pageURL, let url = URL(string: page) {
-                        Button("Release notes") { ExternalOpen.open(url) }
-                            .buttonStyle(.dockLink)
-                            .dockFont(.metadata, weight: .medium)
-                            .foregroundStyle(Color.dockAccent)
-                    }
-                }
-            }
             HStack(spacing: 8) {
                 Circle().fill(statusColor).frame(width: 7, height: 7)
-                Text(statusText.lowercased().capitalized)
-                    .dockFont(.body, weight: .medium)
+                Text(statusText)
+                    .dockFont(.body, weight: .semibold)
                     .foregroundStyle(statusColor)
-                if showsUpdateButton,
-                    let installed = agentUpdateService.installed,
-                    let latest = agentUpdateService.latest
-                {
-                    Text("\(installed.displayVersion) → \(latest.displayVersion)")
-                        .dockFont(.body)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                Spacer(minLength: 0)
                 if showsUpdateButton {
-                    Button("Update Hermes") { isShowingAgentUpdateConfirmation = true }
+                    Button("Update Hermes Agent") { isShowingAgentUpdateConfirmation = true }
                         .buttonStyle(.dockPrimary)
-                        .controlSize(.small)
                         .disabled(!agentUpdateService.canStartUpdate)
                 }
             }
-            .dockPadding(.horizontal, 9)
-            .dockPadding(.vertical, 7)
-            .background(statusColor.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                if let installed = agentUpdateService.installed {
+                    GridRow {
+                        Text("Installed")
+                        Text(
+                            [installed.displayVersion, agentUpdateService.installMethod].compactMap { $0 }
+                                .joined(separator: "  ·  "))
+                    }
+                }
+                if let latest = agentUpdateService.latest {
+                    GridRow {
+                        Text("Latest release")
+                        Text(
+                            latest.displayVersion
+                                + (latest.publishedAt.map { "  ·  " + HumanDateFormatting.dateAndTime($0) } ?? ""))
+                    }
+                    if let page = latest.pageURL, let url = URL(string: page) {
+                        GridRow {
+                            Color.clear.frame(width: 0, height: 0)
+                            Button("Release notes") { ExternalOpen.open(url) }.buttonStyle(.dockLink)
+                        }
+                    }
+                }
+            }
+            .dockFont(.body)
+            .foregroundStyle(Color.dockSecondaryText)
             Text(
                 "Source  ·  NousResearch/hermes-agent"
                     + (agentUpdateService.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? "")

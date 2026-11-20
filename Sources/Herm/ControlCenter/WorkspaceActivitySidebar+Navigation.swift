@@ -277,6 +277,7 @@ extension WorkspaceActivitySidebar {
                 }
                 coreContent
             }
+            .frame(maxWidth: selectedSettingsCategory == .updates ? 920 : .infinity, alignment: .leading)
             .dockPadding(.vertical, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
             .dockPadding(.horizontal, 20)

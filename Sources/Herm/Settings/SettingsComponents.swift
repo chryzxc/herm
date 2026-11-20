@@ -75,7 +75,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .gateway: "Connections and the local messaging gateway"
         case .appearance: "Themes, sidebar, notch, and companion"
         case .notifications: "Completion alerts and repository changes"
-        case .updates: "Herm and Hermes versions and updates"
+        case .updates: "Manage Herm and Hermes Agent, check compatibility, and browse release notes."
         case .runtime: "Models, dispatch, and tools"
         case .subagents: "Routing, model defaults, and delegation limits"
         case .providers: "Accounts, API keys, sign-in, and account rotation"

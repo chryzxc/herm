@@ -87,24 +87,7 @@ extension WorkspaceActivitySidebar {
                 }
             }
             if selectedSettingsCategory == .updates {
-                settingsDisclosure(
-                    title: "Herm update", subtitle: "Herm \(appUpdater.currentVersion ?? "dev build")",
-                    icon: .arrowsClockwise, isExpanded: $isAppUpdateExpanded, buildBadge: .current
-                ) {
-                    appUpdateSection
-                        .onAppear { appUpdater.checkIfStale() }
-                }
-                settingsDisclosure(
-                    title: "Agent update", subtitle: "Version and updates", icon: .arrowsClockwise,
-                    isExpanded: $isAgentUpdateExpanded
-                ) {
-                    agentUpdateSection
-                }
-                SettingsSection(
-                    title: "Compatibility", subtitle: "Upstream changes and known work", tint: .dockAccent
-                ) {
-                    HermesCompatibilitySettings(installedVersion: agentUpdateService.installed?.displayVersion)
-                }
+                updatesContent
             }
 
             if selectedSettingsCategory == .runtime {

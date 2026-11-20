@@ -7,7 +7,10 @@ struct HermesCompatibilitySettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Hermes compatibility tracker").dockFont(.body, weight: .semibold)
+                Text(status)
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Button(tracker.isChecking ? "Checking…" : "Check upstream") {
                     Task { await tracker.check(force: true) }
@@ -15,10 +18,6 @@ struct HermesCompatibilitySettings: View {
                 .buttonStyle(.dockSecondary)
                 .disabled(tracker.isChecking)
             }
-            Text(status)
-                .dockFont(.body)
-                .foregroundStyle(Color.dockSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
             if let baseline = tracker.baseline {
                 Text(
                     "Installed CLI: \(installedVersion ?? "unavailable") · Reviewed upstream: "

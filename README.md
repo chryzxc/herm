@@ -1270,6 +1270,8 @@ visible through More. Connection and window-switch actions stay directly accessi
 
 ### Settings organization
 
+- **Updates** groups Herm and Hermes Agent under Software updates, followed by Agent compatibility.
+- **Updates → Herm changelog** shows offline release highlights. Choose a version to read what changed or open its full release notes on GitHub.
 - **General:** startup, global keyboard shortcuts, keep-awake behavior, and app restart.
 - **Gateway:** backend connections and the local messaging gateway service.
 - **Chat:** autocorrect, visual replies, reply summaries, session naming, quota display, personality, and attachments.
