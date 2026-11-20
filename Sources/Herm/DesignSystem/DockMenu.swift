@@ -307,6 +307,45 @@ struct DockMenuPanel<Content: View>: View {
     }
 }
 
+/// A searchable list inside a `DockMenu`: the search field stays pinned while
+/// only the rows scroll beneath it. Use it for every filterable menu list.
+struct DockMenuSearchList<Rows: View>: View {
+    let placeholder: String
+    @Binding var query: String
+    let isEmpty: Bool
+    @ViewBuilder let rows: () -> Rows
+    @State private var rowsHeight: CGFloat = 0
+    /// Leaves room for the field inside the panel's 440pt cap, so only this list scrolls.
+    private var maxRowsHeight: CGFloat { 380 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            DockSearchField(placeholder: placeholder, text: $query).frame(maxWidth: .infinity)
+            ScrollView(.vertical, showsIndicators: false) {
+                // Lazy, so a row's onAppear means it actually scrolled into view.
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    if isEmpty { DockMenuNoMatches() }
+                    rows()
+                }
+                .background(
+                    GeometryReader { Color.clear.preference(key: DockMenuHeightKey.self, value: $0.size.height) })
+            }
+            .onPreferenceChange(DockMenuHeightKey.self) { rowsHeight = $0 }
+            .frame(height: rowsHeight > 0 ? min(rowsHeight, maxRowsHeight) : nil)
+        }
+    }
+}
+
+struct DockMenuNoMatches: View {
+    var body: some View {
+        Text("No matches")
+            .dockFont(.body)
+            .foregroundStyle(Color.dockMetadataText)
+            .dockPadding(.horizontal, 8)
+            .dockPadding(.vertical, 6)
+    }
+}
+
 extension View {
     /// The raised popover surface `DockMenu` uses; content popovers beside menus share it.
     func dockMenuSurface() -> some View {

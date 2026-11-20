@@ -3029,7 +3029,7 @@ each room's name over its members' 16pt avatars in one row (side by side, not st
 opens a three-column grid of Bots (32pt avatar over the name, only Bots that have recent sessions, in
 roster order); picking a Bot opens that Bot's sessions, merged from the all-profile scan and the
 selected profile's fresher rows. The grid scrolls on its own at three and a half rows, so the half-shown row signals more. When the Bot roster is unavailable, Sessions lists every session
-directly. Session lists have a search field on top and show each session's short last-updated time
+directly. Searchable menu lists (Bot chat, Sessions) use `DockMenuSearchList`: the search field stays pinned while only the rows scroll beneath it. Session lists show each session's short last-updated time
 (20 at a time, most recent first; scrolling to the end reveals the next 20, and search matches every session). Picking one opens it in split view beside the active column and collapses the inspector, so the grid does not linger; the inspector toggle brings it back.
 A split tab shows the avatar of the Bot its session belongs to (its Hermes profile), not the chat
 glyph; a Bot's main chat also shows the Bot's name, and a group chat its members' avatars.

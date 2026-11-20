@@ -140,21 +140,20 @@ struct SessionInspectorEmptyView: View {
         .contentShape(Rectangle())
     }
 
-    @ViewBuilder
     private var botRows: some View {
-        DockSearchField(placeholder: "Search Bots", text: $botQuery).frame(maxWidth: .infinity).dockPadding(.bottom, 4)
         let query = botQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         let matches = query.isEmpty ? bots : bots.filter { $0.name.localizedCaseInsensitiveContains(query) }
-        if matches.isEmpty { noMatches }
-        ForEach(matches) { bot in
-            if let item = SessionPaneDrag(bot: bot) {
-                Button {
-                    SessionPaneStore.shared.open(item)
-                    onDismiss()
-                } label: {
-                    HStack(spacing: 8) {
-                        BotAvatarView(bot: bot, imageData: botAvatars[bot.id], size: 18, animated: false)
-                        Text(bot.name)
+        return DockMenuSearchList(placeholder: "Search Bots", query: $botQuery, isEmpty: matches.isEmpty) {
+            ForEach(matches) { bot in
+                if let item = SessionPaneDrag(bot: bot) {
+                    Button {
+                        SessionPaneStore.shared.open(item)
+                        onDismiss()
+                    } label: {
+                        HStack(spacing: 8) {
+                            BotAvatarView(bot: bot, imageData: botAvatars[bot.id], size: 18, animated: false)
+                            Text(bot.name)
+                        }
                     }
                 }
             }
@@ -220,18 +219,6 @@ struct SessionInspectorEmptyView: View {
         SessionPaneStore.shared.open(SessionPaneDrag(session: session))
         onDismiss()
     }
-
-    private var noMatches: some View { DockMenuNoMatches() }
-}
-
-private struct DockMenuNoMatches: View {
-    var body: some View {
-        Text("No matches")
-            .dockFont(.body)
-            .foregroundStyle(Color.dockMetadataText)
-            .dockPadding(.horizontal, 8)
-            .dockPadding(.vertical, 6)
-    }
 }
 
 /// Searchable, paged session rows inside a `DockMenu`; each menu keeps its own query.
@@ -243,14 +230,9 @@ private struct SessionPickerRows: View {
     private static let page = 20
 
     var body: some View {
-        DockSearchField(placeholder: "Search sessions", text: $query).frame(maxWidth: .infinity)
-            .dockPadding(.bottom, 4)
-            .onChange(of: query) { _, _ in limit = Self.page }
         let all = SessionSidebarSearch.sessions(matching: query, in: sessions, projects: [:])
         let shown = all.prefix(limit)
-        if all.isEmpty { DockMenuNoMatches() }
-        // Lazy, so a row's onAppear means it actually scrolled into view.
-        LazyVStack(alignment: .leading, spacing: 1) {
+        DockMenuSearchList(placeholder: "Search sessions", query: $query, isEmpty: all.isEmpty) {
             ForEach(Array(shown)) { session in
                 Button {
                     onPick(session)
@@ -270,5 +252,6 @@ private struct SessionPickerRows: View {
                 }
             }
         }
+        .onChange(of: query) { _, _ in limit = Self.page }
     }
 }
