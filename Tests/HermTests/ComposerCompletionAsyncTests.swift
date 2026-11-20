@@ -131,7 +131,9 @@ private final class CompletionControlledRPC: HermesRPCClientProtocol {
         parameters[text] = params
         return try await withCheckedThrowingContinuation { continuation in
             pending[text] = continuation
-            waiters.removeValue(forKey: text)?.resume(returning: params)
+            // Test-only hand-off on the main actor; the dictionary is never mutated afterwards.
+            nonisolated(unsafe) let sent = params
+            waiters.removeValue(forKey: text)?.resume(returning: sent)
         }
     }
 
@@ -141,6 +143,7 @@ private final class CompletionControlledRPC: HermesRPCClientProtocol {
     }
 
     func respond(_ text: String, _ result: Result<[String: Any], Error>) {
-        pending.removeValue(forKey: text)?.resume(with: result)
+        nonisolated(unsafe) let sent = result
+        pending.removeValue(forKey: text)?.resume(with: sent)
     }
 }
