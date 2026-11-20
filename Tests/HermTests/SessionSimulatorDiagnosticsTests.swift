@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import Testing
 
@@ -42,7 +43,7 @@ struct SessionSimulatorDiagnosticsTests {
         #expect(state.selection == nil)
     }
 
-    @Test func diagnosticFailureDoesNotDisconnectDisplay() throws {
+    @Test func diagnosticFailureDoesNotDisconnectDisplay() async throws {
         let capture = SessionSimulatorCapture()
         let context = try #require(
             CGContext(
@@ -50,7 +51,38 @@ struct SessionSimulatorDiagnosticsTests {
                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         let image = try #require(context.makeImage())
         let png = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
-        capture.receive(kind: 73, data: png)
+        await capture.receiveFrame(png)
+        #expect(capture.inputAllowed)
+        capture.pauseDisplay()
+        #expect(!capture.deviceInputAllowed)
+        await capture.receiveFrame(Data())
+        #expect(!capture.connectionFailed)
+        let revision = try #require(capture.resumeDisplay())
+        #expect(capture.image != nil)
+        #expect(capture.isLoading)
+        capture.receive(kind: 74, data: Data("{\"displayReady\":\(revision - 1)}".utf8))
+        await capture.receiveFrame(Data())
+        #expect(!capture.connectionFailed)
+        #expect(!capture.inputAllowed)
+        capture.receive(kind: 74, data: Data("{\"displayReady\":\(revision)}".utf8))
+        #expect(!capture.inputAllowed)
+        await capture.receiveFrame(png)
+        #expect(capture.inputAllowed)
+        var changes = 0
+        let subscription = capture.objectWillChange.sink { changes += 1 }
+        var frameLayoutChanges = 0
+        var deliveredFrames = 0
+        let layoutSubscription = capture.frames.objectWillChange.sink { frameLayoutChanges += 1 }
+        let frameSubscription = capture.frames.updates.sink { _ in deliveredFrames += 1 }
+        defer {
+            layoutSubscription.cancel()
+            frameSubscription.cancel()
+        }
+        await capture.receiveFrame(png)
+        #expect(changes == 0)
+        #expect(frameLayoutChanges == 0)
+        #expect(deliveredFrames == 1)
+        subscription.cancel()
         let request = try #require(capture.diagnostics.begin("inspect", image: image))
         capture.diagnostics.receive(.init(request: request, error: "Unavailable"))
         #expect(capture.inputAllowed)

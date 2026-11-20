@@ -66,8 +66,8 @@ final class HermesSimulatorBridge {
     }
 
     func start(
-        platform: String, device: String, boot: Bool = false,
-        receive: @escaping @MainActor @Sendable (UInt8, Data) -> Void,
+        platform: String, device: String, boot: Bool = false, displayVisible: Bool = true,
+        receive: @escaping @MainActor @Sendable (UInt8, Data) async -> Void,
         ended: @escaping @MainActor @Sendable () -> Void
     ) throws {
         stop()
@@ -83,7 +83,8 @@ final class HermesSimulatorBridge {
         }
         let child = Process()
         child.executableURL = Self.python
-        child.arguments = [folder.appendingPathComponent("bridge.py").path, platform, device] + (boot ? ["boot"] : [])
+        let mode = boot ? ["boot"] : displayVisible ? [] : ["paused"]
+        child.arguments = [folder.appendingPathComponent("bridge.py").path, platform, device] + mode
         child.environment = ProcessInfo.processInfo.environment.merging(["PYTHONDONTWRITEBYTECODE": "1"]) { _, new in
             new
         }

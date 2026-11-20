@@ -103,14 +103,20 @@ class Android:
                                          response_deserializer=response.FromString if response else lambda x: x)
         return method(request, metadata=self.metadata, timeout=5)
 
-    def frames(self):
+    def frames(self, register):
         method = self.channel.unary_stream('/android.emulation.control.EmulatorController/streamScreenshot',
                                           request_serializer=lambda x: x.SerializeToString(),
                                           response_deserializer=self.pb.Image.FromString)
-        for frame in method(self.pb.ImageFormat(format=0), metadata=self.metadata):
-            self.width, self.height = frame.format.width, frame.format.height
-            if frame.image:
-                yield frame.image
+        stream = method(self.pb.ImageFormat(format=0), metadata=self.metadata)
+        if not register(stream.cancel):
+            return
+        try:
+            for frame in stream:
+                self.width, self.height = frame.format.width, frame.format.height
+                if frame.image:
+                    yield frame.image
+        finally:
+            stream.cancel()
 
     def input(self, event):
         kind = event['kind']
@@ -150,7 +156,6 @@ class IOS:
         self.child = None
         self.channel = None
         self.events = queue.Queue(maxsize=256)
-        self.video_stop = threading.Event()
         self.point = None
         self.keys = set()
         self.directory = tempfile.TemporaryDirectory(prefix='herm-idb-')
@@ -185,18 +190,24 @@ class IOS:
             self.close()
             raise
 
-    def frames(self):
+    def frames(self, register):
         pb = self.pb
         method = self.channel.stream_stream('/idb.CompanionService/video_stream',
                                             request_serializer=lambda x: x.SerializeToString(),
                                             response_deserializer=pb.VideoStreamResponse.FromString)
-        stop = self.video_stop
+        stop = threading.Event()
         def requests():
             yield pb.VideoStreamRequest(start=pb.VideoStreamRequest.Start(fps=30, format=2, compression_quality=0.8))
             stop.wait()
+        stream = method(requests())
+        def cancel():
+            stop.set()
+            stream.cancel()
+        if not register(cancel):
+            return
         buffer = bytearray()
         try:
-            for response in method(requests()):
+            for response in stream:
                 buffer.extend(response.payload.data)
                 if len(buffer) > MAX_PACKET:
                     raise RuntimeError('Invalid iOS video frame.')
@@ -211,7 +222,7 @@ class IOS:
                     yield frame
                     del buffer[:end + 2]
         finally:
-            stop.set()
+            cancel()
 
     def press(self, action, up):
         self.events.put(self.pb.HIDEvent(press=self.pb.HIDEvent.HIDPress(action=action, direction=1 if up else 0)), timeout=2)
@@ -258,7 +269,6 @@ class IOS:
             self.keys.clear()
 
     def close(self):
-        self.video_stop.set()
         if hasattr(self, 'hid'):
             try:
                 self.input(dict(kind='release'))
@@ -278,9 +288,78 @@ class IOS:
         self.directory.cleanup()
 
 
+class DisplayStream:
+    """One producer at a time. Cancel its gRPC call while the device tab is hidden."""
+    def __init__(self, backend, visible):
+        self.backend = backend
+        self.condition = threading.Condition()
+        self.visible = visible
+        self.closed = False
+        self.revision = 0
+        self.cancel = None
+        self.client_revision = None
+
+    def set_visible(self, visible, client_revision=None):
+        with self.condition:
+            if self.visible == visible or self.closed:
+                return
+            self.visible = visible
+            self.client_revision = client_revision
+            self.revision += 1
+            cancel = self.cancel
+            self.condition.notify()
+        if cancel:
+            cancel()
+
+    def close(self):
+        with self.condition:
+            self.closed = True
+            cancel = self.cancel
+            self.condition.notify()
+        if cancel:
+            cancel()
+
+    def run(self):
+        while True:
+            with self.condition:
+                self.condition.wait_for(lambda: self.closed or self.visible)
+                if self.closed:
+                    return
+                revision = self.revision
+                ready = self.client_revision
+
+            def register(cancel):
+                with self.condition:
+                    if not self.closed and self.revision == revision:
+                        self.cancel = cancel
+                        return True
+                cancel()
+                return False
+
+            message = 'Device stream ended. Reconnect to continue.'
+            try:
+                for frame in self.backend.frames(register):
+                    with self.condition:
+                        if self.closed or self.revision != revision:
+                            break
+                    if ready is not None:
+                        emit('J', dict(displayReady=ready))
+                        ready = None
+                    emit('I', frame)
+            except Exception:
+                message = 'Device stream failed. Check the device and bridge version, then reconnect.'
+            with self.condition:
+                self.cancel = None
+                if self.closed or self.revision != revision:
+                    continue
+                self.closed = True
+            emit('J', dict(error=message))
+            return
+
+
 def main():
     backend = None
-    done = threading.Event()
+    display = None
     try:
         platform, device = sys.argv[1:3]
         import devices as device_manager
@@ -309,16 +388,8 @@ def main():
         if any(d['id'] == device and not d['running'] for d in inventory):
             return
         backend = Android(device) if platform == 'android' else IOS(device)
-        def frames():
-            try:
-                for frame in backend.frames():
-                    emit('I', frame)
-                if not done.is_set():
-                    emit('J', dict(error='Device stream ended. Reconnect to continue.'))
-            except Exception:
-                if not done.is_set():
-                    emit('J', dict(error='Device stream failed. Check the device and bridge version, then reconnect.'))
-        threading.Thread(target=frames, daemon=True).start()
+        display = DisplayStream(backend, visible=sys.argv[3:] != ['paused'])
+        threading.Thread(target=display.run, daemon=True).start()
         diagnostic_busy = threading.Lock()
         def diagnostic(event):
             request = event.get('request', '')
@@ -337,7 +408,9 @@ def main():
             if len(line) > 8192:
                 raise ValueError('Input too large')
             event = json.loads(line)
-            if event.get('kind') in ('inspect', 'logs'):
+            if event.get('kind') == 'display':
+                display.set_visible(event.get('visible') is True, event.get('revision'))
+            elif event.get('kind') in ('inspect', 'logs'):
                 if diagnostic_busy.acquire(blocking=False):
                     threading.Thread(target=diagnostic, args=(event,), daemon=True).start()
                 else:
@@ -353,7 +426,8 @@ def main():
     except Exception:
         emit('J', dict(error='Direct device connection failed. Check the local bridge installation and retry.'))
     finally:
-        done.set()
+        if display:
+            display.close()
         if backend:
             backend.close()
 

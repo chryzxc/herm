@@ -4513,7 +4513,9 @@ launch receipt selects its exact device ID in the owning session.
 The toolbar and recovery content use the shared workspace inset without a second
 outer gutter, leaving the device display the full available width.
 
-The display fits available space with aspect ratio preserved. Click to focus;
+The display fits available space with aspect ratio preserved. Hiding its tab
+pauses the video stream. Returning resumes it on the connected device, and input
+stays disabled until a fresh frame arrives. Click to focus;
 click/drag sends touch events and typing sends device key events. Home and Power
 are available on both platforms; Android adds Back and Apps. Debugging and device
 controls appear when a display is connected; setup and failures use the same recovery region. Narrow layouts stack recovery

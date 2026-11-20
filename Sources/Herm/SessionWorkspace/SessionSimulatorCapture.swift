@@ -17,10 +17,84 @@ final class SessionSimulatorCapture: ObservableObject {
         var booted: String?
         var setup: String?
         var diagnostic: SessionSimulatorDiagnosticResult?
+        var displayReady: UInt64?
     }
 
     @Published private(set) var devices: [Device] = []
-    @Published private(set) var image: CGImage?
+    @MainActor final class Frames: ObservableObject {
+        @Published private(set) var size: CGSize?
+        private(set) var image: CGImage?
+        let updates = PassthroughSubject<CGImage?, Never>()
+
+        func show(_ image: CGImage?) {
+            self.image = image
+            let next = image.map { CGSize(width: $0.width, height: $0.height) }
+            if size != next { size = next }
+            updates.send(image)
+        }
+    }
+    let frames = Frames()
+    var image: CGImage? { frames.image }
+    private(set) var visible = true
+    private var frameRevision: UInt64 = 0
+    private var displayRevision: UInt64 = 0
+    private var awaitingDisplayRevision: UInt64?
+
+    func pauseDisplay() {
+        guard visible else { return }
+        if inputAllowed { objectWillChange.send() }
+        visible = false
+        frameRevision &+= 1
+        awaitingDisplayRevision = nil
+        releaseInput()
+        bridge.send(["kind": "display", "visible": false])
+        if !isStarting {
+            deadline?.cancel()
+            deadline = nil
+        }
+    }
+
+    @discardableResult
+    func resumeDisplay() -> UInt64? {
+        guard !visible else { return awaitingDisplayRevision }
+        visible = true
+        guard !isStarting, image != nil || (isLoading && !selectedID.isEmpty) else { return nil }
+        displayRevision &+= 1
+        awaitingDisplayRevision = displayRevision
+        isLoading = true
+        message = "Resuming device display…"
+        bridge.send(["kind": "display", "visible": true, "revision": displayRevision])
+        startDeadline(boot: false)
+        return displayRevision
+    }
+
+    func receiveFrame(_ data: Data) async {
+        guard visible, awaitingDisplayRevision == nil else { return }
+        frameRevision &+= 1
+        let revision = frameRevision
+        let decoded = await Self.decodeFrame(data)
+        guard visible, frameRevision == revision else { return }
+        installFrame(decoded)
+    }
+
+    nonisolated private static func decodeFrame(_ data: Data) async -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+    }
+
+    private func installFrame(_ frame: CGImage?) {
+        guard let frame else {
+            fail("The device returned an invalid display frame. Reconnect to retry.")
+            return
+        }
+        if image == nil { objectWillChange.send() }
+        frames.show(frame)
+        if connectionFailed { connectionFailed = false }
+        if isLoading { isLoading = false }
+        if !message.isEmpty { message = "" }
+        deadline?.cancel()
+        deadline = nil
+    }
     @Published private(set) var message = "Start a device from your chat, then refresh."
     @Published private(set) var isLoading = false
     @Published private(set) var connectionFailed = false
@@ -28,7 +102,7 @@ final class SessionSimulatorCapture: ObservableObject {
     @Published private(set) var isStarting = false
     private var platform: SessionSimulatorPlatform = .ios
     @Published var selectedID = ""
-    var inputAllowed: Bool { image != nil }
+    var inputAllowed: Bool { visible && !isLoading && image != nil }
     @Published private(set) var isPreviewing = false
     var deviceInputAllowed: Bool { inputAllowed && !isPreviewing && diagnostics.snapshot == nil }
 
@@ -72,9 +146,14 @@ final class SessionSimulatorCapture: ObservableObject {
         isLoading = true
         message = boot ? "Starting device…" : (selectedID.isEmpty ? "Finding devices…" : "Connecting to device…")
         do {
-            try bridge.start(platform: platform.rawValue, device: selectedID, boot: boot) { [weak self] kind, data in
+            try bridge.start(platform: platform.rawValue, device: selectedID, boot: boot, displayVisible: visible) {
+                [weak self] kind, data in
                 guard let self, self.generation == request else { return }
-                self.receive(kind: kind, data: data)
+                if kind == 73 {
+                    await self.receiveFrame(data)
+                } else {
+                    self.receive(kind: kind, data: data)
+                }
             } ended: { [weak self] in
                 guard let self, self.generation == request else { return }
                 if boot || !connectingDevice.isEmpty,
@@ -85,31 +164,32 @@ final class SessionSimulatorCapture: ObservableObject {
                     self.isLoading = false
                 }
             }
-            deadline = Task { [weak self] in
-                do { try await Task.sleep(for: .seconds(boot ? 150 : 30)) } catch { return }
-                guard let self, self.generation == request, self.isLoading else { return }
-                self.fail("The device did not provide a display. Check the bridge installation and retry.")
-            }
+            if boot || visible { startDeadline(boot: boot) }
         } catch {
             setupRequired = true
             fail(HermesDiagnosticsService.safeSummary(error.localizedDescription))
         }
     }
 
+    private func startDeadline(boot: Bool) {
+        deadline?.cancel()
+        let current = generation
+        deadline = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(boot ? 150 : 30)) } catch { return }
+            guard let self, generation == current, isLoading else { return }
+            fail("The device did not provide a display. Check the bridge installation and retry.")
+        }
+    }
+
     func receive(kind: UInt8, data: Data) {
         if kind == 73 {
-            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-                let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-            else {
-                fail("The device returned an invalid display frame. Reconnect to retry.")
-                return
-            }
-            self.image = image
-            connectionFailed = false
-            isLoading = false
-            message = ""
-            deadline?.cancel()
+            guard visible, awaitingDisplayRevision == nil else { return }
+            let source = CGImageSourceCreateWithData(data as CFData, nil)
+            installFrame(source.flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
         } else if let update = try? JSONDecoder().decode(Update.self, from: data) {
+            if let revision = update.displayReady, visible, revision == awaitingDisplayRevision {
+                awaitingDisplayRevision = nil
+            }
             if let booted = update.booted {
                 refresh(platform, preferredID: booted)
                 return
@@ -155,7 +235,12 @@ final class SessionSimulatorCapture: ObservableObject {
         deadline?.cancel()
         deadline = nil
         bridge.stop()
-        image = nil
+        frameRevision &+= 1
+        awaitingDisplayRevision = nil
+        if image != nil {
+            objectWillChange.send()
+            frames.show(nil)
+        }
         isLoading = false
         isStarting = false
     }

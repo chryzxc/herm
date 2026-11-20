@@ -10,7 +10,7 @@ struct SessionSimulatorView: View {
     @State private var refreshRequest = 0
     @State private var consumedCallID: String?
     @State private var showSetup = false
-    @State private var resumed = false
+    @State private var appliedRefreshRequest = 0
     @State private var connectionOwner = UUID()
 
     init(
@@ -31,11 +31,14 @@ struct SessionSimulatorView: View {
     private static var idleStops: [SessionSimulatorPlatform: Task<Void, Never>] = [:]
 
     /// A hidden device is released after a minute; returning sooner cancels this.
-    private static func scheduleIdleStop(_ platform: SessionSimulatorPlatform) {
+    private static func scheduleIdleStop(_ platform: SessionSimulatorPlatform, for capture: SessionSimulatorCapture) {
+        guard retained[platform]?.capture === capture else { return }
         idleStops[platform]?.cancel()
-        idleStops[platform] = Task { @MainActor in
+        idleStops[platform] = Task { @MainActor [weak capture] in
             do { try await Task.sleep(for: .seconds(60)) } catch { return }
-            retained[platform]?.capture.stop()
+            guard let capture, retained[platform]?.capture === capture else { return }
+            idleStops[platform] = nil
+            capture.stop()
         }
     }
 
@@ -73,9 +76,9 @@ struct SessionSimulatorView: View {
                 .dockPadding(.vertical, 6)
                 .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
             GeometryReader { geometry in
-                if let image = diagnostics.snapshot ?? capture.image {
+                if diagnostics.snapshot != nil || capture.image != nil {
                     SessionSimulatorStage(
-                        capture: capture, image: image, platform: platform, sessionKey: sessionKey,
+                        capture: capture, frames: capture.frames, platform: platform, sessionKey: sessionKey,
                         annotate: attachAnnotation)
                 } else {
                     ScrollView {
@@ -99,21 +102,26 @@ struct SessionSimulatorView: View {
         presentation
             .task(id: "\(isActive)-\(refreshRequest)-\(capture.selectedID)-\(launchRequest?.callID ?? "")") {
                 guard isActive else {
+                    capture.pauseDisplay()
                     reportConnection(false)
-                    Self.scheduleIdleStop(platform)
+                    Self.scheduleIdleStop(platform, for: capture)
                     return
                 }
                 Self.cancelIdleStop(platform)
+                capture.resumeDisplay()
+                guard !Task.isCancelled else { return }
                 var preferredID: String?
                 if let request = launchRequest, consumedCallID != request.callID {
                     consumedCallID = request.callID
                     preferredID = request.receipt.deviceID
                 }
                 // Returning to a still-connected device: keep it, only re-announce.
-                let isReturn = !resumed
-                resumed = true
-                if isReturn, preferredID == nil, refreshRequest == 0, capture.inputAllowed {
-                    reportConnection(true)
+                let requestedRefresh = appliedRefreshRequest != refreshRequest
+                appliedRefreshRequest = refreshRequest
+                if !requestedRefresh, preferredID == nil,
+                    capture.inputAllowed || (capture.isLoading && !capture.selectedID.isEmpty)
+                {
+                    reportConnection(capture.inputAllowed)
                     return
                 }
                 reportConnection(false)
@@ -123,8 +131,9 @@ struct SessionSimulatorView: View {
                 reportConnection(connected && isActive)
             }
             .onDisappear {
+                capture.pauseDisplay()
                 reportConnection(false)
-                Self.scheduleIdleStop(platform)
+                Self.scheduleIdleStop(platform, for: capture)
             }
     }
 
@@ -155,7 +164,7 @@ struct SessionSimulatorView: View {
     private var deviceToolbar: some View {
         HStack(spacing: 8) {
             DockIcon(.deviceMobile, size: 14, color: Color.dockSecondaryText)
-            if capture.inputAllowed {
+            if capture.image != nil {
                 devicePicker
             } else {
                 Text(platform.title).dockFont(.body, weight: .semibold)

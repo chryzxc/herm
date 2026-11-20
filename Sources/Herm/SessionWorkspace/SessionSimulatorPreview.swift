@@ -1,10 +1,12 @@
 import AppKit
+import Combine
 import SceneKit
 import SwiftUI
 
 /// An actual rounded solid with live pixels on its front face. Input never reaches the device.
 struct SessionSimulatorPreview: NSViewRepresentable {
     let image: CGImage
+    var frames: SessionSimulatorCapture.Frames? = nil
     let platform: SessionSimulatorPlatform
     let reset: Int
     var exit: () -> Void = {}
@@ -20,10 +22,12 @@ struct SessionSimulatorPreview: NSViewRepresentable {
 
     func updateNSView(_ view: PreviewView, context: Context) {
         view.exit = exit
-        view.update(image: image, platform: platform, reset: reset)
+        view.update(image: frames?.image ?? image, platform: platform, reset: reset)
+        view.observe(frames, platform: platform)
     }
 
     static func dismantleNSView(_ view: PreviewView, coordinator: ()) {
+        view.observe(nil, platform: .ios)
         view.scene = nil
     }
 
@@ -38,6 +42,17 @@ struct SessionSimulatorPreview: NSViewRepresentable {
         private var pitch: Float = 0
         private var zoom: Double = 1
         private var lastPoint: CGPoint?
+        private weak var frames: SessionSimulatorCapture.Frames?
+        private var frameObservation: AnyCancellable?
+
+        func observe(_ frames: SessionSimulatorCapture.Frames?, platform: SessionSimulatorPlatform) {
+            guard self.frames !== frames else { return }
+            self.frames = frames
+            frameObservation = frames?.updates.sink { [weak self] image in
+                guard let self, let image else { return }
+                update(image: image, platform: platform, reset: lastReset ?? 0)
+            }
+        }
 
         override init(frame: NSRect, options: [String: Any]? = nil) {
             super.init(frame: frame, options: options)

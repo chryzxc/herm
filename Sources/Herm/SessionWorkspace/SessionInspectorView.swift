@@ -920,7 +920,7 @@ struct SessionInspector: View {
             SessionSimulatorView(
                 platform: selectedSection == .iosSimulator ? .ios : .android,
                 sessionKey: WorkspaceIdentity.session(model),
-                isActive: selectedExtraID == nil && selectedPreview == nil
+                isActive: hostVisible && selectedExtraID == nil && selectedPreview == nil
             )
             .id(WorkspaceIdentity.session(model) + selectedSection.rawValue)
         case .github:
