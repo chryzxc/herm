@@ -162,6 +162,7 @@ struct ComposerCompletionPopover: View {
     let trigger: ComposerCompletionTrigger
     let items: [ComposerCompletionItem]
     let selectedIndex: Int
+    var isLoading = false
     var avatarImages: [String: Data] = [:]
     /// Replaces the key hints when a picked Bot would not be reached.
     var notice: String? = nil
@@ -169,39 +170,48 @@ struct ComposerCompletionPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                            if !item.group.isEmpty, index == 0 || items[index - 1].group != item.group {
-                                Text(item.group.uppercased())
-                                    .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
-                                    .tracking(0.6)
-                                    .foregroundStyle(Color.dockMetadataText)
-                                    .dockPadding(.horizontal, 12)
-                                    .dockPadding(.top, index == 0 ? 8 : 10)
-                                    .dockPadding(.bottom, 4)
+            if items.isEmpty && isLoading {
+                Text("Loading commands…")
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .dockPadding(.horizontal, 12)
+                    .dockPadding(.vertical, 8)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                                if !item.group.isEmpty, index == 0 || items[index - 1].group != item.group {
+                                    Text(item.group.uppercased())
+                                        .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
+                                        .tracking(0.6)
+                                        .foregroundStyle(Color.dockMetadataText)
+                                        .dockPadding(.horizontal, 12)
+                                        .dockPadding(.top, index == 0 ? 8 : 10)
+                                        .dockPadding(.bottom, 4)
+                                }
+                                row(item, isSelected: index == selectedIndex)
+                                    .id(item.id)
                             }
-                            row(item, isSelected: index == selectedIndex)
-                                .id(item.id)
                         }
                     }
+                    .onChange(of: selectedIndex) { _, index in
+                        guard items.indices.contains(index) else { return }
+                        proxy.scrollTo(items[index].id)
+                    }
                 }
-                .onChange(of: selectedIndex) { _, index in
-                    guard items.indices.contains(index) else { return }
-                    proxy.scrollTo(items[index].id)
-                }
-            }
-            .frame(maxHeight: 280)
+                .frame(maxHeight: 280)
 
-            Text(notice ?? "↑↓ to navigate · ↩ or ⇥ to select · esc to dismiss")
-                .dockFont(.compactStatus, weight: .regular)
-                .foregroundStyle(notice == nil ? Color.dockMetadataText : Color.dockSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .dockPadding(.horizontal, 12)
-                .dockPadding(.vertical, 6)
-                .dockPaneTint(Color.dockSurface6.opacity(0.5))
+                Text(notice ?? "↑↓ to navigate · ↩ or ⇥ to select · esc to dismiss")
+                    .dockFont(.compactStatus, weight: .regular)
+                    .foregroundStyle(notice == nil ? Color.dockMetadataText : Color.dockSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .dockPadding(.horizontal, 12)
+                    .dockPadding(.vertical, 6)
+                    .dockPaneTint(Color.dockSurface6.opacity(0.5))
+            }
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)

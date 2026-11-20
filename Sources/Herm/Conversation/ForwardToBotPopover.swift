@@ -23,11 +23,12 @@ struct ForwardToBotPopover: View {
     var body: some View {
         let field = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         VStack(alignment: .leading, spacing: 10) {
-            if let trigger = completions.trigger, !completions.result.items.isEmpty {
+            if let trigger = completions.trigger, completions.isPresented {
                 ComposerCompletionPopover(
                     trigger: trigger,
                     items: completions.result.items,
                     selectedIndex: completions.index,
+                    isLoading: completions.isLoading,
                     avatarImages: botMode.avatarImages,
                     onSelect: { completions.accept($0) }
                 )

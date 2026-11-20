@@ -219,11 +219,12 @@ struct ChatComposerView: View {
         let textTopPadding: CGFloat = 4
 
         return VStack(spacing: 6) {
-            if let trigger = completions.trigger, !completions.result.items.isEmpty {
+            if let trigger = completions.trigger, completions.isPresented {
                 ComposerCompletionPopover(
                     trigger: trigger,
                     items: completions.result.items,
                     selectedIndex: completions.index,
+                    isLoading: completions.isLoading,
                     avatarImages: botMode.avatarImages,
                     notice: mentionRelayNotice(trigger),
                     onSelect: { completions.accept($0) }
