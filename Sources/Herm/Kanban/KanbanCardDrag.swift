@@ -34,7 +34,15 @@ final class KanbanDragController {
     var placement: Placement?
 
     // Board inputs and measured geometry; written often, never rendered directly.
-    @ObservationIgnored var tasks: [KanbanTaskSummary] = []
+    @ObservationIgnored var tasks: [KanbanTaskSummary] = [] {
+        didSet {
+            if tasks != oldValue {
+                rowsByLane = Dictionary(grouping: tasks) { KanbanBoardPresentation.lane(for: $0.status) }
+                    .mapValues { $0.map(\.id) }
+            }
+        }
+    }
+    @ObservationIgnored private var rowsByLane: [KanbanLane: [String]] = [:]
     @ObservationIgnored var actions = KanbanCardActionAvailability()
     @ObservationIgnored var pendingActionIDs: Set<String> = []
     @ObservationIgnored var motion: Animation?
@@ -68,8 +76,8 @@ final class KanbanDragController {
             newTarget.map { lane in
                 Self.insertionIndex(
                     pointerY: value.location.y,
-                    rowMidYs: tasks.filter { KanbanBoardPresentation.lane(for: $0.status) == lane && $0.id != task.id }
-                        .map { rowFrames[$0.id]?.midY ?? .infinity },
+                    rowMidYs: (rowsByLane[lane] ?? []).lazy.filter { $0 != task.id }
+                        .map { self.rowFrames[$0]?.midY ?? .infinity },
                     openGap: target == lane ? insertion : nil,
                     gapHeight: session.size.height + Self.cardSpacing)
             } ?? 0
@@ -118,13 +126,16 @@ final class KanbanDragController {
     /// Where the dragged card lands among a lane's rows. Rows after an already
     /// open gap are measured at their pre-gap position so the gap cannot chase
     /// the pointer.
-    nonisolated static func insertionIndex(
-        pointerY: CGFloat, rowMidYs: [CGFloat], openGap: Int?, gapHeight: CGFloat
-    ) -> Int {
-        let natural = rowMidYs.enumerated().map { index, midY in
-            if let openGap, index >= openGap { midY - gapHeight } else { midY }
+    nonisolated static func insertionIndex<Rows: Sequence>(
+        pointerY: CGFloat, rowMidYs: Rows, openGap: Int?, gapHeight: CGFloat
+    ) -> Int where Rows.Element == CGFloat {
+        var index = 0
+        for midY in rowMidYs {
+            let natural = openGap.map { index >= $0 } == true ? midY - gapHeight : midY
+            if pointerY < natural { return index }
+            index += 1
         }
-        return natural.firstIndex { pointerY < $0 } ?? natural.count
+        return index
     }
 }
 

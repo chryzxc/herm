@@ -31,4 +31,17 @@ struct KanbanCardDragTests {
         #expect(snapshot.placing("b", in: .todo, at: 0).tasks(in: .todo).map(\.id) == ["b", "c"])
         #expect(snapshot.placing("zzz", in: .todo, at: 0).totalCount == 3)
     }
+
+    @Test func insertionOnlyReadsRowsThroughTheDropSlot() {
+        var visited = 0
+        let heights = [50.0, 150.0, 250.0].lazy.map { height in
+            visited += 1
+            return CGFloat(height)
+        }
+        #expect(
+            KanbanDragController.insertionIndex(
+                pointerY: 100, rowMidYs: heights, openGap: nil, gapHeight: 0) == 1)
+        #expect(visited == 2)
+    }
+
 }

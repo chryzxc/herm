@@ -67,6 +67,21 @@ struct KanbanBoardView: View, Equatable {
     /// `nil` unassigns.
     let onAssign: (KanbanTaskSummary, String?) -> Void
 
+    @MainActor private final class BoardCache {
+        var inputs: ([KanbanTaskSummary], [BotSummary], [BotSummary])?
+        var snapshot: KanbanBoardPresentation.Snapshot?
+
+        func resolve(_ tasks: [KanbanTaskSummary], _ bots: [BotSummary], _ visible: [BotSummary])
+            -> KanbanBoardPresentation.Snapshot
+        {
+            if let inputs, let snapshot, inputs == (tasks, bots, visible) { return snapshot }
+            let value = KanbanBoardPresentation.makeSnapshot(tasks: tasks, bots: bots, visibleBots: visible)
+            inputs = (tasks, bots, visible)
+            snapshot = value
+            return value
+        }
+    }
+    @State private var boardCache = BoardCache()
     @State private var expansion = KanbanLaneExpansionState()
     @State private var drag = KanbanDragController()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -83,7 +98,7 @@ struct KanbanBoardView: View, Equatable {
     }
 
     var body: some View {
-        var snapshot = KanbanBoardPresentation.makeSnapshot(tasks: tasks, bots: bots, visibleBots: visibleBots)
+        var snapshot = boardCache.resolve(tasks, bots, visibleBots)
         if let placement = drag.placement {
             snapshot = snapshot.placing(placement.taskID, in: placement.lane, at: placement.index)
         }
