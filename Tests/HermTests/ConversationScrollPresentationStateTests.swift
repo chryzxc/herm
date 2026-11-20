@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import Observation
 import Testing
 
 @testable import Herm
@@ -65,6 +66,17 @@ struct ConversationScrollPresentationStateTests {
             isLiveTail: false
         )
         #expect(!state.isAtBottom)
+    }
+
+    @Test func changingVisibleMessagesDoesNotInvalidateTheLatestButton() {
+        let state = ConversationScrollPresentationState()
+        withObservationTracking {
+            _ = state.showsLatestControl
+            _ = state.unseenMessageCount
+        } onChange: {
+            Issue.record("Navigator visibility invalidated the latest-message button")
+        }
+        state.visibleTargets = [MessageNavigatorTarget(sessionID: "chat", messageID: UUID())]
     }
 
     @Test func equalSettleResultsDoNotPublish() {

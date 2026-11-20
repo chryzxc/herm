@@ -24,7 +24,6 @@ struct ChatComposerView: View {
     var worktreeBar: WorktreePicker? = nil
 
     @State private var composerHeight: CGFloat = ComposerLayout.minHeight
-    @State private var sendKick = 0
     @State private var contextCaret = 0
     @State private var inspectingContext: ChatContext?
     @State private var contextPreviewOwner: String?
@@ -579,42 +578,16 @@ struct ChatComposerView: View {
                                     ComposerSubmitLabel(
                                         isEnabled: canSubmit && !model.isRestoringSession, isFullscreen: isFullscreen
                                     ) {
-                                        Group {
-                                            if speechInput.isRecording {
-                                                DockIcon(.stop, weight: .fill)
-                                                    .dockFont(.compactStatus, weight: .bold)
-                                                    .foregroundStyle(Color.dockPrimaryText)
-                                            } else if showStop {
-                                                DockIcon(.stop, weight: .fill)
-                                                    .dockFont(.compactStatus, weight: .bold)
-                                                    .foregroundStyle(Color.dockDestructive)
-                                                    .transition(.scale(scale: 0.3).combined(with: .opacity))
-                                            } else {
-                                                DockIcon(.arrowUp)
-                                                    .dockFont(.body, weight: .semibold)
-                                                    // Use soft dockPrimaryText instead of stark white to prevent eye strain
-                                                    .foregroundStyle(
-                                                        canSubmit
-                                                            ? Color.dockOnAccentText
-                                                            : Color.dockSecondaryText.opacity(0.5)
-                                                    )
-                                                    // Send: the arrow launches up and drops back in.
-                                                    .keyframeAnimator(initialValue: CGFloat(0), trigger: sendKick) {
-                                                        view, y in
-                                                        view.offset(y: y).opacity(1 - Double(abs(y)) / 14)
-                                                    } keyframes: { _ in
-                                                        KeyframeTrack {
-                                                            CubicKeyframe(-12, duration: 0.14)
-                                                            MoveKeyframe(10)
-                                                            SpringKeyframe(0, duration: 0.3, spring: .bouncy)
-                                                        }
-                                                    }
-                                                    .transition(.scale(scale: 0.3).combined(with: .opacity))
-                                            }
-                                        }
-                                        .animation(
-                                            reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.65),
-                                            value: showStop)
+                                        ComposerSubmitMark(stop: speechInput.isRecording || showStop ? 1 : 0)
+                                            .fill(
+                                                speechInput.isRecording ? Color.dockPrimaryText
+                                                    : showStop ? Color.dockDestructive
+                                                    : canSubmit ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5)
+                                            )
+                                            .frame(width: 14, height: 14)
+                                            .animation(
+                                                DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18),
+                                                value: speechInput.isRecording || showStop)
                                     }
                                 }
                                 .buttonStyle(.dockHover)
@@ -753,7 +726,6 @@ struct ChatComposerView: View {
     private func submitComposerInput() {
         liveDictation = ComposerDictation()
         dictation.stop()
-        if !reduceMotion { sendKick += 1 }
         completions.close()
         prepareRequiredContext()
         model.submitComposerInput(bots: botMode.bots.filter { !$0.isHidden })
@@ -1436,5 +1408,37 @@ struct RunningProcessesStrip: View {
                 .buttonStyle(.dockCompact).dockFont(.metadata).foregroundStyle(Color.dockWarning)
                 .accessibilityLabel("Stop \(process.name)")
         }
+    }
+}
+
+/// The shoulders of the send arrow fold into the stop square. The button
+/// and its hit target remain stationary when the action changes.
+private struct ComposerSubmitMark: Shape {
+    var stop: CGFloat
+
+    var animatableData: CGFloat {
+        get { stop }
+        set { stop = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let t = min(1, max(0, stop))
+        func point(_ x: CGFloat, _ y: CGFloat, _ endX: CGFloat, _ endY: CGFloat) -> CGPoint {
+            CGPoint(
+                x: rect.minX + rect.width * (x + (endX - x) * t),
+                y: rect.minY + rect.height * (y + (endY - y) * t))
+        }
+        var path = Path()
+        path.move(to: point(0.5, 0.03, 0.5, 0.12))
+        path.addLine(to: point(0.96, 0.48, 0.88, 0.12))
+        path.addLine(to: point(0.81, 0.63, 0.88, 0.5))
+        path.addLine(to: point(0.59, 0.40, 0.88, 0.7))
+        path.addLine(to: point(0.59, 0.97, 0.88, 0.88))
+        path.addLine(to: point(0.41, 0.97, 0.12, 0.88))
+        path.addLine(to: point(0.41, 0.40, 0.12, 0.7))
+        path.addLine(to: point(0.19, 0.63, 0.12, 0.5))
+        path.addLine(to: point(0.04, 0.48, 0.12, 0.12))
+        path.closeSubpath()
+        return path
     }
 }

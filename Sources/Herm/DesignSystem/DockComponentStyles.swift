@@ -1429,8 +1429,11 @@ struct DockActionLabel: View {
     var tint: Color = .dockAccent
 
     var body: some View {
+        let distance = DockMotion.isEnabled(reduceMotion: reduceMotion) ? DockMotion.revealDistance : 0
         ZStack {
-            Text(title).opacity(isPending ? 0 : 1)
+            Text(title)
+                .opacity(isPending ? 0 : 1)
+                .offset(y: isPending ? -distance : 0)
             HStack(spacing: 6) {
                 ZStack {
                     if isPending {
@@ -1441,9 +1444,11 @@ struct DockActionLabel: View {
                 Text(pendingTitle)
             }
             .opacity(isPending ? 1 : 0)
+            .offset(y: isPending ? 0 : distance)
         }
         .lineLimit(1)
-        .animation(DockMotion.animation(reduceMotion: reduceMotion), value: isPending)
+        .clipped()
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: isPending)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(isPending ? pendingTitle : title)
     }
@@ -2258,6 +2263,7 @@ enum DockWellTone {
 /// Thin capsule meter: `fraction` (0...1) of the track filled with `tint`.
 struct DockProgressBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.layoutDirection) private var direction
     let fraction: Double
     var tint: Color = .dockAccent
     var height: CGFloat = 4
@@ -2266,15 +2272,33 @@ struct DockProgressBar: View {
     var minFill: CGFloat = 0
 
     var body: some View {
-        GeometryReader { proxy in
-            Capsule().fill(track)
-                .overlay(alignment: .leading) {
-                    Capsule().fill(tint)
-                        .frame(width: max(minFill, proxy.size.width * min(1, max(0, fraction))))
-                        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.22), value: fraction)
-                }
-        }
-        .frame(height: height)
-        .accessibilityHidden(true)
+        Capsule().fill(track)
+            .overlay {
+                DockProgressFill(
+                    fraction: min(1, max(0, fraction)), minimum: minFill, rightToLeft: direction == .rightToLeft
+                )
+                    .fill(tint)
+                    .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.22), value: fraction)
+            }
+            .frame(height: height)
+            .accessibilityHidden(true)
+    }
+}
+
+private struct DockProgressFill: Shape {
+    var fraction: Double
+    let minimum: CGFloat
+    let rightToLeft: Bool
+
+    var animatableData: Double {
+        get { fraction }
+        set { fraction = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let width = min(rect.width, max(0, minimum, rect.width * fraction))
+        guard width > 0 else { return Path() }
+        let x = rightToLeft ? rect.maxX - width : rect.minX
+        return Capsule().path(in: CGRect(x: x, y: rect.minY, width: width, height: rect.height))
     }
 }

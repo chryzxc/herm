@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ConversationLatestMessageControl: View {
-    @ObservedObject var presentation: ConversationScrollPresentationState
+    let presentation: ConversationScrollPresentationState
     var isWorking = false
     let onSelect: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -18,7 +18,8 @@ struct ConversationLatestMessageControl: View {
                             Text("\(unread) new \(unread == 1 ? "message" : "messages")")
                                 .dockFont(.body, weight: .semibold)
                                 .monospacedDigit()
-                                .contentTransition(.numericText())
+                                .contentTransition(.numericText(value: Double(unread)))
+                                .transition(DockMotion.reveal(from: .leading, reduceMotion: reduceMotion))
                         }
                     }
                     .foregroundStyle(Color.dockPrimaryText)
@@ -58,7 +59,7 @@ struct ConversationLatestMessageControl: View {
 }
 
 struct ConversationScrollNavigator: View {
-    @ObservedObject var presentation: ConversationScrollPresentationState
+    let presentation: ConversationScrollPresentationState
     let snapshot: MessageNavigatorSnapshot
     let sessionID: String
     @Binding var isSearchPresented: Bool

@@ -25,8 +25,21 @@ struct DockLayerMotionTests {
         #expect(resized.path?.boundingBoxOfPath == view.bounds.insetBy(dx: 0.5, dy: 0.5))
     }
 
+    @Test func thinkingRelayStaysInsideItsOriginalFootprint() throws {
+        let view = DockLayerMotionView(frame: NSRect(x: 0, y: 0, width: 26, height: 6))
+        view.spec = .init(kind: .thinkingRelay, color: NSColor.white.cgColor, paused: false)
+        let bead = try #require(view.layer?.sublayers?.last)
+        let pass = try #require(bead.animation(forKey: "relay") as? CAKeyframeAnimation)
+        let paths = try #require(pass.values as? [CGPath])
+        try #require(paths.count == 6)
+        #expect(pass.keyTimes?.count == paths.count)
+        #expect(paths.allSatisfy { view.bounds.contains($0.boundingBoxOfPath) })
+        #expect(paths[1].boundingBoxOfPath.width > paths[0].boundingBoxOfPath.width)
+    }
+
     @Test func pausingEveryLoopKeepsItsArtworkAndRemovesAnimations() throws {
         let kinds: [DockLayerMotion.Kind] = [
+            .thinkingRelay, .compactLines,
             .spin(period: 1.6, lineWidth: 1.5), .capsuleRim(period: 2.4, lineWidth: 1),
             .breathe(period: 2), .sweep(period: 1.6, fraction: 0.4, clamp: 0...80),
             .tide(period: 2, depth: 4),

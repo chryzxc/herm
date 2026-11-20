@@ -2984,6 +2984,8 @@ Group chat action errors use toast notifications without an inline error row abo
 
 ### Conversation workspace
 
+The send arrow folds into a square in the same button when its action changes to Stop. Thinking uses a three-bead relay, and live compaction folds the outer two lines into the middle line. Both use native layers and retain static marks when motion is paused. The shared progress meter interpolates its filled path inside a fixed track.
+
 A reaction on a user bubble grows from the corner touching the bubble. A later emoji change briefly compresses the existing pill around that point. The assistant footer uses its leading corner.
 
 The composer names a conversation's reported model as soon as it is available,

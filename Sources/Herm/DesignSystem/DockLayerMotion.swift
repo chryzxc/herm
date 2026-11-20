@@ -7,6 +7,10 @@ import SwiftUI
 /// environment, so skins and appearance changes still apply.
 struct DockLayerMotion: NSViewRepresentable {
     enum Kind: Equatable {
+        /// Three beads pass a highlight along a fixed track.
+        case thinkingRelay
+        /// Three transcript lines fold together as context is compacted.
+        case compactLines
         /// A 70% arc turning clockwise over a faint ring.
         case spin(period: Double, lineWidth: CGFloat)
         /// A highlight travelling around a capsule without rotating its contents.
@@ -92,6 +96,61 @@ final class DockLayerMotionView: NSView {
         let color = spec.color
 
         switch spec.kind {
+        case .thinkingRelay:
+            let diameter = min(bounds.height, bounds.width / 3)
+            let travel = (bounds.width - diameter) / 2
+            let first = CGRect(x: 0, y: bounds.midY - diameter / 2, width: diameter, height: diameter)
+            let marks = CGMutablePath()
+            for index in 0..<3 {
+                marks.addEllipse(in: first.offsetBy(dx: CGFloat(index) * travel, dy: 0))
+            }
+            let track = CAShapeLayer()
+            track.path = marks
+            track.fillColor = color
+            track.opacity = spec.paused ? 1 : 0.35
+            host.addSublayer(track)
+            if !spec.paused {
+                let bead = CAShapeLayer()
+                bead.fillColor = color
+                let frames = [
+                    first,
+                    first.insetBy(dx: -travel / 2, dy: 0).offsetBy(dx: travel / 2, dy: 0),
+                    first.offsetBy(dx: travel, dy: 0),
+                    first.insetBy(dx: -travel / 2, dy: 0).offsetBy(dx: travel * 1.5, dy: 0),
+                    first.offsetBy(dx: 2 * travel, dy: 0),
+                ]
+                let paths = frames.map {
+                    CGPath(roundedRect: $0, cornerWidth: diameter / 2, cornerHeight: diameter / 2, transform: nil)
+                }
+                bead.path = paths[0]
+                host.addSublayer(bead)
+                let pass = CAKeyframeAnimation(keyPath: "path")
+                pass.keyTimes = [0, 0.2, 0.4, 0.6, 0.8, 1]
+                pass.values = paths + [paths[4]]
+                pass.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 5)
+                pass.duration = 1.25
+                pass.autoreverses = true
+                pass.repeatCount = .infinity
+                bead.add(pass, forKey: "relay")
+            }
+
+        case .compactLines:
+            for (index, width) in [0.625, 0.875, 0.5].enumerated() {
+                let line = CALayer()
+                line.bounds.size = CGSize(width: bounds.width * CGFloat(width), height: 2)
+                let start = bounds.midY + CGFloat(1 - index) * bounds.height * 0.28
+                line.position = CGPoint(x: bounds.midX, y: start)
+                line.cornerRadius = 1
+                line.backgroundColor = color
+                line.opacity = index == 1 ? 1 : 0.7
+                host.addSublayer(line)
+                if !spec.paused && index != 1 {
+                    loop(
+                        line, "position.y", from: start, to: bounds.midY, duration: 0.7,
+                        autoreverses: true, timing: .easeInEaseOut)
+                }
+            }
+
         case .spin(let period, let lineWidth):
             let path = CGPath(ellipseIn: bounds.insetBy(dx: lineWidth / 2, dy: lineWidth / 2), transform: nil)
             let track = ring(path, lineWidth: lineWidth, color: color.copy(alpha: color.alpha * 0.25) ?? color)

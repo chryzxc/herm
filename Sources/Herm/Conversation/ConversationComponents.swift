@@ -6,28 +6,11 @@ import SwiftUI
 /// Reusable conversation-only presentation primitives. They render DockModel
 /// state but deliberately do not own transport, session, or input state.
 struct ThinkingDots: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
-        if !DockMotion.isEnabled(reduceMotion: reduceMotion) {
-            dots(at: 0)
-        } else {
-            // This indicator is informative, not motion-critical. Ten updates a
-            // second on the shared clock reads smoothly without adding renders.
-            TimelineView(.dockMotion(rate: 10)) { context in
-                dots(at: context.date.timeIntervalSinceReferenceDate)
-            }
-        }
-    }
-
-    private func dots(at time: TimeInterval) -> some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3) { i in
-                let p = (time + Double(i) * 0.2).truncatingRemainder(dividingBy: 1.4) / 1.4
-                let s = 0.6 + 0.4 * max(0, sin(p * .pi * 2))
-                Circle().fill(Color.dockAccent).frame(width: 6, height: 6).scaleEffect(s).opacity(s)
-            }
-        }
+        DockLayerMotion(kind: .thinkingRelay, color: .dockAccent)
+            .frame(width: 26, height: 6)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -657,7 +640,7 @@ struct SignalTrace: View {
                 // Keyed by glyph so each new step starts its own trace loop.
                 TracingGlyph(icon: liveGlyph, color: color)
                     .id(liveGlyph)
-                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    .transition(DockMotion.reveal(from: .bottom, reduceMotion: reduceMotion))
             }
         }
         // Without a Bot only the 28pt glyph shows; a 56pt frame left a wide gap before the text.
@@ -768,6 +751,7 @@ struct BotDispatchCard: View {
     var assignedIDs: Set<String> = []
     var botsByID: [String: BotSummary] = [:]
     var avatars: [String: Data] = [:]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var openIDs: Set<String> = []
     @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
 
@@ -794,7 +778,7 @@ struct BotDispatchCard: View {
                         return
                     }
                     guard canOpen else { return }
-                    withAnimation(.easeOut(duration: 0.18)) {
+                    withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18)) {
                         if isOpen { openIDs.remove(record.id) } else { openIDs.insert(record.id) }
                     }
                 } label: {
@@ -862,13 +846,13 @@ struct BotDispatchCard: View {
                     DockIcon(.pauseCircle, size: 10, color: Color.dockWarning)
                     Text(record.linkedCardID != nil ? "blocked" : "waiting on you")
                 }
-                .transition(.scale(scale: 0.6).combined(with: .opacity))
+                .transition(DockMotion.reveal(from: .bottom, reduceMotion: reduceMotion))
             case .failed:
                 HStack(spacing: 4) {
                     DockIcon(.x, size: 10, color: Color.dockDestructive)
                     Text("failed")
                 }
-                .transition(.scale(scale: 0.6).combined(with: .opacity))
+                .transition(DockMotion.reveal(from: .bottom, reduceMotion: reduceMotion))
             case .canceled:
                 Text("canceled").transition(.opacity)
             case .completed:
@@ -876,13 +860,13 @@ struct BotDispatchCard: View {
                     DockIcon(.check, size: 10, color: Color.dockSuccess)
                     Text(Self.clock(record.updatedAt.timeIntervalSince(record.createdAt)))
                 }
-                .transition(.scale(scale: 0.6).combined(with: .opacity))
+                .transition(DockMotion.reveal(from: .bottom, reduceMotion: reduceMotion))
             }
         }
         .dockFont(.metadata).monospacedDigit()
         .foregroundStyle(Color.dockMetadataText)
         // The clock settles into a check (or ×) when the Bot finishes.
-        .animation(.spring(response: 0.35, dampingFraction: 0.65), value: record.state)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion), value: record.state)
     }
 
     /// "45s", "2m 14s", "1h 5m".
@@ -1386,10 +1370,9 @@ private struct CompactionStepRow: View {
                     .transition(.scale.combined(with: .opacity))
                 Text(title).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
             } else {
-                TimelineView(.dockMotion(rate: 10, paused: reduceMotion)) { context in
-                    squeezeGlyph(reduceMotion ? 0 : DockMotionSchedule.breath(context.date, period: 1.4))
-                }
-                .frame(width: 16, height: 16)
+                DockLayerMotion(kind: .compactLines, color: .dockAccent)
+                    .frame(width: 16, height: 16)
+                    .accessibilityHidden(true)
                 Text("Compacting context")
                     .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockAccent)
@@ -1405,7 +1388,7 @@ private struct CompactionStepRow: View {
                     }
             }
         }
-        .animation(.dockEase(duration: 0.25), value: call.isComplete)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion), value: call.isComplete)
         .help("Hermes summarizes older turns to free context")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(call.isComplete ? title : "Compacting context")
@@ -1416,18 +1399,6 @@ private struct CompactionStepRow: View {
             "Compacted context in \(TurnActivityView.roughDuration($0.timeIntervalSince(call.startedAt)))"
         }
             ?? "Compacted context"
-    }
-
-    /// Three transcript lines that fold toward the middle one and back.
-    private func squeezeGlyph(_ squeeze: Double) -> some View {
-        ZStack {
-            ForEach(Array([(-4.5, 10.0), (0, 14.0), (4.5, 8.0)].enumerated()), id: \.offset) { index, line in
-                Capsule()
-                    .fill(Color.dockAccent.opacity(index == 1 ? 1 : 0.7 - 0.45 * squeeze))
-                    .frame(width: line.1 + (14 - line.1) * squeeze, height: 2)
-                    .offset(y: line.0 * (1 - squeeze))
-            }
-        }
     }
 }
 

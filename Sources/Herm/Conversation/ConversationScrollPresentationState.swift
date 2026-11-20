@@ -1,16 +1,20 @@
 import Combine
+import Observation
 
 /// Only the scroll controls observe this object. The transcript owner keeps an
 /// unobserved reference so settled geometry does not invalidate its message rows.
 @MainActor
+@Observable
 final class ConversationScrollPresentationState: ObservableObject {
-    @Published private var atBottom = true
-    @Published private var unreadCount = 0
-    @Published private var targets: Set<MessageNavigatorTarget> = []
+    let objectWillChange = ObservableObjectPublisher()
+    private var atBottom = true
+    private var unreadCount = 0
+    private var targets: Set<MessageNavigatorTarget> = []
     var isAtBottom: Bool {
         get { atBottom }
         set {
             guard newValue != atBottom else { return }
+            objectWillChange.send()
             atBottom = newValue
         }
     }
@@ -19,6 +23,7 @@ final class ConversationScrollPresentationState: ObservableObject {
         get { unreadCount }
         set {
             guard newValue != unreadCount else { return }
+            objectWillChange.send()
             unreadCount = newValue
         }
     }
@@ -27,6 +32,7 @@ final class ConversationScrollPresentationState: ObservableObject {
         get { targets }
         set {
             guard newValue != targets else { return }
+            objectWillChange.send()
             targets = newValue
         }
     }
