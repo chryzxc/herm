@@ -30,6 +30,36 @@ struct ProjectionRefreshPublicationTests {
         #expect(model.projectionRefreshStates["sessions"]?.isStale == true)
     }
 
+    @Test func repeatedSuccessAdvancesFreshnessWithoutPublishing() {
+        let model = makeModel()
+        let first = Date(timeIntervalSince1970: 10)
+        let second = first.addingTimeInterval(5)
+        model.recordProjectionSuccess("core", count: 1, now: first)
+        var publications = 0
+        let subscription = model.objectWillChange.sink { publications += 1 }
+        defer { subscription.cancel() }
+
+        model.recordProjectionSuccess("core", count: 1, now: second)
+
+        #expect(model.refreshState(for: "core")?.lastSuccess == second)
+        #expect(publications == 0)
+        model.recordProjectionUnavailable("core")
+        #expect(model.refreshState(for: "core")?.lastSuccess == nil)
+    }
+
+    @Test func processCapabilityFollowsTheVerifiedSession() {
+        let model = makeModel()
+        let clientWide = [HermesCapabilityService.activityCapability(available: false)]
+        model.processSessionID = "first"
+        model.verifiedProcessSessionID = "first"
+        model.installCapabilities(clientWide)
+        #expect(model.capabilityAvailable("rpc-activity"))
+
+        model.processSessionID = "second"
+        model.installCapabilities(clientWide)
+        #expect(!model.capabilityAvailable("rpc-activity"))
+    }
+
     @Test func repeatingAnUnchangedBatchDoesNotPublish() {
         let model = makeModel()
         model.beginProjectionRefreshes(["agents", "projects"])

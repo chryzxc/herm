@@ -252,7 +252,9 @@ extension ControlCenterModel {
                 guard let self, !Task.isCancelled else { return }
                 let events = self.pendingEventRefreshes
                 self.pendingEventRefreshes.removeAll()
-                if events.contains("sessions.changed") {
+                let needsOverview = self.visibleSidebarTabs.values.contains(.core)
+                let needsProjects = self.visibleSidebarTabs.values.contains(.projects)
+                if events.contains("sessions.changed"), needsOverview || needsProjects {
                     self.refresh()
                     while self.isRefreshing, !Task.isCancelled {
                         try? await Task.sleep(for: .milliseconds(250))
@@ -260,14 +262,16 @@ extension ControlCenterModel {
                 } else {
                     self.inFlightEventRefreshes = events
                     let generation = self.refreshGeneration
-                    if events.contains("message.complete") || events.contains("process.changed") {
+                    if events.contains("message.complete") || events.contains("process.changed")
+                        || events.contains("sessions.changed")
+                    {
                         await self.refreshEventSessions()
                     }
                     if generation != self.refreshGeneration {
                         self.inFlightEventRefreshes.removeAll()
                         continue
                     }
-                    if events.contains("message.complete") {
+                    if events.contains("sessions.changed") || (events.contains("message.complete") && needsProjects) {
                         await self.refreshEventActivity()
                     }
                     if generation != self.refreshGeneration {
@@ -275,12 +279,17 @@ extension ControlCenterModel {
                         continue
                     }
                     guard !Task.isCancelled else { return }
-                    await self.refreshEventDelegation()
+                    if events.contains("message.complete"), self.isLatestActivityRequested {
+                        self.refreshLatestActivityProjection()
+                    }
+                    if needsOverview {
+                        await self.refreshEventDelegation()
+                    }
                     if generation != self.refreshGeneration {
                         self.inFlightEventRefreshes.removeAll()
                         continue
                     }
-                    if let dock = self.dockModel {
+                    if let dock = self.dockModel, dock.presentationDemand.hasVisibleHost {
                         self.refreshSessionCockpit(for: dock.sessionID, quiet: true)
                         self.refreshPromptBudget(quiet: true)
                         self.refreshVerification()
@@ -351,7 +360,7 @@ extension ControlCenterModel {
         }
     }
 
-    /// Preserve project navigation and activity without toggling every projection on each turn.
+    /// Keep project navigation current without rereading the activity archive.
     func refreshEventActivity() async {
         guard let rpc, dockModel != nil else { return }
         let generation = refreshGeneration
@@ -369,14 +378,15 @@ extension ControlCenterModel {
                     return
                 }
                 if profile != nil {
-                    for project in refreshed where project.name != "__no_project__" {
+                    for project in refreshed where projectSessionsByProjectID[project.id] != nil {
                         let result = try await rpc.projectSessions(projectID: project.id, profileID: profile)
                         guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity),
                             projectProfileID == profile
                         else { return }
-                        if projectSessionsByProjectID[project.id] != Self.parseProjectSessions(result) {
-                            refresh()
-                            return
+                        let rows = Self.parseProjectSessions(result)
+                        if projectSessionsByProjectID[project.id] != rows {
+                            projectSessionsByProjectID[project.id] = rows
+                            if selectedProjectID == project.id { projectSessions = rows }
                         }
                     }
                 }
@@ -393,18 +403,6 @@ extension ControlCenterModel {
             else { return }
             recordProjectionFailure("projects", error: Self.safeUserDiagnostic(error.localizedDescription))
             return
-        }
-        do {
-            try await refreshLatestActivities(rpc: rpc, generation: generation, clientIdentity: identity)
-            guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity) else { return }
-            let state = refreshState(for: "latest.activity")
-            if state?.lastSuccess == nil || state?.error != nil || state?.isRefreshing == true || state?.isStale == true
-            {
-                recordProjectionSuccess("latest.activity")
-            }
-        } catch {
-            guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity) else { return }
-            recordProjectionFailure("latest.activity", error: Self.safeUserDiagnostic(error.localizedDescription))
         }
     }
 
@@ -553,6 +551,10 @@ extension ControlCenterModel {
     func refreshSessionScopedProjections(for sessionID: String) {
         let generation = UUID()
         sessionProcessesGeneration = generation
+        if processSessionID != sessionID {
+            verifiedProcessSessionID = nil
+            installCapabilities(capabilities)
+        }
         processSessionID = sessionID
         processes = []
         refreshSessionKanban(for: sessionID)

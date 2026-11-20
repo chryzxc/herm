@@ -1029,7 +1029,7 @@ Setup: run `Scripts/setup-simulator-bridge.sh` (plus `brew install facebook/fb/i
 ### Projects and session continuity
 
 - Skill and command highlights include the full namespaced token, such as `/cpipe:run`, in the composer and sent message bubbles.
-- Browse projects and their conversations within the selected bot's scope.
+- Browse project previews in the selected bot's scope. Opening a project loads its full conversation list.
 - Rename open and saved conversations in their bot's scope.
 - Create a project with just a name; the source folder is optional and can be added later. Folder-backed projects open their first chat automatically.
 - Create a project, set it active, archive it, or delete it when the installed Hermes runtime exposes the corresponding project methods.

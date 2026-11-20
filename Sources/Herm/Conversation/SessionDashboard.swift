@@ -9,6 +9,8 @@ struct SessionDashboard<Conversation: View>: View {
     @State private var selection = SessionDashboardSelection()
     @State private var showsConversation = false
     @State private var isNewConversation = false
+    @State private var activityHostID = UUID()
+    @Environment(\.dockHostVisible) private var hostVisible
     let onNewConversation: () -> Void
     let onOpenWorkspace: () -> Void
     let onShowList: () -> Void
@@ -92,8 +94,12 @@ struct SessionDashboard<Conversation: View>: View {
         .task {
             baseline(snapshot)
             if model.sessions.isEmpty { model.loadSessions() }
-            control.refreshProjectNavigation()
         }
+        .onChange(of: hostVisible, initial: true) { _, visible in
+            control.dashboardActivityDemand.update(activityHostID, visible: visible)
+            if visible { control.refreshLatestActivityProjection() }
+        }
+        .onDisappear { control.dashboardActivityDemand.update(activityHostID, visible: false) }
         // Not `onChange(of: sessionProjectionState)`: that compared every session on each
         // DockModel publish, streaming included. Snapshots publish only when inputs change.
         .onReceive(

@@ -14,6 +14,7 @@ extension ControlCenterModel {
             resetRoutineRunState()
             latestActivityRefreshTask?.cancel()
             latestActivityRefreshTask = nil
+            latestActivityRefreshID = nil
             latestActivityCache = [:]
             eventRefreshTask?.cancel()
             eventRefreshTask = nil
@@ -21,8 +22,9 @@ extension ControlCenterModel {
             inFlightEventRefreshes.removeAll()
             refreshTask?.cancel()
             refreshTask = nil
-            initialProjectNavigationTask?.cancel()
-            initialProjectNavigationTask = nil
+            sidebarCapabilityTask?.cancel()
+            sidebarCapabilityTask = nil
+            verifiedProcessSessionID = nil
             searchTask?.cancel()
             searchTask = nil
             sessionKanbanTask?.cancel()
@@ -130,8 +132,8 @@ extension ControlCenterModel {
             projectSessions = []
             projectSessionsByProjectID = [:]
             isRefreshingProjectNavigation = false
-            didLoadInitialProjectNavigation = false
             projectNavigationRefreshGeneration = nil
+            projectNavigationReads.removeAll()
             pendingProjectNavigationSessions = [:]
             completedProjectNavigationIDs = []
             projectNavigationRefreshIDs = []
@@ -167,6 +169,7 @@ extension ControlCenterModel {
             sessionProcessesGeneration = UUID()
             processSessionID = nil
             projectionRefreshStates.removeAll()
+            projectionSuccessDates.removeAll()
             projectionStates.removeAll()
             if let eventSubscription {
                 dockModel?.eventRouter.unsubscribe(eventSubscription)
@@ -217,6 +220,7 @@ extension ControlCenterModel {
         projectProfileID = next
         projectProfileScopeUnavailable = nextUnavailable
         projectNavigationRefreshGeneration = nil
+        projectNavigationReads.removeAll()
         projectNavigationRefreshIDs = []
         pendingProjectNavigationSessions = [:]
         completedProjectNavigationIDs = []
@@ -240,8 +244,43 @@ extension ControlCenterModel {
         refresh()
     }
 
+    /// Reopening the sidebar can follow a completed shared refresh in the same interaction.
+    func refreshOnSidebarMount(now: Date = .now) {
+        if let core = refreshState(for: "core"), let lastSuccess = core.lastSuccess,
+            !core.isStale, lastError == nil, (0..<15).contains(now.timeIntervalSince(lastSuccess))
+        {
+            return
+        }
+        refresh()
+    }
+
+    private static let sidebarCapabilityMaxAge: TimeInterval = 60
+
+    func refreshSidebarCapabilities(now: Date = .now) {
+        guard !isRefreshing, sidebarCapabilityTask == nil,
+            !(0..<Self.sidebarCapabilityMaxAge).contains(now.timeIntervalSince(capabilitySnapshotGeneratedAt)),
+            let dockModel
+        else { return }
+        let binding = clientBindingGeneration
+        let client = dockModel.controlRPCClient
+        let reminders = refreshState(for: "reminders")
+        let remindersAvailable = reminders?.lastSuccess != nil && reminders?.error == nil
+        sidebarCapabilityTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if clientBindingGeneration == binding { sidebarCapabilityTask = nil } }
+            let states = await capabilityService.probe(
+                client: client, remindersAvailable: remindersAvailable, cacheMaxAge: Self.sidebarCapabilityMaxAge)
+            guard !Task.isCancelled, isCurrentClient(ObjectIdentifier(client), bindingGeneration: binding)
+            else { return }
+            installCapabilities(states)
+            capabilitySnapshotGeneratedAt =
+                capabilityService.cachedGlobalProbeDate(client: client, remindersAvailable: remindersAvailable) ?? now
+        }
+    }
+
     func refresh(forceCapabilities: Bool = false) {
         guard !isRefreshing else { return }
+        sidebarCapabilityTask?.cancel()
         refreshGeneration &+= 1
         pendingEventRefreshes.formUnion(inFlightEventRefreshes)
         if eventRefreshTask != nil {
@@ -256,7 +295,7 @@ extension ControlCenterModel {
         let generation = refreshGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         isRefreshing = true
-        refreshLatestActivityProjection()
+        if isLatestActivityRequested { refreshLatestActivityProjection() }
         if lastError != nil { lastError = nil }
         rebuildAttention()
         // The left Kanban is a global Control projection. Hydrate it with the
@@ -308,22 +347,17 @@ extension ControlCenterModel {
                     }
                 }
                 if let dockModel {
-                    var probedCapabilities: [CapabilityState]
-                    while true {
-                        let sessionID = dockModel.sessionID
-                        probedCapabilities = await capabilityService.probe(
-                            client: dockModel.controlRPCClient,
-                            remindersAvailable: remindersAvailable,
-                            sessionID: sessionID,
-                            forceRefresh: forceCapabilities
-                        )
-                        guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
-                            return
-                        }
-                        if sessionID == dockModel.sessionID { break }
+                    let client = dockModel.controlRPCClient
+                    let probedCapabilities = await capabilityService.probe(
+                        client: client, remindersAvailable: remindersAvailable, forceRefresh: forceCapabilities,
+                        cacheMaxAge: Self.sidebarCapabilityMaxAge)
+                    guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
+                        return
                     }
-                    if capabilities != probedCapabilities { capabilities = probedCapabilities }
-                    capabilitySnapshotGeneratedAt = .now
+                    installCapabilities(probedCapabilities)
+                    capabilitySnapshotGeneratedAt =
+                        capabilityService.cachedGlobalProbeDate(client: client, remindersAvailable: remindersAvailable)
+                        ?? .now
                     // Activity may mount before the bounded capability probe finishes.
                     // Refresh here, at the ownership boundary, so a successful Kanban
                     // probe immediately hydrates the focused session projection rather
@@ -413,6 +447,8 @@ extension ControlCenterModel {
                             {
                                 let refreshed = Self.parseProcesses(result)
                                 if processes != refreshed { processes = refreshed }
+                                verifiedProcessSessionID = sessionID
+                                installCapabilities(capabilities)
                                 recordProjectionSuccess("processes")
                             }
                         } catch {
@@ -423,6 +459,8 @@ extension ControlCenterModel {
                             {
                                 let message = HermesDiagnosticsService.safeSummary(
                                     Self.safeUserDiagnostic(error.localizedDescription))
+                                verifiedProcessSessionID = nil
+                                installCapabilities(capabilities)
                                 recordProjectionFailure("processes", error: message)
                                 updateSharedRefreshError()
                             }
@@ -448,10 +486,20 @@ extension ControlCenterModel {
                                 current: projects, incoming: parsedProjects)
                             guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity)
                             else { return }
+                            let oldProjects = Dictionary(
+                                projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                            var changedHydratedIDs = Set<String>()
+                            for project in refreshedProjects where projectSessionsByProjectID[project.id] != nil {
+                                if let old = oldProjects[project.id],
+                                    old.sessionIDs != project.sessionIDs || old.sessionCount != project.sessionCount
+                                {
+                                    changedHydratedIDs.insert(project.id)
+                                }
+                            }
                             if projects != refreshedProjects { projects = refreshedProjects }
                             let validProjectIDs = Set(refreshedProjects.map(\.id))
                             let retainedSessions = projectSessionsByProjectID.filter {
-                                validProjectIDs.contains($0.key)
+                                validProjectIDs.contains($0.key) && !changedHydratedIDs.contains($0.key)
                             }
                             if projectSessionsByProjectID != retainedSessions {
                                 projectSessionsByProjectID = retainedSessions
@@ -480,10 +528,8 @@ extension ControlCenterModel {
                             // the focused session, which is the authoritative UI
                             // selection for this model.
                             resolveProjectMembership(for: currentFocus?.sessionID)
-                            if !refreshedProjects.isEmpty, projectProfileID != nil {
-                                refreshProjectNavigation(refreshProjects: false)
-                            }
                             recordProjectionSuccess("projects")
+                            for projectID in changedHydratedIDs { loadProjectNavigationSessions(projectID) }
                         } catch {
                             guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity)
                             else { return }

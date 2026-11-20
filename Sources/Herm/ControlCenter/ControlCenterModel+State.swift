@@ -47,6 +47,9 @@ extension ControlCenterModel {
             $projects.map { _ in () }.eraseToAnyPublisher(),
             $projectIDBySessionID.map { _ in () }.eraseToAnyPublisher(),
             $projectSessionsByProjectID.map { _ in () }.eraseToAnyPublisher(),
+            $projectionRefreshStates.map { states in
+                states.filter { $0.key.hasPrefix("projects.sessions.") && $0.value.error != nil }
+            }.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
             $projectProfileID.map { _ in () }.eraseToAnyPublisher(),
             $isRefreshing.map { _ in () }.eraseToAnyPublisher(),
             $isRefreshingProjectNavigation.map { _ in () }.eraseToAnyPublisher()
@@ -175,7 +178,9 @@ extension ControlCenterModel {
     }
 
     func refreshState(for projection: String) -> ProjectionRefreshState? {
-        projectionRefreshStates[projection]
+        guard var state = projectionRefreshStates[projection] else { return nil }
+        state.lastSuccess = projectionSuccessDates[projection] ?? state.lastSuccess
+        return state
     }
 
     func projectSessionsProjectionKey(for projectID: String) -> String {
@@ -227,11 +232,16 @@ extension ControlCenterModel {
         if states != projectionStates { projectionStates = states }
     }
 
-    func recordProjectionSuccess(_ projection: String, count: Int? = nil) {
+    func recordProjectionSuccess(_ projection: String, count: Int? = nil, now: Date = .now) {
         let resolvedCount = count ?? projectionCount(projection)
-        projectionRefreshStates[projection] = ProjectionRefreshState(
-            lastSuccess: .now, error: nil, isStale: false, isRefreshing: false)
-        projectionStates[projection] = resolvedCount == 0 ? .empty : .ready(resolvedCount)
+        projectionSuccessDates[projection] = now
+        // The timestamp alone is bookkeeping. Publish readiness transitions.
+        let previous = projectionRefreshStates[projection]
+        let ready = ProjectionRefreshState(
+            lastSuccess: previous?.lastSuccess ?? now, error: nil, isStale: false, isRefreshing: false)
+        if previous != ready { projectionRefreshStates[projection] = ready }
+        let next: HermesProjectionState<Int> = resolvedCount == 0 ? .empty : .ready(resolvedCount)
+        if projectionStates[projection] != next { projectionStates[projection] = next }
     }
 
     /// Publishes an explicit capability boundary when this model has no Hermes
@@ -243,6 +253,7 @@ extension ControlCenterModel {
         var refreshStates = projectionRefreshStates
         var states = projectionStates
         for projection in projections {
+            projectionSuccessDates.removeValue(forKey: projection)
             refreshStates[projection] = ProjectionRefreshState(
                 lastSuccess: nil, error: nil, isStale: false, isRefreshing: false)
             states[projection] = .unavailable(

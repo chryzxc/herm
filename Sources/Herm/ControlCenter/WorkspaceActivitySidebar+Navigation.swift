@@ -495,28 +495,46 @@ extension WorkspaceActivitySidebar {
                 // task so switching Global/Session cannot let this view clear or race
                 // the workflow projection. Manual Refresh actions still use the local
                 // refreshRepository() path below.
-                .task {
+                .task(id: hostVisible ? selectedMode : nil) {
+                    control.visibleSidebarTabs[sidebarVisibilityID] = hostVisible ? selectedMode : nil
+                    guard hostVisible else { return }
                     control.bind(to: model)
-                    control.refresh()
+                    if selectedMode == .kanban || selectedMode == .quota {
+                        control.refreshSidebarCapabilities()
+                    }
                     // The initial tab does not produce an `onChange` event. Load
                     // projections only after binding the CLI client, so a directly
                     // opened Quota or Kanban tab never misses its first request.
-                    if selectedMode == .quota {
+                    switch selectedMode {
+                    case .quota:
                         control.refreshProviderQuota()
-                    } else if selectedMode == .kanban {
+                    case .kanban:
                         applyKanbanFilters()
-                    } else if selectedMode == .officePreview {
+                    case .officePreview:
                         control.refreshGlobalKanban()
+                        control.refreshLatestActivityProjection()
+                    case .projects, .core:
+                        control.refreshOnSidebarMount()
+                    case .automations, .calendar:
+                        await control.refreshRoutineInventory(profileID: model.profileScopeID, includeSessions: true)
+                        guard !Task.isCancelled else { return }
+                        if selectedMode == .automations {
+                            control.refreshCronRuns()
+                            reconcileSelectedCronJob()
+                        }
+                    default: break
                     }
                 }
+                .onDisappear { control.visibleSidebarTabs[sidebarVisibilityID] = nil }
                 .onChange(of: initialMode) { _, mode in selectedMode = mode }
                 .onChange(of: model.status) { _, _ in control.rebuildAttention() }
                 .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
                 .onChange(of: model.sessionID) { _, sessionID in
                     sessionSteerFeedback = nil
+                    guard hostVisible, control.currentFocus?.sessionID != sessionID else { return }
                     control.focus(sessionID: sessionID)
                     if sessionID != nil {
-                        control.refresh()
+                        control.refreshPromptBudget()
                     }
                 }
                 .onChange(of: control.projectSessions) { _, sessions in
@@ -526,36 +544,16 @@ extension WorkspaceActivitySidebar {
                 .onChange(of: control.cronJobs) { _, _ in
                     reconcileSelectedCronJob()
                 }
-                .onChange(of: control.capabilities) { _, _ in
-                    guard selectedMode == .kanban, control.capabilityAvailable("kanban") else { return }
+                .onChange(of: control.capabilityAvailable("kanban")) { _, available in
+                    guard hostVisible, selectedMode == .kanban, available else { return }
                     applyKanbanFilters()
                 }
-                .onChange(of: selectedMode) { _, mode in
-                    switch mode {
-                    case .quota:
-                        control.refreshProviderQuota()
-                    case .kanban:
-                        // Re-apply this surface's visible controls. This prevents a
-                        // session-only query started from Activity from leaking into
-                        // a separately opened global board.
-                        applyKanbanFilters()
-                    case .officePreview:
-                        // The office reads the same global Kanban projection as the
-                        // Kanban page; it never creates or mutates a second task store.
-                        control.refreshGlobalKanban()
-                    case .automations:
-                        control.refresh()
-                        control.refreshCronRuns()
-                        reconcileSelectedCronJob()
-                    default:
-                        break
-                    }
-                }
                 .onChange(of: model.runtimeConfiguration) { _, _ in
-                    guard selectedMode == .quota else { return }
+                    guard hostVisible, selectedMode == .quota else { return }
                     control.refreshProviderQuota()
                 }
                 .onChange(of: model.observedKanbanTaskRevision) { _, _ in
+                    guard hostVisible else { return }
                     // Keep the board in step with an exact `kanban show <id>` tool
                     // event. The task may not carry a durable session_id, so waiting
                     // for a session-filtered list would leave the board falsely empty.

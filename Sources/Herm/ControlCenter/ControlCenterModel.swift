@@ -150,7 +150,7 @@ final class ControlCenterModel: ObservableObject {
     /// or a short preview.
     @Published var projectSessionsByProjectID: [String: [SessionSummary]] = [:]
     @Published var isRefreshingProjectNavigation = false
-    var didLoadInitialProjectNavigation = false
+    var projectNavigationReads: [String: UUID] = [:]
     @Published var selectedProjectID: String?
     /// Profile scope used exclusively by the Projects projection and its
     /// mutations. Other Control tabs remain gateway-global by design.
@@ -171,6 +171,7 @@ final class ControlCenterModel: ObservableObject {
     @Published var providerQuotaActionErrors: [String: String] = [:]
     /// `provider/id` of each pooled credential Hermes currently selects.
     @Published var hermesActiveCredentialKeys: Set<String> = []
+    var projectionSuccessDates: [String: Date] = [:]
     @Published var projectionRefreshStates: [String: ProjectionRefreshState] = [:]
     @Published var projectionStates: [String: HermesProjectionState<Int>] = [:]
 
@@ -189,12 +190,19 @@ final class ControlCenterModel: ObservableObject {
         profile: { [weak self] in self?.dockModel?.profileScopeID }, rpc: { [weak self] in self?.rpc })
     var cli: HermesCLIAdapter?
     var refreshTask: Task<Void, Never>?
+    var sidebarCapabilityTask: Task<Void, Never>?
+    var verifiedProcessSessionID: String?
     var latestActivityRefreshTask: Task<Void, Never>?
+    var latestActivityRefreshID: UUID?
+    var visibleSidebarTabs: [UUID: ControlTab] = [:]
+    let dashboardActivityDemand = DockPresentationDemand()
+    var isLatestActivityRequested: Bool {
+        dashboardActivityDemand.hasVisibleHost || visibleSidebarTabs.values.contains(.officePreview)
+    }
     var latestActivityCache: [String: LatestActivityCacheEntry] = [:]
     var eventRefreshTask: Task<Void, Never>?
     var pendingEventRefreshes: Set<String> = []
     var inFlightEventRefreshes: Set<String> = []
-    var initialProjectNavigationTask: Task<Void, Never>?
     var refreshGeneration: UInt64 = 0
     var clientBindingGeneration: UInt64 = 0
     var searchTask: Task<Void, Never>?

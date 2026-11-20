@@ -102,7 +102,21 @@ extension ControlCenterModel {
             || (processSessionID != nil && processSessionID == dockModel?.sessionID && !processes.isEmpty)
     }
 
+    func installCapabilities(_ states: [CapabilityState]) {
+        var next = states
+        let available = verifiedProcessSessionID != nil && verifiedProcessSessionID == processSessionID
+        let activity = HermesCapabilityService.activityCapability(available: available)
+        if let index = next.firstIndex(where: { $0.id == activity.id }) {
+            next[index] = activity
+        } else if available {
+            next.append(activity)
+        }
+        if capabilities != next { capabilities = next }
+    }
+
     func clearProcessFocus() {
+        verifiedProcessSessionID = nil
+        installCapabilities(capabilities)
         currentFocus = nil
         sessionProcessesGeneration = UUID()
         processSessionID = nil
@@ -118,7 +132,7 @@ extension ControlCenterModel {
 
     @discardableResult
     func refreshFocusedProcesses(for sessionID: String, generation: UUID) -> Task<Void, Never>? {
-        guard capabilityAvailable("rpc-sessions"), let rpc else { return nil }
+        guard let rpc else { return nil }
         let binding = clientBindingGeneration
         let refresh = refreshGeneration
         return Task { @MainActor [weak self] in
@@ -132,6 +146,8 @@ extension ControlCenterModel {
                 }
                 let parsed = Self.parseProcesses(result)
                 if self.processes != parsed { self.processes = parsed }
+                self.verifiedProcessSessionID = sessionID
+                self.installCapabilities(self.capabilities)
                 let state = self.refreshState(for: "processes")
                 if state?.lastSuccess == nil || state?.error != nil || state?.isStale == true
                     || state?.isRefreshing == true
@@ -145,6 +161,8 @@ extension ControlCenterModel {
                     return
                 }
                 self.processes = []
+                self.verifiedProcessSessionID = nil
+                self.installCapabilities(self.capabilities)
                 self.recordProjectionFailure("processes", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }

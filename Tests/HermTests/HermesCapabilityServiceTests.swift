@@ -38,6 +38,17 @@ struct HermesCapabilityServiceTests {
         #expect(client.requestCount > firstRequestCount)
     }
 
+    @Test func capabilityProbeHonorsTheRequestedCacheLifetime() async {
+        let client = CapabilityProbeClient()
+        let service = HermesCapabilityService()
+        _ = await service.probe(client: client, remindersAvailable: false)
+        let firstRequestCount = client.requestCount
+
+        _ = await service.probe(client: client, remindersAvailable: false, cacheMaxAge: 0)
+
+        #expect(client.requestCount > firstRequestCount)
+    }
+
     @Test func capabilityCacheIsScopedToTheActiveSession() async {
         let client = CapabilityProbeClient()
         let service = HermesCapabilityService()

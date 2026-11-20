@@ -126,14 +126,16 @@ final class HermesCapabilityService {
         client: HermesRPCClientProtocol,
         remindersAvailable: Bool,
         sessionID: String? = nil,
-        forceRefresh: Bool = false
+        forceRefresh: Bool = false,
+        cacheMaxAge: TimeInterval? = nil
     ) async -> [CapabilityState] {
         let clientID = ObjectIdentifier(client)
         let activeSessionID = Self.normalizedSessionID(sessionID)
         let cacheKey = CacheKey(clientID: clientID, remindersAvailable: remindersAvailable, sessionID: activeSessionID)
         if !forceRefresh,
             let cached = cachedSnapshots[cacheKey],
-            cached.client === client
+            cached.client === client,
+            cacheMaxAge.map({ (0..<$0).contains(Date().timeIntervalSince(cached.snapshot.generatedAt)) }) ?? true
         {
             return cached.snapshot.states
         }
@@ -195,6 +197,23 @@ final class HermesCapabilityService {
             if activeProbe == worker { activeProbe = nil }
             return states
         }
+    }
+
+    func cachedGlobalProbeDate(client: HermesRPCClientProtocol, remindersAvailable: Bool) -> Date? {
+        let key = CacheKey(clientID: ObjectIdentifier(client), remindersAvailable: remindersAvailable, sessionID: nil)
+        return cachedSnapshots[key]?.snapshot.generatedAt
+    }
+
+    static func activityCapability(available: Bool) -> CapabilityState {
+        productionMetadata(
+            CapabilityState(
+                id: HermesFeatureIDs.ID.rpcActivity.rawValue,
+                title: "Activity inspection",
+                detail: available
+                    ? "Process and activity inspection is available" : "process.list is unsupported or unavailable",
+                isAvailable: available,
+                recovery: available ? nil : "Upgrade Hermes to expose process activity to Herm."
+            ))
     }
 
     private static func normalizedSessionID(_ sessionID: String?) -> String? {
@@ -403,14 +422,7 @@ final class HermesCapabilityService {
                 isAvailable: schedulingRPC != nil,
                 recovery: schedulingRPC == nil ? "Upgrade Hermes or manage scheduled work through the Hermes CLI." : nil
             ),
-            CapabilityState(
-                id: HermesFeatureIDs.ID.rpcActivity.rawValue,
-                title: "Activity inspection",
-                detail: activityRPC == nil
-                    ? "process.list is unsupported or unavailable" : "Process and activity inspection is available",
-                isAvailable: activityRPC != nil,
-                recovery: activityRPC == nil ? "Upgrade Hermes to expose process activity to Herm." : nil
-            ),
+            Self.activityCapability(available: activityRPC != nil),
             CapabilityState(
                 id: HermesFeatureIDs.ID.rpcProjects.rawValue,
                 title: "Project control",

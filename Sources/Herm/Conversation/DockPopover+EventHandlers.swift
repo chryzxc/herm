@@ -271,7 +271,6 @@ extension DockPopover {
             handleProfileScopeChange(botMode.selectedProfileID)
             model.restoreLatestSessionIfNeeded()
             controlCenter.refresh()
-            controlCenter.startInitialProjectNavigationLoad()
         }
         // Seed the project name cache immediately after bind so the label is
         // visible from the first render if membership data is already loaded.

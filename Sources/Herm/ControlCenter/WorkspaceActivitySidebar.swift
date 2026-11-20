@@ -219,11 +219,13 @@ struct WorkspaceActivitySidebar: View {
 
     @StateObject private var confirmedAction = DockAsyncAction()
     @State private var activityRevision = 0
+    @State var sidebarVisibilityID = UUID()
 
     var body: some View {
         let _ = activityRevision
         observedSidebar
             .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
+                guard hostVisible else { return }
                 activityRevision &+= 1
             }
             .overlay(alignment: .bottomTrailing) {

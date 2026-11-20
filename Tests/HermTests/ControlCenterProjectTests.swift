@@ -640,6 +640,32 @@ struct ControlCenterProjectTests {
         #expect(projects.first?.sessionIDs == Set(["session-1"]))
     }
 
+    @Test func compactTreeKeepsPreviewsAndMembershipBeforeProjectHydration() async {
+        let client = ProjectSessionIsolationClient()
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        control.projects = ControlCenterModel.parseProjects([
+            "projects": [
+                [
+                    "id": "A", "path": "/repos/A", "sessionCount": 2, "sessionIds": ["A-preview", "A-older"],
+                    "previewSessions": [["id": "A-preview", "title": "Recent", "preview": "Latest"]],
+                ],
+                ["id": "B", "path": "/repos/B", "sessionCount": 1],
+            ]
+        ])
+
+        #expect(control.projects.first?.previewSessions?.map(\.id) == ["A-preview"])
+        #expect(control.projects.first?.sessionIDs == ["A-preview", "A-older"])
+        #expect(client.requestedProjectIDs.isEmpty)
+
+        let load = control.loadProjectNavigationSessions("A")
+        #expect(control.loadProjectNavigationSessions("A") == nil)
+        await load?.value
+        #expect(control.loadProjectNavigationSessions("A") == nil)
+        #expect(client.requestedProjectIDs == ["A"])
+        #expect(control.projectSessionsByProjectID["A"]?.map(\.id) == ["A-session"])
+        #expect(control.projectSessionsByProjectID["B"] == nil)
+    }
+
     @Test func malformedSessionContextRemainsUnavailableAndUsesUniqueFallbackCategories() {
         let context = ControlCenterModel.parseSessionContext([
             "categories": [

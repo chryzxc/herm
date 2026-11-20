@@ -20,8 +20,7 @@ struct PerformanceAuditRegressionTests {
     @Test func archiveReadsAreLimitedToTwoAndKeepAllSessions() async throws {
         let client = ArchiveConcurrencyClient()
         let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
-        try await control.refreshLatestActivities(
-            rpc: HermesControlRPC(client: client), generation: control.refreshGeneration, clientIdentity: nil)
+        try await control.refreshLatestActivities(rpc: HermesControlRPC(client: client))
         #expect(client.maximumConcurrent == 2)
         #expect(client.completed == 8)
         #expect(control.latestActivities.count == 8)
@@ -227,6 +226,12 @@ struct PerformanceAuditRegressionTests {
         let client = HeldActivityClient()
         let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
         control.refresh()
+        for _ in 0..<200 where !client.agentRead {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(client.agentRead)
+        #expect(client.archiveReads == 0)
+        control.refreshLatestActivityProjection()
         for _ in 0..<200 {
             if client.archiveStarted && client.agentRead { break }
             try await Task.sleep(for: .milliseconds(10))
@@ -249,8 +254,7 @@ struct PerformanceAuditRegressionTests {
         let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
         for expectedReads in [1, 1, 2] {
             if expectedReads == 2 { client.messageCount = 3 }
-            try await control.refreshLatestActivities(
-                rpc: HermesControlRPC(client: client), generation: 0, clientIdentity: nil)
+            try await control.refreshLatestActivities(rpc: HermesControlRPC(client: client))
             #expect(client.messageReads == expectedReads)
         }
         #expect(control.latestActivities.count == 1)

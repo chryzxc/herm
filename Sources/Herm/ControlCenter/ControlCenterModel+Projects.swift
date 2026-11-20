@@ -15,7 +15,7 @@ extension ControlCenterModel {
         currentFocus = ControlReference(source: .hermesProject, sourceID: project.id, projectID: project.id)
         selectedProjectID = project.id
         selectedProject = project
-        projectSessions = projectSessionsByProjectID[project.id] ?? []
+        projectSessions = projectSessionsByProjectID[project.id] ?? project.previewSessions ?? []
         beginProjectionRefresh(projectionKey)
         let profileID = projectProfileID
         Task {
@@ -75,6 +75,7 @@ extension ControlCenterModel {
         // A refresh already in flight carries pre-move membership: drop it
         // and start a fresh one so it cannot put the session back.
         projectNavigationRefreshGeneration = nil
+        projectNavigationReads.removeAll()
         isRefreshingProjectNavigation = false
         pendingProjectNavigationSessions = [:]
         completedProjectNavigationIDs = []
@@ -104,7 +105,8 @@ extension ControlCenterModel {
             return ProjectSummary(
                 id: project.id, name: project.name, repoCount: project.repoCount,
                 sessionCount: max(0, project.sessionCount + (isTarget ? 1 : -1)),
-                sessionIDs: ids, preview: project.preview, isActive: project.isActive)
+                sessionIDs: ids, preview: project.preview, isActive: project.isActive,
+                previewSessions: project.previewSessions?.filter { $0.id != sessionID })
         }
     }
 
@@ -143,6 +145,7 @@ extension ControlCenterModel {
         guard !navigationProjects.isEmpty else { return }
         let profileID = projectProfileID
         isRefreshingProjectNavigation = true
+        projectNavigationReads.removeAll()
         let generation = UUID()
         projectNavigationRefreshIDs = Set(navigationProjects.map(\.id))
         projectNavigationRefreshGeneration = generation
@@ -168,31 +171,36 @@ extension ControlCenterModel {
         }
     }
 
-    /// Starts the linked-session projection after the initial project tree is
-    /// ready. The tree and its session details are separate gateway calls, so
-    /// waiting here avoids leaving every project permanently on a loading row
-    /// until the user presses Refresh.
-    func startInitialProjectNavigationLoad() {
-        guard !projectProfileScopeUnavailable else {
-            initialProjectNavigationTask?.cancel()
-            initialProjectNavigationTask = nil
-            return
-        }
-        guard !didLoadInitialProjectNavigation,
-            initialProjectNavigationTask == nil
-        else { return }
-        initialProjectNavigationTask = Task { @MainActor [weak self] in
-            for _ in 0..<120 {
-                guard let self, !Task.isCancelled else { return }
-                if !self.isRefreshing, !self.projects.isEmpty {
-                    self.didLoadInitialProjectNavigation = true
-                    self.initialProjectNavigationTask = nil
-                    self.refreshProjectNavigation(refreshProjects: false)
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(250))
+    /// Hydrates the expanded project that asked for rows, independently of its siblings.
+    @discardableResult
+    func loadProjectNavigationSessions(_ projectID: String) -> Task<Void, Never>? {
+        guard let rpc, !projectProfileScopeUnavailable, !isRefreshingProjectNavigation,
+            projectNavigationReads[projectID] == nil, projectSessionsByProjectID[projectID] == nil,
+            projects.contains(where: { $0.id == projectID && $0.sessionCount > 0 })
+        else { return nil }
+        let request = UUID()
+        let key = projectSessionsProjectionKey(for: projectID)
+        let profile = projectProfileID
+        projectNavigationReads[projectID] = request
+        beginProjectionRefresh(key)
+        return Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if projectNavigationReads[projectID] == request { projectNavigationReads[projectID] = nil }
             }
-            self?.initialProjectNavigationTask = nil
+            do {
+                let response = try await rpc.projectSessions(projectID: projectID, profileID: profile)
+                guard projectNavigationReads[projectID] == request, projects.contains(where: { $0.id == projectID })
+                else { return }
+                guard !(response["project"] is NSNull) else { throw HermesGateway.GatewayError.malformedResponse }
+                let rows = Self.parseProjectSessions(response)
+                projectSessionsByProjectID[projectID] = rows
+                if selectedProjectID == projectID { projectSessions = rows }
+                recordProjectionSuccess(key, count: rows.count)
+            } catch {
+                guard projectNavigationReads[projectID] == request else { return }
+                recordProjectionFailure(key, error: HermesDiagnosticsService.safeSummary(error.localizedDescription))
+            }
         }
     }
 

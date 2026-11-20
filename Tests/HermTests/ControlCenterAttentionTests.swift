@@ -136,7 +136,7 @@ struct ControlCenterAttentionTests {
         model.eventRefreshTask?.cancel()
     }
 
-    @Test func unchangedMessageRefreshDoesNotPublish() async {
+    @Test func hiddenMessageRefreshOnlyReadsSharedSessionsWithoutPublishingUnchangedState() async {
         let client = ClarificationResponseRPCClient()
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client), capabilities: [])
         let dock = DockModel(rpcClient: client)
@@ -159,9 +159,10 @@ struct ControlCenterAttentionTests {
         await model.eventRefreshTask?.value
         try? await Task.sleep(for: .milliseconds(200))
         #expect(publications == 0)
-        #expect(client.calls.map(\.method).contains("projects.tree"))
-        #expect(client.httpPaths.contains { $0.hasPrefix("/api/sessions?") })
-        #expect(client.calls.map(\.method).contains("shell.exec"))
+        #expect(client.calls.contains { $0.method == "session.active_list" })
+        #expect(!client.calls.contains { $0.method == "projects.tree" })
+        #expect(!client.httpPaths.contains { $0.hasPrefix("/api/sessions?") })
+        #expect(!client.calls.contains { $0.method == "shell.exec" })
         withExtendedLifetime(subscription) {}
     }
 
@@ -170,6 +171,8 @@ struct ControlCenterAttentionTests {
         let model = ControlCenterModel()
         let dock = DockModel(rpcClient: client)
         model.bind(to: dock)
+        model.visibleSidebarTabs[UUID()] = .core
+        dock.presentationDemand.update(UUID(), visible: true)
         model.projectProfileScopeUnavailable = false
         model.verification = VerificationSummary(state: .notApplicable, evidence: nil)
         client.sessions = [["id": "session-a", "title": "Changed"]]

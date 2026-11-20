@@ -80,6 +80,7 @@ struct SessionNavSidebarSnapshot: Equatable {
         var localProjectPathBySessionID: [String: String] = [:]
         /// Every bot's recent sessions, for the multi-bot groupings.
         var allBotSessionsState: HermesProjectionState<[HermesSession]> = .loading
+        var failedProjectSessionIDs: Set<String> = []
 
         /// Every input `conversationGroups` and `SidebarAgentGrouping.merged` read.
         func hasSameConversations(as other: Inputs) -> Bool {
@@ -201,7 +202,12 @@ struct SessionNavSidebarSnapshot: Equatable {
             pinnedSessions: model.pinnedSessions,
             pinningSessionID: model.pinningSessionID,
             localProjectPathBySessionID: localProjectPaths,
-            allBotSessionsState: model.allBotSessionsState
+            allBotSessionsState: model.allBotSessionsState,
+            failedProjectSessionIDs: Set(
+                control.projects.compactMap { project in
+                    control.refreshState(for: control.projectSessionsProjectionKey(for: project.id))?.error == nil
+                        ? nil : project.id
+                })
         )
     }
 
@@ -247,7 +253,7 @@ struct SessionNavSidebarSnapshot: Equatable {
         for (index, project) in renderable.enumerated() {
             var sessionsByID = Dictionary(
                 members[index].map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            for summary in inputs.projectSessionsByProjectID[project.id] ?? [] {
+            for summary in inputs.projectSessionsByProjectID[project.id] ?? project.previewSessions ?? [] {
                 let savedSession = sessionsByID[summary.id]
                 let updatedAt = [summary.updatedAt, savedSession?.updatedAt].compactMap { $0 }.max()
                 let savedSessionIsNewer = sessionDate(savedSession) > (summary.updatedAt ?? .distantPast)

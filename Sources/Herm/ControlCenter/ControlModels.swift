@@ -581,6 +581,7 @@ struct ProjectSummary: Identifiable, Codable, Equatable {
     let sessionIDs: Set<String>
     let preview: String?
     let isActive: Bool
+    var previewSessions: [SessionSummary]? = nil
 
     /// The gateway can expose internal/session buckets alongside real
     /// repo-backed projects. Those buckets must not claim ownership of a

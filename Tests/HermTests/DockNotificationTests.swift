@@ -866,8 +866,8 @@ struct DockNotificationTests {
         )
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
 
-        model.refresh()
-        for _ in 0..<20 { await Task.yield() }
+        model.refreshLatestActivityProjection()
+        await model.latestActivityRefreshTask?.value
 
         #expect(model.latestActivities.count == 2)
         #expect(
@@ -887,13 +887,13 @@ struct DockNotificationTests {
         )
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
 
-        model.refresh()
-        for _ in 0..<20 { await Task.yield() }
+        model.refreshLatestActivityProjection()
+        await model.latestActivityRefreshTask?.value
         let previousActivities = model.latestActivities
         #expect(!previousActivities.isEmpty)
 
-        model.refresh()
-        for _ in 0..<20 { await Task.yield() }
+        model.refreshLatestActivityProjection()
+        await model.latestActivityRefreshTask?.value
 
         #expect(model.latestActivities == previousActivities)
         let isStale: Bool

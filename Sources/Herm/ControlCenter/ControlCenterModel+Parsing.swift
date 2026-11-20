@@ -99,32 +99,34 @@ extension ControlCenterModel {
     /// Archive enrichment must not delay live agent, capability, or project state.
     func refreshLatestActivityProjection() {
         guard latestActivityRefreshTask == nil, let rpc else { return }
-        let generation = refreshGeneration
+        let request = UUID()
+        latestActivityRefreshID = request
+        let binding = clientBindingGeneration
         let identity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         beginProjectionRefresh("latest.activity")
         latestActivityRefreshTask = Task { [weak self] in
             guard let self else { return }
             defer {
-                if isCurrentRefresh(generation, clientIdentity: identity) { latestActivityRefreshTask = nil }
+                if latestActivityRefreshID == request {
+                    latestActivityRefreshTask = nil
+                    latestActivityRefreshID = nil
+                }
             }
             do {
-                try await refreshLatestActivities(rpc: rpc, generation: generation, clientIdentity: identity)
+                try await refreshLatestActivities(rpc: rpc)
                 try Task.checkCancellation()
-                guard isCurrentRefresh(generation, clientIdentity: identity) else { return }
+                guard isCurrentClient(identity, bindingGeneration: binding) else { return }
                 recordProjectionSuccess("latest.activity")
             } catch {
-                guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity) else { return }
+                guard !Task.isCancelled, isCurrentClient(identity, bindingGeneration: binding) else { return }
                 recordProjectionFailure(
                     "latest.activity", error: HermesDiagnosticsService.safeSummary(error.localizedDescription))
             }
         }
     }
 
-    func refreshLatestActivities(
-        rpc: HermesControlRPC,
-        generation: UInt64,
-        clientIdentity: ObjectIdentifier?
-    ) async throws {
+    func refreshLatestActivities(rpc: HermesControlRPC) async throws {
+        let binding = clientBindingGeneration
         var sessionRows: [[String: Any]] = []
         var offset = 0
         var pageCount = 0
@@ -133,7 +135,7 @@ extension ControlCenterModel {
         let maximumPageCount = 1_000
         repeat {
             try Task.checkCancellation()
-            guard isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+            guard binding == clientBindingGeneration else { return }
             guard pageCount < maximumPageCount else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
@@ -174,7 +176,7 @@ extension ControlCenterModel {
 
         for start in stride(from: 0, to: sessions.count, by: 2) {
             try Task.checkCancellation()
-            guard isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+            guard binding == clientBindingGeneration else { return }
             let end = min(start + 2, sessions.count)
             let batch = Array(sessions[start..<end])
             let fetched = await withTaskGroup(
@@ -216,7 +218,7 @@ extension ControlCenterModel {
             }
         }
         try Task.checkCancellation()
-        guard isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+        guard binding == clientBindingGeneration else { return }
         latestActivityCache = nextCache
 
         let projectedActivities = GlobalSessionActivityPresentation.latestActivity(
@@ -233,7 +235,6 @@ extension ControlCenterModel {
                 ]
             )
         }
-        guard isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
         if latestActivities != projectedActivities { latestActivities = projectedActivities }
     }
 
@@ -1476,21 +1477,25 @@ extension ControlCenterModel {
         return rows.compactMap { row in
             guard let id = row["id"] as? String else { return nil }
             let repos = (row["repos"] as? [[String: Any]]) ?? (row["repositories"] as? [[String: Any]]) ?? []
-            let sessions = (row["sessions"] as? [[String: Any]]) ?? (row["preview_sessions"] as? [[String: Any]]) ?? []
-            let declaredSessionCount = (row["session_count"] as? NSNumber)?.intValue
+            let sessions =
+                (row["sessions"] as? [[String: Any]]) ?? (row["previewSessions"] as? [[String: Any]])
+                ?? (row["preview_sessions"] as? [[String: Any]]) ?? []
+            let declaredSessionCount = ((row["sessionCount"] ?? row["session_count"]) as? NSNumber)?.intValue
             // Projects can return session records inside their repository lanes,
             // while `session_count` is absent or stale. Preserve a larger
             // declared total but never hide the sessions that are present.
             let projectSessions = parseProjectSessions(row)
-            let sessionCount = max(max(declaredSessionCount ?? 0, sessions.count), projectSessions.count)
+            let memberIDs = Set(row["sessionIds"] as? [String] ?? []).union(projectSessions.map(\.id))
+            let sessionCount = max(declaredSessionCount ?? 0, sessions.count, memberIDs.count)
             return ProjectSummary(
                 id: id,
                 name: projectPath(row, repos: repos) ?? (row["name"] as? String) ?? id,
                 repoCount: (row["repo_count"] as? NSNumber)?.intValue ?? repos.count,
                 sessionCount: sessionCount,
-                sessionIDs: Set(projectSessions.map(\.id)),
+                sessionIDs: memberIDs,
                 preview: (sessions.first?["preview"] as? String) ?? (sessions.first?["title"] as? String),
-                isActive: (row["active"] as? Bool) ?? (id == activeID)
+                isActive: (row["active"] as? Bool) ?? (id == activeID),
+                previewSessions: projectSessions.isEmpty ? nil : projectSessions
             )
         }
     }
@@ -1500,6 +1505,7 @@ extension ControlCenterModel {
     /// repository's path whenever the declared name is not already a path.
     static func projectPath(_ row: [String: Any], repos: [[String: Any]]) -> String? {
         if let name = row["name"] as? String, name.hasPrefix("/") { return name }
+        if let path = row["path"] as? String, path.hasPrefix("/") { return path }
         for repo in repos {
             for key in ["path", "root", "repo_path", "folder", "cwd"] {
                 if let path = repo[key] as? String, path.hasPrefix("/") { return path }

@@ -136,12 +136,11 @@ struct ProjectDisclosureState: Equatable {
     }
 
     func visibleSessions(_ sessions: [HermesSession], projectID: String, limit: Int = 10) -> [HermesSession] {
-        let newestFirst = sessions.sorted { lhs, rhs in
-            let lhsDate = lhs.lastUpdatedAt ?? .distantPast
-            let rhsDate = rhs.lastUpdatedAt ?? .distantPast
-            if lhsDate != rhsDate { return lhsDate > rhsDate }
-            return lhs.id < rhs.id
-        }
+        visibleSortedSessions(
+            SidebarAgentGrouping.sortedNewestFirst(sessions, tieBreakByID: true), projectID: projectID, limit: limit)
+    }
+
+    func visibleSortedSessions(_ newestFirst: [HermesSession], projectID: String, limit: Int) -> [HermesSession] {
         return showsAllSessions(projectID: projectID)
             ? newestFirst
             : Array(newestFirst.prefix(max(0, limit)))
@@ -179,6 +178,8 @@ struct SessionNavProjectList: View {
     var projectTargets: (String) -> [SidebarProjectTarget] = { _ in [] }
     var isMovingSession = false
     var onAddToProject: (HermesSession, SidebarProjectTarget) -> Void = { _, _ in }
+    var loadSessions: (String) -> Void = { _ in }
+    var failedProjectSessionIDs: Set<String> = []
     @State private var disclosureState = ProjectDisclosureState()
     @State private var isExpanded = true
     @State private var hoveredNewChatProjectID: String?
@@ -229,7 +230,7 @@ struct SessionNavProjectList: View {
         let sessionCount = max(group.declaredSessionCount, group.sessions.count)
         let isCollapsed = disclosureState.isCollapsed(
             projectID: group.id, isEmpty: sessionCount == 0 && group.sessions.isEmpty)
-        let sessions = disclosureState.visibleSessions(group.sessions, projectID: group.id, limit: sessionLimit)
+        let sessions = disclosureState.visibleSortedSessions(group.sessions, projectID: group.id, limit: sessionLimit)
         let isCreatingHere = creatingProjectPath != nil && creatingProjectPath == group.projectPath
         HStack(spacing: 0) {
             Button {
@@ -333,6 +334,9 @@ struct SessionNavProjectList: View {
                 : (hoveredProjectRowID == group.id ? nil : hoveredProjectRowID)
         }
         .background(Color.clear)
+        .task(id: isCollapsed ? nil : group.projectID) {
+            if !isCollapsed, let projectID = group.projectID { loadSessions(projectID) }
+        }
         .dockContextMenu {
             if let projectPath = group.projectPath, !projectPath.isEmpty {
                 projectActions(group, projectPath: projectPath)
@@ -340,7 +344,7 @@ struct SessionNavProjectList: View {
         }
         if !isCollapsed {
             if group.sessions.isEmpty {
-                projectStatusRow(sessionCount == 0 ? "No conversations yet" : "Loading linked sessions…", leading: 0)
+                projectStatusRow(projectSessionStatus(group, sessionCount: sessionCount), leading: 0)
                     .dockPadding(.leading, 12)
             } else {
                 ForEach(sessions, id: \.[sidebarSection: group.id]) { session in
@@ -376,6 +380,11 @@ struct SessionNavProjectList: View {
                 }
             }
         }
+    }
+
+    private func projectSessionStatus(_ group: SessionNavConversationGroup, sessionCount: Int) -> String {
+        if let id = group.projectID, failedProjectSessionIDs.contains(id) { return "Linked sessions are unavailable" }
+        return sessionCount == 0 ? "No conversations yet" : "Loading linked sessions…"
     }
 
     private func projectStatusRow(_ text: String, leading: CGFloat = 34) -> some View {

@@ -783,7 +783,9 @@ struct SessionNavQueue: View, Equatable {
                 pinningSessionID: sidebarSnapshot.inputs.pinningSessionID,
                 projectTargets: { sidebarSnapshot.projectTargets(forSessionID: $0) },
                 isMovingSession: model.movingSessionToProjectID != nil,
-                onAddToProject: moveToProject
+                onAddToProject: moveToProject,
+                loadSessions: { controlCenter.loadProjectNavigationSessions($0) },
+                failedProjectSessionIDs: sidebarSnapshot.inputs.failedProjectSessionIDs
             )
         }
     }

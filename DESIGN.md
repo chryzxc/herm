@@ -1904,6 +1904,9 @@ for up to 60 seconds while fetching the recent page and current pins/activity.
 Manual refreshes and profile switches bypass that reuse; older sessions remain
 searchable between full-history reads. External changes to older rows reconcile
 on the first refresh after expiry, or immediately through manual refresh.
+Projects show the overview's preview rows immediately and hydrate linked sessions
+as expanded groups enter view. The Office and Chats tiles request archived
+activity when opened.
 The floating desktop shell keeps the conversation and inspector side by side
 when the inspector opens, using a 360pt conversation minimum (520pt in
 fullscreen). Expanding the inspector must not replace the conversation.
@@ -4167,6 +4170,9 @@ message. Character count and Post comment sit below the editor. Preserve drafts,
 confirmation, posting feedback, and provider-authoritative metadata editing.
 
 ### Activity workspace
+
+Opening an Activity tab refreshes the data the tab uses. Recent activity history
+refreshes while Office or the Chats dashboard is visible.
 
 Activity Work uses full-width count bars with aligned totals and wrapping day metadata.
 Its adaptive Usage grid shows reported input, output, cache-read and reasoning tokens,
