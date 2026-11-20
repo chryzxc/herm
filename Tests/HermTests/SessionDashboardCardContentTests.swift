@@ -32,6 +32,13 @@ struct SessionDashboardCardContentTests {
         #expect(SessionDashboardCardContent.latestUpdate([]) == nil)
     }
 
+    @Test func longTilePreviewBoundsMarkdownWorkAndKeepsInlineLinks() {
+        let link = "[Review](https://example.com/review)"
+        let result = SessionDashboardCard.renderedPreview(link + String(repeating: " detail", count: 12_000))
+        #expect(result.characters.count <= 1024)
+        #expect(result.runs.first?.link?.absoluteString == "https://example.com/review")
+    }
+
     @Test func visualReplyUsesReadableFallbackInsteadOfJSON() {
         let source = """
             ```herm-ui

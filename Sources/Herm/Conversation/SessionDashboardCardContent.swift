@@ -1,6 +1,30 @@
 import Combine
 import Foundation
 
+/// Scrolling through a large board evicts individual previews under memory pressure.
+@MainActor
+final class SessionDashboardPreviewCache<Value> {
+    private final class Entry {
+        let value: Value
+        init(_ value: Value) { self.value = value }
+    }
+
+    private let storage = NSCache<NSString, Entry>()
+
+    init(limit: Int) { storage.countLimit = limit }
+
+    subscript(key: String) -> Value? {
+        get { storage.object(forKey: key as NSString)?.value }
+        set {
+            if let newValue {
+                storage.setObject(Entry(newValue), forKey: key as NSString)
+            } else {
+                storage.removeObject(forKey: key as NSString)
+            }
+        }
+    }
+}
+
 /// Disposable, read-only message tail for a visible dashboard card.
 @MainActor
 final class SessionDashboardCardContent: ObservableObject {
@@ -8,7 +32,7 @@ final class SessionDashboardCardContent: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var loading = false
     private var generation = UUID()
-    private static var cache: [String: String] = [:]
+    private static let cache = SessionDashboardPreviewCache<String>(limit: 300)
 
     func load(session: HermesSession, profileID: String?, client: HermesRPCClientProtocol) async {
         let stamp = session.lastUpdatedAt?.timeIntervalSince1970 ?? 0
@@ -36,7 +60,6 @@ final class SessionDashboardCardContent: ObservableObject {
             guard generation == request, !Task.isCancelled else { return }
             text = Self.latestUpdate(page.messages)
             if let text {
-                if Self.cache.count > 300 { Self.cache.removeAll() }
                 Self.cache[key] = text
             }
             error = nil
@@ -46,12 +69,11 @@ final class SessionDashboardCardContent: ObservableObject {
         }
     }
 
-    private static var previews: [String: String?] = [:]
+    private static let previews = SessionDashboardPreviewCache<String?>(limit: 500)
 
     /// `preview` scans for rich surfaces and summarizes; tiles ask on every render.
     static func cachedPreview(_ value: String) -> String? {
         if let cached = previews[value] { return cached }
-        if previews.count > 500 { previews.removeAll() }
         let summary = preview(value)
         previews[value] = .some(summary)
         return summary

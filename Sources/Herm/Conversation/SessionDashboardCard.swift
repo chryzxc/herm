@@ -263,14 +263,15 @@ struct SessionDashboardCard: View, Equatable {
 
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
 
-    private static var renderedPreviews: [String: AttributedString] = [:]
+    private static let renderedPreviews = SessionDashboardPreviewCache<AttributedString>(limit: 500)
 
     /// Markdown parsing is the costliest part of a tile; lazy grids re-create tiles on every scroll.
     static func renderedPreview(_ text: String) -> AttributedString {
-        if let cached = renderedPreviews[text] { return cached }
-        if renderedPreviews.count > 500 { renderedPreviews.removeAll() }
-        let rendered = inlineMarkdown(text)
-        renderedPreviews[text] = rendered
+        // Four visible lines need only an excerpt. The tooltip keeps the complete reply.
+        let excerpt = String(text.prefix(1024))
+        if let cached = renderedPreviews[excerpt] { return cached }
+        let rendered = inlineMarkdown(excerpt)
+        renderedPreviews[excerpt] = rendered
         return rendered
     }
 
