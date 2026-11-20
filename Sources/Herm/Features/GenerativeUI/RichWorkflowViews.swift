@@ -24,7 +24,7 @@ struct RichCodeView: View {
                     max(64, CGFloat(code.code.split(separator: "\n", omittingEmptySubsequences: false).count) * 17 + 44)
                 )
             )
-            .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 8))
+            .dockWell(.raised)
         }
     }
 }
@@ -36,9 +36,16 @@ struct RichFindingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(findings.items) { item in
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(item.severity.rawValue.capitalized).foregroundStyle(color(item.severity))
-                        Text(item.title).fontWeight(.semibold)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline, spacing: DockSpacing.group) {
+                            Text(item.title).fontWeight(.semibold)
+                            Spacer(minLength: DockSpacing.control)
+                            severityLabel(item.severity)
+                        }
+                        VStack(alignment: .leading, spacing: DockSpacing.micro) {
+                            Text(item.title).fontWeight(.semibold)
+                            severityLabel(item.severity)
+                        }
                     }
                     if let location = item.location {
                         Text(location).dockFont(.code, design: .monospaced)
@@ -52,6 +59,11 @@ struct RichFindingsView: View {
                 if item.id != findings.items.last?.id { Divider().overlay(Color.dockBorder) }
             }
         }
+    }
+
+    private func severityLabel(_ severity: RichFindings.Item.Severity) -> some View {
+        Text(severity.rawValue.capitalized).dockFont(.metadata, weight: .medium)
+            .foregroundStyle(color(severity)).dockPill(tint: color(severity), compact: true)
     }
 
     private func color(_ severity: RichFindings.Item.Severity) -> Color {

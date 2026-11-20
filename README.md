@@ -271,9 +271,18 @@ and suppress repeat submission. See [the loading-state audit](docs/loading-state
 
 ### Generative UI
 
+Generated replies can show category breakdowns with labelled horizontal bars and expandable Q&A with Markdown answers.
+
 Generated replies use a macOS-style document surface with a tonal toolbar, visible
 Expand action, grouped provenance, inset sections, and rounded metric figures.
 The treatment follows your current Herm theme, including Glass and Monochrome.
+
+A finished assistant reply can also use ordinary Markdown. A pipe table with a header
+and separator gets sortable columns and a filter above ten rows. A quoted GitHub
+alert such as `> [!TIP]` followed by `> Keep a copy of the original.` appears as a native
+callout. A list of two or more bullets like `- **Format:** CSV` becomes a fact sheet.
+These work with the default Generative UI setting, including in earlier replies.
+Copying the message preserves its Markdown.
 
 [![A Herm reply rendered as an interactive visual answer](docs/media/genui-demo-poster.webp)](docs/media/genui-demo.mp4)
 
@@ -291,7 +300,7 @@ Bot mentions also request visual replies in the recipient's Bot Chat, even while
 |---|---|
 | Data | Sortable, filterable tables with aligned numbers; bar, line, area, and point charts with multiple series linked to a shared dataset (selecting a row highlights it in the chart); metric tiles with comparisons |
 | Decisions and plans | Option comparisons against shared criteria, checklists, timelines with dependencies, and workflow steps (proposed, running, passed, failed, blocked, skipped) |
-| Structure | Graphs (up to 200 nodes, solid or dashed edges, with status) and collapsible trees |
+| Structure | Label–value fact sheets, callouts (note, tip, important, warning, caution), graphs (up to 200 nodes, solid or dashed edges, with status) and collapsible trees |
 | Development | Copyable code blocks, review findings with severity, location, and recommendation, and runnable command cards |
 | Media and sources | Source link lists, image galleries, and before/after image comparisons |
 | Input | Forms with text, number, choice, multiple-choice, and yes/no fields |
@@ -1423,7 +1432,7 @@ For more detail, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Herm doesn't yet support everything Hermes can do. Some features require additional frontend work or stable runtime support; others are deliberately left out for now:
 
-- Generated replies require supported `herm-ui` content. Generative UI ships enabled by default and can be disabled in Appearance. Connected native records are limited to registered readers and existing actions; MCP App views run offline and cannot call tools or send messages; Hermes inline widgets run offline and can only send chat prompts; A2UI and connected HTML apps are not included.
+- Custom generated surfaces use the supported `herm-ui` format. Ordinary Markdown tables and alerts also render natively. Generative UI ships enabled by default and can be disabled in Settings → Chat → Replies. Connected native records are limited to registered readers and existing actions; MCP App views run offline and cannot call tools or send messages; Hermes inline widgets run offline and can only send chat prompts; A2UI and connected HTML apps are not included.
 - Directly invoking arbitrary third-party MCP tools from Herm (catalog/setup, credentials, authorization, connection tests and removal are available through supported Hermes lifecycle methods)
 - Structured cron report contracts and more detailed diagnostics (recorded chat-backed run output can already be read)
 - A provider-independent, full-duplex realtime audio transport (continuous Voice mode is available through Hermes' transcription and speech pipeline)

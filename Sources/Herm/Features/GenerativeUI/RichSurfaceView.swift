@@ -4,11 +4,17 @@ import SwiftUI
 
 struct RichDocumentView: View {
     let document: RichDocument
+    var enhancesMarkdown = true
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(document.segments.enumerated()), id: \.offset) { _, segment in
                 switch segment {
-                case .markdown(let text): MarkdownMessageView(markdown: text).equatable()
+                case .markdown(let text):
+                    if enhancesMarkdown {
+                        GenerativeUIIntegration.renderMarkdown(text)
+                    } else {
+                        MarkdownMessageView(markdown: text).equatable()
+                    }
                 case .surface(let surface, let source): RichSurfaceView(surface: surface, source: source)
                 case .unavailable(let text, let source):
                     Text("Visual reply unavailable").dockFont(.body, weight: .semibold).foregroundStyle(
@@ -304,7 +310,7 @@ struct RichSurfaceView: View {
             case .chart:
                 RichLegacyChartView(block: block, blockID: "legacy-chart:\(index)", state: presentation)
             case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record,
-                .code, .findings, .workflow, .command:
+                .code, .findings, .workflow, .command, .callout, .facts, .faq, .breakdown:
                 EmptyView()
             case .form:
                 if let state, let context {
@@ -364,13 +370,7 @@ private struct RichTableView: View {
     let blockID: String
     @ObservedObject var state: RichArtifactPresentationState
     var body: some View {
-        let dataset = RichDataset(
-            id: blockID,
-            columns: columns.enumerated().map { index, title in
-                RichDataset.Column(
-                    id: String(index), title: title,
-                    type: !rows.isEmpty && rows.allSatisfy { Double($0[index])?.isFinite == true } ? .number : .text)
-            }, rows: rows.enumerated().map { RichDataset.Row(id: String($0.offset), values: $0.element) })
+        let dataset = RichDataset.displayTable(id: blockID, columns: columns, rows: rows)
         RichDatasetTableView(dataset: dataset, blockID: blockID, state: state)
     }
 }

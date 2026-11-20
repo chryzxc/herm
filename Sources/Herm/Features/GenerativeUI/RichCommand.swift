@@ -25,7 +25,7 @@ struct RichCommandView: View {
             Text(command.command).dockFont(.code, design: .monospaced)
                 .textSelection(.enabled).dockPadding(12).dockPadding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 8))
+                .dockWell(.raised)
             HStack(spacing: 8) {
                 Button {
                     do {

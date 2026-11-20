@@ -31,7 +31,7 @@ struct ReviewGuideView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let reply = content.reply {
-                        GenerativeUIIntegration.renderReply(reply) { MarkdownMessageView(markdown: reply) }
+                        GenerativeUIIntegration.renderReply(reply)
                         let references = ReviewGuideReferences.valid(
                             in: GenerativeUIIntegration.plainText(reply), documents: coordinator.documents)
                         if !references.isEmpty {

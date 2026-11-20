@@ -16,6 +16,16 @@ struct RichDataset: Codable, Equatable, Sendable, Identifiable {
     let columns: [Column]
     let rows: [Row]
 
+    static func displayTable(id: String, columns: [String], rows: [[String]]) -> Self {
+        RichDataset(
+            id: id,
+            columns: columns.enumerated().map { index, title in
+                RichDataset.Column(
+                    id: String(index), title: title,
+                    type: !rows.isEmpty && rows.allSatisfy { Double($0[index])?.isFinite == true } ? .number : .text)
+            }, rows: rows.enumerated().map { RichDataset.Row(id: String($0.offset), values: $0.element) })
+    }
+
     func validate() -> Bool {
         guard !id.isEmpty, !columns.isEmpty, columns.count <= 20, rows.count <= 1_000,
             RichIdentity.unique(columns.map(\.id)), RichIdentity.unique(rows.map(\.id))
@@ -40,28 +50,30 @@ struct RichDataset: Codable, Equatable, Sendable, Identifiable {
     }
 
     func displayedRows(query: String, column: Int?, descending: Bool) -> [Row] {
-        let filtered = rows.filter {
-            query.isEmpty || $0.values.contains { $0.localizedCaseInsensitiveContains(query) }
-        }
-        guard let column, columns.indices.contains(column) else { return filtered }
-        return filtered.enumerated().sorted { left, right in
-            let a = left.element.values[column]
-            let b = right.element.values[column]
-            let order: ComparisonResult
-            switch columns[column].type {
-            case .number:
-                let x = Double(a) ?? 0
-                let y = Double(b) ?? 0
-                order = x == y ? .orderedSame : x < y ? .orderedAscending : .orderedDescending
-            case .text: order = a.localizedStandardCompare(b)
-            case .date:
-                let x = Self.dateValue(a) ?? .distantPast
-                let y = Self.dateValue(b) ?? .distantPast
-                order = x == y ? .orderedSame : x < y ? .orderedAscending : .orderedDescending
+        let filtered =
+            query.isEmpty
+            ? rows
+            : rows.filter {
+                $0.values.contains { $0.localizedCaseInsensitiveContains(query) }
             }
-            if order == .orderedSame { return left.offset < right.offset }
-            return descending ? order == .orderedDescending : order == .orderedAscending
-        }.map(\.element)
+        guard let column, columns.indices.contains(column) else { return filtered }
+        switch columns[column].type {
+        case .number:
+            return Self.sortRows(filtered, descending: descending) { Double($0.values[column]) ?? 0 }
+        case .date:
+            return Self.sortRows(filtered, descending: descending) { Self.dateValue($0.values[column]) ?? .distantPast }
+        case .text:
+            return filtered.sorted { left, right in
+                let order = left.values[column].localizedStandardCompare(right.values[column])
+                return descending ? order == .orderedDescending : order == .orderedAscending
+            }
+        }
+    }
+
+    private static func sortRows<Key: Comparable>(_ rows: [Row], descending: Bool, key: (Row) -> Key) -> [Row] {
+        rows.map { (row: $0, value: key($0)) }.sorted {
+            descending ? $0.value > $1.value : $0.value < $1.value
+        }.map(\.row)
     }
 }
 
@@ -163,6 +175,10 @@ struct RichRecordTarget: Codable, Equatable, Sendable {
 enum RichBlockPayload: Equatable, Sendable {
     case command(RichCommand)
     case code(RichCode)
+    case callout(RichCallout)
+    case facts(RichFacts)
+    case faq(RichFacts)
+    case breakdown(RichBreakdown)
     case findings(RichFindings)
     case workflow(RichWorkflow)
     case section(RichSection)
@@ -182,6 +198,10 @@ enum RichBlockPayload: Equatable, Sendable {
         switch type {
         case .command: return .command(try value.decode(RichCommand.self))
         case .code: return .code(try value.decode(RichCode.self))
+        case .callout: return .callout(try value.decode(RichCallout.self))
+        case .facts: return .facts(try value.decode(RichFacts.self))
+        case .faq: return .faq(try value.decode(RichFacts.self))
+        case .breakdown: return .breakdown(try value.decode(RichBreakdown.self))
         case .findings: return .findings(try value.decode(RichFindings.self))
         case .workflow: return .workflow(try value.decode(RichWorkflow.self))
         case .section: return .section(try value.decode(RichSection.self))
@@ -205,6 +225,10 @@ enum RichBlockPayload: Equatable, Sendable {
         switch self {
         case .command(let value): try value.encode(to: encoder)
         case .code(let value): try value.encode(to: encoder)
+        case .callout(let value): try value.encode(to: encoder)
+        case .facts(let value): try value.encode(to: encoder)
+        case .faq(let value): try value.encode(to: encoder)
+        case .breakdown(let value): try value.encode(to: encoder)
         case .findings(let value): try value.encode(to: encoder)
         case .workflow(let value): try value.encode(to: encoder)
         case .section(let value): try value.encode(to: encoder)
@@ -224,6 +248,10 @@ enum RichBlockPayload: Equatable, Sendable {
         switch self {
         case .command(let value): return value.validate()
         case .code(let value): return value.validate()
+        case .callout(let value): return value.validate()
+        case .facts(let value): return value.validate()
+        case .faq(let value): return value.validate()
+        case .breakdown(let value): return value.validate()
         case .findings(let value): return value.validate()
         case .workflow(let value): return value.validate()
         case .section(let value):
@@ -277,6 +305,10 @@ enum RichBlockPayload: Equatable, Sendable {
         switch self {
         case .command(let value): return value.command
         case .code(let value): return value.plainText
+        case .callout(let value): return value.plainText
+        case .facts(let value): return value.plainText
+        case .faq(let value): return value.plainText
+        case .breakdown(let value): return value.plainText
         case .findings(let value): return value.items.map(\.plainText).joined(separator: "\n\n")
         case .workflow(let value): return value.items.map(\.plainText).joined(separator: "\n\n")
         case .section(let value): return value.title

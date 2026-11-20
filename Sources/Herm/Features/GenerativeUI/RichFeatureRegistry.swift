@@ -24,6 +24,32 @@ struct RichFeatureDescriptor: Identifiable, Sendable {
 enum RichFeatureRegistry {
     static let local: [RichFeatureDescriptor] = [
         .init(
+            id: "faq", version: 2,
+            guidance:
+                "Expandable reference questions. Each item has an id, a question in label and a Markdown answer in value.",
+            example:
+                #"{"id":"questions","type":"faq","payload":{"items":[{"id":"encoding","label":"Which encoding does the export use?","value":"The export uses **UTF-8**."}]}}"#
+        ),
+        .init(
+            id: "breakdown", version: 2,
+            guidance:
+                "Compare nonnegative amounts in one unit with horizontal bars scaled to the largest supplied value. Keep the intended category order.",
+            example:
+                #"{"id":"time","type":"breakdown","payload":{"unit":"min","items":[{"id":"read","label":"Reading","value":24},{"id":"practice","label":"Practice","value":36}]}}"#
+        ),
+        .init(
+            id: "callout", version: 2,
+            guidance: "One note, tip, important point, warning or caution with a Markdown body",
+            example:
+                #"{"id":"retention","type":"callout","payload":{"tone":"note","body":"The export includes archived entries."}}"#
+        ),
+        .init(
+            id: "facts", version: 2,
+            guidance: "A compact list of supplied label–value pairs for specifications, handoffs or summaries",
+            example:
+                #"{"id":"format","type":"facts","payload":{"items":[{"id":"format","label":"File format","value":"CSV"},{"id":"encoding","label":"Encoding","value":"UTF-8"}]}}"#
+        ),
+        .init(
             id: "command", version: 2,
             guidance:
                 "One explicit shell command (up to 512 UTF-8 bytes, no control characters or newlines). Run in Terminal is a user click in the original loaded session, in a fresh local shell at the displayed session directory. Use separate ordered blocks for migrations, installs, tests or dev servers. No automatic execution or success claims; code remains copy-only",
@@ -154,14 +180,18 @@ enum RichFeatureRegistry {
             }).filter { $0.isAvailable(in: context) }.sorted { $0.id < $1.id }
     }
 
+    private static let markdownGuidance =
+        "Ordinary Markdown pipe tables are sortable in Herm. Use a GitHub-style alert such as > [!NOTE] followed by a quoted paragraph for an important aside. For specs, two or more bullets like - **Format:** CSV form a label–value list. These formats work directly in Markdown."
+
     /// Session rules; the full catalog is served on demand so the rules fit Hermes' prompt-section budget.
     static let rules = """
-        Generative UI: Herm renders fenced `herm-ui` JSON surfaces in replies. When an interactive or structured view helps, use one; the user does not need to ask for Herm UI or HTML. For calculators, simulations, interactive graphics and tools whose results change with inputs, return a working self-contained HTML surface whose inputs update results immediately. Respect explicit requests for plain text, code listings, or project/file changes, and use Markdown when a visual adds no value. Never invent data, verified status, actions, or execution outcomes. Before writing a surface, call herm_reference with surface "herm.generative-ui" for the envelope, block catalog, limits and records loaded in this chat.
+        Generative UI: Herm renders fenced `herm-ui` JSON surfaces in replies. When an interactive or structured view helps, use one; the user does not need to ask for Herm UI or HTML. For calculators, simulations, interactive graphics and tools whose results change with inputs, return a working self-contained HTML surface whose inputs update results immediately. Respect explicit requests for plain text, code listings, or project/file changes, and use Markdown when a visual adds no value. Never invent data, verified status, actions, or execution outcomes. \(markdownGuidance) Before writing a fenced surface, call herm_reference with surface "herm.generative-ui" for the envelope, block catalog, limits and records loaded in this chat.
         """
 
     /// Envelope, composition rules and the local block catalog. Session records come from `sessionReference`.
     static func reference() -> String {
         """
+        \(markdownGuidance)
         Example HTML tool: a savings calculator needs editable balance, contribution, rate and years with a recalculating result.
         Envelope: {"version":1,"id":"stable-short-id","title":"Title","fallback":"Readable explanation","kind":"native","blocks":[...]}. Use version 2 for new components, datasets or revisionOf. Native surfaces omit html. HTML uses kind "html", complete inline HTML/CSS/JS in html, and omits blocks. Include a useful fallback. HTML is offline and has no host bridge, credentials, storage, files, tools, downloads, popups or device access. Never request secrets.
         V2 blocks have stable id, type and typed payload. Legacy blocks still work. V2 datasets: [{"id":"sales","columns":[{"id":"month","title":"Month","type":"text"},{"id":"sales","title":"Sales","type":"number","unit":"units"}],"rows":[{"id":"jan","values":["January","12"]}]}]. Table payload: {"dataset":"sales"}; chart payload: {"dataset":"sales","label":"month","series":["sales"],"style":"bar"}. Columns use text, number or ISO8601 date; dataset cells, metric values, comparison values and tree values are strings. Share datasets to link selection. Optional metadata example: \(metadataExample). assumptions accepts a string or an array of strings; source and observedAt are strings, fictional is a boolean. Supply only known metadata. Only use revisionOf when the user supplies an exact artifact reference; copy it unchanged.

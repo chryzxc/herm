@@ -1066,10 +1066,8 @@ struct GroupChatView: View {
                     if !tools.isEmpty {
                         TurnActivityView(activity: tools, runningSince: nil, duration: turnDuration(ending: event))
                     }
-                    GenerativeUIIntegration.renderReply(event.text) {
-                        MarkdownMessageView(markdown: event.text, cacheKey: event.id)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    GenerativeUIIntegration.renderReply(event.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     replyActions(for: event, author: member?.displayName ?? memberID)
                 }
             }

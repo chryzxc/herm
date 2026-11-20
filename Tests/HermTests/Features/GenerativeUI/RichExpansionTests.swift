@@ -426,27 +426,50 @@ struct RichLifecycleTests {
         #expect(surface.validate())
         let source = String(decoding: try JSONEncoder().encode(surface), as: UTF8.self)
         let document = RichDocument("```herm-ui\n" + source + "\n```")
+        let reading = RichDocument(
+            """
+            ## Export formats
+
+            | Format | Size (KB) | Use |
+            | :--- | ---: | :--- |
+            | **CSV** | 12 | Working with spreadsheets |
+            | JSON | 8 | Sharing structured records |
+            | Text | 10 | Reading a quick summary |
+
+            > [!TIP]
+            > Choose **CSV** to keep the column names in the exported file.
+
+            ### CSV details
+
+            - **Encoding:** UTF-8
+            - **Column separator:** Comma
+            """)
         for theme: DockThemeID in [.warmLight, .slate, .glass, .mono] {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
             let appearance = NSAppearance(named: theme == .warmLight ? .aqua : .darkAqua)
             application.appearance = appearance
             for width: CGFloat in [320, 640, 1000] {
-                let host = NSHostingView(rootView: RichDocumentView(document: document).padding(16).frame(width: width))
-                host.frame = NSRect(x: 0, y: 0, width: width, height: 700)
-                let window = NSWindow(
-                    contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-                window.appearance = appearance
-                window.contentView = host
-                window.orderFrontRegardless()
-                host.layoutSubtreeIfNeeded()
-                try await Task.sleep(for: .milliseconds(100))
-                host.layoutSubtreeIfNeeded()
-                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-                host.cacheDisplay(in: host.bounds, to: bitmap)
-                let png = try #require(bitmap.representation(using: .png, properties: [:]))
-                try png.write(to: root.appendingPathComponent("\(theme.rawValue)-\(Int(width)).png"))
-                window.orderOut(nil)
+                for (prefix, sample) in [("", document), ("reading-", reading)] {
+                    let host = NSHostingView(
+                        rootView: RichDocumentView(document: sample).padding(16).frame(width: width).background(
+                            Color.dockCanvas
+                        ).dockThemedRoot())
+                    host.frame = NSRect(x: 0, y: 0, width: width, height: 700)
+                    let window = NSWindow(
+                        contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    window.appearance = appearance
+                    window.contentView = host
+                    window.orderFrontRegardless()
+                    host.layoutSubtreeIfNeeded()
+                    try await Task.sleep(for: .milliseconds(250))
+                    host.layoutSubtreeIfNeeded()
+                    let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                    host.cacheDisplay(in: host.bounds, to: bitmap)
+                    let png = try #require(bitmap.representation(using: .png, properties: [:]))
+                    try png.write(to: root.appendingPathComponent("\(prefix)\(theme.rawValue)-\(Int(width)).png"))
+                    window.orderOut(nil)
+                }
             }
         }
     }

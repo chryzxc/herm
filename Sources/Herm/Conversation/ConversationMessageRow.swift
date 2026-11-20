@@ -484,20 +484,9 @@ struct ConversationMessageRow: View, Equatable {
         }
     }
 
-    private func messageMarkdownView(_ markdown: String, hugsContent: Bool = false) -> some View {
-        // Trailing blank lines would render as empty paragraphs and open a gap
-        // above the action row.
-        let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Every assistant reply uses the section host. Routing long replies
-        // through one text view bypasses its viewport mounting and height cache.
-        return Group {
-            if hugsContent {
-                NativeMarkdownMessageView(markdown: trimmed, themeRevision: themeRevision, hugsContent: hugsContent)
-            } else {
-                MarkdownMessageView(markdown: trimmed).equatable()
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
+    private func messageMarkdownView(_ markdown: String) -> some View {
+        GenerativeUIIntegration.renderMarkdown(markdown.trimmingCharacters(in: .newlines))
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var messageActions: some View {

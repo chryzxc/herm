@@ -190,7 +190,7 @@ extension DockPopover {
 
     func voiceGenerativeCard(_ message: ChatMessage, immersive: Bool) -> some View {
         let shape = RoundedRectangle(cornerRadius: DockLayout.paneRadius + 8, style: .continuous)
-        let content = GenerativeUIIntegration.renderReply(message.text) { MarkdownMessageView(markdown: message.text) }
+        let content = GenerativeUIIntegration.renderReply(message.text)
             .generativeUIMessage(model: model, message: message)
             .textSelection(.enabled)
             .dockPadding(18)

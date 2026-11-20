@@ -57,11 +57,38 @@ enum GenerativeUIIntegration {
     }
 
     @MainActor @ViewBuilder
+    static func renderMarkdown(_ text: String) -> some View {
+        if RichMarkdownPart.isCandidate(text) {
+            OptionalRichMarkdown(text: text)
+        } else {
+            MarkdownMessageView(markdown: text).equatable()
+        }
+    }
+
+    @MainActor
+    static func renderReply(_ text: String) -> some View {
+        renderReply(text) { renderMarkdown(text) }
+    }
+
+    @MainActor @ViewBuilder
     static func renderReply<Content: View>(
         _ text: String, streaming: Bool = false, enabled: Bool? = nil,
         @ViewBuilder fallback: () -> Content
     ) -> some View {
         GenerativeReply(text: text, streaming: streaming, override: enabled, fallback: fallback())
+    }
+}
+
+private struct OptionalRichMarkdown: View {
+    let text: String
+    @AppStorage(GenerativeUIIntegration.preferenceKey) private var enabled = true
+
+    var body: some View {
+        if enabled {
+            RichMarkdownReply(source: text).id(text)
+        } else {
+            MarkdownMessageView(markdown: text).equatable()
+        }
     }
 }
 
@@ -99,7 +126,7 @@ private struct GenerativeReply<Content: View>: View {
             if let request {
                 let document = parsedRequest?.canPresent(whileParsing: request) == true ? parsed : nil
                 if override ?? enabled {
-                    RichDocumentView(document: document ?? .preparing)
+                    RichDocumentView(document: document ?? .preparing, enhancesMarkdown: !streaming)
                 } else {
                     MarkdownMessageView(markdown: document?.plainText ?? GenerativeUIIntegration.plainText(text))
                 }

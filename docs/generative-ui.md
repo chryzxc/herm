@@ -7,6 +7,24 @@ shows readable fallbacks. HTML always needs an explicit Open action.
 
 No build or launch environment variable is required.
 
+## Standard Markdown replies
+
+Completed assistant replies get sortable pipe tables and GitHub-style alerts with
+the existing Generative UI preference. Write a header, separator with at least
+three dashes per cell, and consistently sized data rows. Above ten rows the table
+offers a filter. Plain Markdown remains available for large messages (over 64 KiB),
+tables with linked headers, incomplete tables, and fenced examples. Two or more
+bullets of the form `- **Label:** value` or `- **Label**: value` render as a fact sheet
+when every bullet has a value. Copying the reply returns its original Markdown.
+
+For a callout, place one of `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`,
+or `[!CAUTION]` on its own quoted line, followed by the quoted body.
+The following version-2 surface combines a fact sheet with a callout.
+
+```herm-ui
+{"version":2,"id":"export-format","title":"Export format","fallback":"The export uses UTF-8 CSV and includes archived rows.","kind":"native","blocks":[{"id":"spec","type":"facts","payload":{"items":[{"id":"file","label":"File format","value":"CSV"},{"id":"encoding","label":"Encoding","value":"UTF-8"}]}},{"id":"scope","type":"callout","payload":{"tone":"note","body":"Archived rows are included in the export."}}]}
+```
+
 ## Card composition and motion
 
 Use one compact interactive card for one result, with the main visual and its

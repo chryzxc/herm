@@ -52,7 +52,7 @@ struct RichBlock: Codable, Equatable, Sendable {
     enum Kind: String, Codable, CaseIterable, Sendable {
         case text, table, sources, gallery, chart, form
         case section, metrics, comparison, checklist, timeline, graph, tree, imageComparison, record, code, findings,
-            workflow, command
+            workflow, command, callout, facts, faq, breakdown
     }
     let type: Kind
     var text: String?
@@ -85,7 +85,7 @@ struct RichBlock: Codable, Equatable, Sendable {
             else { return false }
             return points.allSatisfy { !$0.label.isEmpty && $0.value.isFinite }
         case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record, .code,
-            .findings, .workflow, .command:
+            .findings, .workflow, .command, .callout, .facts, .faq, .breakdown:
             return false
         case .form:
             guard let fields, !fields.isEmpty, fields.count <= 64,
@@ -108,7 +108,7 @@ struct RichBlock: Codable, Equatable, Sendable {
         if let payload { return payload.plainText }
         return switch type {
         case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record, .code,
-            .findings, .workflow, .command:
+            .findings, .workflow, .command, .callout, .facts, .faq, .breakdown:
             ""
         case .text: text ?? ""
         case .table:

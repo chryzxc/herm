@@ -14,6 +14,21 @@ struct RichNativeBlockView: View {
         Group {
             switch block.payload {
             case .command(let command): RichCommandView(command: command)
+            case .callout(let callout): RichCalloutView(callout: callout)
+            case .breakdown(let breakdown): RichBreakdownView(breakdown: breakdown)
+            case .faq(let questions):
+                VStack(alignment: .leading, spacing: DockSpacing.control) {
+                    ForEach(questions.items) { item in
+                        DisclosureGroup(isExpanded: state.expanded(blockID + ":" + item.id)) {
+                            MarkdownMessageView(markdown: item.value).equatable().dockPadding(
+                                .vertical, DockSpacing.tight)
+                        } label: {
+                            Text(item.label).dockFont(.body, weight: .semibold).multilineTextAlignment(.leading)
+                        }.disclosureGroupStyle(DockDisclosureGroupStyle())
+                        if item.id != questions.items.last?.id { Divider() }
+                    }
+                }
+            case .facts(let facts): RichFactsView(facts: facts)
             case .code(let code): RichCodeView(code: code)
             case .findings(let findings): RichFindingsView(findings: findings)
             case .workflow(let workflow): RichWorkflowView(workflow: workflow)
@@ -59,7 +74,8 @@ struct RichNativeBlockView: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                .dockCard(padding: 12)
+                .dockPadding(DockSpacing.group)
+                .dockWell()
             }
         }
     }
@@ -74,8 +90,10 @@ struct RichNativeBlockView: View {
                         HStack {
                             Text(option.title).multilineTextAlignment(.leading)
                             Spacer(minLength: 8)
-                            Image(systemName: selected == option.id ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(Color.dockAccent).accessibilityHidden(true)
+                            DockIcon(
+                                selected == option.id ? .checkCircle : .circle, size: 14,
+                                weight: selected == option.id ? .fill : .regular,
+                                color: selected == option.id ? .dockAccent : .dockMetadataText)
                         }
                     }.buttonStyle(
                         .dockSecondary)
@@ -87,12 +105,8 @@ struct RichNativeBlockView: View {
                         }
                     }
                     if selected == option.id, let detail = option.detail { Text(detail).textSelection(.enabled) }
-                }.dockPadding(12).dockCard(padding: 0)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(selected == option.id ? Color.dockAccent : .clear, lineWidth: 1.5)
-                            .allowsHitTesting(false)
-                    }
+                }.dockPadding(DockSpacing.group)
+                    .dockWell(stroke: selected == option.id ? Color.dockAccent : nil)
                     .accessibilityAddTraits(selected == option.id ? .isSelected : [])
             }
         }
@@ -106,8 +120,7 @@ struct RichNativeBlockView: View {
                 Spacer()
                 Text("\(checked) of \(list.items.count)").monospacedDigit()
             }
-            ProgressView(value: Double(checked), total: Double(list.items.count)).tint(Color.dockAccent)
-                .accessibilityLabel("Selected items")
+            DockProgressBar(fraction: Double(checked) / Double(max(1, list.items.count)))
             ForEach(list.items) { item in
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle(item.title, isOn: state.checked(blockID + ":" + item.id)).toggleStyle(.dockCheckbox)
@@ -149,70 +162,6 @@ struct RichNativeBlockView: View {
                     }
                 }.dockPadding(.vertical, 8)
                 Divider().overlay(Color.dockBorderLight)
-            }
-        }
-    }
-}
-
-struct RichDatasetTableView: View {
-    let dataset: RichDataset
-    let blockID: String
-    @ObservedObject var state: RichArtifactPresentationState
-    private var rows: [RichDataset.Row] {
-        dataset.displayedRows(
-            query: state.snapshot.queries[blockID] ?? "",
-            column: state.snapshot.sortColumns[blockID], descending: state.snapshot.descending.contains(blockID))
-    }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if dataset.rows.count > 10 {
-                TextField("Filter rows", text: state.query(blockID)).textFieldStyle(.dockGlass)
-            }
-            ScrollView([.horizontal, .vertical]) {
-                Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 8) {
-                    GridRow {
-                        ForEach(Array(dataset.columns.enumerated()), id: \.element.id) { index, column in
-                            Button(column.title + (column.unit.map { " (\($0))" } ?? "")) {
-                                if state.snapshot.sortColumns[blockID] == index {
-                                    if state.snapshot.descending.contains(blockID) {
-                                        state.snapshot.descending.remove(blockID)
-                                    } else {
-                                        state.snapshot.descending.insert(blockID)
-                                    }
-                                } else {
-                                    state.snapshot.sortColumns[blockID] = index
-                                }
-                            }.buttonStyle(.dockCompact)
-                        }
-                    }
-                    ForEach(rows) { row in
-                        GridRow {
-                            ForEach(Array(row.values.enumerated()), id: \.offset) { index, value in
-                                Button(value) {
-                                    state.snapshot.selected[RichSelectionIdentity.dataset(dataset.id)] = row.id
-                                }
-                                .buttonStyle(.dockHover)
-                                .frame(
-                                    maxWidth: .infinity,
-                                    alignment: dataset.columns[index].type == .number ? .trailing : .leading
-                                )
-                                .dockPadding(.vertical, 4)
-                                .background(
-                                    state.snapshot.selected[RichSelectionIdentity.dataset(dataset.id)] == row.id
-                                        ? Color.dockControlSurface : Color.clear
-                                )
-                                .accessibilityLabel("\(dataset.columns[index].title): \(value). Select row.")
-                            }
-                        }
-                    }
-                }.dockPadding(4).dockPadding([.bottom, .trailing], 16)
-            }.frame(height: min(320, CGFloat(rows.count + 1) * 34 + 32))
-                .dockPadding(.bottom, 4)
-            if state.snapshot.sortColumns[blockID] != nil {
-                Button("Restore source order") {
-                    state.snapshot.sortColumns.removeValue(forKey: blockID)
-                    state.snapshot.descending.remove(blockID)
-                }.buttonStyle(.dockCompact)
             }
         }
     }
