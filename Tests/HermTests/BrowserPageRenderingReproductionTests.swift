@@ -12,8 +12,9 @@ struct BrowserPageRenderingReproductionTests {
         let window = NSWindow(contentRect: canvas.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = canvas
         defer { window.contentView = nil }
-        let cached = try frame()
-        browser.receiveFrame(cached, css: NSSize(width: 1280, height: 800))
+        // Decoded frames arrive as CGImage-backed images; the layer shows that CGImage directly.
+        let cachedImage = try #require(try frame().cgImage(forProposedRect: nil, context: nil, hints: nil))
+        browser.receiveFrame(NSImage(cgImage: cachedImage, size: .zero), css: NSSize(width: 1280, height: 800))
         browser.updatePointer(AgentPointer(kind: .down, point: CGPoint(x: 640, y: 400)))
         canvas.surfaceVisible = false
         canvas.setFrameSize(NSSize(width: 500, height: 400))
@@ -21,7 +22,9 @@ struct BrowserPageRenderingReproductionTests {
         #expect(canvas.pageRect.width == 256)
         canvas.surfaceVisible = true
         #expect(canvas.pageRect.width == 500)
-        #expect(canvas.subviews.first?.layer?.contents as? NSImage === cached)
+        let shown = try #require(canvas.subviews.first?.layer?.contents)
+        #expect(CFGetTypeID(shown as CFTypeRef) == CGImage.typeID)
+        #expect((shown as CFTypeRef) === cachedImage)
         #expect(browser.panelSize == canvas.bounds.size)
         #expect(browser.lastPointer?.kind == .move)
         let cursor = try #require(canvas.subviews.compactMap { $0 as? AgentCursorView }.first)
@@ -188,9 +191,7 @@ struct BrowserPageRenderingReproductionTests {
             // Mirrors AgentBrowser.applyViewport: a static page may not repaint for new metrics,
             // so a size change restarts the screencast to get a frame at that size.
             if index > 0 { _ = try await cdp.send("Page.stopScreencast", session: session) }
-            _ = try await cdp.send(
-                "Page.startScreencast",
-                ["format": "png", "everyNthFrame": 1, "maxWidth": 8192, "maxHeight": 8192], session: session)
+            _ = try await cdp.send("Page.startScreencast", AgentBrowser.screencastParameters, session: session)
             for _ in 0..<200 {
                 if frames > previous, reportedSize == viewport { break }
                 try await Task.sleep(for: .milliseconds(25))

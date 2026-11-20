@@ -139,6 +139,8 @@ final class AgentBrowser: ObservableObject {
     /// Keep the last observed position between tool calls, without replaying a click on remount.
     func updatePointer(_ pointer: AgentPointer?) {
         if pointer == nil { pointerTracker?.clearPointer() }
+        // Every keystroke and mouse move clears the pointer; once it's gone, skip the canvas fade.
+        guard pointer != nil || lastPointer != nil else { return }
         lastPointer = pointer.map { AgentPointer(kind: .move, point: $0.point) }
         pointerUpdates.send(pointer)
     }
@@ -668,15 +670,17 @@ final class AgentBrowser: ObservableObject {
         cdp.fire("Page.stopScreencast", session: sid)
         self.screencast = screencast
         guard screencast != nil else { return }
-        cdp.fire(
-            "Page.startScreencast",
-            [
-                // Every frame: a keystroke or click damages one frame, and skipping alternate ones
-                // held its echo until the next damage (~500ms) and always dropped the same caret blink phase.
-                "format": "png", "everyNthFrame": 1,
-                "maxWidth": 8192, "maxHeight": 8192,  // Caps only; frames match the emulated viewport.
-            ], session: sid)
+        cdp.fire("Page.startScreencast", Self.screencastParameters, session: sid)
     }
+
+    /// Every frame: a keystroke or click damages one frame, and skipping alternate ones held its
+    /// echo until the next damage (~500ms) and always dropped the same caret blink phase.
+    /// JPEG, not PNG: frames are encoded, sent as base64 and decoded one at a time, and at retina
+    /// scale PNG held typing to ~45fps where JPEG 90 keeps 60. Frames are 2x, so text stays crisp.
+    static let screencastParameters: [String: Any] = [
+        "format": "jpeg", "quality": 90, "everyNthFrame": 1,
+        "maxWidth": 8192, "maxHeight": 8192,  // Caps only; frames match the emulated viewport.
+    ]
 
     func handle(_ method: String, _ params: [String: Any], _ session: String?) {
         pointerTracker?.receive(method, params: params, session: session)
@@ -1364,7 +1368,8 @@ final class AgentBrowserCanvas: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) == nil ? nil : self }
 
     private func show(_ image: NSImage, css: CGSize) {
-        page.layer?.contents = image
+        // The decoded CGImage itself, so Core Animation never asks NSImage for a layer representation.
+        page.layer?.contents = image.cgImage(forProposedRect: nil, context: nil, hints: nil) ?? image
         if css != cssSize {
             cssSize = css
             page.frame = pageRect
