@@ -34,6 +34,16 @@ extension DockPopover {
             isIssuesActive: fullscreenSurface == .issues,
             onNewConversation: startNewConversation,
             onSelectSession: { session in
+                // A detached conversation lives in its own window: bring that forward and
+                // keep the sidebar on what the main window still shows.
+                if ConversationWindowStore.shared.focus(sessionID: session.id) {
+                    if let shown = model.navigationSessionID {
+                        sessionNavNavigation.selectSession(shown)
+                    } else {
+                        sessionNavNavigation.clearSelection()
+                    }
+                    return
+                }
                 leaveIntegrations {
                     sessionNavNavigation.selectSession(session.id)
                     fullscreenSurface = .conversation
@@ -153,6 +163,8 @@ extension DockPopover {
         leaveIntegrations {
             switch destination.surface {
             case .conversation:
+                // History still holds a detached session; bring its window forward instead.
+                if let id = destination.sessionID, ConversationWindowStore.shared.focus(sessionID: id) { return }
                 if let id = destination.sessionID, let session = model.sessions.first(where: { $0.id == id }) {
                     sessionNavNavigation.selectSession(id)
                     inspectorScope = .session

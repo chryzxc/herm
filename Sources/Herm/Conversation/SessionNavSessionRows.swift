@@ -882,6 +882,9 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             SessionPaneStore.shared.open(SessionPaneDrag(session: session))
         }
         .disabled(isSelected)
+        Button("Pop Out Conversation", icon: .arrowSquareOut) {
+            ConversationWindowStore.shared.open(SessionPaneDrag(session: session).destination)
+        }
         Button("Rename…", icon: .pencilSimple) {
             isEditingTitle = true
         }

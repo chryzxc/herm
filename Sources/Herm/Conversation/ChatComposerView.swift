@@ -39,6 +39,7 @@ struct ChatComposerView: View {
     @StateObject private var completions = ComposerCompletionController()
     @FocusState private var isComposerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.composerReservesFolderBar) private var reservesFolderBar
 
     var body: some View {
         let _ = HermPerformanceRecorder.countBody("ChatComposerView")
@@ -669,7 +670,7 @@ struct ChatComposerView: View {
                 if let worktreeBar { worktreeBar.dockPadding(.vertical, 2) }
             }
             .composerTray()
-            if worktreeBar == nil { ComposerFolderBarSlot() }
+            if worktreeBar == nil, reservesFolderBar { ComposerFolderBarSlot() }
         }
         .composerColumn(metrics)
     }

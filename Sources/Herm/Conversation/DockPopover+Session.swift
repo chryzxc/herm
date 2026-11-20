@@ -97,6 +97,9 @@ extension DockPopover {
             HStack(spacing: 4) {
                 DockMenu {
                     if let session {
+                        Button("Pop out conversation", icon: .arrowSquareOut) {
+                            ConversationWindowStore.shared.open(SessionPaneDrag(session: session).destination)
+                        }
                         let pinned = model.isSessionPinned(session.id)
                         Button(
                             pinned ? "Unpin conversation" : "Pin conversation", icon: pinned ? .pushPinSlash : .pushPin
@@ -184,10 +187,18 @@ extension DockPopover {
                     SessionMessageTabs.shared.open(.botSettings(bot), in: WorkspaceIdentity.session(model))
                     if !inspectorPanelIsVisible { toggleInspectorPanel() }
                 }
+                if let drag = SessionPaneDrag(bot: bot) {
+                    Button("Pop out conversation", icon: .arrowSquareOut) {
+                        ConversationWindowStore.shared.open(drag.destination)
+                    }
+                }
                 Divider()
             }
             // Bots shows each Bot's main chat, which can't be pinned, renamed or hidden.
             if fullscreenSurface != .bots, let session = currentSession {
+                Button("Pop out conversation", icon: .arrowSquareOut) {
+                    ConversationWindowStore.shared.open(SessionPaneDrag(session: session).destination)
+                }
                 let pinned = model.isSessionPinned(session.id)
                 Button(pinned ? "Unpin conversation" : "Pin conversation", icon: pinned ? .pushPinSlash : .pushPin) {
                     Task { await model.toggleSessionPinned(session) }

@@ -359,6 +359,8 @@ extension DockPopover {
                 sessionPendingDeletion = nil
                 Task { @MainActor in
                     if await model.deleteSession(session) {
+                        // Its detached window would otherwise keep projecting a deleted session.
+                        ConversationWindowStore.shared.close(sessionID: session.id)
                         controlCenter.refreshProjectNavigation()
                     }
                 }
@@ -668,6 +670,8 @@ extension DockPopover {
                     openGroupRoomID = $0
                 } onOpenBot: { bot in
                     openBotsPage(with: bot)
+                } onPopOut: {
+                    ConversationWindowStore.shared.open(SessionPaneDrag(room: room).destination)
                 }
                 .id(room.id)
                 .sessionPaneRoomDrop(

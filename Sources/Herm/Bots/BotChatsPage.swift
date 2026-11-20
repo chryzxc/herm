@@ -315,8 +315,12 @@ struct BotChatsPage: View, Equatable {
         case .room(let room, let date):
             GroupChatSidebarRow(
                 room: room, store: groups, botMode: bots, style: style,
-                isSelected: room.id == selectedRoomID, date: date,
-                onOpen: { openRoom(room.id) }, onOpenRoom: openRoom
+                isSelected: room.id == selectedRoomID
+                    || sessionPanes.shownSessionIDs.contains(QuickDestination.groupRoomTabID(room.id)),
+                date: date,
+                onOpen: { openRoom(room.id) }, onOpenRoom: openRoom,
+                onSplit: { sessionPanes.open(SessionPaneDrag(room: room)) },
+                onPopOut: { ConversationWindowStore.shared.open(SessionPaneDrag(room: room).destination) }
             )
             .sessionPaneDraggable(SessionPaneDrag(room: room))
         }
@@ -547,6 +551,8 @@ struct BotChatsPage: View, Equatable {
     }
 
     private func openRoom(_ id: String) {
+        // A detached room lives in its window; bring that forward instead.
+        if ConversationWindowStore.shared.focus(sessionID: QuickDestination.groupRoomTabID(id)) { return }
         isCreatingBot = false
         openRoomID = id
     }
@@ -613,6 +619,10 @@ struct BotChatsPage: View, Equatable {
                 if let drag = SessionPaneDrag(bot: bot) { sessionPanes.open(drag) }
             }
             .disabled(isSelected || bot.chat == nil)
+            Button("Pop Out Conversation", icon: .arrowSquareOut) {
+                if let drag = SessionPaneDrag(bot: bot) { ConversationWindowStore.shared.open(drag.destination) }
+            }
+            .disabled(bot.chat == nil)
             BotFolderMoveMenu(itemID: BotChatsItem.bot(bot).id) { startRename(id: $0, name: "New Folder") }
         }
         .accessibilityElement(children: .combine)
