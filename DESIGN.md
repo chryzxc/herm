@@ -2476,8 +2476,16 @@ footer button opening the first one in the document. A top-right `magnifyingGlas
 (⌘F) opens a 280pt find card at the top left (match count, then an `x` close button; Esc also closes): non-matches fade to 35%, folded
 branches hiding a match show a small accent `magnifyingGlass`, and Return selects the
 next match, unfolding its path. A `dotsThree` menu holds Expand all, Show steps only,
-Collapse to phases and Copy as outline (a Markdown checklist keeping statuses); there is
-no image export and no zoom. Folds are remembered per file. On reload, selection, picks and folds
+Collapse to phases, Zoom in, Zoom out, Actual size (showing the current percent) and
+Copy as outline (a Markdown checklist keeping statuses); there is no image export. The
+map has no scroll bars: drag the empty canvas to pan (closed-hand cursor; cards keep
+their clicks), and scroll or pinch to zoom at the pointer between 25% and 200%. Panning
+always leaves 80pt of the plan in view, and selecting a node pans just far enough to
+show it clear of the top fade and bottom view controls. The canvas is a drafting
+surface: `SpecMapGrid` draws 1.6pt `dockBorder` dots every 24pt on `dockCanvas`, fixed
+to the plan so they travel with a pan and tighten with zoom; below 14pt on screen the
+spacing doubles so the grid never turns to noise. Toolbar icons are
+`DockIconAction`s, so they share one square size and outline. Folds are remembered per file. On reload, selection, picks and folds
 follow their step by title when edits move it to another line. The map takes keyboard focus: ↑/↓ move through visible nodes, → unfolds or
 steps in, ← folds or goes to the parent, Return shows the node in the document, Esc
 clears, ⌘C copies the node's title, summary and notes. ⌘-click picks several nodes; a

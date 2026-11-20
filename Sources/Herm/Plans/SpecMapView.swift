@@ -99,6 +99,11 @@ struct SpecMapView: View, Equatable {
     @State private var showsSearch = false
     @State private var query = ""
     @State private var scrollTarget: String?
+    /// Pan and zoom of the canvas; it starts below the pane's floating top controls.
+    @State private var viewport = SpecMapViewport(pan: CGSize(width: 0, height: ToolsTopFade.reserved))
+    @State private var dragStart: CGSize?
+    @State private var canvasSize: CGSize = .zero
+    @State private var paneSize: CGSize = .zero
     @FocusState private var isSearchFocused: Bool
     @FocusState private var isMapFocused: Bool
     /// A tree branches right to show the plan's shape; a list suits a narrow pane and long text.
@@ -147,32 +152,37 @@ struct SpecMapView: View, Equatable {
     }
 
     private var showsRoot: Bool { map.lanes.count > 1 }
-    private var palette: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            // Nodes keep their natural size; the canvas pans both ways instead of squeezing them.
-            GeometryReader { geometry in
-                ScrollView([.horizontal, .vertical]) {
-                    canvas
-                        // The pane floats its view controls over the bottom edge; scroll clear of them.
-                        .dockPadding(.bottom, isExpanded ? 0 : 48)
-                        .dockPadding(.top, ToolsTopFade.reserved)
-                        .frame(minWidth: geometry.size.width, minHeight: geometry.size.height, alignment: .topLeading)
+        // Nodes keep their natural size; the canvas pans by dragging and zooms with scroll or pinch.
+        GeometryReader { geometry in
+            canvas
+                .fixedSize()
+                .onGeometryChange(for: CGSize.self, of: \.size) { canvasSize = $0 }
+                .scaleEffect(viewport.zoom, anchor: .topLeading)
+                .offset(viewport.pan)
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+                .background { panSurface }
+                .overlay { SpecMapZoomInput { zoom(by: $0, at: $1) }.allowsHitTesting(false) }
+                .clipped()
+                .background { SpecMapGrid(viewport: viewport) }
+                .onAppear { paneSize = geometry.size }
+                .onChange(of: geometry.size) { _, size in
+                    paneSize = size
+                    clampViewport()
                 }
-                .background(Color.dockCanvas)
-            }
-            .focusable()
-            .focused($isMapFocused)
-            .focusEffectDisabled()
-            .onKeyPress(phases: .down, action: handle)
-            .onCopyCommand { selectedNode.map { [NSItemProvider(object: copyText($0) as NSString)] } ?? [] }
-            .onChange(of: scrollTarget) { _, id in
-                guard let id else { return }
-                scrollTarget = nil
-                withAnimation(.dockEase(duration: 0.2)) { proxy.scrollTo(id) }
-            }
         }
+        .focusable()
+        .focused($isMapFocused)
+        .focusEffectDisabled()
+        .onKeyPress(phases: .down, action: handle)
+        .onCopyCommand { selectedNode.map { [NSItemProvider(object: copyText($0) as NSString)] } ?? [] }
+        .onChange(of: scrollTarget) { _, id in
+            guard let id else { return }
+            scrollTarget = nil
+            revealNow(id)
+        }
+        .onChange(of: canvasSize) { clampViewport() }
         .overlay(alignment: .top) { ToolsTopFade() }
         .overlay(alignment: .topLeading) { floatingPanels }
         .overlay(alignment: .topTrailing) { toolbar }
@@ -320,46 +330,43 @@ struct SpecMapView: View, Equatable {
                 .dockPadding(.trailing, 2)
             }
             if let next = map.nextUp {
-                DockIconButton(
+                DockIconAction(
                     icon: .arrowCircleRight, label: "Jump to next step: \(next.title)",
-                    help: "Jump to Next up: \(next.title). It is the first open step with nothing left to wait on.",
-                    style: palette
+                    help: "Jump to Next up: \(next.title). It is the first open step with nothing left to wait on."
                 ) {
                     select(next.id)
                 }
             }
-            DockIconButton(
+            DockIconAction(
                 icon: .magnifyingGlass, label: "Find in plan (⌘F)",
                 help: "Find in plan (⌘F). Fades steps that don’t match and opens folded branches that do.",
-                isProminent: showsSearch, style: palette
+                isProminent: showsSearch
             ) {
                 showsSearch ? closeSearch() : openSearch()
             }
             .keyboardShortcut("f", modifiers: .command)
-            DockMenu(content: { moreMenu }) {
-                DockIconButtonLabel(
-                    icon: .dotsThree, isProminent: false, isBusy: false, hasBackground: true, size: 28, style: palette)
+            DockMenu(outlined: true, content: { moreMenu }) {
+                DockIcon(.dotsThree, size: 14)
             }
+            .dockIconOnlyAction()
             .help(
                 "Plan actions: expand or collapse every step, show only phases or steps, or copy the plan as a Markdown outline with its statuses."
             )
             .accessibilityLabel("More plan actions")
-            DockIconButton(
+            DockIconAction(
                 icon: isTree ? .listBullets : .treeStructure,
                 label: isTree ? "Show as list" : "Show as tree",
                 help: isTree
                     ? "Show as list: phases stacked top to bottom with each step indented under its parent. Suits a narrow pane and long step text."
-                    : "Show as tree: each step’s nested items branch out to its right, so you see the plan’s shape at a glance. Fold a branch with the port on its card’s edge.",
-                style: palette
+                    : "Show as tree: each step’s nested items branch out to its right, so you see the plan’s shape at a glance. Fold a branch with the port on its card’s edge."
             ) {
                 withAnimation(.dockEase(duration: 0.25)) { isTree.toggle() }
             }
             if !isExpanded {
-                DockIconButton(
+                DockIconAction(
                     icon: .arrowsOut, label: "Open plan full screen",
                     help:
-                        "Open this plan in a full-window view with more room for wide phases. Close it to return here.",
-                    style: palette
+                        "Open this plan in a full-window view with more room for wide phases. Close it to return here."
                 ) {
                     showingExpanded = true
                 }
@@ -387,6 +394,25 @@ struct SpecMapView: View, Equatable {
         } label: {
             Label("Collapse to phases", icon: .arrowsInLineVertical)
         }
+        Divider()
+        Button {
+            zoom(to: viewport.zoom * 1.25)
+        } label: {
+            Label("Zoom in", icon: .magnifyingGlassPlus)
+        }
+        .disabled(!viewport.canZoomIn)
+        Button {
+            zoom(to: viewport.zoom / 1.25)
+        } label: {
+            Label("Zoom out", icon: .magnifyingGlassMinus)
+        }
+        .disabled(!viewport.canZoomOut)
+        Button {
+            zoom(to: 1)
+        } label: {
+            Label("Actual size (\(Int((viewport.zoom * 100).rounded()))%)", icon: .arrowCounterClockwise)
+        }
+        .disabled(abs(viewport.zoom - 1) < 0.001)
         Divider()
         Button {
             NSPasteboard.general.clearContents()
@@ -536,6 +562,60 @@ struct SpecMapView: View, Equatable {
 
     private func reveal(_ id: String) {
         DispatchQueue.main.async { scrollTarget = id }
+    }
+
+    // MARK: Pan and zoom
+
+    /// Clear of the pane's floating controls: the top fade, and the view controls along the bottom.
+    private var revealInsets: EdgeInsets {
+        EdgeInsets(top: ToolsTopFade.reserved, leading: 12, bottom: isExpanded ? 12 : 48, trailing: 12)
+    }
+
+    private func revealNow(_ id: String) {
+        guard let rect = frames["card:\(id)"] ?? frames["phase:\(id)"] else { return }
+        withAnimation(.dockEase(duration: 0.2)) {
+            viewport = viewport.revealing(rect, in: paneSize, insets: revealInsets)
+        }
+    }
+
+    private func zoom(by factor: CGFloat, at anchor: CGPoint) {
+        viewport = viewport.zoomed(by: factor, at: anchor).clamped(content: canvasSize, in: paneSize)
+    }
+
+    private func zoom(to level: CGFloat) {
+        let center = CGPoint(x: paneSize.width / 2, y: paneSize.height / 2)
+        withAnimation(.dockEase(duration: 0.2)) { zoom(by: level / viewport.zoom, at: center) }
+    }
+
+    private func clampViewport() {
+        let clamped = viewport.clamped(content: canvasSize, in: paneSize)
+        if clamped != viewport { viewport = clamped }
+    }
+
+    /// The empty canvas behind the cards: grab it to pan. Cards and controls keep their clicks.
+    private var panSurface: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 3)
+                    .onChanged { value in
+                        if dragStart == nil {
+                            dragStart = viewport.pan
+                            NSCursor.closedHand.push()
+                        }
+                        guard let start = dragStart else { return }
+                        var next = viewport
+                        next.pan = CGSize(
+                            width: start.width + value.translation.width,
+                            height: start.height + value.translation.height)
+                        viewport = next.clamped(content: canvasSize, in: paneSize)
+                    }
+                    .onEnded { _ in
+                        if dragStart != nil { NSCursor.pop() }
+                        dragStart = nil
+                    }
+            )
+            .accessibilityHidden(true)
     }
 
     // MARK: Keyboard
@@ -1161,11 +1241,7 @@ struct SpecMapView: View, Equatable {
     }
 
     private func iconAction(_ icon: Ph, _ label: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { DockIcon(icon, size: 13) }
-            .buttonStyle(.dockSecondary)
-            .fixedSize()
-            .help(help)
-            .accessibilityLabel(label)
+        DockIconAction(icon: icon, label: label, help: help, iconSize: 13, action: action)
     }
 
     // MARK: Wires

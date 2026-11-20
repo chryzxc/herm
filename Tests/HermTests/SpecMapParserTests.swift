@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import Herm
@@ -401,5 +402,58 @@ struct SpecMapParserTests {
         #expect(map.progress?.done == 1)
         #expect(map.progress?.total == 4)
         #expect(SpecMapParser.parse("# T\n## A\n- one\n- two\n## B\n- three", fallbackTitle: "t").nextUp == nil)
+    }
+}
+
+struct SpecMapViewportTests {
+    @Test func zoomStopsAtTheLimitsAndKeepsThePointUnderThePointer() {
+        let start = SpecMapViewport(zoom: 1, pan: CGSize(width: 10, height: 20))
+        let anchor = CGPoint(x: 110, y: 220)
+        let zoomed = start.zoomed(by: 2, at: anchor)
+        #expect(zoomed.zoom == 2)
+        // Canvas point (100, 200) sat under the pointer before and after.
+        #expect(zoomed.pan == CGSize(width: -90, height: -180))
+        #expect(start.zoomed(by: 100, at: anchor).zoom == SpecMapViewport.maxZoom)
+        #expect(start.zoomed(by: 0.001, at: anchor).zoom == SpecMapViewport.minZoom)
+        #expect(!start.zoomed(by: 100, at: anchor).canZoomIn)
+        #expect(!start.zoomed(by: 0.001, at: anchor).canZoomOut)
+        #expect(start.zoomed(by: .nan, at: anchor) == start)
+        #expect(SpecMapViewport.wheelFactor(deltaY: 5, isPrecise: true) > 1)
+        #expect(SpecMapViewport.wheelFactor(deltaY: -5, isPrecise: false) < 1)
+    }
+
+    @Test func panningKeepsPartOfThePlanInView() {
+        let content = CGSize(width: 1000, height: 800)
+        let pane = CGSize(width: 400, height: 300)
+        let far = SpecMapViewport(zoom: 1, pan: CGSize(width: 5000, height: -5000)).clamped(content: content, in: pane)
+        #expect(far.pan == CGSize(width: 320, height: -720))
+        let inside = SpecMapViewport(zoom: 1, pan: CGSize(width: -100, height: 40))
+        #expect(inside.clamped(content: content, in: pane) == inside)
+    }
+
+    @Test func revealMovesOnlyAsFarAsNeeded() {
+        let pane = CGSize(width: 400, height: 300)
+        let insets = EdgeInsets(top: 44, leading: 12, bottom: 48, trailing: 12)
+        let start = SpecMapViewport(zoom: 1, pan: .zero)
+        #expect(start.revealing(CGRect(x: 50, y: 60, width: 100, height: 50), in: pane, insets: insets) == start)
+        // Below the visible area: its bottom lands on the bottom inset.
+        let below = start.revealing(CGRect(x: 50, y: 400, width: 100, height: 50), in: pane, insets: insets)
+        #expect(below.pan == CGSize(width: 0, height: -198))
+        // Taller than the visible area: its top lands on the top inset.
+        let tall = start.revealing(CGRect(x: 50, y: 400, width: 100, height: 900), in: pane, insets: insets)
+        #expect(tall.pan == CGSize(width: 0, height: -356))
+        let zoomed = SpecMapViewport(zoom: 2, pan: .zero)
+            .revealing(CGRect(x: 300, y: 50, width: 100, height: 20), in: pane, insets: insets)
+        #expect(zoomed.pan == CGSize(width: -412, height: 0))
+    }
+}
+
+struct SpecMapGridTests {
+    @Test func gridThinsOutInsteadOfTurningToNoise() {
+        #expect(SpecMapGrid.screenSpacing(zoom: 1) == 24)
+        #expect(SpecMapGrid.screenSpacing(zoom: 2) == 48)
+        #expect(SpecMapGrid.screenSpacing(zoom: 0.5) == 24)
+        #expect(SpecMapGrid.screenSpacing(zoom: 0.25) == 24)
+        #expect(SpecMapGrid.screenSpacing(zoom: 0.55) >= SpecMapGrid.minScreenSpacing)
     }
 }
