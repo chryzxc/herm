@@ -4078,13 +4078,17 @@ Browser has no Local Previews control or discovery polling. Auto follows native
 page bounds on every resize without reloading; device presets retain their CSS
 width and scale to fit. WebKit sizing belongs to its native page container;
 Chromium’s canvas reports frame changes directly rather than waiting for a
-subview layout pass. Headless Chromium uses a 2x compositor and lossless PNG
-screencast frames, bounded to the viewing display’s pixel density. Frames decode
-and are acknowledged on the socket callback before reaching the main actor, and
-are shown as layer contents rather than redrawn; unchanged navigation state
-does not publish workspace updates. Resizes coalesce into one metrics update and
-never restart the screencast. Chromium emulates page focus, so focus rings and
-carets show in form fields. While Hermes drives, the page gets a 2pt accent
+subview layout pass. Chromium keeps the emulated viewport and device scale while
+streaming high-quality JPEG frames sized for the visible page. Large previews
+cap each frame at the pixel count of a 1920 × 1080 image. Every frame is eligible
+for capture so a single click or keystroke can repaint promptly. Frames decode on
+the socket callback and are shown as layer contents. Unchanged navigation state
+does not publish workspace updates. Resizes coalesce metrics updates, request
+layout at the new size and restart capture. The preview keeps the last usable
+frame if Chromium briefly sends pixels from the previous layout. It retries
+capture once when the first frame has the wrong proportions or resolution.
+Chromium emulates page focus so focus rings and carets show in form fields.
+While Hermes drives, the page gets a 2pt accent
 frame and an accent "Herm" cursor that glides to each pointer move, click, and
 focused field Hermes produces in the main frame; clicks spread a ring. The
 cursor never takes input. Its last observed position remains visible between tool

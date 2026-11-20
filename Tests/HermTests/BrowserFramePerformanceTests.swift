@@ -6,6 +6,47 @@ import Testing
 
 @MainActor
 struct BrowserFramePerformanceTests {
+    @Test func resizedStreamWaitsForTheNewViewportAndRetriesAStaleRasterOnce() {
+        let css = CGSize(width: 900, height: 700)
+        let pixels = CGSize(width: 1632, height: 1269)
+        let viewport = BrowserScreencast.Viewport(cssSize: css, pixelSize: pixels, backingScale: 2, isMobile: false)
+        var stream = BrowserScreencast(sessionID: "resizing", viewport: viewport)
+
+        #expect(stream.receive(cssSize: CGSize(width: 432, height: 780), pixelSize: pixels) == .ignore)
+        #expect(stream.receive(cssSize: css, pixelSize: CGSize(width: 864, height: 672)) == .restart)
+        #expect(stream.receive(cssSize: css, pixelSize: CGSize(width: 864, height: 1269)) == .ignore)
+        #expect(stream.receive(cssSize: css, pixelSize: pixels) == .display)
+    }
+
+    @Test func aCorrectlyProportionedFrameIsUsableAfterOneRetry() {
+        let css = CGSize(width: 900, height: 700)
+        let viewport = BrowserScreencast.Viewport(
+            cssSize: css, pixelSize: CGSize(width: 1632, height: 1269), backingScale: 2, isMobile: false)
+        var stream = BrowserScreencast(sessionID: "fallback", viewport: viewport)
+        let smaller = CGSize(width: 864, height: 672)
+        #expect(stream.receive(cssSize: css, pixelSize: smaller) == .restart)
+        #expect(stream.receive(cssSize: css, pixelSize: smaller) == .display)
+    }
+
+    @Test func screencastMatchesSmallPanesAndBoundsLargeFrames() {
+        let browser = AgentBrowser(profileID: "frame-size")
+        browser.resize(to: CGSize(width: 640, height: 400), scale: 2)
+        let native = CGSize(width: 1280, height: 800)
+        #expect(browser.screencastPixelSize(for: browser.captureViewportSize) == native)
+
+        browser.presetWidth = 1280
+        #expect(browser.captureViewportSize == native)
+        #expect(browser.screencastPixelSize(for: browser.captureViewportSize) == native)
+
+        browser.presetWidth = 0
+        browser.resize(to: native, scale: 2)
+        let pixels = browser.screencastPixelSize(for: browser.captureViewportSize)
+        #expect(browser.captureViewportSize == native)
+        #expect(pixels.width > native.width)
+        #expect(pixels.width * pixels.height <= 1920 * 1080)
+        #expect(abs(pixels.width / pixels.height - native.width / native.height) < 0.002)
+    }
+
     @Test func frameAndRuntimeEventsDoNotPublishNavigationChanges() {
         let browser = AgentBrowser(profileID: "frame-publications")
         var publications = 0

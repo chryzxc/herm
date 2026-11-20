@@ -258,8 +258,7 @@ final class AgentBrowser: ObservableObject {
     private var backingScale: CGFloat = 2
     private var viewportTask: Task<Void, Never>?
     private var viewportDirty = false
-    /// "<session>@<scale>" of the running screencast.
-    private var screencast: String?
+    private var screencast: BrowserScreencast?
     private var themeCancellable: AnyCancellable?
     private var navigationRequestID = UUID()
     private var historyRequestID = UUID()
@@ -653,34 +652,66 @@ final class AgentBrowser: ObservableObject {
         return CGSize(width: width, height: height)
     }
 
+    func screencastPixelSize(for viewport: CGSize) -> CGSize {
+        let fit = min(1, panelSize.width / viewport.width, panelSize.height / viewport.height)
+        // A single caret update still encodes the whole frame. Cap large panes at Full HD pixel count.
+        let budgetScale = sqrt(2_073_600 / (viewport.width * viewport.height))
+        let scale = min(fit * backingScale, budgetScale)
+        return CGSize(
+            width: max(1, (viewport.width * scale).rounded(.down)),
+            height: max(1, (viewport.height * scale).rounded(.down)))
+    }
+
+    private var screencastViewport: BrowserScreencast.Viewport {
+        let size = captureViewportSize
+        return BrowserScreencast.Viewport(
+            cssSize: size, pixelSize: screencastPixelSize(for: size), backingScale: backingScale,
+            isMobile: presetWidth > 0 && presetWidth < 800)
+    }
+
     private func applyViewport() async throws {
         guard let cdp, let sid = sessionID else { return }
-        let size = captureViewportSize
+        let viewport = screencastViewport
+        let size = viewport.cssSize
         _ = try await cdp.send(
             "Emulation.setDeviceMetricsOverride",
             [
-                "width": Int(size.width), "height": Int(size.height), "deviceScaleFactor": backingScale,
+                "width": Int(size.width), "height": Int(size.height), "deviceScaleFactor": viewport.backingScale,
                 "screenWidth": Int(size.width), "screenHeight": Int(size.height),
-                "mobile": presetWidth > 0 && presetWidth < 800,
+                "mobile": viewport.isMobile,
             ], session: sid)
-        // Restart for a new tab, display scale, viewport size, or the pane being shown or hidden.
-        // A static page may not repaint for new metrics, which left the old-size frame letterboxed.
-        let screencast = viewers > 0 ? "\(sid)@\(backingScale)@\(size)" : nil
-        guard sessionID == sid, screencast != self.screencast else { return }
-        cdp.fire("Page.stopScreencast", session: sid)
-        self.screencast = screencast
-        guard screencast != nil else { return }
-        cdp.fire("Page.startScreencast", Self.screencastParameters, session: sid)
+        guard sessionID == sid, viewport == screencastViewport else { return }
+        guard viewers > 0 else {
+            if screencast != nil { cdp.fire("Page.stopScreencast", session: sid) }
+            screencast = nil
+            return
+        }
+        guard screencast?.sessionID != sid || screencast?.viewport != viewport else { return }
+        // Flush the new layout before capture. A frame can still arrive from the old compositor surface.
+        _ = try? await cdp.send("Page.getLayoutMetrics", session: sid)
+        guard sessionID == sid, viewers > 0, viewport == screencastViewport,
+            screencast?.sessionID != sid || screencast?.viewport != viewport
+        else { return }
+        let next = BrowserScreencast(sessionID: sid, viewport: viewport)
+        screencast = next
+        restartScreencast(next, on: cdp)
+    }
+
+    private func restartScreencast(_ stream: BrowserScreencast, on cdp: CDPConnection) {
+        cdp.fire("Page.stopScreencast", session: stream.sessionID)
+        cdp.fire(
+            "Page.startScreencast", Self.screencastParameters(pixelSize: stream.viewport.pixelSize),
+            session: stream.sessionID)
     }
 
     /// Every frame: a keystroke or click damages one frame, and skipping alternate ones held its
     /// echo until the next damage (~500ms) and always dropped the same caret blink phase.
-    /// JPEG, not PNG: frames are encoded, sent as base64 and decoded one at a time, and at retina
-    /// scale PNG held typing to ~45fps where JPEG 90 keeps 60. Frames are 2x, so text stays crisp.
-    static let screencastParameters: [String: Any] = [
-        "format": "jpeg", "quality": 90, "everyNthFrame": 1,
-        "maxWidth": 8192, "maxHeight": 8192,  // Caps only; frames match the emulated viewport.
-    ]
+    static func screencastParameters(pixelSize: CGSize) -> [String: Any] {
+        [
+            "format": "jpeg", "quality": 95, "everyNthFrame": 1,
+            "maxWidth": Int(pixelSize.width), "maxHeight": Int(pixelSize.height),
+        ]
+    }
 
     func handle(_ method: String, _ params: [String: Any], _ session: String?) {
         pointerTracker?.receive(method, params: params, session: session)
@@ -714,13 +745,26 @@ final class AgentBrowser: ObservableObject {
         receiveNavigation(method, params: params)
         switch method {
         case "Page.screencastFrame":
-            guard let decoded = params["decodedFrame"] as? CDPConnection.Frame else { return }
-            let image = NSImage(cgImage: decoded.image, size: .zero)
+            guard let decoded = params["decodedFrame"] as? CDPConnection.Frame,
+                let viewport = screencast?.viewport, screencast?.sessionID == session
+            else { return }
             let meta = params["metadata"] as? [String: Any]
-            let css = CGSize(
-                width: meta?["deviceWidth"] as? Double ?? image.size.width,
-                height: meta?["deviceHeight"] as? Double ?? image.size.height)
-            receiveFrame(image, css: css)
+            let css =
+                if let width = meta?["deviceWidth"] as? Double, let height = meta?["deviceHeight"] as? Double {
+                    CGSize(width: width, height: height)
+                } else {
+                    viewport.cssSize
+                }
+            let pixels = CGSize(width: decoded.image.width, height: decoded.image.height)
+            switch screencast?.receive(cssSize: css, pixelSize: pixels) {
+            case .display:
+                receiveFrame(NSImage(cgImage: decoded.image, size: .zero), css: css)
+            case .restart:
+                if viewers > 0, viewport == screencastViewport, let screencast, let cdp {
+                    restartScreencast(screencast, on: cdp)
+                }
+            case .ignore, nil: break
+            }
         case "Page.frameNavigated":
             guard let frame = params["frame"] as? [String: Any], frame["parentId"] == nil else { return }
             mainFrameID = frame["id"] as? String

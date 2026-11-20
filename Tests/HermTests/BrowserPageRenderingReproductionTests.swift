@@ -161,6 +161,8 @@ struct BrowserPageRenderingReproductionTests {
         defer { window.contentView = nil }
         var frames = 0
         var reportedSize = CGSize.zero
+        var reportedPixels = CGSize.zero
+        var stream: BrowserScreencast?
         cdp.onEvent = { method, params, eventSession in
             guard method == "Page.screencastFrame", eventSession == session,
                 let decoded = params["decodedFrame"] as? CDPConnection.Frame,
@@ -168,7 +170,22 @@ struct BrowserPageRenderingReproductionTests {
                 let width = metadata["deviceWidth"] as? Double,
                 let height = metadata["deviceHeight"] as? Double
             else { return }
-            reportedSize = CGSize(width: width, height: height)
+            let css = CGSize(width: width, height: height)
+            let pixels = CGSize(width: decoded.image.width, height: decoded.image.height)
+            switch stream?.receive(cssSize: css, pixelSize: pixels) {
+            case .display: break
+            case .restart:
+                if let stream {
+                    cdp.fire("Page.stopScreencast", session: session)
+                    cdp.fire(
+                        "Page.startScreencast", AgentBrowser.screencastParameters(pixelSize: stream.viewport.pixelSize),
+                        session: session)
+                }
+                return
+            case .ignore, nil: return
+            }
+            reportedSize = css
+            reportedPixels = pixels
             frames += 1
             browser.frameUpdates.send((NSImage(cgImage: decoded.image, size: .zero), reportedSize))
         }
@@ -180,7 +197,9 @@ struct BrowserPageRenderingReproductionTests {
         let sizes = [NSSize(width: 640, height: 400), NSSize(width: 900, height: 500)]
         for (index, size) in sizes.enumerated() {
             canvas.setFrameSize(size)
+            browser.resize(to: size, scale: 2)
             let viewport = browser.captureViewportSize
+            let pixels = browser.screencastPixelSize(for: viewport)
             let previous = frames
             _ = try await cdp.send(
                 "Emulation.setDeviceMetricsOverride",
@@ -188,10 +207,14 @@ struct BrowserPageRenderingReproductionTests {
                     "width": Int(viewport.width), "height": Int(viewport.height), "deviceScaleFactor": 2,
                     "screenWidth": Int(viewport.width), "screenHeight": Int(viewport.height), "mobile": false,
                 ], session: session)
-            // Mirrors AgentBrowser.applyViewport: a static page may not repaint for new metrics,
-            // so a size change restarts the screencast to get a frame at that size.
+            _ = try await cdp.send("Page.getLayoutMetrics", session: session)
             if index > 0 { _ = try await cdp.send("Page.stopScreencast", session: session) }
-            _ = try await cdp.send("Page.startScreencast", AgentBrowser.screencastParameters, session: session)
+            stream = BrowserScreencast(
+                sessionID: session,
+                viewport: BrowserScreencast.Viewport(
+                    cssSize: viewport, pixelSize: pixels, backingScale: 2, isMobile: false))
+            _ = try await cdp.send(
+                "Page.startScreencast", AgentBrowser.screencastParameters(pixelSize: pixels), session: session)
             for _ in 0..<200 {
                 if frames > previous, reportedSize == viewport { break }
                 try await Task.sleep(for: .milliseconds(25))
@@ -201,6 +224,9 @@ struct BrowserPageRenderingReproductionTests {
             print("REPRO page=\(page.frame) frames=\(frames)")
             #expect(frames > previous)
             #expect(reportedSize == viewport)
+            #expect(reportedPixels.width <= pixels.width)
+            #expect(reportedPixels.height <= pixels.height)
+            #expect(reportedPixels.width * reportedPixels.height >= pixels.width * pixels.height * 0.99)
             #expect(abs(canvas.pageRect.width - size.width) < 1)
             #expect(abs(canvas.pageRect.height - size.height) < 1)
             #expect(page.layer?.contents != nil)
