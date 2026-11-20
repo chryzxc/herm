@@ -39,6 +39,49 @@ struct SessionUnreadRepliesTests {
         ["id": id, "role": role, "content": text, "timestamp": timestamp]
     }
 
+    @Test func storedFailureProjectsWithoutCountingAReply() async throws {
+        let client = Client()
+        client.rows = [
+            row(1, role: "user", text: "Question", timestamp: 101),
+            row(2, role: "system", text: "Failed turn", timestamp: 102),
+        ]
+        client.rows[1]["display_kind"] = "failed_turn"
+        let projection = try await SessionUnreadReplies(client: client).project(
+            session: session(), profileID: "bot", after: Date(timeIntervalSince1970: 100))
+        #expect(projection.hasUnseenFailedTurn)
+        #expect(projection.count == 0)
+        #expect(projection.firstRowID == nil)
+    }
+
+    @Test func failureAndReplyRemainIndependent() async throws {
+        let client = Client()
+        client.rows = [
+            row(1, role: "assistant", text: "Reply", timestamp: 101),
+            row(2, role: "system", text: "Failed turn", timestamp: 102),
+        ]
+        client.rows[1]["display_kind"] = "failed_turn"
+        let projection = try await SessionUnreadReplies(client: client).project(
+            session: session(), profileID: "bot", after: Date(timeIntervalSince1970: 100))
+        #expect(projection.hasUnseenFailedTurn)
+        #expect(projection.count == 1)
+        #expect(projection.firstRowID == 1)
+    }
+
+    @Test func rewrittenFailureTailIsRevalidated() async throws {
+        let client = Client()
+        client.rows = [row(1, role: "system", text: "Failure", timestamp: 102)]
+        var now = Date(timeIntervalSince1970: 1_000)
+        let replies = SessionUnreadReplies(client: client, now: { now })
+        let seen = Date(timeIntervalSince1970: 100)
+        let before = try await replies.project(session: session(), profileID: "bot", after: seen)
+        #expect(!before.hasUnseenFailedTurn)
+        client.rows[0]["display_kind"] = "failed_turn"
+        now = now.addingTimeInterval(16)
+        let after = try await replies.project(session: session(), profileID: "bot", after: seen)
+        #expect(after.hasUnseenFailedTurn)
+        #expect(client.paths.count == 3)
+    }
+
     @Test func storedHistoryAndLiveMessagesUseTheSameResponsePolicy() async throws {
         let client = Client()
         client.rows = [

@@ -68,15 +68,7 @@ struct SessionNavConversationSessionRow: View, Equatable {
                     .foregroundStyle(style.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                SessionActivityGlyph(
-                    isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate, session: session)
-                if let attentionDot, attentionDot != .success, !(attentionDot == .failure && session.isWorking) {
-                    if let state = attentionDot.activityState {
-                        DockActivityIndicator(state: state, unreadDot: true)
-                    } else {
-                        Circle().fill(attentionDot.color).frame(width: 6, height: 6)
-                    }
-                }
+                SessionRowActivityIndicators(session: session, attention: attentionDot)
             }
             if let badge = ConversationRepositoryBadgePresentation.make(
                 projectName: projectName,
@@ -513,11 +505,11 @@ struct SessionNavBotSessionRow: View, Equatable {
         HStack(alignment: .center, spacing: 8) {
             ZStack(alignment: .trailing) {
                 Color.clear
-                if Self.showsUnreadCount(for: sessionStatus) {
-                    SessionUnreadReplyBadge(session: session, showUnavailable: sessionStatus == .unreadComplete)
+                if sessionStatus == .failed || Self.showsUnreadCount(for: sessionStatus) {
+                    SidebarSessionStatusIndicator(session: session, status: sessionStatus)
                 }
             }
-            .frame(width: 20, height: 18)
+            .frame(width: SessionFailureWarning.statusSlotWidth, height: 18)
             BotAvatarView(bot: bot, imageData: imageData, size: 30, mood: mood, orbits: session.isWorking)
             VStack(alignment: .leading, spacing: DockSidebarListMetrics.titleToPreview) {
                 HStack(spacing: 6) {
@@ -836,7 +828,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             Color.clear
             SidebarSessionStatusIndicator(session: session, status: sessionStatus)
         }
-        .frame(width: 20, height: 18, alignment: .trailing)
+        .frame(width: SessionFailureWarning.statusSlotWidth, height: 18, alignment: .trailing)
         // Shapes and spinners have no text baseline; center on the title's x-height so every state lines up.
         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4.5 }
     }
