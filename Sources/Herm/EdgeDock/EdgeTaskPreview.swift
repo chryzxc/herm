@@ -78,6 +78,14 @@ struct EdgeNotchTask: Identifiable, Equatable {
     /// session's row and Bot DMs whose own session is not known yet.
     var profileID: String? = nil
 
+    var attentionState: DockActivityState? = nil
+    var resolvedAttentionState: DockActivityState {
+        if let attentionState { return attentionState }
+        if isFailure { return .failed }
+        if deliveryQuestion != nil { return .clarification }
+        return .approval
+    }
+
     static func choiceLabel(_ choice: String) -> String {
         switch choice {
         case ApprovalChoice.once: "Allow once"
@@ -191,7 +199,10 @@ struct EdgeNotchTask: Identifiable, Equatable {
                     isStatusCurrent: isOnline,
                     session: session,
                     choices: attention[session.id]?.choices ?? [],
-                    attentionRequest: attention[session.id]?.responseTarget
+                    attentionRequest: attention[session.id]?.responseTarget,
+                    attentionState: attention[session.id].map {
+                        $0.status == .needsClarification ? .clarification : .approval
+                    }
                 )
             }
         return ([current].compactMap { $0 } + others).sorted { lhs, rhs in

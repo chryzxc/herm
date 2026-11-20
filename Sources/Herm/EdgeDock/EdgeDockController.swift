@@ -150,6 +150,21 @@ final class EdgeDockController: NSObject {
             .sink { [weak self] status, unread, tasks in
                 self?.refresh(status: status, unread: unread, tasks: tasks)
             }.store(in: &subscriptions)
+        state.interruptions.sessionCompletions.receive(on: RunLoop.main)
+            .sink { [weak self] notice in
+                guard let self else { return }
+                let current =
+                    self.model.currentSessionIDs.contains {
+                        self.model.rowSessionID($0) == notice.sourceID
+                    }
+                    && notice.profileID == (self.model.sessionProfileID ?? self.model.profileScopeID)
+                if current, self.model.status != .working {
+                    self.state.activity.responseCompleted = true
+                    self.updateDetail()
+                }
+                self.announce(notice: notice)
+                self.pollQuota(afterWork: true)
+            }.store(in: &subscriptions)
         model.$sessionAttention
             .receive(on: RunLoop.main)
             .sink { [weak self] requests in
@@ -501,8 +516,18 @@ final class EdgeDockController: NSObject {
         state.interruptions.reconcile(
             profileID: model.profileScopeID, sessions: sessions, kanban: controlCenter.globalKanbanTasks)
         if EdgeNotchTask.newlyFinished(from: previous, to: state.tasks) {
-            let previousWorking = Set(previous.filter { $0.phase == .working }.map(\.id))
-            for task in state.tasks where task.phase == .finished && previousWorking.contains(task.id) {
+            let currentIDs = Set(model.currentSessionIDs.map { model.rowSessionID($0) })
+            let previousWorking = previous.filter {
+                !$0.isCurrent && $0.session != nil && $0.isStatusCurrent && $0.phase == .working
+                    && !currentIDs.contains(model.rowSessionID($0.id))
+            }
+            for task in state.tasks
+            where !task.isCurrent && task.session != nil && task.isStatusCurrent && task.phase == .finished
+                && !currentIDs.contains(model.rowSessionID(task.id))
+                && previousWorking.contains(where: {
+                    $0.id == task.id && $0.session?.profileID == task.session?.profileID
+                })
+            {
                 announce(notice: model.interruptionNotice(.completion, owner: task.id))
             }
             pollQuota(afterWork: true)
@@ -535,7 +560,8 @@ final class EdgeDockController: NSObject {
                 statusLabel: label, detail: request?.summary ?? state.detail, updatedAt: nil, isCurrent: true,
                 isStatusCurrent: activity.status != .offline, session: nil, choices: request?.choices ?? [],
                 attentionRequest: request?.responseTarget,
-                profileID: model.activeBotProfileID ?? model.sessionProfileID)
+                profileID: model.activeBotProfileID ?? model.sessionProfileID,
+                attentionState: request.map { $0.status == .needsClarification ? .clarification : .approval })
         }
         var tasks = EdgeNotchTask.merged(
             EdgeNotchTask.build(
@@ -579,7 +605,8 @@ final class EdgeDockController: NSObject {
                 id: session.id, title: session.displayTitle, phase: .attention,
                 statusLabel: request.status.title, detail: request.summary, updatedAt: nil, isCurrent: false,
                 isStatusCurrent: activity.status != .offline, session: session, choices: request.choices,
-                attentionRequest: target)
+                attentionRequest: target,
+                attentionState: request.status == .needsClarification ? .clarification : .approval)
             row.answerState = latestAnswers[target]
             tasks.append(row)
         }
@@ -761,27 +788,20 @@ final class EdgeDockController: NSObject {
         let newCompletion = completedTaskIDs.map { !completed.subtracting($0).isEmpty } ?? false
         completedTaskIDs = completed
         let previous = state.activity
-        let responseFinished =
-            previous.status == .working && status == .idle
-            && model.messages.last?.role == .hermes
         state.activity = EdgeNotchActivity(
             status: status, unread: unread,
             runningCount: tasks.filter { $0.status == .running }.count,
             backgroundCompleted: newCompletion || (previous.backgroundCompleted && !completed.isEmpty),
-            responseCompleted: responseFinished || (previous.responseCompleted && status != .working))
+            responseCompleted: previous.responseCompleted && status != .working)
         updateDetail()
-        if state.activity.shouldAnnounce(after: previous) || newCompletion || responseFinished {
+        if state.activity.shouldAnnounce(after: previous) {
             announce(
                 notice: model.interruptionNotice(
-                    model.messages.last?.isError == true
-                        ? .failure
-                        : state.activity.attention
-                            ? (status == .needsApproval ? .approval : .clarification)
-                            : responseFinished || newCompletion ? .completion : .information))
+                    status == .needsApproval ? .approval : .clarification))
         } else {
             position(animated: true)
         }
-        if newCompletion || responseFinished { pollQuota(afterWork: true) }
+        if newCompletion { pollQuota(afterWork: true) }
     }
 
     private func refreshProgress() {
@@ -1310,6 +1330,7 @@ struct EdgeNotchActivity: Equatable {
     /// Every task row currently working (sessions, background, Kanban); the exact number the Count style shows.
     var workingCount = 0
     var sessionNeedsAttention = false
+    var sessionAttentionState: DockActivityState?
     var kanbanNeedsAttention = false
     var kanbanHasUpdate = false
     var agentUpdatePhase: HermesUpdatePhase = .idle
@@ -1335,8 +1356,13 @@ struct EdgeNotchActivity: Equatable {
     var quiet: Bool { !working && !attention && !hasUpdate && status == .idle }
 
     func shouldAnnounce(after previous: Self) -> Bool {
-        (working && !previous.working) || runningCount != previous.runningCount
-            || (unread && !previous.unread) || (attention && status != previous.status)
+        status != previous.status && (status == .needsApproval || status == .needsClarification)
+    }
+
+    var attentionState: DockActivityState {
+        if status == .needsApproval { return .approval }
+        if status == .needsClarification { return .clarification }
+        return sessionAttentionState ?? .approval
     }
 
     var working: Bool {
@@ -1350,7 +1376,7 @@ struct EdgeNotchActivity: Equatable {
     }
     var title: String {
         if status == .needsApproval || status == .needsClarification { return status.title }
-        if sessionNeedsAttention { return "Needs your attention" }
+        if sessionNeedsAttention { return attentionState.label }
         if kanbanNeedsAttention { return "Kanban card blocked" }
         if let update = agentUpdatePhase.ambientStatus { return update.title }
         if unread { return "New response" }
@@ -1365,8 +1391,9 @@ struct EdgeNotchActivity: Equatable {
         return "Open Herm"
     }
     var symbol: Ph {
-        if kanbanNeedsAttention || sessionNeedsAttention { return .warningCircle }
-        if status == .needsClarification { return DockActivityState.clarification.icon! }
+        if status == .needsApproval || status == .needsClarification { return attentionState.icon ?? .warningCircle }
+        if sessionNeedsAttention { return attentionState.icon ?? .warningCircle }
+        if kanbanNeedsAttention { return .warningCircle }
         if status != .needsApproval && agentUpdatePhase.ambientStatus?.isRunning == false { return .warningCircle }
         if attention { return status.icon }
         if unread { return .chat }
@@ -1389,7 +1416,11 @@ struct EdgeNotchActivity: Equatable {
             working.append(id)
         }
         workingBotIDs = Array(working.prefix(3))
-        blockedBotID = bot(.attention) ?? board.blocked.first
+        blockedBotID =
+            live.first {
+                $0.phase == .attention && $0.resolvedAttentionState == attentionState
+            }.map(profile)
+            ?? bot(.attention) ?? board.blocked.first
         finishedBotID = bot(.finished) ?? board.finished.first
         finishedCount = live.filter { $0.phase == .finished }.count
     }
@@ -1891,6 +1922,9 @@ final class EdgeNotchState: ObservableObject {
         result.sessionNeedsAttention = tasks.contains {
             $0.kanbanTask == nil && $0.phase == .attention && $0.isStatusCurrent
         }
+        result.sessionAttentionState = tasks.filter {
+            $0.kanbanTask == nil && $0.phase == .attention && $0.isStatusCurrent
+        }.map(\.resolvedAttentionState).min()
         let cards = tasks.filter { $0.kanbanTask != nil && $0.isStatusCurrent }
         result.kanbanRunningCount = cards.filter { $0.phase == .working }.count
         result.kanbanNeedsAttention = cards.contains { $0.phase == .attention }
