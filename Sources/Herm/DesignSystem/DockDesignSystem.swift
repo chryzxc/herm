@@ -609,7 +609,7 @@ struct DockSectionHeader<Actions: View>: View {
     @State private var isHovering = false
 
     private func toggle() {
-        withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18)) {
+        withAnimation(DockMotion.disclosure(reduceMotion: reduceMotion)) {
             isExpanded?.wrappedValue.toggle()
         }
     }

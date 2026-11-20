@@ -739,7 +739,7 @@ struct SystemEventCard: View {
             let canExpand = firstLine != text || text.count > 90
             VStack(alignment: .leading, spacing: DockSpacing.micro) {
                 Button {
-                    withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
+                    withAnimation(DockMotion.disclosure(reduceMotion: reduceMotion)) { isExpanded.toggle() }
                 } label: {
                     HStack(spacing: DockSpacing.tight) {
                         DockIcon(event.tone.activityIcon, size: 12, weight: .fill, color: event.tone.color)
@@ -784,6 +784,7 @@ struct SystemEventCard: View {
                         }
                         .dockPadding(.leading, 14)
                         .dockPadding(.bottom, 4)
+                        .transition(.dockPanelReveal)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -824,7 +825,7 @@ struct FeedEventRow: View {
         VStack(alignment: .leading, spacing: DockSpacing.micro) {
             Button {
                 guard canExpand else { return }
-                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
+                withAnimation(DockMotion.disclosure(reduceMotion: reduceMotion)) { isExpanded.toggle() }
             } label: {
                 HStack(alignment: .center, spacing: DockSpacing.tight) {
                     DockIcon(event.tone.activityIcon, size: 13, weight: .fill, color: event.tone.color)
@@ -874,6 +875,7 @@ struct FeedEventRow: View {
                     }
                     .dockPadding(.leading, 14)
                     .dockPadding(.bottom, 4)
+                    .transition(.dockPanelReveal)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -940,7 +942,7 @@ struct KanbanNoticeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DockSpacing.micro) {
             Button {
-                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
+                withAnimation(DockMotion.disclosure(reduceMotion: reduceMotion)) { isExpanded.toggle() }
             } label: {
                 HStack(alignment: .center, spacing: DockSpacing.tight) {
                     DockIcon(notice.tone.activityIcon, size: 13, weight: .fill, color: notice.tone.color)
@@ -1024,6 +1026,7 @@ struct KanbanNoticeCard: View {
                     guard card == nil, let loadDetail else { return }
                     card = await loadDetail()
                 }
+                .transition(.dockPanelReveal)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

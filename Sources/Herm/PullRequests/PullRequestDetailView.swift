@@ -359,20 +359,23 @@ struct PullRequestDetailView: View {
                     title: "Activity", count: activity.count, isExpanded: $activityExpanded,
                     style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true)
                 if activityExpanded {
-                    if activity.isEmpty {
-                        Text(center.isLoadingDetail(for: pr.id) ? "Loading activity…" : "No activity loaded.")
-                            .dockFont(.body).foregroundStyle(Color.dockMetadataText)
-                    } else {
-                        GitHubTimelineView(
-                            reference: pr.reference, items: activity,
-                            commitCheckEvidence: center.commitCheckEvidence(for: pr.repository)
-                        ) { sha in
-                            if let commit = center.commitsByID[pr.id]?.first(where: { $0.id == sha }) {
-                                commitDiffTarget = PullRequestCommitDiffTarget(
-                                    repository: pr.repository, commit: commit)
+                    VStack(alignment: .leading, spacing: 0) {
+                        if activity.isEmpty {
+                            Text(center.isLoadingDetail(for: pr.id) ? "Loading activity…" : "No activity loaded.")
+                                .dockFont(.body).foregroundStyle(Color.dockMetadataText)
+                        } else {
+                            GitHubTimelineView(
+                                reference: pr.reference, items: activity,
+                                commitCheckEvidence: center.commitCheckEvidence(for: pr.repository)
+                            ) { sha in
+                                if let commit = center.commitsByID[pr.id]?.first(where: { $0.id == sha }) {
+                                    commitDiffTarget = PullRequestCommitDiffTarget(
+                                        repository: pr.repository, commit: commit)
+                                }
                             }
                         }
                     }
+                    .transition(.dockPanelReveal)
                 }
             }
             commentComposer(pr)
@@ -392,6 +395,7 @@ struct PullRequestDetailView: View {
                         files: center.filesByID[pr.id], expectedCount: pr.changedFiles,
                         isCurrent: center.filesAreCurrent(for: pr), isLoading: center.isLoadingDetail(for: pr.id),
                         onReviewFiles: { detailTab = 1 }, embedded: true)
+                    .transition(.dockPanelReveal)
                 }
             }
             Color.dockBorderLight.frame(height: DockLayout.hairline)
@@ -416,7 +420,7 @@ struct PullRequestDetailView: View {
                 DockSectionHeader(
                     title: "Checks", count: pr.checks.isEmpty ? nil : pr.checks.count, isExpanded: $checksExpanded,
                     style: DockThemePalette(theme: DockThemeRuntime.current), isContentHeader: true)
-                if checksExpanded { checksSection(pr) }
+                if checksExpanded { checksSection(pr).transition(.dockPanelReveal) }
             }
             Color.dockBorderLight.frame(height: DockLayout.hairline)
             PullRequestReadinessView(center: center, record: pr, embedded: true)

@@ -1195,6 +1195,7 @@ struct TurnActivityView: View, Equatable {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .dockPadding(.leading, 28)
+                .transition(.dockPanelReveal)
             }
         }
     }
@@ -1247,6 +1248,7 @@ struct TurnActivityView: View, Equatable {
                             Color.dockBorderLight, lineWidth: 0.5)
                     )
                     .dockPadding(.leading, 24)
+                    .transition(.dockPanelReveal)
                 }
             }
         } else {

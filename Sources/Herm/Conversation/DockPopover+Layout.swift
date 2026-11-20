@@ -708,32 +708,39 @@ extension DockPopover {
                                     : 0
                                 chatConversationContent(railWidth: railWidth)
                                     .overlay(alignment: .trailing) {
-                                        if railWidth > 0 {
-                                            SessionPullRequestRail(
-                                                model: model, workflow: developerWorkflow, control: controlCenter,
-                                                repositoryPath: activeSessionRepositoryScope?.repositoryPath,
-                                                onViewAllChanges: { showSessionRailInspector(.changes) },
-                                                onViewPullRequest: viewSessionRailPullRequest,
-                                                onRefreshChanges: refreshSessionRailChanges,
-                                                onViewAllOutputs: { showSessionRailInspector(.artifacts) },
-                                                onViewTimeline: { showSessionRailInspector(.timeline) },
-                                                onRespondInChat: {
-                                                    sessionRailReplyRequest &+= 1
-                                                    model.requestComposerFocus()
-                                                },
-                                                onViewPin: { pin in
-                                                    let identity = WorkspaceIdentity.session(model)
-                                                    guard let id = await model.messageID(forPin: pin),
-                                                        identity == WorkspaceIdentity.session(model)
-                                                    else { return false }
-                                                    pinnedMessageJumpID = id
-                                                    return true
-                                                }
-                                            )
-                                            .id(sessionWorkspaceIdentity)
-                                            .frame(width: railWidth - DockSpacing.section)
-                                            .padding(.trailing, DockSpacing.section)
+                                        ZStack(alignment: .trailing) {
+                                            if railWidth > 0 {
+                                                SessionPullRequestRail(
+                                                    model: model, workflow: developerWorkflow, control: controlCenter,
+                                                    repositoryPath: activeSessionRepositoryScope?.repositoryPath,
+                                                    onViewAllChanges: { showSessionRailInspector(.changes) },
+                                                    onViewPullRequest: viewSessionRailPullRequest,
+                                                    onRefreshChanges: refreshSessionRailChanges,
+                                                    onViewAllOutputs: { showSessionRailInspector(.artifacts) },
+                                                    onViewTimeline: { showSessionRailInspector(.timeline) },
+                                                    onRespondInChat: {
+                                                        sessionRailReplyRequest &+= 1
+                                                        model.requestComposerFocus()
+                                                    },
+                                                    onViewPin: { pin in
+                                                        let identity = WorkspaceIdentity.session(model)
+                                                        guard let id = await model.messageID(forPin: pin),
+                                                            identity == WorkspaceIdentity.session(model)
+                                                        else { return false }
+                                                        pinnedMessageJumpID = id
+                                                        return true
+                                                    }
+                                                )
+                                                .id(sessionWorkspaceIdentity)
+                                                .frame(width: railWidth - DockSpacing.section)
+                                                .padding(.trailing, DockSpacing.section)
+                                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                                            }
                                         }
+                                        .frame(maxWidth: .infinity, alignment: .trailing)
+                                        .clipped()
+                                        .allowsHitTesting(railWidth > 0)
+                                        .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: isSessionRailVisible)
                                     }
                             }
                         }

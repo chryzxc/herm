@@ -55,6 +55,7 @@ struct RepositoryStashSection: View {
                     }
                 }
                 .dockPadding(.leading, 12)
+                .transition(.dockPanelReveal)
             }
         }
         .dockPadding(.top, 12)
@@ -114,6 +115,7 @@ private struct RepositoryStashRow: View {
     let requestOperation: (RepositoryStashOperation) -> Void
 
     @State private var isExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var patch: String?
     @State private var isTruncated = false
     @State private var isLoading = false
@@ -121,10 +123,11 @@ private struct RepositoryStashRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                isExpanded.toggle()
+                withAnimation(DockMotion.disclosure(reduceMotion: reduceMotion)) { isExpanded.toggle() }
             } label: {
                 HStack(spacing: 6) {
-                    DockIcon(isExpanded ? .caretDown : .caretRight, size: 11, color: .dockMetadataText)
+                    DockIcon(.caretRight, size: 11, color: .dockMetadataText)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     Text(stash.reference).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                     Text(stash.subject).dockFont(.body).foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1).truncationMode(.middle)
@@ -170,6 +173,7 @@ private struct RepositoryStashRow: View {
                     }
                 }
                 .dockPadding(8)
+                .transition(.dockPanelReveal)
             }
         }
         .task(id: isExpanded) {

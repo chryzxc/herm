@@ -179,13 +179,16 @@ struct IssueDetailView: View {
                             title: "Description", isExpanded: $descriptionExpanded,
                             style: DockThemePalette(theme: DockThemeRuntime.current))
                         if descriptionExpanded {
-                            if displayedIssue.body.isEmpty {
-                                Text("No description provided.").foregroundStyle(Color.dockSecondaryText)
-                            } else {
-                                MarkdownMessageView(markdown: displayedIssue.body)
-                                    .frame(maxWidth: 820, alignment: .leading)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 0) {
+                                if displayedIssue.body.isEmpty {
+                                    Text("No description provided.").foregroundStyle(Color.dockSecondaryText)
+                                } else {
+                                    MarkdownMessageView(markdown: displayedIssue.body)
+                                        .frame(maxWidth: 820, alignment: .leading)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
+                            .transition(.dockPanelReveal)
                         }
                     }.dockFont(.body).dockCard(padding: 16)
                     GitHubMetadataView(reference: displayedIssue.reference, client: center.api.client) {

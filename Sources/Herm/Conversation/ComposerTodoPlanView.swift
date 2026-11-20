@@ -73,7 +73,7 @@ struct ComposerTodoPlanView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .dockPadding(.horizontal, 4)
                 .dockPadding(.bottom, 8)
-                .transition(DockMotion.reveal(from: .top, reduceMotion: reduceMotion))
+                .transition(.dockPanelReveal)
             }
         }
         .transaction {

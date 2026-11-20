@@ -82,3 +82,25 @@ private struct DockDisclosureLayout: Layout {
             proposal: ProposedViewSize(width: proposal.width, height: nil))
     }
 }
+
+extension AnyTransition {
+    /// Release expensive panel content after collapse. Keep its full width
+    /// while the visible height and the space occupied in the stack recede.
+    static var dockPanelReveal: AnyTransition {
+        .modifier(active: DockPanelReveal(progress: 0), identity: DockPanelReveal(progress: 1))
+    }
+}
+
+private struct DockPanelReveal: AnimatableModifier {
+    var progress: CGFloat
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        DockDisclosureLayout(progress: progress) { content }
+            .clipped()
+            .opacity(Double(min(1, max(0, progress))))
+    }
+}

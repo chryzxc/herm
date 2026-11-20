@@ -1531,7 +1531,7 @@ struct DockCalloutDisclosure: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DockSpacing.tight) {
             Button {
-                withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18)) { isOpen.toggle() }
+                withAnimation(DockMotion.disclosure(reduceMotion: reduceMotion)) { isOpen.toggle() }
             } label: {
                 HStack(spacing: DockSpacing.tight) {
                     DockIcon(.caretRight, size: 11, color: .dockMetadataText)
@@ -1557,6 +1557,7 @@ struct DockCalloutDisclosure: View {
                 }
                 .frame(maxHeight: 220)
                 .fixedSize(horizontal: false, vertical: true)
+                .transition(.dockPanelReveal)
             }
         }
         .dockPadding(.horizontal, 10)
