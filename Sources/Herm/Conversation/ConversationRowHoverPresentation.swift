@@ -54,3 +54,41 @@ struct ConversationRowHoverBackground: View {
         }
     }
 #endif
+
+/// The metadata and action line under a message, shared by user and assistant rows so their
+/// order and gaps stay in one place. `anchor` is the side the bubble hugs: always-shown actions
+/// sit there, status next to them, and hover-only metadata at the outer edge, so its hidden slot
+/// never opens a gap between visible items.
+struct ConversationMessageFooter<HoverOnly: View, Status: View, Actions: View>: View {
+    enum Anchor { case leading, trailing }
+
+    let anchor: Anchor
+    @ViewBuilder let hoverOnly: () -> HoverOnly
+    @ViewBuilder let status: () -> Status
+    @ViewBuilder let actions: () -> Actions
+
+    var body: some View {
+        HStack(spacing: 0) {
+            switch anchor {
+            case .trailing:
+                HStack(spacing: ConversationMessageFooterMetrics.itemSpacing) {
+                    hoverOnly()
+                    status()
+                }
+                actions()
+            case .leading:
+                actions()
+                HStack(spacing: ConversationMessageFooterMetrics.itemSpacing) {
+                    status()
+                    hoverOnly()
+                }
+            }
+        }
+    }
+}
+
+enum ConversationMessageFooterMetrics {
+    /// Gap between footer metadata items. Action buttons sit flush beside them: their 24pt
+    /// boxes already inset a 12pt glyph by this much, so every visible gap reads the same.
+    static let itemSpacing: CGFloat = 6
+}

@@ -2831,6 +2831,11 @@ Unresolved user sends show status in their own metadata, not assistant content. 
 Accepted is not proof of storage; Queued is an explicit acknowledgment. A proven row receipt or conservative
 history match clears status without a permanent stored badge or read receipt. Delivery unconfirmed offers a
 bounded, read-only Check status action, never automatic resend; a missing row in that window is inconclusive.
+Every message footer is a `ConversationMessageFooter`, anchored to the side its bubble hugs: always-shown
+actions sit on that side, status (Sending, Delivery unconfirmed, Steering, duration/tokens/model) beside them,
+and the hover-only timestamp at the outer edge, so its hidden slot never opens a gap between visible items.
+Text items are `ConversationMessageFooterMetrics.itemSpacing` (6pt) apart and actions sit flush, since their
+24pt boxes already inset the glyph by the same 6pt.
 
 Completed replies group delivered files and edit diff previews into one compact,
 headerless file list. Exact matching paths share a row; uncertain matches remain

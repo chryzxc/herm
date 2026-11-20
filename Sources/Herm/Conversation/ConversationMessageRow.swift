@@ -254,40 +254,15 @@ struct ConversationMessageRow: View, Equatable {
                             isSteering: message.isSteering, isSpotlit: isSpotlit, reduceMotion: reduceMotion)
                     }
 
-                    HStack(spacing: 0) {
-                        if message.isSteering && delivery == nil {
-                            Text(steeringLabel)
-                                .dockFont(.metadata, weight: .medium)
-                                .foregroundStyle(Color.dockAccent)
-                        }
-                        if let delivery {
-                            HStack(spacing: 4) {
-                                if delivery == .sending || deliveryChecking {
-                                    ProgressView().controlSize(.small)
-                                } else if delivery == .unconfirmed {
-                                    Image(systemName: "exclamationmark.triangle").accessibilityHidden(true)
-                                }
-                                Text(delivery.label)
-                                if delivery == .unconfirmed {
-                                    Button(deliveryChecking ? "Checking…" : "Check status", action: onCheckDelivery)
-                                        .buttonStyle(.dockLink)
-                                        .disabled(deliveryChecking || !deliveryCheckAvailable)
-                                        .help(deliveryCheckNote ?? "Check the conversation before sending again.")
-                                }
-                            }
-                            .fixedSize(horizontal: true, vertical: false)
-                            .dockFont(.metadata)
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .help(delivery == .accepted ? "Storage unconfirmed" : delivery.label)
-                        }
+                    ConversationMessageFooter(anchor: .trailing) {
                         ConversationRowHoverTimestamp(text: message.timeLabel, hover: hoverPresentation)
-                            .padding(.leading, delivery == nil ? 0 : 4)
                             .dockFont(.machineMetadata)
                             .foregroundStyle(Color.dockMetadataText)
-                        HStack(spacing: 0) {
-                            actionButton(.copy, action: onCopy)
-                            if showsPinAction { actionButton(.pin, action: onPin, isAvailable: isPinAvailable) }
-                        }
+                    } status: {
+                        userMessageStatus
+                    } actions: {
+                        actionButton(.copy, action: onCopy)
+                        if showsPinAction { actionButton(.pin, action: onPin, isAvailable: isPinAvailable) }
                     }
                     // Reserve space for the taller unconfirmed status and its action.
                     .frame(minHeight: 30)
@@ -526,7 +501,19 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     private var messageActions: some View {
-        HStack(spacing: 0) {
+        ConversationMessageFooter(anchor: .leading) {
+            ConversationRowHoverTimestamp(
+                text: message.durationLabel != nil || message.tokenCount != nil || message.modelName != nil
+                    ? "· \(message.timeLabel)" : message.timeLabel,
+                hover: hoverPresentation,
+                alwaysVisible: message.isError
+            )
+            .dockFont(.machineMetadata)
+            .foregroundStyle(Color.dockMetadataText)
+            .lineLimit(1)
+        } status: {
+            messageMetadata
+        } actions: {
             MessageReactionBadge(reactions: message.reactions)
                 .dockPadding(.trailing, message.reactions.isEmpty ? 0 : 6)
             actionButton(.copy, action: onCopy)
@@ -539,7 +526,6 @@ struct ConversationMessageRow: View, Equatable {
             if isSpeaking {
                 actionButton(.readAloud, action: onReadAloud, isAvailable: areSessionActionsAvailable)
             }
-            messageMetadata
         }
         .dockButtonSize(.compact)
         .dockPopover(item: $sendTarget, arrowEdge: .bottom) { bot in
@@ -600,32 +586,61 @@ struct ConversationMessageRow: View, Equatable {
         }
     }
 
-    private var messageMetadata: some View {
-        HStack(spacing: 6) {
-            if let durationLabel = message.durationLabel {
-                HStack(spacing: 4) {
-                    DockIcon(.timer, size: 12, color: .dockMetadataText)
-                    Text(durationLabel)
+    /// Steering or delivery state under a user message; always shown, so it sits beside the actions.
+    @ViewBuilder
+    private var userMessageStatus: some View {
+        if message.isSteering && delivery == nil {
+            Text(steeringLabel)
+                .dockFont(.metadata, weight: .medium)
+                .foregroundStyle(Color.dockAccent)
+        }
+        if let delivery {
+            HStack(spacing: 4) {
+                if delivery == .sending || deliveryChecking {
+                    ProgressView().controlSize(.small)
+                } else if delivery == .unconfirmed {
+                    Image(systemName: "exclamationmark.triangle").accessibilityHidden(true)
+                }
+                Text(delivery.label)
+                if delivery == .unconfirmed {
+                    Button(
+                        deliveryChecking ? "Checking…" : "Check status", action: onCheckDelivery
+                    )
+                    .buttonStyle(.dockLink)
+                    .disabled(deliveryChecking || !deliveryCheckAvailable)
+                    .help(deliveryCheckNote ?? "Check the conversation before sending again.")
                 }
             }
-            if let tokenCount = message.tokenCount {
-                Text("· \(SessionTokenFormatting.format(tokenCount))")
-                    .help("Tokens used by this turn, including tool calls and context")
-            }
-            if let modelName = message.modelName {
-                Text("· \(modelName)")
-            }
-            ConversationRowHoverTimestamp(
-                text: message.durationLabel != nil || message.tokenCount != nil || message.modelName != nil
-                    ? "· \(message.timeLabel)" : message.timeLabel,
-                hover: hoverPresentation,
-                alwaysVisible: message.isError
-            )
+            .fixedSize(horizontal: true, vertical: false)
+            .dockFont(.metadata)
+            .foregroundStyle(Color.dockSecondaryText)
+            .help(delivery == .accepted ? "Storage unconfirmed" : delivery.label)
         }
-        .dockFont(.machineMetadata)
-        .foregroundStyle(Color.dockMetadataText)
-        .lineLimit(1)
-        .dockPadding(.leading, 4)
+    }
+
+    /// Duration, tokens and model after the assistant's actions; empty when Hermes reported none.
+    @ViewBuilder
+    private var messageMetadata: some View {
+        if message.durationLabel != nil || message.tokenCount != nil || message.modelName != nil {
+            HStack(spacing: ConversationMessageFooterMetrics.itemSpacing) {
+                if let durationLabel = message.durationLabel {
+                    HStack(spacing: 4) {
+                        DockIcon(.timer, size: 12, color: .dockMetadataText)
+                        Text(durationLabel)
+                    }
+                }
+                if let tokenCount = message.tokenCount {
+                    Text("· \(SessionTokenFormatting.format(tokenCount))")
+                        .help("Tokens used by this turn, including tool calls and context")
+                }
+                if let modelName = message.modelName {
+                    Text("· \(modelName)")
+                }
+            }
+            .dockFont(.machineMetadata)
+            .foregroundStyle(Color.dockMetadataText)
+            .lineLimit(1)
+        }
     }
 
     @ViewBuilder
