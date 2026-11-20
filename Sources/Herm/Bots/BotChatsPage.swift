@@ -117,12 +117,9 @@ struct BotChatsPage: View, Equatable {
         VStack(spacing: 0) {
             // Same strip as the Sessions list: the sidebar toggle beside the traffic lights.
             HStack(spacing: 0) {
-                if usesWindowChrome {
-                    DockBuildBadgeSlot()
-                        .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 8)
+                DockTitleLeadingControls(showsBadge: usesWindowChrome) {
+                    DockSidebarToggle(isCollapsed: $isCollapsed)
                 }
-                DockSidebarToggle(isCollapsed: $isCollapsed)
-                DockHistoryButtons()
                 Spacer(minLength: 0)
                     .frame(maxHeight: .infinity)
                     .background { if usesWindowChrome { TitlebarDoubleClickArea() } }

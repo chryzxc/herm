@@ -16,6 +16,7 @@ extension EnvironmentValues {
 /// The ⌘[ and ⌘] shortcuts live once on the window shell, not on each instance.
 struct DockHistoryButtons: View {
     @Environment(\.dockNavigationHistory) private var history
+    static let width: CGFloat = 22
 
     var body: some View {
         if let history {
@@ -30,7 +31,8 @@ struct DockHistoryButtons: View {
         Button(action: action) {
             DockIcon(icon, size: DockLayout.toolbarIconSize)
                 .foregroundStyle(enabled ? Color.dockPrimaryText : Color.dockMetadataText.opacity(0.6))
-                .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+                // Chevrons are half as wide as other glyphs; a narrower box keeps the gaps even.
+                .frame(width: Self.width, height: DockLayout.iconControlSize)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)

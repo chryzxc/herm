@@ -357,10 +357,7 @@ struct SessionNavQueue: View, Equatable {
             // The session list owns its title strip beside the conversation and inspector.
             if isDockedWindow && showsWindowTitleRow {
                 HStack(spacing: 0) {
-                    DockBuildBadgeSlot()
-                        .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 8)
-                    DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
-                    DockHistoryButtons()
+                    DockTitleLeadingControls { DockSidebarToggle(isCollapsed: $isSidebarCollapsed) }
                     Spacer(minLength: 0)
                         .frame(maxHeight: .infinity)
                         .background { TitlebarDoubleClickArea() }

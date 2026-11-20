@@ -990,12 +990,9 @@ extension DockPopover {
     /// The conversation toolbar; a group room swaps the name and the session controls for its own.
     /// Sidebar toggle and history shown by the leftmost title row while the chat list is hidden.
     @ViewBuilder var toolbarLeadingControls: some View {
-        if usesWindowChrome {
-            DockBuildBadgeSlot()
-                .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 4)
+        DockTitleLeadingControls(showsBadge: usesWindowChrome) {
+            DockSidebarToggle(isCollapsed: chatListCollapsed)
         }
-        DockSidebarToggle(isCollapsed: chatListCollapsed)
-        DockHistoryButtons()
     }
 
     /// `showsLeadingControls` is false when split columns put this header right of another column.

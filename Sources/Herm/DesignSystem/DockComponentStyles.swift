@@ -1178,14 +1178,9 @@ struct DockPageHeader<Trailing: View>: View {
     /// line, title then status, actions trailing, like a native toolbar.
     private func windowTitleRow(_ row: DockTitleRow) -> some View {
         HStack(spacing: 8) {
-            HStack(spacing: 0) {
-                // Only the leftmost title row; GitHub's detail header sits beside its own navigation.
-                if row.leadingClearance > 0 {
-                    DockBuildBadgeSlot()
-                        .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : 8)
-                }
+            // Only the leftmost title row; GitHub's detail header sits beside its own navigation.
+            DockTitleLeadingControls(showsBadge: row.leadingClearance > 0, showsHistory: row.leadingClearance > 0) {
                 sidebarToggle
-                if row.leadingClearance > 0 { DockHistoryButtons() }
             }
             Text(title)
                 .dockFont(.navigation, weight: .semibold, design: DockThemeStyle.current.fontDesign)

@@ -32,19 +32,63 @@ struct DockBuildBadge: View {
     }
 }
 
-/// Reserves the badge's space in a title row. The real badge is drawn once by `dockBuildBadgeOverlay`, so no page places it.
+/// Reserves the badge's space in a title row and reports where it sits. The real badge
+/// is drawn once by `dockBuildBadgeOverlay`, which places it on the leftmost visible slot.
 struct DockBuildBadgeSlot: View {
-    var body: some View { DockBuildBadge().hidden().accessibilityHidden(true) }
+    @Environment(\.dockHostVisible) private var hostVisible
+
+    var body: some View {
+        DockBuildBadge().hidden().accessibilityHidden(true)
+            .anchorPreference(key: DockBuildBadgeSlotKey.self, value: .bounds) { hostVisible ? [$0] : [] }
+    }
+}
+
+private struct DockBuildBadgeSlotKey: PreferenceKey {
+    static let defaultValue: [Anchor<CGRect>] = []
+    static func reduce(value: inout [Anchor<CGRect>], nextValue: () -> [Anchor<CGRect>]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+/// The sidebar toggle and history buttons beside the traffic lights, after the build badge's
+/// slot. Every leftmost title row uses this so the badge and icons keep one rhythm on every page.
+struct DockTitleLeadingControls<Toggle: View>: View {
+    var showsBadge = true
+    var showsHistory = true
+    @ViewBuilder let toggle: () -> Toggle
+
+    /// Badge edge to the toggle's 28pt box; with the glyph's own inset it matches the glyph-to-glyph gap.
+    static var badgeGap: CGFloat { 6 }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if showsBadge {
+                DockBuildBadgeSlot()
+                    .dockPadding(.trailing, HermBuildInfo.current.badge() == nil ? 0 : Self.badgeGap)
+            }
+            toggle()
+            if showsHistory { DockHistoryButtons() }
+        }
+    }
 }
 
 extension View {
-    /// Draws the build badge once at the window's leading title row, above every page.
+    /// Draws the build badge once at the window's leading title row, above every page. It sits
+    /// exactly on the leftmost visible `DockBuildBadgeSlot`, so each page's own spacing holds.
     func dockBuildBadgeOverlay() -> some View {
-        overlay(alignment: .topLeading) {
-            DockBuildBadge()
-                .frame(height: DockWindowChrome.titleRowHeight)
-                .padding(.leading, 52 + DockWindowChrome.sidebarToggleLeading)  // rail + toggle inset
-                .allowsHitTesting(false)
+        overlayPreferenceValue(DockBuildBadgeSlotKey.self, alignment: .topLeading) { anchors in
+            GeometryReader { proxy in
+                if let slot = anchors.map({ proxy[$0] }).min(by: { $0.minX < $1.minX }) {
+                    DockBuildBadge()
+                        .frame(height: slot.height)
+                        .offset(x: slot.minX, y: slot.minY)
+                } else {
+                    DockBuildBadge()
+                        .frame(height: DockWindowChrome.titleRowHeight)
+                        .padding(.leading, 52 + DockWindowChrome.sidebarToggleLeading)  // rail + toggle inset
+                }
+            }
+            .allowsHitTesting(false)
         }
     }
 }

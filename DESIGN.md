@@ -4357,7 +4357,7 @@ retain their original text. No separate local model-switch history is stored.
 
 Automation starts with a full-width searchable schedule list. Selecting a schedule opens its details and history; All automations returns to the list. Run output opens on request, keeping the overview and details focused.
 
-Shared history buttons inherit their actions from the window shell; keyboard shortcuts are registered once per window. Shell dividers begin below the title row. Modal headers show their title, subtitle, close control, and optional identity badge. Group-chat transcripts and composers use the same reading widths as regular conversations; thread chips reveal longer titles on hover and respect Reduce Motion.
+Shared history buttons inherit their actions from the window shell; keyboard shortcuts are registered once per window. Every leftmost title row places the build badge, sidebar toggle and history buttons through one `DockTitleLeadingControls`, so their gaps match on every page: the badge sits 6pt before the toggle's 28pt box, and the back and forward chevrons use 22pt-wide boxes so their narrow glyphs keep the same visual gap. The badge is drawn once by the window overlay on the leftmost visible slot. Shell dividers begin below the title row. Modal headers show their title, subtitle, close control, and optional identity badge. Group-chat transcripts and composers use the same reading widths as regular conversations; thread chips reveal longer titles on hover and respect Reduce Motion.
 
 ### Hermes compatibility tracker
 
