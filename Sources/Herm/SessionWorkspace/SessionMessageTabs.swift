@@ -130,7 +130,7 @@ struct SessionMessageTabView: View {
                 }
                 Text(message.timeLabel).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 Spacer(minLength: 0)
-                AnnotateToggle(isOn: $isAnnotating)
+                AnnotateToggle(isOn: $isAnnotating).dockTabTrack()
                 DockCopyButton(message.text, accessibilityLabel: "Copy message")
                     .buttonStyle(.dockSecondary)
             }

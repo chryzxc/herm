@@ -395,6 +395,8 @@ struct DockRailButton: View {
 struct DockIconButton: View {
     let icon: Ph
     let label: String
+    /// Hover text that explains the action; the short `label` stays the accessibility name.
+    var help: String? = nil
     var isProminent = false
     var isBusy = false
     /// Toolbars draw bare icons; the background belongs to icon buttons inside content.
@@ -411,7 +413,7 @@ struct DockIconButton: View {
         }
         .buttonStyle(.dockHover)
         .disabled(isBusy)
-        .help(label)
+        .help(help ?? label)
         .accessibilityLabel(label)
     }
 }

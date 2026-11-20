@@ -517,9 +517,24 @@ descriptions; live state overrides history, and nonterminal history without live
 evidence is status not current, not inferred complete; View in timeline),
 Checkpoints (`rollback.list` for the session workspace; Show diff
 inline and a confirmed Restore that is disabled mid-turn and reloads the transcript
-Hermes rewinds), Outputs (the existing session artifact index), Pinned items
+Hermes rewinds), Plan (see below), Outputs (the existing session artifact index), Pinned items
 (canonical message pins), and Workspace (path and a matching fresh Git snapshot).
 Omit sections without data.
+Plan lists the plans this session owns, re-read every 2 seconds: Hermes `/plan` files
+(Markdown under the session workspace's `.hermes/plans/`, excluding `reviews/`, whose
+file name the chat mentions, newest first), then files linked with **Add to rail** in a
+plan file tab's header (a local preference per session; **Remove from rail** there or
+in the row's context menu unlinks). Progress comes from the file's checkboxes; agents
+rarely tick them, so a plan without any falls back to the session's Hermes task list,
+counting only steps a task names unambiguously (titles of six or more characters) and
+labelled `from task list`. A row then shows a `DockProgressBar` (complete tone),
+`N/M done`, `N blocked` and **Next up**. With neither it reads "No progress yet: neither
+the plan nor the task list marks its steps." and offers a **Track progress** `.dockLink`.
+That action, and the same `.dockSecondary` button in the file tab's header, only
+attaches a context chip asking Hermes to name its task list after the plan's steps;
+Herm never edits the plan or ticks steps. A linked file that is gone or unreadable
+shows "File not found." in the warning color with Remove from rail, never old numbers.
+Selecting a row opens the file tab in Plan view.
 Tasks and the composer reuse `TodoPlanTaskList`: in-progress tasks first, pending
 tasks next, and completed/cancelled tasks last, preserving original order within each
 group and original slots for identity. The active task has a progress indicator,
@@ -2279,15 +2294,133 @@ long lines wrap by default in unified and split layouts without horizontal scrol
 Keep **Open** (a preview tab with an Annotate toggle, or another app)
 available for the file itself.
 Annotation is one shared component (`TextAnnotator`) for every tab that shows
-text: file previews and message tabs. Headers use a persistent **Annotate** label with the shared **Dock switch**
-treatment, showing on/off state through its track and thumb without changing width.
+text: file previews and message tabs. **Annotate** is a `DockTabButton` toggle (28pt,
+`highlighter` glyph that fills while on, the tab selection background while on) of fixed
+width. Message tabs keep it in the header inside a `.dockTabTrack()`. File previews take
+the header down to the filename and **Open in**. The document floats its tools top right,
+10pt in, matching the map's: an Annotate `DockIconButton` (`highlighter`, prominent while
+on) and `arrowsOut`, which opens the same annotator in a `DockExpandedPage` sheet (notes
+stay in sync). When the file maps, the Document (`fileText`) and Map (`treeStructure`)
+tabs float over the bottom edge, centered 12pt up in one `.dockCard(padding: 3)`; the
+document scrolls clear of them through a 56pt bottom content inset and the inline map
+adds 48pt of bottom room.
 Message **Copy** uses a compact labeled secondary action.
 Selection guidance lives in the review footer and accessibility hint; tooltips stay short.
 Review and note-editor actions use shared compact button sizing. The review footer grows with its controls
 so they remain fully visible at larger interface scales. Turning Annotate off keeps saved notes.
+The file document reserves 44pt above its text for those top-right tools, and text
+scrolling under them is covered by a 76pt canvas band: solid behind the tool row (the
+top 62%), then fading to clear, so the icons never sit on text.
+The review footer's notes popover groups **Not sent** and **Sent** under `DockSectionLabel`
+counts. Each row leads with its quote as a two-line citation (metadata ink, a 1pt
+`dockBorderStrong` rule on the left), then the note in body type; draft rows carry their
+document number as plain accent tabular digits, never a pill. Delete appears on row hover
+or while editing. **Add general note** is a compact `.dockSecondary` action under a divider.
 Message tabs show rich content until
 Annotate is on, then the plain message text; images and attachment cards return
 when Annotate is off. Structured tabs (bot, task, tool, activity) do not annotate. Opening a diff does not rebind the session's project; closing the tab clears its transient attachment selection.
+
+Markdown file tabs whose plan has at least two nodes add the **Document | Plan**
+tabs to those floating controls. The map is derived from
+the file on every reload and never stored. It reads as a node-graph pipeline on the plain
+canvas color that pans both ways, so nodes keep their natural size in a narrow
+pane; a top-right `arrowsOut` icon opens the same map in a `DockExpandedPage` sheet
+(its actions close the sheet first). Beside it, a `listBullets`/`treeStructure` icon
+switches between **Tree** (default) and **List** (a local preference shared by both views;
+each state's tooltip says what the other layout is for).
+As a tree, the root (the 240pt title node with more than one phase, else the single phase's
+own node) sits at the left and every node's children stack to its right, the parent centered
+on them, joined by right-angle wires: out of the parent's right edge at its header's middle,
+along a bus 28pt beside it, then a rounded elbow into each child's header. The fold port sits
+just outside the card's right edge on that wire. Tree cards are 280pt and widen to 440pt
+while selected, for their notes and actions. Hovering a step lights its dependency wires; that
+hover redraws only the wires layer, never the cards, so scrolling across many cards stays
+smooth. The rest of this paragraph describes the list, which stacks phases top to bottom
+(chained with arrows looping down their left side). With more than one phase, a 240pt root
+node (the document title, an overall completion ring, phase and step counts) leads.
+Each repeated heading is
+a 440pt column: a phase node on top (`.dockCard`: completion ring over steps with a stated status, `Phase N`, title,
+step count plus any active or blocked counts in their tone colors) whose bottom-left
+port folds its steps: an 18pt open circle in the canvas color with a `dockBorderStrong`
+rule, hung fully below the card's bottom edge at the trunk (so it never covers the index or
+text), showing `minus`/`plus`; a folded node leaves an 18pt gap for it. One quiet accent
+tree drops a trunk from each port and branches with rounded elbows toward each
+child's left edge; a stated done, working or blocked status recolors
+its own branch, and the selected node's branch is solid accent. Each branch ends in a
+filled input dot seated on the child's left edge, haloed in the canvas color. Steps are checklist
+items, numbered items and sub-headings; nested checklist and numbered items and
+deeper sub-headings become further levels indented 36pt under their step with their
+own port, trunk and branches, and a folded node shows a `treeStructure` count.
+A step's card opens with a label strip: status icon, monospaced `STEP 03` (just `03` for
+a single-phase outline, whose top level is its sections), then right-aligned quiet
+metadata (non-to-do status label, readiness, ID pill, subtask count) and a caret, over a
+full-width title, so narrow tree cards fit. Nested items stay one compact row: status
+icon, title, metadata, caret. Every metadata mark has a tooltip that says what it means
+and what to do about it. Stated
+`depends on`/`blocked by`/`requires`/`after` references between nodes, across phases
+too, are dashed accent wires (`requires` and `after` count only when they name a node; an
+unmatched `depends on` or `blocked by` shows as not found) with arrowheads (forward out of the right edge,
+backward out of the left, same-column wires looping out to the right), solid when
+they touch the selected node; a dependent node that is not done shows **Ready**
+(`lightning`, complete tone) once every source is done, otherwise `lockSimple` and
+the number it waits on. Titles are always the document's words, never generated: a bold lead
+(`**Name:** rest`, punctuation inside or after the emphasis) is the title and the rest a
+one-line metadata summary; a hard-wrapped item joins its continuation lines; a title over
+72 characters breaks at its first clause (` — `, `: `, `. `, `; `) into title and summary.
+Selecting a row shows both in full. Rings and hollow status circles appear only where the
+document states status, so a design spec reads as structure, not as unstarted work. A
+checklist plan maps as written; a reading without stated status must keep every
+phase-level section, or the parser falls back to an outline (sections as steps, their
+lists as children). No sparkle glyph anywhere (`make icon-contract`). Status comes only
+from the document (`[x]`, ✅ or a fully struck-through item complete;
+`[~]`/`[-]`/`[/]` or 🚧 working; `[ ]` or ☐ inactive; ⛔, ❌ or "blocked" attention); a
+section takes its status from its checkboxes. Documents without checklists fall back
+to plain bullets as steps, and heading-only specs to an outline of their headings;
+prose with no structure keeps the picker hidden. Selecting a node tints it and its
+phase with the accent (`.dockCard(tint:)`) and expands it in place: its notes
+(source text after the title line) in a sunken well, a **Depends on** row of pills
+(complete tone when done, accent when pending, warning when unresolved), and a
+footer under a hairline: the source line (`Line N`, monospaced), outlined `.dockSecondary` icon
+actions (13pt glyphs) for **Show in document** and **Comment** (opens the note popover on its title), and a
+primary **Send to chat** (attaches a context chip; never sends), all at `.inline`
+24pt. Notes render through `MarkdownMessageView` (metadata size, full height with no nested
+scroll view; hard-wrapped prose lines join into paragraphs) with ```` ```mermaid ```` fences drawn by `MermaidDiagramView`; a section's
+table rows become its child nodes (first cell as the bold lead, other cells as the
+summary). Relative file paths in a node's notes that exist beside the plan (or in a
+folder above it) show as `.dockLink` chips that open a preview tab. A node with no
+bold-lead summary previews its first sentence, or `Table · N rows`, until selected.
+Headings name what a status-less section is: open questions and risks get a
+`question` mark in the attention tone, decisions a `sealCheck` in accent, non-goals
+and deferred work a `prohibit` mark and secondary title ink.
+
+Rows also carry live state in their metadata, before status: **Updated** (accent)
+on nodes whose text changed since the file was last loaded, cleared when selected;
+**Working** or **Done in chat** when the session's task list names the node (only
+titles of six or more characters that match one node; the file stays the status
+source); and a `chatCircleText` count of unsent review notes quoting the node, with a
+footer button opening the first one in the document. A top-right `magnifyingGlass`
+(⌘F) opens a 280pt find card at the top left (match count, then an `x` close button; Esc also closes): non-matches fade to 35%, folded
+branches hiding a match show a small accent `magnifyingGlass`, and Return selects the
+next match, unfolding its path. A `dotsThree` menu holds Expand all, Show steps only,
+Collapse to phases and Copy as outline (a Markdown checklist keeping statuses); there is
+no image export and no zoom. Folds are remembered per file. On reload, selection, picks and folds
+follow their step by title when edits move it to another line. The map takes keyboard focus: ↑/↓ move through visible nodes, → unfolds or
+steps in, ← folds or goes to the parent, Return shows the node in the document, Esc
+clears, ⌘C copies the node's title, summary and notes. ⌘-click picks several nodes; a
+top-left card then reads `N selected`, **Clear** and **Send N to chat** (one combined
+context chip). Switching to Document scrolls to the selected node; switching to Plan
+selects the section at the top of the document.
+
+When the file states status, the first open step with no open nested items and no
+undone dependency shows **Next up** (`arrowCircleRight`, accent) and the toolbar gains
+an `arrowCircleRight` icon that jumps to it; the pane header shows `N/M done` (plus
+`N blocked` in the attention tone) after the filename in both views. When steps
+changed since the file was last seen, a `.dockSecondary` **N updated**
+(`clockCounterClockwise`) leads the toolbar and jumps to the first. Dependency pills in
+an expanded node are links (underlined, `arrowUpRight`) that select their source, and
+the label reads **Waiting on** while any source is open. Hovering a node lights its
+dependency wires as selection does. An open node's footer has one chat action,
+**Send to chat**; no second icon duplicates it.
 
 Expanded edit activity uses a selectable, monospaced diff preview. Lines wrap to
 the available width and the bounded preview scrolls vertically.

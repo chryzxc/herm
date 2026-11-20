@@ -7,6 +7,10 @@ open-chrome behavior per skin, so a card never needs its own `RoundedRectangle` 
 - Static group: `.dockCard(padding: 12)`.
 - Hovered, focused or selected card: `.dockCard(padding: 16, isActive: hovered)`.
 - Content that supplies its own padding: `.dockCard(padding: 0)`.
+- Selection that carries a hue (canvas nodes): `.dockCard(isActive: selected, tint: Color.dockAccent)`.
+- Card drawn over other content (canvas nodes over wires, panels floating over a scroll view):
+  add `isSolid: true`. Typographic skins otherwise draw cards boxless; solid cards keep a canvas
+  fill and rule there so what is beneath does not show through.
 - Inset boxes inside a card or row: `.dockWell(.raised | .sunken)` (`radius:`, `role:`, `stroke:` to tune).
 - Floating HUD surface: `.dockHUDSurface(tint:)`.
 - Tinted label capsule: `.dockPill(tint:)`; neutral chip: `DockMetadataPill`.

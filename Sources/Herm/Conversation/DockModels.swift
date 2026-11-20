@@ -19,7 +19,7 @@ enum HermesStatus: Equatable {
 
     var icon: Ph {
         switch self {
-        case .idle: .sparkle
+        case .idle: .checkCircle
         case .working: .lightning
         case .needsApproval: .warningCircle
         case .needsClarification: .question

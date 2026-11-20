@@ -97,7 +97,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general: .slidersHorizontal
         case .gateway: .globe
-        case .appearance: .sparkle
+        case .appearance: .palette
         case .notifications: .bell
         case .updates: .arrowsClockwise
         case .runtime: .gearSix

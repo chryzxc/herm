@@ -39,6 +39,20 @@ struct FilePreviewPane: View {
     @State private var modifiedAt: Date?
     /// Off by default so the tab reads as a plain preview until review starts.
     @State private var isAnnotating = false
+    /// Derived from the loaded text on every reload; nil for non-Markdown.
+    @State private var specMap: SpecMap?
+    @State private var showsMap = false
+    /// Linked to this session's rail as a plan; a local preference.
+    @State private var isLinked = false
+    @State private var focus: SpecMapFocus?
+    @State private var showsFullScreen = false
+    @State private var mapSelection: String?
+    /// Titles Hermes changed since they were last seen; cleared per node on selection.
+    @State private var updatedTitles: Set<String> = []
+    @State private var sync = SpecMapDocumentSync()
+    /// Recomputed only when its inputs change, never on the token stream that re-runs body.
+    @State private var mapOverlay = SpecMapOverlay()
+    @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
 
     private var kind: FilePreviewKind? { FilePreviewKind(url: url) }
     private var path: String { url.path }
@@ -46,6 +60,8 @@ struct FilePreviewPane: View {
         if case .text(let text, _) = content { return text }
         return nil
     }
+    private var usefulMap: SpecMap? { specMap?.isUseful == true ? specMap : nil }
+    private var isShowingMap: Bool { showsMap && usefulMap != nil }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,6 +70,12 @@ struct FilePreviewPane: View {
         }
         .background(Color.dockCanvas)
         .onAppear { isAnnotating = center.hasDrafts(path) }
+        .onChange(of: path, initial: true) { _, path in isLinked = model.isPlanLinked(path) }
+        .onChange(of: center.planRequest, initial: true) { _, request in
+            guard request == path else { return }
+            center.planRequest = nil
+            showsMap = true
+        }
         .task(id: url) { await watch() }
     }
 
@@ -64,8 +86,34 @@ struct FilePreviewPane: View {
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            let progress = headerProgress
+            if let progress {
+                progressSummary(progress)
+            }
             Spacer(minLength: 8)
-            if kind != .image, text != nil { AnnotateToggle(isOn: $isAnnotating) }
+            if let map = usefulMap {
+                let isHermesPlan = path.contains("/.hermes/plans/")
+                if progress == nil, isHermesPlan || isLinked {
+                    Button("Track progress") {
+                        model.attachChatContext(SessionPlans.trackProgressContext(path: path, title: map.title))
+                    }
+                    .buttonStyle(.dockSecondary)
+                    .help(
+                        "Add a request to the chat composer asking Hermes to name its task list after this plan’s steps, so Herm can show progress here and in the session rail. Herm never edits the plan."
+                    )
+                }
+                if !isHermesPlan, model.navigationSessionID != nil {
+                    Button(isLinked ? "Remove from rail" : "Add to rail") {
+                        isLinked = model.setPlan(path, linked: !isLinked)
+                    }
+                    .buttonStyle(.dockSecondary)
+                    .help(
+                        isLinked
+                            ? "Stop showing this plan in this session’s rail. The file is not changed."
+                            : "Show this plan in this session’s rail with its progress, so you can follow it without keeping this tab open."
+                    )
+                }
+            }
             openInMenu
         }
         .dockPadding(.horizontal, 16)
@@ -73,6 +121,107 @@ struct FilePreviewPane: View {
         .dockButtonSize(.compact)
         .dockPaneTint(Color.dockSurface2)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    /// The file's own checkboxes, else the session's task list where it names plan steps.
+    private var headerProgress: (done: Int, total: Int, blocked: Int, fromTaskList: Bool)? {
+        guard let map = usefulMap else { return nil }
+        if let progress = map.progress { return (progress.done, progress.total, progress.blocked, false) }
+        return map.taskListProgress(model.planTasks.map { ($0.content, $0.status) }).map {
+            ($0.done, $0.total, 0, true)
+        }
+    }
+
+    /// The plan's state in both views.
+    private func progressSummary(_ progress: (done: Int, total: Int, blocked: Int, fromTaskList: Bool)) -> some View {
+        HStack(spacing: 6) {
+            Text("\(progress.done)/\(progress.total) done").foregroundStyle(Color.dockMetadataText)
+            if progress.blocked > 0 {
+                Text("\(progress.blocked) blocked").foregroundStyle(DockStatusTone.attention.color)
+            }
+            if progress.fromTaskList {
+                Text("from task list").foregroundStyle(Color.dockMetadataText)
+            }
+        }
+        .help(
+            progress.fromTaskList
+                ? "The plan has no checkboxes, so this counts the session’s Hermes task list where tasks name the plan’s steps."
+                : "Counted from the plan’s own checkboxes."
+        )
+        .dockFont(.metadata)
+        .monospacedDigit()
+        .lineLimit(1)
+        .fixedSize()
+        .accessibilityElement(children: .combine)
+    }
+
+    private var canAnnotate: Bool { kind != .image && text != nil }
+
+    /// Document | Plan float over the content's bottom edge, beside the thing they change.
+    @ViewBuilder
+    private var viewControls: some View {
+        if usefulMap != nil {
+            HStack(spacing: 2) {
+                modeTab("Document", icon: .fileText, showsMap: false)
+                modeTab("Plan", icon: .treeStructure, showsMap: true)
+                    .help(
+                        "Show this Markdown as a plan: phases, steps, dependencies and progress, read from the file each time it changes."
+                    )
+            }
+            .fixedSize()
+            .dockCard(padding: 3)
+            .dockPadding(.bottom, 12)
+        }
+    }
+
+    /// The document's own tools, top right like the map's: Annotate, then full screen.
+    private func documentControls(expanded: Bool) -> some View {
+        let palette = DockThemePalette(theme: DockThemeRuntime.current)
+        return HStack(spacing: 4) {
+            if canAnnotate {
+                DockIconButton(
+                    icon: .highlighter, label: isAnnotating ? "Stop annotating" : "Annotate: select text to add notes",
+                    help: isAnnotating
+                        ? "Stop annotating and return to the rich view. Your unsent notes are kept."
+                        : "Annotate: select text to add notes on it. Notes collect as a review you can send to Hermes in one message.",
+                    isProminent: isAnnotating, style: palette
+                ) {
+                    withAnimation(.dockEase(duration: 0.15)) { isAnnotating.toggle() }
+                }
+                .accessibilityValue(isAnnotating ? "On" : "Off")
+            }
+            if !expanded {
+                DockIconButton(
+                    icon: .arrowsOut, label: "Open document full screen",
+                    help:
+                        "Open this document in a full-window view for easier reading and annotating. Close it to return here.",
+                    style: palette
+                ) {
+                    showsFullScreen = true
+                }
+            }
+        }
+        .dockPadding(10)
+    }
+
+    private func modeTab(_ title: String, icon: Ph, showsMap value: Bool) -> some View {
+        DockTabButton(title: title, icon: icon, isSelected: showsMap == value, height: 28) {
+            switchMode(toMap: value)
+        }
+    }
+
+    /// The map and the document follow each other: the document scrolls to the
+    /// selected node, and the map selects the section the document was reading.
+    private func switchMode(toMap: Bool) {
+        guard toMap != showsMap else { return }
+        if toMap, let map = usefulMap, case let offset = sync.readTopOffset(), offset > 0,
+            let node = map.node(atRenderedOffset: offset, in: sync.rendered)
+        {
+            mapSelection = node.id
+        } else if !toMap, let node = mapSelection.flatMap({ usefulMap?.node($0) }) {
+            focus = .reveal(node.title)
+        }
+        withAnimation(.dockEase(duration: 0.2)) { showsMap = toMap }
     }
 
     private var openInMenu: some View {
@@ -97,12 +246,38 @@ struct FilePreviewPane: View {
         } else {
             switch content {
             case .text(let text, let truncated):
-                TextAnnotator(
-                    source: .file(url), text: text, isMarkdown: kind == .markdown,
-                    notice: truncated ? "Preview truncated — open the file to see the rest." : nil,
-                    isAnnotating: $isAnnotating, model: model
-                )
-                .id(path)
+                if isShowingMap, let usefulMap {
+                    SpecMapView(
+                        map: usefulMap, selectedID: $mapSelection, storageKey: path,
+                        overlay: mapOverlay, actions: mapActions
+                    )
+                    .equatable()
+                    .overlay(alignment: .bottom) { viewControls }
+                    .onChange(of: overlayInputs(usefulMap), initial: true) { _, inputs in
+                        mapOverlay = overlay(inputs)
+                    }
+                } else {
+                    TextAnnotator(
+                        source: .file(url), text: text, isMarkdown: kind == .markdown,
+                        notice: truncated ? "Preview truncated — open the file to see the rest." : nil,
+                        isAnnotating: $isAnnotating, model: model, focus: $focus, sync: sync,
+                        accessory: usefulMap == nil ? nil : AnyView(viewControls),
+                        controls: AnyView(documentControls(expanded: false))
+                    )
+                    .id(path)
+                    .dockSheet(isPresented: $showsFullScreen) {
+                        DockExpandedPage(
+                            title: url.lastPathComponent, subtitle: "Document", close: { showsFullScreen = false }
+                        ) {
+                            TextAnnotator(
+                                source: .file(url), text: text, isMarkdown: kind == .markdown,
+                                isAnnotating: $isAnnotating, model: model,
+                                controls: AnyView(documentControls(expanded: true)))
+                        }
+                        .frame(minWidth: 900, minHeight: 640)
+                        .modifier(ReviewSheetContext())
+                    }
+                }
             case .missing:
                 SessionSurfacePreviewPlaceholder(icon: .warning, title: "File not found", detail: path)
             case .binary:
@@ -114,11 +289,86 @@ struct FilePreviewPane: View {
         }
     }
 
+    private func open(_ request: SpecMapFocus) {
+        focus = request
+        showsMap = false
+    }
+
+    private var mapActions: SpecMapActions {
+        SpecMapActions(
+            reveal: { open(.reveal($0.title)) },
+            comment: { open(.comment($0.title)) },
+            send: send,
+            openNote: { open(.note($0)) },
+            seen: { updatedTitles.remove($0.title) },
+            openFile: { url in
+                if let previewWorkspace {
+                    SessionMessageTabs.shared.open(.file(url), in: previewWorkspace)
+                } else {
+                    ArtifactOpener.open(url.path)
+                }
+            },
+            resolveFile: resolve)
+    }
+
+    /// Compared on every body pass. Cheap without a version counter: the map and the
+    /// annotations are unchanged values between reloads, and `Array ==` returns early on
+    /// shared storage, so the walk over every node runs only when something changed.
+    private struct OverlayInputs: Equatable {
+        let map: SpecMap
+        let notes: [FileAnnotation]
+        let plan: TodoPlan?
+        let updated: Set<String>
+    }
+
+    private func overlayInputs(_ map: SpecMap) -> OverlayInputs {
+        OverlayInputs(
+            map: map, notes: center.review(AnnotationSource.file(url).key).annotations,
+            plan: model.currentTodoPlan, updated: updatedTitles)
+    }
+
+    private func overlay(_ inputs: OverlayInputs) -> SpecMapOverlay {
+        var notes: [String: [UUID]] = [:]
+        for note in inputs.notes where note.sentAt == nil {
+            guard let quote = note.quote, let node = inputs.map.node(quoting: quote) else { continue }
+            notes[node.id, default: []].append(note.id)
+        }
+        let live = inputs.plan.map { plan in
+            inputs.map.liveStatuses(plan.items.map { ($0.content, $0.status) })
+        }
+        return SpecMapOverlay(updated: inputs.updated, notes: notes, live: live ?? [:])
+    }
+
+    /// A path written in the plan, found relative to the plan or any folder above it.
+    /// ponytail: existence checks on the main thread, only for the expanded node's few paths.
+    private func resolve(_ relative: String) -> URL? {
+        var folder = url.deletingLastPathComponent()
+        for _ in 0..<8 {
+            let candidate = folder.appending(path: relative)
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            guard folder.path != "/" else { return nil }
+            folder.deleteLastPathComponent()
+        }
+        return nil
+    }
+
+    private func send(_ nodes: [SpecMapNode]) {
+        guard let first = nodes.first else { return }
+        let title = nodes.count == 1 ? "Spec node · \(first.title)" : "Spec nodes · \(nodes.count) steps"
+        let body = ([path] + nodes.map { "## \($0.title)\n\n\($0.detail)" }).joined(separator: "\n\n")
+        model.attachChatContext(
+            ChatContext(
+                id: "spec:\(path):\(nodes.map { String($0.line) }.joined(separator: ","))", title: title, body: body))
+    }
+
     /// ponytail: 1s mtime poll (Hermes writes atomically, which breaks fd
     /// watches); switch to FSEvents like RepositoryWatchService if needed.
     private func watch() async {
         content = nil
         modifiedAt = nil
+        specMap = nil
+        mapSelection = nil
+        updatedTitles = []
         guard kind != .image else { return }
         let url = url
         while !Task.isCancelled {
@@ -128,9 +378,16 @@ struct FilePreviewPane: View {
             guard !Task.isCancelled else { return }
             if content == nil || date != modifiedAt {
                 modifiedAt = date
-                let loaded = await Task.detached { ArtifactTextPreview.Content.load(url) }.value
+                let isMarkdown = kind == .markdown
+                let (loaded, map) = await Task.detached {
+                    let loaded = ArtifactTextPreview.Content.load(url)
+                    guard isMarkdown, case .text(let text, _) = loaded else { return (loaded, SpecMap?.none) }
+                    return (loaded, SpecMapParser.parse(text, fallbackTitle: url.lastPathComponent))
+                }.value
                 guard !Task.isCancelled else { return }
                 content = loaded
+                if let old = specMap, let map { updatedTitles.formUnion(map.changedTitles(since: old)) }
+                specMap = map
                 if let text { center.reconcile(path, contents: text) }
             }
             try? await Task.sleep(for: .seconds(1))
@@ -138,18 +395,49 @@ struct FilePreviewPane: View {
     }
 }
 
-/// The header toggle every annotatable tab uses.
+/// The document's reading position, shared with the map without re-rendering either.
+/// The band under tools floating at a scrolling surface's top edge: solid behind the
+/// tool row, then a short fade, so the icons never sit on content. Surfaces start their
+/// content `reserved` points down so nothing begins hidden under the tools.
+struct ToolsTopFade: View {
+    static let reserved: CGFloat = 44
+
+    var body: some View {
+        LinearGradient(
+            stops: [
+                .init(color: Color.dockCanvas, location: 0),
+                .init(color: Color.dockCanvas, location: 0.62),
+                .init(color: Color.dockCanvas.opacity(0), location: 1),
+            ], startPoint: .top, endPoint: .bottom
+        )
+        .frame(height: 76)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+@MainActor
+final class SpecMapDocumentSync {
+    var readTopOffset: @MainActor () -> Int = { 0 }
+    var rendered = ""
+}
+
+/// The Annotate toggle every annotatable tab uses: a highlighter tab that stays lit while on.
 struct AnnotateToggle: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        Toggle("Annotate", isOn: $isOn)
-            .toggleStyle(.dockSwitch)
-            .dockFont(.body)
-            .fixedSize(horizontal: true, vertical: false)
-            .help("Annotate text")
-            .accessibilityValue(isOn ? "On" : "Off")
-            .accessibilityHint("Select text to add a note. Saved notes are kept when you finish.")
+        DockTabButton(title: "Annotate", icon: .highlighter, isSelected: isOn, height: 28, font: .control) {
+            withAnimation(.dockEase(duration: 0.15)) { isOn.toggle() }
+        }
+        .fixedSize()
+        .help(
+            isOn
+                ? "Stop annotating and return to the rich view. Your unsent notes are kept."
+                : "Select text to add notes on it. Notes collect as a review you can send to Hermes in one message."
+        )
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityHint("Select text to add a note. Saved notes are kept when you finish.")
     }
 }
 
@@ -164,15 +452,25 @@ struct TextAnnotator: View {
     var notice: String?
     @Binding var isAnnotating: Bool
     @ObservedObject var model: DockModel
+    /// A Spec Map action to carry out once the document has rendered.
+    var focus: Binding<SpecMapFocus?> = .constant(nil)
+    /// Where the document is reading, for the map to pick up; never drives a render.
+    var sync: SpecMapDocumentSync?
+    /// Controls floated over the document's bottom edge; the text scrolls clear of them.
+    var accessory: AnyView?
+    /// Tools floated at the document's top-right corner.
+    var controls: AnyView?
 
     @ObservedObject private var center = FilePreviewCenter.shared
     /// Rendered document text; highlights are located in this, not the source.
     @State private var rendered = ""
+    @State private var scrollTarget: NSRange?
     /// The note being written or viewed: from a selection, a highlight click,
     /// the notes list, or "General note" (no quote, edited in the bottom bar).
     @State private var composing: FileAnnotation?
     @State private var anchor: AnnotationAnchor?
     @State private var showsNotes = false
+    @State private var hoveredNote: FileAnnotation.ID?
     @State private var showsChanges = false
     @State private var changes: [FileAnnotationText.DiffLine] = []
 
@@ -193,6 +491,12 @@ struct TextAnnotator: View {
     var body: some View {
         VStack(spacing: 0) {
             document
+                .overlay(alignment: .bottom) { accessory }
+                .overlay(alignment: .top) {
+                    // Text scrolling under the top tools fades out instead of colliding with them.
+                    if controls != nil { ToolsTopFade() }
+                }
+                .overlay(alignment: .topTrailing) { controls }
             if let notice {
                 Text(notice)
                     .dockFont(.compactStatus, weight: .regular)
@@ -228,6 +532,8 @@ struct TextAnnotator: View {
                 showsNotes = false
             }
         }
+        .onChange(of: rendered) { applyFocus() }
+        .onChange(of: focus.wrappedValue) { applyFocus() }
         .task(id: reviewDiffInput) {
             changes = []
             guard let input = reviewDiffInput else { return }
@@ -250,7 +556,14 @@ struct TextAnnotator: View {
             onSelect: { range, quote in if isAnnotating { select(range, quote) } },
             onOpenAnnotation: openAnnotation,
             onDismiss: popoverDismissed,
-            onRendered: { rendered = $0 },
+            onRendered: { text in
+                rendered = text
+                sync?.rendered = text
+            },
+            scrollTarget: scrollTarget,
+            bottomInset: accessory == nil ? 0 : 56,
+            topInset: controls == nil ? 0 : ToolsTopFade.reserved,
+            exposeVisibleOffset: sync.map { sync in { sync.readTopOffset = $0 } },
             editor: {
                 AnnotationEditor(
                     annotation: composingBinding,
@@ -318,6 +631,30 @@ struct TextAnnotator: View {
         keepComposingDraft()
         composing = FileAnnotation(quote: quote, location: range.location, note: "")
         anchor = AnnotationAnchor(range: range, annotationID: nil)
+    }
+
+    /// Finds the node's title in the rendered text: it differs from the source,
+    /// so source lines can't be used. ponytail: first match wins for repeated titles.
+    private func applyFocus() {
+        guard let request = focus.wrappedValue, !rendered.isEmpty else { return }
+        focus.wrappedValue = nil
+        let string = rendered as NSString
+        switch request {
+        case .note(let id):
+            guard let annotation = review.annotations.first(where: { $0.id == id }) else { return }
+            isAnnotating = true
+            // Let the highlights lay out before the popover anchors on one.
+            DispatchQueue.main.async { revealNow(annotation) }
+        case .reveal(let title), .comment(let title):
+            let range = string.range(of: title, options: .caseInsensitive)
+            guard range.location != NSNotFound else { return }
+            if case .comment = request {
+                isAnnotating = true
+                select(range, String(string.substring(with: range).prefix(500)))
+            } else {
+                scrollTarget = range
+            }
+        }
     }
 
     private func openAnnotation(_ id: UUID, _ range: NSRange) {
@@ -446,12 +783,12 @@ struct TextAnnotator: View {
                         .dockPadding(8)
                     }
                     if !drafts.isEmpty {
-                        sectionLabel("NOT SENT")
+                        sectionLabel("Not sent", count: drafts.count)
                         ForEach(drafts.sorted { (number(of: $0) ?? .max) < (number(of: $1) ?? .max) }) { noteRow($0) }
                     }
                     if !sent.isEmpty {
                         HStack {
-                            sectionLabel("SENT")
+                            sectionLabel("Sent", count: sent.count)
                             Spacer()
                             Button("Clear") { center.clearSent(key) }
                                 .buttonStyle(.dockCompact)
@@ -468,80 +805,101 @@ struct TextAnnotator: View {
             .frame(maxHeight: 360)
             .fixedSize(horizontal: false, vertical: true)
             Divider()
-            Button(action: startGeneralNote) {
-                Label("Add general note", systemImage: "plus")
-                    .dockFont(.control)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+            HStack {
+                Button(action: startGeneralNote) {
+                    DockIconLabel("Add general note", icon: .plus)
+                }
+                .buttonStyle(.dockSecondary)
+                Spacer()
             }
-            .buttonStyle(.dockCompact)
-            .foregroundStyle(Color.dockSecondaryText)
-            .dockPadding(.horizontal, 14)
-            .dockPadding(.vertical, 10)
+            .dockButtonSize(.compact)
+            .dockPadding(10)
         }
         .frame(width: 340)
     }
 
-    private func sectionLabel(_ title: String) -> some View {
-        DockSectionLabel(title: title)
+    private func sectionLabel(_ title: String, count: Int? = nil) -> some View {
+        DockSectionLabel(title: title, count: count)
             .dockPadding(.horizontal, 8)
             .dockPadding(.top, 8)
             .dockPadding(.bottom, 2)
     }
 
+    /// The quote leads as a citation (what the note is about), the note follows in body type.
     private func noteRow(_ annotation: FileAnnotation) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Group {
-                if let number = number(of: annotation) {
-                    Text("\(number)")
-                        .dockFont(.compactStatus, weight: .semibold)
-                        .foregroundStyle(Color.dockAccent)
-                        .frame(width: 18, height: 16)
-                        .background(Color.dockAccent.opacity(0.22), in: Capsule())
-                } else if annotation.sentAt != nil {
-                    DockIcon(
-                        annotation.resolved ? .checkCircle : .clock, size: 13,
-                        color: annotation.resolved ? Color.dockAccent : Color.dockMetadataText
-                    )
-                    .help(
-                        annotation.resolved
-                            ? "Addressed: the quoted text changed" : "Sent; the quoted text is unchanged")
+        let isHovered = hoveredNote == annotation.id
+        let isComposing = annotation.id == composing?.id
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            noteMarker(annotation)
+                .frame(width: 16, alignment: .trailing)
+            VStack(alignment: .leading, spacing: 4) {
+                if let quote = annotation.quote {
+                    Text(quote)
+                        .dockFont(.metadata)
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .dockPadding(.leading, 8)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(Color.dockBorderStrong).frame(width: 1)
+                        }
                 } else {
-                    DockIcon(.notePencil, size: 13, color: Color.dockMetadataText)
+                    Text("General note")
+                        .dockFont(.metadata)
+                        .foregroundStyle(Color.dockMetadataText)
                 }
-            }
-            .frame(width: 18)
-            .dockPadding(.top, 1)
-            VStack(alignment: .leading, spacing: 3) {
                 Text(annotation.note)
                     .dockFont(.body)
                     .foregroundStyle(annotation.resolved ? Color.dockSecondaryText : Color.dockPrimaryText)
-                    .lineLimit(3)
-                Text(annotation.quote.map { "“\($0)”" } ?? "General note")
-                    .dockFont(.compactStatus, weight: .regular)
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
+                    .strikethrough(annotation.resolved, color: Color.dockMetadataText)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
             if annotation.sentAt == nil {
                 Button {
                     center.remove(annotation.id, from: key)
                 } label: {
-                    DockIcon(.trash, size: 11, color: Color.dockMetadataText)
+                    DockIcon(.trash, size: 13, color: Color.dockMetadataText)
                 }
                 .buttonStyle(.dockHover)
+                .opacity(isHovered || isComposing ? 1 : 0)
                 .help("Delete note")
                 .accessibilityLabel("Delete note")
             }
         }
-        .dockPadding(8)
+        .dockPadding(.horizontal, 8)
+        .dockPadding(.vertical, 8)
         .background(
-            annotation.id == composing?.id ? Color.dockAccent.opacity(0.12) : Color.clear,
+            isComposing ? Color.dockAccent.opacity(0.12) : isHovered ? Color.dockSurface2 : Color.clear,
             in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
         )
         .contentShape(Rectangle())
+        .onHover { hoveredNote = $0 ? annotation.id : (hoveredNote == annotation.id ? nil : hoveredNote) }
         .onTapGesture { reveal(annotation) }
         .help(annotation.quote == nil ? "Edit note" : "Show in document")
+    }
+
+    /// Draft numbers match the marks in the document; sent notes show whether they were addressed.
+    @ViewBuilder
+    private func noteMarker(_ annotation: FileAnnotation) -> some View {
+        if let number = number(of: annotation) {
+            Text("\(number)")
+                .dockFont(.metadata, weight: .semibold)
+                .monospacedDigit()
+                .foregroundStyle(Color.dockAccent)
+        } else if annotation.sentAt != nil {
+            DockIcon(
+                annotation.resolved ? .checkCircle : .clock, size: 13,
+                color: annotation.resolved ? Color.dockAccent : Color.dockMetadataText
+            )
+            .help(
+                annotation.resolved
+                    ? "Addressed: the text this note quoted has changed since you sent it."
+                    : "Sent to Hermes. The quoted text hasn’t changed yet.")
+        } else {
+            DockIcon(.notePencil, size: 13, color: Color.dockMetadataText)
+        }
     }
 
     private var changesSection: some View {
@@ -594,11 +952,14 @@ struct TextAnnotator: View {
     }
 
     /// Preview tabs belong to the session they were opened in, so notes go to its chat.
-    private func attach(_ context: ChatContext) {
-        if !model.attachedContexts.contains(where: { $0.id == context.id }) {
-            model.attachedContexts.append(context)
-        }
-        model.requestComposerFocus()
+    private func attach(_ context: ChatContext) { model.attachChatContext(context) }
+}
+
+extension DockModel {
+    /// Adds a context chip to the composer once and focuses it; never sends.
+    func attachChatContext(_ context: ChatContext) {
+        if !attachedContexts.contains(where: { $0.id == context.id }) { attachedContexts.append(context) }
+        requestComposerFocus()
     }
 }
 

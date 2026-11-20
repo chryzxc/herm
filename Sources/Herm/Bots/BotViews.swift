@@ -1144,7 +1144,7 @@ private struct BotAvatarGeneratorTip: View {
                     title: "Fill Missing",
                     detail: pending.isEmpty
                         ? "Every Bot already has an avatar." : "Only Bots still using the placeholder.",
-                    icon: .sparkle, badge: pending.isEmpty ? nil : "\(pending.count)",
+                    icon: .userCirclePlus, badge: pending.isEmpty ? nil : "\(pending.count)",
                     done: pending.isEmpty, action: onFillMissing)
                 BotAvatarOptionCard(
                     title: "Regenerate All", detail: "Replace every avatar so all Bots match and animate.",

@@ -1348,7 +1348,7 @@ struct SessionTraceCanvas: View {
         switch row.kind {
         case .turn: return .chatText
         case .agent: return .usersThree
-        case .model: return .sparkle
+        case .model: return .cpu
         case .tool: return row.toolName.map(TurnActivityView.icon(for:)) ?? .wrench
         case .thinking: return .brain
         case .compaction: return .arrowsInSimple

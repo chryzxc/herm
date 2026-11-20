@@ -15,6 +15,8 @@ struct SessionRailSummary: Equatable {
     }
     var attention: [Attention] = []
     var plan: TodoPlan?
+    /// Hermes `/plan` files this session named, newest first.
+    var plans: [SessionPlan] = []
     var isWorking = false
     var outputs: [ArtifactRecord] = []
     var outputsError: String?
@@ -31,7 +33,7 @@ struct SessionRailSummary: Equatable {
     var isRestoringCheckpoint = false
 
     var isEmpty: Bool {
-        attention.isEmpty && plan == nil && outputs.isEmpty && outputsError == nil
+        attention.isEmpty && plan == nil && plans.isEmpty && outputs.isEmpty && outputsError == nil
             && pins.isEmpty && pinsError == nil && workspace == nil && contextFiles.isEmpty && processes.isEmpty
             && subagents.isEmpty && checkpoints.isEmpty
     }

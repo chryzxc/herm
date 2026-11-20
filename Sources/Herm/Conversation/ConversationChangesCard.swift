@@ -63,7 +63,7 @@ struct ConversationChangesCard: View {
                                         status[path] = "Download failed: \(error.localizedDescription)"
                                     }
                                 } label: {
-                                    actionLabel("Download")
+                                    actionLabel("Download", icon: .downloadSimple)
                                 }
                                 .buttonStyle(.dockSecondary)
                                 .disabled(!exists)
@@ -75,7 +75,7 @@ struct ConversationChangesCard: View {
                                     ArtifactOpener.open(path)
                                 }
                             } label: {
-                                actionLabel("Open")
+                                actionLabel("Open", icon: .arrowSquareOut)
                             }
                             .buttonStyle(.dockSecondary)
                             .disabled(!exists)
@@ -118,10 +118,10 @@ struct ConversationChangesCard: View {
         .dockWell()
     }
 
-    private func actionLabel(_ title: String) -> some View {
+    private func actionLabel(_ title: String, icon: Ph) -> some View {
         ZStack {
-            Text("Download").hidden().accessibilityHidden(true)
-            Text(title)
+            DockIconLabel("Download", icon: .downloadSimple).hidden().accessibilityHidden(true)
+            DockIconLabel(title, icon: icon)
         }
         .fixedSize()
     }

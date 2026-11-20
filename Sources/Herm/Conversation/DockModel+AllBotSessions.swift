@@ -50,7 +50,8 @@ extension DockModel {
             guard let profile = Self.normalizedProfileID(session.profileID) else { return nil }
             return (session, profile)
         }
-        let candidates = current.filter { $0.0.isPinned } + remote.filter { $0.0.isPinned }
+        let candidates =
+            current.filter { $0.0.isPinned } + remote.filter { $0.0.isPinned }
             + current.filter { !$0.0.isPinned } + remote.filter { !$0.0.isPinned }
         sessionTranscriptPreloadTask = Task { @MainActor [weak self] in
             await self?.preloadSessionTranscripts(candidates)
@@ -84,7 +85,8 @@ extension DockModel {
             } catch is CancellationError {
                 return
             } catch {
-                DebugLog.write("model: transcript preload failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                DebugLog.write(
+                    "model: transcript preload failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }

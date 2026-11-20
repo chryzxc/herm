@@ -101,7 +101,7 @@ struct DockOnboardingView: View {
                     icon: .gearSix, title: "Keep your Hermes setup",
                     detail: "Your models, providers, skills, memory, and conversations stay with Hermes.")
                 welcomeDetail(
-                    icon: .sparkle, title: "Personalize Herm",
+                    icon: .palette, title: "Personalize Herm",
                     detail: "Choose a bot, place the notch, pick a skin, and set up Apple Intelligence.")
             }
             Text("You can change these choices later. Actions that update Hermes ask for confirmation.")

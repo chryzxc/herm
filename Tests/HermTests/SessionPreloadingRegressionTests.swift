@@ -27,10 +27,14 @@ private final class PreloadingRegressionRPC: HermesRPCClientProtocol {
         fetchedPaths.append(path)
         if path.hasPrefix("/api/profiles/sessions/sidebar") {
             if failScan { throw HermesGateway.GatewayError.malformedResponse }
-            return ["recents": ["sessions": [
-                ["id": "shared", "profile": "two", "title": "Other", "pinned": true],
-                ["id": "unknown", "title": "Unknown", "pinned": true]
-            ]]]
+            return [
+                "recents": [
+                    "sessions": [
+                        ["id": "shared", "profile": "two", "title": "Other", "pinned": true],
+                        ["id": "unknown", "title": "Unknown", "pinned": true],
+                    ]
+                ]
+            ]
         }
         if path.hasPrefix("/api/sessions/") {
             if holdTranscript {
@@ -87,9 +91,11 @@ struct SessionPreloadingRegressionTests {
             defaults.removePersistentDomain(forName: suite)
         }
         model.profileScopeID = "one"
-        model.pinnedSessions = [HermesSession(
-            id: "shared", profileID: "one", title: "Pin", preview: "", startedAt: nil,
-            messageCount: 1, source: "test", isPinned: true)]
+        model.pinnedSessions = [
+            HermesSession(
+                id: "shared", profileID: "one", title: "Pin", preview: "", startedAt: nil,
+                messageCount: 1, source: "test", isPinned: true)
+        ]
         model.loadAllBotSessions(force: true)
         await model.allBotSessionsTask?.value
         await model.sessionTranscriptPreloadTask?.value
@@ -107,11 +113,16 @@ struct SessionPreloadingRegressionTests {
         let client = PreloadingRegressionRPC()
         client.failScan = true
         let model = DockModel(defaults: defaults, rpcClient: client)
-        defer { model.shutdown(); defaults.removePersistentDomain(forName: suite) }
+        defer {
+            model.shutdown()
+            defaults.removePersistentDomain(forName: suite)
+        }
         model.profileScopeID = "one"
-        model.pinnedSessions = [HermesSession(
-            id: "pin", profileID: nil, title: "Pin", preview: "", startedAt: nil,
-            messageCount: 1, source: "test", isPinned: true)]
+        model.pinnedSessions = [
+            HermesSession(
+                id: "pin", profileID: nil, title: "Pin", preview: "", startedAt: nil,
+                messageCount: 1, source: "test", isPinned: true)
+        ]
         model.loadAllBotSessions(force: true)
         await model.allBotSessionsTask?.value
         await model.sessionTranscriptPreloadTask?.value
@@ -125,7 +136,10 @@ struct SessionPreloadingRegressionTests {
         let client = PreloadingRegressionRPC()
         client.holdTranscript = true
         let model = DockModel(defaults: defaults, rpcClient: client)
-        defer { model.shutdown(); defaults.removePersistentDomain(forName: suite) }
+        defer {
+            model.shutdown()
+            defaults.removePersistentDomain(forName: suite)
+        }
         model.loadAllBotSessions(force: true)
         await model.allBotSessionsTask?.value
         for _ in 0..<100 where client.pendingTranscript == nil { await Task.yield() }
@@ -143,9 +157,13 @@ struct SessionPreloadingRegressionTests {
         let suite = "SessionPreloadingRegressionTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         let model = DockModel(defaults: defaults, rpcClient: PreloadingRegressionRPC())
-        defer { model.shutdown(); defaults.removePersistentDomain(forName: suite) }
+        defer {
+            model.shutdown()
+            defaults.removePersistentDomain(forName: suite)
+        }
         func session(_ id: String) -> HermesSession {
-            HermesSession(id: id, profileID: "one", title: id, preview: "", startedAt: nil,
+            HermesSession(
+                id: id, profileID: "one", title: id, preview: "", startedAt: nil,
                 messageCount: 1, source: "test")
         }
         #expect(await model.resumeSession(session("a"), reportFailure: true))
@@ -168,7 +186,10 @@ struct SessionPreloadingRegressionTests {
         let client = PreloadingRegressionRPC()
         client.holdTranscript = true
         let model = DockModel(defaults: defaults, rpcClient: client)
-        defer { model.shutdown(); defaults.removePersistentDomain(forName: suite) }
+        defer {
+            model.shutdown()
+            defaults.removePersistentDomain(forName: suite)
+        }
         model.loadAllBotSessions(force: true)
         await model.allBotSessionsTask?.value
         for _ in 0..<100 where client.pendingTranscript == nil { await Task.yield() }

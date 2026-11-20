@@ -28,6 +28,8 @@ final class FilePreviewCenter: ObservableObject {
     static let shared = FilePreviewCenter()
 
     @Published var attachmentDiff: RepositoryAttachmentChanges?
+    /// A file the next preview of it should open in Plan view; the pane clears it on use.
+    @Published var planRequest: String?
 
     func openDiff(_ changes: RepositoryAttachmentChanges) {
         attachmentDiff = changes
