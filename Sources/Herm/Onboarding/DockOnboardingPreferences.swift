@@ -24,7 +24,7 @@ struct DockOnboardingAppearance: View {
             )
             .foregroundStyle(Color.dockSecondaryText)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 12)], spacing: 12) {
-                ForEach(DockThemeID.allCases) { skin in
+                ForEach(theme.availableThemes) { skin in
                     skinCard(skin)
                 }
             }
@@ -54,7 +54,7 @@ struct DockOnboardingAppearance: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
-        .accessibilityLabel(skin.title)
+        .accessibilityLabel("\(skin.title), \(skin.originLabel)")
         .accessibilityValue(selected ? "Selected" : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

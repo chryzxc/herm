@@ -1,10 +1,70 @@
 import AppKit
 import SwiftUI
 
-enum DockThemeID: String, CaseIterable, Identifiable, Codable {
-    case glass, clean, hermesClassic, ares, mono, slate, warmLight, cartoon, terminal, brutalist, origami, dusk, retro,
-        eInk, swiss, clay, pixel, notebook, hud, storm, island
+enum DockThemeID: CaseIterable, Identifiable, Hashable, Sendable {
+    case builtIn(DockBuiltInTheme)
+    indirect case imported(DockImportedTheme)
+
+    static let glass = Self.builtIn(.glass)
+    static let clean = Self.builtIn(.clean)
+    static let hermesClassic = Self.builtIn(.hermesClassic)
+    static let ares = Self.builtIn(.ares)
+    static let mono = Self.builtIn(.mono)
+    static let slate = Self.builtIn(.slate)
+    static let warmLight = Self.builtIn(.warmLight)
+    static let cartoon = Self.builtIn(.cartoon)
+    static let terminal = Self.builtIn(.terminal)
+    static let brutalist = Self.builtIn(.brutalist)
+    static let origami = Self.builtIn(.origami)
+    static let dusk = Self.builtIn(.dusk)
+    static let retro = Self.builtIn(.retro)
+    static let eInk = Self.builtIn(.eInk)
+    static let swiss = Self.builtIn(.swiss)
+    static let clay = Self.builtIn(.clay)
+    static let pixel = Self.builtIn(.pixel)
+    static let notebook = Self.builtIn(.notebook)
+    static let hud = Self.builtIn(.hud)
+    static let storm = Self.builtIn(.storm)
+    static let island = Self.builtIn(.island)
+
+    static let canopy = Self.builtIn(.canopy)
+    static let capiz = Self.builtIn(.capiz)
+    static let hiFi = Self.builtIn(.hiFi)
+    static let highContrast = Self.builtIn(.highContrast)
+
+    static let allCases = DockBuiltInTheme.allCases.map(Self.builtIn)
+    static var hermOnly: [Self] { allCases.filter { $0.hermesSkinID == nil } }
+
+    init?(rawValue: String) {
+        guard let builtIn = DockBuiltInTheme(rawValue: rawValue) else { return nil }
+        self = .builtIn(builtIn)
+    }
+
     var id: String { rawValue }
+    var rawValue: String { importedTheme.map { "t3:\($0.definition.id)" } ?? builtInTheme.rawValue }
+    var hermesSkinID: String? { importedTheme == nil ? builtInTheme.hermesSkinID : nil }
+    var title: String { importedTheme?.definition.name ?? builtInTheme.title }
+    var originLabel: String { importedTheme == nil ? "Built-in" : "Imported" }
+    var signature: String { importedTheme == nil ? builtInTheme.signature : "Imported T3Code palette" }
+    var detail: String { importedTheme == nil ? builtInTheme.detail : "T3Code colors applied to Herm’s Clean skin." }
+    var appearance: DockThemeAppearance { importedTheme?.appearance ?? builtInTheme.appearance }
+    var style: DockThemeStyle { builtInTheme.style }
+    var usesNativeMaterial: Bool { style.material == .glass }
+
+    var importedTheme: DockImportedTheme? {
+        if case .imported(let theme) = self { return theme }
+        return nil
+    }
+
+    private var builtInTheme: DockBuiltInTheme {
+        if case .builtIn(let theme) = self { return theme }
+        return .clean
+    }
+}
+
+enum DockBuiltInTheme: String, CaseIterable, Sendable {
+    case glass, clean, hermesClassic, ares, mono, slate, warmLight, cartoon, terminal, brutalist, origami, dusk, retro,
+        eInk, swiss, clay, pixel, notebook, hud, storm, island, canopy, capiz, hiFi, highContrast
     var hermesSkinID: String? {
         switch self {
         case .hermesClassic: "default"
@@ -13,7 +73,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .slate: "slate"
         case .warmLight: "warm-lightmode"
         case .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .glass, .clean, .eInk, .swiss, .clay, .pixel,
-            .notebook, .hud, .storm, .island:
+            .notebook, .hud, .storm, .island, .canopy, .capiz, .hiFi, .highContrast:
             nil
         }
     }
@@ -39,6 +99,10 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .notebook: "Notebook"
         case .hud: "HUD"
         case .storm: "Storm"
+        case .canopy: "Canopy"
+        case .capiz: "Capiz"
+        case .hiFi: "Hi-Fi"
+        case .highContrast: "High Contrast"
         case .island: "Onyx"
         }
     }
@@ -64,6 +128,10 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .notebook: "Pencil & paper"
         case .hud: "Night instruments"
         case .storm: "Neon rain"
+        case .canopy: "Evergreen & lichen"
+        case .capiz: "Pearl shell"
+        case .hiFi: "Graphite receiver"
+        case .highContrast: "Ink & reverse type"
         case .island: "Black frame"
         }
     }
@@ -91,21 +159,38 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .notebook: "Ruled cream paper, blue accents, pencil outlines, and highlighter selection."
         case .hud: "Cyan instruments, crosshair grid, chamfered panels, and fine corner brackets."
         case .storm: "Storm-night indigo, matte blue controls, falling rain streaks, and crisp selection bars."
+        case .canopy: "Matte forest panels, a curved leaf vein, and soft moss selection."
+        case .capiz: "Warm ivory panes with a pearlescent rim and deep teal underlines."
+        case .hiFi: "Graphite faceplates, engraved tuning marks, amber selection bars, and recessed inputs."
+        case .highContrast: "Bold contours, checked navigation, and inverted selection. Follows macOS appearance."
         case .island: "Near-black frame around a dark gray rounded card, with white type."
         }
     }
     var appearance: DockThemeAppearance {
         switch self {
-        case .glass, .clean, .swiss, .hermesClassic: .system
-        case .warmLight, .cartoon, .brutalist, .origami, .eInk, .clay, .notebook, .retro: .light
-        case .ares, .mono, .slate, .terminal, .dusk, .pixel, .hud, .storm, .island: .dark
+        case .glass, .clean, .swiss, .hermesClassic, .highContrast: .system
+        case .warmLight, .cartoon, .brutalist, .origami, .eInk, .clay, .notebook, .retro, .capiz: .light
+        case .ares, .mono, .slate, .terminal, .dusk, .pixel, .hud, .storm, .island, .canopy, .hiFi: .dark
         }
     }
-    var usesNativeMaterial: Bool { style.material == .glass }
-    /// Themes Herm ships without a matching Hermes skin; always selectable.
-    static var hermOnly: [DockThemeID] { allCases.filter { $0.hermesSkinID == nil } }
     var style: DockThemeStyle {
         switch self {
+        case .canopy:
+            DockThemeStyle(
+                controlRadius: 10, paneRadius: 16, outlineWidth: 0, backdrop: .leaf,
+                pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+        case .capiz:
+            DockThemeStyle(
+                controlRadius: 3, paneRadius: 5, outlineWidth: 1, selection: .underline,
+                motion: .float, pressScale: 0.99, cardFill: 1, tintedSidebar: true, finish: .pearl)
+        case .hiFi:
+            DockThemeStyle(
+                controlRadius: 3, paneRadius: 6, outlineWidth: 1, selection: .bar, emboss: 1,
+                motion: .mechanical, pressScale: 0.98, cardFill: 1, tintedSidebar: true, finish: .machined)
+        case .highContrast:
+            DockThemeStyle(
+                controlRadius: 3, paneRadius: 4, outlineWidth: 2, selection: .invert,
+                animates: false, pressScale: 1, cardFill: 1, strongFocus: true)
         case .hermesClassic:
             DockThemeStyle(
                 controlRadius: 2, paneRadius: 3, outlineWidth: 0.5, backdrop: .etching, motion: .snap, pressScale: 1,
@@ -214,7 +299,7 @@ enum DockThemeMaterial: Equatable { case solid, glass }
 /// `.neon` is a gradient wash with a glowing leading bar, drawn from the palette's `neonHues`.
 enum DockThemeSelection: Equatable { case fill, invert, underline, highlight, bar, neon }
 /// Faint pattern drawn on the window canvas.
-enum DockThemeBackdrop: Equatable { case none, ruled, grid, dots, scanlines, crosshairs, rain, etching }
+enum DockThemeBackdrop: Equatable { case none, ruled, grid, dots, scanlines, crosshairs, rain, etching, leaf }
 /// How a skin moves: the curve and pace every `dockEase` transition takes.
 enum DockThemeMotion: Equatable {
     /// Soft deceleration; the default.
@@ -233,6 +318,8 @@ enum DockThemeChrome: Equatable { case boxed, open }
 
 /// Component geometry a theme controls beyond color. Shared controls, cards,
 /// and `DockLayout` read it, so a theme can reshape the UI from one place.
+enum DockPanelFinish { case plain, pearl, machined }
+
 struct DockThemeStyle: Equatable {
     var controlRadius: CGFloat = 8
     var paneRadius: CGFloat = 10
@@ -268,11 +355,13 @@ struct DockThemeStyle: Equatable {
     var tintedSidebar: Bool = false
     /// Hermes Desktop's flat shell: content meets the sidebar edge to edge, and section labels are tracked caps.
     var flatShell: Bool = false
+    var finish: DockPanelFinish = .plain
+    var strongFocus = false
 
     static var current: DockThemeStyle { DockThemeRuntime.current.style }
 }
 
-enum DockThemeAppearance: Equatable { case system, light, dark }
+enum DockThemeAppearance: String, Codable, Sendable { case system, light, dark }
 
 struct DockAppearanceOption: Identifiable, Equatable {
     let themeID: DockThemeID
@@ -341,6 +430,58 @@ struct DockThemePalette {
         let l = luminance(accent)
         return (1.05 / (l + 0.05)) >= ((l + 0.05) / (luminance("#111111") + 0.05)) ? "#FFFFFF" : "#111111"
     }
+
+    static func importedHex(_ value: String) throws -> String {
+        let color = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if color.wholeMatch(of: /#[0-9a-f]{6}/) != nil { return color }
+        if color.wholeMatch(of: /#[0-9a-f]{3}/) != nil {
+            return "#" + color.dropFirst().map { String(repeating: $0, count: 2) }.joined()
+        }
+        guard color.hasPrefix("oklch("), color.hasSuffix(")") else { throw DockThemeImportError.unsupportedColor }
+        let parts = color.dropFirst(6).dropLast().split(separator: "/", omittingEmptySubsequences: false)
+        guard let components = parts.first?.split(whereSeparator: \.isWhitespace),
+            parts.count == 1 || (parts.count == 2 && cssNumber(parts[1], percentScale: 1) == 1),
+            components.count == 3,
+            let lightness = cssNumber(components[0], percentScale: 1), (0...1).contains(lightness),
+            let chroma = cssNumber(components[1], percentScale: 0.4), (0...1).contains(chroma),
+            let hue = Double(components[2]), hue.isFinite
+        else { throw DockThemeImportError.unsupportedColor }
+        let radians = hue.truncatingRemainder(dividingBy: 360) * .pi / 180
+        let a = chroma * cos(radians)
+        let b = chroma * sin(radians)
+        // OKLab → linear sRGB, followed by the sRGB transfer function.
+        let l = pow(lightness + 0.3963377774 * a + 0.2158037573 * b, 3)
+        let m = pow(lightness - 0.1055613458 * a - 0.0638541728 * b, 3)
+        let s = pow(lightness - 0.0894841775 * a - 1.2914855480 * b, 3)
+        let channels = [
+            4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+            -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+            -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+        ].map { channel in
+            let clamped = max(0, min(1, channel))
+            let encoded = clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * pow(clamped, 1 / 2.4) - 0.055
+            return Int((encoded * 255).rounded())
+        }
+        return String(format: "#%02x%02x%02x", channels[0], channels[1], channels[2])
+    }
+
+    private static func cssNumber(_ part: Substring, percentScale: Double) -> Double? {
+        let value = part.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasSuffix("%") { return Double(value.dropLast()).map { $0 * percentScale / 100 } }
+        return Double(value)
+    }
+
+    static func importedInk(_ value: String?, fallback: String, over surfaces: [String]) throws -> String {
+        let preferred = try value.map(importedHex) ?? fallback
+        let papers = surfaces.map(luminance)
+        for candidate in [preferred, fallback, "#000000", "#FFFFFF"] {
+            let ink = luminance(candidate)
+            if papers.allSatisfy({ (max(ink, $0) + 0.05) / (min(ink, $0) + 0.05) >= 4.5 }) {
+                return candidate
+            }
+        }
+        throw DockThemeImportError.unusableContrast
+    }
     typealias Roles = (
         bg: String, surface: String, surface2: String, surface4: String, primary: String, secondary: String,
         metadata: String, accent: String, selected: String, divider: String, success: String, warning: String,
@@ -352,17 +493,42 @@ struct DockThemePalette {
         "#2A2A2C", "#30D158", "#FF9F0A", "#FF453A"
     )
 
-    fileprivate static func roles(_ theme: DockThemeID, dark isDark: Bool) -> Roles {
-        var roles = baseRoles(theme, dark: isDark)
+    fileprivate static func semanticRoles(_ base: Roles, vivid: Bool) -> Roles {
+        var roles = base
         // Interaction and selection belong to the skin, never the status palette.
-        roles.success = DockAccentColor.green.hex(on: roles, vivid: theme == .glass)
-        roles.warning = DockAccentColor.orange.hex(on: roles, vivid: theme == .glass)
-        roles.destructive = DockAccentColor.coral.hex(on: roles, vivid: theme == .glass)
+        roles.success = DockAccentColor.green.hex(on: roles, vivid: vivid)
+        roles.warning = DockAccentColor.orange.hex(on: roles, vivid: vivid)
+        roles.destructive = DockAccentColor.coral.hex(on: roles, vivid: vivid)
         return roles
     }
 
-    private static func baseRoles(_ theme: DockThemeID, dark isDark: Bool) -> Roles {
+    static func baseRoles(_ theme: DockBuiltInTheme, dark isDark: Bool) -> Roles {
         switch theme {
+        case .canopy:
+            return (
+                "#14221D", "#20322A", "#192B23", "#2D4035", "#DCDCD0", "#C3D1BF", "#B0C3AE",
+                "#BED794", "#304637", "#506B57", "#64B870", "#C09254", "#D67973"
+            )
+        case .capiz:
+            return (
+                "#FAF7EC", "#FFFCF3", "#F0EADB", "#E9E5D3", "#202E2A", "#414F48", "#4E6056",
+                "#165F55", "#D8E8DD", "#A59B82", "#44714B", "#86581F", "#A83430"
+            )
+        case .hiFi:
+            return (
+                "#1C1D1B", "#2A2B28", "#222320", "#353631", "#DCD9CE", "#CBC7B8", "#B9B4A5",
+                "#F0A969", "#42392F", "#686860", "#74B779", "#CC9941", "#DE837C"
+            )
+        case .highContrast:
+            return isDark
+                ? (
+                    "#080808", "#101010", "#141414", "#202020", "#DBDBDB", "#D6D6D6", "#CECECE",
+                    "#FFFFFF", "#272727", "#BDBDBD", "#81C88A", "#E3BA66", "#E08F89"
+                )
+                : (
+                    "#FFFFFF", "#FAFAFA", "#F5F5F5", "#EEEEEE", "#080808", "#161616", "#282828",
+                    "#000000", "#DDDDDD", "#343434", "#315C3D", "#79521C", "#9F3531"
+                )
         // Hermes desktop "Nous": GitHub Default neutrals carrying Nous blue.
         case .hermesClassic:
             return isDark
@@ -512,10 +678,22 @@ struct DockThemePalette {
     /// resolve against the appearance they draw in, so AppKit text, nested
     /// hosting views, and Office materials never pick up a stale Light/Dark
     /// variant from whatever appearance happened to be current when read.
-    private static let tokens: [DockThemeID: Tokens] = Dictionary(
-        uniqueKeysWithValues: DockThemeID.allCases.map { ($0, Tokens(theme: $0)) })
+    private static let tokens: [DockBuiltInTheme: DockThemeTokens] = Dictionary(
+        uniqueKeysWithValues: DockBuiltInTheme.allCases.map { theme in
+            (
+                theme,
+                DockThemeTokens(
+                    light: baseRoles(theme, dark: false), dark: baseRoles(theme, dark: true),
+                    appearance: theme.appearance, usesNativeMaterial: theme == .glass)
+            )
+        })
     private static let solidAccents = DockAccentColor.allCases.map { Color(nsColor: NSColor(hex: $0.hex)) }
-    private var resolvedTokens: Tokens { Self.tokens[theme]! }
+    private var resolvedTokens: DockThemeTokens {
+        switch theme {
+        case .builtIn(let theme): Self.tokens[theme]!
+        case .imported(let theme): theme.tokens
+        }
+    }
     var windowBackground: Color { resolvedTokens.windowBackground }
     var opaqueBackground: Color { resolvedTokens.opaqueBackground }
     var background: Color { resolvedTokens.background }
@@ -558,21 +736,24 @@ struct DockThemePalette {
     var neonHues: [Color] { [] }
 }
 
-private struct Tokens {
+struct DockThemeTokens: Sendable {
     let accents: [Color]
     let windowBackground, opaqueBackground, background, surface, surface2, surface4, primaryText, secondaryText,
         metadataText, accent,
         onAccent, selectedFill, divider, success, warning, destructive, info, merged, review: Color
 
-    init(theme: DockThemeID) {
-        let light = DockThemePalette.roles(theme, dark: false)
-        let dark = DockThemePalette.roles(theme, dark: true)
+    init(
+        light: DockThemePalette.Roles, dark: DockThemePalette.Roles, appearance mode: DockThemeAppearance,
+        usesNativeMaterial: Bool
+    ) {
+        let light = DockThemePalette.semanticRoles(light, vivid: usesNativeMaterial)
+        let dark = DockThemePalette.semanticRoles(dark, vivid: usesNativeMaterial)
         func color(
             _ pick: (DockThemePalette.Roles) -> String, nativeAlpha: CGFloat = 1, nativeLightAlpha: CGFloat? = nil
         ) -> Color {
             func resolved(_ roles: DockThemePalette.Roles, alpha: CGFloat) -> NSColor {
                 let value = NSColor(hex: pick(roles))
-                return theme.usesNativeMaterial ? value.withAlphaComponent(alpha) : value
+                return usesNativeMaterial ? value.withAlphaComponent(alpha) : value
             }
             let lightColor = resolved(light, alpha: nativeLightAlpha ?? nativeAlpha)
             let darkColor = resolved(dark, alpha: nativeAlpha)
@@ -582,7 +763,7 @@ private struct Tokens {
             return Color(
                 nsColor: NSColor(name: nil) { appearance in
                     if appearance.name == DockThemeStore.notchAppearance.name { return notchColor }
-                    switch theme.appearance {
+                    switch mode {
                     case .light: return lightColor
                     case .dark: return darkColor
                     case .system:
@@ -592,7 +773,7 @@ private struct Tokens {
         }
         accents = DockAccentColor.allCases.map { accent in
             color { roles in
-                accent.hex(on: roles, vivid: theme == .glass)
+                accent.hex(on: roles, vivid: usesNativeMaterial)
             }
         }
         info = accents[DockAccentColor.blue.rawValue]
@@ -660,10 +841,13 @@ extension NSColor {
 final class DockThemeStore: ObservableObject {
     static let storageKey = "hermes.dock.theme.v1"
     static let legacyStorageKey = "hermes.sidebar.brand-concept.v1"
+    private static let importedStorageKey = "hermes.dock.imported-themes.v1"
     /// The one theme store every Dock window observes. Separate stores would
     /// each hold their own selection, so a surface observing a different
     /// instance kept rendering the previous theme.
     static let shared = DockThemeStore(appliesToApplication: true)
+    @Published private(set) var importedThemes: [DockThemeID]
+    var availableThemes: [DockThemeID] { DockThemeID.allCases + importedThemes }
     @Published var selectedThemeID: DockThemeID {
         willSet {
             guard selectedThemeID != newValue else { return }
@@ -688,12 +872,44 @@ final class DockThemeStore: ObservableObject {
         self.defaults = defaults
         self.appliesToApplication = appliesToApplication
         defaults.removeObject(forKey: Self.legacyStorageKey)
-        selectedThemeID = defaults.string(forKey: Self.storageKey).flatMap(DockThemeID.init(rawValue:)) ?? .glass
+        let definitions =
+            defaults.data(forKey: Self.importedStorageKey)
+            .flatMap { try? JSONDecoder().decode([DockT3ThemeFile].self, from: $0) } ?? []
+        let imports = definitions.compactMap { try? DockImportedTheme(definition: $0) }.map(DockThemeID.imported)
+        importedThemes = imports
+        let saved = defaults.string(forKey: Self.storageKey)
+        selectedThemeID = (DockThemeID.allCases + imports).first { $0.rawValue == saved } ?? .glass
         applyToApplication(themeID: selectedThemeID)
         observeSystemAppearance()
         pinPopoverAppearance()
     }
     var palette: DockThemePalette { DockThemePalette(theme: selectedThemeID) }
+
+    func importTheme(json: String) throws {
+        let theme = DockThemeID.imported(try DockImportedTheme(json: json))
+        var themes = importedThemes
+        if let existing = themes.firstIndex(where: { $0.id == theme.id }) {
+            themes[existing] = theme
+        } else {
+            themes.append(theme)
+        }
+        try saveImportedThemes(themes)
+        selectedThemeID = theme
+    }
+
+    func removeImportedTheme(_ theme: DockThemeID) throws {
+        let themes = importedThemes.filter { $0.id != theme.id }
+        guard themes.count != importedThemes.count else { return }
+        try saveImportedThemes(themes)
+        if selectedThemeID.id == theme.id { selectedThemeID = .glass }
+    }
+
+    private func saveImportedThemes(_ themes: [DockThemeID]) throws {
+        let definitions = themes.compactMap { $0.importedTheme?.definition }
+        let data = try JSONEncoder().encode(definitions)
+        defaults.set(data, forKey: Self.importedStorageKey)
+        importedThemes = themes
+    }
 
     /// Publishes the theme to token readers and forces the matching
     /// appearance on every window, so AppKit views, nested hosting views,

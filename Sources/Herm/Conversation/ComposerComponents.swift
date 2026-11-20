@@ -77,6 +77,14 @@ struct ComposerInputSurface: ViewModifier {
                             .opacity(showsNeutralOutline || isFocused || isRecording ? 1 : 0)
                         }
                     }
+                    .overlay {
+                        if DockThemeStyle.current.finish == .machined {
+                            shape.stroke(Color.dockBorderStrong, lineWidth: 1).padding(2)
+                        } else if isFocused && DockThemeStyle.current.strongFocus {
+                            shape.stroke(isRecording ? Color.dockDestructive : Color.dockAccent, lineWidth: 3)
+                                .padding(-2)
+                        }
+                    }
                     .dockStickerShadow(shape)
                     .dockFoldCrease()
                     .dockEmboss(shape)

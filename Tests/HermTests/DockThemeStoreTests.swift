@@ -308,7 +308,7 @@ struct DockThemeStoreTests {
         #expect(
             DockThemeID.hermOnly == [
                 .glass, .clean, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel,
-                .notebook, .hud, .storm, .island,
+                .notebook, .hud, .storm, .island, .canopy, .capiz, .hiFi, .highContrast,
             ])
         #expect(
             DockThemeID.hermesClassic.style.motion == .snap && DockThemeID.cartoon.style.motion == .bouncy

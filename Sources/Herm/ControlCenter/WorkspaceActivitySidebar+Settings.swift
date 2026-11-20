@@ -1107,9 +1107,11 @@ extension WorkspaceActivitySidebar {
 
     var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            DockSkinImportSettings(store: dockThemeStore)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 224), spacing: 8)], spacing: 8) {
                 let skins = control.appearanceProjection?.skins ?? []
-                let hermOptions = DockThemeID.hermOnly.map { DockAppearanceOption(themeID: $0, hermesSkin: nil) }
+                let hermOptions = (dockThemeStore.importedThemes + DockThemeID.hermOnly)
+                    .map { DockAppearanceOption(themeID: $0, hermesSkin: nil) }
                 ForEach(hermOptions + DockAppearanceCatalog.installedOptions(installedSkins: skins)) { option in
                     themeOption(option)
                 }
@@ -1193,7 +1195,7 @@ extension WorkspaceActivitySidebar {
         .buttonStyle(.dockHover)
         .help(theme.detail)
         .accessibilityLabel(
-            "\(theme.title), \(theme.signature), \(modeLabel)\(option.isHermesActive ? ", active in Hermes" : "")"
+            "\(theme.title), \(theme.originLabel), \(theme.signature), \(modeLabel)\(option.isHermesActive ? ", active in Hermes" : "")"
         )
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

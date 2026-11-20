@@ -70,6 +70,7 @@ struct DockSkinSpecimen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(height: 148)
+        .overlay(alignment: .topTrailing) { origin }
         // Native-material tokens are translucent; the specimen needs a solid base.
         .background(palette.windowBackground.overlay(DockBackdrop(style: style, accent: palette.accent)))
         .background(
@@ -79,6 +80,16 @@ struct DockSkinSpecimen: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .accessibilityHidden(true)
         .allowsHitTesting(false)
+    }
+
+    /// Built-in or Imported, in the skin's own ink and surface so it reads on any specimen.
+    private var origin: some View {
+        Text(theme.originLabel)
+            .dockFont(.metadata, weight: .medium)
+            .foregroundStyle(palette.secondaryText)
+            .fixedSize()
+            .dockPill(tint: palette.surface2, solid: true)
+            .dockPadding(8)
     }
 
     private var selection: some View {

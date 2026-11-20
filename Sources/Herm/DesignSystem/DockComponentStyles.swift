@@ -261,6 +261,32 @@ struct DockBackdrop: View {
             .blendMode(.difference)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+        } else if kind == .leaf {
+            Canvas { original, size in
+                var context = original
+                // A single frond at the lower right leaves the reading column clear.
+                let scale = min(1, min(size.width / 240, size.height / 180))
+                context.translateBy(x: size.width, y: size.height)
+                context.scaleBy(x: scale, y: scale)
+                var frond = Path()
+                frond.move(to: .zero)
+                frond.addQuadCurve(to: CGPoint(x: -100, y: -130), control: CGPoint(x: -84, y: -66))
+                for index in 1...5 {
+                    let t = CGFloat(index) / 6
+                    let x = -168 * t + 68 * t * t
+                    let y = -132 * t + 2 * t * t
+                    for side: CGFloat in [-1, 1] {
+                        let root = CGPoint(x: x, y: y)
+                        let tip = CGPoint(x: x + side * 23 - 9, y: y - 18 + side * 9)
+                        frond.move(to: root)
+                        frond.addQuadCurve(to: tip, control: CGPoint(x: tip.x, y: y))
+                        frond.addQuadCurve(to: root, control: CGPoint(x: x, y: tip.y))
+                    }
+                }
+                context.stroke(frond, with: .color(accent.opacity(0.15)), lineWidth: 1)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         } else if kind != .none && kind != .etching {
             Canvas { context, size in
                 let step: CGFloat =
@@ -271,7 +297,7 @@ struct DockBackdrop: View {
                     case .scanlines: 4
                     case .crosshairs: 40
                     case .rain: 24
-                    case .etching: 0
+                    case .leaf, .etching: 0
                     }
                 var path = Path()
                 if kind == .rain {
@@ -383,6 +409,12 @@ private struct DockSelectionSurface<S: Shape>: View {
             switch mode {
             case .underline:
                 Color.clear
+            case .bar where theme.style.finish == .machined:
+                shape.fill(fill)
+                    .overlay(alignment: .leading) {
+                        palette.accent.frame(width: 3).padding(.vertical, 3)
+                    }
+                    .clipShape(shape)
             case .invert where allowsInvert:
                 shape.fill(palette.primaryText)
             case .highlight:
@@ -505,7 +537,32 @@ extension View {
         let geometry = theme.style.geometry
         let neon = DockThemePalette(theme: theme).neonHues
         return overlay {
-            if !neon.isEmpty {
+            if theme.style.finish == .pearl {
+                let palette = DockThemePalette(theme: theme)
+                DockThemeShape(cornerRadius: theme.style.paneRadius, role: .pane, geometry: geometry)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                palette.divider, palette.surface, palette.accent.opacity(0.55), palette.surface,
+                                palette.divider,
+                            ], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5
+                    )
+                    .allowsHitTesting(false)
+            } else if theme.style.finish == .machined {
+                Canvas { context, size in
+                    guard size.width >= 60, size.height >= 20 else { return }
+                    var ticks = Path()
+                    for index in 0..<9 {
+                        let x = size.width - 12 - CGFloat(index) * 3
+                        ticks.move(to: CGPoint(x: x, y: size.height - 2))
+                        ticks.addLine(to: CGPoint(x: x, y: size.height - (index % 4 == 0 ? 6 : 4)))
+                    }
+                    context.stroke(
+                        ticks, with: .color(DockThemePalette(theme: theme).accent.opacity(0.65)), lineWidth: 1)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            } else if !neon.isEmpty {
                 // Neon rim: a faint gradient outline with a brighter lit top edge.
                 let rim = DockThemeShape(cornerRadius: theme.style.paneRadius, role: .pane, geometry: geometry)
                 rim.stroke(
@@ -864,6 +921,7 @@ struct DockPrimaryButtonStyle: ButtonStyle {
         theme.style.material == .glass || !DockThemePalette(theme: theme).neonHues.isEmpty
             ? .dockOnAccentText : .dockPrimaryText
     }
+    @Environment(\.isFocused) private var isFocused
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
     @DockChromeTheme private var theme
@@ -915,6 +973,11 @@ struct DockPrimaryButtonStyle: ButtonStyle {
             .dockStickerShadow(shape, pressed: configuration.isPressed)
             .dockEmboss(shape, pressed: configuration.isPressed)
             .dockBevel(pressed: configuration.isPressed)
+            .overlay {
+                if isFocused && theme.style.strongFocus {
+                    shape.stroke(Color.dockAccent, lineWidth: 3).padding(-2).allowsHitTesting(false)
+                }
+            }
             .contentShape(shape)
             .opacity(isEnabled || !dimsWhenDisabled ? 1 : 0.42)
             .scaleEffect(
@@ -936,6 +999,7 @@ struct DockPrimaryButtonStyle: ButtonStyle {
 /// The outlined companion to the primary action (Cancel, Remove, Copy). A
 /// destructive role tints the label instead of filling the control.
 struct DockSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isFocused) private var isFocused
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
     @DockChromeTheme private var theme
@@ -968,6 +1032,11 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .dockStickerShadow(shape, pressed: configuration.isPressed)
             .dockEmboss(shape, pressed: configuration.isPressed)
             .dockBevel(pressed: configuration.isPressed)
+            .overlay {
+                if isFocused && theme.style.strongFocus {
+                    shape.stroke(Color.dockAccent, lineWidth: 3).padding(-2).allowsHitTesting(false)
+                }
+            }
             .contentShape(shape)
             .opacity(isEnabled ? 1 : 0.42)
             .scaleEffect(

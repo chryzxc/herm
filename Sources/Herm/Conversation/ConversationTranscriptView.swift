@@ -255,6 +255,9 @@ struct ConversationTranscriptView: View, Equatable {
                 }
             }
         }
+        .background {
+            if hostVisible && !reduceMotion { DockConversationWallpaper() }
+        }
         .environment(\.conversationScrollController, coordinator.controller)
         .onAppear {
             reset()

@@ -410,10 +410,10 @@ Floating and springy skins lift actions subtly on hover and settle on press;
 surface reveals follow each skin’s motion style. Reduce Motion disables these
 effects, and Retro, Pixel, and E-Ink remain still.
 
-Choose from the skin gallery in **Settings → Appearance**. Every tile previews
+Choose from the skin gallery in **Settings → Appearance**. Each card is labeled **Built-in** or **Imported** and previews
 its own material, geometry, and selection treatment. Switching skins
 keeps the Appearance page selected while the new skin applies immediately. The gallery
-reflows into fewer columns in narrow windows, keeping previews inside their cards. The 21 skins
+reflows into fewer columns in narrow windows, keeping previews inside their cards. The 25 built-in skins
 range from Hermes' desktop look (Nous blue with the etched backdrop from Hermes
 desktop) and Ares' oxblood panels to folded
 Origami, ruled Notebook, molded Clay, and silver-beveled Retro. Terminal has
@@ -423,6 +423,16 @@ the workspace layout and controls in place. Each skin also moves in its own
 way: Hermes snaps like its desktop app, instrument skins move crisply, Cartoon
 and Clay spring, and Glass, Dusk, Storm, and Island settle softly. E-Ink,
 Pixel, and Retro remain motion-free; other skins respect Reduce Motion.
+
+Canopy pairs matte evergreen with a lichen-colored frond. Capiz has pearl-rimmed ivory panels and teal underlines. Hi-Fi has graphite faceplates and amber tuning marks. High Contrast adds bold outlines and checked navigation in both macOS appearances.
+
+To use a T3Code palette, choose **Copy theme JSON** on the theme page, then
+open the sidebar gear → **Skins** and choose **Import from clipboard**. The same
+action is available in **Settings → Appearance**. Herm applies the palette to its Clean skin and saves it
+on this Mac. Embedded SVG conversation wallpapers such as Pixel Quest animate behind chat messages.
+Reimport older copies to pick up their artwork. Reduce Motion uses the plain palette.
+Palettes with light and dark variants follow macOS. Reimport a
+theme to update it, or select it and choose **Remove skin**. [T3 Themes](https://t3themes.com/)
 
 Herm uses one centralized solid accent palette throughout the app: teal, amber,
 violet, coral, blue, orange, pink, green, cyan, indigo, and tangerine. Neutral skins use gray actions and selection;

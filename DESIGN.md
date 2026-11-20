@@ -764,7 +764,12 @@ scanlines; Brutalist uses a dotted print grid; Origami uses folded ivory;
 Dusk uses plum and lavender; Retro uses silver desktop bevels. E-Ink is
 high-contrast print; Swiss is an open red-accent editorial layout; Clay is
 soft terracotta; Pixel is an indigo arcade; Notebook is ruled cream paper;
-HUD uses cyan crosshairs; Storm uses Tokyo Night indigo with neon rain. These are centralized skin treatments, the
+HUD uses cyan crosshairs; Storm uses Tokyo Night indigo with neon rain.
+Canopy pairs a matte evergreen canvas with a fine leaf vein in its lower corner.
+Capiz uses pearl-edged ivory panes and deep teal underlines. Hi-Fi pairs graphite
+faceplates with fine amber tuning marks and a recessed composer. High Contrast
+follows macOS appearance with bold outlines, inverted navigation, a selection
+checkmark, and a stronger focus ring on text actions and the composer. These are centralized skin treatments, the
 exception to the default flat chrome rules: patterns stay faint and static,
 surface shadows stay local, and semantic status hues retain their meaning.
 
@@ -774,13 +779,13 @@ outline and material details without changing their footprint. Patterned skins
 use distinct static scanline, dot, rule, grid or crosshair backdrops; Clean,
 Glass, E-Ink and Swiss keep their canvas clear. No decorative loops.
 
-**Adding a theme (standard).** A theme is one `DockThemeID` case in
-`DockTheme.swift`. The `title`, `detail`, `appearance`, `style`, `hermesSkinID`
-and palette `roles` switches are exhaustive (no `default`), so the compiler
-lists every place to fill in. Then:
+**Adding a built-in theme (standard).** Add a `DockBuiltInTheme` case in
+`DockTheme.swift` and its `DockThemeID` shortcut. The `title`, `detail`,
+`appearance`, `style`, `hermesSkinID` and `baseRoles` switches are exhaustive
+(no `default`), so the compiler lists every place to fill in. Then:
 
 1. Pick `appearance` honestly: `.system` only for themes with distinct light and
-   dark palettes (`roles(_, dark:)`); native-material themes (Glass) must be `.system`.
+   dark palettes (`baseRoles(_, dark:)`); native-material themes (Glass) must be `.system`.
 2. Set `style.material = .glass` for Liquid Glass; `usesNativeMaterial` derives
    from it. Never special-case a theme id in views; add a `DockThemeStyle` knob.
 3. Read colors only through `Color.dock*` tokens and `DockThemeStyle.current`.
@@ -2109,7 +2114,9 @@ opens at the top when the category changes.
   (`SSHPortForwards`); a port already used on this Mac fails in the tab's
   error slot rather than showing the wrong server.
 - **Skins gallery.** Compact tiles show a miniature material/type/selection
-  specimen, the Herm skin name, a short material signature, and one line for
+  specimen with a **Built-in** or **Imported** origin pill in its top-right corner
+  (drawn in that skin's own surface and ink, so it reads on any specimen), the Herm
+  skin name, a short material signature, and one line for
   the mode plus "Active in Hermes" when it applies. Specimens use the target
   palette and geometry independently of the active skin; they contain no
   invented activity or metrics. Each specimen also shows four sample Herm
@@ -2117,6 +2124,17 @@ opens at the top when the category changes.
   outline and badge colors are previewed before switching. The selected tile gets an accent stroke and
   checkmark in a fixed slot; the description is a tooltip. Selecting a
   tile changes Herm presentation only and never invokes Hermes skin commands.
+  **Import from clipboard** reads T3Code version 1 theme JSON on demand. The sidebar
+  gear’s **Skins** submenu keeps this action above its scrolling gallery. Imported
+  skins use Clean’s geometry and Herm’s shared status colors, with supported
+  hex and OKLCH palette roles mapped to Herm’s surfaces, text, and actions.
+  A quoted, embedded SVG image in a conversation background renders behind the visible transcript
+  with its original animation and reduced opacity. Reduce Motion uses the palette alone.
+  The wallpaper receives no pointer or keyboard interaction. Older imports gain artwork on reimport.
+  Two-appearance imports follow macOS. Imports appear at the start of the
+  settings gallery and persist on this Mac. The import applies the palette
+  immediately. Reimporting the same theme ID updates that palette. Removing
+  the selected import returns to Glass. An import error appears in a dialog.
   Unmapped skins and installed companions are quiet lists below the grid.
 - **Color and copy.** The Quota rule applies: healthy and ready states stay
   neutral, and warning or destructive hues mark only states that need action.

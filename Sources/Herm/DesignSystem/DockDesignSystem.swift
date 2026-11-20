@@ -328,6 +328,9 @@ struct DockNavRow: View {
                     )
                     .lineLimit(1)
                 Spacer(minLength: 0)
+                if isSelected && style.theme.style.strongFocus {
+                    DockIcon(.check, size: 14, color: style.background).accessibilityHidden(true)
+                }
                 if showsUpdateBadge {
                     Text("Update")
                         .dockFont(.compactStatus, weight: .semibold)

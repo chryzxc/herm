@@ -381,9 +381,18 @@ struct SessionNavRail: View {
     }
 
     private var skinMenu: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            DockSkinImportActions(store: dockThemeStore, allowsRemoval: false)
+                .dockPadding(8)
+            skinGrid
+        }
+        .frame(width: 560, height: 460)
+    }
+
+    private var skinGrid: some View {
         ScrollView {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                ForEach(DockThemeID.allCases) { theme in
+                ForEach(dockThemeStore.availableThemes) { theme in
                     let selected = dockThemeStore.selectedThemeID == theme
                     Button {
                         withAnimation(.dockEase(duration: 0.16)) { dockThemeStore.selectedThemeID = theme }
@@ -405,7 +414,6 @@ struct SessionNavRail: View {
             }
             .dockPadding(8)
         }
-        .frame(width: 560, height: 460)
     }
 
     private var densityMenu: some View {
