@@ -203,6 +203,7 @@ final class DockModel: ObservableObject {
         didSet { syncBotActivitySignals() }
     }
     var allBotSessionsTask: Task<Void, Never>?
+    var sessionTranscriptPreloadTask: Task<Void, Never>?
     var allBotSessionsLoadedAt: Date?
     /// Coalesces Bot activity signal syncs into one pass per main-actor turn.
     var botActivitySyncPending = false

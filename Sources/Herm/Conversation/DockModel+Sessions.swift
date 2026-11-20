@@ -599,9 +599,16 @@ extension DockModel {
         let selectedAt = DispatchTime.now().uptimeNanoseconds
         sessionResumeTask?.cancel()
         sessionResumeWorkTask?.cancel()
+        let prepared = sessionTranscriptLoadState == .ready
+        if prepared {
+            prepareLeavingTranscript()
+            cacheLeavingTranscript()
+        }
         sessionTranscriptLoadState = .loading
         sessionResumeTask = Task {
-            _ = await resumeSession(session, reportFailure: true, profileID: profileID, selectedAt: selectedAt)
+            _ = await resumeSession(
+                session, reportFailure: true, profileID: profileID, selectedAt: selectedAt,
+                leavingTranscriptPrepared: prepared)
         }
     }
 
@@ -731,7 +738,7 @@ extension DockModel {
     @discardableResult
     func resumeSession(
         _ session: HermesSession, reportFailure: Bool, profileID: String? = nil, selectedAt: UInt64? = nil,
-        reviewUnread: Bool = true
+        reviewUnread: Bool = true, leavingTranscriptPrepared: Bool = false
     ) async -> Bool {
         sessionResumeWorkTask?.cancel()
         let token = UUID()
@@ -741,7 +748,7 @@ extension DockModel {
             guard let self else { return false }
             return await performResumeSession(
                 session, reportFailure: reportFailure, profileID: profileID, selectedAt: selectedAt,
-                reviewUnread: reviewUnread)
+                reviewUnread: reviewUnread, leavingTranscriptPrepared: leavingTranscriptPrepared)
         }
         sessionResumeWorkTask = task
         let result = await withTaskCancellationHandler {
@@ -757,7 +764,8 @@ extension DockModel {
     }
 
     private func performResumeSession(
-        _ session: HermesSession, reportFailure: Bool, profileID: String?, selectedAt: UInt64, reviewUnread: Bool
+        _ session: HermesSession, reportFailure: Bool, profileID: String?, selectedAt: UInt64, reviewUnread: Bool,
+        leavingTranscriptPrepared: Bool
     ) async -> Bool {
         guard !Task.isCancelled else { return false }
         let owningProfileID = Self.normalizedProfileID(profileID ?? session.profileID ?? profileScopeID)
@@ -778,13 +786,7 @@ extension DockModel {
             sessionWorkspace = nil
             pendingWorktreeDirectory = nil
         }
-        if let sessionStorageID, streamingMessageID != nil {
-            inFlightTurnActivityBySessionID[sessionStorageID] = streamingTurnActivity
-            unconfirmedUserMessagesBySessionID[sessionStorageID] = Self.unconfirmedUserMessages(
-                messages, storedIDs: Set(transcriptMessageIDsByRowID.values)
-            )
-        }
-        commitStreamingMessage()
+        if !leavingTranscriptPrepared { prepareLeavingTranscript() }
         if !isRefreshingActiveSession { cacheLeavingTranscript() }
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
@@ -1195,6 +1197,15 @@ extension DockModel {
         newSessionProjectPath = path
         newSessionProjectWasPicked = true
         objectWillChange.send()
+    }
+
+    private func prepareLeavingTranscript() {
+        if let sessionStorageID, streamingMessageID != nil {
+            inFlightTurnActivityBySessionID[sessionStorageID] = streamingTurnActivity
+            unconfirmedUserMessagesBySessionID[sessionStorageID] = Self.unconfirmedUserMessages(
+                messages, storedIDs: Set(transcriptMessageIDsByRowID.values))
+        }
+        commitStreamingMessage()
     }
 
     /// Keeps the transcript as the reader left it so returning shows it before the fresh resume lands.

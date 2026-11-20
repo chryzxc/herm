@@ -418,9 +418,9 @@ final class PinnedSessionTests: XCTestCase {
         return (model, client)
     }
 
-    func testPresentationHidesPinsWhileTheSessionIndexIsUnavailable() {
+    func testPresentationKeepsPinsWhileLoadingButHidesUnavailableData() {
         let pinned = [session("a")]
-        XCTAssertEqual(PinnedSessionPresentation(pinned: pinned, live: [], projection: .loading).count, 0)
+        XCTAssertEqual(PinnedSessionPresentation(pinned: pinned, live: [], projection: .loading).count, 1)
         XCTAssertEqual(
             PinnedSessionPresentation(pinned: pinned, live: [], projection: .failed(safeMessage: "Failed.")).status,
             .failed("Failed.")

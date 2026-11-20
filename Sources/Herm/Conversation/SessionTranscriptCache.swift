@@ -49,6 +49,8 @@ final class SessionTranscriptCache {
     private var order: [String] = []
     private var totalCost = 0
 
+    var hasPreloadCapacity: Bool { entries.count < maximumEntries && totalCost < maximumCost }
+
     func value(for key: String) -> SessionTranscriptPreview? {
         guard let entry = entries[key] else { return nil }
         order.removeAll { $0 == key }
@@ -66,6 +68,13 @@ final class SessionTranscriptCache {
     func refresh(_ restored: RestoredTranscript, references: [UUID: StoredMessageReference], for key: String) {
         guard let entry = makeEntry(restored, references: references) else { return }
         remove(key)
+        insert(entry, for: key)
+    }
+
+    func preload(_ restored: RestoredTranscript, references: [UUID: StoredMessageReference], for key: String) {
+        guard entries[key] == nil, entries.count < maximumEntries,
+            let entry = makeEntry(restored, references: references), totalCost + entry.cost <= maximumCost
+        else { return }
         insert(entry, for: key)
     }
 

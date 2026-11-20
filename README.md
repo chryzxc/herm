@@ -448,8 +448,9 @@ a row missing from that window is inconclusive. Status appears in user-message m
 and there is no permanent stored badge or read receipt.
 
 Recently viewed conversations can show their last loaded messages immediately while
-Herm refreshes them from Hermes. The title shows when the conversation is refreshing
-or not current; session actions become available after the refresh succeeds. Drafts
+Herm refreshes them from Hermes. Herm also preloads a bounded set of recent and pinned
+conversation previews across profiles in the background. The title shows when the
+conversation is refreshing or not current; session actions become available after the refresh succeeds. Drafts
 remain editable, and the conversation menu offers retry if loading fails.
 
 The session-title popover reuses the sidebar session row, with matching typography,
