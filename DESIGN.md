@@ -1854,7 +1854,9 @@ The desktop split commits its final widths once when visibility changes. A short
 Working and unread activity follows each session through selection, pinned rows,
 and project summaries; the notch uses the same session activity state.
 Unseen failed turns show a warning triangle beside the independent unread count,
-including in All profiles. Opening the session acknowledges the history warning
+including in All profiles. Leading status marks (spinner, approval, warning, unread
+count, done) share `DockSidebarListMetrics.statusMark` (16pt) inside a 28pt
+`statusSlotWidth`, via `DockActivityIndicator`'s `.status` role; never size one locally. Opening the session acknowledges the history warning
 while retaining error details in the transcript.
 
 A fixed Search sessions field below the Bot header filters loaded session titles,

@@ -13,11 +13,12 @@ enum SessionFailureWarningPolicy {
 }
 
 struct SessionFailureWarning: View {
-    static let statusSlotWidth: CGFloat = 48
+    static let statusSlotWidth = DockSidebarListMetrics.statusSlotWidth
     private let description = "Failed turn. Open conversation for details."
 
     var body: some View {
-        DockIcon(.warning, size: 12, color: .dockWarning)
+        DockIcon(.warning, size: DockSidebarListMetrics.statusMark - 2, color: .dockWarning)
+            .frame(width: DockSidebarListMetrics.statusMark, height: DockSidebarListMetrics.statusMark)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(description)
             .help(description)
@@ -38,7 +39,7 @@ struct SessionRowActivityIndicators: View {
             }
             if let attention, attention != .success, attention != .failure {
                 if let state = attention.activityState {
-                    DockActivityIndicator(state: state, unreadDot: true)
+                    DockActivityIndicator(state: state, role: .status, unreadDot: true)
                 } else {
                     Circle().fill(attention.color).frame(width: 6, height: 6)
                 }

@@ -217,11 +217,15 @@ extension EnvironmentValues {
 /// Red count pill shared by session rows and the chats rail button.
 struct UnreadCountPill: View {
     let label: String
+    /// Least height (and width, so one digit is a disc); nil sizes to the text.
+    var markSize: CGFloat? = nil
 
     var body: some View {
         Text(label)
             .dockFont(.compactStatus, weight: .semibold)
             .monospacedDigit()
+            // The compact pill adds 4pt each side and 1pt above and below.
+            .frame(minWidth: markSize.map { max(0, $0 - 8) }, minHeight: markSize.map { max(0, $0 - 2) })
             .foregroundStyle(DockAccentColor.unreadBadgeText)
             .dockPill(tint: DockAccentColor.unreadBadgeFill, solid: true, compact: true)
             .fixedSize()
@@ -270,9 +274,12 @@ struct SessionUnreadReplyBadge: View {
             }
             switch result {
             case .loaded(let projection) where projection.count > 0:
-                UnreadCountPill(label: projection.count > 99 ? "99+" : "\(projection.count)")
-                    .accessibilityLabel(
-                        "\(projection.count) unread AI \(projection.count == 1 ? "response" : "responses")")
+                UnreadCountPill(
+                    label: projection.count > 99 ? "99+" : "\(projection.count)",
+                    markSize: DockSidebarListMetrics.statusMark
+                )
+                .accessibilityLabel(
+                    "\(projection.count) unread AI \(projection.count == 1 ? "response" : "responses")")
             case .unavailable where showUnavailable:
                 Text("?")
                     .dockFont(.compactStatus, weight: .semibold)
@@ -325,7 +332,7 @@ struct SidebarSessionStatusIndicator: View {
             SessionUnreadReplyBadge(
                 session: session, showUnavailable: status == .unreadComplete, hasKnownFailure: status == .failed)
         } else if let state = status.activityState {
-            DockActivityIndicator(state: state, unreadDot: true)
+            DockActivityIndicator(state: state, role: .status, unreadDot: true)
         }
     }
 }

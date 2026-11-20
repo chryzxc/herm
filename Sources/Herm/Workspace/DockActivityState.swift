@@ -65,6 +65,8 @@ struct DockActivityIndicator: View {
         case badge
         /// Stands in for a row's avatar in the leading column.
         case row
+        /// A list row's leading status slot; matches the unread count and failure marks beside it.
+        case status
 
         var size: CGFloat {
             switch self {
@@ -72,6 +74,7 @@ struct DockActivityIndicator: View {
             case .inline: 14
             case .badge: 15
             case .row: 20
+            case .status: DockSidebarListMetrics.statusMark
             }
         }
     }
