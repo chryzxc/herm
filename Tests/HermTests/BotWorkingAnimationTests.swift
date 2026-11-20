@@ -62,6 +62,16 @@ struct BotWorkingAnimationTests {
         #expect(settled.scaleX == 1 && settled.scaleY == 1)
     }
 
+    @Test func waitingHopFollowsTilesFromLeftToRight() {
+        let left = BotWorkingPose.at(0.3)
+        let right = BotWorkingPose.at(0.9)
+        #expect(left.reach < 0 && right.reach > 0)
+        #expect(left.rotation < 0 && right.rotation > 0)
+        #expect(abs(left.lift - right.lift) < 0.0001)
+        #expect(BotWorkingPose.stridePhase(at: 1.5) == 1)
+        #expect(BotWorkingPose.stridePhase(at: 2.8) == 0)
+    }
+
     @Test func waitingMotionSettlesAndRepeats() {
         for tick in 0..<280 {
             let time = Double(tick) / 100

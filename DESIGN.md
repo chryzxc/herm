@@ -3421,7 +3421,7 @@ The welcome orb retains the same footprint and pointer reactions as voice,
 including Reduce Motion support.
 The running indicator uses the responding Bot's stored avatar or generated
 face, falling back to the session profile and selected Bot for ordinary chats.
-Its gentle hop and activity-driven gestures stop under Reduce Motion and motion-free themes.
+Between activity changes the avatar leans into a short hop as three diamond tiles light from left to right beneath it. The tiles fade before the next hop and yield to the activity glyph during a reaction. Reduce Motion and motion-free themes keep the avatar still and hide the tiles.
 Activity rows appear immediately; their insertion and the Bot's movement share
 one short spring transition. Disclosure and completion transitions use the same
 motion preference, with no delayed or queued row reveals.

@@ -199,11 +199,16 @@ struct BotWorkingPose {
     static let rest = BotWorkingPose()
     static let reactionDuration: TimeInterval = 1.2
 
+    static func stridePhase(at elapsed: TimeInterval) -> Double {
+        min(max(0, elapsed).truncatingRemainder(dividingBy: 2.8) / 1.2, 1)
+    }
+
     static func at(_ elapsed: TimeInterval) -> BotWorkingPose {
-        let beat = max(0, elapsed).truncatingRemainder(dividingBy: 2.8)
-        let wave = pow(sin(min(beat / 1.2, 1) * .pi), 2)
+        let phase = stridePhase(at: elapsed)
+        let wave = pow(sin(phase * .pi), 2)
+        let lean = -sin(phase * .pi * 2) * wave
         return BotWorkingPose(
-            lift: wave * 0.4, rotation: sin(beat * .pi * 2 / 1.2) * wave * 4,
+            lift: wave * 0.4, reach: lean * 0.09, rotation: lean * 7,
             scaleX: 1 - wave * 0.025, scaleY: 1 + wave * 0.025)
     }
 
@@ -272,7 +277,13 @@ struct BotWorkingAvatarView: View {
                     to: BotAvatarView(
                         bot: bot, imageData: imageData, size: size, animated: frame.moves,
                         orbits: true, statusMotion: false),
-                    size: size)
+                    size: size
+                )
+                .background {
+                    if frame.moves && !reacting {
+                        steppingStones(phase: BotWorkingPose.stridePhase(at: frame.date.timeIntervalSince(startedAt)))
+                    }
+                }
                 // Echo the real activity glyph as the Bot reaches toward the rows above.
                 DockIcon(activityIcon, size: 12, color: .dockAccent)
                     .dockPadding(3)
@@ -301,6 +312,31 @@ struct BotWorkingAvatarView: View {
                 reactionStart = .rest
             }
         }
+    }
+
+    private func steppingStones(phase: Double) -> some View {
+        Canvas { context, bounds in
+            for index in 0..<3 {
+                // Each tile crests just after its neighbor, then settles flush.
+                let local = min(max((phase - Double(index) * 0.22) / 0.56, 0), 1)
+                guard local > 0 && local < 1 else { continue }
+                let glow = pow(sin(local * .pi), 2)
+                let unit = bounds.width
+                let x = unit * (0.25 + Double(index) * 0.25)
+                let y = bounds.height - unit * (0.06 + 0.045 * glow)
+                let radius = unit * (0.055 + 0.045 * glow)
+                var tile = Path()
+                tile.move(to: CGPoint(x: x - radius, y: y))
+                tile.addLine(to: CGPoint(x: x, y: y - radius * 0.48))
+                tile.addLine(to: CGPoint(x: x + radius, y: y))
+                tile.addLine(to: CGPoint(x: x, y: y + radius * 0.48))
+                tile.closeSubpath()
+                context.fill(tile, with: .color(Color.dockAccent.opacity(glow * 0.85)))
+            }
+        }
+        .padding(.bottom, -size * 0.15)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private func currentPose(at date: Date) -> BotWorkingPose {
