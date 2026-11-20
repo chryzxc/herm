@@ -389,6 +389,8 @@ uses airy porcelain surfaces, hairline cards, neutral graphite actions, and stab
 automatically when macOS switches between Light and Dark, including while the
 workspace is open. Skin changes also apply to the side notch and its open preview.
 
+Dragging files over an editable composer traces its outline once. Staged items settle into the attachment tray, and dragging a queued prompt marks the insertion point above the destination row.
+
 In chat, the send arrow folds into the stop control while a reply is running. Thinking dots pass a highlight between them, and context compaction draws three lines together. Both indicators run in Core Animation. When a tool changes in a chat without a bot avatar, its icon draws once inside a continuous breathing halo.
 
 Search, task details, and new columns open from their respective edges. Bot motion pauses during live resizing. Warm Light, Clay, and Dusk use shallower card relief. Switching skins reveals the new material from the pointer. Switch thumbs stretch between stops, checkmarks draw into place, and a side notch curves toward a pet as you drag it home.

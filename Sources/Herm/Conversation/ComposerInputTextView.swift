@@ -5,6 +5,11 @@ final class ComposerInputTextView: NSTextView {
     var onPrepareForInput: ((NSTextView) -> Void)?
     var onSubmit: (() -> Void)?
     var onCompletionKey: ((ComposerCompletionKey) -> Bool)?
+    var animatesFileDrop = false
+    private var fileDragSequence: Int?
+    private var fileDragRevision: Int?
+    private var dragHasFiles = false
+    private var fileDropOutline: CAShapeLayer?
     var onDropFiles: (([URL]) -> Void)?
     var onPaste: (() -> Bool)?
     var onWidthChanged: (() -> Void)?
@@ -68,17 +73,77 @@ final class ComposerInputTextView: NSTextView {
         }
     }
 
+    private func acceptsFileDrag(_ sender: NSDraggingInfo) -> Bool {
+        guard isEditable, onDropFiles != nil else {
+            clearFileDrag()
+            return false
+        }
+        let revision = sender.draggingPasteboard.changeCount
+        if fileDragSequence != sender.draggingSequenceNumber || fileDragRevision != revision {
+            clearFileDrag()
+            fileDragSequence = sender.draggingSequenceNumber
+            fileDragRevision = revision
+            dragHasFiles = !droppedFileURLs(sender).isEmpty
+            if dragHasFiles { showFileDropOutline() }
+        }
+        return dragHasFiles
+    }
+
+    private func showFileDropOutline() {
+        guard let scroll = enclosingScrollView else { return }
+        scroll.wantsLayer = true
+        guard let host = scroll.layer else { return }
+        let rect = CGRect(origin: .zero, size: host.bounds.size).insetBy(dx: 2, dy: 2)
+        guard rect.width > 0, rect.height > 0 else { return }
+        let outline = CAShapeLayer()
+        outline.frame = host.bounds
+        outline.path = CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil)
+        outline.fillColor = nil
+        outline.strokeColor = insertionPointColor.cgColor
+        outline.lineWidth = 2
+        outline.lineCap = .round
+        host.addSublayer(outline)
+        fileDropOutline = outline
+        if animatesFileDrop {
+            let trace = CABasicAnimation(keyPath: "strokeEnd")
+            trace.fromValue = 0
+            trace.toValue = 1
+            trace.duration = 0.20
+            trace.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            outline.add(trace, forKey: "trace")
+        }
+    }
+
+    private func clearFileDrag() {
+        fileDropOutline?.removeFromSuperlayer()
+        fileDropOutline = nil
+        fileDragSequence = nil
+        fileDragRevision = nil
+        dragHasFiles = false
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        droppedFileURLs(sender).isEmpty ? super.draggingEntered(sender) : .copy
+        acceptsFileDrag(sender) ? .copy : super.draggingEntered(sender)
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        droppedFileURLs(sender).isEmpty ? super.draggingUpdated(sender) : .copy
+        acceptsFileDrag(sender) ? .copy : super.draggingUpdated(sender)
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        clearFileDrag()
+        super.draggingExited(sender)
+    }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        clearFileDrag()
+        super.draggingEnded(sender)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        clearFileDrag()
         let urls = droppedFileURLs(sender)
-        guard !urls.isEmpty, let onDropFiles else { return super.performDragOperation(sender) }
+        guard isEditable, !urls.isEmpty, let onDropFiles else { return super.performDragOperation(sender) }
         onDropFiles(urls)
         return true
     }

@@ -1361,7 +1361,9 @@ struct GroupChatView: View {
                     .dockPadding(.top, 4)
                     .frame(height: draft.isEmpty ? ComposerLayout.minHeight : editorHeight + 4)
                     .clipped()
-                    if !attachments.isEmpty || uploadingCount > 0 { attachmentChips }
+                    if !attachments.isEmpty || uploadingCount > 0 {
+                        attachmentChips.transition(DockMotion.composerTray(reduceMotion: reduceMotion))
+                    }
                     composerControls
                 }
                 .composerCard(isFocused: isEditorFocused)
@@ -1411,9 +1413,11 @@ struct GroupChatView: View {
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                             .dockSurfaceFill(Color.dockSurface)
                     )
+                    .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                 }
                 if uploadingCount > 0 { ProgressView().controlSize(.small).help("Uploading") }
             }
+            .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: attachments.count)
         }
     }
 

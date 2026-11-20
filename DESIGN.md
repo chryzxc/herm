@@ -3254,6 +3254,8 @@ and grows only for multiline drafts, attachments, suggestions, or actionable
 errors. Files, Images, and Folder share one native picker presentation, configured for
 the selected action. Files and composer drops accept generic files up to 8 MB as
 removable context chips, using the existing protected file upload on send.
+Dragging files over an editable composer traces its outline once. Staged items settle into the attachment tray, and dragging a queued prompt marks the insertion point above the destination row.
+
 Context attachments use one removable tray chip per source. Attaching or refreshing
 context never inserts a second chip into the text editor. Restored inline context
 references move into the tray while preserving their payload and the surrounding

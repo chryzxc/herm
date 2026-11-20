@@ -248,12 +248,14 @@ struct ChatComposerView: View {
                     QueuedPromptList(model: model, prompts: queuedPrompts)
                         .dockPadding(.horizontal, 12)
                         .dockPadding(.vertical, 8)
+                        .transition(DockMotion.composerTray(reduceMotion: reduceMotion))
                 }
 
                 if let quote = model.replyQuote {
                     ReplyQuoteChip(quote: quote, showsAuthor: false) { model.replyQuote = nil }
                         .dockPadding(.horizontal, 12)
                         .dockPadding(.vertical, 6)
+                        .transition(DockMotion.composerTray(reduceMotion: reduceMotion))
                 }
 
                 VStack(spacing: 6) {
@@ -377,9 +379,12 @@ struct ChatComposerView: View {
                                         }
                                         .disabled(model.extractingImageTextIDs.contains(image.id))
                                     }
+                                    .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                                 }
                             }
+                            .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: model.pendingImages.count)
                         }
+                        .transition(DockMotion.composerTray(reduceMotion: reduceMotion))
                     }
                     if !model.attachedContexts.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -417,9 +422,12 @@ struct ChatComposerView: View {
                                             .dockSurfaceFill(Color.dockSurface)
                                     )
                                     .help("Inspect context")
+                                    .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                                 }
                             }
+                            .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: model.attachedContexts.count)
                         }
+                        .transition(DockMotion.composerTray(reduceMotion: reduceMotion))
                     }
                     if !model.pendingPDFURLs.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -451,9 +459,12 @@ struct ChatComposerView: View {
                                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                                             .dockSurfaceFill(Color.dockSurface)
                                     )
+                                    .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                                 }
                             }
+                            .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: model.pendingPDFURLs.count)
                         }
+                        .transition(DockMotion.composerTray(reduceMotion: reduceMotion))
                     }
                     ForEach([model.pendingPDFError, model.pendingAttachmentError].compactMap { $0 }, id: \.self) {
                         error in
@@ -1106,6 +1117,7 @@ private struct QueuedPromptList: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var model: DockModel
     let prompts: [QueuedPrompt]
+    @State private var dropTargetID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1149,9 +1161,18 @@ private struct QueuedPromptList: View {
                         }
                         .draggable(prompt.id.uuidString)
                         .dropDestination(for: String.self) { items, _ in
-                            guard let value = items.first, let id = UUID(uuidString: value) else { return false }
+                            dropTargetID = nil
+                            guard let value = items.first, let id = UUID(uuidString: value),
+                                id != prompt.id, prompts.contains(where: { $0.id == id })
+                            else { return false }
                             model.reorderQueuedPrompt(id, before: prompt.id)
                             return true
+                        } isTargeted: { targeted in
+                            if targeted {
+                                dropTargetID = prompt.id
+                            } else if dropTargetID == prompt.id {
+                                dropTargetID = nil
+                            }
                         }
                         .contextMenu {
                             Button("Move up") { model.moveQueuedPrompt(prompt.id, offset: -1) }
@@ -1171,13 +1192,23 @@ private struct QueuedPromptList: View {
                                         .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
                                 }
                         )
+                        .overlay(alignment: .topLeading) {
+                            Capsule()
+                                .fill(Color.dockAccent)
+                                .frame(height: 2)
+                                .scaleEffect(x: dropTargetID == prompt.id ? 1 : 0, y: 1, anchor: .leading)
+                                .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.14),
+                                           value: dropTargetID == prompt.id)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
                     }
                 }
             }
             .frame(maxHeight: 144)
             .fixedSize(horizontal: false, vertical: true)
         }
-        .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: prompts.map(\.id))
+        .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: prompts.map(\.id))
     }
 
     private func rowButton(_ icon: Ph, label: String, action: @escaping () -> Void) -> some View {

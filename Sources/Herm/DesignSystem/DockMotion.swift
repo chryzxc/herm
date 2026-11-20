@@ -20,6 +20,20 @@ enum DockMotion {
         }
     }
 
+    static func composerChip(reduceMotion: Bool) -> AnyTransition {
+        guard isEnabled(reduceMotion: reduceMotion) else { return .identity }
+        let settle = AnyTransition.scale(scale: 0.90, anchor: .bottomLeading)
+            .combined(with: .offset(y: revealDistance))
+        return .asymmetric(
+            insertion: settle.combined(with: .opacity),
+            removal: .scale(scale: 0.92).combined(with: .opacity))
+    }
+
+    static func composerTray(reduceMotion: Bool) -> AnyTransition {
+        guard let motion = disclosure(reduceMotion: reduceMotion) else { return .identity }
+        return .dockPanelReveal.animation(motion)
+    }
+
     static func pressScale(isPressed: Bool, isEnabled: Bool, reduceMotion: Bool) -> CGFloat {
         isPressed && isEnabled && Self.isEnabled(reduceMotion: reduceMotion) ? DockThemeStyle.current.pressScale : 1
     }

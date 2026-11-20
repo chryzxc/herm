@@ -39,6 +39,7 @@ struct ComposerInputEditor: NSViewRepresentable {
         }
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
+        textView.animatesFileDrop = DockMotion.isEnabled(reduceMotion: context.environment.accessibilityReduceMotion)
         textView.onDropFiles = onDropFiles
         textView.onPaste = onPaste
         textView.isEditable = isEnabled
@@ -83,6 +84,7 @@ struct ComposerInputEditor: NSViewRepresentable {
         context.coordinator.parent = self
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
+        textView.animatesFileDrop = DockMotion.isEnabled(reduceMotion: context.environment.accessibilityReduceMotion)
         textView.onDropFiles = onDropFiles
         textView.onPaste = onPaste
         textView.isEditable = isEnabled
