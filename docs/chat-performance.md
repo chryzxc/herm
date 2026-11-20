@@ -669,6 +669,32 @@ snapshot, re-lays out the mounted transcript and corrects the anchor.
 
 Not measured: a paired capture after these changes.
 
+## Transcript hover during scroll — 20 November 2026
+
+A 22 s chat-scroll capture on a 120 Hz display, in Low Power Mode with no
+running sessions, lost 35% of frames. Steady scrolling seconds (t=2–18) had no
+publications, yet each scroll tick re-rendered the pane host holding the
+transcript (`hostLayout.panelLeading`, about 1.7 ms per render, 180–290 ms a
+second). In `stack-t1s.txt`, 16 of the 37 samples taken in the scroll
+display-link callback were `EventBindingManager.enqueueHoverUpdateIfNeeded`.
+In that call, SwiftUI re-hit-tests every mounted row's hover, tooltip and
+action-button region because content slides under a still pointer.
+`DockHoverGate` only gates `mouseMoved`, so it never saw this path.
+
+- The transcript scrolls in `HoverPausingScrollView`, the same scroll-phase
+  hit-testing pause the sidebar uses. Hover resumes when the scroll goes idle.
+- `ControlCenterModel.refresh` marks its projections refreshing or unavailable
+  in one write per published dictionary instead of two per projection. The
+  t=21 s burst (55 publications, 277 ms worst frame) came from this, started by
+  the Activity sidebar mounting.
+
+Still open: 36 samples blocked in `routeCursorRect` →
+`SLSCopyWindowRoutingRecordsForScreenLocation`, a synchronous window-server
+lookup inside `sendEvent`. Stack sampling was active for t=2–22 s, so those
+seconds are inflated.
+
+Not measured: a paired timing-only capture of the same chat.
+
 ## Decorative motion during scroll — 18 November 2026
 
 A 23 s scroll capture on a 120 Hz display, in Low Power Mode with no running

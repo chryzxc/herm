@@ -86,7 +86,9 @@ struct ConversationTranscriptView: View, Equatable {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottom) {
-                    ScrollView {
+                    // Each scroll frame otherwise re-hit-tests every mounted
+                    // row's hover, tooltip and action-button region.
+                    HoverPausingScrollView {
                         VStack(spacing: 0) {
                             VStack(spacing: 0) {
                                 if snapshot.messages.isEmpty && snapshot.context.conversationApproval == nil

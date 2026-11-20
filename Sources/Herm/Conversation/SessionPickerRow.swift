@@ -7,7 +7,9 @@ import UniformTypeIdentifiers
 /// Rows sliding under a still pointer otherwise flip hover on every row they
 /// pass, each building and tearing down its action buttons. Like Finder, hover
 /// pauses while the list scrolls. `content` is stored, not a closure, so the
-/// scroll-phase flip does not rebuild the rail.
+/// scroll-phase flip does not rebuild the rail or the transcript's rows.
+/// Without it SwiftUI re-hit-tests every hover region on each scroll frame
+/// (`EventBindingManager.enqueueHoverUpdateIfNeeded`), even with the pointer still.
 struct HoverPausingScrollView<Content: View>: View {
     let content: Content
     @State private var isScrolling = false
