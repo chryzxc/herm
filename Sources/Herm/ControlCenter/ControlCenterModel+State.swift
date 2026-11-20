@@ -199,25 +199,32 @@ extension ControlCenterModel {
         return bindingGeneration.map { $0 == clientBindingGeneration } ?? true
     }
 
-    func beginProjectionRefresh(_ projection: String) {
-        let previous = projectionRefreshStates[projection]
-        projectionRefreshStates[projection] = ProjectionRefreshState(
-            lastSuccess: previous?.lastSuccess,
-            error: previous?.error,
-            isStale: previous?.lastSuccess != nil,
-            isRefreshing: true
-        )
-        if let previousState = projectionStates[projection] {
-            switch previousState {
-            case .ready(let count), .stale(let count, _):
-                projectionStates[projection] = .stale(
+    func beginProjectionRefresh(_ projection: String) { beginProjectionRefreshes([projection]) }
+
+    /// Marks several projections refreshing with one write per published
+    /// dictionary. Writing each key separately published twice per projection,
+    /// and every publication re-renders all ControlCenterModel observers.
+    func beginProjectionRefreshes(_ projections: [String]) {
+        var refreshStates = projectionRefreshStates
+        var states = projectionStates
+        for projection in projections {
+            let previous = refreshStates[projection]
+            refreshStates[projection] = ProjectionRefreshState(
+                lastSuccess: previous?.lastSuccess,
+                error: previous?.error,
+                isStale: previous?.lastSuccess != nil,
+                isRefreshing: true
+            )
+            switch states[projection] {
+            case .ready(let count)?, .stale(let count, _)?:
+                states[projection] = .stale(
                     count, safeMessage: "Hermes projection is refreshing. Refresh to try again.")
             default:
-                projectionStates[projection] = .loading
+                states[projection] = .loading
             }
-        } else {
-            projectionStates[projection] = .loading
         }
+        if refreshStates != projectionRefreshStates { projectionRefreshStates = refreshStates }
+        if states != projectionStates { projectionStates = states }
     }
 
     func recordProjectionSuccess(_ projection: String, count: Int? = nil) {
@@ -230,13 +237,21 @@ extension ControlCenterModel {
     /// Publishes an explicit capability boundary when this model has no Hermes
     /// gateway to query. This is distinct from a failed request and keeps the
     /// UI from presenting an unsupported projection as an empty result.
-    func recordProjectionUnavailable(_ projection: String) {
-        projectionRefreshStates[projection] = ProjectionRefreshState(
-            lastSuccess: nil, error: nil, isStale: false, isRefreshing: false)
-        projectionStates[projection] = .unavailable(
-            safeMessage:
-                "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry."
-        )
+    func recordProjectionUnavailable(_ projection: String) { recordProjectionsUnavailable([projection]) }
+
+    func recordProjectionsUnavailable(_ projections: [String]) {
+        var refreshStates = projectionRefreshStates
+        var states = projectionStates
+        for projection in projections {
+            refreshStates[projection] = ProjectionRefreshState(
+                lastSuccess: nil, error: nil, isStale: false, isRefreshing: false)
+            states[projection] = .unavailable(
+                safeMessage:
+                    "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry."
+            )
+        }
+        if refreshStates != projectionRefreshStates { projectionRefreshStates = refreshStates }
+        if states != projectionStates { projectionStates = states }
     }
 
     func recordProjectionFailure(_ projection: String, error: String) {
