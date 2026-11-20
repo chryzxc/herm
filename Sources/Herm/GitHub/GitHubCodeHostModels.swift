@@ -269,7 +269,7 @@ enum GitHubPullRequestParser {
             return nil
         }
         let author = ((row["user"] as? [String: Any])?["login"] as? String).flatMap(bounded) ?? "Unknown reviewer"
-        let submittedAt = (row["submitted_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+        let submittedAt = (row["submitted_at"] as? String).flatMap(ISO8601Parsing.date)
         return GitHubReviewSummary(
             id: id, author: author, state: state, submittedAt: submittedAt,
             webURL: (row["html_url"] as? String).flatMap(URL.init),

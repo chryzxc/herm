@@ -271,7 +271,7 @@ final class PullRequestReviewModel: ObservableObject {
             var found = false
             for review in page.rows {
                 let user = review["user"] as? [String: Any]
-                let date = (review["submitted_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+                let date = (review["submitted_at"] as? String).flatMap(ISO8601Parsing.date)
                 guard login != nil, user?["login"] as? String == login,
                     review["commit_id"] as? String == submittedReviewHead, review["state"] as? String == expectedState,
                     review["body"] as? String == submittedReviewBody,

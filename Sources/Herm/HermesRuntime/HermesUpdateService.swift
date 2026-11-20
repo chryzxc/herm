@@ -162,10 +162,7 @@ enum HermesUpdateParsing {
     }
 
     nonisolated private static func parseDate(_ raw: String) -> Date? {
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: raw) { return date }
-        return ISO8601DateFormatter().date(from: raw)
+        ISO8601Parsing.fractionalDate(raw) ?? ISO8601Parsing.date(raw)
     }
 
     nonisolated private static func firstMatch(in text: String, pattern: String) -> String? {

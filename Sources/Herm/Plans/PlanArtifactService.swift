@@ -96,7 +96,7 @@ struct PlanArtifactService {
     }
 
     func revisionDraft(for document: PlanArtifactDocument, now: Date = .now) -> PlanRevisionDraft {
-        let timestamp = ISO8601DateFormatter().string(from: now).replacingOccurrences(of: ":", with: "")
+        let timestamp = ISO8601Parsing.string(now).replacingOccurrences(of: ":", with: "")
             .replacingOccurrences(of: "-", with: "").replacingOccurrences(of: ".", with: "")
         let stem = URL(fileURLWithPath: document.relativePath).deletingPathExtension().lastPathComponent
         let path = "\(timestamp)-\(stem)-revision.md"

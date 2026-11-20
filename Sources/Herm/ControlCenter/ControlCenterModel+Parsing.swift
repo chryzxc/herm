@@ -347,7 +347,7 @@ extension ControlCenterModel {
             return Date(timeIntervalSince1970: number.doubleValue)
         }
         if let string = value as? String {
-            return ISO8601DateFormatter().date(from: string)
+            return ISO8601Parsing.date(string)
         }
         return nil
     }
@@ -1295,7 +1295,7 @@ extension ControlCenterModel {
 
     static func optionalISO8601Date(_ value: Any?) -> Date? {
         guard let value = value as? String else { return nil }
-        return ISO8601DateFormatter().date(from: value)
+        return ISO8601Parsing.date(value)
     }
 
     static func parseKanbanAttachments(_ value: Any, boardSlug: String?, taskID: String) -> [KanbanAttachmentSummary] {
@@ -1417,7 +1417,7 @@ extension ControlCenterModel {
             }
             return CronRunSummary(
                 id: id, status: status, jobID: jobID, source: source,
-                claimedAt: ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: started.doubleValue)),
+                claimedAt: ISO8601Parsing.string(Date(timeIntervalSince1970: started.doubleValue)),
                 error: row["error"] as? String, sessionID: source == "cron" ? id : nil,
                 outputPreview: source == "cron_output" ? row["preview"] as? String : nil)
         }

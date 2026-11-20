@@ -102,7 +102,7 @@ struct GitHubRepositoryActivity: Identifiable, Equatable, Sendable {
             let ref = row["ref"] as? String, !ref.isEmpty,
             !ref.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }),
             let rawDate = (row["timestamp"] ?? row["pushed_at"]) as? String,
-            let date = ISO8601DateFormatter().date(from: rawDate) ?? fractionalDate(rawDate),
+            let date = ISO8601Parsing.date(rawDate) ?? fractionalDate(rawDate),
             let rawType = (row["activity_type"] ?? row["push_type"]) as? String, !rawType.isEmpty
         else { throw GitHubRequestError.malformed }
         let actor = row["actor"] as? [String: Any] ?? row["pusher"] as? [String: Any]
@@ -120,9 +120,7 @@ struct GitHubRepositoryActivity: Identifiable, Equatable, Sendable {
             type: rawType == "normal" ? "push" : rawType, actor: actor?["login"] as? String, avatarURL: avatar)
     }
     private static func fractionalDate(_ value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: value)
+        ISO8601Parsing.fractionalDate(value)
     }
 }
 

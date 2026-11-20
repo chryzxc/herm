@@ -703,7 +703,7 @@ final class BotService {
 
     private static func parseTimestamp(_ value: Any?) -> Date? {
         if let seconds = value as? Double, seconds > 0 { return Date(timeIntervalSince1970: seconds) }
-        if let string = value as? String { return ISO8601DateFormatter().date(from: string) }
+        if let string = value as? String { return ISO8601Parsing.date(string) }
         return nil
     }
 

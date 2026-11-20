@@ -17,7 +17,7 @@ struct GitHubRepositoryCommit: Identifiable, Equatable, Sendable {
         return Self(
             sha: sha, title: String(title),
             author: (row["author"] as? [String: Any])?["login"] as? String ?? author?["name"] as? String,
-            date: (author?["date"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) })
+            date: (author?["date"] as? String).flatMap(ISO8601Parsing.date))
     }
 }
 
@@ -39,7 +39,7 @@ struct GitHubRepositoryRelease: Equatable, Sendable {
         let name = (row["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return Self(
             name: name.flatMap { $0.isEmpty ? nil : $0 } ?? tag, tag: tag,
-            publishedAt: (row["published_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) },
+            publishedAt: (row["published_at"] as? String).flatMap(ISO8601Parsing.date),
             draft: draft, prerelease: prerelease, url: url)
     }
 }

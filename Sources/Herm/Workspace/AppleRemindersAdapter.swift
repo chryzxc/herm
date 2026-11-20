@@ -53,7 +53,7 @@ final class AppleRemindersAdapter {
             let title = (row["title"] as? String) ?? (row["name"] as? String)
             guard let id, let title, !title.isEmpty else { return nil }
             let dueValue = (row["dueDate"] as? String) ?? (row["due_date"] as? String)
-            let dueDate = dueValue.flatMap { ISO8601DateFormatter().date(from: $0) }
+            let dueDate = dueValue.flatMap(ISO8601Parsing.date)
             let overdue = (row["isOverdue"] as? Bool) ?? (row["overdue"] as? Bool) ?? false
             return ReminderSummary(
                 id: id, title: title, list: row["list"] as? String, dueDate: dueDate, isOverdue: overdue)

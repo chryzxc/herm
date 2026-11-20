@@ -153,7 +153,7 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
 
     func start() {
         guard !isRecording, !isFinalizing, let screen = NSScreen.main else { return }
-        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let stamp = ISO8601Parsing.string(Date()).replacingOccurrences(of: ":", with: "-")
         let folder = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/Herm/Performance/\(stamp)", isDirectory: true)
         guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil

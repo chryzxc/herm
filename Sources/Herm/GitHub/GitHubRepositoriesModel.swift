@@ -38,8 +38,8 @@ struct GitHubRepositorySummary: Identifiable, Equatable, Sendable {
             forks: row["forks_count"] as? Int,
             openIssuesAndPullRequests: row["open_issues_count"] as? Int,
             defaultBranch: row["default_branch"] as? String,
-            pushedAt: (row["pushed_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) },
-            updatedAt: (row["updated_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) },
+            pushedAt: (row["pushed_at"] as? String).flatMap(ISO8601Parsing.date),
+            updatedAt: (row["updated_at"] as? String).flatMap(ISO8601Parsing.date),
             license: (row["license"] as? [String: Any])?["name"] as? String,
             access: access, hasIssues: row["has_issues"] as? Bool)
     }

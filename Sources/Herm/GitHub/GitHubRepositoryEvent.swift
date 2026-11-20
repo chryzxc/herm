@@ -11,7 +11,7 @@ struct GitHubRepositoryEvent: Identifiable, Equatable, Sendable {
         guard let id = row["id"] as? String, !id.isEmpty,
             let type = row["type"] as? String, !type.isEmpty,
             let actor = (row["actor"] as? [String: Any])?["login"] as? String, !actor.isEmpty,
-            let rawDate = row["created_at"] as? String, let date = ISO8601DateFormatter().date(from: rawDate)
+            let rawDate = row["created_at"] as? String, let date = ISO8601Parsing.date(rawDate)
         else { throw GitHubRequestError.malformed }
         let payload = row["payload"] as? [String: Any] ?? [:]
         let action = payload["action"] as? String ?? ""

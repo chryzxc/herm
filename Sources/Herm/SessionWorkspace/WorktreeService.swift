@@ -66,7 +66,7 @@ enum WorktreeService {
                 guard let dateString = rawDate as? String else {
                     return projection(sessionID: sessionID, state: .malformed)
                 }
-                latestAt = ISO8601DateFormatter().date(from: dateString)
+                latestAt = ISO8601Parsing.date(dateString)
                 guard latestAt != nil else { return projection(sessionID: sessionID, state: .malformed) }
             }
             historySummary = SessionHistorySummary(sessionID: sessionID, eventCount: eventCount, latestAt: latestAt)
