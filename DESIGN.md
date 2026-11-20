@@ -1738,7 +1738,9 @@ per-frame pose driver that blends toward each target. Sitting, standing,
 walking and gesturing never pop. Walking eases in and out across corners on
 smoothed routes. The gait has counter-swinging arms, a forward lean, torso
 twist and a speed-scaled stride. Bots yield to a colleague just ahead and
-replan if blocked. Reduce Motion snaps bots to their destination pose and
+replan if blocked. Walking routes and leisure reachability checks run off the main
+actor. Drag input accumulates between scene updates so the camera moves once per
+rendered frame. Reduce Motion snaps bots to their destination pose and
 disables leisure and chats.
 
 Workstations are real cubicles. Floor-standing panels with trim caps, end
@@ -1800,8 +1802,8 @@ static mesh batcher leaves unmerged (merged meshes carry no UVs) and which
 never registers as an obstacle. A screen-space finish (`OfficePostProcess`)
 applies a light warm grade, bloom on near-white lamps, signs and screens, a
 soft vignette, and a tilt-shift blur at the top and bottom of wide views. Cached
-Metal pipelines reuse two quarter-resolution working textures for a separable
-blur and a full-resolution composite. Working textures change only with viewport
+Metal pipelines run both blur passes at quarter resolution. The full-resolution
+composite samples the finished blur and bloom once each. Working textures change only with viewport
 size or GPU; frame rendering builds no Core Image filter graph. If the effect is
 unavailable, the original frame still renders. The
 tilt-shift fades out as the camera moves in, so close views of a bot stay

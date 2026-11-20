@@ -265,6 +265,16 @@ struct OfficePreviewLayout {
         return [Float(node.grid.x) / 4, 0, Float(node.grid.y) / 4]
     }
 
+    func canReach(from start: Node, to end: Node) async -> Bool {
+        !route(from: start, to: end).isEmpty
+    }
+
+    /// Search an immutable floor-plan snapshot off the scene's main actor.
+    func walkingSteps(from start: Node, to end: Node, avoiding occupied: [SIMD3<Float>]) async -> [Node] {
+        let path = route(from: start, to: end, avoiding: occupied)
+        return Array(smoothed(path, from: position(start), avoiding: occupied).dropFirst())
+    }
+
     /// A* on a quarter-unit grid. Every segment is checked against the same
     /// furniture and wall footprints used by the renderer.
     func route(from start: Node, to end: Node, avoiding occupied: [SIMD3<Float>] = []) -> [Node] {
@@ -336,6 +346,7 @@ struct OfficePreviewLayout {
         var previous: [SIMD2<Int>: SIMD2<Int>] = [:]
         var closed = Set<SIMD2<Int>>()
         while !open.isEmpty {
+            if Task.isCancelled { return [] }
             let candidate = pop()
             let current = candidate.point
             guard !closed.contains(current), candidate.score == costs[current] else { continue }

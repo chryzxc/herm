@@ -4,6 +4,24 @@ import simd
 @testable import Herm
 
 struct OfficeNavigationCacheTests {
+    @MainActor
+    @Test func backgroundPlanPreservesWaypointsAndHonorsOccupiedDestination() async {
+        var layout = OfficePreviewLayout()
+        var floor = OfficeDesignNavigation()
+        floor.stations[.desk] = [.init(position: [0, 0, 0], approach: [0, 0, 0], yaw: 0)]
+        floor.stations[.reviewTable] = [.init(position: [2, 0, 0], approach: [2, 0, 0], yaw: 0)]
+        layout.authored = floor
+        let start = layout.node(slot: 0, location: .desk)
+        let end = layout.node(slot: 0, location: .reviewTable)
+        let path = layout.route(from: start, to: end)
+        #expect(await layout.canReach(from: start, to: end))
+        let steps = await layout.walkingSteps(from: start, to: end, avoiding: [])
+        #expect(steps.last == end)
+        #expect(steps == Array(layout.smoothed(path, from: layout.position(start), avoiding: []).dropFirst()))
+        let approach = OfficePreviewLayout.Node(slot: end.slot, index: end.index, isStation: false, isApproach: true)
+        #expect(await layout.walkingSteps(from: start, to: end, avoiding: [layout.position(approach)]).isEmpty)
+    }
+
     @Test func cachedWalkabilityMatchesGeometryAfterRosterGrowthAndCopy() {
         let original = OfficePreviewLayout()
         var expanded = original

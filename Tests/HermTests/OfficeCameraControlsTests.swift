@@ -1,9 +1,73 @@
-import Foundation
+import AppKit
+import RealityKit
 import Testing
 
 @testable import Herm
 
 struct OfficeCameraControlsTests {
+    /// Opt-in because measuring rendered frames requires a visible Metal-backed window.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["OFFICE_CAMERA_FRAME_SAMPLE"] == "1"))
+    @MainActor func sampleDraggingInAnOccupiedOffice() async throws {
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 960, height: 600), styleMask: [.titled], backing: .buffered,
+            defer: false)
+        let view = OfficePreviewARView(frame: window.contentView!.bounds)
+        window.contentView = view
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+
+        let suite = "OfficeCameraControlsTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let scene = OfficePreviewSceneView.Coordinator(
+            placementStore: OfficePlacementStore(defaults: defaults), onSelectAgent: { _ in })
+        let agents = (0..<8).map { OfficePreviewAgentPresentation(id: "bot-\($0)", name: "Bot \($0)", tasks: []) }
+        scene.showsAgents = true
+        scene.install(in: view, agents: agents, reduceMotion: true)
+        defer { scene.stop() }
+        try await Task.sleep(for: .seconds(2))
+        let camera = try #require(view.scene.anchors.first?.children.first { $0 is PerspectiveCamera })
+        let initial = camera.position
+        var intervals: [Double] = []
+        let subscription = view.scene.subscribe(to: SceneEvents.Update.self) { event in
+            MainActor.assumeIsolated {
+                let before = camera.position
+                for _ in 0..<4 { scene.applyCameraGesture(.orbit, x: 0.5, y: 0) }
+                #expect(camera.position == before)
+                intervals.append(event.deltaTime * 1000)
+            }
+        }
+        defer { subscription.cancel() }
+        let reviewing = agents.map { agent in
+            let task = KanbanTaskSummary(
+                id: agent.id, title: "Review", status: "review", detail: nil, priority: nil, assignee: agent.id)
+            return OfficePreviewAgentPresentation(id: agent.id, name: agent.name, tasks: [OfficePreviewTaskData(task)])
+        }
+        scene.update(agents: reviewing, reduceMotion: false)
+        try await Task.sleep(for: .seconds(10))
+        try #require(intervals.count > 1)
+        #expect(camera.position != initial)
+        let sorted = intervals.sorted()
+        print(
+            "Office orbit (ms), frames=\(sorted.count), median=\(sorted[sorted.count / 2]), p95=\(sorted[sorted.count * 95 / 100]), max=\(sorted.last!)"
+        )
+    }
+
+    @MainActor
+    @Test func movingLabelsKeepTheirSizeUntilContentChanges() {
+        let bubble = OfficePreviewTaskBubble(frame: .zero)
+        let short = OfficePreviewAgentPresentation(id: "bot", name: "Bo", tasks: [])
+        let long = OfficePreviewAgentPresentation(id: "bot", name: "A considerably longer bot name", tasks: [])
+        bubble.update(agent: short, reduceMotion: true, isDataCurrent: true)
+        let initial = bubble.size(for: .compact)
+        bubble.setTier(.dot)
+        #expect(bubble.size(for: .compact) == initial)
+        bubble.update(agent: long, reduceMotion: true, isDataCurrent: true)
+        #expect(bubble.size(for: .compact).width > initial.width)
+        bubble.update(agent: short, reduceMotion: true, isDataCurrent: true)
+        #expect(bubble.size(for: .compact) == initial)
+    }
+
     @Test func movementUsesCameraHeadingAndNormalizesDiagonals() {
         var forward = OfficePreviewCameraState()
         forward.azimuth = 0

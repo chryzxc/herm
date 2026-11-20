@@ -120,7 +120,7 @@ final class OfficePreviewTaskBubble: NSView {
     private(set) var tier: Tier = .full
     private(set) var content: Content?
     private var reduceMotion = false
-    private var wasHidden = true
+    private var measuredSizes: [Tier: CGSize] = [:]
     private let card = CALayer()
     private let tail = CAShapeLayer()
     private let dot = CALayer()
@@ -220,6 +220,7 @@ final class OfficePreviewTaskBubble: NSView {
         guard next != content else { return }
         let changedState = content.map { $0.status != next.status || $0.title != next.title } ?? false
         content = next
+        measuredSizes.removeAll(keepingCapacity: true)
         apply()
         if changedState && !isHidden { pop() }
     }
@@ -231,6 +232,7 @@ final class OfficePreviewTaskBubble: NSView {
         let text = statusText(now: now)
         guard statusLabel.stringValue != text else { return false }
         statusLabel.stringValue = text
+        measuredSizes[.full] = nil
         return tier == .full
     }
 
@@ -245,23 +247,27 @@ final class OfficePreviewTaskBubble: NSView {
     }
 
     func size(for tier: Tier) -> CGSize {
+        if let cached = measuredSizes[tier] { return cached }
         guard let content else { return .zero }
         func width(_ label: NSTextField, _ text: String) -> CGFloat {
             ceil((text as NSString).size(withAttributes: [.font: label.font as Any]).width)
         }
+        let size: CGSize
         switch tier {
-        case .dot: return CGSize(width: 14, height: 14)
+        case .dot: size = CGSize(width: 14, height: 14)
         case .compact:
             let text = width(nameLabel, content.name)
-            return CGSize(width: min(170, max(56, 23 + text)), height: 22 + Self.tailHeight)
+            size = CGSize(width: min(170, max(56, 23 + text)), height: 22 + Self.tailHeight)
         case .full:
             let rows = [
-                width(nameLabel, content.name) + 15, width(statusLabel, statusText(now: Date())),
+                width(nameLabel, content.name) + 15, width(statusLabel, statusLabel.stringValue),
                 width(titleLabel, content.title), content.detail.map { width(detailLabel, $0) } ?? 0,
             ]
             let height: CGFloat = 8 + 15 + 14 + 14 + (content.detail == nil ? 0 : 14) + (content.isWorking ? 6 : 0) + 7
-            return CGSize(width: min(220, max(128, (rows.max() ?? 0) + 20)), height: height + Self.tailHeight)
+            size = CGSize(width: min(220, max(128, (rows.max() ?? 0) + 20)), height: height + Self.tailHeight)
         }
+        measuredSizes[tier] = size
+        return size
     }
 
     func setTier(_ next: Tier) {
@@ -279,11 +285,7 @@ final class OfficePreviewTaskBubble: NSView {
 
     /// Unhiding plays a short rise-and-fade so bubbles do not blink in.
     func setVisible(_ visible: Bool) {
-        guard visible == wasHidden else {
-            isHidden = !visible
-            return
-        }
-        wasHidden = !visible
+        guard visible == isHidden else { return }
         isHidden = !visible
         guard visible, !reduceMotion, let layer else { return }
         let rise = CABasicAnimation(keyPath: "transform.translation.y")
@@ -324,7 +326,11 @@ final class OfficePreviewTaskBubble: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         nameLabel.stringValue = content.name
-        statusLabel.stringValue = statusText(now: Date())
+        if content.startedAt != nil {
+            refreshClock()
+        } else {
+            statusLabel.stringValue = content.status
+        }
         titleLabel.stringValue = content.title
         detailLabel.stringValue = content.detail ?? ""
         dot.backgroundColor = content.tint.cgColor
@@ -678,12 +684,14 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         private var anchor: AnchorEntity?
         private var camera: PerspectiveCamera?
         private var cameraState = OfficePreviewCameraState()
+        private var renderedCameraState: OfficePreviewCameraState?
         fileprivate var lastResetToken = 0
         private var resetTask: Task<Void, Never>?
         var wholeOfficePreset = true
         private var manuallyMovedCamera = false
         private var leisureTargets: [String: OfficePreviewLayout.Node] = [:]
         private var nextLeisureChange: [String: TimeInterval] = [:]
+        private var leisureTask: Task<Void, Never>?
         private var lastLeisureTick: TimeInterval = 0
         private var screens: [Int: ModelEntity] = [:]
         private var poweredScreens: Set<Int> = []
@@ -752,10 +760,22 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 MainActor.assumeIsolated {
                     self?.advanceCamera(delta: event.deltaTime)
                     self?.advanceSky(delta: event.deltaTime)
-                    self?.animateStationary(delta: event.deltaTime)
+                    if HermPerformanceRecorder.active {
+                        let start = CACurrentMediaTime()
+                        self?.animateStationary(delta: event.deltaTime)
+                        HermPerformanceRecorder.recordWork("office.animateStationary", since: start)
+                    } else {
+                        self?.animateStationary(delta: event.deltaTime)
+                    }
                     self?.animateMusic(delta: event.deltaTime)
                     self?.refreshBubbleClocks()
-                    self?.flushLabelLayout()
+                    if HermPerformanceRecorder.active {
+                        let start = CACurrentMediaTime()
+                        self?.flushLabelLayout()
+                        HermPerformanceRecorder.recordWork("office.flushLabelLayout", since: start)
+                    } else {
+                        self?.flushLabelLayout()
+                    }
                     self?.resumeFrameWaiters()
                 }
             }
@@ -772,7 +792,6 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     deltaX: x, deltaY: y, xRange: (roomLayout.minX - 5)...(roomLayout.maxX + 5),
                     zRange: (roomLayout.back - 5)...(roomLayout.front + 5))
             }
-            applyCameraTransform()
         }
 
         func applyCameraZoom(delta: CGFloat) {
@@ -785,7 +804,6 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             if lastReduceMotion {
                 cameraState.distance = destination.distance
                 zoomTarget = nil
-                applyCameraTransform()
             }
         }
 
@@ -794,7 +812,6 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         private func advanceCamera(delta: TimeInterval) {
             guard let view, view.window?.isVisible == true else { return }
             let input = view.cameraInput()
-            let old = cameraState
             if input.isActive {
                 manuallyMovedCamera = true
                 resetTask?.cancel()
@@ -811,7 +828,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     zoomTarget = nil
                 }
             }
-            if old != cameraState { applyCameraTransform() }
+            applyCameraTransform()
         }
 
         func resetCamera(reduceMotion: Bool, wholeOffice: Bool = false, focusAgentID: String? = nil) {
@@ -835,6 +852,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 applyCameraTransform()
                 return
             }
+            cameraState = old
             resetTask = Task { @MainActor [weak self] in
                 guard let self else { return }
                 for frame in 1...14 {
@@ -871,6 +889,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 agents != lastPresentations || reduceMotion != lastReduceMotion || isDataCurrent != lastDataCurrent
                     || avatarImages != lastAvatarImages || characterThemeChanged
             else { return }
+            leisureTask?.cancel()
             lastAvatarImages = avatarImages
             lastCharacterTheme = palette.theme
             lastDataCurrent = isDataCurrent
@@ -1107,8 +1126,8 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             return base + Double(seed % 6)
         }
 
-        private func updateLeisure() {
-            guard let authored = roomLayout.authored else { return }
+        private func updateLeisure() async {
+            guard !Task.isCancelled, let authored = roomLayout.authored else { return }
             updateConversations()
             for agent in desiredAgents.values.sorted(by: { $0.id < $1.id })
             where agent.canWander && movementTasks[agent.id] == nil && socialPartners[agent.id] == nil {
@@ -1117,13 +1136,17 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     nextLeisureChange[agent.id] = animationTime + 2 + Double(agent.identitySeed % 5)
                 }
                 guard animationTime >= nextLeisureChange[agent.id, default: .infinity] else { continue }
-                if startConversation(agent, slot: slot, current: current) { continue }
+                if await startConversation(agent, slot: slot, current: current) { continue }
+                guard !Task.isCancelled else { return }
                 // Leisure never changes Hermes tasks or their ordering.
                 var target = roomLayout.node(slot: slot, location: .desk)
-                for candidate in leisureCandidates(for: agent, slot: slot, current: current).prefix(6)
-                where !roomLayout.route(from: current, to: candidate).isEmpty {
-                    target = candidate
-                    break
+                for candidate in leisureCandidates(for: agent, slot: slot, current: current).prefix(6) {
+                    let reachable = await roomLayout.canReach(from: current, to: candidate)
+                    guard !Task.isCancelled else { return }
+                    if reachable {
+                        target = candidate
+                        break
+                    }
                 }
                 leisureTargets[agent.id] = target
                 if let index = target.leisureIndex { lastLeisureAction[agent.id] = authored.leisureSpots[index].action }
@@ -1147,7 +1170,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         /// Invites the nearest free idle colleague to a pair of chat spots.
         private func startConversation(
             _ agent: OfficePreviewAgentPresentation, slot: Int, current: OfficePreviewLayout.Node
-        ) -> Bool {
+        ) async -> Bool {
             let roll = (agent.identitySeed &+ UInt64(max(0, animationTime) / 7) &* 7_919) % 100
             guard roll < 45, let authored = roomLayout.authored, let position = avatarRoots[agent.id]?.position else {
                 return false
@@ -1180,9 +1203,11 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     slot: slot, index: 0, isStation: true, leisureIndex: near ? pair.0 : pair.1)
                 let theirs = OfficePreviewLayout.Node(
                     slot: partnerSlot, index: 0, isStation: true, leisureIndex: near ? pair.1 : pair.0)
-                guard !roomLayout.route(from: current, to: mine).isEmpty,
-                    !roomLayout.route(from: partnerNode, to: theirs).isEmpty
+                guard !Task.isCancelled else { return false }
+                guard await roomLayout.canReach(from: current, to: mine),
+                    await roomLayout.canReach(from: partnerNode, to: theirs)
                 else { continue }
+                guard !Task.isCancelled else { return false }
                 leisureTargets[agent.id] = mine
                 leisureTargets[partner.id] = theirs
                 socialPartners[agent.id] = partner.id
@@ -1270,6 +1295,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         }
 
         func stop() {
+            leisureTask?.cancel()
             savePlacements()
             for task in movementTasks.values { task.cancel() }
             movementTasks.removeAll()
@@ -1336,19 +1362,26 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     }
                     // Stations are private; corridors are shared. Reserve the
                     // next waypoint and yield if another character occupies it.
-                    let occupied =
+                    @MainActor func occupiedPositions() -> [SIMD3<Float>] {
                         self.avatarRoots.filter { $0.key != id }.map { $0.value.position }
-                        + self.reservedSteps.filter { $0.key != id }.map(\.value)
+                            + self.reservedSteps.filter { $0.key != id }.map(\.value)
+                    }
+                    var occupied = occupiedPositions()
                     func obstructed(_ point: SIMD3<Float>) -> Bool {
                         occupied.contains { abs($0.x - point.x) < 0.8 && abs($0.z - point.z) < 0.8 }
                     }
                     if plannedDestination != destination || remainingRoute.isEmpty
                         || remainingRoute.first.map({ obstructed(self.roomLayout.position($0)) }) == true
                     {
-                        let route = self.roomLayout.route(from: node, to: destination, avoiding: occupied)
-                        remainingRoute = Array(
-                            self.roomLayout.smoothed(route, from: self.roomLayout.position(node), avoiding: occupied)
-                                .dropFirst())
+                        let geometry = self.roomGeometry
+                        let steps = await self.roomLayout.walkingSteps(from: node, to: destination, avoiding: occupied)
+                        guard !Task.isCancelled else { return }
+                        guard self.roomGeometry === geometry, self.currentNodes[id] == node,
+                            let latest = self.desiredAgents[id], let latestSlot = self.roomLayout.slots[id],
+                            self.destination(for: latest, slot: latestSlot) == destination
+                        else { continue }
+                        occupied = occupiedPositions()
+                        remainingRoute = steps
                         plannedDestination = destination
                     }
                     guard let nextNode = remainingRoute.first, !obstructed(self.roomLayout.position(nextNode)) else {
@@ -1484,7 +1517,12 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             animationTime += Double(dt)
             if animationTime - lastLeisureTick >= 1 {
                 lastLeisureTick = animationTime
-                updateLeisure()
+                if leisureTask == nil {
+                    leisureTask = Task { [weak self] in
+                        await self?.updateLeisure()
+                        self?.leisureTask = nil
+                    }
+                }
                 updateComputers()
             }
             guard showsAgents else { return }
@@ -1559,7 +1597,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             lastClockTick = now
             if now.timeIntervalSince(lastPlacementSave) >= 10 { savePlacements() }
             var changed = false
-            for label in labels.values where !label.isHidden { changed = label.refreshClock(now: now) || changed }
+            for label in labels.values where label.refreshClock(now: now) && !label.isHidden { changed = true }
             if changed { layoutLabels() }
         }
 
@@ -2164,6 +2202,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         }
 
         private func rebuildRoom() {
+            leisureTask?.cancel()
             roomGeometry?.removeFromParent()
             let geometry: Entity
             if let cached = Self.cachedRoom, cached.palette == palette, cached.capacity == roomLayout.capacity {
@@ -2491,10 +2530,13 @@ struct OfficePreviewSceneView: NSViewRepresentable {
 
         private func applyCameraTransform() {
             guard let camera else { return }
-            camera.position = cameraState.position
-            camera.look(at: cameraState.orbitTarget, from: camera.position, relativeTo: nil)
-            lighting?.updateShadow(cameraDistance: cameraState.distance)
-            postProcess.update(cameraDistance: cameraState.distance, isDark: daylight.isDark)
+            guard renderedCameraState != cameraState else { return }
+            camera.look(at: cameraState.orbitTarget, from: cameraState.position, relativeTo: nil)
+            if renderedCameraState?.distance != cameraState.distance {
+                lighting?.updateShadow(cameraDistance: cameraState.distance)
+                postProcess.update(cameraDistance: cameraState.distance, isDark: daylight.isDark)
+            }
+            renderedCameraState = cameraState
             layoutLabels()
         }
 

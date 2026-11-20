@@ -4,7 +4,7 @@ import RealityKit
 import os
 
 /// A fixed GPU finish: quarter-resolution separable blur, then one full-resolution composite.
-/// Pipelines and two small working textures are reused across frames.
+/// Pipelines and small working textures are reused across frames.
 final class OfficePostProcess: @unchecked Sendable {
     private struct Parameters {
         var tiltShift: Float = 0
@@ -14,7 +14,10 @@ final class OfficePostProcess: @unchecked Sendable {
     private let parameters = OSAllocatedUnfairLock(initialState: Parameters())
     private var deviceID: UInt64?
     private var horizontal: (any MTLComputePipelineState)?
+    private var vertical: (any MTLComputePipelineState)?
     private var composite: (any MTLComputePipelineState)?
+    private var horizontalColor: (any MTLTexture)?
+    private var horizontalHighlights: (any MTLTexture)?
     private var blurredColor: (any MTLTexture)?
     private var blurredHighlights: (any MTLTexture)?
     private var fallback: CIContext?
@@ -27,20 +30,26 @@ final class OfficePostProcess: @unchecked Sendable {
     /// Compile once per GPU, including when rendering standalone test frames.
     @discardableResult
     func prepare(device: any MTLDevice) -> Bool {
-        if deviceID == device.registryID { return horizontal != nil && composite != nil }
+        if deviceID == device.registryID { return horizontal != nil && vertical != nil && composite != nil }
         deviceID = device.registryID
         horizontal = nil
+        vertical = nil
         composite = nil
+        horizontalColor = nil
+        horizontalHighlights = nil
         blurredColor = nil
         blurredHighlights = nil
         fallback = nil
         guard let library = try? device.makeLibrary(source: Self.shader, options: nil),
             let first = library.makeFunction(name: "officeHorizontal"),
+            let middle = library.makeFunction(name: "officeVertical"),
             let last = library.makeFunction(name: "officeComposite"),
             let firstPipeline = try? device.makeComputePipelineState(function: first),
+            let middlePipeline = try? device.makeComputePipelineState(function: middle),
             let lastPipeline = try? device.makeComputePipelineState(function: last)
         else { return false }
         horizontal = firstPipeline
+        vertical = middlePipeline
         composite = lastPipeline
         return true
     }
@@ -50,15 +59,19 @@ final class OfficePostProcess: @unchecked Sendable {
         let height = max(1, (frame.sourceColorTexture.height + 3) / 4)
         if prepare(device: frame.device),
             blurredColor?.width != width || blurredColor?.height != height || blurredHighlights == nil
+                || horizontalColor == nil || horizontalHighlights == nil
         {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: .rgba16Float, width: width, height: height, mipmapped: false)
             descriptor.storageMode = .private
             descriptor.usage = [.shaderRead, .shaderWrite]
+            horizontalColor = frame.device.makeTexture(descriptor: descriptor)
+            horizontalHighlights = frame.device.makeTexture(descriptor: descriptor)
             blurredColor = frame.device.makeTexture(descriptor: descriptor)
             blurredHighlights = frame.device.makeTexture(descriptor: descriptor)
         }
-        guard let horizontal, let composite, let blurredColor, let blurredHighlights,
+        guard let horizontal, let vertical, let composite, let horizontalColor, let horizontalHighlights,
+            let blurredColor, let blurredHighlights,
             let first = frame.commandBuffer.makeComputeCommandEncoder()
         else {
             copyFrame(frame)
@@ -67,13 +80,26 @@ final class OfficePostProcess: @unchecked Sendable {
         var settings = parameters.withLock { $0 }
         first.setComputePipelineState(horizontal)
         first.setTexture(frame.sourceColorTexture, index: 0)
-        first.setTexture(blurredColor, index: 1)
-        first.setTexture(blurredHighlights, index: 2)
+        first.setTexture(horizontalColor, index: 1)
+        first.setTexture(horizontalHighlights, index: 2)
         first.setBytes(&settings, length: MemoryLayout<Parameters>.stride, index: 0)
         first.dispatchThreads(
             MTLSize(width: width, height: height, depth: 1),
             threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
         first.endEncoding()
+        guard let middle = frame.commandBuffer.makeComputeCommandEncoder() else {
+            copyFrame(frame)
+            return
+        }
+        middle.setComputePipelineState(vertical)
+        middle.setTexture(horizontalColor, index: 0)
+        middle.setTexture(horizontalHighlights, index: 1)
+        middle.setTexture(blurredColor, index: 2)
+        middle.setTexture(blurredHighlights, index: 3)
+        middle.dispatchThreads(
+            MTLSize(width: width, height: height, depth: 1),
+            threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+        middle.endEncoding()
         guard let last = frame.commandBuffer.makeComputeCommandEncoder() else {
             copyFrame(frame)
             return
@@ -135,6 +161,24 @@ final class OfficePostProcess: @unchecked Sendable {
             highlights.write(half4(half3(bright), 1), pixel);
         }
 
+        kernel void officeVertical(
+            texture2d<half, access::sample> color [[texture(0)]],
+            texture2d<half, access::sample> highlights [[texture(1)]],
+            texture2d<half, access::write> blurredColor [[texture(2)]],
+            texture2d<half, access::write> blurredHighlights [[texture(3)]],
+            uint2 pixel [[thread_position_in_grid]]) {
+            if (pixel.x >= color.get_width() || pixel.y >= color.get_height()) return;
+            float2 uv = (float2(pixel) + 0.5) / float2(color.get_width(), color.get_height());
+            float3 blurred = 0, bright = 0;
+            for (int i = -4; i <= 4; ++i) {
+                float2 sampleUV = uv + float2(0, i / 180.0);
+                blurred += float3(color.sample(linearSample, sampleUV).rgb) * weights[abs(i)];
+                bright += float3(highlights.sample(linearSample, sampleUV).rgb) * weights[abs(i)];
+            }
+            blurredColor.write(half4(half3(blurred), 1), pixel);
+            blurredHighlights.write(half4(half3(bright), 1), pixel);
+        }
+
         kernel void officeComposite(
             texture2d<float, access::sample> source [[texture(0)]],
             texture2d<half, access::sample> color [[texture(1)]],
@@ -144,12 +188,8 @@ final class OfficePostProcess: @unchecked Sendable {
             if (pixel.x >= destination.get_width() || pixel.y >= destination.get_height()) return;
             float2 size = float2(destination.get_width(), destination.get_height());
             float2 uv = (float2(pixel) + 0.5) / size;
-            float3 blurred = 0, bright = 0;
-            for (int i = -4; i <= 4; ++i) {
-                float2 sampleUV = uv + float2(0, i / 180.0);
-                blurred += float3(color.sample(linearSample, sampleUV).rgb) * weights[abs(i)];
-                bright += float3(highlights.sample(linearSample, sampleUV).rgb) * weights[abs(i)];
-            }
+            float3 blurred = float3(color.sample(linearSample, uv).rgb);
+            float3 bright = float3(highlights.sample(linearSample, uv).rgb);
             float4 original = source.sample(linearSample, uv);
             float mask = max(saturate((0.4 - uv.y) / 0.4), saturate((uv.y - 0.66) / 0.34)) * settings.tiltShift;
             float3 result = mix(grade(original.rgb, settings.isDark), blurred, mask);

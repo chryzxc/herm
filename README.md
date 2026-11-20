@@ -1158,7 +1158,7 @@ limited to two concurrent requests.
 - Idle bots start at randomly chosen, unoccupied activities around the office. Positions are saved locally every ten seconds and when leaving Office, and restored after app relaunch. Active work still determines working bots’ destinations.
 - Task ownership and status come live from Hermes. The movement and gestures are only visual.
 - Compact status counts above the scene focus the next bot in each state.
-- Includes camera presets, keyboard camera navigation, and Reduce Motion support.
+- Pan or orbit by dragging, use the keyboard to navigate, or choose a camera preset. Bots plan their walks in the background while you move around the office. The camera and bots support Reduce Motion.
 - Office's warm lighting finish uses reusable GPU buffers to reduce the rendering cost during longer visits.
 - Hover the lounge record player to see what's playing in the Spotify app, play or pause, and skip tracks. macOS asks once for permission to control Spotify; no Spotify login is needed.
 
