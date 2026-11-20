@@ -1821,6 +1821,9 @@ hides the roster when both panels would crowd the scene.
 
 Working and unread activity follows each session through selection, pinned rows,
 and project summaries; the notch uses the same session activity state.
+Unseen failed turns show a warning triangle beside the independent unread count,
+including in All profiles. Opening the session acknowledges the history warning
+while retaining error details in the transcript.
 
 A fixed Search sessions field below the Bot header filters loaded session titles,
 previews, and project names case-insensitively in the selected Bot scope. Nonempty
@@ -4387,8 +4390,8 @@ partial inventories show a lower bound or an unavailable marker. Running Bot
 activity remains independently visible.
 
 Completed session rows show a compact red numeric unread AI-response pill in the leading status
-slot, replacing the completion dot. Working, approval, clarification, and failure
-indicators retain their existing priority. The fixed leading slot stays stable while
+slot, replacing the completion dot. An unseen failure has a separate warning triangle;
+working, approval, and clarification indicators retain their existing priority. The fixed leading slot stays stable while
 the count loads. Counts above 99 display as `99+`; accessibility exposes the full count.
 A failed or incomplete history read shows `?` with an unavailable description, never
 a guessed number. Read sessions show no completion marker.

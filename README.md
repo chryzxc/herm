@@ -25,6 +25,8 @@ Performance captures record callback timing and workspace updates locally; optio
 
 Unread session badges and the floating “new messages” control count AI responses only. User messages, tools, activity, system notices, errors, and empty streaming placeholders do not increase the count. Opening an unread session takes you to its first unread reply and marks the captured updates reviewed; a blue-tinted unread divider remains visible for that visit. A session you already viewed since Herm launched reopens where you left it instead; the divider still marks the first unread reply. The Bot picker counts unread sessions per Bot in a red badge, with a plus sign when the available session inventory is incomplete. Scrolling to the latest reply clears the floating count.
 
+An unread failed turn also shows a warning triangle on its conversation row, including in All profiles; it does not increase the reply count. Opening the conversation acknowledges the history warning and retains the error details in the transcript.
+
 [![Herm driving a shared browser with a live agent cursor](docs/media/browser-demo-poster.webp)](docs/media/browser-demo.mp4)
 
 *▶ [Play the recording](docs/media/browser-demo.mp4)*

@@ -7,6 +7,7 @@ final class SessionUnreadReplies {
     struct Projection: Equatable {
         let count: Int
         let firstRowID: Int?
+        var hasUnseenFailedTurn = false
     }
 
     struct BotCounts: Equatable {
@@ -185,7 +186,10 @@ final class SessionUnreadReplies {
                     transcript.messages, after: seenAt, through: cutoff)
                 let firstRowID = transcript.rowIDs.filter { $0.value == unread.firstMessageID }.keys.min()
                 return Read(
-                    projection: Projection(count: unread.count, firstRowID: firstRowID),
+                    projection: Projection(
+                        count: unread.count, firstRowID: firstRowID,
+                        hasUnseenFailedTurn: SessionFailureWarningPolicy.hasUnseenFailure(
+                            in: projected, after: seenAt, through: cutoff)),
                     tail: rows.last.flatMap(Self.tail(of:)))
             }
         }
@@ -227,13 +231,14 @@ struct UnreadCountPill: View {
 struct SessionUnreadReplyBadge: View {
     let session: HermesSession
     var showUnavailable = true
+    var hasKnownFailure = false
     @Environment(\.sessionUnreadReplies) private var replies
-    @ObservedObject private var seenStore = SidebarSessionSeenStore.shared
+    @ObservedObject var seenStore = SidebarSessionSeenStore.shared
     @State private var result: CountState?
     @State private var lastRead: Read?
 
     private enum CountState {
-        case loaded(Int)
+        case loaded(SessionUnreadReplies.Projection)
         case unavailable
     }
 
@@ -259,11 +264,15 @@ struct SessionUnreadReplyBadge: View {
             seenAt: seenStore.seenAt(profileID: profileID, sessionID: session.id),
             baselined: seenStore.isBaselined(profileID: profileID),
             refresh: Int(now.timeIntervalSince1970 / 15))
-        return Group {
+        return HStack(spacing: 4) {
+            if !session.isWorking && (hasKnownFailure || loadedFailure) {
+                SessionFailureWarning()
+            }
             switch result {
-            case .loaded(let count) where count > 0:
-                UnreadCountPill(label: count > 99 ? "99+" : "\(count)")
-                    .accessibilityLabel("\(count) unread AI \(count == 1 ? "response" : "responses")")
+            case .loaded(let projection) where projection.count > 0:
+                UnreadCountPill(label: projection.count > 99 ? "99+" : "\(projection.count)")
+                    .accessibilityLabel(
+                        "\(projection.count) unread AI \(projection.count == 1 ? "response" : "responses")")
             case .unavailable where showUnavailable:
                 Text("?")
                     .dockFont(.compactStatus, weight: .semibold)
@@ -276,6 +285,7 @@ struct SessionUnreadReplyBadge: View {
                 EmptyView()
             }
         }
+        .fixedSize()
         .task(id: read) {
             if lastRead?.identity != read.identity || lastRead?.seenAt != read.seenAt
                 || lastRead?.baselined != read.baselined
@@ -285,10 +295,10 @@ struct SessionUnreadReplyBadge: View {
             lastRead = read
             guard let replies, read.seenAt != nil || read.baselined else { return }
             do {
-                let count = try await replies.replies.count(
+                let projection = try await replies.replies.project(
                     session: session, profileID: read.identity.profileID, after: read.seenAt ?? .distantPast)
                 try Task.checkCancellation()
-                result = .loaded(count)
+                result = .loaded(projection)
             } catch is CancellationError {
                 return
             } catch {
@@ -296,6 +306,11 @@ struct SessionUnreadReplyBadge: View {
                 result = .unavailable
             }
         }
+    }
+
+    private var loadedFailure: Bool {
+        if case .loaded(let projection) = result { return projection.hasUnseenFailedTurn }
+        return false
     }
 }
 
@@ -306,8 +321,9 @@ struct SidebarSessionStatusIndicator: View {
     let status: SidebarSessionStatus
 
     var body: some View {
-        if status == .unreadComplete || status == .none {
-            SessionUnreadReplyBadge(session: session, showUnavailable: status == .unreadComplete)
+        if status == .unreadComplete || status == .none || status == .failed {
+            SessionUnreadReplyBadge(
+                session: session, showUnavailable: status == .unreadComplete, hasKnownFailure: status == .failed)
         } else if let state = status.activityState {
             DockActivityIndicator(state: state, unreadDot: true)
         }
