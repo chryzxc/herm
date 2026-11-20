@@ -13,8 +13,9 @@ private final class ConversationPanel: NSPanel {
 /// drops only the view: a running turn keeps going in Hermes.
 @MainActor
 final class ConversationWindowController: NSObject, NSWindowDelegate, ConversationWindowHandle {
-    nonisolated static let defaultSize = CGSize(width: 420, height: 600)
-    nonisolated static let minimumSize = CGSize(width: 320, height: 360)
+    nonisolated static let defaultSize = CGSize(width: 460, height: 600)
+    /// Wide enough for the transcript and composer toolbar to lay out without clipping the trailing edge.
+    nonisolated static let minimumSize = CGSize(width: 420, height: 360)
 
     private let destination: QuickDestination
     private let sessionID: String
@@ -25,6 +26,7 @@ final class ConversationWindowController: NSObject, NSWindowDelegate, Conversati
     private weak var controlCenter: ControlCenterModel?
     private var window: NSPanel?
     private var loadTask: Task<Void, Never>?
+    private var previewPanelOpen = false
 
     init(destination: QuickDestination, runtime: DockModel, controlCenter: ControlCenterModel, cascadeIndex: Int) {
         self.destination = destination
@@ -99,8 +101,27 @@ final class ConversationWindowController: NSObject, NSWindowDelegate, Conversati
                 header: header, worktree: worktree, chat: chat, control: control, bots: bots,
                 openQuota: { ConversationWindowStore.shared.showQuota() },
                 openInMain: { [weak self] in self?.openInMain($0) },
-                onRetry: { [weak self] in self?.load() })
+                onRetry: { [weak self] in self?.load() },
+                onPreviewPanel: { [weak self] in self?.setPreviewPanel($0) })
         }
+    }
+
+    /// Widens the window for the preview panel so the chat keeps its width, and narrows it
+    /// again when the panel closes. The frame stays on the window's screen.
+    private func setPreviewPanel(_ open: Bool) {
+        guard let window, previewPanelOpen != open else { return }
+        previewPanelOpen = open
+        let extra = ConversationPopoutView.previewWidth + DockLayout.hairline
+        var content = Self.minimumSize
+        if open { content.width += extra }
+        window.minSize = window.frameRect(forContentRect: CGRect(origin: .zero, size: content)).size
+        var frame = window.frame
+        frame.size.width = max(window.minSize.width, frame.width + (open ? extra : -extra))
+        if let screen = (window.screen ?? NSScreen.main)?.visibleFrame {
+            frame.size.width = min(frame.width, max(screen.width, window.minSize.width))
+            if frame.maxX > screen.maxX { frame.origin.x = max(screen.minX, screen.maxX - frame.width) }
+        }
+        window.setFrame(frame, display: true, animate: false)
     }
 
     private var autosaveName: String { "HermConversationWindow." + sessionID }
@@ -137,12 +158,14 @@ final class ConversationWindowController: NSObject, NSWindowDelegate, Conversati
             header.titleLeading = zoom.frame.maxX + 14
         }
         let saved = window.setFrameUsingName(autosaveName) ? window.frame : nil
-        window.setFrame(
-            ConversationWindowStore.placement(
-                saved: saved, screens: NSScreen.screens.map(\.visibleFrame), mouse: NSEvent.mouseLocation,
-                size: window.frameRect(forContentRect: CGRect(origin: .zero, size: Self.defaultSize)).size,
-                cascadeIndex: cascadeIndex),
-            display: false)
+        var frame = ConversationWindowStore.placement(
+            saved: saved, screens: NSScreen.screens.map(\.visibleFrame), mouse: NSEvent.mouseLocation,
+            size: window.frameRect(forContentRect: CGRect(origin: .zero, size: Self.defaultSize)).size,
+            cascadeIndex: cascadeIndex)
+        // A window saved before the minimum grew reopens at the minimum, not clipped.
+        frame.size.width = max(frame.width, window.minSize.width)
+        frame.size.height = max(frame.height, window.minSize.height)
+        window.setFrame(frame, display: false)
         window.setFrameAutosaveName(autosaveName)
         return window
     }

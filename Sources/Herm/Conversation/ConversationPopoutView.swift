@@ -17,19 +17,58 @@ final class ConversationPopoutHeader: ObservableObject {
 }
 
 /// A detached conversation: a title row naming the chat and its profile, then the same
-/// transcript and composer a split column shows. No sidebar, tabs, or session tools.
+/// transcript and composer a split column shows. No sidebar or session tools; what the chat
+/// opens as a tab (a message, file, tool call, bot) shows in a trailing preview panel.
 struct ConversationPopoutView: View {
+    /// The preview panel's width; the window grows by this much when it opens.
+    static let previewWidth: CGFloat = 380
+
     @ObservedObject var header: ConversationPopoutHeader
     @ObservedObject var worktree: ConversationWorktreeState
-    let chat: EdgeQuickConversationModel
+    @ObservedObject var chat: EdgeQuickConversationModel
     let control: ControlCenterModel
     let bots: BotModeModel
     let openQuota: () -> Void
     /// Starts a chat in the main window at a worktree, carrying this window's draft.
     let openInMain: (String) -> Void
     let onRetry: () -> Void
+    /// Resizes the window for the preview panel opening (`true`) or closing.
+    var onPreviewPanel: (Bool) -> Void = { _ in }
+    @ObservedObject private var previews = SessionMessageTabs.shared
+    @ObservedObject private var tabOrder = SessionInspectorTabOrder.shared
+    @State private var showsPreviews = false
+
+    private var workspace: String? { chat.conversation.map { WorkspaceIdentity.session($0) } }
+    private var previewTabs: [SessionPreviewTab] { workspace.flatMap { previews.tabs[$0] } ?? [] }
+    private var isPreviewPanelVisible: Bool { showsPreviews && !previewTabs.isEmpty }
 
     var body: some View {
+        HStack(spacing: 0) {
+            conversation
+            if isPreviewPanelVisible, let model = chat.conversation, let workspace {
+                Color.dockBorderLight.frame(width: DockLayout.hairline)
+                ConversationPopoutPreviewPanel(
+                    model: model, bots: bots, workspace: workspace, tabs: previewTabs,
+                    selection: previews.selection[workspace], tabOrder: tabOrder
+                )
+                .frame(width: Self.previewWidth)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .underTitlebar(header.titleRowHeight)
+        .overlay(alignment: .top) { titleRow }
+        .popoutCanvas()
+        .onReceive(previews.$openRequest) { request in
+            guard let request, request == workspace else { return }
+            showsPreviews = true
+        }
+        .onChange(of: isPreviewPanelVisible) { _, visible in
+            if !visible { showsPreviews = false }
+            onPreviewPanel(visible)
+        }
+    }
+
+    private var conversation: some View {
         SessionPaneChatContent(
             chat: chat, control: control, bots: bots,
             metrics: ConversationWorkspaceMetrics.resolve(isFullscreen: false),
@@ -40,17 +79,28 @@ struct ConversationPopoutView: View {
             onRetry: onRetry
         )
         .environment(\.composerReservesFolderBar, false)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .underTitlebar(header.titleRowHeight)
-        .overlay(alignment: .top) {
-            titleRow
-                // The strip underneath drags and zooms the window.
-                .allowsHitTesting(false)
-        }
-        .popoutCanvas()
+        // Lift the composer clear of the window's rounded bottom corners.
+        .dockPadding(.bottom, 6)
+        .frame(minWidth: ConversationWindowController.minimumSize.width, maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var titleRow: some View {
+        HStack(spacing: 8) {
+            identity
+                // The strip underneath drags and zooms the window.
+                .allowsHitTesting(false)
+            if !previewTabs.isEmpty {
+                DockSidebarToggle(isCollapsed: !isPreviewPanelVisible, edge: .trailing, panel: "previews") {
+                    showsPreviews.toggle()
+                }
+            }
+        }
+        .padding(.leading, header.titleLeading)
+        .padding(.trailing, 8)
+        .frame(height: header.titleRowHeight)
+    }
+
+    private var identity: some View {
         HStack(spacing: 8) {
             Text(header.title)
                 .dockFont(.rowTitle, weight: .semibold)
@@ -67,10 +117,56 @@ struct ConversationPopoutView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.leading, header.titleLeading)
-        .padding(.trailing, 12)
-        .frame(height: header.titleRowHeight)
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The popout's tab panel: only what this chat opened, in the session inspector's tab strip,
+/// with the selected tab's preview below. Closing the last tab closes the panel.
+private struct ConversationPopoutPreviewPanel: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let model: DockModel
+    let bots: BotModeModel
+    let workspace: String
+    let tabs: [SessionPreviewTab]
+    let selection: UUID?
+    let tabOrder: SessionInspectorTabOrder
+
+    /// The selected tab, or the newest when the selection was closed elsewhere.
+    private var selected: SessionPreviewTab? { tabs.first { $0.id == selection } ?? tabs.last }
+
+    private var items: [SessionInspectorTabItem] {
+        let store = SessionMessageTabs.shared
+        let items = tabs.map { tab in
+            SessionInspectorTabItem(
+                id: "preview:" + tab.id.uuidString, title: tab.content.title, icon: tab.content.icon,
+                isSelected: tab.id == selected?.id,
+                select: { [workspace] in store.select(tab.id, in: workspace) },
+                close: { [workspace] in store.close(tab.id, in: workspace) },
+                fileName: tab.content.fileName)
+        }
+        return tabOrder.ordered(items.map(\.id), in: workspace).compactMap { id in items.first { $0.id == id } }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SessionInspectorTabStrip(tabs: items, workspace: workspace) { drag, target in
+                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) {
+                    tabOrder.move(drag, to: target, available: items.map(\.id), in: workspace)
+                }
+            }
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+            if let selected {
+                // Pull request tabs open only from the main window's rail, which starts their chats.
+                SessionDataPreviewView(
+                    content: selected.content, model: model, botMode: bots, onOpenPullRequestChat: { _ in }
+                )
+                .id(selected.id)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
     }
 }
 

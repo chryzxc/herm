@@ -13,6 +13,8 @@ struct SessionInspectorTabItem: Identifiable {
     var groupRoomID: String?
     /// The Hermes profile a session tab belongs to; its bot's avatar replaces the icon.
     var profileID: String?
+    /// Set for a tab that shows one file; a known file type replaces `icon` with its type icon.
+    var fileName: String?
 }
 
 struct SessionInspectorTabDrag: Codable, Transferable {
@@ -126,9 +128,17 @@ struct SessionInspectorTab: View {
 
     private var selectionLabel: some View {
         HStack(spacing: 6) {
-            DockIcon(
-                tab.icon, size: 12, weight: tab.isSelected ? .fill : .regular,
-                color: tab.isSelected ? .dockPrimaryText : .dockSecondaryText)
+            // Known file types show their type icon; anything else keeps the generic glyph.
+            if let fileName = tab.fileName, ArtifactFileIcon.mappedName(for: fileName) != nil,
+                let image = ArtifactFileIcon.image(for: fileName)
+            {
+                Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
+                    .frame(width: 12, height: 12).accessibilityHidden(true)
+            } else {
+                DockIcon(
+                    tab.icon, size: 12, weight: tab.isSelected ? .fill : .regular,
+                    color: tab.isSelected ? .dockPrimaryText : .dockSecondaryText)
+            }
             if showsTitle {
                 Text(tab.title).lineLimit(1).frame(maxWidth: 240)
             }

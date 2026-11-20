@@ -3466,7 +3466,10 @@ compact button sizing and wrap when the available width requires it.
 
 **Pop Out Conversation** (session, Bot and group-room row context menus; **Pop out conversation** in the session "Conversation
 actions" menus) detaches a conversation into its own small floating window
-(`ConversationWindowController`, default 420×600pt; resizing stops at 320×360pt). A
+(`ConversationWindowController`, default 460×600pt; resizing stops at 420×360pt, and
+a saved smaller frame reopens at the minimum). Transcript row metadata (plugin event
+ids, task ids) drops to the time alone when the column is narrow, so rows never widen
+the window. A
 conversation lives in one place: detaching the main conversation clears the
 main chat to a new one without leaving the current page, and detaching a split tab closes that tab. The
 window holds only the transcript and composer (`SessionPaneChatContent`, the
@@ -3476,11 +3479,17 @@ worktrees through `ConversationWorktreeState`, never `DeveloperWorkflowModel.sha
 opening a worktree in a new chat and creating a task worktree start that chat in
 the main window carrying the window's draft, and moving the chat moves this session), ⌘F search, the quota
 chip and banner, and session-scoped previews. Outside a Git folder the composer
-drops the empty folder-bar slot. There is no inspector. It sits
+drops the empty folder-bar slot, and the composer sits 6pt above the window's
+rounded bottom. There is no inspector; instead, what the chat opens as a tab (Open
+as new tab on a message, a file, tool call, task or bot) opens a 380pt trailing
+preview panel: the session inspector's tab strip over `SessionDataPreviewView`,
+separated by a hairline. Opening it widens the window by the panel (kept on its
+screen) and raises the minimum width; closing it, or its last tab, narrows the
+window back. A trailing sidebar toggle in the title row (shown only while tabs
+exist) hides and reopens it; the rest of the title row still drags the window. It sits
 under a compact title row (an empty `.unifiedCompact` toolbar centers the traffic
 lights; the 12pt semibold session title sits on their line, and a metadata
-`dockPill` names another profile); there is no sidebar, inspector or
-header menu. It floats above other apps (also over full-screen apps), keeps a per-session
+`dockPill` names another profile); there is no sidebar or header menu. It floats above other apps (also over full-screen apps), keeps a per-session
 frame (re-centered on the pointer's screen if the saved frame is mostly
 offscreen; new windows cascade 24pt), and follows renames. Picking a detached
 session in the sidebar, or opening it in split view, focuses its window instead,

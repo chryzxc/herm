@@ -98,6 +98,15 @@ enum SessionPreviewContent {
         case .pullRequest: .gitPullRequest
         }
     }
+
+    /// The file this tab shows, so its tab can carry the file-type icon; nil for non-file content.
+    var fileName: String? {
+        switch self {
+        case .file(let url): url.lastPathComponent
+        case .output(let record) where record.kind == .file || record.kind == .image: record.label
+        default: nil
+        }
+    }
 }
 
 private struct SessionPreviewWorkspaceKey: EnvironmentKey {

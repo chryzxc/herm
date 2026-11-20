@@ -870,7 +870,8 @@ struct SessionInspector: View {
             id: "preview:" + message.id.uuidString, title: message.content.title, icon: message.content.icon,
             isSelected: messageTabs.selection[workspace] == message.id,
             select: { messageTabs.select(message.id, in: workspace) },
-            close: { messageTabs.close(message.id, in: workspace) })
+            close: { messageTabs.close(message.id, in: workspace) },
+            fileName: message.content.fileName)
     }
 
     private var inspectorHeader: some View {
