@@ -10,6 +10,16 @@ enum DockMotion {
         isEnabled(reduceMotion: reduceMotion) ? .dockEase(duration: duration) : nil
     }
 
+    static func disclosure(reduceMotion: Bool) -> Animation? {
+        guard isEnabled(reduceMotion: reduceMotion) else { return nil }
+        switch DockThemeStyle.current.motion {
+        case .float: return .smooth(duration: 0.28)
+        case .bouncy: return .spring(duration: 0.30, bounce: 0.10)
+        case .glide: return .smooth(duration: 0.22)
+        case .snap, .mechanical: return .dockEase(duration: 0.16)
+        }
+    }
+
     static func pressScale(isPressed: Bool, isEnabled: Bool, reduceMotion: Bool) -> CGFloat {
         isPressed && isEnabled && Self.isEnabled(reduceMotion: reduceMotion) ? DockThemeStyle.current.pressScale : 1
     }

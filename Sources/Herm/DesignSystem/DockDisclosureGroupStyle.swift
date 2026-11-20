@@ -8,7 +8,7 @@ struct DockDisclosureGroupStyle: DisclosureGroupStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(reduceMotion || !DockThemeStyle.current.animates ? nil : .dockEase(duration: 0.18)) {
+                withAnimation(DockMotion.disclosure(reduceMotion: reduceMotion)) {
                     configuration.isExpanded.toggle()
                 }
             } label: {
@@ -43,25 +43,42 @@ struct DockRetainedDisclosureContent<Content: View>: View {
     @State private var hasExpanded = false
 
     var body: some View {
-        Group {
+        DockDisclosureLayout(progress: isExpanded ? 1 : 0) {
             if isExpanded || hasExpanded {
-                content()
-                    .offset(
-                        y: isExpanded || !DockMotion.isEnabled(reduceMotion: reduceMotion)
-                            ? 0 : -DockMotion.revealDistance
-                    )
-                    .frame(height: isExpanded ? nil : 0, alignment: .top)
-                    .clipped()
+                VStack(alignment: .leading, spacing: 0) { content() }
                     .opacity(isExpanded ? 1 : 0)
-                    .disabled(!isExpanded)
-                    .allowsHitTesting(isExpanded)
-                    .accessibilityHidden(!isExpanded)
-                    .transition(.opacity.combined(with: .offset(y: -DockMotion.revealDistance)))
+                    .transition(.identity)
             }
         }
-        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2), value: isExpanded)
+        .clipped()
+        .disabled(!isExpanded)
+        .allowsHitTesting(isExpanded)
+        .accessibilityHidden(!isExpanded)
+        .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: isExpanded)
         .onChange(of: isExpanded, initial: true) { _, expanded in
             if expanded { hasExpanded = true }
         }
+    }
+}
+
+/// Lay out the body at its natural height and reveal it from the header.
+/// A reversal continues from the current visible fraction.
+private struct DockDisclosureLayout: Layout {
+    var progress: CGFloat
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        let natural = child.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: natural.width, height: natural.height * min(1, max(0, progress)))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(
+            at: bounds.origin, anchor: .topLeading,
+            proposal: ProposedViewSize(width: proposal.width, height: nil))
     }
 }

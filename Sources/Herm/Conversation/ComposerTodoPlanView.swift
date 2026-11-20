@@ -11,18 +11,23 @@ struct ComposerTodoPlanView: View {
         reduceMotion || !DockThemeStyle.current.animates ? nil : .dockEase(duration: 0.22)
     }
 
+    private var completionFraction: CGFloat {
+        CGFloat(plan.done) / CGFloat(max(1, plan.items.count))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(motion) { isExpanded.toggle() }
+                withAnimation(DockMotion.disclosure(reduceMotion: reduceMotion)) { isExpanded.toggle() }
             } label: {
                 HStack(spacing: 10) {
                     ZStack {
                         Circle().stroke(Color.dockBorderStrong, lineWidth: 2)
                         Circle()
-                            .trim(from: 0, to: CGFloat(plan.done) / CGFloat(max(1, plan.items.count)))
+                            .trim(from: 0, to: completionFraction)
                             .stroke(Color.dockSuccess, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                             .rotationEffect(.degrees(-90))
+                            .animation(motion, value: completionFraction)
                     }
                     .frame(width: 16, height: 16)
                     .accessibilityHidden(true)
@@ -31,6 +36,7 @@ struct ComposerTodoPlanView: View {
                         .dockFont(.body, weight: .semibold).monospacedDigit()
                         .foregroundStyle(Color.dockPrimaryText)
                         .contentTransition(.numericText())
+                        .animation(motion, value: plan.done)
                         .fixedSize()
                     Text(
                         isExpanded
@@ -70,7 +76,6 @@ struct ComposerTodoPlanView: View {
                 .transition(DockMotion.reveal(from: .top, reduceMotion: reduceMotion))
             }
         }
-        .animation(motion, value: plan)
         .transaction {
             if motion == nil {
                 $0.animation = nil
@@ -150,6 +155,7 @@ struct TodoPlanTaskList: View {
             RoundedRectangle(cornerRadius: DockThemeStyle.current.controlRadius), active: active, fill: .dockSurface4,
             allowsInvert: false
         )
+        .animation(motion, value: item.status)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(item.content), \(item.status.replacingOccurrences(of: "_", with: " "))")
     }

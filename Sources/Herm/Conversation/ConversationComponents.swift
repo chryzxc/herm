@@ -630,23 +630,11 @@ struct SignalTrace: View {
                     activitySignature: activity.map { "\($0.id):\($0.isComplete)" },
                     activityIcon: Self.glyph(for: activity.last))
             } else {
-                DockBotFrameClock { frame in
-                    let breathe = frame.moves ? DockMotionSchedule.breath(frame.date, period: 2.4) : 0
-                    Circle()
-                        .fill(color.opacity(0.08 + 0.1 * breathe))
-                        .frame(width: 28, height: 28)
-                        .scaleEffect(0.88 + 0.12 * breathe)
-                }
-                // Keyed by glyph so each new step starts its own trace loop.
-                TracingGlyph(icon: liveGlyph, color: color)
-                    .id(liveGlyph)
-                    .transition(DockMotion.reveal(from: .bottom, reduceMotion: reduceMotion))
+                SignalGlyph(icon: liveGlyph, color: color)
             }
         }
         // Without a Bot only the 28pt glyph shows; a 56pt frame left a wide gap before the text.
         .frame(width: bot == nil ? 32 : Self.size, height: bot == nil ? 32 : Self.size)
-        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: liveGlyph)
-        .animation(.easeInOut(duration: 0.3), value: phase)
         .accessibilityHidden(true)
     }
 
@@ -659,27 +647,42 @@ struct SignalTrace: View {
     }
 }
 
-/// A step glyph whose outline traces itself on a loop over a faint fill.
-private struct TracingGlyph: View {
+/// A steady halo carries across tool changes while each new glyph draws once.
+private struct SignalGlyph: View {
     let icon: Ph
     let color: Color
+    @ObservedObject private var focus = HermFocus.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        DockBotFrameClock { frame in
-            let trace = frame.moves ? DockMotionSchedule.loop(frame.date, period: 1.6) : 0
-            let breathe = frame.moves ? DockMotionSchedule.breath(frame.date, period: 2.4) : 1
-            ZStack {
-                PhosphorShape(icon: icon).fill(color.opacity(frame.moves ? 0.35 : 1))
-                // Phosphor glyphs are filled outlines, so a stroke draws both edges; keep it hairline.
-                PhosphorShape(icon: icon)
-                    .trim(from: 0, to: trace)
-                    .stroke(color.opacity(0.7), style: StrokeStyle(lineWidth: 0.35, lineCap: .round, lineJoin: .round))
-            }
-            .frame(width: 13, height: 13)
-            .scaleEffect(0.94 + 0.12 * breathe)
-            .opacity(0.7 + 0.3 * breathe)
+        ZStack {
+            DockLayerMotion(kind: .breathe(period: 2.4), color: color.opacity(0.18), paused: !focus.engaged)
+                .frame(width: 28, height: 28)
+            TracingGlyph(icon: icon, color: color)
+                .id(icon)
+                .transition(DockMotion.reveal(from: .bottom, reduceMotion: reduceMotion))
         }
+        .animation(DockMotion.animation(reduceMotion: reduceMotion), value: icon)
+    }
+}
+
+private struct TracingGlyph: View {
+    let icon: Ph
+    let color: Color
+    @State private var drawn = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let visible = drawn || !DockMotion.isEnabled(reduceMotion: reduceMotion)
+        ZStack {
+            PhosphorShape(icon: icon).fill(color.opacity(visible ? 0.95 : 0.45))
+            PhosphorShape(icon: icon)
+                .trim(from: 0, to: visible ? 1 : 0)
+                .stroke(color, style: StrokeStyle(lineWidth: 0.35, lineCap: .round, lineJoin: .round))
+        }
+        .frame(width: 13, height: 13)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.32), value: visible)
+        .onAppear { drawn = true }
     }
 }
 
@@ -801,7 +804,8 @@ struct BotDispatchCard: View {
                         .dockFont(.body)
                         status(record)
                         if previewWorkspace == nil, canOpen {
-                            DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
+                            DockIcon(.caretRight, size: 9, color: Color.dockMetadataText)
+                                .rotationEffect(.degrees(isOpen ? 90 : 0))
                         }
                     }
                     .dockPadding(.horizontal, 12)
@@ -1057,7 +1061,8 @@ struct TurnActivityView: View, Equatable {
                     } label: {
                         HStack(spacing: 6) {
                             Text(summary).dockFont(.body, weight: .medium)
-                            DockIcon(isExpanded ? .caretDown : .caretRight, size: 10)
+                            DockIcon(.caretRight, size: 10)
+                                .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         }
                         .foregroundStyle(Color.dockSecondaryText)
                         .dockPadding(.vertical, 6)
@@ -1108,7 +1113,7 @@ struct TurnActivityView: View, Equatable {
 
     private var motionEnabled: Bool { !reduceMotion && DockThemeStyle.current.animates }
     private var stepMotion: Animation? { motionEnabled ? .spring(response: 0.38, dampingFraction: 0.86) : nil }
-    private var disclosureMotion: Animation? { motionEnabled ? .dockEase(duration: 0.18) : nil }
+    private var disclosureMotion: Animation? { DockMotion.disclosure(reduceMotion: !motionEnabled) }
     private func card(_ segment: TurnActivitySegment) -> some View {
         let assigned = zip(segment.calls, segment.records).filter { $0.0.name == "kanban_create" }.map(\.1.id)
         return BotDispatchCard(
@@ -1170,7 +1175,8 @@ struct TurnActivityView: View, Equatable {
                     stepIcon(.brain)
                     Text(title).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                     if !call.isComplete { ProgressView().controlSize(.mini) }
-                    DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
+                    DockIcon(.caretRight, size: 9, color: Color.dockMetadataText)
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
                 }
                 .contentShape(Rectangle())
             }
@@ -1212,7 +1218,8 @@ struct TurnActivityView: View, Equatable {
                         toolLabel(call)
                         Text("+\(stats.added)").foregroundStyle(Color.dockSuccess)
                         Text("−\(stats.removed)").foregroundStyle(Color.dockDestructive)
-                        DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
+                        DockIcon(.caretRight, size: 9, color: Color.dockMetadataText)
+                            .rotationEffect(.degrees(isOpen ? 90 : 0))
                     }
                     .dockFont(.metadata, weight: .medium, design: .monospaced)
                     .contentShape(Rectangle())

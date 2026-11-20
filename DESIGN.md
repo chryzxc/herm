@@ -4205,7 +4205,7 @@ their category colors across metric and theme changes.
 Neutral skins use neutral interaction and selection. Character skins use their
 own hue. Semantic status and identity colors use the shared solid palette.
 
-Disclosure groups use `DockDisclosureGroupStyle`: the caret, label, and remaining header width form one keyboard-focusable button. Expanded content keeps its own interactions; the header reports expanded/collapsed state and respects Reduce Motion.
+Disclosure groups use `DockDisclosureGroupStyle`: the caret, label, and remaining header width form one keyboard-focusable button. The body reveals from the header at its natural width, so text keeps its wrapping and a second click can reverse the reveal. Expanded content keeps its own interactions; the header reports expanded/collapsed state and respects Reduce Motion.
 
 ### Task and development visual replies
 
