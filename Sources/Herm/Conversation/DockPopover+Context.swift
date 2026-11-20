@@ -497,7 +497,9 @@ extension DockPopover {
     /// The Bots page: every bot's main chat beside the open conversation.
     func openBotsPage(with bot: BotSummary? = nil) {
         sessionNavNavigation.selectBots()
-        Task { await botMode.refreshNow(force: true) }
+        // A forced refresh publishes its spinner twice and rebuilds the page mid-switch;
+        // the page polls on its own, so only an empty roster waits on a forced load.
+        Task { await botMode.refreshNow(force: botMode.bots.isEmpty, probeCapability: true, minimumInterval: 5) }
         fullscreenSurface = .bots
         inspectorScope = .session
         if let bot {

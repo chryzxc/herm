@@ -235,7 +235,9 @@ struct BotChatsPage: View, Equatable {
         } else {
             let sections = BotChatsOrdering.sections(
                 items, folders: folders.folders, botSections: folders.botSections, isSearching: isSearching)
-            ScrollView {
+            // Rows sliding under a still pointer otherwise flip every row's hover (and the
+            // page-level hoveredBotID, which rebuilds the whole list) on each scroll frame.
+            HoverPausingScrollView {
                 // ponytail: eager VStack so folder moves animate; a LazyVStack cross-fades them. Fine for a roster.
                 // Sections sit apart so a folder's last row never reads as part of the next group.
                 VStack(spacing: 12) {
@@ -559,7 +561,7 @@ struct BotChatsPage: View, Equatable {
         Group {
             HStack(spacing: 8) {
                 // The face animates while the bot works; the row draws no spinner.
-                BotAvatarView(bot: bot, imageData: bots.avatarImages[bot.id], size: 34)
+                BotAvatarView(bot: bot, imageData: bots.avatarImages[bot.id], size: 38)
                     .overlay(alignment: .bottomTrailing) {
                         if !isSelected, let session = bot.chat?.unreadSession(title: bot.name) {
                             SessionUnreadReplyBadge(session: session, showUnavailable: false)

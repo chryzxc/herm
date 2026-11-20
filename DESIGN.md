@@ -2695,10 +2695,11 @@ from Folder for keyboard users and bots without a main chat. Search flattens
 folders so no match hides in a collapsed one. Deleting a folder returns its
 items to the top level.
 
-Rows are compact. Each bot row shows a 34pt avatar whose face animates while the main chat
+Rows are compact. Each bot row shows a 38pt avatar whose face animates while the main chat
 works (no spinner), the name, a small pill in 10pt medium type with the bot's role (its Hermes
 title; no pill without one), the main chat's last-message time, and a one-line
-preview ("No messages yet" when empty). The avatar carries the Sessions list's
+preview ("No messages yet" when empty). Like the Sessions list, the list pauses
+row hover while it scrolls. The avatar carries the Sessions list's
 unread-reply count badge at its bottom-trailing corner while the row is not on
 screen; opening the chat marks it read. Rows sort by main-chat activity, newest first; idle bots keep roster
 order. The open bot takes the selected fill. On open, the page reopens the
