@@ -80,6 +80,7 @@ struct ConversationTranscriptSnapshot: Equatable {
     let context: Context
     let prepend: TranscriptHistoryPrepend?
     let navigator: MessageNavigatorSnapshot
+    let navigatorCount: Int
     var navigatorItems: [MessageNavigatorItem] { navigator.items }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -88,7 +89,7 @@ struct ConversationTranscriptSnapshot: Equatable {
             && lhs.layoutGeneration == rhs.layoutGeneration
             && lhs.messages.count == rhs.messages.count
             && lhs.range == rhs.range && lhs.rows == rhs.rows && lhs.context == rhs.context
-            && lhs.prepend == rhs.prepend && lhs.navigator === rhs.navigator
+            && lhs.prepend == rhs.prepend && lhs.navigator === rhs.navigator && lhs.navigatorCount == rhs.navigatorCount
     }
 }
 
@@ -105,6 +106,7 @@ final class ConversationTranscriptSource: ObservableObject {
     let coordinator: ConversationTranscriptCoordinator
     private var subscriptions: Set<AnyCancellable> = []
     private var refreshScheduled = false
+    private var needsNavigator: Bool
     private var holdingPrefetch = false
     private var heldMeasurementContext: NativeMarkdownDocumentContainerView.MeasurementContext?
     private var isActive = true
@@ -115,13 +117,14 @@ final class ConversationTranscriptSource: ObservableObject {
 
     init(
         model: DockModel, bots: BotModeModel, actions: ConversationMessageActionState,
-        voice: VoiceOutput, coordinator: ConversationTranscriptCoordinator
+        voice: VoiceOutput, coordinator: ConversationTranscriptCoordinator, needsNavigator: Bool = true
     ) {
         self.model = model
         self.bots = bots
         self.actions = actions
         self.voice = voice
         self.coordinator = coordinator
+        self.needsNavigator = needsNavigator
         showingPreview = model.sessionTranscriptPreview != nil
         coordinator.synchronize(model: model)
         if !showingPreview, model.sessionActionsReady, let id = model.unreadDividerMessageID,
@@ -133,7 +136,7 @@ final class ConversationTranscriptSource: ObservableObject {
         }
         snapshot = Self.makeSnapshot(
             model: model, bots: bots, actions: actions, voice: voice, range: coordinator.mountedRange,
-            generation: coordinator.generation)
+            generation: coordinator.generation, needsNavigator: needsNavigator)
         coordinator.onAcceptedLayout = { [weak self] sessionID in
             guard let self, self.model.transcriptPresentationID == sessionID,
                 self.snapshot.layoutSessionID == sessionID,
@@ -249,7 +252,7 @@ final class ConversationTranscriptSource: ObservableObject {
         showingPreview = hasPreview
         let next = Self.makeSnapshot(
             model: model, bots: bots, actions: actions, voice: voice, range: coordinator.mountedRange,
-            generation: coordinator.generation)
+            generation: coordinator.generation, needsNavigator: needsNavigator)
         guard next != snapshot else {
             // A refresh that changes nothing was triggered by an unrelated
             // publisher (often another running session); counted to find them.
@@ -266,6 +269,12 @@ final class ConversationTranscriptSource: ObservableObject {
         isActive = true
         refresh()
         prefetch()
+    }
+
+    func setNavigatorDemand(_ demanded: Bool) {
+        guard needsNavigator != demanded else { return }
+        needsNavigator = demanded
+        refresh()
     }
 
     func suspend() {
@@ -330,7 +339,7 @@ final class ConversationTranscriptSource: ObservableObject {
 
     private static func makeSnapshot(
         model: DockModel, bots: BotModeModel, actions: ConversationMessageActionState,
-        voice: VoiceOutput, range: Range<Int>, generation: UInt64
+        voice: VoiceOutput, range: Range<Int>, generation: UInt64, needsNavigator: Bool
     ) -> ConversationTranscriptSnapshot {
         let messages = model.displayedTranscriptMessages
         let preview = model.sessionTranscriptPreview
@@ -349,6 +358,10 @@ final class ConversationTranscriptSource: ObservableObject {
             uniqueKeysWithValues: botRecordIDs.compactMap { id in
                 model.botLiveSteps[id].map { (id, $0) }
             })
+        let loadedCount = preview == nil ? messages.count : 0
+        let olderCount =
+            preview == nil && loadedCount < MessageNavigator.minimumMessagesToShowNavigator
+            ? model.unloadedTranscriptPrompts.count : 0
         return ConversationTranscriptSnapshot(
             sessionID: model.sessionID, layoutSessionID: model.transcriptPresentationID, isPreview: preview != nil,
             unreadDividerMessageID: preview == nil && model.sessionActionsReady ? model.unreadDividerMessageID : nil,
@@ -401,7 +414,9 @@ final class ConversationTranscriptSource: ObservableObject {
                 deliveryChecking: model.deliveryChecksInFlight.contains(model.composerDraftKey),
                 deliveryCheckNote: model.deliveryCheckNotes[model.composerDraftKey],
                 deliveryCheckAvailable: model.sessionStorageID != nil
-            ), prepend: model.lastTranscriptPrepend, navigator: preview?.navigator ?? model.messageNavigatorSnapshot
+            ), prepend: model.lastTranscriptPrepend,
+            navigator: needsNavigator ? (preview?.navigator ?? model.messageNavigatorSnapshot) : .empty,
+            navigatorCount: loadedCount + olderCount
         )
     }
 }

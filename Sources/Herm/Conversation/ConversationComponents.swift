@@ -1053,16 +1053,16 @@ struct TurnActivityView: View, Equatable {
                     }
                     .dockPadding(.vertical, 6)
                 }
-                .transition(.opacity)
             } else {
                 HStack {
                     Button {
-                        withAnimation(disclosureMotion) { expansionOverride = !isExpanded }
+                        expansionOverride = !isExpanded
                     } label: {
                         HStack(spacing: 6) {
                             Text(summary).dockFont(.body, weight: .medium)
                             DockIcon(.caretRight, size: 10)
                                 .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                                .animation(disclosureMotion, value: isExpanded)
                         }
                         .foregroundStyle(Color.dockSecondaryText)
                         .dockPadding(.vertical, 6)
@@ -1070,7 +1070,6 @@ struct TurnActivityView: View, Equatable {
                     }
                     .buttonStyle(.dockHover)
                     .accessibilityLabel(isExpanded ? "Hide activity" : "Show activity")
-                    .transition(.opacity)
                 }
                 if isExpanded {
                     steps(prepared.segments)
@@ -1087,8 +1086,12 @@ struct TurnActivityView: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(stepMotion, value: prepared.signature)
-        .animation(stepMotion, value: runningSince != nil)
+        .animation(runningSince == nil ? nil : stepMotion, value: prepared.signature)
+        .transaction(value: runningSince != nil) { transaction in
+            // Commit the finished height without springing the viewport through intermediate sizes.
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
     }
 
     /// Whole units only: "45 seconds", "3 minutes", "2 hours".

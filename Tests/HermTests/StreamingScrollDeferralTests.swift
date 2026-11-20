@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 import Testing
 
 @testable import Herm
@@ -46,6 +47,29 @@ struct StreamingScrollDeferralTests {
         #expect(streaming.text.isEmpty)
         streaming.appendPresentation("A new response.")
         #expect(updates == 3)
+        withExtendedLifetime(observation) {}
+    }
+
+    @Test func completionKeepsTheOutgoingReplyVisibleUntilTheTranscriptTakesOver() {
+        let streaming = StreamingText()
+        let id = UUID()
+        var visibility: [Bool] = []
+        let observation = ConversationMessageRow.visibleTextChanges(streaming, messageID: id).sink {
+            visibility.append($0)
+        }
+        streaming.appendPresentation("# Result\n\nReady.")
+        let chunks = streaming.chunks
+        streaming.retainCompletionPresentation(for: id)
+        streaming.clearLivePresentation()
+
+        #expect(streaming.text.isEmpty)
+        #expect(visibility == [false, true])
+        #expect(streaming.retainedCompletion(for: id)?.text == "# Result\n\nReady.")
+        #expect(streaming.retainedCompletion(for: id)?.chunks == chunks)
+        #expect(streaming.retainedCompletion(for: UUID()) == nil)
+
+        streaming.clearPresentation()
+        #expect(visibility == [false, true, false])
         withExtendedLifetime(observation) {}
     }
 

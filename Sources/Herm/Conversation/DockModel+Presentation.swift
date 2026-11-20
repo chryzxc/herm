@@ -116,10 +116,11 @@ extension DockModel {
         if !messageNavigatorNeedsRefresh, let cached = cachedMessageNavigatorItems, cached.sessionID == owner {
             return cached.snapshot
         }
+        if cachedMessageNavigatorItems?.sessionID != owner { cachedMessageNavigatorRows.removeAll() }
         let items = MessageNavigator.items(
             messages: messages,
             earlierPrompts: unloadedTranscriptPrompts,
-            sessionID: owner
+            sessionID: owner, reusing: &cachedMessageNavigatorRows
         )
         // Metadata-only message edits must not invalidate navigator identity.
         let snapshot: MessageNavigatorSnapshot
@@ -136,6 +137,8 @@ extension DockModel {
     var messageNavigatorItems: [MessageNavigatorItem] {
         messageNavigatorSnapshot.items
     }
+
+    var hasNavigatorMessages: Bool { !messages.isEmpty || !unloadedTranscriptPrompts.isEmpty }
 
     /// Compatibility accessor over the composer's draft so send, steering,
     /// clarification, and external writers (voice transcripts, quick prompts)

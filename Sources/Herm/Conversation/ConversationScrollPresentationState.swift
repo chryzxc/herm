@@ -6,7 +6,7 @@ import Observation
 @MainActor
 @Observable
 final class ConversationScrollPresentationState: ObservableObject {
-    let objectWillChange = ObservableObjectPublisher()
+    nonisolated(unsafe) let objectWillChange = ObservableObjectPublisher()
     private var atBottom = true
     private var unreadCount = 0
     private var targets: Set<MessageNavigatorTarget> = []

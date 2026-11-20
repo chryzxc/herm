@@ -41,7 +41,7 @@ struct ResponseDurationLabel: View {
     }
 }
 
-struct StreamingPresentationChunk: Identifiable, Equatable {
+struct StreamingPresentationChunk: Identifiable, Equatable, Sendable {
     let id: Int
     let text: String
     let revision: Int
@@ -56,7 +56,7 @@ struct StreamingPresentationChunk: Identifiable, Equatable {
     }
 }
 
-indirect enum StreamingChunkContext: Equatable {
+indirect enum StreamingChunkContext: Equatable, Sendable {
     case markdown
     case paragraph
     case list(marker: String, indentation: Int)
@@ -245,8 +245,14 @@ final class StreamingText: ObservableObject {
     /// text remains owned by DockModel.
     func retainCompletionPresentation(for messageID: UUID? = nil) {
         completionSnapshot = chunks
-        completionSnapshotText = chunks.map(\.text).joined()
+        completionSnapshotText = text
         completionSnapshotMessageID = messageID
+    }
+
+    /// The outgoing live row can still render before the transcript publishes its completed row.
+    func retainedCompletion(for messageID: UUID) -> (text: String, chunks: [StreamingPresentationChunk])? {
+        guard completionSnapshotMessageID == messageID, let completionSnapshot else { return nil }
+        return (completionSnapshotText, completionSnapshot)
     }
 
     /// The snapshot belongs to one completed message. Other long rows must
@@ -412,29 +418,58 @@ final class StreamingTextPresentation: ObservableObject {
 /// Renders the in-flight response without reflowing it during a manual scroll.
 struct StreamingMessageText: View {
     let streaming: StreamingText
+    let messageID: UUID
+    var completedMarkdown: String? = nil
+    var completionChunks: [StreamingPresentationChunk]? = nil
     @Environment(\.conversationScrollController) private var scrollController
     @StateObject private var presentation = StreamingTextPresentation()
+    @State private var prepared: MarkdownRenderDocument?
 
     var body: some View {
-        GenerativeUIIntegration.renderReply(streaming.text, streaming: true) { standardBody }
-            .onAppear { presentation.observe(streaming, controller: scrollController) }
-            .onChange(of: ObjectIdentifier(streaming)) { _, _ in
-                presentation.observe(streaming, controller: scrollController)
-            }
-            .onChange(of: scrollController.map { ObjectIdentifier($0) }) { _, _ in
-                presentation.observe(streaming, controller: scrollController)
-            }
-            .onDisappear { presentation.stopObserving() }
+        let completion = streaming.retainedCompletion(for: messageID)
+        let text = completedMarkdown ?? completion?.text ?? streaming.text
+        let chunks = completionChunks ?? completion?.chunks ?? streaming.chunks
+        let key = completedMarkdown.map { MarkdownMessageView.renderKey(for: $0) }
+        return GenerativeUIIntegration.renderReply(text, streaming: true) {
+            standardBody(text: text, chunks: chunks, document: prepared?.source == completedMarkdown ? prepared : nil)
+        }
+        .task(id: key) {
+            guard let key, let completedMarkdown else { return }
+            let document = await ConversationMarkdownPrefetch.prepareCompletion(
+                completedMarkdown, key: key, controller: scrollController)
+            if !Task.isCancelled { prepared = document }
+        }
+        .onAppear { updateObservation() }
+        .onChange(of: completedMarkdown != nil) { _, _ in updateObservation() }
+        .onChange(of: ObjectIdentifier(streaming)) { _, _ in
+            updateObservation()
+        }
+        .onChange(of: scrollController.map { ObjectIdentifier($0) }) { _, _ in
+            updateObservation()
+        }
+        .onDisappear { presentation.stopObserving() }
+    }
+
+    private func updateObservation() {
+        if completedMarkdown == nil {
+            presentation.observe(streaming, controller: scrollController)
+        } else {
+            presentation.stopObserving()
+        }
     }
 
     @ViewBuilder
-    private var standardBody: some View {
-        if StreamingMarkdownRendererPolicy.usesNativeRenderer(for: streaming.text) {
+    private func standardBody(
+        text: String, chunks: [StreamingPresentationChunk], document: MarkdownRenderDocument?
+    ) -> some View {
+        if completedMarkdown != nil || StreamingMarkdownRendererPolicy.usesNativeRenderer(for: text) {
             NativeStreamingMarkdownView(
-                chunks: streaming.chunks, source: streaming.text, themeRevision: DockThemeRuntime.revision)
+                chunks: chunks, source: text, themeRevision: DockThemeRuntime.revision, completedDocument: document
+            )
+            .fixedSize(horizontal: false, vertical: true)
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(streaming.chunks) { chunk in
+                ForEach(chunks) { chunk in
                     StreamingChunkText(chunk: chunk)
                         .equatable()
                 }
@@ -447,30 +482,31 @@ struct StreamingMessageText: View {
 /// appended once; only the final mutable chunk is replaced on each flush.
 @MainActor
 struct NativeStreamingMarkdownView: NSViewRepresentable {
+    @Environment(\.conversationScrollController) private var scrollController
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @Environment(\.accessibilitySwitchControlEnabled) private var switchControlEnabled
     let chunks: [StreamingPresentationChunk]
     let source: String
     let themeRevision: Int
+    var completedDocument: MarkdownRenderDocument? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NativeMarkdownDocumentContainerView {
         let view = NativeMarkdownDocumentContainerView()
-        view.markdownOpenURL = context.environment.markdownOpenURL
-        view.setBodyStyle(
-            size: DockTypography.size(.conversation, scale: context.environment.dockWorkspaceScale), weight: .regular)
-        view.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
-        context.coordinator.update(view, chunks: chunks, source: source, themeRevision: themeRevision)
+        view.retainsStreamingMeasurements = true
+        updateNSView(view, context: context)
         return view
     }
 
     func updateNSView(_ nsView: NativeMarkdownDocumentContainerView, context: Context) {
+        nsView.scrollController = scrollController
         nsView.markdownOpenURL = context.environment.markdownOpenURL
         nsView.setBodyStyle(
             size: DockTypography.size(.conversation, scale: context.environment.dockWorkspaceScale), weight: .regular)
         nsView.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
-        context.coordinator.update(nsView, chunks: chunks, source: source, themeRevision: themeRevision)
+        context.coordinator.update(
+            nsView, chunks: chunks, source: source, themeRevision: themeRevision, completedDocument: completedDocument)
     }
 
     func sizeThatFits(
@@ -485,6 +521,7 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
     final class Coordinator {
         private var renderedThemeRevision: Int?
         private(set) var sectionPreparationCount = 0
+        private weak var previousView: NativeMarkdownDocumentContainerView?
         private var previousChunks: [StreamingPresentationChunk] = []
         private var sectionEnds: [Int] = []
         private(set) var preparedSections: [MarkdownRenderSection] = []
@@ -492,8 +529,18 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
             _ view: NativeMarkdownDocumentContainerView,
             chunks: [StreamingPresentationChunk],
             source: String,
-            themeRevision: Int
+            themeRevision: Int, completedDocument: MarkdownRenderDocument? = nil
         ) {
+            if let completedDocument {
+                if !previousChunks.isEmpty {
+                    previousChunks.removeAll()
+                    sectionEnds.removeAll()
+                    preparedSections.removeAll()
+                }
+                previousView = nil
+                view.apply(document: completedDocument)
+                return
+            }
             let started = DispatchTime.now().uptimeNanoseconds
             let preparationsBefore = sectionPreparationCount
             if renderedThemeRevision != nil, renderedThemeRevision != themeRevision { view.reset() }
@@ -527,7 +574,9 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
                 sectionEnds.append(preparedSections.count)
             }
             previousChunks = chunks
-            view.applyStreaming(sections: preparedSections, source: source)
+            view.applyStreaming(
+                sections: preparedSections, source: source, retained: previousView === view ? retained : -1)
+            previousView = view
             let tailBytes = chunks.last(where: { $0.isMutableTail })?.text.utf8.count ?? 0
             let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             DebugLog.writePerformance(
@@ -559,27 +608,21 @@ private struct StreamingChunkText: View, Equatable {
     }
 }
 
-/// Metadata for the in-flight assistant row. It observes live text because the
-/// row itself is an equatable boundary and the placeholder exists (via
-/// `message.start`) before the first delta; until text arrives the
-/// "Responding" indicator already shows the timer.
+/// Metadata shown once the in-flight assistant row has visible text.
 struct StreamingResponseMetadata: View {
-    @ObservedObject var streaming: StreamingText
     let timestamp: Date
     let timeLabel: String
     let modelName: String?
     let responseDuration: TimeInterval?
 
     var body: some View {
-        if streaming.text.contains(where: { !$0.isWhitespace }) {
-            HStack(spacing: 6) {
-                Text(timeLabel)
-                ResponseDurationLabel(startedAt: timestamp, finishedDuration: responseDuration)
-                if let modelName { Text("· \(modelName)") }
-            }
-            .dockFont(.machineMetadata)
-            .foregroundStyle(Color.dockMetadataText)
-            .dockPadding(.horizontal, 4)
+        HStack(spacing: 6) {
+            Text(timeLabel)
+            ResponseDurationLabel(startedAt: timestamp, finishedDuration: responseDuration)
+            if let modelName { Text("· \(modelName)") }
         }
+        .dockFont(.machineMetadata)
+        .foregroundStyle(Color.dockMetadataText)
+        .dockPadding(.horizontal, 4)
     }
 }

@@ -266,6 +266,24 @@ struct MarkdownPreparationTests {
         #expect(NativeMarkdownCompletedHeightCache.hits == hits)
     }
 
+    @Test func streamingTailReusesPrefixGeometryAndRemeasuresAtNewWidth() throws {
+        let source = "# Heading\n\nFirst paragraph.\n\nLast paragraph."
+        let key = MarkdownMessageView.renderKey(for: source)
+        let first = MarkdownRenderDocumentBuilder.build(source: source, key: key)
+        let finalSource = source + String(repeating: " more text", count: 40)
+        let last = MarkdownRenderDocumentBuilder.build(source: finalSource, key: key)
+        try #require(first.sections.count > 1 && first.sections.count == last.sections.count)
+        let streaming = NativeMarkdownDocumentContainerView()
+        streaming.applyStreaming(sections: first.sections, source: source)
+        _ = streaming.measuredHeight(forWidth: 400)
+        streaming.applyStreaming(sections: last.sections, source: finalSource, retained: first.sections.count - 1)
+        let fresh = NativeMarkdownDocumentContainerView()
+        fresh.applyStreaming(sections: last.sections, source: finalSource)
+        for width: CGFloat in [400, 220] {
+            #expect(streaming.measuredHeight(forWidth: width) == fresh.measuredHeight(forWidth: width))
+        }
+    }
+
     @Test func shortMutableStreamingTailBypassesBothCompletedCaches() {
         NativeMarkdownCompletedHeightCache.removeAll()
         let source = "Short mutable tail \(UUID())"

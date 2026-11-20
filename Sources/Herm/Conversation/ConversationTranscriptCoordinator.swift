@@ -92,6 +92,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     var onPreparationCancelled: () -> Void = {}
     var onPreparationInvalidated: () -> Void = {}
     private var navigationAfterLayout: (@MainActor () -> Void)?
+    private var laidOutGeneration: UInt64?
     /// The reader repinned to the bottom of a widened window during a gesture.
     private var compactsWhenSettled = false
 
@@ -147,7 +148,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             if restore(saved, messages: messages, rowIDs: rowIDs) { return }
         }
         setRange(ConversationMessageWindow.rangeForSessionReplacement(totalCount: totalCount))
-        navigationAfterLayout = { [weak self] in self?.followTail() }
+        if totalCount > 0 { navigationAfterLayout = { [weak self] in self?.followTail() } }
     }
 
     private func restore(_ saved: SavedPosition, messages: [ChatMessage], rowIDs: [Int: UUID]) -> Bool {
@@ -261,10 +262,17 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     /// view is attached; before that a scroll lands nowhere and is lost.
     private func runNavigationIfAttached() -> Bool {
         guard let navigate = navigationAfterLayout else { return false }
-        guard controller.geometry != nil, Set(rowViewports.map(\.index)) == Set(mountedRange) else { return true }
+        guard controller.geometry != nil, laidOutGeneration == generation else { return true }
         navigationAfterLayout = nil
-        scheduleScroll(navigate)
+        navigate()
         return true
+    }
+
+    private func queueTailLanding() {
+        navigationAfterLayout = { [weak self] in
+            guard let self, self.presentation.isAtBottom else { return }
+            self.controller.scrollToBottom()
+        }
     }
 
     func contentResized() {
@@ -273,7 +281,10 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             applyAnchor()
             return
         }
-        guard presentation.isAtBottom else { return }
+        guard presentation.isAtBottom, let geometry = controller.geometry else { return }
+        // A collapse can already have clamped the native clip to the new tail.
+        let bottom = max(0, geometry.documentHeight - geometry.visibleHeight)
+        guard abs(geometry.visibleTop - bottom) > 0.5 else { return }
         followTail()
     }
 
@@ -384,6 +395,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         else { return }
         onAcceptedLayout(layout.sessionID)
         rowViewports = layout.rows
+        laidOutGeneration = layout.generation
         if runNavigationIfAttached() { return }
         if pendingPage == nil, queuedDirection != 0, let geometry = controller.geometry {
             let direction = queuedDirection
@@ -478,7 +490,11 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         lastResponseCount = bubbleCount
         if newCount < oldCount { presentation.unseenMessageCount = 0 }
         if presentation.isAtBottom {
-            if newCount > oldCount || added > 0 { followTail() }
+            if oldCount == 0, !range.isEmpty {
+                queueTailLanding()
+            } else if newCount > oldCount || added > 0 {
+                followTail()
+            }
         } else if newCount >= oldCount {
             presentation.unseenMessageCount += added
         }
@@ -596,7 +612,9 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         presentation.isAtBottom = false
         presentation.unseenMessageCount = 0
         setRange(ConversationMessageWindow.jumpWindow(aroundIndex: index, totalCount: totalCount))
-        navigationAfterLayout = afterLayout ?? { [weak self] in self?.alignTop(index) }
+        navigationAfterLayout = { [weak self] in
+            self?.scheduleScroll(afterLayout ?? { [weak self] in self?.alignTop(index) })
+        }
     }
 
     /// Puts a mounted row at the top of the viewport natively, from its measured position.

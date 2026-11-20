@@ -3240,9 +3240,9 @@ The canonical stream and activity continue accumulating while browsing history;
 returning to the live reply presents the current state without replaying UI updates.
 The jump-to-message rail sits on the left edge of wide conversations, with hover
 previews opening inward to its right. Find opens at the same left edge.
-The message navigator reuses its immutable history projection across activity and
-scroll refreshes; offscreen edits and stored-history changes still update search
-and navigation. Ordinary Markdown chunks do not restart visual-reply parsing tasks.
+The message navigator prepares previews when the rail or Find needs them. It reuses
+unchanged previews when messages are edited or older pages are loaded. Ordinary
+Markdown chunks do not restart visual-reply parsing tasks.
 Find matches full message text away from the main thread. Query edits, history
 changes, closing Find, and session changes cancel obsolete matching; stale results
 cannot be selected. Return reuses matching results or waits for the current query,
@@ -3256,8 +3256,11 @@ small slices, and the current page stays visible until its next page is ready.
 Requested pages continue preparing during scrolling; speculative work waits for
 the reader to pause. Prepared documents and measurements survive cache eviction
 until the matching page layout completes. A bounded 32,000-entry memory cache reuses numeric completed-section heights by exact
-source, kind, width, body style, theme identity/revision, and mention revision. Streaming
-measurements remain local; completed code entries also retain their numeric content size.
+source, kind, width, body style, theme identity/revision, and mention revision. Stable
+streamed sections share these measurements with the completed reply. During a long
+reply's handoff, its existing content stays visible while the completed document is
+prepared in slices that yield to input. Matching native text sections stay mounted
+with their selection. Code entries also retain their numeric content size.
 Reusable text and code views
 measure sections before their display views are created, so cold history pages
 do not construct a text view for every offscreen paragraph. Scrolling remounts the same

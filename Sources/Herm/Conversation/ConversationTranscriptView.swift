@@ -61,7 +61,7 @@ struct ConversationTranscriptView: View, Equatable {
         _source = StateObject(
             wrappedValue: ConversationTranscriptSource(
                 model: model, bots: botMode, actions: messageActionState, voice: voiceOutput,
-                coordinator: coordinator()))
+                coordinator: coordinator(), needsNavigator: false))
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
@@ -77,13 +77,15 @@ struct ConversationTranscriptView: View, Equatable {
             && lhs.themeRevision == rhs.themeRevision
     }
 
-    var effectiveMountedRange: Range<Int> { source.snapshot.range }
-
     var body: some View {
         let snapshot = source.snapshot
         let _ = coordinator.performance.recordTranscriptEvaluation()
         let _ = HermPerformanceRecorder.countBody("ConversationTranscriptView")
         GeometryReader { viewport in
+            let showsMap =
+                snapshot.navigatorCount >= MessageNavigator.minimumMessagesToShowNavigator
+                && viewport.size.width - trailingContentInset >= 820
+            let needsNavigator = hostVisible && (showsMap || isShowingMessageSearch)
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottom) {
                     // Each scroll frame otherwise re-hit-tests every mounted
@@ -103,10 +105,9 @@ struct ConversationTranscriptView: View, Equatable {
                                     DockLoadingState(
                                         title: "Loading conversation…", minHeight: max(300, viewport.size.height - 16))
                                 }
-                                let range = effectiveMountedRange
+                                let range = snapshot.range
                                 let generation = snapshot.layoutGeneration
                                 let sessionID = snapshot.sessionID
-                                let dispatches = snapshot.context.dispatches
                                 let defaultBot = botMode.visibleBots.first(where: \.isDefault)
                                 ForEach(snapshot.rows, id: \.message.id) { descriptor in
                                     let message = descriptor.message
@@ -117,7 +118,7 @@ struct ConversationTranscriptView: View, Equatable {
                                             unreadDivider
                                         }
                                         messageRow(
-                                            message, index: descriptor.index, dispatches: dispatches,
+                                            message, index: descriptor.index, snapshot: snapshot,
                                             defaultBot: defaultBot)
 
                                     }
@@ -148,7 +149,7 @@ struct ConversationTranscriptView: View, Equatable {
                                         approvalAnswer: snapshot.context.approvalAnswer, transcriptMode: true)
                                 }
                                 if model.sessionActionsReady {
-                                    botHandoffRow
+                                    botHandoffRow(context: snapshot.context)
                                         .animation(.spring(response: 0.45, dampingFraction: 0.8), value: workingCrewIDs)
                                 }
                             }
@@ -213,10 +214,7 @@ struct ConversationTranscriptView: View, Equatable {
                         coordinator.jumpToLatest(animated: true, reduceMotion: reduceMotion)
                     }
                     .padding(.trailing, trailingContentInset)
-                    let showsMap =
-                        snapshot.navigatorItems.count >= MessageNavigator.minimumMessagesToShowNavigator
-                        && viewport.size.width - trailingContentInset >= 820
-                    if showsMap || isShowingMessageSearch {
+                    if needsNavigator {
                         ConversationScrollNavigator(
                             presentation: coordinator.presentation, snapshot: snapshot.navigator,
                             sessionID: snapshot.sessionID ?? "", isSearchPresented: $isShowingMessageSearch,
@@ -242,17 +240,15 @@ struct ConversationTranscriptView: View, Equatable {
                             coordinator?.controller.scrollToBottom()
                         }
                     }
-                    jumpToUnread(snapshot.unreadDividerMessageID)
-                }
-                .onChange(of: snapshot.unreadDividerMessageID) { _, id in
-                    jumpToUnread(id)
                 }
                 .onChange(of: pinnedMessageJumpID) { _, id in
-                    guard let id, let item = snapshot.navigatorItems.first(where: { $0.messageID == id })
+                    guard let id, !snapshot.isPreview,
+                        let item = model.messageNavigatorItems.first(where: { $0.messageID == id })
                     else { return }
                     jumpToMessage(item, proxy: proxy)
                     pinnedMessageJumpID = nil
                 }
+                .onChange(of: needsNavigator, initial: true) { _, demanded in source.setNavigatorDemand(demanded) }
             }
         }
         .background {
@@ -301,14 +297,6 @@ struct ConversationTranscriptView: View, Equatable {
         .accessibilityLabel("Unread messages begin here")
     }
 
-    private func jumpToUnread(_ id: UUID?) {
-        guard let id, let index = model.displayedTranscriptMessages.firstIndex(where: { $0.id == id }) else { return }
-        coordinator.synchronize(model: model)
-        // A session already viewed this run reopens where the reader left it.
-        guard !coordinator.restoresViewedPosition else { return }
-        coordinator.jump(to: index)
-    }
-
     private func spotlight(_ id: UUID) {
         withAnimation(reduceMotion ? nil : .spring(duration: 0.45, bounce: 0.3)) { spotlightMessageID = id }
         Task { @MainActor in
@@ -326,7 +314,7 @@ struct ConversationTranscriptView: View, Equatable {
     }
 
     @ViewBuilder
-    var botHandoffRow: some View {
+    func botHandoffRow(context: ConversationTranscriptSnapshot.Context) -> some View {
         let fromID = model.activeBotProfileID ?? model.sessionProfileID ?? botMode.selectedProfileID
         let from =
             fromID.flatMap { botMode.botsByID[$0] } ?? botMode.visibleBots.first(where: \.isDefault)
@@ -334,7 +322,7 @@ struct ConversationTranscriptView: View, Equatable {
         let mentions = model.pendingBotMentions
         let replying = mentionedBots
         // While the turn runs the huddle is its loading row instead.
-        if model.streamingMessageIDForPresentation == nil {
+        if context.streamingID == nil {
             VStack(alignment: .leading, spacing: 4) {
                 if let lead = replying.first {
                     BotCrewRow(
@@ -343,7 +331,7 @@ struct ConversationTranscriptView: View, Equatable {
                         avatars: botMode.avatarImages, repliesToUser: true,
                         steps: Dictionary(
                             mentions.compactMap { record in
-                                source.snapshot.context.botSteps[record.id].map { (record.botID, $0) }
+                                context.botSteps[record.id].map { (record.botID, $0) }
                             }, uniquingKeysWith: { first, _ in first })
                     )
                     .transition(
@@ -358,7 +346,7 @@ struct ConversationTranscriptView: View, Equatable {
                         avatars: botMode.avatarImages,
                         steps: Dictionary(
                             model.workingBotDispatches.compactMap { record in
-                                source.snapshot.context.botSteps[record.id].map { (record.botID, $0) }
+                                context.botSteps[record.id].map { (record.botID, $0) }
                             }, uniquingKeysWith: { first, _ in first })
                     )
                     .transition(.opacity.combined(with: .offset(y: 6)))
@@ -382,11 +370,12 @@ struct ConversationTranscriptView: View, Equatable {
 
     @ViewBuilder
     func messageRow(
-        _ message: ChatMessage, index: Int, dispatches: [String: BotActivityRecord], defaultBot: BotSummary?
+        _ message: ChatMessage, index: Int, snapshot: ConversationTranscriptSnapshot, defaultBot: BotSummary?
     ) -> some View {
-        let target = MessageNavigatorTarget(sessionID: model.sessionID ?? "", messageID: message.id)
-        let isStreaming = message.id == model.streamingMessageIDForPresentation
-        let activity = isStreaming ? source.snapshot.context.streamingActivity : message.activity
+        let target = MessageNavigatorTarget(sessionID: snapshot.sessionID ?? "", messageID: message.id)
+        let context = snapshot.context
+        let isStreaming = message.id == context.streamingID
+        let activity = isStreaming ? context.streamingActivity : message.activity
         let workingBotID =
             message.botProfileID ?? model.activeBotProfileID ?? model.sessionProfileID
             ?? botMode.selectedProfileID
@@ -395,15 +384,15 @@ struct ConversationTranscriptView: View, Equatable {
         if message.role == .hermes, isStreaming || !activity.isEmpty {
             let rowDispatches = Dictionary(
                 activity.compactMap { call in
-                    dispatches[call.id].map { (call.id, $0) }
+                    context.dispatches[call.id].map { (call.id, $0) }
                 }, uniquingKeysWith: { first, _ in first })
             let rowSteps = Dictionary(
                 rowDispatches.values.compactMap { record in
-                    source.snapshot.context.botSteps[record.id].map { (record.id, $0) }
+                    context.botSteps[record.id].map { (record.id, $0) }
                 }, uniquingKeysWith: { first, _ in first })
             TurnActivityView(
                 activity: activity,
-                runningSince: isStreaming ? (model.streamingResponseStartedAt ?? message.timestamp) : nil,
+                runningSince: isStreaming ? (context.streamingStartedAt ?? message.timestamp) : nil,
                 duration: message.responseDuration,
                 expandsByDefault: !message.hasBodyText && message.images.isEmpty,
                 bot: isStreaming ? workingBot : nil,
@@ -428,13 +417,12 @@ struct ConversationTranscriptView: View, Equatable {
             ConversationMessageRow(
                 message: message,
                 changes: ConversationChangeSummary.turnFiles(
-                    messages: source.snapshot.messages, at: index, streamingID: source.snapshot.context.streamingID),
-                isStreamingMessage: message.id == model.streamingMessageIDForPresentation,
-                streamingMood: message.id == model.streamingMessageIDForPresentation
+                    messages: snapshot.messages, at: index, streamingID: context.streamingID),
+                isStreamingMessage: isStreaming,
+                streamingMood: isStreaming
                     ? BotMood(
-                        status: model.status,
-                        compacting: model.compactingSessionID != nil
-                            && model.compactingSessionID == model.sessionID)
+                        status: context.status,
+                        compacting: context.compactingID != nil && context.compactingID == target.sessionID)
                     : nil,
                 streamingText: model.streamingText,
                 activeBotProfileID: model.activeBotProfileID,
@@ -447,15 +435,14 @@ struct ConversationTranscriptView: View, Equatable {
                 },
                 pendingAction: messageActionState.pendingAction(for: message.id),
                 areSessionActionsAvailable:
-                    source.snapshot.context.actionsReady
-                    && !(model.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
+                    context.actionsReady && !target.sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                 isSpeaking: voiceOutput.speakingMessageID == message.id,
                 metrics: conversationMetrics,
                 actionTarget: target,
-                delivery: source.snapshot.context.deliveryStates[message.id],
-                deliveryChecking: source.snapshot.context.deliveryChecking,
-                deliveryCheckNote: source.snapshot.context.deliveryCheckNote,
-                deliveryCheckAvailable: source.snapshot.context.deliveryCheckAvailable,
+                delivery: context.deliveryStates[message.id],
+                deliveryChecking: context.deliveryChecking,
+                deliveryCheckNote: context.deliveryCheckNote,
+                deliveryCheckAvailable: context.deliveryCheckAvailable,
                 onCheckDelivery: {
                     Task { await model.checkDeliveryStatus(owner: owner, generation: generation) }
                 },

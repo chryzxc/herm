@@ -1362,7 +1362,7 @@ extension DockModel {
         streamingResponseStartedAt = responseStartedAt
         streamingMessageBuffer = ""
         streamingMessagePendingPresentationDelta = ""
-        streamingMessagePublishedText = ""
+        streamingMessagePublishedSuffix = ""
         streamingTurnActivity = []
         splitOffCallIDs = []
         turnCommittedText = ""
@@ -1424,10 +1424,17 @@ extension DockModel {
                     limit: TranscriptHistoryPaging.pageRowLimit, minimumDisplayRows: 1, maximumPages: 1
                 ), generation == sessionResumeGeneration, sessionStorageID == storageID
             else { return }
-            insertTimelineMessages(
-                Self.parseMessages(loaded.rows).messages.filter {
-                    $0.systemEvent != nil && $0.systemEvent?.isFeed == false
-                })
+            // Legacy system notes can be stored as user text. Assistant rows need a display kind to qualify.
+            let candidates = loaded.rows.filter { row in
+                let role = row["role"] as? String
+                return role == "system" || role == "user" || row["display_kind"] as? String != nil
+            }
+            let (restored, _) = await Self.parseMessagesOffMain(
+                candidates, defaultBotProfileID: nil, defaultBotDisplayName: nil)
+            guard !Task.isCancelled, generation == sessionResumeGeneration, sessionStorageID == storageID else {
+                return
+            }
+            insertTimelineMessages(restored.messages.filter { $0.systemEvent?.isFeed == false })
         }
     }
 
@@ -1611,7 +1618,7 @@ extension DockModel {
         streamingResponseStartedAt = nil
         streamingMessageBuffer = ""
         streamingMessagePendingPresentationDelta = ""
-        streamingMessagePublishedText = ""
+        streamingMessagePublishedSuffix = ""
         streamingText.clearPresentation()
         isAwaitingClarificationResume = false
     }
@@ -1629,7 +1636,7 @@ extension DockModel {
         streamingResponseStartedAt = nil
         streamingMessageBuffer = ""
         streamingMessagePendingPresentationDelta = ""
-        streamingMessagePublishedText = ""
+        streamingMessagePublishedSuffix = ""
         streamingText.clearPresentation()
         streamingMessageGeneration &+= 1
     }
@@ -1853,16 +1860,12 @@ extension DockModel {
     func flushStreamingMessage() {
         streamingMessageFlushTask?.cancel()
         streamingMessageFlushTask = nil
-        guard streamingMessageID != nil,
-            streamingMessageSessionID == sessionID,
-            let newText = pendingStreamingText()
-        else { return }
+        guard streamingMessageID != nil, streamingMessageSessionID == sessionID else { return }
         // Only the delta is new; the published tail catches a phrase split
         // across flushes. Commit re-checks the whole buffer.
         applyVisionNoticeDetectionIfNeeded(
-            to: String(streamingMessagePublishedText.suffix(Self.visionUnsupportedPhrase.count - 1))
-                + streamingMessagePendingPresentationDelta)
-        let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : newText
+            to: streamingMessagePublishedSuffix + streamingMessagePendingPresentationDelta)
+        let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageBuffer
         if streamingMessageIsVisionNotice {
             streamingText.replacePresentation(with: publishedText)
         } else {
@@ -1870,7 +1873,7 @@ extension DockModel {
             streamingMessagePendingPresentationDelta = ""
             streamingText.appendPresentation(delta)
         }
-        streamingMessagePublishedText = publishedText
+        streamingMessagePublishedSuffix = String(publishedText.suffix(Self.visionUnsupportedPhrase.count - 1))
     }
 
     /// Commits the buffered stream into the transcript. Callers are response
@@ -1922,10 +1925,6 @@ extension DockModel {
         streamingText.retainCompletionPresentation(for: id)
         streamingText.clearLivePresentation()
         streamingResponseStartedAt = nil
-    }
-
-    func pendingStreamingText() -> String? {
-        streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageBuffer
     }
 
     func applyVisionNoticeDetectionIfNeeded(to text: String) {

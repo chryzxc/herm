@@ -227,7 +227,7 @@ extension DockPopover {
                 {
                     isShowingMessageSearch.toggle()
                 }
-                if !model.messageNavigatorItems.isEmpty {
+                if model.hasNavigatorMessages {
                     Button("Pinned messages", icon: .pushPin) { isShowingMessagePins.toggle() }
                 }
             }

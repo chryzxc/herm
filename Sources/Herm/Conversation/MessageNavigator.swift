@@ -14,7 +14,7 @@ struct MessageNavigatorTarget: Hashable, Identifiable, Sendable {
 
 struct MessageNavigatorItem: Equatable, Identifiable, Sendable {
     let target: MessageNavigatorTarget
-    let ordinal: Int
+    var ordinal: Int
     let roleLabel: String
     let preview: String
     let contentRevision: Int
@@ -32,6 +32,7 @@ struct MessageNavigatorItem: Equatable, Identifiable, Sendable {
 
 /// Immutable projection identity lets transcript refreshes skip walking unchanged history.
 final class MessageNavigatorSnapshot: Sendable {
+    static let empty = MessageNavigatorSnapshot(items: [])
     let items: [MessageNavigatorItem]
 
     init(items: [MessageNavigatorItem]) {
@@ -44,6 +45,22 @@ enum MessageNavigator {
     static let minimumPreviewLimit = 2
     static let minimumMessagesToShowNavigator = 24
 
+    struct RowKey: Hashable {
+        let id: UUID
+        let revision: Int
+        let isUser: Bool
+        let isReply: Bool
+        let hasImages: Bool
+
+        init(_ message: ChatMessage) {
+            id = message.id
+            revision = message.contentRevision
+            isUser = message.role == .user
+            isReply = message.role == .hermes && message.systemEvent == nil && message.kanbanNotice == nil
+            hasImages = !message.images.isEmpty
+        }
+    }
+
     static func items(messages: [ChatMessage], sessionID: String, previewLimit: Int = defaultPreviewLimit)
         -> [MessageNavigatorItem]
     {
@@ -54,16 +71,7 @@ enum MessageNavigator {
             return memoized
         }
         let projected = messages.enumerated().map { index, message in
-            let text = GenerativeUIIntegration.readableText(message)
-            return MessageNavigatorItem(
-                target: MessageNavigatorTarget(sessionID: sessionID, messageID: message.id),
-                ordinal: index + 1,
-                roleLabel: message.role == .user ? "You" : "Herm",
-                preview: boundedPreview(text, limit: limit),
-                contentRevision: message.contentRevision,
-                hasImages: !message.images.isEmpty,
-                searchText: text
-            )
+            item(for: message, ordinal: index + 1, sessionID: sessionID, previewLimit: limit)
         }
         memo.store(items: projected, fingerprint: fingerprint)
         return projected
@@ -78,6 +86,43 @@ enum MessageNavigator {
         previewLimit: Int = defaultPreviewLimit
     ) -> [MessageNavigatorItem] {
         let loaded = items(messages: messages, sessionID: sessionID, previewLimit: previewLimit)
+        return addingEarlierPrompts(earlierPrompts, to: loaded, sessionID: sessionID, previewLimit: previewLimit)
+    }
+
+    static func items(
+        messages: [ChatMessage], earlierPrompts: [TranscriptTimelineEntry], sessionID: String,
+        reusing cache: inout [RowKey: MessageNavigatorItem]
+    ) -> [MessageNavigatorItem] {
+        var next: [RowKey: MessageNavigatorItem] = [:]
+        next.reserveCapacity(messages.count)
+        let loaded = messages.enumerated().map { index, message in
+            let key = RowKey(message)
+            var row =
+                cache[key]
+                ?? item(
+                    for: message, ordinal: index + 1, sessionID: sessionID, previewLimit: defaultPreviewLimit)
+            row.ordinal = index + 1
+            next[key] = row
+            return row
+        }
+        cache = next
+        return addingEarlierPrompts(earlierPrompts, to: loaded, sessionID: sessionID, previewLimit: defaultPreviewLimit)
+    }
+
+    private static func item(
+        for message: ChatMessage, ordinal: Int, sessionID: String, previewLimit: Int
+    ) -> MessageNavigatorItem {
+        let text = GenerativeUIIntegration.readableText(message)
+        return MessageNavigatorItem(
+            target: MessageNavigatorTarget(sessionID: sessionID, messageID: message.id), ordinal: ordinal,
+            roleLabel: message.role == .user ? "You" : "Herm", preview: boundedPreview(text, limit: previewLimit),
+            contentRevision: message.contentRevision, hasImages: !message.images.isEmpty, searchText: text)
+    }
+
+    private static func addingEarlierPrompts(
+        _ earlierPrompts: [TranscriptTimelineEntry], to loaded: [MessageNavigatorItem], sessionID: String,
+        previewLimit: Int
+    ) -> [MessageNavigatorItem] {
         guard !earlierPrompts.isEmpty else { return loaded }
         let limit = max(minimumPreviewLimit, previewLimit)
         let prompts = earlierPrompts.enumerated().map { index, entry in
@@ -96,15 +141,9 @@ enum MessageNavigator {
         let offset = prompts.count
         return prompts
             + loaded.map { item in
-                MessageNavigatorItem(
-                    target: item.target,
-                    ordinal: item.ordinal + offset,
-                    roleLabel: item.roleLabel,
-                    preview: item.preview,
-                    contentRevision: item.contentRevision,
-                    hasImages: item.hasImages,
-                    searchText: item.searchText
-                )
+                var item = item
+                item.ordinal += offset
+                return item
             }
     }
 

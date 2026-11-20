@@ -168,14 +168,62 @@ struct ConversationTranscriptIntegrationTests {
         fixture.window.orderFrontRegardless()
         defer { fixture.window.orderOut(nil) }
         try await fixture.settle()
+        let previousNavigation = fixture.coordinator.navigationGeneration
         fixture.model.unreadDividerMessageID = messages[20].id
         try await fixture.settle()
+        #expect(fixture.coordinator.navigationGeneration == previousNavigation + 1)
         #expect(fixture.coordinator.mountedRange.contains(20))
         let row = try #require(fixture.coordinator.rowViewports.first { $0.target.messageID == messages[20].id })
         let geometry = try #require(fixture.controller.geometry)
         #expect(row.minY >= geometry.visibleTop - 2)
         #expect(row.minY < geometry.visibleTop + geometry.visibleHeight)
         #expect(!fixture.coordinator.presentation.isAtBottom)
+    }
+
+    @Test(arguments: [false, true])
+    func finishingAnActivityHeavyReplyPreservesScrollPosition(browsingHistory: Bool) async throws {
+        let messages = (0..<20).map { index in
+            ChatMessage(role: .hermes, text: "Earlier reply \(index)\n\n" + String(repeating: "Paragraph. ", count: 45))
+        }
+        let fixture = Fixture(messages: messages)
+        let model = fixture.model
+        let sessionID = try #require(model.sessionID)
+        model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": [:]])
+        let replyID = try #require(model.streamingMessageID)
+        let text = "The reply is ready."
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": sessionID, "payload": ["delta": text]])
+        model.flushStreamingMessage()
+        model.streamingTurnActivity = (0..<24).map { index in
+            ActiveToolCall(
+                id: "step-\(index)", name: "terminal", input: "Fixture step", context: "",
+                startedAt: .distantPast, isComplete: true)
+        }
+        fixture.window.orderFrontRegardless()
+        defer { fixture.window.orderOut(nil) }
+        try await fixture.settle()
+
+        if browsingHistory {
+            let row = try #require(fixture.coordinator.rowViewports.first { $0.index == 14 })
+            try fixture.move(to: row.minY + 20)
+            try await fixture.settle()
+        }
+        let before = try #require(fixture.controller.geometry)
+        #expect(fixture.coordinator.presentation.isAtBottom == !browsingHistory)
+
+        model.receiveGatewayEvent("message.complete", params: ["session_id": sessionID, "payload": ["text": text]])
+        try await fixture.settle()
+
+        let after = try #require(fixture.controller.geometry)
+        #expect(model.messages.last?.id == replyID)
+        #expect(model.messages.last?.text == text)
+        #expect(after.documentHeight < before.documentHeight - 100)
+        #expect(fixture.coordinator.presentation.isAtBottom == !browsingHistory)
+        if browsingHistory {
+            #expect(abs(after.visibleTop - before.visibleTop) < 1)
+        } else {
+            #expect(after.distanceToBottom < 1)
+        }
     }
 
     @Test func initialUnreadPositionSurvivesAppearance() async throws {

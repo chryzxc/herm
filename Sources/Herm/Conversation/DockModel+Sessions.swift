@@ -1237,15 +1237,11 @@ extension DockModel {
                     todos, sessionID: resolvedSessionID, revision: state["revision"] as? Int ?? 0,
                     updatedAt: written ?? .distantPast)
             }
-            let promotedPreview = sessionTranscriptPreview != nil
             sessionTranscriptPreview = nil
             sessionPreviewImageTask?.cancel()
             sessionTranscriptLoadState = .ready
             recordSessionSwitch(
                 "fresh_publication", startedAt: switchStartedAt, generation: resumeGeneration, token: switchToken)
-            if !promotedPreview && !isRefreshingActiveSession && unreadDividerMessageID == nil {
-                scrollToLatestMessageRequest &+= 1
-            }
             refreshSessionModelOptions()
             refreshSessionReasoningVariant()
             refreshSessionFast()
@@ -1413,7 +1409,7 @@ extension DockModel {
         streamingResponseStartedAt = nil
         streamingMessageBuffer = ""
         streamingMessagePendingPresentationDelta = ""
-        streamingMessagePublishedText = ""
+        streamingMessagePublishedSuffix = ""
         conversationActivityPhase = .idle
         streamingMessageIsVisionNotice = false
         isSending = false

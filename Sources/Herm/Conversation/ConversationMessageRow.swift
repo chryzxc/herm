@@ -333,14 +333,19 @@ struct ConversationMessageRow: View, Equatable {
                     } else if !message.text.isEmpty || (isStreamingMessage && streamingHasText)
                         || !ArtifactService.deliveredFiles(in: message.activity).isEmpty
                     {
+                        let completion = completionMarkdown
                         Group {
-                            if isStreamingMessage, let streamingText {
+                            if let streamingText, isStreamingMessage || completion != nil {
                                 // The row is an equatable boundary that does
                                 // not observe live text. StreamingMessageText
                                 // observes it and owns the native switch, so a
                                 // long response can never freeze at the
                                 // snapshot captured by the last row render.
-                                StreamingMessageText(streaming: streamingText)
+                                StreamingMessageText(
+                                    streaming: streamingText, messageID: message.id, completedMarkdown: completion,
+                                    completionChunks: completion.flatMap { _ in
+                                        streamingText.retainedCompletion(for: message.id)?.chunks
+                                    })
                             } else if message.isError {
                                 DockCallout(
                                     tone: .danger,
@@ -377,9 +382,8 @@ struct ConversationMessageRow: View, Equatable {
                         EmptyView()
                     } else if !message.isError, message.hasBodyText {
                         messageActions
-                    } else if isStreamingMessage, let streamingText {
+                    } else if isStreamingMessage, streamingHasText {
                         StreamingResponseMetadata(
-                            streaming: streamingText,
                             timestamp: message.timestamp,
                             timeLabel: message.timeLabel,
                             modelName: message.modelName,
@@ -390,7 +394,7 @@ struct ConversationMessageRow: View, Equatable {
                     }
                 }
                 .onHover { hoverPresentation.isHovering = $0 }
-                .onReceive(Self.visibleTextChanges(isStreamingMessage ? streamingText : nil)) {
+                .onReceive(Self.visibleTextChanges(isStreamingMessage ? streamingText : nil, messageID: message.id)) {
                     streamingHasText = $0
                 }
             }
@@ -400,12 +404,28 @@ struct ConversationMessageRow: View, Equatable {
         .dockPadding(.top, message.role == .user ? 12 : 0)
     }
 
+    /// Only ordinary streamed replies can keep their native body during completion.
+    private var completionMarkdown: String? {
+        guard !isStreamingMessage, !message.isError, !message.isBotHandoffReply, changes.isEmpty,
+            let live = streamingText?.retainedCompletion(for: message.id),
+            StreamingMarkdownRendererPolicy.usesNativeRenderer(for: live.text),
+            !RichDocument.mentionsSurface(message.text),
+            ChatMediaSegment.split(message.text, delivered: ArtifactService.deliveredFiles(in: message.activity))
+                == [.markdown(message.text)]
+        else { return nil }
+        let text = message.text.trimmingCharacters(in: .newlines)
+        guard live.text.trimmingCharacters(in: .newlines) == text, !RichMarkdownPart.isCandidate(text) else {
+            return nil
+        }
+        return text
+    }
+
     /// Emits only when the reply crosses from blank to visible text, so the row
     /// re-renders once per turn rather than on every streamed delta.
-    static func visibleTextChanges(_ streaming: StreamingText?) -> AnyPublisher<Bool, Never> {
+    static func visibleTextChanges(_ streaming: StreamingText?, messageID: UUID) -> AnyPublisher<Bool, Never> {
         guard let streaming else { return Just(false).eraseToAnyPublisher() }
         return streaming.$chunks
-            .map { ConversationMessageRow.hasVisibleText($0) }
+            .map { ConversationMessageRow.hasVisibleText(streaming.retainedCompletion(for: messageID)?.chunks ?? $0) }
             .removeDuplicates()
             .eraseToAnyPublisher()
     }

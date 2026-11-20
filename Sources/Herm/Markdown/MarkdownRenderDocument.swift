@@ -282,6 +282,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         let themeID: DockThemeID
     }
     weak var scrollController: ConversationScrollController?
+    var retainsStreamingMeasurements = false
     var markdownOpenURL = OpenURLAction {
         InAppBrowser.open($0)
         return .handled
@@ -291,7 +292,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     static let sectionSpacing: CGFloat = 8
 
     private final class Entry {
-        let section: MarkdownRenderSection
+        var section: MarkdownRenderSection
         var view: (any NativeMarkdownMeasurableSection)?
         var spacingBefore: CGFloat
         var heights = NativeMarkdownHeightCache()
@@ -332,6 +333,39 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     private var lastFocusedIndex: Int?
     private(set) var viewportSectionVisits = 0
     private(set) var viewportMountChanges = 0
+    /// All mounted documents in one scroller share the clip's notification registration.
+    @MainActor private final class ClipViewport {
+        private static let byClip = NSMapTable<NSClipView, ClipViewport>.weakToWeakObjects()
+        let documents = NSHashTable<NativeMarkdownDocumentContainerView>.weakObjects()
+        nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
+
+        static func forClip(_ clip: NSClipView) -> ClipViewport {
+            if let viewport = byClip.object(forKey: clip) { return viewport }
+            let viewport = ClipViewport(clip: clip)
+            byClip.setObject(viewport, forKey: clip)
+            return viewport
+        }
+
+        private init(clip: NSClipView) {
+            clip.postsBoundsChangedNotifications = true
+            clip.postsFrameChangedNotifications = true
+            for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
+                observers.append(
+                    NotificationCenter.default.addObserver(forName: name, object: clip, queue: .main) { [weak self] _ in
+                        MainActor.assumeIsolated {
+                            guard let self else { return }
+                            for document in self.documents.allObjects { document.viewportDidChange() }
+                        }
+                    })
+            }
+        }
+
+        deinit {
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        }
+    }
+
+    private var clipViewport: ClipViewport?
     private weak var observedClipView: NSClipView?
     private var observedAncestors: [ObjectIdentifier] = []
     nonisolated(unsafe) private var viewportObservers: [NSObjectProtocol] = []
@@ -361,7 +395,12 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
 
     private func observeViewport() {
         let clip = window == nil ? nil : enclosingScrollView?.contentView
-        observedClipView = clip
+        if observedClipView !== clip {
+            clipViewport?.documents.remove(self)
+            clipViewport = clip.map(ClipViewport.forClip)
+            clipViewport?.documents.add(self)
+            observedClipView = clip
+        }
         needsLayout = true
         // SwiftUI detaches and reattaches platform views as rows scroll past.
         // Keep the observers across that instead of rebuilding them each time;
@@ -369,9 +408,8 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         guard let clip else { return }
         var chain: [NSView] = []
         var ancestor: NSView? = self
-        while let view = ancestor {
+        while let view = ancestor, view !== clip {
             chain.append(view)
-            if view === clip { break }
             ancestor = view.superview
         }
         let ids = chain.map(ObjectIdentifier.init)
@@ -417,11 +455,12 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         if let cached = cachedIntrinsicHeight, cachedSolveWidth == width {
             return cached
         }
-        var frames: [CGRect] = []
+        var frames = cachedSolveWidth == width ? cachedFrames : []
         frames.reserveCapacity(entries.count)
-        var y: CGFloat = 0
-        var hasVisibleSection = false
-        for entry in entries {
+        var y = frames.last?.maxY ?? 0
+        var hasVisibleSection = y > 0
+        for entry in entries.dropFirst(frames.count) {
+            let sharesHeight = !isStreamingDocument || (retainsStreamingMeasurements && entry.section.id >= 0)
             let height: CGFloat
             let measurementWidth: CGFloat
             if case .code = entry.section.kind { measurementWidth = 0 } else { measurementWidth = width }
@@ -432,7 +471,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                 themeID: DockThemeRuntime.current)
             if let cached = entry.heights.height(forWidth: measurementWidth) {
                 height = cached
-            } else if !isStreamingDocument,
+            } else if sharesHeight,
                 let cached = scrollController?.preparedPage?.measurements[sharedKey]
                     ?? NativeMarkdownCompletedHeightCache.measurement(for: sharedKey)
             {
@@ -452,7 +491,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                 sectionMeasurementCount += 1
                 if Self.tracksPerformance { Self.totalForegroundMeasurements += 1 }
                 entry.heights.store(height, forWidth: measurementWidth)
-                if !isStreamingDocument {
+                if sharesHeight {
                     NativeMarkdownCompletedHeightCache.store(
                         height, for: sharedKey, codeSize: (measuringView as? NativeMarkdownCodeView)?.contentSize)
                 }
@@ -495,6 +534,8 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     /// the scroll's display cycle from queueing a layout pass per frame; the
     /// layout pass is only needed when the solved geometry is out of date.
     private func viewportDidChange() {
+        let start = HermPerformanceRecorder.active ? CACurrentMediaTime() : 0
+        defer { if start > 0 { HermPerformanceRecorder.recordWork("markdown.viewport", since: start) } }
         guard bounds.width > 1, cachedSolveWidth == bounds.width, entries.count == cachedFrames.count else {
             needsLayout = true
             return
@@ -514,7 +555,8 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         }
         let keepAll = keepsAccessibilitySectionsMounted || NSApp?.isFullKeyboardAccessEnabled == true
         let range = keepAll || viewport == nil ? entries.indices : sectionRange(intersecting: viewport!)
-        var focused = window?.firstResponder as? NSView
+        if range == entries.indices, lastMountedRange == range, lastKeepAll == keepAll { return }
+        var focused = viewIndices.isEmpty ? nil : window?.firstResponder as? NSView
         var focusedIndex: Int?
         while let view = focused, view !== self {
             if let index = viewIndices[ObjectIdentifier(view)] {
@@ -656,11 +698,12 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     }
 
     func apply(document: MarkdownRenderDocument) {
+        let finishingStream = isStreamingDocument
         isStreamingDocument = false
-        applyProjection(document)
+        applyProjection(document, finishingStream: finishingStream)
     }
 
-    private func applyProjection(_ document: MarkdownRenderDocument) {
+    private func applyProjection(_ document: MarkdownRenderDocument, finishingStream: Bool = false) {
         source = document.source
         let themeRevision = DockThemeRuntime.revision
         let mentionRevision = BotMentions.revision
@@ -672,16 +715,32 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         renderedSections = document.sections
         renderedThemeRevision = themeRevision
         renderedMentionRevision = mentionRevision
-        var previous = Dictionary(entries.map { ($0.section.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var previous =
+            finishingStream
+            ? [:] : Dictionary(entries.map { ($0.section.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var streamed =
+            finishingStream
+            ? Dictionary(entries.map { ($0.section.sourceRange, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
         var next: [Entry] = []
         next.reserveCapacity(document.sections.count)
+        var prefix = 0
         var previousSource: String?
         for section in document.sections {
-            let existing = previous.removeValue(forKey: section.id)
+            let existing =
+                finishingStream
+                ? streamed.removeValue(forKey: section.sourceRange).flatMap { entry in
+                    entry.section.kind == section.kind && entry.section.source == section.source ? entry : nil
+                } : previous.removeValue(forKey: section.id)
             let spacing = previousSource.map { Self.spacing(after: $0, before: section) } ?? 0
             let entry: Entry
-            if let existing, canReuseHeights, existing.section == section {
+            if let existing, canReuseHeights, finishingStream || existing.section == section {
+                if prefix == next.count, prefix < entries.count, entries[prefix] === existing,
+                    spacing == existing.spacingBefore
+                {
+                    prefix += 1
+                }
                 entry = existing
+                entry.section = section
                 entry.spacingBefore = spacing
             } else {
                 let view = existing?.view.flatMap { Self.isCompatible($0, with: section) ? $0 : nil }
@@ -708,13 +767,32 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
             })
         lastMountedRange = nil
         cachedIntrinsicHeight = nil
-        cachedSolveWidth = -1
-        cachedFrames = []
+        if cachedFrames.count > prefix { cachedFrames.removeLast(cachedFrames.count - prefix) }
         needsLayout = true
         invalidateIntrinsicContentSize()
     }
 
-    func applyStreaming(sections: [MarkdownRenderSection], source: String) {
+    func applyStreaming(sections: [MarkdownRenderSection], source: String, retained: Int = -1) {
+        if retained >= 0, isStreamingDocument, renderedThemeRevision == DockThemeRuntime.revision,
+            renderedMentionRevision == BotMentions.revision, retained == entries.count - 1,
+            sections.count == entries.count, let section = sections.last, let old = entries.last,
+            old.section.id == section.id, old.view.map({ Self.isCompatible($0, with: section) }) ?? true
+        {
+            self.source = source
+            if section == old.section { return }
+            if let view = old.view { Self.update(view, with: section, bodySize: bodySize, bodyWeight: bodyWeight) }
+            let spacing = retained > 0 ? Self.spacing(after: entries[retained - 1].section.source, before: section) : 0
+            let entry = Entry(section: section, view: old.view, spacingBefore: spacing)
+            entry.horizontalOffset = old.horizontalOffset
+            entries[retained] = entry
+            renderedSections = sections
+            if cachedFrames.count > retained { cachedFrames.removeLast() }
+            cachedIntrinsicHeight = nil
+            lastMountedRange = nil
+            needsLayout = true
+            invalidateIntrinsicContentSize()
+            return
+        }
         isStreamingDocument = true
         applyProjection(
             MarkdownRenderDocument(
@@ -1398,6 +1476,14 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
             }
         }
         quoteRanges = output.quoteRanges
+        hasLinks = false
+        output.string.enumerateAttribute(.link, in: NSRange(location: 0, length: output.string.length)) {
+            value, _, stop in
+            if value != nil {
+                hasLinks = true
+                stop.pointee = true
+            }
+        }
         // A reused measurement view must not inherit the previous block's font.
         typingAttributes = output.string.length > 0 ? output.string.attributes(at: 0, effectiveRange: nil) : [:]
         defaultParagraphStyle = typingAttributes[.paragraphStyle] as? NSParagraphStyle
@@ -1428,6 +1514,9 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
     /// text changes.
     override func resetCursorRects() {
         super.resetCursorRects()
+        guard hasLinks else { return }
+        let start = HermPerformanceRecorder.active ? CACurrentMediaTime() : 0
+        defer { if start > 0 { HermPerformanceRecorder.recordWork("markdown.linkCursorRects", since: start) } }
         let visible = visibleRect
         guard !visible.isEmpty, let layoutManager, let textContainer else { return }
         let origin = textContainerOrigin
@@ -1452,6 +1541,7 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         var characters: NSRange
     }
     private var textRevision = 0
+    private var hasLinks = false
     private var linkRects: (key: LinkRectKey, rects: [CGRect])?
     private(set) var linkRectComputationCount = 0
 

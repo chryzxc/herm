@@ -5,6 +5,27 @@ import Testing
 
 @MainActor
 struct ConversationTranscriptSourceTests {
+    @Test func hiddenNavigatorDefersPreviewProjectionUntilRequested() {
+        let model = DockModel(initialSessionID: "hidden-navigator")
+        model.messages = (0..<30).map { ChatMessage(role: .hermes, text: "Message \($0)") }
+        let source = ConversationTranscriptSource(
+            model: model, bots: BotModeModel(), actions: ConversationMessageActionState(),
+            voice: VoiceOutput(), coordinator: ConversationTranscriptCoordinator(), needsNavigator: false)
+        #expect(source.snapshot.navigatorCount == 30)
+        #expect(source.snapshot.navigatorItems.isEmpty)
+        #expect(model.cachedMessageNavigatorItems == nil)
+
+        source.setNavigatorDemand(true)
+        #expect(source.snapshot.navigatorItems.count == 30)
+        source.setNavigatorDemand(false)
+        model.messages.append(ChatMessage(role: .user, text: "Latest prompt"))
+        source.refresh()
+        #expect(source.snapshot.navigatorItems.isEmpty)
+        #expect(model.cachedMessageNavigatorItems?.snapshot.items.count == 30)
+        source.setNavigatorDemand(true)
+        #expect(source.snapshot.navigatorItems.last?.searchText == "Latest prompt")
+    }
+
     @Test func deliveryStatusProjectionUpdatesAndIsScopedToOwner() {
         let model = DockModel(initialSessionID: "owner")
         defer { model.delegationMonitoringTask?.cancel() }

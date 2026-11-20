@@ -49,6 +49,32 @@ import Testing
         return "Intro\n\n```swift\n" + code.joined(separator: "\n") + "\n```\n\nOutro."
     }
 
+    @Test func finishingStreamRetainsTheSelectedTextViewAcrossSectionIDChanges() throws {
+        let source = "Paragraph to keep selected"
+        let fixture = makeFixture(source)
+        let key = MarkdownRenderKey(messageID: UUID(), contentRevision: 1, themeRevision: 1)
+        let document = MarkdownRenderDocumentBuilder.build(source: source, key: key)
+        let section = try #require(document.sections.first)
+        fixture.container.applyStreaming(
+            sections: [
+                .init(
+                    id: 99, sourceRange: section.sourceRange, source: section.source,
+                    kind: section.kind, continuation: section.continuation)
+            ],
+            source: source)
+        fixture.container.layoutSubtreeIfNeeded()
+        let streamText = try #require(fixture.container.mountedSectionViews.first as? NSTextView)
+        streamText.setSelectedRange(NSRange(location: 0, length: 9))
+        let measurements = fixture.container.sectionMeasurementCount
+
+        fixture.container.apply(document: document)
+        fixture.container.layoutSubtreeIfNeeded()
+
+        #expect(fixture.container.mountedSectionViews.first === streamText)
+        #expect(streamText.selectedRange() == NSRange(location: 0, length: 9))
+        #expect(fixture.container.sectionMeasurementCount == measurements)
+    }
+
     /// A hosted SwiftUI view re-renders whenever its window position changes,
     /// so the code block chrome must stay pure AppKit.
     @Test func codeBlockChromeHostsNoSwiftUI() {
@@ -130,6 +156,10 @@ import Testing
         text.update(markdown: "Now [one link](https://example.net).", kind: .prose)
         text.resetCursorRects()
 
+        #expect(text.linkRectComputationCount == computed + 1)
+
+        text.update(markdown: "Plain text with no links.", kind: .prose)
+        text.resetCursorRects()
         #expect(text.linkRectComputationCount == computed + 1)
     }
 

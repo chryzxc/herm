@@ -62,6 +62,7 @@ final class DockModel: ObservableObject {
     }
     private(set) var messagesRevision: UInt64 = 0
     var cachedMessageNavigatorItems: (sessionID: String, snapshot: MessageNavigatorSnapshot)?
+    var cachedMessageNavigatorRows: [MessageNavigator.RowKey: MessageNavigatorItem] = [:]
     var messageNavigatorNeedsRefresh = true
 
     let composer = ComposerText()
@@ -461,7 +462,7 @@ final class DockModel: ObservableObject {
     // UI flush made long responses progressively more expensive.
     var streamingMessageBuffer = ""
     var streamingMessagePendingPresentationDelta = ""
-    var streamingMessagePublishedText = ""
+    var streamingMessagePublishedSuffix = ""
     var streamingMessageFlushTask: Task<Void, Never>?
     var activityPresentationTask: Task<Void, Never>?
     var streamingMessageGeneration = 0

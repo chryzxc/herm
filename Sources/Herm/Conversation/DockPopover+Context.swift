@@ -1027,7 +1027,7 @@ extension DockPopover {
                 if let groupActions {
                     groupActions
                 } else {
-                    if sessionWorkspaceMode == .chat, !model.messageNavigatorItems.isEmpty {
+                    if sessionWorkspaceMode == .chat, model.hasNavigatorMessages {
                         // Pinned messages open from the "…" menu; the popover anchors here.
                         Color.clear.frame(width: 0, height: 0)
                             .dockPopover(isPresented: $isShowingMessagePins, arrowEdge: .bottom) {

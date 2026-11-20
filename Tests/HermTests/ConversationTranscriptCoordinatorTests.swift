@@ -348,6 +348,24 @@ struct ConversationTranscriptCoordinatorTests {
         #expect(coordinator.mountedRange.upperBound <= 3)
     }
 
+    @Test func firstMessagesLandAtTheTailOnceTheirRowsHaveLaidOut() async throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 3_600))
+        controller.clipView = scroll.contentView
+        let initialTop = try #require(controller.geometry).visibleTop
+        coordinator.reset(sessionID: "opening", totalCount: 0, bubbleCount: 0)
+        coordinator.messagesChanged(oldCount: 0, newCount: 500, bubbleCount: 500, prepend: nil)
+
+        coordinator.contentResized()
+        for _ in 0..<10 { await Task.yield() }
+        #expect(controller.geometry?.visibleTop == initialTop)
+
+        coordinator.receiveLayout(layout(coordinator))
+        #expect(controller.geometry?.distanceToBottom == 0)
+    }
+
     private func messages() -> [ChatMessage] {
         identities.map { ChatMessage(id: $0, role: .hermes, text: "message") }
     }

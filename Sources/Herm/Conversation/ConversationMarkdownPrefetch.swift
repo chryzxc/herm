@@ -60,6 +60,83 @@ final class ConversationMarkdownPrefetch {
     private(set) var preparationSlices = 0
     private(set) var maximumPreparationSliceNanoseconds: UInt64 = 0
 
+    static func prepareCompletion(
+        _ source: String, key: MarkdownRenderKey, controller: ConversationScrollController?
+    ) async -> MarkdownRenderDocument? {
+        let cached = MarkdownRenderDocumentCache.cached(source: source, key: key)
+        let worker = Task.detached(priority: .userInitiated) {
+            cached ?? MarkdownRenderDocumentBuilder.build(source: source, key: key)
+        }
+        let document = await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+        guard !Task.isCancelled else { return nil }
+        if let controller, let context = controller.markdownMeasurementContext,
+            context.themeRevision == key.themeRevision
+        {
+            let text = NativeMarkdownTextSectionView()
+            let code = NativeMarkdownCodeView()
+            var sliceStart = DispatchTime.now().uptimeNanoseconds
+            func resumePreparation() async -> Bool {
+                guard !Task.isCancelled else { return false }
+                if DispatchTime.now().uptimeNanoseconds - sliceStart >= 2_000_000 {
+                    do { try await Task.sleep(for: .milliseconds(2)) } catch { return false }
+                    sliceStart = DispatchTime.now().uptimeNanoseconds
+                }
+                while controller.isUserScrolling {
+                    do { try await Task.sleep(for: .milliseconds(32)) } catch { return false }
+                    sliceStart = DispatchTime.now().uptimeNanoseconds
+                }
+                if DockScrollActivity.remainingInputSettle() > 0 {
+                    guard await DockScrollActivity.waitForInputIdle() else { return false }
+                    sliceStart = DispatchTime.now().uptimeNanoseconds
+                }
+                return true
+            }
+            for section in document.sections {
+                guard await resumePreparation() else { return nil }
+                guard controller.markdownMeasurementContext == context else { break }
+                let measurement = NativeMarkdownDocumentContainerView.measurementKey(for: section, context: context)
+                if NativeMarkdownCompletedHeightCache.height(for: measurement) != nil { continue }
+                if case .code(let language) = section.kind {
+                    code.update(
+                        code: section.source, language: language, bodySize: context.bodySize, deferMeasurement: true)
+                    code.beginIncrementalLayout()
+                    var offset = 0
+                    while offset < code.incrementalTextLength {
+                        guard await resumePreparation() else { return nil }
+                        offset = code.advanceIncrementalLayout(from: offset)
+                    }
+                    code.finishIncrementalLayout()
+                    guard controller.markdownMeasurementContext == context else { break }
+                    NativeMarkdownCompletedHeightCache.store(
+                        code.measuredHeight(forWidth: context.width), for: measurement, codeSize: code.contentSize)
+                } else {
+                    text.update(
+                        markdown: section.source, kind: section.kind, bodySize: context.bodySize,
+                        bodyWeight: context.bodyWeight)
+                    text.beginIncrementalLayout(forWidth: context.width)
+                    var offset = 0
+                    while offset < text.incrementalTextLength {
+                        guard await resumePreparation() else { return nil }
+                        offset = text.advanceIncrementalLayout(from: offset)
+                    }
+                    let size = text.finishIncrementalLayout(forWidth: context.width)
+                    guard controller.markdownMeasurementContext == context else { break }
+                    NativeMarkdownCompletedHeightCache.store(size.height, for: measurement)
+                }
+            }
+        }
+        while controller?.isUserScrolling == true {
+            do { try await Task.sleep(for: .milliseconds(32)) } catch { return nil }
+        }
+        guard await DockScrollActivity.waitForInputIdle() else { return nil }
+        if cached == nil { MarkdownRenderDocumentCache.insert(document, prefetched: true) }
+        return document
+    }
+
     func cancel() {
         generation &+= 1
         task?.cancel()
