@@ -6,6 +6,25 @@ final class DockWindowHostingView<Content: View>: NSHostingView<Content> {
     /// Names this host in performance captures (`hostLayout.<role>`).
     var performanceRole = "root"
 
+    /// Split panes set this. See `needsUpdateConstraints`.
+    var containsConstraintInvalidation = false
+
+    /// A pane host publishes no constraints (`sizingOptions = []`), yet SwiftUI
+    /// still marks it `needsUpdateConstraints` on every scroll commit, and AppKit
+    /// forwards that up to the SwiftUI view hosting the split, which re-lays out
+    /// the whole window. A pane turns the request into its own layout pass,
+    /// which renders the same graph update without informing its ancestors.
+    override var needsUpdateConstraints: Bool {
+        get { super.needsUpdateConstraints }
+        set {
+            if newValue, containsConstraintInvalidation {
+                needsLayout = true
+                return
+            }
+            super.needsUpdateConstraints = newValue
+        }
+    }
+
     // Nested split-pane hosts relayout whenever the root re-renders; time it so
     // performance captures show whether that cascade is behind a dropped frame.
     override func layout() {
@@ -143,6 +162,9 @@ enum DockScrollActivity {
 @MainActor
 enum DockHostLayoutTiming {
     private static var childSeconds: [TimeInterval] = []
+    /// Receives each host's role as it finishes a layout pass. The layout
+    /// budget tests use it to count layouts per pane; it is nil in the app.
+    static var layoutObserver: ((String) -> Void)?
 
     static func begin() { childSeconds.append(0) }
 
@@ -156,6 +178,7 @@ enum DockHostLayoutTiming {
         if !childSeconds.isEmpty { childSeconds[childSeconds.count - 1] += total }
         let own = max(0, total - nested)
         HermPerformanceRecorder.recordWork("hostLayout.\(role)", milliseconds: own * 1000)
+        layoutObserver?(role)
         return own
     }
 }
@@ -170,5 +193,6 @@ func splitPaneHost(role: String = "pane") -> NSHostingView<AnyView> {
     // Panes draw their own title row; inheriting the window's titlebar safe
     // area would push every pane down a second 52pt.
     host.safeAreaRegions = []
+    host.containsConstraintInvalidation = true
     return host
 }
