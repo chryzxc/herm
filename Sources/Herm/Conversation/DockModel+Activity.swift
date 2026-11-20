@@ -40,7 +40,7 @@ extension DockModel {
             source: session.source,
             isHidden: session.isHidden,
             isWorking: session.isWorking,
-            hasUnreadUpdate: session.hasUnreadUpdate
+            hasUnreadUpdate: session.hasUnreadUpdate, isPinned: session.isPinned, modelName: session.modelName
         )
     }
 
@@ -67,7 +67,7 @@ extension DockModel {
                 source: session.source,
                 isHidden: session.isHidden,
                 isWorking: working,
-                hasUnreadUpdate: hasUnread
+                hasUnreadUpdate: hasUnread, isPinned: session.isPinned, modelName: session.modelName
             )
         }
         let recentIndex = sessions.firstIndex { $0.id == sessionID }
@@ -133,7 +133,7 @@ extension DockModel {
                 id: session.id, profileID: session.profileID, title: session.title, preview: session.preview,
                 startedAt: session.startedAt, updatedAt: session.updatedAt, messageCount: session.messageCount,
                 source: session.source, isHidden: session.isHidden, isWorking: session.isWorking,
-                hasUnreadUpdate: false)
+                hasUnreadUpdate: false, isPinned: session.isPinned, modelName: session.modelName)
         }
         sessions = sessions.map(clearingUnread)
         pinnedSessions = pinnedSessions.map(clearingUnread)
@@ -178,7 +178,7 @@ extension DockModel {
                 source: session.source,
                 isHidden: session.isHidden,
                 isWorking: session.isWorking,
-                hasUnreadUpdate: true
+                hasUnreadUpdate: true, isPinned: session.isPinned, modelName: session.modelName
             )
         }
     }

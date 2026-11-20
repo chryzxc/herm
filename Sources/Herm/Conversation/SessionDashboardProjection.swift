@@ -56,7 +56,7 @@ enum SessionDashboardProjection {
                 id: id, profileID: session.profileID, title: session.title, preview: session.preview,
                 startedAt: session.startedAt, updatedAt: session.updatedAt, messageCount: session.messageCount,
                 source: session.source, isHidden: session.isHidden, isWorking: session.isWorking,
-                hasUnreadUpdate: session.hasUnreadUpdate)
+                hasUnreadUpdate: session.hasUnreadUpdate, isPinned: session.isPinned, modelName: session.modelName)
         }
 
         let knownIDs = Set(known.map(\.id))

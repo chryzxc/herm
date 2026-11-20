@@ -2808,6 +2808,9 @@ Group chat action errors use toast notifications without an inline error row abo
 
 ### Conversation workspace
 
+The composer names a conversation's reported model as soon as it is available,
+independently of catalog loading. A reported name alone does not imply a provider route.
+
 Reserve the session rail's actual width in both density settings, including for the
 transcript, composer, welcome and floating controls; density only tightens visual spacing.
 

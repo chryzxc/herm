@@ -919,6 +919,8 @@ struct HermesSession: Identifiable, Equatable {
     /// pins come from `DockModel.pinnedSessions`; this carries other
     /// profiles' pins from the all-profile scan.
     let isPinned: Bool
+    /// Last model reported by Hermes, for display only, not provider routing.
+    let modelName: String?
 
     var displayTitle: String {
         title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled chat" : title
@@ -956,7 +958,14 @@ struct HermesSession: Identifiable, Equatable {
         HermesSession(
             id: id, profileID: profileID, title: title, preview: preview, startedAt: startedAt, updatedAt: updatedAt,
             messageCount: messageCount, source: source, isHidden: isHidden, isWorking: isWorking,
-            hasUnreadUpdate: hasUnreadUpdate, isPinned: pinned)
+            hasUnreadUpdate: hasUnreadUpdate, isPinned: pinned, modelName: modelName)
+    }
+
+    func withModelName(_ name: String?) -> HermesSession {
+        HermesSession(
+            id: id, profileID: profileID, title: title, preview: preview, startedAt: startedAt, updatedAt: updatedAt,
+            messageCount: messageCount, source: source, isHidden: isHidden, isWorking: isWorking,
+            hasUnreadUpdate: hasUnreadUpdate, isPinned: isPinned, modelName: name)
     }
 
     init(
@@ -971,7 +980,8 @@ struct HermesSession: Identifiable, Equatable {
         isHidden: Bool = false,
         isWorking: Bool = false,
         hasUnreadUpdate: Bool = false,
-        isPinned: Bool = false
+        isPinned: Bool = false,
+        modelName: String? = nil
     ) {
         self.id = id
         self.profileID = profileID
@@ -985,6 +995,8 @@ struct HermesSession: Identifiable, Equatable {
         self.isWorking = isWorking
         self.hasUnreadUpdate = hasUnreadUpdate
         self.isPinned = isPinned
+        let trimmed = modelName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.modelName = trimmed?.isEmpty == false ? trimmed : nil
     }
 }
 
