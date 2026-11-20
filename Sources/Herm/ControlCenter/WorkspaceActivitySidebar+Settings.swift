@@ -854,11 +854,7 @@ extension WorkspaceActivitySidebar {
                                 .dockFont(.body, weight: .semibold)
                                 .foregroundStyle(Color.dockPrimaryText)
                             Spacer(minLength: 0)
-                            Button {
-                                isShowingDockRestartConfirmation = true
-                            } label: {
-                                Text("Restart Herm").frame(width: 140)
-                            }
+                            Button("Restart Herm") { isShowingDockRestartConfirmation = true }
                             .buttonStyle(.dockSecondary)
                             .dockFont(.body, weight: .medium)
                             .disabled(agentUpdateService.isBusy)
