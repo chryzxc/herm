@@ -855,9 +855,9 @@ extension WorkspaceActivitySidebar {
                                 .foregroundStyle(Color.dockPrimaryText)
                             Spacer(minLength: 0)
                             Button("Restart Herm") { isShowingDockRestartConfirmation = true }
-                            .buttonStyle(.dockSecondary)
-                            .dockFont(.body, weight: .medium)
-                            .disabled(agentUpdateService.isBusy)
+                                .buttonStyle(.dockSecondary)
+                                .dockFont(.body, weight: .medium)
+                                .disabled(agentUpdateService.isBusy)
                         }
                         Text("Relaunches the app and reloads the selected Codex account.")
                             .dockFont(.body)
