@@ -44,7 +44,8 @@ enum ToolStep {
             return (
                 .bookmarkSimple, title, (a["content"] ?? a["new_text"] ?? a["old_text"]).map { String($0.prefix(100)) }
             )
-        case "skill_view": return (.sparkle, "Using skill \(a["name"] ?? "")".trimmingCharacters(in: .whitespaces), nil)
+        case "skill_view":
+            return (.bookOpen, "Using skill \(a["name"] ?? "")".trimmingCharacters(in: .whitespaces), nil)
         case "image_generate":
             return (
                 .image, isComplete ? "Image ready" : "Generating an image", a["prompt"].map { String($0.prefix(90)) }
