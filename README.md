@@ -389,6 +389,8 @@ uses airy porcelain surfaces, hairline cards, neutral graphite actions, and stab
 automatically when macOS switches between Light and Dark, including while the
 workspace is open. Skin changes also apply to the side notch and its open preview.
 
+Search, task details, and new columns open from their respective edges. Bot motion pauses during live resizing. Warm Light, Clay, and Dusk use shallower card relief. Switching skins reveals the new material from the pointer. Switch thumbs stretch between stops, checkmarks draw into place, and a side notch curves toward a pet as you drag it home.
+
 Herm uses a content-first layout across skins: shared spacing and action sizes, quiet dividers, and cards reserved for distinct objects or tasks. Selected list rows follow the active skin’s selection surface.
 
 Active navigation, icon rails, inspector tabs, and open sidebar toggles keep

@@ -330,7 +330,7 @@ struct BotFacePose {
         let bob = CGFloat(sin(t * (busy ? 7 : 1.8))) * (busy ? 0.03 : 0.018)
         let look =
             busy
-            ? CGSize(width: sin(t * 2.4) >= 0 ? 0.028 : -0.028, height: -0.012)
+            ? CGSize(width: sin(t * 2.4) * 0.028, height: -0.012)
             : CGSize(width: CGFloat(sin(t * 0.6)) * 0.025, height: CGFloat(sin(t * 0.43)) * 0.012)
         return BotFacePose(bob: bob, blink: blink, look: look, t: t)
     }
@@ -348,8 +348,13 @@ private struct BotMotion<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var focus = HermFocus.shared
 
+    @Environment(\.dockHostVisible) private var hostVisible
+    @Environment(\.dockHostResizing) private var hostResizing
+
     var body: some View {
-        if animated && busy && !reduceMotion && DockThemeStyle.current.animates && (live || focus.engaged) {
+        if animated && busy && hostVisible && !hostResizing && DockMotion.isEnabled(reduceMotion: reduceMotion)
+            && (live || focus.engaged)
+        {
             let phase = Double(BotAvatarPresentation.seed(for: id) % 1000) / 100
             TimelineView(.dockMotion(rate: 15)) { context in
                 content(.at(context.date.timeIntervalSinceReferenceDate + phase, busy: true))

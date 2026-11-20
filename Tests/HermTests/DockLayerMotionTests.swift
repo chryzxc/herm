@@ -49,13 +49,14 @@ struct DockLayerMotionTests {
     @Test func layerLoopsRespectThemeAndHostVisibility() async throws {
         let previous = DockThemeRuntime.current
         defer { DockThemeRuntime.current = previous }
-        for (theme, visible) in [
-            (DockThemeID.glass, true), (.glass, false), (.eInk, true),
+        for (theme, visible, resizing) in [
+            (DockThemeID.glass, true, false), (.glass, false, false), (.glass, true, true), (.eInk, true, false),
         ] {
             DockThemeRuntime.current = theme
             let host = NSHostingView(
                 rootView: DockLayerMotion(kind: .spin(period: 1.6, lineWidth: 1.5), color: .dockAccent)
                     .environment(\.dockHostVisible, visible)
+                    .environment(\.dockHostResizing, resizing)
                     .frame(width: 24, height: 24))
             host.frame = NSRect(x: 0, y: 0, width: 24, height: 24)
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -66,7 +67,7 @@ struct DockLayerMotionTests {
             let view = try #require(motionView(in: host))
             #expect(
                 view.spec?.paused
-                    == (!visible
+                    == (!visible || resizing
                         || !DockMotion.isEnabled(
                             reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, theme: theme))
             )

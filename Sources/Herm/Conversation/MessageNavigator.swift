@@ -267,6 +267,7 @@ struct MessageNavigatorView: View {
     let sessionID: String
     let visibleTargets: Set<MessageNavigatorTarget>
     /// The find panel stays hidden until the header search action opens it.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var isSearchPresented: Bool
     /// The marker rail needs room beside the transcript; search does not.
     var showsMap = true
@@ -342,12 +343,12 @@ struct MessageNavigatorView: View {
                             .frame(width: 300, alignment: .leading)
                             .dockPadding(.top, 10)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(DockMotion.reveal(from: .top, reduceMotion: reduceMotion))
                     }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .animation(.dockEase(duration: 0.16), value: isSearchPresented)
+            .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: isSearchPresented)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: sessionID) { _, _ in
@@ -699,6 +700,7 @@ struct RailPointerStrip: NSViewRepresentable {
         private weak var observedWindow: NSWindow?
         private var previousMouseMovedEvents = false
         private var pointerTrackingArea: NSTrackingArea?
+        private var refreshQueued = false
         private var lastY: CGFloat?
         var callbacksReady = false
         var pointerLocation: () -> NSPoint = { NSEvent.mouseLocation }
@@ -739,7 +741,7 @@ struct RailPointerStrip: NSViewRepresentable {
                     NotificationCenter.default.addObserver(
                         forName: name, object: window, queue: .main
                     ) { [weak self] _ in
-                        MainActor.assumeIsolated { self?.refreshPointer() }
+                        MainActor.assumeIsolated { self?.deferRefreshPointer() }
                     })
             }
             clickMonitor = NSEvent.addLocalMonitorForEvents(
@@ -788,7 +790,13 @@ struct RailPointerStrip: NSViewRepresentable {
         }
 
         func deferRefreshPointer() {
-            DispatchQueue.main.async { [weak self] in self?.refreshPointer() }
+            guard !refreshQueued else { return }
+            refreshQueued = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                refreshQueued = false
+                refreshPointer()
+            }
         }
 
         func refreshPointer() {

@@ -1007,11 +1007,8 @@ struct DockToggleStyle: ToggleStyle {
                                     configuration.isOn ? Color.dockAccent.opacity(0.72) : Color.dockBorderStrong,
                                     lineWidth: max(0.7, DockLayout.outline))
                         }
-                    Circle()
+                    DockSwitchThumb(position: configuration.isOn ? 1 : 0)
                         .fill(configuration.isOn ? Color.dockAccent : Color.dockSecondaryText)
-                        .frame(width: 16, height: 16)
-                        .shadow(color: configuration.isOn ? Color.dockAccentGlow : .clear, radius: 5)
-                        .offset(x: configuration.isOn ? 9 : -9)
                 }
                 .frame(width: 38, height: 22)
             }
@@ -1021,6 +1018,29 @@ struct DockToggleStyle: ToggleStyle {
         .buttonStyle(.dockHover)
         .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: configuration.isOn)
+    }
+}
+
+/// One end leads the other during travel. The thumb rounds back into a
+/// circle at either stop, including when a toggle reverses mid-flight.
+struct DockSwitchThumb: Shape {
+    var position: CGFloat
+
+    var animatableData: CGFloat {
+        get { position }
+        set { position = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let progress = min(1, max(0, position))
+        let diameter = min(16, rect.height, rect.width)
+        let travel = max(0, rect.width - diameter - 4)
+        let stretch = min(4, travel / 2) * 4 * progress * (1 - progress)
+        let center = rect.midX + (progress - 0.5) * travel
+        let thumb = CGRect(
+            x: center - (diameter + stretch) / 2, y: rect.midY - diameter / 2,
+            width: diameter + stretch, height: diameter)
+        return Capsule().path(in: thumb)
     }
 }
 
@@ -1039,7 +1059,11 @@ struct DockCheckboxStyle: ToggleStyle {
                 shape.fill(configuration.isOn ? Color.dockPrimaryText : Color.dockSurface4)
                     .overlay(shape.stroke(Color.dockBorderStrong, lineWidth: DockLayout.hairline))
                     .overlay {
-                        if configuration.isOn { DockIcon(.check, size: 10, color: .dockCanvas) }
+                        DockIcon(.check, size: 10, color: .dockCanvas)
+                            .mask(alignment: .leading) {
+                                Rectangle().scaleEffect(x: configuration.isOn ? 1 : 0, anchor: .leading)
+                            }
+                            .accessibilityHidden(true)
                     }
                     .frame(width: 16, height: 16)
                     .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }

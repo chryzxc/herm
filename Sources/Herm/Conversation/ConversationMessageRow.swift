@@ -271,7 +271,7 @@ struct ConversationMessageRow: View, Equatable {
                 }
                 .overlay(alignment: .topLeading) {
                     // Hangs 11pt above the bubble, inside the row's 12pt top padding.
-                    MessageReactionBadge(reactions: message.reactions).offset(x: -8, y: -11)
+                    MessageReactionBadge(reactions: message.reactions, anchor: .bottomTrailing).offset(x: -8, y: -11)
                 }
                 .onHover { hoverPresentation.isHovering = $0 }
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)

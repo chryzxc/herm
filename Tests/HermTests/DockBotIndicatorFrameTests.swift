@@ -15,6 +15,14 @@ struct DockBotIndicatorFrameTests {
         #expect(first.t != other.t)
     }
 
+    @Test func busyGazeCrossesCenterWithoutJumpingBetweenFrames() {
+        let center = Double.pi / 2.4
+        let before = BotFacePose.at(center - 1.0 / 30, busy: true).look.width
+        let after = BotFacePose.at(center + 1.0 / 30, busy: true).look.width
+        #expect(before > 0 && after < 0)
+        #expect(before - after < 0.01)
+    }
+
     @Test func disabledMotionIsStaticAcrossDates() {
         for date in [Date(timeIntervalSinceReferenceDate: 0), Date(timeIntervalSinceReferenceDate: 456.7)] {
             let frame = DockBotIndicatorFrame(date: date, moves: false)

@@ -31,6 +31,7 @@ final class HermesPetWindow {
     private(set) var attached: Bool {
         get { defaults.object(forKey: Self.attachedKey) as? Bool ?? true }
         set {
+            guard newValue != attached else { return }
             defaults.set(newValue, forKey: Self.attachedKey)
             motion.attached = newValue
             onAttachChange?(newValue)
@@ -118,7 +119,7 @@ final class HermesPetWindow {
         updateSize()
         if moved {
             if attached {
-                recall()
+                if dragOrigin == nil, !snapping, panel.frame.origin != self.home { panel.setFrameOrigin(self.home) }
             } else {
                 panel.setFrameOrigin(Self.clamped(panel.frame.origin, to: screen, size: windowSize))
             }
@@ -221,7 +222,7 @@ final class HermesPetWindow {
     private func step() {
         defer { if !allowed, motion.direction != 0 { motion.direction = 0 } }
         guard allowed, pet.visible, screen.width > 0 else {
-            panel.orderOut(nil)
+            if panel.isVisible { panel.orderOut(nil) }
             return
         }
         updateSize()
@@ -326,7 +327,8 @@ private struct PetWindowContent: View {
     @ObservedObject var motion: PetRoamPresentation
     let hover: (Bool) -> Void
     let recall: () -> Void
-    @State private var wobble = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var animates: Bool { DockMotion.isEnabled(reduceMotion: reduceMotion) }
     @State private var ring = 0.0  // 0 idle, then animates to 1 after an attach
     private var walkingRow: String? {
         if motion.held { return HermesPetReaction.petting.pose }  // lifted: the jump row while held or dragged
@@ -339,18 +341,10 @@ private struct PetWindowContent: View {
             pet: pet, mirrored: walkingRow == "run" && motion.direction < 0, poseOverride: walkingRow,
             spriteSize: motion.size
         )
-        .scaleEffect(motion.held ? 1.1 : motion.nearNotch ? 1.12 : 1)
-        .rotationEffect(.degrees(motion.held ? (wobble ? 5 : -5) : 0))
-        .shadow(color: .black.opacity(motion.held ? 0.35 : 0), radius: 8, y: 6)
-        .animation(.spring(response: 0.25, dampingFraction: 0.55), value: motion.held)
-        .onChange(of: motion.held) { _, held in
-            guard held else {
-                wobble = false
-                return
-            }
-            // perf-contract: allow wobble runs only while the pet is held by the pointer
-            withAnimation(.easeInOut(duration: 0.18).repeatForever(autoreverses: true)) { wobble = true }
-        }
+        .scaleEffect(animates && motion.held ? 1.045 : 1, anchor: .bottom)
+        .rotationEffect(.degrees(animates && motion.held && !motion.nearNotch ? -3 : 0), anchor: .bottom)
+        .shadow(color: .black.opacity(motion.held ? 0.22 : 0), radius: 4, y: 2)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: motion.held)
         .overlay {
             if motion.nearNotch {
                 Circle().strokeBorder(
@@ -364,8 +358,9 @@ private struct PetWindowContent: View {
                 0.8 + ring * 0.7
             ).opacity(ring == 0 ? 0 : 0.8 * (1 - ring)).dockPadding(4).allowsHitTesting(false)
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: motion.nearNotch)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18), value: motion.nearNotch)
         .onChange(of: motion.pulse) {
+            guard animates else { return }
             ring = 0.001
             withAnimation(.easeOut(duration: 0.6)) { ring = 1 }
         }

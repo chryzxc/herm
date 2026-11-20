@@ -56,11 +56,11 @@ struct MessageReaction: Equatable, Hashable, Sendable {
 /// bubbles hang it off the top corner inside their reserved top padding, and
 /// assistant rows seat it at the start of the action line.
 ///
-/// A new or changed reaction pops in with a springy overshoot and a quick
-/// wobble; a retracted one shrinks away. Reduce Motion and motion-free skins
-/// swap it with a plain fade. Views that scroll into place do not replay it.
+/// The first badge grows from its attachment point. Later emoji changes
+/// briefly compress the existing pill, without moving its message or actions.
 struct MessageReactionBadge: View {
     let reactions: [MessageReaction]
+    var anchor: UnitPoint = .topLeading
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -72,11 +72,13 @@ struct MessageReactionBadge: View {
                 chip(animates: animates)
                     .transition(
                         animates
-                            ? .scale(scale: 0.2, anchor: .bottomLeading).combined(with: .opacity) : .opacity)
+                            ? .asymmetric(
+                                insertion: .scale(scale: 0.72, anchor: anchor).combined(with: .opacity),
+                                removal: .scale(scale: 0.9, anchor: anchor).combined(with: .opacity)) : .identity)
             }
         }
         .animation(
-            animates ? .spring(duration: 0.38, bounce: 0.4) : .dockEase(duration: 0.18), value: reactions.isEmpty)
+            animates ? .dockEase(duration: 0.2) : nil, value: reactions.isEmpty)
     }
 
     private func chip(animates: Bool) -> some View {
@@ -86,15 +88,14 @@ struct MessageReactionBadge: View {
                     .font(.system(size: 13))
                     .transition(
                         animates
-                            ? .scale(scale: 0.2).combined(with: .opacity).combined(with: .offset(y: 4))
-                            : .opacity)
+                            ? .offset(y: 2).combined(with: .opacity) : .identity)
             }
         }
         .frame(minWidth: 18, minHeight: 18)
         .dockPill()
         .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
-        .modifier(ReactionPop(trigger: reactions, animates: animates))
-        .animation(animates ? .spring(duration: 0.38, bounce: 0.4) : .dockEase(duration: 0.18), value: reactions)
+        .modifier(ReactionPop(trigger: reactions, animates: animates, anchor: anchor))
+        .animation(animates ? .dockEase(duration: 0.2) : nil, value: reactions)
         .help(Self.accessibilityLabel(reactions))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.accessibilityLabel(reactions))
@@ -106,28 +107,21 @@ struct MessageReactionBadge: View {
     }
 }
 
-/// Overshoot and wobble each time the reaction list changes; never on first appearance.
+/// A live change briefly widens the pill against its attachment point.
 private struct ReactionPop: ViewModifier {
-    struct Values {
-        var scale = 1.0
-        var tilt = 0.0
-    }
-
     let trigger: [MessageReaction]
     let animates: Bool
+    let anchor: UnitPoint
 
     func body(content: Content) -> some View {
-        // Motion-free: a trigger that never changes never fires.
-        content.keyframeAnimator(initialValue: Values(), trigger: animates ? trigger : []) { view, values in
-            view.scaleEffect(values.scale).rotationEffect(.degrees(values.tilt), anchor: .bottomLeading)
+        content.keyframeAnimator(initialValue: CGFloat(0), trigger: animates ? trigger : []) { view, pressure in
+            let compression = animates ? pressure : 0
+            view.scaleEffect(x: 1 + compression * 0.09, y: 1 - compression * 0.07, anchor: anchor)
         } keyframes: { _ in
-            KeyframeTrack(\.scale) {
-                SpringKeyframe(1.28, duration: 0.16, spring: .snappy)
-                SpringKeyframe(1, duration: 0.34, spring: .bouncy)
-            }
-            KeyframeTrack(\.tilt) {
-                LinearKeyframe(-9, duration: 0.1)
-                SpringKeyframe(0, duration: 0.4, spring: .bouncy)
+            KeyframeTrack(\.self) {
+                CubicKeyframe(1, duration: 0.09)
+                CubicKeyframe(-0.25, duration: 0.11)
+                CubicKeyframe(0, duration: 0.1)
             }
         }
     }

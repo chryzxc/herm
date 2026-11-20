@@ -18,6 +18,21 @@ enum DockMotion {
         0
     }
 
+    /// Small travel from the control that opened a surface. Dismiss in place so
+    /// content underneath is readable as soon as the surface closes.
+    static func reveal(from edge: Edge, reduceMotion: Bool) -> AnyTransition {
+        guard isEnabled(reduceMotion: reduceMotion) else { return .identity }
+        let distance = revealDistance
+        let offset: AnyTransition
+        switch edge {
+        case .top: offset = .offset(y: -distance)
+        case .bottom: offset = .offset(y: distance)
+        case .leading: offset = .offset(x: -distance)
+        case .trailing: offset = .offset(x: distance)
+        }
+        return .asymmetric(insertion: .opacity.combined(with: offset), removal: .opacity)
+    }
+
     static var revealDistance: CGFloat {
         switch DockThemeStyle.current.motion {
         case .float: 5

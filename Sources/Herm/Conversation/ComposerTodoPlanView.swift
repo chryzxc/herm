@@ -67,7 +67,7 @@ struct ComposerTodoPlanView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .dockPadding(.horizontal, 4)
                 .dockPadding(.bottom, 8)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(DockMotion.reveal(from: .top, reduceMotion: reduceMotion))
             }
         }
         .animation(motion, value: plan)

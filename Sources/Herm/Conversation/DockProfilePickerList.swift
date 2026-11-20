@@ -10,7 +10,7 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     @ViewBuilder var header: () -> Header
     @ViewBuilder let row: (BotSummary) -> Row
     /// The row being dragged, the index it started from, and the pointer's travel.
-    @State private var drag: (id: String, start: Int, translation: CGFloat)?
+    @State private var drag: (id: String, start: Int, slot: Int, translation: CGFloat)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -46,6 +46,7 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
                     .modifier(
                         LiftedRow(
                             isLifted: drag?.id == bot.id,
+                            scales: DockMotion.isEnabled(reduceMotion: reduceMotion),
                             offset: liftOffset(for: bot.id, at: index), style: style))
                 }
             }
@@ -69,19 +70,23 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
         // handle moves with its row, so local translation would oscillate.
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
-                NSCursor.closedHand.set()
                 if drag?.id != id {
-                    withAnimation(liftAnimation) { drag = (id, index, 0) }
+                    NSCursor.closedHand.set()
+                    withAnimation(liftAnimation) { drag = (id, index, index, 0) }
                 }
                 guard let start = drag?.start else { return }
                 drag?.translation = value.translation.height
                 let target = DockProfilePickerReorder.target(
                     start: start, translation: value.translation.height, pitch: Self.rowPitch, count: count)
-                guard var current = order.ordered(bots).firstIndex(where: { $0.id == id }) else { return }
-                while current != target {
-                    let step = target > current ? 1 : -1
-                    move(id, by: step)
-                    current += step
+                guard target != drag?.slot else { return }
+                let ordered = order.ordered(bots)
+                guard ordered.indices.contains(target), let current = ordered.firstIndex(where: { $0.id == id }) else {
+                    return
+                }
+                drag?.slot = target
+                guard target != current else { return }
+                withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16)) {
+                    order.move(id, relativeTo: ordered[target].id, after: target > current, in: bots)
                 }
             }
             .onEnded { _ in
@@ -91,7 +96,7 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     }
 
     private var liftAnimation: Animation? {
-        reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.78)
+        DockMotion.isEnabled(reduceMotion: reduceMotion) ? .smooth(duration: 0.18) : nil
     }
 
     private func move(_ id: String, by offset: Int) {
@@ -107,6 +112,7 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
 /// releasing springs it back into its new slot.
 private struct LiftedRow: ViewModifier {
     let isLifted: Bool
+    let scales: Bool
     let offset: CGFloat
     let style: DockThemePalette
 
@@ -117,7 +123,7 @@ private struct LiftedRow: ViewModifier {
                     .fill(style.surface4)
                     .opacity(isLifted ? 1 : 0)
             )
-            .scaleEffect(isLifted ? 1.03 : 1)
+            .scaleEffect(isLifted && scales ? 1.012 : 1)
             .offset(y: offset)
             .zIndex(isLifted ? 1 : 0)
     }

@@ -597,7 +597,7 @@ extension WorkspaceActivitySidebar {
                                 .dockSurfaceFill(Color.dockSurface2.opacity(0.72))
                         )
                         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(DockMotion.reveal(from: .top, reduceMotion: reduceMotion))
                 }
             } else if job.sessionID != nil {
                 Divider().overlay(Color.dockBorderLight)

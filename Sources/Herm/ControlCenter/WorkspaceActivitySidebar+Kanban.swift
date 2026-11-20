@@ -21,7 +21,7 @@ extension WorkspaceActivitySidebar {
                             isShowingKanbanComposer
                         {
                             createKanbanTaskForm
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                                .transition(DockMotion.reveal(from: .top, reduceMotion: reduceMotion))
                         } else if kanbanCurrentSessionOnly {
                             DockIconLabel(
                                 "Session cards must be created by a session-aware Kanban worker. Manual CLI cards are global.",
@@ -164,7 +164,7 @@ extension WorkspaceActivitySidebar {
                         )
                     )
                     .animation(.dockEase(duration: 0.2), value: selectedKanbanTask?.id)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .transition(DockMotion.reveal(from: .trailing, reduceMotion: reduceMotion))
                 }
             }
         }

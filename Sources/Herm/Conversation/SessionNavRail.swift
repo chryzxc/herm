@@ -196,8 +196,8 @@ struct SessionNavRail: View {
                         .contextMenu {
                             Button("Unpin \(title(item)) from sidebar", icon: .pushPinSlash) { togglePin(item) }
                         }
-                        .scaleEffect(isDragging ? 1.12 : 1)
-                        .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 8, y: 3)
+                        .scaleEffect(isDragging && DockMotion.isEnabled(reduceMotion: reduceMotion) ? 1.045 : 1)
+                        .shadow(color: .black.opacity(isDragging ? 0.18 : 0), radius: 4, y: 2)
                         .offset(y: isDragging ? dragOffset : 0)
                         .zIndex(isDragging ? 1 : 0)
                         .simultaneousGesture(reorderGesture(for: item))
@@ -307,7 +307,7 @@ struct SessionNavRail: View {
                     order.count - 1)
                 if target != current {
                     order = DockRailItem.moving(item, to: target, in: order)
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.78)) {
+                    withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16)) {
                         dragOrder = order
                     }
                 }
@@ -316,7 +316,7 @@ struct SessionNavRail: View {
             }
             .onEnded { _ in
                 let order = dragOrder ?? orderedPins
-                withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8)) {
+                withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2)) {
                     dragOffset = 0
                     draggingItem = nil
                     pinnedDestinations = DockRailItem.raw(visible: order, keepingHiddenFrom: pinnedDestinations)

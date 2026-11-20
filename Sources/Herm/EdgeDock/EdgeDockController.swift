@@ -81,8 +81,11 @@ final class EdgeDockController: NSObject {
                 self.setExpanded(false)
             }
             if !dragging { self.petDragging = false }
-            self.state.petDragging = dragging
-            self.state.petPull = pull
+            if self.state.petDragging != dragging { self.state.petDragging = dragging }
+            // The contour travels at most a few points per step. Keep raw mouse samples
+            // out of the notch state, especially when the pet is outside its reach.
+            let step = (pull * 64).rounded() / 64
+            if self.state.petPull != step { self.state.petPull = step }
             if !dragging { self.surfaceDigestIfPossible() }
         }
         quickProfileID = model.profileScopeID
@@ -1264,17 +1267,19 @@ final class EdgeDockController: NSObject {
         guard !workspacePresented else { return }
         collapseTask?.cancel()
         expandTask?.cancel()
+        if dragging != !ended {
+            (ended ? NSCursor.arrow : NSCursor.closedHand).set()
+        }
         dragging = !ended
         hovering = false
-        state.expanded = false
-        (ended ? NSCursor.arrow : NSCursor.closedHand).set()
+        if state.expanded { state.expanded = false }
         let point = NSEvent.mouseLocation
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
             let location = EdgeDockPlacement.dragged(
                 to: point, screenFrame: screen.frame, visibleFrame: screen.visibleFrame,
                 allowsTop: screen == NSScreen.screens.first)
             displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
-            state.side = location.side
+            if state.side != location.side { state.side = location.side }
             fraction = location.fraction
             position(animated: false)
         }
@@ -2089,7 +2094,7 @@ struct EdgeNotchView: View {
                 )
                 // The content is revealed through the growing shell rather than
                 // appearing at full size beside it.
-                .mask { shell(EdgeNotchShape(side: state.side).fill(.black)) }
+                .mask { shell(outline.fill(.black)) }
                 // One persistent shell: the rail bar itself stretches into the preview
                 // panel and back, so the two states read as a single growing notch.
                 .background {
@@ -2099,15 +2104,15 @@ struct EdgeNotchView: View {
                     } else {
                         // Side previews retain a contour even when Glass blends into the desktop.
                         shell(
-                            DockWindowBackground(shape: AnyShape(EdgeNotchShape(side: state.side)))
+                            DockWindowBackground(shape: AnyShape(outline))
                                 .overlay {
                                     // Doubled stroke clipped to the shape leaves a uniform inner 1pt line;
                                     // a centered 1pt stroke loses its outer half to the clip on every edge.
                                     if state.side != .top {
-                                        EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: 2)
+                                        outline.stroke(Color.dockBorderStrong, lineWidth: 2)
                                     }
                                 }
-                                .clipShape(EdgeNotchShape(side: state.side)))
+                                .clipShape(outline))
                     }
                 }
                 // Attach drag gesture to parent so it works in both collapsed and expanded states
@@ -2161,14 +2166,22 @@ struct EdgeNotchView: View {
                 .frame(maxWidth: .infinity, alignment: state.side.alignment)
         }
         .animation(
-            reduceMotion ? nil : .interactiveSpring(response: 0.28, dampingFraction: 0.68), value: state.barWidth)
+            state.petDragging ? nil : DockMotion.animation(reduceMotion: reduceMotion), value: state.barWidth)
     }
+
+    private var dockingReach: CGFloat {
+        guard !open, state.side != .top, DockMotion.isEnabled(reduceMotion: reduceMotion) else { return 0 }
+        return state.petPull
+    }
+
+    private var outline: EdgeNotchShape { EdgeNotchShape(side: state.side, dockingReach: dockingReach) }
 
     private var rail: some View {
         Button(action: openDock) {
             EdgePetRail(
                 activity: state.railActivity, side: state.side, width: state.barWidth,
-                height: state.collapsedRailHeight, glow: state.barGlow, docked: state.petAttached && state.hasPet
+                height: state.collapsedRailHeight, glow: state.barGlow, dockingReach: dockingReach,
+                tracking: state.petDragging, docked: state.petAttached && state.hasPet
             )
             .frame(width: state.railWidth, height: state.collapsedRailHeight)
             .contentShape(Rectangle())
@@ -2436,6 +2449,8 @@ private struct EdgePetRail: View {
     var width: CGFloat = 28
     var height: CGFloat = 60
     var glow = 0.0
+    var dockingReach: CGFloat = 0
+    var tracking = false
     var docked = false
     @State private var flash = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -2449,12 +2464,12 @@ private struct EdgePetRail: View {
                     .frame(width: width, height: height)
                     // The shell fill lives in EdgeNotchView so it can grow into the preview.
                     .overlay {
-                        EdgeNotchShape(side: side).stroke(
+                        EdgeNotchShape(side: side, dockingReach: dockingReach).stroke(
                             DockThemePalette(theme: chrome).accent, lineWidth: 2
                         ).opacity(flash ? 1 : glow * 0.8)
                     }
                     .animation(
-                        reduceMotion ? nil : .interactiveSpring(response: 0.28, dampingFraction: 0.68), value: width)
+                        tracking ? nil : DockMotion.animation(reduceMotion: reduceMotion), value: width)
                 if side == .left { Spacer(minLength: 0) }
             }
         }
@@ -2490,6 +2505,12 @@ extension AnyTransition {
 /// Small concave shoulders meet the physical screen edge; the inner face is rounded.
 struct EdgeNotchShape: Shape {
     var side: EdgeDockSide = .right
+    var dockingReach: CGFloat = 0
+
+    var animatableData: CGFloat {
+        get { dockingReach }
+        set { dockingReach = newValue }
+    }
 
     func path(in rect: CGRect) -> Path {
         if side == .top {
@@ -2510,10 +2531,15 @@ struct EdgeNotchShape: Shape {
             to: CGPoint(x: rect.minX, y: rect.minY + shoulder + radius),
             control: CGPoint(x: rect.minX, y: rect.minY + shoulder))
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - shoulder - radius))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX + radius, y: rect.maxY - shoulder),
-            control: CGPoint(x: rect.minX, y: rect.maxY - shoulder))
-        path.addLine(to: CGPoint(x: rect.maxX - shoulder, y: rect.maxY - shoulder))
+        // Pull the lower lip toward the companion. Both ends of the returning
+        // curve have horizontal tangents, so the crest joins the shoulder smoothly.
+        let baseline = rect.maxY - shoulder
+        let depth = min(1, max(0, dockingReach)) * shoulder * 0.9
+        let crest = CGPoint(x: rect.minX + radius, y: baseline + depth)
+        path.addQuadCurve(to: crest, control: CGPoint(x: rect.minX, y: crest.y))
+        let end = CGPoint(x: rect.maxX - shoulder, y: baseline)
+        let middle = (crest.x + end.x) / 2
+        path.addCurve(to: end, control1: CGPoint(x: middle, y: crest.y), control2: CGPoint(x: middle, y: end.y))
         path.addQuadCurve(
             to: CGPoint(x: rect.maxX, y: rect.maxY),
             control: CGPoint(x: rect.maxX, y: rect.maxY - shoulder))
@@ -2536,7 +2562,7 @@ final class EdgeDockHostingView<Content: View>: NSHostingView<Content> {
     }
 
     var onHoverChanged: ((Bool) -> Void)?
-    var bottomHoverExclusion: CGFloat = 0 { didSet { updateTrackingAreas() } }
+    var bottomHoverExclusion: CGFloat = 0
     private var lastNotchHover: Bool?
     private var hoverArea: NSTrackingArea?
     override func updateTrackingAreas() {

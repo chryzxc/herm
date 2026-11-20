@@ -192,7 +192,9 @@ struct EdgeNotchStatusIndicator: View {
     private enum Mark { case working, done, blocked, offline, idle }
     private static let slot: CGFloat = 20
 
-    private var animates: Bool { !reduceMotion && (activity.working || activity.attention) }
+    private var animates: Bool {
+        DockMotion.isEnabled(reduceMotion: reduceMotion) && (activity.working || activity.attention)
+    }
 
     private var primary: Mark {
         activity.working
@@ -210,37 +212,42 @@ struct EdgeNotchStatusIndicator: View {
     }
 
     var body: some View {
-        // A blocked-only pulse is a slow 2s breath; 15Hz keeps it smooth at half the renders.
-        let spins = part != .badges && primary == .working && (style != .count || activity.workingCount == 0)
-        let pulses = (part != .badges && primary == .blocked) || (part != .primary && badges.contains(.blocked))
-        TimelineView(.dockMotion(rate: spins ? 30 : 15, paused: !animates || style == .bots || !(spins || pulses))) {
-            timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            let layout = axis == .vertical ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
-            layout {
-                // A state change swaps the mark in place with a short scale-fade, never a jump cut.
-                if part != .badges {
-                    if style == .bots, primary == .working, activity.workingBotIDs.count > 1 {
-                        // One face per working Bot, like the Bot picker's running list.
-                        ForEach(activity.workingBotIDs, id: \.self) { id in
-                            mark(.working, t, botID: id).transition(Self.swap)
-                        }
-                    } else {
-                        mark(primary, t).id(primary).transition(Self.swap)
+        let layout = axis == .vertical ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+        layout {
+            if part != .badges {
+                if style == .bots, primary == .working, activity.workingBotIDs.count > 1 {
+                    ForEach(activity.workingBotIDs, id: \.self) { id in
+                        statusMark(.working, botID: id).transition(Self.swap)
                     }
-                }
-                if part != .primary {
-                    ForEach(badges, id: \.self) { mark($0, t).transition(Self.swap) }
+                } else {
+                    statusMark(primary).id(primary).transition(Self.swap)
                 }
             }
-            .animation(reduceMotion ? nil : .dockEase(duration: 0.22), value: primary)
-            .animation(reduceMotion ? nil : .dockEase(duration: 0.22), value: badges)
-            .animation(reduceMotion ? nil : .dockEase(duration: 0.22), value: activity.workingBotIDs)
+            if part != .primary {
+                ForEach(badges, id: \.self) { statusMark($0).transition(Self.swap) }
+            }
         }
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2), value: primary)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2), value: badges)
+        .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2), value: activity.workingBotIDs)
         .accessibilityHidden(true)
     }
 
-    private static let swap = AnyTransition.scale(scale: 0.6).combined(with: .opacity)
+    private static let swap = AnyTransition.asymmetric(
+        insertion: .opacity.combined(with: .scale(scale: 0.86)), removal: .opacity)
+
+    /// Only the individual mark that changes with time gets a clock.
+    @ViewBuilder
+    private func statusMark(_ m: Mark, botID: String? = nil) -> some View {
+        let workingSweep = m == .working && style != .ring && !(style == .count && activity.workingCount > 0)
+        if animates && style != .bots && (workingSweep || m == .blocked) {
+            TimelineView(.dockMotion(rate: workingSweep ? 30 : 15)) { timeline in
+                mark(m, timeline.date.timeIntervalSinceReferenceDate, botID: botID)
+            }
+        } else {
+            mark(m, 0, botID: botID)
+        }
+    }
 
     /// 0...1 sine wave; resting at full when motion is off.
     private func wave(_ t: Double, period: Double) -> Double {
@@ -268,7 +275,7 @@ struct EdgeNotchStatusIndicator: View {
             switch style {
             case .dots: dot(m, c, level, t)
             case .line: bar(m, c, level, t)
-            case .ring: ring(m, c, level, t)
+            case .ring: ring(m, c, level)
             case .icons: chip(m, c, level, t)
             case .count: chip(m, c, level, t, number: activity.workingCount)
             case .bots: bot(m, c, t, id: botID)
@@ -304,14 +311,10 @@ struct EdgeNotchStatusIndicator: View {
     }
 
     @ViewBuilder
-    private func ring(_ m: Mark, _ c: Color, _ level: Double, _ t: Double) -> some View {
+    private func ring(_ m: Mark, _ c: Color, _ level: Double) -> some View {
         switch m {
         case .working:
-            Circle().stroke(c.opacity(0.2), lineWidth: 2)
-                .overlay {
-                    Circle().trim(from: 0, to: 0.7).stroke(c, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .rotationEffect(.degrees(animates ? phase(t, period: 1.6) * 360 : -90))
-                }
+            DockLayerMotion(kind: .spin(period: 1.6, lineWidth: 2), color: c, paused: !animates)
                 .frame(width: 16, height: 16)
         case .done, .blocked:
             Circle().stroke(c.opacity(level), lineWidth: 2).frame(width: 16, height: 16)

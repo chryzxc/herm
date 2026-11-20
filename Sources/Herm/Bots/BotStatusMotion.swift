@@ -40,7 +40,8 @@ enum BotStatusMotion: Equatable {
         case .blocked:
             // A quick head shake at the top of each 2s beat, then still.
             let beat = max(0, t).truncatingRemainder(dividingBy: 2) / 2
-            let shake = beat < 0.25 ? sin(beat / 0.25 * 6 * .pi) * 10 * (1 - beat / 0.25) : 0
+            let phase = min(beat / 0.25, 1)
+            let shake = sin(phase * 4 * .pi) * sin(phase * .pi) * (1 - phase) * 8
             return BotWorkingPose(rotation: shake)
         case .finished, .resting:
             return .rest
@@ -73,11 +74,15 @@ private struct BotStatusMotionModifier: ViewModifier {
     let live: Bool
     let cue: Int
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dockHostVisible) private var hostVisible
+    @Environment(\.dockHostResizing) private var hostResizing
     @ObservedObject private var focus = HermFocus.shared
     @State private var startedAt = Date()
     @State private var hopAt: Date?
 
-    private var moves: Bool { !reduceMotion && DockThemeStyle.current.animates && (live || focus.engaged) }
+    private var moves: Bool {
+        hostVisible && !hostResizing && DockMotion.isEnabled(reduceMotion: reduceMotion) && (live || focus.engaged)
+    }
 
     func body(content: Content) -> some View {
         let running = moves && (motion.loops(live: live) || hopAt != nil)

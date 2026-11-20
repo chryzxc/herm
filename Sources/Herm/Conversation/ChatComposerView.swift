@@ -219,18 +219,21 @@ struct ChatComposerView: View {
         let textTopPadding: CGFloat = 4
 
         return VStack(spacing: 6) {
-            if let trigger = completions.trigger, completions.isPresented {
-                ComposerCompletionPopover(
-                    trigger: trigger,
-                    items: completions.result.items,
-                    selectedIndex: completions.index,
-                    isLoading: completions.isLoading,
-                    avatarImages: botMode.avatarImages,
-                    notice: mentionRelayNotice(trigger),
-                    onSelect: { completions.accept($0) }
-                )
-                .transition(.move(edge: .top).combined(with: .opacity))
+            Group {
+                if let trigger = completions.trigger, completions.isPresented {
+                    ComposerCompletionPopover(
+                        trigger: trigger,
+                        items: completions.result.items,
+                        selectedIndex: completions.index,
+                        isLoading: completions.isLoading,
+                        avatarImages: botMode.avatarImages,
+                        notice: mentionRelayNotice(trigger),
+                        onSelect: { completions.accept($0) }
+                    )
+                    .transition(DockMotion.reveal(from: .bottom, reduceMotion: reduceMotion))
+                }
             }
+            .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: completions.isPresented)
 
             // One tray joins the plan, queue and folder bar to the input. With
             // none of them showing, the input covers it completely.

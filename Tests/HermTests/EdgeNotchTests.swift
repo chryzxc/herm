@@ -255,6 +255,18 @@ struct EdgeNotchTests {
         }
     }
 
+    @Test func dockingContourReachesTowardThePetAndKeepsTheCameraStill() {
+        let rect = CGRect(x: 0, y: 0, width: 52, height: 96)
+        for side in [EdgeDockSide.left, .right] {
+            let probe = CGPoint(x: rect.midX, y: rect.maxY - 8)
+            #expect(!EdgeNotchShape(side: side).path(in: rect).contains(probe))
+            let reaching = EdgeNotchShape(side: side, dockingReach: 1).path(in: rect)
+            #expect(reaching.contains(probe))
+            #expect(rect.contains(reaching.boundingRect))
+        }
+        #expect(EdgeNotchShape(side: .top).path(in: rect) == EdgeNotchShape(side: .top, dockingReach: 1).path(in: rect))
+    }
+
     @Test func draggingToTopCenterDocksTheIsland() {
         let screen = NSRect(x: 0, y: 0, width: 1600, height: 1000)
         let visible = NSRect(x: 0, y: 0, width: 1600, height: 968)

@@ -141,6 +141,13 @@ keep their own accent hue. Clay, Dusk, Storm, and Glass use restrained depth so
 adjacent controls do not merge into broad shadows. E-Ink and Swiss retain their
 minimal geometry and monochrome/editorial composition.
 
+Warm Light and Clay use shallow relief. Dusk
+uses a narrow glow. Search, task plans, and split columns enter a few points
+from their opening edge and fade in place on dismissal. Bot status gestures
+rest during live window and split-divider resizing.
+
+Changing skins reveals the new appearance at the pointer in one visible window. Floating skins spread horizontally before rounding out; mechanical skins use a straight wipe. Switch thumbs lengthen briefly between stops and checkboxes reveal their mark from its leading edge.
+
 Enabled actions retain stationary hover feedback. Pressing uses the existing skin-specific compression. Surface
 reveals drift 5pt for floating skins, 7pt for springy skins, and 3pt for quiet skins;
 mechanical and snap skins fade without travel. These are rendering transforms,
@@ -1221,6 +1228,8 @@ this template, using bold run-in labels:
 Older sections are migrated to the template when they are next changed.
 
 ### Side activity notch
+
+As a pet approaches a side rail, the lower contour bends toward its docking point. During the drag it tracks proximity directly and settles on release; the top camera housing retains its outline. A held pet tips once. Sprite frames step through the Hermes sheet in Core Animation.
 
 **Hermes companion.** When the selected Hermes profile has an enabled pet, its
 sprite sits outside and below the rail with a 4pt gap, in its own sized window.
@@ -2974,6 +2983,8 @@ member's face attached; clicking it opens the room at that message. All motion f
 Group chat action errors use toast notifications without an inline error row above the composer. The group composer reuses the main chat composer chrome (`composerCard`, `composerTray`, `composerColumn`, `ComposerFolderBarSlot`, `ComposerControlLabel`, `ComposerSubmitLabel`), so its input sits at the same position and size as a session composer. When `groups.capabilities` lists `groups.attachment.upload`, the **+** popover adds Files and Images, and files dropped or pasted onto the editor upload through the same `ComposerInputEditor(onDropFiles:)` path as sessions; uploaded files show as removable chips above the controls (Send waits for uploads), and sent messages use the main chat's user-message chrome (`UserMessageImages`, `UserMessageAttachmentRow`, `.userMessageBubble()`): images read back with `groups.attachment.download` sit above the bubble and open the image preview, other files (and images Hermes refuses) are named rows inside it, and a timestamp and copy action sit underneath. Group actions (thread, Edit Group…, Disband…) sit at the trailing edge of the toolbar, including in a tab column where the tab row carries them. Edit Group renames the room in place and edits members with the New Group Chat checklist (`GroupMemberPicker`); Hermes fixes a room's members at creation, so a changed roster says so and creates a new group (the old one and its history stay). Groups with bots from another Mac keep their members read-only. A group chat opened from Bots accepts a dropped session like any chat: the room becomes the first column's tab and the session opens as a tab or new column beside it. Bot, group and session rows in the sidebar take their insets and gaps from `DockSidebarListMetrics`, so the Bots list spaces rows exactly like Recents, including the shared `titleToPreview` gap between a row title and its last message. The Bots | Sessions switch is a full-width tab track (`DockChatsScopeSwitch`) at the top of each list: above the bot picker in Sessions, above the search field in Bots, not in the title strip. In Sessions, New chat is an icon button (tooltip "New chat") to the right of the search field, mirroring the Bots + menu.
 
 ### Conversation workspace
+
+A reaction on a user bubble grows from the corner touching the bubble. A later emoji change briefly compresses the existing pill around that point. The assistant footer uses its leading corner.
 
 The composer names a conversation's reported model as soon as it is available,
 independently of catalog loading. A reported name alone does not imply a provider route.

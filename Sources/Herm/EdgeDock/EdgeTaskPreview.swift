@@ -449,7 +449,7 @@ struct EdgeTaskPreview: View {
                     .dockPadding(.horizontal, 8)
                     .dockPadding(.bottom, 8)
                     .id("reply-\(task.presentationID)")
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(DockMotion.reveal(from: .top, reduceMotion: reduceMotion))
                 }
             }
             .contextMenu {

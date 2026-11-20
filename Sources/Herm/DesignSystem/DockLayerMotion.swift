@@ -29,6 +29,8 @@ struct DockLayerMotion: NSViewRepresentable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dockHostVisible) private var hostVisible
 
+    @Environment(\.dockHostResizing) private var hostResizing
+
     static func dismantleNSView(_ view: DockLayerMotionView, coordinator: ()) {
         for layer in view.layer?.sublayers ?? [] { layer.removeAllAnimations() }
     }
@@ -40,7 +42,7 @@ struct DockLayerMotion: NSViewRepresentable {
             kind: kind, color: color.resolve(in: context.environment).cgColor,
             glow: glow?.resolve(in: context.environment).cgColor,
             rim: rim?.resolve(in: context.environment).cgColor,
-            paused: paused || !hostVisible || !DockMotion.isEnabled(reduceMotion: reduceMotion))
+            paused: paused || !hostVisible || hostResizing || !DockMotion.isEnabled(reduceMotion: reduceMotion))
     }
 }
 

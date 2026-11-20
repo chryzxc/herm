@@ -6,6 +6,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct WorkspaceActivitySidebar: View {
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.dockWorkspaceScale) var workspaceScale
     static let projectsPageSize = 25
     enum AutomationHistoryScope: String, CaseIterable, Identifiable {

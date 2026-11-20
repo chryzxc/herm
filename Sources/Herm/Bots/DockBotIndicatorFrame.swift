@@ -44,6 +44,8 @@ extension EnvironmentValues {
 struct DockBotFrameClock<Content: View>: View {
     @Environment(\.dockBotIndicatorFrame) private var externalFrame
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dockHostVisible) private var hostVisible
+    @Environment(\.dockHostResizing) private var hostResizing
     @ObservedObject private var focus = HermFocus.shared
     @ViewBuilder let content: (DockBotIndicatorFrame) -> Content
 
@@ -51,7 +53,8 @@ struct DockBotFrameClock<Content: View>: View {
         if let externalFrame {
             content(externalFrame)
         } else {
-            let moves = !reduceMotion && DockThemeStyle.current.animates && focus.engaged
+            let moves =
+                hostVisible && !hostResizing && DockMotion.isEnabled(reduceMotion: reduceMotion) && focus.engaged
             TimelineView(.dockMotion(rate: 15, paused: !moves)) { context in
                 let frame = DockBotIndicatorFrame(date: context.date, moves: moves)
                 content(frame).environment(\.dockBotIndicatorFrame, frame)

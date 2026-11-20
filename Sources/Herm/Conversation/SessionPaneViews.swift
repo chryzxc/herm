@@ -28,6 +28,7 @@ struct SessionPaneRow<Primary: View>: View {
     @State private var target: SessionPaneTarget?
     /// Resized column shares; ignored (equal columns) once the column count changes.
     @State private var columnFractions: [CGFloat] = []
+    @Environment(\.dockHostResizing) private var hostResizing
     @State private var resizeStart: [CGFloat]?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -113,12 +114,7 @@ struct SessionPaneRow<Primary: View>: View {
                             inspector.frame(width: Self.inspectorWidth)
                         }
                     }
-                    .transition(
-                        reduceMotion
-                            ? .opacity
-                            : .asymmetric(
-                                insertion: .move(edge: .trailing).combined(with: .opacity),
-                                removal: .opacity))
+                    .transition(DockMotion.reveal(from: .trailing, reduceMotion: reduceMotion))
                 }
             }
             .overlay(alignment: .topLeading) {
@@ -147,6 +143,7 @@ struct SessionPaneRow<Primary: View>: View {
             }
             .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.28), value: slots.map(\.id))
             .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2), value: target)
+            .environment(\.dockHostResizing, hostResizing || resizeStart != nil)
             .onDrop(
                 of: isEnabled ? [SessionPaneDrag.pasteboardType.rawValue] : [],
                 delegate: SessionPaneDropDelegate(
@@ -174,10 +171,11 @@ struct SessionPaneRow<Primary: View>: View {
                                 if #unavailable(macOS 15) { NSCursor.resizeLeftRight.set() }
                                 guard available > 0 else { return }
                                 let start = resizeStart ?? fractions
-                                resizeStart = start
-                                columnFractions = SessionPaneStore.resized(
+                                if resizeStart == nil { resizeStart = start }
+                                let next = SessionPaneStore.resized(
                                     start, divider: index - 1, delta: value.translation.width / available,
                                     minFraction: SessionPaneStore.minColumnWidth / available)
+                                if columnFractions != next { columnFractions = next }
                             }
                             .onEnded { _ in resizeStart = nil }
                     )

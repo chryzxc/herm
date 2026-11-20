@@ -39,8 +39,7 @@ final class HermesPetSpriteView: NSView {
     private var sheet: HermesPetSheet?
     private var pose = "idle"
     private var animates = false
-    private var frameIndex = 0
-    private var timer: Timer?
+    private static let loopKey = "pet.frames"
     private var observer: NSObjectProtocol?
 
     override init(frame frameRect: NSRect) {
@@ -65,13 +64,18 @@ final class HermesPetSpriteView: NSView {
     }
 
     func configure(_ sheet: HermesPetSheet, pose: String, animates: Bool) {
-        let changed = self.sheet?.image !== sheet.image || self.pose != pose || self.animates != animates
+        let changed =
+            self.sheet?.image !== sheet.image || self.sheet?.info != sheet.info || self.pose != pose
+            || self.animates != animates
         self.sheet = sheet
         self.pose = pose
         self.animates = animates
         if changed {
-            frameIndex = 0
-            drawFrame()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            sprite.contents = sheet.image
+            sprite.contentsRect = Self.crop(sheet: sheet, row: sheet.info.frame(for: pose).row, column: 0)
+            CATransaction.commit()
             schedule()
         }
     }
@@ -91,51 +95,40 @@ final class HermesPetSpriteView: NSView {
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        sprite.removeAnimation(forKey: Self.loopKey)
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
     }
 
     private func schedule() {
-        timer?.invalidate()
-        timer = nil
+        sprite.removeAnimation(forKey: Self.loopKey)
         guard animates, !isHiddenOrHasHiddenAncestor, window?.occlusionState.contains(.visible) == true, let sheet
         else { return }
-        let count = sheet.info.frame(for: pose).count
-        guard count > 1 else { return }
-        let interval = max(0.016, Double(sheet.info.loopMs ?? 1100) / 1000 / Double(count))
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.advanceFrame()
-            }
+        if let animation = Self.frameLoop(sheet: sheet, pose: pose) {
+            sprite.add(animation, forKey: Self.loopKey)
         }
-        // Frame-accurate sprite timing isn't needed; let macOS coalesce wakeups.
-        timer?.tolerance = interval / 10
     }
 
-    func advanceFrame() {
-        guard let sheet else { return }
-        frameIndex = (frameIndex + 1) % sheet.info.frame(for: pose).count
-        drawFrame()
+    /// Step between the atlas cells in the render server. A sprite frame needs
+    /// neither a main-run-loop timer nor a new copy of the sheet.
+    static func frameLoop(sheet: HermesPetSheet, pose: String) -> CAKeyframeAnimation? {
+        let selection = sheet.info.frame(for: pose)
+        let columns = sheet.image.width / max(1, sheet.info.frameW ?? 1)
+        let count = min(selection.count, columns)
+        guard count > 1 else { return nil }
+        let loop = CAKeyframeAnimation(keyPath: "contentsRect")
+        loop.values = (0..<count).map { NSValue(rect: crop(sheet: sheet, row: selection.row, column: $0)) }
+        loop.calculationMode = .discrete
+        loop.duration = max(0.016 * Double(count), Double(sheet.info.loopMs ?? 1100) / 1000)
+        loop.repeatCount = .infinity
+        return loop
     }
 
-    private func drawFrame() {
-        guard let sheet else { return }
-        let info = sheet.info
-        let selected = info.frame(for: pose)
-        let w = CGFloat(info.frameW ?? 1) / CGFloat(sheet.image.width)
-        let h = CGFloat(info.frameH ?? 1) / CGFloat(sheet.image.height)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        sprite.contents = sheet.image
-        // Hermes rows are top-down; CALayer's normalized crop is bottom-up.
-        // Using the row directly selects unrelated rows and their blank padding.
-        sprite.contentsRect = CGRect(
-            x: CGFloat(frameIndex % selected.count) * w,
-            y: 1 - CGFloat(selected.row + 1) * h, width: w, height: h)
-        CATransaction.commit()
+    private static func crop(sheet: HermesPetSheet, row: Int, column: Int) -> CGRect {
+        let w = CGFloat(sheet.info.frameW ?? 1) / CGFloat(sheet.image.width)
+        let h = CGFloat(sheet.info.frameH ?? 1) / CGFloat(sheet.image.height)
+        // Hermes rows run top-down, Core Animation's contents rect runs bottom-up.
+        return CGRect(x: CGFloat(column) * w, y: 1 - CGFloat(row + 1) * h, width: w, height: h)
     }
 }
 

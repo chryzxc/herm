@@ -113,7 +113,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .warmLight:
             DockThemeStyle(
                 controlRadius: 12, paneRadius: 16, outlineWidth: 0.5, selection: .fill,
-                cardShadow: 6, emboss: 3, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+                cardShadow: 4, emboss: 2, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
         case .ares:
             DockThemeStyle(
                 controlRadius: 2, paneRadius: 4, outlineWidth: 1.5, stickerShadow: 3, selection: .bar,
@@ -124,8 +124,8 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
                 motion: .mechanical, pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
         case .clay:
             DockThemeStyle(
-                controlRadius: 16, paneRadius: 22, outlineWidth: 0, cardShadow: 5,
-                accentGradient: true, emboss: 4, motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
+                controlRadius: 16, paneRadius: 22, outlineWidth: 0, cardShadow: 3,
+                accentGradient: true, emboss: 3, motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
         case .pixel:
             DockThemeStyle(
                 controlRadius: 0, paneRadius: 0, outlineWidth: 3, stickerShadow: 4, geometry: .pixel,
@@ -164,7 +164,7 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
                 motion: .mechanical, pressScale: 1, cardFill: 1, tintedSidebar: true)
         case .dusk:
             DockThemeStyle(
-                controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 2, cardShadow: 6, accentGradient: true,
+                controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 1, cardShadow: 3, accentGradient: true,
                 motion: .float, pressScale: 0.98, cardFill: 1, tintedSidebar: true)
         case .origami:
             DockThemeStyle(
@@ -670,7 +670,7 @@ final class DockThemeStore: ObservableObject {
             // @Published announces from its setter. Publish the runtime first
             // so every observing subtree resolves canvas and text from the same
             // theme during that render pass.
-            if appliesToApplication { DockSkinRipple.play() }
+            if appliesToApplication { DockSkinRipple.play(to: newValue) }
             applyToApplication(themeID: newValue)
         }
         didSet {

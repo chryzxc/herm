@@ -5,6 +5,14 @@ import Testing
 
 @MainActor
 struct DockMotionTests {
+    @Test func switchThumbStretchesOnlyInTransitAndKeepsItsStopsInsideTheTrack() {
+        let track = CGRect(x: 0, y: 0, width: 38, height: 22)
+        let stops = [CGFloat(0), 0.5, 1].map { DockSwitchThumb(position: $0).path(in: track).boundingRect }
+        #expect(stops.map(\.midX) == [10, 19, 28])
+        #expect(stops.map(\.width) == [16, 20, 16])
+        #expect(stops.allSatisfy { track.contains($0) })
+    }
+
     @Test func reducedMotionOverridesEveryTheme() {
         for theme in DockThemeID.allCases {
             #expect(!DockMotion.isEnabled(reduceMotion: true, theme: theme))

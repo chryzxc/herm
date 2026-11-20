@@ -132,8 +132,16 @@ struct HermesPetTests {
         view.configure(sheet, pose: "idle", animates: false)
         view.layoutSubtreeIfNeeded()
         let layer = try #require(view.layer?.sublayers?.first)
-        for _ in 0..<12 {
-            view.advanceFrame()
+        let loop = try #require(HermesPetSpriteView.frameLoop(sheet: sheet, pose: "idle"))
+        let cells = try #require(loop.values as? [NSValue])
+        #expect(loop.calculationMode == .discrete)
+        #expect(loop.duration == 1.1)
+        #expect(
+            cells.map(\.rectValue) == [
+                CGRect(x: 0, y: 0.5, width: 0.5, height: 0.5), CGRect(x: 0.5, y: 0.5, width: 0.5, height: 0.5),
+            ])
+        for cell in cells {
+            layer.contentsRect = cell.rectValue
             view.configure(sheet, pose: "idle", animates: false)
             view.layout()
             let context = try #require(
