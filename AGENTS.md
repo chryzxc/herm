@@ -34,7 +34,7 @@ mistake twice, add it to a `Scripts/check-*.py` contract instead of more prose.
 ```sh
 make build                     # debug build
 swift test --disable-automatic-resolution --filter <SuiteName>   # iterate
-make guard                     # fast deterministic gate: strict lint + colors + diff checks
+make guard                     # fast deterministic gate: strict lint + colors + perf + diff checks
 make format                    # fix mechanical Swift formatting
 make check                     # full gate: guard + tests + smoke + release build (CI runs this)
 ```

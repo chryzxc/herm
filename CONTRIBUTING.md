@@ -19,7 +19,7 @@ make check
 ```
 
 Start iteration with `make guard`. It runs strict Swift syntax/style lint, the
-button sizing contract, the product naming contract, the color contract and its self-tests, and Git's conflict-marker/whitespace check.
+button sizing contract, the product naming contract, the color contract and its self-tests, the performance contract (`make perf-contract`: no unbudgeted perpetual motion, per-call formatters, tolerance-free repeating timers or growth in god-model observation), and Git's conflict-marker/whitespace check.
 It needs no model calls, network, app launch, or Swift build. Fix its file/line
 diagnostics before asking for AI review; reserve review for behavior, ownership,
 concurrency, and UI decisions. These checks do not replace focused tests.

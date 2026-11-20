@@ -851,3 +851,62 @@ with the screen locked or asleep, when nothing could see it.
   tolerance so macOS can coalesce their wakeups.
 
 Not measured: a paired before/after energy capture; this needs a relaunch.
+
+## Whole-app audit and performance contract — 20 November 2026
+
+Capture `2026-11-20T02-10-27Z` (120 Hz display, Low Power Mode) lost 35% of
+frames while scrolling a transcript. Self time per host: `panelLeading` (the
+transcript pane) 180–290 ms/s, `root` about 45 ms/s, `panelTrailing` about
+3 ms/s. A `ControlCenterModel` refresh burst of 55 publications produced one
+277 ms frame.
+
+Fixed:
+
+- Three perpetual animations bypassed `DockMotionSchedule` and rendered at the
+  display rate, through scrolls and off screen: the repository loading
+  shimmer (`repeatForever`), the voice HUD subagent orbs (cyclic
+  `phaseAnimator`) and the live trace clock (`TimelineView(.animation)` at
+  10 Hz). All three now use `.dockMotion(rate:paused:)`.
+- About 20 parsers built an `ISO8601DateFormatter` per call, several of them
+  once per row while refreshing lists on the main actor (Control Center
+  activity dates alone have 29 callers). They now share `ISO8601Parsing`;
+  a cached parse measured about 3× cheaper.
+- The sprite frame timer, the message navigator's 30 Hz pointer poll and
+  the dictation meter now carry timer tolerance.
+
+Scrolling a split pane re-laid out the root host twice per scroll tick.
+The pane's `ScrollViewCommitMutation` calls `NSHostingView.setNeedsUpdate`,
+which sets `needsUpdateConstraints` on the pane host; AppKit forwarded that
+to the parent SwiftUI graph (`_informContainerThatSubviewsNeedUpdateConstraints`
+→ `_layoutMetricsInvalidatedForHostedView`). Pane hosts publish no
+constraints, so they now turn that request into their own layout pass
+(`containsConstraintInvalidation`), which halved root layouts (62 → 30 over
+30 scroll steps) with the sibling pane still at 0. The remaining root layout
+per tick comes from SwiftUI itself: `ScrollViewCommitMutation.apply` dirties
+an attribute in the root graph, which no public API intercepts.
+`PaneLayoutBudgetTests` pins the ceiling (sibling 0, root ≤ 1 per step).
+
+Not measured: the transcript pane's own ~2 ms layout per scroll tick needs an
+Instruments trace on a Release build. Debug (`-Onone`) builds run this
+SwiftUI and projection work several times slower; judge smoothness on a
+Release build.
+
+### Performance contract
+
+`make perf-contract` (part of `make guard`) rejects, in `Sources/Herm`:
+
+| Pattern | Use instead |
+|---|---|
+| `.repeatForever(` | `TimelineView(.dockMotion(rate:paused:))` + `DockMotionSchedule` |
+| `.phaseAnimator(` without `trigger:` | `trigger:`, or `.dockMotion` |
+| `TimelineView(.animation…)` | `.dockMotion(rate:paused:)` |
+| `TimelineView(.periodic(… by: <1))` | `.dockMotion(rate:paused:)` |
+| `XFormatter().…` (allocate and use) | `ISO8601Parsing`, or a stored static formatter |
+| repeating `Timer` without `tolerance` | set `timer.tolerance` / pass `tolerance:` |
+
+`// perf-contract: allow <reason>` on the line or the line above opts out;
+the reason is required (the pet's drag wobble uses it). The script also
+ratchets observation fan-out: the `@Published` count of `DockModel` (118)
+and `ControlCenterModel` (93), and the number of views observing either
+model whole (43 and 28), may not grow. Lower the caps when a change reduces
+them.

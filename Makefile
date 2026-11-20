@@ -3,7 +3,7 @@ SHELL := /bin/sh
 PROJECT_ROOT := $(CURDIR)
 SWIFT_FORMAT ?= $(shell xcrun --find swift-format 2>/dev/null)
 
-.PHONY: test build build-release run guard lint format smoke-contract color-contract button-contract card-contract shell-contract theme-surface-contract naming-contract resource-contract design-contract plugin-host-contract icon-contract check package
+.PHONY: test build build-release run guard lint format smoke-contract color-contract button-contract card-contract shell-contract theme-surface-contract naming-contract resource-contract design-contract plugin-host-contract icon-contract perf-contract check package
 
 test:
 	# Native UI fixtures share the main actor; serialize to keep their deadlines meaningful.
@@ -39,6 +39,10 @@ card-contract:
 	python3 Scripts/test-card-contract.py
 	python3 Scripts/check-card-contract.py
 
+perf-contract:
+	python3 Scripts/test-perf-contract.py
+	python3 Scripts/check-perf-contract.py
+
 shell-contract:
 	python3 Scripts/check-shell-contract.py
 
@@ -70,7 +74,7 @@ icon-contract:
 	@! grep -rnE '(^|[^A-Za-z0-9_])\.sparkle\b|"sparkles?"' Sources --include='*.swift' | grep -v '^Sources/Herm/DesignSystem/PhosphorIcons.swift:' || \
 		{ echo 'Do not use the sparkle icon; pick one that names the action or object.'; exit 1; }
 
-guard: color-contract button-contract card-contract shell-contract theme-surface-contract naming-contract design-contract plugin-host-contract resource-contract icon-contract lint
+guard: color-contract button-contract card-contract shell-contract theme-surface-contract naming-contract design-contract plugin-host-contract resource-contract icon-contract perf-contract lint
 	git diff --check
 
 check: guard test smoke-contract build-release
