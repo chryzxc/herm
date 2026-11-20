@@ -17,6 +17,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
     /// Nil draws text segments; icons only suit options whose glyph says what they do.
     let symbol: ((Option) -> Ph)?
     let select: (Option) -> Void
+    @DockChromeTheme private var theme
 
     var body: some View {
         if symbol == nil {
@@ -50,7 +51,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
                     DockIcon(
                         symbol?(option) ?? .circle, size: 13,
                         color: selection == option
-                            ? (DockThemeStyle.current.selection == .invert ? .dockCanvas : .dockPrimaryText)
+                            ? (theme.style.selection == .invert ? .dockCanvas : .dockPrimaryText)
                             : .dockSecondaryText
                     )
                     .frame(width: 26)

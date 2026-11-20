@@ -426,10 +426,11 @@ struct DockIconButtonLabel: View {
     var hasBackground = true
     var size: CGFloat = 28
     var style = DockThemePalette(theme: DockThemeRuntime.current)
+    @DockChromeTheme private var theme
     @State private var isHovering = false
 
     var body: some View {
-        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
+        let shape = DockThemeShape(theme: theme, delta: -1)
         Group {
             if isBusy {
                 ProgressView().controlSize(.mini)
@@ -602,6 +603,7 @@ struct DockSectionHeader<Actions: View>: View {
     var tint: Color = .dockAccent
     @ViewBuilder var actions: () -> Actions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @DockChromeTheme private var theme
     @State private var isHovering = false
 
     private func toggle() {
@@ -633,7 +635,7 @@ struct DockSectionHeader<Actions: View>: View {
     }
 
     /// Hermes Desktop sets sidebar group labels (PINNED, SESSIONS) as tracked caps.
-    private var capsLabel: Bool { DockThemeStyle.current.flatShell && !isContentHeader && icon == nil }
+    private var capsLabel: Bool { theme.style.flatShell && !isContentHeader && icon == nil }
 
     private func label(isExpanded: Bool?) -> some View {
         HStack(spacing: 6) {

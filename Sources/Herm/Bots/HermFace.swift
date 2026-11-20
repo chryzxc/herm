@@ -245,13 +245,16 @@ extension BotFaceMark {
 
     /// Draws a Herm face into a `size` square at the context origin. Rings and
     /// hints reach 20% past the square, so give the canvas that margin.
-    /// `theme` nil is the neutral face saved to Hermes as a PNG.
+    /// `theme` nil is the neutral face saved to Hermes as a PNG. `theme` colors
+    /// the face (the skin); `ink` names the chrome it sits on, which outlines and
+    /// rims must contrast with (Onyx on the camera notch). Nil inks with `theme`.
     static func draw(
         in ctx: inout GraphicsContext, id: String, size: CGFloat, mood: BotMood,
-        pose: BotFacePose, theme: DockThemeID?, originalColors: Bool = false
+        pose: BotFacePose, theme: DockThemeID?, ink inkTheme: DockThemeID? = nil, originalColors: Bool = false
     ) {
         let genes = HermFaceGenes(id: id)
         let colors = DockThemePalette(theme: theme ?? .glass)
+        let chrome = inkTheme.map { DockThemePalette(theme: $0) } ?? colors
         let tone = HermFaceTone(theme: theme)
         // Unskinned exports retain their original colors so previously saved faces remain recognizable.
         let (lite, deep): (Color, Color)
@@ -322,7 +325,7 @@ extension BotFaceMark {
             layer.opacity *= opacity
             let shape = Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
             layer.fill(shape, with: .color(color))
-            if stroke { layer.stroke(shape, with: .color(colors.primaryText.opacity(0.2)), lineWidth: 1.5) }
+            if stroke { layer.stroke(shape, with: .color(chrome.primaryText.opacity(0.2)), lineWidth: 1.5) }
         }
         // Behind the body: the far half of the thinking dots and subagent orbits.
         func orbiters(front: Bool) {
@@ -381,7 +384,7 @@ extension BotFaceMark {
                 Path(CGRect(x: 0, y: 0, width: 100, height: 100)), with: .color(colors.destructive.opacity(0.2)))
         }
         if let outline = HermFaceTone.outline(theme) {
-            body.stroke(shape, with: .color(colors.primaryText), lineWidth: outline)
+            body.stroke(shape, with: .color(chrome.primaryText), lineWidth: outline)
         } else if glossy {
             body.stroke(
                 shape,
@@ -501,7 +504,7 @@ extension BotFaceMark {
         case .approval, .clarify:
             if moves { ring(50 + pulse * 16, (1 - pulse) * 0.6, 3, colors.warning) }
         case .queued:
-            ring(55, 0.5, 2.5, colors.metadataText, dash: [4, 8])
+            ring(55, 0.5, 2.5, chrome.metadataText, dash: [4, 8])
         case .handoff:
             let p = moves ? t.truncatingRemainder(dividingBy: 1.4) / 1.4 : 0.5
             var arc = Path()
@@ -528,7 +531,7 @@ extension BotFaceMark {
         mark.translateBy(x: 84, y: 16)
         let disc = Path(ellipseIn: CGRect(x: -11, y: -11, width: 22, height: 22))
         mark.fill(disc, with: .color(badge))
-        mark.stroke(disc, with: .color(theme == nil ? .white : colors.surface), lineWidth: 3)
+        mark.stroke(disc, with: .color(theme == nil ? .white : chrome.surface), lineWidth: 3)
         // Glyphs are unreadable below this; the colored badge still carries the state.
         guard size >= 24 else { return }
         let glyph = StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)

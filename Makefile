@@ -3,7 +3,7 @@ SHELL := /bin/sh
 PROJECT_ROOT := $(CURDIR)
 SWIFT_FORMAT ?= $(shell xcrun --find swift-format 2>/dev/null)
 
-.PHONY: test build build-release run guard lint format smoke-contract color-contract button-contract card-contract shell-contract naming-contract resource-contract design-contract plugin-host-contract check package
+.PHONY: test build build-release run guard lint format smoke-contract color-contract button-contract card-contract shell-contract theme-surface-contract naming-contract resource-contract design-contract plugin-host-contract check package
 
 test:
 	# Native UI fixtures share the main actor; serialize to keep their deadlines meaningful.
@@ -42,6 +42,9 @@ card-contract:
 shell-contract:
 	python3 Scripts/check-shell-contract.py
 
+theme-surface-contract:
+	python3 Scripts/check-theme-surface-contract.py
+
 button-contract:
 	python3 Scripts/test-button-contract.py
 	python3 Scripts/check-button-contract.py
@@ -62,7 +65,7 @@ resource-contract:
 	@! grep -rn 'Bundle\.module' Sources --include='*.swift' | grep -v '^Sources/Herm/App/HermResources.swift:' || \
 		{ echo 'Use Bundle.herm instead of Bundle.module (it crashes outside the build machine).'; exit 1; }
 
-guard: color-contract button-contract card-contract shell-contract naming-contract design-contract plugin-host-contract resource-contract lint
+guard: color-contract button-contract card-contract shell-contract theme-surface-contract naming-contract design-contract plugin-host-contract resource-contract lint
 	git diff --check
 
 check: guard test smoke-contract build-release

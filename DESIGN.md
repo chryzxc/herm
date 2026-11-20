@@ -807,6 +807,22 @@ changes, even if its text is unchanged. Unknown local or hub skins remain visibl
 read-only inventory and are disabled until an explicit Herm palette mapping
 exists.
 
+A hosting root names its theme surface: `dockThemedRoot(surface:)` takes `.app`
+(the default, which follows the skin) or `.cameraNotch` (always Onyx, because the
+notch is black). The surface sets the window appearance, the color-scheme pin
+and the chrome theme in the environment in one place. Shared components
+(buttons, cards, wells, pills, tabs, fields, selection, hover, icon buttons) read
+their shape, outline, bevel, material and selection style through
+`@DockChromeTheme` or `dockChrome { view, theme in … }`, never through
+`DockThemeRuntime.current`. A new themed component does the same. Then it renders
+correctly on any surface without a notch-specific branch.
+`make theme-surface-contract` (part of `make guard`) rejects direct skin reads
+in notch views and shared components. Bot faces are the one
+deliberate split. The skin colors the face, and the chrome theme inks its
+outline, badge rim and queued ring, so a Brutalist bot stays Brutalist on the
+notch with a light outline. An explicit preview skin (the skin gallery) inks
+itself.
+
 ### Workspace shell
 
 Every desktop destination renders inside `DockWorkspaceShell`
@@ -1294,6 +1310,9 @@ workspace states share the theme's canvas and text colors, with a 1pt
 `dockBorderStrong` border around the contour.
 Left and right previews and expanded side panels retain that border in Glass;
 the top island remains outline-free so it blends with the camera housing.
+The top island renders on the `.cameraNotch` theme surface. Its chrome
+(selection fills, outlines, buttons, text) is Onyx whatever the skin, and its
+bots keep the selected skin with Onyx ink. Left and right rails follow the skin.
 
 **Preview.** Hover or new work morphs the rail into an attached preview. It is
 a fixed 368 × 360pt panel with stable inset content. The size never changes

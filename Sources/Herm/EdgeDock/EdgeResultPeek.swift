@@ -245,8 +245,9 @@ struct EdgeResultPeek: View {
         }
         .dockFont(.metadata)
         .dockPadding(8)
-        .background(
-            Color.dockSurface4.opacity(0.5), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius))
+        .dockChrome { view, theme in
+            view.background(Color.dockSurface4.opacity(0.5), in: DockThemeShape(theme: theme))
+        }
     }
 }
 

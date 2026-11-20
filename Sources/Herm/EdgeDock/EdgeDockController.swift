@@ -209,9 +209,7 @@ final class EdgeDockController: NSObject {
         state.$side.removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] side in
                 guard let self else { return }
-                self.panel.appearance =
-                    side == .top
-                    ? DockThemeStore.notchAppearance : DockThemeStore.nsAppearance(for: DockThemeRuntime.current)
+                self.panel.appearance = EdgeNotchState.themeSurface(for: side).windowAppearance
             }.store(in: &subscriptions)
         state.$composing.removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.position(animated: true) }.store(in: &subscriptions)
@@ -1933,6 +1931,8 @@ final class EdgeNotchState: ObservableObject {
     /// Badged faces sit bottom-leading in their box, so the left ear pads its
     /// outer edge to keep them off the shell's shoulder.
     static let islandBadgeInset: CGFloat = 6
+    /// The top notch wraps the camera housing, so its chrome wears Onyx; side notches wear the skin.
+    static func themeSurface(for side: EdgeDockSide) -> DockThemeSurface { side == .top ? .cameraNotch : .app }
     /// The window stays centered on the camera at the wider ear on both sides;
     /// the drawn island uses the real ears and shifts by this to keep the gap on the camera.
     var islandEar: CGFloat { max(islandEars.left, islandEars.right) }
@@ -2111,7 +2111,7 @@ struct EdgeNotchView: View {
             }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: state.isQuiet)
-        .dockThemedRoot().dockPreferredTextSize()
+        .dockThemedRoot(surface: EdgeNotchState.themeSurface(for: state.side)).dockPreferredTextSize()
         .id(theme.selectedThemeID)
     }
 
@@ -2404,6 +2404,7 @@ private struct EdgePetRail: View {
     var docked = false
     @State private var flash = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @DockChromeTheme private var chrome
 
     var body: some View {
         VStack(spacing: 4) {
@@ -2414,7 +2415,7 @@ private struct EdgePetRail: View {
                     // The shell fill lives in EdgeNotchView so it can grow into the preview.
                     .overlay {
                         EdgeNotchShape(side: side).stroke(
-                            DockThemePalette(theme: DockThemeRuntime.current).accent, lineWidth: 2
+                            DockThemePalette(theme: chrome).accent, lineWidth: 2
                         ).opacity(flash ? 1 : glow * 0.8)
                     }
                     .animation(

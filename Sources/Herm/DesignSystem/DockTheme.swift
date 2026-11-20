@@ -787,6 +787,68 @@ enum DockThemeRuntime {
     }
 }
 
+/// Where a hosting root draws, and so which theme its chrome wears. The one
+/// place a surface opts out of the user's skin: the top notch sits on the
+/// camera housing, so its chrome is always Onyx. Identity art (bot faces)
+/// keeps the skin on every surface; only its ink follows the chrome it sits on.
+enum DockThemeSurface: Equatable {
+    case app
+    case cameraNotch
+
+    /// Chrome theme override installed by `dockThemedRoot(surface:)`; nil wears the skin.
+    var chromeTheme: DockThemeID? { self == .cameraNotch ? .island : nil }
+
+    /// Window appearance for the surface's panel. Token colors resolve the
+    /// camera-black Onyx roles under `DockThemeStore.notchAppearance`.
+    @MainActor var windowAppearance: NSAppearance? {
+        self == .cameraNotch
+            ? DockThemeStore.notchAppearance : DockThemeStore.nsAppearance(for: DockThemeRuntime.current)
+    }
+}
+
+private struct DockChromeThemeKey: EnvironmentKey {
+    static let defaultValue: DockThemeID? = nil
+}
+
+extension EnvironmentValues {
+    /// Set only by `dockThemedRoot(surface:)`; read it through `@DockChromeTheme`.
+    var dockChromeThemeOverride: DockThemeID? {
+        get { self[DockChromeThemeKey.self] }
+        set { self[DockChromeThemeKey.self] = newValue }
+    }
+}
+
+/// The theme a view's chrome wears: the skin, or its surface's override.
+/// Shared components read style (selection, outlines, radii, material) here,
+/// never from `DockThemeRuntime.current`, so a surface override reaches every
+/// component without per-surface logic. Resolved in the body, so skin
+/// switches still re-render.
+@propertyWrapper
+struct DockChromeTheme: DynamicProperty {
+    @Environment(\.dockChromeThemeOverride) private var override
+
+    init() {}
+
+    var wrappedValue: DockThemeID { override ?? DockThemeRuntime.current }
+}
+
+/// Hands `build` the chrome theme for helpers that are not views themselves
+/// (`View`/`Shape` extensions).
+struct DockChromeReader<Content: View, Output: View>: View {
+    @DockChromeTheme private var theme
+    let content: Content
+    let build: (Content, DockThemeID) -> Output
+
+    var body: some View { build(content, theme) }
+}
+
+extension View {
+    /// Builds chrome from the surrounding chrome theme; see `DockChromeTheme`.
+    func dockChrome<Output: View>(@ViewBuilder _ build: @escaping (Self, DockThemeID) -> Output) -> some View {
+        DockChromeReader(content: self, build: build)
+    }
+}
+
 extension Color {
     /// Device pixels contain black corner masks; keep their surrounding canvas black in every skin.
     static var dockDeviceCanvas: Color { .black }

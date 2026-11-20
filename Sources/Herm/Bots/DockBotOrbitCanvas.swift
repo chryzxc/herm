@@ -9,9 +9,11 @@ struct DockBotOrbitCanvas: View {
     let mood: BotMood
     let pose: BotFacePose
     @ObservedObject private var themeStore = DockThemeStore.shared
+    @DockChromeTheme private var chrome
 
     var body: some View {
         let theme = themeStore.selectedThemeID
+        let ink = chrome
         Canvas { context, box in
             var avatar = context
             avatar.translateBy(x: (box.width - size) / 2, y: (box.height - size) / 2)
@@ -28,7 +30,7 @@ struct DockBotOrbitCanvas: View {
                         x: (size - width) / 2, y: (size - height) / 2,
                         width: width, height: height))
             } else {
-                BotFaceMark.draw(in: &avatar, id: id, size: size, mood: mood, pose: pose, theme: theme)
+                BotFaceMark.draw(in: &avatar, id: id, size: size, mood: mood, pose: pose, theme: theme, ink: ink)
             }
         }
         .frame(width: size * 1.4, height: size * 1.4)

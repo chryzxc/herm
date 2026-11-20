@@ -146,6 +146,13 @@ struct DockThemeShape: Shape {
 }
 
 extension DockThemeShape {
+    /// `theme`'s control or pane silhouette; `delta` adjusts the radius for nested or enclosing shapes.
+    init(theme: DockThemeID, role: DockThemeShapeRole = .control, delta: CGFloat = 0) {
+        let style = theme.style
+        let radius = role == .control ? style.controlRadius : style.paneRadius
+        self.init(cornerRadius: radius == 0 ? 0 : max(0, radius + delta), role: role, geometry: style.geometry)
+    }
+
     private func pixelPath(in r: CGRect) -> Path {
         let s = min(role.step, min(r.width, r.height) / 5)
         let d = s * 2
@@ -365,9 +372,11 @@ private struct DockSelectionSurface<S: Shape>: View {
     let shape: S
     let fill: Color
     let allowsInvert: Bool
-    let theme: DockThemeID
+    let explicit: DockThemeID?
+    @DockChromeTheme private var chrome
 
     var body: some View {
+        let theme = explicit ?? chrome
         let mode = theme.style.selection
         let palette = DockThemePalette(theme: theme)
         Color.clear.background {
@@ -430,16 +439,19 @@ extension View {
     /// `NSHostingView`s do not inherit the parent SwiftUI environment, so each
     /// root sets the themed default text and control tint itself; unstyled
     /// `Text`, hierarchical styles, toggles, and links then follow the theme.
-    func dockThemedRoot() -> some View {
+    /// `surface` is the root's one theme decision: `.cameraNotch` dresses every
+    /// shared component inside in Onyx chrome (see `DockThemeSurface`).
+    func dockThemedRoot(surface: DockThemeSurface = .app) -> some View {
         foregroundStyle(Color.dockPrimaryText)
             .tint(Color.dockAccent)
             .buttonStyle(.dockCompact)
             .toggleStyle(.dockCheckbox)
-            .fontDesign(DockThemeStyle.current.fontDesign)
+            .fontDesign((surface.chromeTheme ?? DockThemeRuntime.current).style.fontDesign)
             // Native controls (placeholders, carets, menus) follow the colour
             // scheme, not our tokens; pin it so a light skin under dark macOS
             // (or vice versa) doesn't get invisible placeholder text.
-            .modifier(DockPinnedColorScheme())
+            .modifier(DockPinnedColorScheme(theme: surface.chromeTheme))
+            .environment(\.dockChromeThemeOverride, surface.chromeTheme)
             .modifier(DockMotionAccessibility())
     }
 
@@ -447,12 +459,13 @@ extension View {
     /// style: tinted fill, inverted ink, or an accent underline. `allowsInvert`
     /// is false for containers whose children set their own text colors.
     func dockSelectionBackground<S: Shape>(
-        _ shape: S, active: Bool, fill: Color, allowsInvert: Bool = true, theme: DockThemeID = DockThemeRuntime.current,
+        _ shape: S, active: Bool, fill: Color, allowsInvert: Bool = true, theme: DockThemeID? = nil,
         namespace: Namespace.ID? = nil
     ) -> some View {
         background {
             if active {
-                let surface = DockSelectionSurface(shape: shape, fill: fill, allowsInvert: allowsInvert, theme: theme)
+                let surface = DockSelectionSurface(
+                    shape: shape, fill: fill, allowsInvert: allowsInvert, explicit: theme)
                 if let namespace {
                     surface.matchedGeometryEffect(id: "dock-selection", in: namespace)
                 } else {
@@ -464,26 +477,31 @@ extension View {
 
     /// Clay look: paired light and dark soft shadows behind the shape. Pressing
     /// flattens them so the control reads as pushed in.
-    func dockEmboss<S: Shape>(_ shape: S, pressed: Bool = false, theme: DockThemeID = DockThemeRuntime.current)
-        -> some View
-    {
-        let depth = theme.style.emboss * (pressed ? 0.3 : 1)
-        return background {
-            if depth > 0 {
-                shape.fill(DockThemePalette(theme: theme).background)
-                    .shadow(color: .white.opacity(0.6), radius: depth * 0.7, x: -depth / 3, y: -depth / 3)
-                    .shadow(color: .black.opacity(0.08), radius: depth * 0.7, x: depth / 3, y: depth / 3)
+    func dockEmboss<S: Shape>(_ shape: S, pressed: Bool = false, theme: DockThemeID? = nil) -> some View {
+        dockChrome { view, chrome in
+            let theme = theme ?? chrome
+            let depth = theme.style.emboss * (pressed ? 0.3 : 1)
+            view.background {
+                if depth > 0 {
+                    shape.fill(DockThemePalette(theme: theme).background)
+                        .shadow(color: .white.opacity(0.6), radius: depth * 0.7, x: -depth / 3, y: -depth / 3)
+                        .shadow(color: .black.opacity(0.08), radius: depth * 0.7, x: depth / 3, y: depth / 3)
+                }
             }
         }
     }
 
     /// Retro look: two-pixel light/dark edges. `pressed` (also used for inset fields) swaps them.
-    func dockBevel(pressed: Bool = false, enabled: Bool = DockThemeStyle.current.bevel) -> some View {
+    func dockBevel(pressed: Bool = false, enabled: Bool? = nil) -> some View {
         overlay(DockBevel(pressed: pressed, enabled: enabled))
     }
 
     /// Corner brackets (HUD) or a strip of tape (Notebook) on cards.
-    func dockCardMarks(theme: DockThemeID = DockThemeRuntime.current) -> some View {
+    func dockCardMarks(theme: DockThemeID? = nil) -> some View {
+        dockChrome { view, chrome in view.dockCardMarks(resolved: theme ?? chrome) }
+    }
+
+    private func dockCardMarks(resolved theme: DockThemeID) -> some View {
         let geometry = theme.style.geometry
         let neon = DockThemePalette(theme: theme).neonHues
         return overlay {
@@ -525,15 +543,16 @@ extension View {
     /// view. Themes without a sticker shadow draw nothing. An opaque canvas
     /// copy sits between the ink and the view so translucent fills don't
     /// blend with the shadow into a muddy tone.
-    func dockStickerShadow<S: Shape>(_ shape: S, pressed: Bool = false, theme: DockThemeID = DockThemeRuntime.current)
-        -> some View
-    {
-        let offset = theme.style.stickerShadow * (pressed ? 0.35 : 1)
-        return background {
-            if offset > 0 {
-                ZStack {
-                    shape.fill(DockThemePalette(theme: theme).divider).offset(x: offset, y: offset)
-                    shape.fill(DockThemePalette(theme: theme).background)
+    func dockStickerShadow<S: Shape>(_ shape: S, pressed: Bool = false, theme: DockThemeID? = nil) -> some View {
+        dockChrome { view, chrome in
+            let theme = theme ?? chrome
+            let offset = theme.style.stickerShadow * (pressed ? 0.35 : 1)
+            view.background {
+                if offset > 0 {
+                    ZStack {
+                        shape.fill(DockThemePalette(theme: theme).divider).offset(x: offset, y: offset)
+                        shape.fill(DockThemePalette(theme: theme).background)
+                    }
                 }
             }
         }
@@ -541,7 +560,11 @@ extension View {
 
     /// A quiet crease on larger Origami surfaces. It uses existing semantic
     /// colors and does not add content, state, or a new elevation level.
-    func dockFoldCrease(theme: DockThemeID = DockThemeRuntime.current) -> some View {
+    func dockFoldCrease(theme: DockThemeID? = nil) -> some View {
+        dockChrome { view, chrome in view.dockFoldCrease(resolved: theme ?? chrome) }
+    }
+
+    private func dockFoldCrease(resolved theme: DockThemeID) -> some View {
         overlay {
             if theme.style.geometry == .folded {
                 let crease = DockFoldCrease(size: DockThemeShapeRole.pane.foldSize)
@@ -612,13 +635,14 @@ struct DockWindowBackground: View {
     // Observed so the canvas repaints on theme switch; it has no other inputs.
     @ObservedObject private var themeStore = DockThemeStore.shared
     @Environment(\.colorScheme) private var colorScheme
+    @DockChromeTheme private var theme
     /// Clip the native material to the panel silhouette, including attached notches.
     var shape = AnyShape(Rectangle())
 
     /// Glass samples the real backdrop with the system Liquid Glass effect
     /// (macOS 26+); older systems and System skin use the blur material.
     @ViewBuilder private var glassOrPopover: some View {
-        if DockThemeRuntime.current == .glass, #available(macOS 26.0, *) {
+        if theme == .glass, #available(macOS 26.0, *) {
             NativeLiquidGlassBackground()
                 // Blend in less frost in light mode so the desktop remains visible.
                 .background {
@@ -628,17 +652,17 @@ struct DockWindowBackground: View {
                 // A second full-window glass effect adds a broad specular reflection over the transcript.
                 .clipShape(shape)
         } else {
-            NativePopoverBackground(material: DockThemeRuntime.current == .glass ? .underWindowBackground : .popover)
+            NativePopoverBackground(material: theme == .glass ? .underWindowBackground : .popover)
         }
     }
 
     var body: some View {
-        if DockThemeRuntime.current.usesNativeMaterial {
+        if theme.usesNativeMaterial {
             glassOrPopover
                 .id(DockThemeRuntime.revision)
-                .overlay(DockThemePalette(theme: DockThemeRuntime.current).windowBackground)
+                .overlay(DockThemePalette(theme: theme).windowBackground)
         } else {
-            Color.dockCanvas.overlay(DockBackdrop())
+            Color.dockCanvas.overlay(DockBackdrop(style: theme.style))
         }
     }
 }
@@ -658,16 +682,17 @@ struct DockPressButtonStyle: ButtonStyle {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
+    @DockChromeTheme private var theme
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
+        let shape = DockThemeShape(theme: theme, delta: -1)
         configuration.label
             .dockFont(.control)
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .padding(DockWorkspaceScale.points(3, scale: workspaceScale))
             .background {
-                if DockThemeStyle.current.material == .glass {
+                if theme.style.material == .glass {
                     Color.clear.dockLiquidGlass(shape)
                         .overlay(shape.fill(Color.dockPrimaryText.opacity(isHovering && isEnabled ? 0.07 : 0)))
                 } else {
@@ -692,10 +717,12 @@ struct DockPressButtonStyle: ButtonStyle {
 /// view and a stronger one while `isPressed`. Use `.dockHoverable()` on any
 /// clickable non-Button (tap-gesture rows, icons); buttons get it via `.dockHover`.
 struct DockHoverModifier: ViewModifier {
-    var cornerRadius: CGFloat = DockLayout.controlRadius - 1
+    /// Nil uses the chrome theme's control radius.
+    var cornerRadius: CGFloat?
     var isPressed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
+    @DockChromeTheme private var theme
     @State private var isHovering = false
 
     func body(content: Content) -> some View {
@@ -703,10 +730,16 @@ struct DockHoverModifier: ViewModifier {
             .overlay {
                 // Only lit rows draw a shape; long scrolling lists stay free of invisible overlays.
                 if isPressed || (isHovering && isEnabled) {
-                    DockThemeShape(cornerRadius: cornerRadius)
-                        .fill(Color.dockAccent.opacity(isPressed ? 0.16 : 0.09))
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
+                    Group {
+                        if let cornerRadius {
+                            DockThemeShape(cornerRadius: cornerRadius, geometry: theme.style.geometry)
+                        } else {
+                            DockThemeShape(theme: theme, delta: -1)
+                        }
+                    }
+                    .foregroundStyle(Color.dockAccent.opacity(isPressed ? 0.16 : 0.09))
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
                 }
             }
             .animation(reduceMotion ? nil : .dockFeedback(isHovering, duration: 0.12), value: isHovering)
@@ -749,7 +782,7 @@ struct DockHoverButtonStyle: ButtonStyle {
 }
 
 extension View {
-    func dockHoverable(cornerRadius: CGFloat = DockLayout.controlRadius - 1) -> some View {
+    func dockHoverable(cornerRadius: CGFloat? = nil) -> some View {
         modifier(DockHoverModifier(cornerRadius: cornerRadius))
     }
 
@@ -826,23 +859,25 @@ enum DockPointerCursor {
 struct DockPrimaryButtonStyle: ButtonStyle {
     /// Split actions keep the shared fill readable while their selector is enabled.
     var dimsWhenDisabled = true
-    static var foregroundColor: Color {
-        DockThemeStyle.current.material == .glass || !DockThemePalette(theme: DockThemeRuntime.current).neonHues.isEmpty
+    static var foregroundColor: Color { foregroundColor(DockThemeRuntime.current) }
+    static func foregroundColor(_ theme: DockThemeID) -> Color {
+        theme.style.material == .glass || !DockThemePalette(theme: theme).neonHues.isEmpty
             ? .dockOnAccentText : .dockPrimaryText
     }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
+    @DockChromeTheme private var theme
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
+        let shape = DockThemeShape(theme: theme)
         let tint = configuration.role == .destructive ? Color.dockDestructive : Color.dockAccent
         let highlighted = isHovering && isEnabled
         // Dense actions share shadowless glass in both appearances.
-        let isGlass = DockThemeStyle.current.material == .glass
-        let neon = DockThemePalette(theme: DockThemeRuntime.current).neonHues
+        let isGlass = theme.style.material == .glass
+        let neon = DockThemePalette(theme: theme).neonHues
         configuration.label
-            .foregroundStyle(Self.foregroundColor)
+            .foregroundStyle(Self.foregroundColor(theme))
             .dockButtonMetrics()
             .background {
                 if isGlass {
@@ -864,10 +899,12 @@ struct DockPrimaryButtonStyle: ButtonStyle {
                 } else {
                     shape.fill(tint.opacity(configuration.isPressed ? 0.30 : highlighted ? 0.24 : 0.14))
                         .background(shape.fill(Color.dockCanvas))
-                        .overlay(shape.stroke(tint.opacity(highlighted ? 0.6 : 0.35), lineWidth: DockLayout.outline))
+                        .overlay(
+                            shape.stroke(tint.opacity(highlighted ? 0.6 : 0.35), lineWidth: theme.style.outlineWidth)
+                        )
                         // Glossy skins add a top-down sheen.
                         .overlay {
-                            if DockThemeStyle.current.accentGradient {
+                            if theme.style.accentGradient {
                                 shape.fill(
                                     LinearGradient(
                                         colors: [.white.opacity(0.16), .clear], startPoint: .top, endPoint: .center))
@@ -901,16 +938,17 @@ struct DockPrimaryButtonStyle: ButtonStyle {
 struct DockSecondaryButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
+    @DockChromeTheme private var theme
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
+        let shape = DockThemeShape(theme: theme)
         configuration.label
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .dockButtonMetrics()
             .background {
                 // Keep actions distinct without stacking native drop shadows.
-                if DockThemeStyle.current.material == .glass {
+                if theme.style.material == .glass {
                     Color.clear.dockLiquidGlass(shape, interactive: true)
                         .overlay(
                             shape.fill(
@@ -923,7 +961,8 @@ struct DockSecondaryButtonStyle: ButtonStyle {
                             ? Color.dockSurface6
                             : isHovering && isEnabled ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6)
                     )
-                    .overlay(shape.stroke(Color.dockBorder, lineWidth: max(DockLayout.hairline, DockLayout.outline)))
+                    .overlay(
+                        shape.stroke(Color.dockBorder, lineWidth: max(DockLayout.hairline, theme.style.outlineWidth)))
                 }
             }
             .dockStickerShadow(shape, pressed: configuration.isPressed)
@@ -1020,7 +1059,6 @@ struct DockGlassTextFieldStyle: TextFieldStyle {
     var compact = false
     var trailingInset: CGFloat = 0
     func _body(configuration: TextField<Self._Label>) -> some View {
-        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         configuration
             .textFieldStyle(.plain)
             .font(.system(size: DockTypography.size(compact ? .control : .navigation, scale: workspaceScale)))
@@ -1031,20 +1069,21 @@ struct DockGlassTextFieldStyle: TextFieldStyle {
             .frame(minHeight: compact ? DockWorkspaceScale.points(28, scale: workspaceScale) : DockLayout.controlHeight)
             // The shared canvas keeps inputs consistent across panes; the
             // plain field style removes the warm native field fill.
-            .background(DockFieldBackground(shape: shape))
+            .background(DockFieldBackground())
             .overlay(DockBevel(pressed: true))
     }
 }
 
 /// A View so the glass branch runs main-actor isolated (TextFieldStyle bodies are not).
 private struct DockFieldBackground: View {
-    let shape: DockThemeShape
+    @DockChromeTheme private var theme
 
     var body: some View {
-        if DockThemeStyle.current.material == .glass {
+        let shape = DockThemeShape(theme: theme)
+        if theme.style.material == .glass {
             Color.clear.dockLiquidGlass(shape)
         } else {
-            shape.fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: DockLayout.outline)
+            shape.fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: theme.style.outlineWidth)
         }
     }
 }
@@ -1672,29 +1711,33 @@ extension Shape {
     /// Use it for any card, field, chip or segmented track instead of `fill(Color.dockSurface…)`.
     /// Neutral outlines are dropped on glass (native glass has its own rim);
     /// pass `strokeOnGlass` for strokes that carry state such as focus or tint.
-    @MainActor @ViewBuilder
+    @MainActor
     func dockSurfaceFill(
         _ fallback: Color, interactive: Bool = false, stroke: Color? = nil, lineWidth: CGFloat = DockLayout.hairline,
         strokeOnGlass: Bool = false
     ) -> some View {
-        if DockThemeStyle.current.material == .glass {
-            Color.clear.dockLiquidGlass(self, interactive: interactive)
-                .overlay { if strokeOnGlass, let stroke { self.stroke(stroke, lineWidth: lineWidth) } }
-        } else {
-            fill(fallback).overlay { if let stroke { self.stroke(stroke, lineWidth: lineWidth) } }
+        dockChrome { shape, theme in
+            if theme.style.material == .glass {
+                Color.clear.dockLiquidGlass(shape, interactive: interactive)
+                    .overlay { if strokeOnGlass, let stroke { shape.stroke(stroke, lineWidth: lineWidth) } }
+            } else {
+                shape.fill(fallback).overlay { if let stroke { shape.stroke(stroke, lineWidth: lineWidth) } }
+            }
         }
     }
 
     /// Theme-aware row selection: the selected row becomes interactive glass on
     /// the glass skin (hover keeps `fallback`); other skins always use `fallback`.
-    @MainActor @ViewBuilder
+    @MainActor
     func dockSelectionFill(_ isSelected: Bool, fallback: Color) -> some View {
-        if isSelected && DockThemeStyle.current.material == .glass {
-            Color.clear.dockLiquidGlass(self, interactive: true)
-                .overlay(stroke(Color.dockGlassSelectionEdge, lineWidth: 1))
-        } else {
-            fill(fallback)
-                .overlay(stroke(isSelected ? Color.dockPrimaryText.opacity(0.75) : .clear, lineWidth: 1))
+        dockChrome { shape, theme in
+            if isSelected && theme.style.material == .glass {
+                Color.clear.dockLiquidGlass(shape, interactive: true)
+                    .overlay(shape.stroke(Color.dockGlassSelectionEdge, lineWidth: 1))
+            } else {
+                shape.fill(fallback)
+                    .overlay(shape.stroke(isSelected ? Color.dockPrimaryText.opacity(0.75) : .clear, lineWidth: 1))
+            }
         }
     }
 
@@ -1710,7 +1753,7 @@ extension View {
     /// identity and rebuild the whole pane (scroll offsets, selection) on a glass switch.
     @MainActor
     func dockPaneTint(_ color: Color) -> some View {
-        background(DockThemeStyle.current.material == .glass ? Color.clear : color)
+        dockChrome { view, theme in view.background(theme.style.material == .glass ? Color.clear : color) }
     }
 }
 
@@ -1752,15 +1795,16 @@ extension View {
 
     /// Floating panels (menus, popovers, navigators): Liquid Glass on the glass
     /// skin; elsewhere an opaque canvas so content beneath never bleeds through.
-    @ViewBuilder
     func dockFloatingSurface<S: Shape>(
         _ shape: S, tint: Color = .clear, stroke: Color = .dockBorder, lineWidth: CGFloat = DockLayout.hairline
     ) -> some View {
-        if DockThemeStyle.current.material == .glass {
-            dockLiquidGlass(shape, elevated: true)
-        } else {
-            background(shape.fill(tint)).background(shape.fill(Color.dockOpaqueCanvas)).overlay(
-                shape.stroke(stroke, lineWidth: lineWidth))
+        dockChrome { view, theme in
+            if theme.style.material == .glass {
+                view.dockLiquidGlass(shape, elevated: true)
+            } else {
+                view.background(shape.fill(tint)).background(shape.fill(Color.dockOpaqueCanvas)).overlay(
+                    shape.stroke(stroke, lineWidth: lineWidth))
+            }
         }
     }
 
@@ -1776,15 +1820,19 @@ extension View {
     /// Divider-led rows keep operational lists dense without turning each item
     /// into a separate card.
     func dockListRow(isHighlighted: Bool = false) -> some View {
-        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
-        return
-            self
+        dockChrome { view, theme in
+            view.dockListRow(isHighlighted: isHighlighted, theme: theme)
+        }
+    }
+
+    private func dockListRow(isHighlighted: Bool, theme: DockThemeID) -> some View {
+        self
             .frame(maxWidth: .infinity, alignment: .leading)
             .dockPadding(.horizontal, DockSpacing.group)
             .dockPadding(.vertical, DockSpacing.control)
             .dockSelectionBackground(
-                shape, active: isHighlighted,
-                fill: DockThemePalette(theme: DockThemeRuntime.current).selectedFill, allowsInvert: false
+                DockThemeShape(theme: theme, delta: -1), active: isHighlighted,
+                fill: DockThemePalette(theme: theme).selectedFill, allowsInvert: false, theme: theme
             )
             .overlay(alignment: .bottom) {
                 Color.dockBorderLight
@@ -1797,10 +1845,14 @@ extension View {
     /// Shared compact surface for secondary inspectors and detail groups.
     /// It uses the same low-contrast treatment as the main Control panel.
     /// `isActive` marks a hovered, focused or selected card: raised fill, strong border.
-    @ViewBuilder
     func dockCard(padding: CGFloat = 12, isActive: Bool = false) -> some View {
-        let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
-        let style = DockThemeStyle.current
+        dockChrome { view, theme in view.dockCard(padding: padding, isActive: isActive, theme: theme) }
+    }
+
+    @ViewBuilder
+    private func dockCard(padding: CGFloat, isActive: Bool, theme: DockThemeID) -> some View {
+        let shape = DockThemeShape(theme: theme, role: .pane)
+        let style = theme.style
         if style.chrome == .open {
             // Typographic skins: spacing and type group content, not boxes.
             self.dockPadding(padding)
@@ -1815,30 +1867,34 @@ extension View {
                 // A 0-width stroke still draws a hairline, so outline-free skins skip it.
                 .overlay(
                     shape.stroke(
-                        isActive || DockLayout.outline > 1
+                        isActive || style.outlineWidth > 1
                             ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72),
-                        lineWidth: DockLayout.outline
-                    ).opacity(DockLayout.outline > 0 ? 1 : 0)
+                        lineWidth: style.outlineWidth
+                    ).opacity(style.outlineWidth > 0 ? 1 : 0)
                 )
-                .dockStickerShadow(shape)
-                .dockFoldCrease()
-                .dockEmboss(shape)
-                .dockBevel()
-                .dockCardMarks()
-                .dockCardDepth()
+                .dockStickerShadow(shape, theme: theme)
+                .dockFoldCrease(theme: theme)
+                .dockEmboss(shape, theme: theme)
+                .dockBevel(enabled: style.bevel)
+                .dockCardMarks(theme: theme)
+                .dockCardDepth(theme: theme)
         }
     }
 
     /// Inset surface for tiles, notices and fields inside a card or panel. Not a card:
     /// no padding or shadow, control radius. `.raised` sits above its parent, `.sunken` is a field.
+    /// `radius` nil uses the chrome theme's radius for `role`.
     @MainActor
     func dockWell(
-        _ tone: DockWellTone = .raised, radius: CGFloat = DockLayout.controlRadius,
+        _ tone: DockWellTone = .raised, radius: CGFloat? = nil,
         role: DockThemeShapeRole = .control, stroke: Color? = nil
     ) -> some View {
-        background(
-            DockThemeShape(cornerRadius: radius, role: role)
-                .dockSurfaceFill(tone.fill, stroke: stroke ?? tone.stroke))
+        dockChrome { view, theme in
+            view.background(
+                (radius.map { DockThemeShape(cornerRadius: $0, role: role, geometry: theme.style.geometry) }
+                    ?? DockThemeShape(theme: theme, role: role))
+                    .dockSurfaceFill(tone.fill, stroke: stroke ?? tone.stroke))
+        }
     }
 
     /// Compact label capsule: neutral by default, or washed with `tint` for status and identity.
@@ -1846,7 +1902,12 @@ extension View {
     /// become frosted chips: white lift, light wash, and a tinted (or neutral) rim.
     @MainActor
     func dockPill(tint: Color? = nil, solid: Bool = false, compact: Bool = false) -> some View {
-        let glassChip = !solid && DockThemeRuntime.current.usesNativeMaterial
+        dockChrome { view, theme in view.dockPill(tint: tint, solid: solid, compact: compact, theme: theme) }
+    }
+
+    @MainActor
+    private func dockPill(tint: Color?, solid: Bool, compact: Bool, theme: DockThemeID) -> some View {
+        let glassChip = !solid && theme.usesNativeMaterial
         return dockPadding(.horizontal, compact ? 4 : 6).dockPadding(.vertical, compact ? 1 : 2)
             .background {
                 if glassChip {
@@ -1873,9 +1934,12 @@ extension View {
     }
 
     /// Soft drop shadow and accent halo for themes that opt in; both are 0 by default.
-    func dockCardDepth() -> some View {
-        let style = DockThemeStyle.current
-        return shadow(
+    func dockCardDepth(theme: DockThemeID? = nil) -> some View {
+        dockChrome { view, chrome in view.dockCardDepth(style: (theme ?? chrome).style) }
+    }
+
+    private func dockCardDepth(style: DockThemeStyle) -> some View {
+        shadow(
             color: Color.black.opacity(style.cardShadow > 0 ? 0.07 : 0), radius: style.cardShadow * 0.6,
             y: style.cardShadow / 5
         )
@@ -1893,6 +1957,7 @@ struct DockTabButton: View {
     var fillsWidth = false
     var height: CGFloat = 30
     let action: () -> Void
+    @DockChromeTheme private var theme
 
     var body: some View {
         DockTabSegment(
@@ -1903,7 +1968,7 @@ struct DockTabButton: View {
                 if showsSelectionMark && isSelected {
                     DockIcon(
                         .check, size: 11,
-                        color: DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)
+                        color: theme.style.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)
                 }
                 Text(title)
             }
@@ -1922,15 +1987,17 @@ struct DockTabSegment<Label: View>: View {
     var inset: CGFloat = 10
     let action: () -> Void
     @ViewBuilder let label: () -> Label
+    @DockChromeTheme private var theme
 
     var body: some View {
-        let shape = DockThemeShape(cornerRadius: max(0, DockLayout.controlRadius - 1))
+        let style = theme.style
+        let shape = DockThemeShape(theme: theme, delta: -1)
         Button(action: action) {
             label()
                 .dockFont(.metadata, weight: isSelected ? .medium : .regular)
                 .foregroundStyle(
                     isSelected
-                        ? (DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)
+                        ? (style.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)
                         : Color.dockSecondaryText
                 )
                 .dockPadding(.horizontal, inset)
@@ -1939,16 +2006,16 @@ struct DockTabSegment<Label: View>: View {
                 .contentShape(Rectangle())
                 .dockSelectionBackground(
                     shape, active: isSelected,
-                    fill: DockThemeStyle.current.material == .glass
+                    fill: style.material == .glass
                         ? (colorScheme == .light ? Color.white.opacity(0.9) : Color.dockPrimaryText.opacity(0.14))
                         : Color.dockSurface4,
-                    namespace: selectionNamespace
+                    theme: theme, namespace: selectionNamespace
                 )
                 .overlay(
                     shape.stroke(
-                        isSelected && DockThemeStyle.current.material != .glass
-                            && (showsSelectionMark || DockLayout.outline > 1) ? Color.dockBorderStrong : .clear,
-                        lineWidth: DockLayout.outline))
+                        isSelected && style.material != .glass
+                            && (showsSelectionMark || style.outlineWidth > 1) ? Color.dockBorderStrong : .clear,
+                        lineWidth: style.outlineWidth))
         }
         .buttonStyle(.dockHover)
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18), value: isSelected)
@@ -2003,11 +2070,10 @@ struct DockTabBar<Option: Hashable>: View {
 extension View {
     /// Seats a row of `DockTabButton`s in the shared segmented track.
     func dockTabTrack() -> some View {
-        dockPadding(2)
-            .background(
-                DockThemeShape(cornerRadius: DockLayout.controlRadius == 0 ? 0 : DockLayout.controlRadius + 1)
-                    .dockSurfaceFill(Color.dockSurface4.opacity(0.5))
-            )
+        dockChrome { view, theme in
+            view.dockPadding(2)
+                .background(DockThemeShape(theme: theme, delta: 1).dockSurfaceFill(Color.dockSurface4.opacity(0.5)))
+        }
     }
 }
 
@@ -2038,12 +2104,15 @@ extension View {
 }
 
 /// Pins the SwiftUI colour scheme for fixed light/dark skins; system skins follow macOS.
+/// A surface override pins its own theme's scheme: a dark pin keeps the notch's
+/// window appearance, so tokens still resolve its camera-black roles.
 private struct DockPinnedColorScheme: ViewModifier {
+    let theme: DockThemeID?
     @Environment(\.colorScheme) private var systemColorScheme
 
     func body(content: Content) -> some View {
         let colorScheme: ColorScheme =
-            switch DockThemeRuntime.current.appearance {
+            switch (theme ?? DockThemeRuntime.current).appearance {
             case .light: .light
             case .dark: .dark
             case .system: systemColorScheme
@@ -2055,10 +2124,12 @@ private struct DockPinnedColorScheme: ViewModifier {
 
 struct DockBevel: View {
     let pressed: Bool
-    var enabled: Bool = DockThemeStyle.current.bevel
+    /// Nil follows the chrome theme's bevel.
+    var enabled: Bool?
+    @DockChromeTheme private var chrome
 
     var body: some View {
-        if enabled {
+        if enabled ?? chrome.style.bevel {
             Canvas { context, size in
                 let w = size.width
                 let h = size.height

@@ -159,6 +159,77 @@ struct DockThemeStoreTests {
         }
     }
 
+    @Test func cameraNotchChromeIsOnyxWhateverTheSkin() async throws {
+        _ = NSApplication.shared
+        let store = DockThemeStore.shared
+        let savedTheme = store.selectedThemeID
+        defer { store.selectedThemeID = savedTheme }
+        #expect(EdgeNotchState.themeSurface(for: .top) == .cameraNotch)
+        for side in [EdgeDockSide.left, .right] { #expect(EdgeNotchState.themeSurface(for: side) == .app) }
+
+        store.selectedThemeID = .brutalist
+        for surface in [DockThemeSurface.cameraNotch, .app] {
+            var chrome: DockThemeID?
+            var scheme: ColorScheme?
+            let probe = ChromeThemeProbe {
+                chrome = $0
+                scheme = $1
+            }
+            let (window, host) = Self.host(
+                probe.background(Color.dockSurface4).dockThemedRoot(surface: surface),
+                appearance: surface.windowAppearance)
+            defer { window.close() }
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(chrome == (surface == .cameraNotch ? .island : .brutalist), "\(surface)")
+            #expect(scheme == (surface == .cameraNotch ? .dark : .light), "\(surface)")
+            // The Brutalist selected fill is #FFE500; on the notch it must be an Onyx gray, never yellow.
+            let fill = try Self.centerColor(host)
+            let isYellow = fill.redComponent > 0.9 && fill.greenComponent > 0.8 && fill.blueComponent < 0.5
+            #expect(isYellow == (surface == .app), "\(surface) fill \(fill)")
+        }
+    }
+
+    @Test func notchBotsKeepTheirSkinAndInkWithOnyx() async throws {
+        _ = NSApplication.shared
+        let store = DockThemeStore.shared
+        let savedTheme = store.selectedThemeID
+        defer { store.selectedThemeID = savedTheme }
+        func render(_ skin: DockThemeID, _ surface: DockThemeSurface) async throws -> Data {
+            store.selectedThemeID = skin
+            let (window, host) = Self.host(
+                BotFaceMark(id: "nexus", size: 80, animated: false).dockThemedRoot(surface: surface),
+                appearance: surface.windowAppearance)
+            defer { window.close() }
+            try await Task.sleep(for: .milliseconds(120))
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            return try #require(bitmap.representation(using: .png, properties: [:]))
+        }
+        let brutalistApp = try await render(.brutalist, .app)
+        let brutalistNotch = try await render(.brutalist, .cameraNotch)
+        let cartoonNotch = try await render(.cartoon, .cameraNotch)
+        #expect(brutalistApp != brutalistNotch, "Notch bot must re-ink its black outline for the black notch")
+        #expect(brutalistNotch != cartoonNotch, "Notch bots must still follow the selected skin")
+    }
+
+    private static func host(_ view: some View, appearance: NSAppearance?) -> (NSWindow, NSHostingView<AnyView>) {
+        let host = NSHostingView(rootView: AnyView(view.frame(width: 120, height: 120)))
+        host.frame = NSRect(x: 0, y: 0, width: 120, height: 120)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = appearance
+        window.contentView = host
+        window.orderFrontRegardless()
+        return (window, host)
+    }
+
+    private static func centerColor(_ host: NSView) throws -> NSColor {
+        host.layoutSubtreeIfNeeded()
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        return try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+    }
+
     @Test func defaultsToGlassAndPersistsSelection() {
         let suiteName = "DockThemeStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -462,6 +533,16 @@ struct DockThemeStoreTests {
                 #expect(rect.contains(stroke.boundingBoxOfPath), "outline extends outside \(rect)")
             }
         }
+    }
+}
+
+private struct ChromeThemeProbe: View {
+    @DockChromeTheme private var chrome
+    @Environment(\.colorScheme) private var colorScheme
+    let observe: (DockThemeID, ColorScheme) -> Void
+
+    var body: some View {
+        Color.clear.onAppear { observe(chrome, colorScheme) }
     }
 }
 

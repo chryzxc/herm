@@ -251,6 +251,7 @@ extension EdgeNotchTask {
 
 /// The notch’s Tasks tab: one list of session and Kanban rows, pre-sorted by `merged`.
 struct EdgeTaskPreview: View {
+    @DockChromeTheme private var chrome
     let tasks: [EdgeNotchTask]
     let isOffline: Bool
     /// Set when a quota drop is announced alongside a task update.
@@ -396,7 +397,7 @@ struct EdgeTaskPreview: View {
                     if section == .finished, let markFinishedRead, !targets.isEmpty {
                         DockIconButton(
                             icon: .checks, label: "Mark finished as read", size: 20,
-                            style: DockThemePalette(theme: DockThemeRuntime.current)
+                            style: DockThemePalette(theme: chrome)
                         ) { markFinishedRead(targets) }
                     }
                 }.frame(height: 20)
@@ -576,10 +577,11 @@ struct EdgeTaskPreview: View {
         } label: {
             DockIcon(isReplying ? .x : .arrowBendUpLeft, size: 13, color: .dockSecondaryText)
                 .frame(width: 24, height: 24)
-                .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).dockSurfaceFill(
-                        Color.dockSurface4.opacity(isReplying ? 0.9 : 0.5), interactive: true)
-                )
+                .dockChrome { icon, theme in
+                    icon.background(
+                        DockThemeShape(theme: theme, delta: -2).dockSurfaceFill(
+                            Color.dockSurface4.opacity(isReplying ? 0.9 : 0.5), interactive: true))
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.dockPress)

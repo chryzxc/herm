@@ -615,14 +615,17 @@ struct BotFaceMark: View {
     /// A status carrier (the notch) keeps moving while Herm is in the background.
     var live = false
     @ObservedObject private var themeStore = DockThemeStore.shared
+    @DockChromeTheme private var chrome
 
     var body: some View {
+        // The skin colors the face; the chrome under it inks the outline (a preview's own skin inks itself).
+        let ink = theme ?? chrome
         let theme = theme ?? themeStore.selectedThemeID
         let mood = self.mood ?? (busy ? .tool : .idle)
         BotMotion(id: id, animated: animated, busy: mood.moves, live: live) { pose in
             Canvas { ctx, _ in
                 ctx.translateBy(x: size * 0.2, y: size * 0.2)
-                Self.draw(in: &ctx, id: id, size: size, mood: mood, pose: pose, theme: theme)
+                Self.draw(in: &ctx, id: id, size: size, mood: mood, pose: pose, theme: theme, ink: ink)
             }
             .frame(width: size * 1.4, height: size * 1.4)
         }

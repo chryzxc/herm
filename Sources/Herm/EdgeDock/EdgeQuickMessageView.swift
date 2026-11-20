@@ -10,6 +10,7 @@ struct EdgeQuickMessageView: View {
     let close: () -> Void
     let openDock: () -> Void
     @State private var focused = false
+    @DockChromeTheme private var chrome
     @State private var choosingDestination = false
     @State private var composerHeight = ComposerLayout.minHeight
     @State private var confirmingReview = false
@@ -78,7 +79,7 @@ struct EdgeQuickMessageView: View {
                 Spacer(minLength: DockSpacing.control)
                 DockIconButton(
                     icon: .x, label: "Close quick message",
-                    style: DockThemePalette(theme: DockThemeRuntime.current), action: close)
+                    style: DockThemePalette(theme: chrome), action: close)
             }
             Divider().overlay(Color.dockBorderLight)
             Group {
