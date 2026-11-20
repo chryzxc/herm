@@ -13,13 +13,8 @@ enum QuotaForecasting {
             remaining > 0, remaining < 100,
             reset > now
         else { return nil }
-        let duration: TimeInterval
-        switch window.label.lowercased() {
-        case let label where label.contains("session") || label.contains("rolling"): duration = 5 * 60 * 60
-        case let label where label.contains("week"): duration = 7 * 24 * 60 * 60
-        case let label where label.contains("month"): duration = 30 * 24 * 60 * 60
-        default: return nil
-        }
+        guard let duration = cycleDuration(for: window, now: now) ?? (isRollingLabel(window.label) ? 5 * 3_600 : nil)
+        else { return nil }
         let elapsed = duration - reset.timeIntervalSince(now)
         guard elapsed > 10 * 60 else { return nil }
         let forecast = now.addingTimeInterval((remaining / (100 - remaining)) * elapsed)
@@ -49,7 +44,7 @@ enum QuotaForecasting {
     static func dailyBudgetMarker(for window: ProviderQuotaWindow, now: Date = .now) -> Double? {
         guard let reset = window.resetsAt,
             reset > now,
-            let duration = cycleDuration(for: window.label)
+            let duration = cycleDuration(for: window, now: now)
         else { return nil }
 
         let daysInCycle = max(1, Int(duration / 86_400))
@@ -71,16 +66,29 @@ enum QuotaForecasting {
     /// example, ~71% expected after two days of a seven-day window).
     static func expectedRemainingMarker(for window: ProviderQuotaWindow, now: Date = .now) -> Double? {
         guard let reset = window.resetsAt, reset > now, reset.timeIntervalSince(now) > 24 * 60 * 60 else { return nil }
-        guard let duration = cycleDuration(for: window.label) else { return nil }
+        guard let duration = cycleDuration(for: window, now: now) else { return nil }
         let elapsed = min(max(0, duration - reset.timeIntervalSince(now)), duration)
         return max(0, min(100, 100 * (1 - elapsed / duration)))
     }
 
-    private static func cycleDuration(for label: String) -> TimeInterval? {
-        switch label.lowercased() {
-        case let label where label.contains("week"): return 7 * 86_400
-        case let label where label.contains("month"): return 30 * 86_400
-        default: return nil
-        }
+    /// Multi-day cycle length: from a weekly or monthly label, or, for a window a provider
+    /// calls "Session" or "Rolling" that resets more than a day out (Codex's account-wide
+    /// allowance), from the time left until its reset. Nil for short rolling windows and
+    /// unrecognized labels.
+    static func cycleDuration(for window: ProviderQuotaWindow, now: Date = .now) -> TimeInterval? {
+        let label = window.label.lowercased()
+        if label.contains("week") { return 7 * 86_400 }
+        if label.contains("month") { return 30 * 86_400 }
+        guard isRollingLabel(label), let reset = window.resetsAt else { return nil }
+        let left = reset.timeIntervalSince(now)
+        guard left > 86_400 else { return nil }
+        if left <= 7 * 86_400 { return 7 * 86_400 }
+        if left <= 30 * 86_400 { return 30 * 86_400 }
+        return nil
+    }
+
+    private static func isRollingLabel(_ label: String) -> Bool {
+        let label = label.lowercased()
+        return label.contains("session") || label.contains("rolling")
     }
 }

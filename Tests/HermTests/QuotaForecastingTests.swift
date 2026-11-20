@@ -86,6 +86,18 @@ struct QuotaForecastingTests {
             ) == nil)
     }
 
+    @Test func multiDaySessionWindowGetsWeeklyBudget() {
+        // Codex labels its account-wide weekly allowance "Session".
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let quotaWindow = ProviderQuotaWindow(
+            id: "session", label: "Session", remainingPercent: 40, remainingDisplay: nil, limitDisplay: nil,
+            resetsAt: now.addingTimeInterval(6.7 * 86_400), resetsDisplay: nil)
+
+        #expect(QuotaForecasting.cycleDuration(for: quotaWindow, now: now) == 604_800.0)
+        #expect(abs(QuotaForecasting.visibleDailyBudgetMarker(for: quotaWindow, now: now)! - 600.0 / 7) < 0.01)
+        #expect(QuotaForecasting.expectedRemainingMarker(for: quotaWindow, now: now) != nil)
+    }
+
     @Test func markerTracksEvenConsumptionBaseline() {
         let marker = QuotaForecasting.expectedRemainingMarker(
             for: window(label: "Weekly", remaining: nil, resetAfter: 5.5 * 86_400)
