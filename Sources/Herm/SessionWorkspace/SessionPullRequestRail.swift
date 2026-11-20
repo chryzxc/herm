@@ -148,6 +148,7 @@ struct SessionPullRequestRail: View {
     @State private var lineSummary: RepositoryChangeLineSummary?
     @State private var lineSnapshot: RepositoryChangeSnapshot?
     @State private var checkpointForRestore: RestoreCheckpoint?
+    @State private var plans: (sessionID: String, plans: [SessionPlan])?
 
     private var changes: SessionRailChangeSummary? {
         .make(path: repositoryPath, repository: workflow.repository, changes: workflow.changes)
@@ -160,6 +161,7 @@ struct SessionPullRequestRail: View {
             contextFiles: contextFiles?.sessionID == model.navigationSessionID ? contextFiles?.files ?? [] : [],
             processes: control.processes, checkpoints: control.restoreCheckpoints)
         summary.isRestoringCheckpoint = control.restoreCheckpointState.isPending
+        if plans?.sessionID == model.navigationSessionID { summary.plans = plans?.plans ?? [] }
         return summary
     }
 
@@ -178,7 +180,22 @@ struct SessionPullRequestRail: View {
                 summary: summary, onViewAllOutputs: onViewAllOutputs,
                 onOpenOutput: { SessionMessageTabs.shared.open(.output($0), in: WorkspaceIdentity.session(model)) },
                 onRespondInChat: onRespondInChat, onViewPin: onViewPin, onViewTimeline: onViewTimeline,
-                onRestoreCheckpoint: { checkpointForRestore = $0 }
+                onRestoreCheckpoint: { checkpointForRestore = $0 },
+                onOpenPlan: { plan in
+                    FilePreviewCenter.shared.planRequest = plan.path
+                    SessionMessageTabs.shared.open(
+                        .file(URL(fileURLWithPath: plan.path)), in: WorkspaceIdentity.session(model))
+                },
+                onTrackPlan: {
+                    model.attachChatContext(SessionPlans.trackProgressContext(path: $0.path, title: $0.title))
+                },
+                onUnlinkPlan: { plan in
+                    guard let id = model.navigationSessionID else { return }
+                    LinkedPlans.set(plan.path, linked: false, sessionID: id)
+                    if let current = plans, current.sessionID == id {
+                        plans = (id, current.plans.filter { $0.path != plan.path })
+                    }
+                }
             )
             .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(model))
             .dockPadding(16)
@@ -222,6 +239,26 @@ struct SessionPullRequestRail: View {
             await pins
             // A missing manifest keeps the last one for this session rather than blanking the section.
             if let files = await context?.files, model.navigationSessionID == id { contextFiles = (id, files) }
+        }
+        .task(id: [model.navigationSessionID ?? "", repositoryPath ?? "", refreshID.uuidString]) {
+            // Plan files change through ordinary edits and links through the file tab, so the
+            // plans are re-read on a slow poll rather than on transcript events.
+            guard let id = model.navigationSessionID else {
+                plans = nil
+                return
+            }
+            let workspace = repositoryPath
+            while !Task.isCancelled {
+                let texts = model.messages.map(\.text)
+                let linked = LinkedPlans.paths(sessionID: id)
+                let tasks = model.planTasks
+                let found = await Task.detached(priority: .utility) {
+                    SessionPlans.load(workspace: workspace, texts: texts, linked: linked, tasks: tasks)
+                }.value
+                guard !Task.isCancelled else { return }
+                if plans?.sessionID != id || plans?.plans != found { plans = (id, found) }
+                try? await Task.sleep(for: .seconds(2))
+            }
         }
         .task(id: workflow.changes) {
             guard changes != nil, let repositoryPath, let snapshot = workflow.changes else { return }
@@ -278,6 +315,9 @@ struct SessionRailCard: View {
     var onViewPin: (PinnedMessage) async -> Bool = { _ in false }
     var onViewTimeline: () -> Void = {}
     var onRestoreCheckpoint: (RestoreCheckpoint) -> Void = { _ in }
+    var onOpenPlan: (SessionPlan) -> Void = { _ in }
+    var onTrackPlan: (SessionPlan) -> Void = { _ in }
+    var onUnlinkPlan: (SessionPlan) -> Void = { _ in }
     @State private var expandedChanges = false
 
     var body: some View {
@@ -302,7 +342,8 @@ struct SessionRailCard: View {
             SessionRailSummarySections(
                 summary: summary, onViewAllOutputs: onViewAllOutputs, onOpenOutput: onOpenOutput,
                 onRespondInChat: onRespondInChat, onViewPin: onViewPin, onViewTimeline: onViewTimeline,
-                onRestoreCheckpoint: onRestoreCheckpoint)
+                onRestoreCheckpoint: onRestoreCheckpoint, onOpenPlan: onOpenPlan, onTrackPlan: onTrackPlan,
+                onUnlinkPlan: onUnlinkPlan)
             if let changes {
                 DisclosureGroup(isExpanded: $expandedChanges) {
                     VStack(alignment: .leading, spacing: 8) {

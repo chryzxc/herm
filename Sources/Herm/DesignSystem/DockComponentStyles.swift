@@ -1840,32 +1840,57 @@ extension View {
     /// Shared compact surface for secondary inspectors and detail groups.
     /// It uses the same low-contrast treatment as the main Control panel.
     /// `isActive` marks a hovered, focused or selected card: raised fill, strong border.
-    func dockCard(padding: CGFloat = 12, isActive: Bool = false) -> some View {
-        dockChrome { view, theme in view.dockCard(padding: padding, isActive: isActive, theme: theme) }
+    /// `tint` washes the fill and rims the card for a selection that carries a hue (canvas nodes).
+    /// `isSolid` is for cards drawn over other content (canvas nodes over wires, panels
+    /// floating over a scroll view): typographic skins then keep a canvas fill and rule
+    /// instead of their usual open, boxless grouping.
+    func dockCard(padding: CGFloat = 12, isActive: Bool = false, tint: Color? = nil, isSolid: Bool = false)
+        -> some View
+    {
+        dockChrome { view, theme in
+            view.dockCard(padding: padding, isActive: isActive, tint: tint, isSolid: isSolid, theme: theme)
+        }
     }
 
     @ViewBuilder
-    private func dockCard(padding: CGFloat, isActive: Bool, theme: DockThemeID) -> some View {
+    private func dockCard(padding: CGFloat, isActive: Bool, tint: Color?, isSolid: Bool, theme: DockThemeID)
+        -> some View
+    {
         let shape = DockThemeShape(theme: theme, role: .pane)
         let style = theme.style
-        if style.chrome == .open {
+        if style.chrome == .open, !isSolid, tint == nil {
             // Typographic skins: spacing and type group content, not boxes.
             self.dockPadding(padding)
+        } else if style.chrome == .open {
+            // No raised fill or depth; the canvas-colored fill reads as open while hiding what
+            // sits beneath, and the rule matches their wells and outlined controls.
+            self
+                .dockPadding(padding)
+                .background(shape.fill(Color.dockCanvas).overlay(shape.fill(tint?.opacity(0.08) ?? .clear)))
+                .overlay(
+                    shape.stroke(
+                        tint ?? (isActive ? Color.dockBorderStrong : Color.dockBorder),
+                        lineWidth: tint == nil ? 1 : 1.5))
         } else if style.material == .glass {
             self
                 .dockPadding(padding)
                 .dockLiquidGlass(shape)
+                .overlay(shape.stroke(tint ?? .clear, lineWidth: 1))
         } else {
             self
                 .dockPadding(padding)
-                .background(shape.fill(isActive ? Color.dockSurface2 : Color.dockSurface.opacity(style.cardFill)))
+                .background(
+                    shape.fill(isActive ? Color.dockSurface2 : Color.dockSurface.opacity(style.cardFill))
+                        .overlay(shape.fill(tint?.opacity(0.12) ?? .clear))
+                )
                 // A 0-width stroke still draws a hairline, so outline-free skins skip it.
                 .overlay(
                     shape.stroke(
-                        isActive || style.outlineWidth > 1
-                            ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72),
-                        lineWidth: style.outlineWidth
-                    ).opacity(style.outlineWidth > 0 ? 1 : 0)
+                        tint
+                            ?? (isActive || style.outlineWidth > 1
+                                ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72)),
+                        lineWidth: tint == nil ? style.outlineWidth : max(style.outlineWidth, 1)
+                    ).opacity(style.outlineWidth > 0 || tint != nil ? 1 : 0)
                 )
                 .dockStickerShadow(shape, theme: theme)
                 .dockFoldCrease(theme: theme)
@@ -1945,19 +1970,23 @@ extension View {
 /// The standard tab control for mutually exclusive scopes on every page.
 struct DockTabButton: View {
     let title: String
+    /// A leading glyph, for tabs that also stand alone as toggles (view modes, Annotate).
+    var icon: Ph? = nil
     let isSelected: Bool
     var showsSelectionMark = false
     var selectionNamespace: Namespace.ID? = nil
     /// Shares a track's width equally with its siblings.
     var fillsWidth = false
     var height: CGFloat = 30
+    /// `.control` when the tab stands beside text buttons, so both read at one size.
+    var font: DockTypography.Role = .metadata
     let action: () -> Void
     @DockChromeTheme private var theme
 
     var body: some View {
         DockTabSegment(
             isSelected: isSelected, showsSelectionMark: showsSelectionMark, selectionNamespace: selectionNamespace,
-            fillsWidth: fillsWidth, height: height, inset: showsSelectionMark ? 6 : 10, action: action
+            fillsWidth: fillsWidth, height: height, inset: showsSelectionMark ? 6 : 10, font: font, action: action
         ) {
             HStack(spacing: 4) {
                 if showsSelectionMark && isSelected {
@@ -1965,6 +1994,7 @@ struct DockTabButton: View {
                         .check, size: 11,
                         color: theme.style.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)
                 }
+                if let icon { DockIcon(icon, size: 13, weight: isSelected ? .fill : .regular) }
                 Text(title)
             }
         }
@@ -1980,6 +2010,7 @@ struct DockTabSegment<Label: View>: View {
     var fillsWidth = false
     var height: CGFloat = 30
     var inset: CGFloat = 10
+    var font: DockTypography.Role = .metadata
     let action: () -> Void
     @ViewBuilder let label: () -> Label
     @DockChromeTheme private var theme
@@ -1989,7 +2020,7 @@ struct DockTabSegment<Label: View>: View {
         let shape = DockThemeShape(theme: theme, delta: -1)
         Button(action: action) {
             label()
-                .dockFont(.metadata, weight: isSelected ? .medium : .regular)
+                .dockFont(font, weight: isSelected ? .medium : .regular)
                 .foregroundStyle(
                     isSelected
                         ? (style.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText)

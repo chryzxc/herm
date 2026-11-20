@@ -33,6 +33,15 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
     let onDismiss: () -> Void
     /// Reports the rendered string so the pane can locate quotes in it.
     let onRendered: (String) -> Void
+    /// Scrolled to and flashed with the find indicator whenever it changes.
+    var scrollTarget: NSRange?
+    /// Room under the text for controls floating over the document's bottom edge.
+    var bottomInset: CGFloat = 0
+    /// Room above the text for tools floating at the document's top edge.
+    var topInset: CGFloat = 0
+    /// Receives, once, a reader for the rendered character offset at the top of the visible
+    /// text. Read on demand: computing it on every scroll tick cost a layout query per frame.
+    var exposeVisibleOffset: ((@escaping @MainActor () -> Int) -> Void)?
     @ViewBuilder let editor: () -> Editor
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -42,11 +51,19 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
         scrollView.autohidesScrollers = true
+        scrollView.automaticallyAdjustsContentInsets = false
         let textView = ReviewTextView()
         textView.autoresizingMask = [.width]
         textView.coordinator = context.coordinator
         scrollView.documentView = textView
         context.coordinator.textView = textView
+        exposeVisibleOffset? { [weak textView, weak scrollView] in
+            guard let textView else { return 0 }
+            // Skip the band hidden under the top tools; the first readable line is below it.
+            let visible = textView.visibleRect
+            let top = visible.minY + (scrollView?.contentInsets.top ?? 0) + 8
+            return textView.characterIndexForInsertion(at: NSPoint(x: visible.minX + 24, y: top))
+        }
         return scrollView
     }
 
@@ -54,6 +71,12 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.parent = self
         guard let textView = coordinator.textView else { return }
+        if scrollView.contentInsets.bottom != bottomInset || scrollView.contentInsets.top != topInset {
+            let movesTop = scrollView.contentInsets.top != topInset
+            scrollView.contentInsets = NSEdgeInsets(top: topInset, left: 0, bottom: bottomInset, right: 0)
+            // Start below the reserved space; scrolled text then passes under the top tools.
+            if movesTop { scrollView.contentView.scroll(to: NSPoint(x: 0, y: -topInset)) }
+        }
         let revision = DockThemeRuntime.revision
         if coordinator.renderedText != text || coordinator.renderedTheme != revision
             || coordinator.renderedMarkdown != isMarkdown || coordinator.renderedScale != workspaceScale
@@ -70,6 +93,13 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
         }
         coordinator.apply(highlights)
         coordinator.present(anchor)
+        if scrollTarget != coordinator.scrolledTarget {
+            coordinator.scrolledTarget = scrollTarget
+            if let target = scrollTarget, NSMaxRange(target) <= textView.string.utf16.count {
+                textView.scrollRangeToVisible(target)
+                DispatchQueue.main.async { textView.showFindIndicator(for: target) }
+            }
+        }
     }
 
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
@@ -109,6 +139,7 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
         var renderedTheme: Int?
         var renderedMarkdown: Bool?
         var renderedScale: CGFloat?
+        var scrolledTarget: NSRange?
         private(set) var appliedHighlights: [AnnotationHighlight] = []
         private var popover: NSPopover?
         private var hosting: NSHostingController<AnyView>?

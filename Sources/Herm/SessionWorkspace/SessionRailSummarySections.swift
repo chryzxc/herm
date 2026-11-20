@@ -8,6 +8,9 @@ struct SessionRailSummarySections: View {
     let onViewPin: (PinnedMessage) async -> Bool
     var onViewTimeline: () -> Void = {}
     var onRestoreCheckpoint: (RestoreCheckpoint) -> Void = { _ in }
+    var onOpenPlan: (SessionPlan) -> Void = { _ in }
+    var onTrackPlan: (SessionPlan) -> Void = { _ in }
+    var onUnlinkPlan: (SessionPlan) -> Void = { _ in }
 
     var body: some View {
         if !summary.attention.isEmpty {
@@ -29,6 +32,21 @@ struct SessionRailSummarySections: View {
                 subtitle: plan.inProgress.map { "In progress: \($0.content)" }
             ) {
                 TodoPlanTaskList(plan: plan, isWorking: summary.isWorking)
+            }
+        }
+        if let lead = summary.plans.first {
+            SessionRailSummarySection(
+                title: summary.plans.count == 1 ? "Plan" : "Plans", icon: .treeStructure,
+                detail: lead.total.map { "\(lead.done ?? 0)/\($0)" },
+                subtitle: lead.total == nil ? "No progress yet" : lead.nextUp.map { "Next up: \($0)" }
+            ) {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(summary.plans) { plan in
+                        SessionRailPlanRow(
+                            plan: plan, onOpen: { onOpenPlan(plan) }, onTrack: { onTrackPlan(plan) },
+                            onUnlink: { onUnlinkPlan(plan) })
+                    }
+                }
             }
         }
         if !summary.processes.isEmpty {
@@ -371,6 +389,75 @@ private struct SessionRailCheckpointRow: View {
                     canRestore
                         ? "Restore files and rewind the chat to this checkpoint"
                         : "Wait for the turn to finish")
+        }
+    }
+}
+
+/// One plan: its progress from the file's checkboxes, or a way to ask Hermes to keep them.
+private struct SessionRailPlanRow: View {
+    let plan: SessionPlan
+    let onOpen: () -> Void
+    let onTrack: () -> Void
+    let onUnlink: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: onOpen) {
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(plan.title).dockFont(.body, weight: .semibold).lineLimit(2)
+                        Text(plan.fileName).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    Spacer(minLength: 0)
+                    DockIcon(.arrowSquareIn, size: 12, color: .dockMetadataText).accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.dockHover)
+            .disabled(plan.isMissing)
+            .help("Open this plan in a file tab, in Plan view.")
+            status
+        }
+        .contextMenu {
+            if plan.isLinked { Button("Remove from rail", action: onUnlink) }
+        }
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        if plan.isMissing {
+            Text("File not found.").dockFont(.metadata).foregroundStyle(Color.dockWarning)
+            Button("Remove from rail", action: onUnlink).buttonStyle(.dockLink)
+                .help("The linked file was moved or deleted. Remove it from this session’s rail.")
+        } else if let total = plan.total, total > 0 {
+            let done = plan.done ?? 0
+            DockProgressBar(fraction: Double(done) / Double(total), tint: DockStatusTone.complete.color)
+                .accessibilityLabel("\(done) of \(total) done")
+            HStack(spacing: 6) {
+                Text("\(done)/\(total) done").foregroundStyle(Color.dockMetadataText)
+                if plan.blocked > 0 {
+                    Text("\(plan.blocked) blocked").foregroundStyle(DockStatusTone.attention.color)
+                }
+                if plan.source == .taskList {
+                    Text("from task list").foregroundStyle(Color.dockMetadataText)
+                        .help(
+                            "The plan has no checkboxes, so this counts the session’s Hermes task list where tasks name the plan’s steps."
+                        )
+                }
+            }
+            .dockFont(.metadata).monospacedDigit()
+            if let next = plan.nextUp {
+                Text("Next up: \(next)").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
+            }
+        } else {
+            Text("No progress yet: neither the plan nor the task list marks its steps.")
+                .dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+            Button("Track progress", action: onTrack).buttonStyle(.dockLink)
+                .help(
+                    "Add a request to the chat composer asking Hermes to name its task list after this plan’s steps, so progress shows here. Herm never edits the plan."
+                )
         }
     }
 }
