@@ -12,7 +12,9 @@ final class ComposerCompletionController: ObservableObject {
     var isPresented: Bool {
         guard let trigger else { return false }
         if !result.items.isEmpty { return true }
-        if case .slash = trigger { return isLoading }
+        // Only the command name waits on a placeholder. In the argument an empty
+        // answer means no options, so a placeholder there flashes on every keystroke.
+        if case .slash(let text) = trigger { return isLoading && !text.contains(where: \.isWhitespace) }
         return false
     }
 

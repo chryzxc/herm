@@ -38,6 +38,30 @@ struct ComposerCompletionTests {
         #expect(!controller.isLoading)
     }
 
+    @MainActor @Test func typingASlashArgumentDoesNotFlashTheLoadingPlaceholder() throws {
+        let suite = "ComposerSlashArgument-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let model = DockModel(
+            sessionAgentStateFileURL: directory.appendingPathComponent("agents.json"), defaults: defaults,
+            botActivityFileURL: directory.appendingPathComponent("bots.json"), rpcClient: SlashOpeningRPC())
+        defer { model.shutdown() }
+        let controller = ComposerCompletionController()
+        defer { controller.close() }
+        var isOpen = false
+        let text = "/deploy start working"
+        controller.configure(
+            model: model, botMode: BotModeModel(), text: { text }, apply: { _, _ in },
+            onOpenChanged: { isOpen = $0 })
+
+        controller.update(for: text, caret: (text as NSString).length)
+
+        #expect(controller.isLoading)
+        #expect(!controller.isPresented)
+        #expect(!isOpen)
+    }
+
     @MainActor @Test func pendingSlashChangingToSkillUpdatesOpenCallback() throws {
         let suite = "ComposerSkillTransition-" + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))
