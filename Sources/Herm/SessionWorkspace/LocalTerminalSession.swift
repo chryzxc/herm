@@ -1,4 +1,5 @@
 import Darwin
+@preconcurrency import Dispatch
 import Foundation
 
 @MainActor
@@ -17,6 +18,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
 
     nonisolated static let maxOutputBytes = 256_000
     nonisolated static let maxOutputLines = 2_000
+    nonisolated static let outputDeliveryBytes = 8_192
 
     /// Bounded terminal output that trims only at UTF-8-safe line boundaries.
     struct OutputBuffer: Equatable {
@@ -87,7 +89,10 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
 
     private var masterFD: Int32 = -1
     private var processID: pid_t = 0
-    private var handle: FileHandle?
+    private var reader: DispatchSourceRead?
+    private var writer: DispatchSourceWrite?
+    private var pendingInput = Data()
+    private var inputOffset = 0
     private var outputBuffer = OutputBuffer()
     private var lifecycleID = UUID()
     private var verificationMarker: String?
@@ -153,30 +158,55 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         masterFD = fd
         processID = child
         let lifecycleID = self.lifecycleID
-        let terminalHandle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
-        handle = terminalHandle
-        terminalHandle.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else {
-                Task { @MainActor [weak self] in
-                    guard let self, self.lifecycleID == lifecycleID, self.masterFD >= 0 else { return }
-                    self.handle?.readabilityHandler = nil
+        // Cancellation closes only this source's duplicate, even if a new shell already owns masterFD.
+        let readFD = fcntl(fd, F_DUPFD_CLOEXEC, 0)
+        guard readFD >= 0 else {
+            let error = String(cString: strerror(errno))
+            close()
+            state = .failed(error)
+            return
+        }
+        let flags = fcntl(fd, F_GETFL)
+        guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 else {
+            let error = String(cString: strerror(errno))
+            Darwin.close(readFD)
+            close()
+            state = .failed(error)
+            return
+        }
+        let outputQueue = DispatchQueue(label: "Herm.terminal.output")
+        let source = DispatchSource.makeReadSource(fileDescriptor: readFD, queue: outputQueue)
+        let decoder = OutputDecoder()
+        reader = source
+        source.setCancelHandler { @Sendable in Darwin.close(readFD) }
+        source.setEventHandler { @Sendable [weak self] in
+            guard let data = Self.readOutput(readFD) else { return }
+            let text = Self.cleanTerminalText(decoder.decode(data))
+            // Keep just one delivery outstanding and give AppKit a turn between batches.
+            source.suspend()
+            DispatchQueue.main.async {
+                defer {
+                    outputQueue.asyncAfter(deadline: .now() + .milliseconds(4)) { source.resume() }
+                }
+                guard let self, self.lifecycleID == lifecycleID, self.masterFD >= 0 else { return }
+                if data.isEmpty {
+                    if !text.isEmpty { self.consume(text) }
+                    self.reader?.cancel()
+                    self.reader = nil
                     Darwin.close(self.masterFD)
-                    self.handle = nil
+                    self.clearPendingInput()
+                    self.finishVerificationFailure("Terminal exited before reporting a result.")
                     self.masterFD = -1
                     self.processID = 0
                     self.state = .exited
+                } else {
+                    self.emulator.view.feed(byteArray: Array(data)[...])
+                    self.consume(text)
+                    if self.state == .starting { self.state = .ready }
                 }
-                return
-            }
-            let text = Self.cleanTerminalText(String(decoding: data, as: UTF8.self))
-            Task { @MainActor [weak self] in
-                guard let self, self.lifecycleID == lifecycleID, self.masterFD >= 0 else { return }
-                self.emulator.view.feed(byteArray: Array(data)[...])
-                self.consume(text)
-                if self.state == .starting { self.state = .ready }
             }
         }
+        source.resume()
         state = .ready
         resize(columns: emulator.view.getTerminal().cols, rows: emulator.view.getTerminal().rows)
     }
@@ -197,7 +227,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         }
         guard verificationRun == nil else { return }
         if bytes.contains(13) || bytes.contains(10) { state = .running }
-        try? handle?.write(contentsOf: Data(bytes))
+        enqueueInput(Data(bytes))
     }
 
     /// Interactive shell input never creates verification evidence.
@@ -205,7 +235,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
     func submitCommand(_ command: String) -> Bool {
         guard masterFD >= 0, verificationRun == nil, !command.isEmpty else { return false }
         send(command + "\n")
-        return true
+        return masterFD >= 0
     }
 
     private func send(_ text: String) {
@@ -219,14 +249,25 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
             }
             state = .running
         }
-        try? handle?.write(contentsOf: data)
+        enqueueInput(data)
     }
 
     func interrupt() {
         guard masterFD >= 0 else { return }
         cancelVerification()
         state = .interrupting
-        send("\u{03}")
+        let droppedInput = inputOffset < pendingInput.count
+        clearPendingInput()
+        // Keep the normal Ctrl-C byte for raw-mode programs when the PTY accepts it.
+        // If backed up, signal the PTY's foreground group without waiting for another write.
+        if !droppedInput, Self.writeInput(Data([3]), from: 0, to: masterFD) == 1 { return }
+        _ = tcflush(masterFD, TCIFLUSH)
+        let foreground = tcgetpgrp(masterFD)
+        if foreground > 0, foreground != getpgrp() {
+            kill(-foreground, SIGINT)
+        } else if processID > 0 {
+            kill(processID, SIGINT)
+        }
     }
 
     func runVerification(_ recipe: VerificationRecipe, repositoryID: String, repositoryFingerprint: String) {
@@ -242,7 +283,63 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         verificationTail = ""
         state = .running
         let payload = "\(recipe.command); printf '\\n\(marker):%s\\n' \"$?\"\n"
-        if let data = payload.data(using: .utf8) { try? handle?.write(contentsOf: data) }
+        enqueueInput(Data(payload.utf8))
+    }
+
+    private func enqueueInput(_ data: Data) {
+        guard masterFD >= 0, !data.isEmpty else { return }
+        pendingInput.append(data)
+        if writer == nil { drainInput() }
+    }
+
+    /// One bounded, nonblocking write per callback. Only arm the source while bytes are pending.
+    private func drainInput() {
+        let count = Self.writeInput(pendingInput, from: inputOffset, to: masterFD)
+        if count < 0 {
+            finishVerificationFailure("Terminal input failed before reporting a result.")
+            close()
+            state = .failed("Terminal input failed. Restart the terminal to reconnect.")
+            return
+        }
+        inputOffset += count
+        if inputOffset == pendingInput.count {
+            clearPendingInput()
+        } else if writer == nil {
+            let lifecycle = lifecycleID
+            let fd = fcntl(masterFD, F_DUPFD_CLOEXEC, 0)
+            guard fd >= 0 else {
+                finishVerificationFailure("Terminal input failed before reporting a result.")
+                close()
+                state = .failed("Terminal input failed. Restart the terminal to reconnect.")
+                return
+            }
+            let source = DispatchSource.makeWriteSource(fileDescriptor: fd, queue: .main)
+            writer = source
+            source.setCancelHandler { @Sendable in Darwin.close(fd) }
+            source.setEventHandler { @Sendable [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.lifecycleID == lifecycle, self.writer != nil else { return }
+                    self.drainInput()
+                }
+            }
+            source.activate()
+        }
+    }
+
+    nonisolated static func writeInput(_ data: Data, from offset: Int, to fd: Int32) -> Int {
+        guard offset < data.count else { return 0 }
+        let wrote = data.withUnsafeBytes { buffer in
+            Darwin.write(fd, buffer.baseAddress!.advanced(by: offset), min(data.count - offset, 16384))
+        }
+        if wrote < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) { return 0 }
+        return wrote
+    }
+
+    private func clearPendingInput() {
+        writer?.cancel()
+        writer = nil
+        pendingInput.removeAll()
+        inputOffset = 0
     }
 
     nonisolated static func acceptedVerificationRecipe(_ recipe: VerificationRecipe) -> VerificationRecipe? {
@@ -261,7 +358,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
             return
         }
         verificationTail.append(text)
-        guard let markerRange = verificationTail.range(of: marker) else {
+        guard let receipt = Self.verificationReceipt(marker: marker, in: verificationTail) else {
             let keep = marker.count + 24
             if verificationTail.count > keep {
                 let flushCount = verificationTail.count - keep
@@ -271,14 +368,13 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
             }
             return
         }
-        let before = String(verificationTail[..<markerRange.lowerBound])
+        let before = String(verificationTail[..<receipt.range.lowerBound])
         outputBuffer.append(before)
-        let afterMarker = verificationTail[markerRange.upperBound...]
-        guard let exitCode = Self.verificationExitCode(marker: marker, in: "\(marker):\(afterMarker)") else { return }
+        outputBuffer.append(String(verificationTail[receipt.range.upperBound...]))
         let completed = VerificationRun(
             id: pending.id, recipeID: pending.recipeID, repositoryID: pending.repositoryID,
             repositoryFingerprint: pending.repositoryFingerprint, command: pending.command,
-            startedAt: pending.startedAt, finishedAt: .now, exitCode: exitCode,
+            startedAt: pending.startedAt, finishedAt: .now, exitCode: receipt.exitCode,
             outputSummary: HermesDiagnosticsService.safeSummary(before))
         verificationRun = nil
         verificationMarker = nil
@@ -288,25 +384,68 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
     }
 
     private func cancelVerification() {
+        finishVerificationFailure("Interrupted", exitCode: 130)
+    }
+
+    private func finishVerificationFailure(_ message: String, exitCode: Int? = nil) {
         guard let pending = verificationRun else { return }
+        outputBuffer.append(verificationTail)
         lastVerificationRun = VerificationRun(
             id: pending.id, recipeID: pending.recipeID, repositoryID: pending.repositoryID,
             repositoryFingerprint: pending.repositoryFingerprint, command: pending.command,
-            startedAt: pending.startedAt, finishedAt: .now, exitCode: 130, outputSummary: "Interrupted")
+            startedAt: pending.startedAt, finishedAt: .now, exitCode: exitCode, outputSummary: message)
         verificationRun = nil
         verificationMarker = nil
         verificationTail = ""
     }
 
+    /// An empty result means EOF. A nil result means a nonblocking read must wait for more data.
+    nonisolated static func readOutput(_ fd: Int32) -> Data? {
+        var buffer = [UInt8](repeating: 0, count: outputDeliveryBytes)
+        repeat {
+            let count = Darwin.read(fd, &buffer, buffer.count)
+            if count < 0 && errno == EINTR { continue }
+            if count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) { return nil }
+            return Data(buffer.prefix(max(0, count)))
+        } while true
+    }
+
+    /// The serial PTY reader owns the pending bytes. The emulator receives the original stream.
+    final class OutputDecoder: @unchecked Sendable {
+        private var pending = Data()
+
+        func decode(_ data: Data) -> String {
+            var bytes = pending
+            bytes.append(data)
+            pending.removeAll()
+            if !data.isEmpty, let start = bytes.indices.suffix(3).last(where: { bytes[$0] & 0xC0 != 0x80 }) {
+                let lead = bytes[start]
+                let length: Int
+                switch lead {
+                case 0xC2...0xDF: length = 2
+                case 0xE0...0xEF: length = 3
+                case 0xF0...0xF4: length = 4
+                default: length = 1
+                }
+                if bytes.endIndex - start < length {
+                    pending = Data(bytes[start...])
+                    bytes.removeSubrange(start...)
+                }
+            }
+            return String(decoding: bytes, as: UTF8.self)
+        }
+    }
+
+    nonisolated private static let escapePatterns = [
+        "\u{001B}\\][^\u{0007}]*(?:\u{0007}|\u{001B}\\\\)",
+        "\u{001B}\\[[0-?]*[ -/]*[@-~]",
+        "\u{001B}[()][0-2]",
+    ].map { try! NSRegularExpression(pattern: $0) }
+
     nonisolated private static func cleanTerminalText(_ text: String) -> String {
         var cleaned = text
-        let patterns = [
-            "\u{001B}\\][^\u{0007}]*(?:\u{0007}|\u{001B}\\\\)",
-            "\u{001B}\\[[0-?]*[ -/]*[@-~]",
-            "\u{001B}[()][0-2]",
-        ]
-        for pattern in patterns {
-            if let regex = try? NSRegularExpression(pattern: pattern) {
+        if text.contains("\u{001B}") {
+            for regex in escapePatterns {
                 let range = NSRange(cleaned.startIndex..<cleaned.endIndex, in: cleaned)
                 cleaned = regex.stringByReplacingMatches(in: cleaned, range: range, withTemplate: "")
             }
@@ -314,32 +453,46 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         return cleaned.replacingOccurrences(of: "\r", with: "")
     }
 
+    nonisolated static func verificationReceipt(marker: String, in text: String)
+        -> (range: Range<String.Index>, exitCode: Int)?
+    {
+        let prefix = marker + ":"
+        var start = text.startIndex
+        while let end = text[start...].firstIndex(of: "\n") {
+            let line = text[start..<end]
+            let next = text.index(after: end)
+            if line.hasPrefix(prefix), let code = Int(line.dropFirst(prefix.count)), (0...255).contains(code) {
+                return (start..<next, code)
+            }
+            start = next
+        }
+        return nil
+    }
+
     nonisolated static func verificationExitCode(marker: String, in text: String) -> Int? {
-        guard let range = text.range(of: "\(marker):") else { return nil }
-        let digits = text[range.upperBound...].prefix(while: { $0.isNumber })
-        return Int(digits)
+        verificationReceipt(marker: marker, in: text)?.exitCode
     }
 
     func close() {
         lifecycleID = UUID()
-        handle?.readabilityHandler = nil
+        reader?.cancel()
+        reader = nil
+        clearPendingInput()
+        finishVerificationFailure("Terminal closed before reporting a result.")
         if masterFD >= 0 {
             let foreground = tcgetpgrp(masterFD)
             if foreground > 0, foreground != getpgrp() { kill(-foreground, SIGHUP) }
-            if let data = "exit\n".data(using: .utf8) {
-                try? handle?.write(contentsOf: data)
-            }
             Darwin.close(masterFD)
         }
         if processID > 0 { kill(processID, SIGTERM) }
-        handle = nil
         masterFD = -1
         processID = 0
         if state != .idle { state = .closed }
     }
 
     deinit {
-        handle?.readabilityHandler = nil
+        reader?.cancel()
+        writer?.cancel()
         if masterFD >= 0 { Darwin.close(masterFD) }
         if processID > 0 { kill(processID, SIGTERM) }
     }

@@ -3658,6 +3658,9 @@ events, and main-agent tool activity.
   Each Terminal inspector tab owns one shell; use the inspector's new-tab control
   for another. Clear, interrupt, and restart are in the options menu immediately
   after Previews. Its grid resizes with the panel; failed and closed shells offer recovery.
+  PTY input is queued in order and written in bounded, nonblocking chunks.
+  Interrupt discards a blocked paste and signals the foreground job. Verification
+  waits for a complete exit receipt before reporting a result.
   User-entered commands never create verification evidence.
 - Verification recipes are presented only when repository facts produce an
   allow-listed command. A missing project root or unsupported command is shown
@@ -4021,7 +4024,9 @@ Terminals are owned by the session-scoped terminal workspace store, not SwiftUI 
 lifetime. Switching sections or conversations preserves shells. At most four split
 panes are visible per group. Closing an active foreground job requires confirmation.
 App termination stops all owned shells; restored tabs start fresh shells. Terminal
-excerpts are user context and never count as verification evidence.
+excerpts are user context and never count as verification evidence. Bursty output
+reaches the terminal in order over short batches so the workspace can handle input
+and scroll events between deliveries.
 
 Source Control has no project Actions menu, saved-command editor, model-comparison
 launcher, or project model overrides. New chats use the selected model or Hermes default.

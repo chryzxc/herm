@@ -123,15 +123,23 @@ struct SessionTerminalView: View {
     }
 
     private func verificationRunBanner(_ run: VerificationRun) -> some View {
-        HStack(spacing: 8) {
-            Text(
-                run.isComplete
-                    ? "\(run.command) · EXIT \(run.exitCode ?? -1)\(run.durationLabel.map { " · \($0)" } ?? "")"
-                    : "Running \(run.command)…"
-            )
-            .dockFont(.compactStatus, weight: .regular, design: .monospaced)
-            .foregroundStyle(run.isComplete && run.exitCode == 0 ? Color.dockSuccess : Color.dockWarning)
-            .lineLimit(1)
+        let title: String
+        let accessibilityLabel: String
+        if let code = run.exitCode {
+            title = "\(run.command) · EXIT \(code)\(run.durationLabel.map { " · \($0)" } ?? "")"
+            accessibilityLabel = "Verification completed with exit code \(code)"
+        } else if run.isComplete {
+            title = run.outputSummary ?? "Check ended without an exit code."
+            accessibilityLabel = title
+        } else {
+            title = "Running \(run.command)…"
+            accessibilityLabel = "Verification running"
+        }
+        return HStack(spacing: 8) {
+            Text(title)
+                .dockFont(.compactStatus, weight: .regular, design: .monospaced)
+                .foregroundStyle(run.isComplete && run.exitCode == 0 ? Color.dockSuccess : Color.dockWarning)
+                .lineLimit(1)
             if let recipe = recipes.first(where: { $0.id == run.recipeID }), run.isComplete {
                 Button("Rerun") {
                     guard let repositoryID, let repositoryFingerprint else { return }
@@ -145,7 +153,6 @@ struct SessionTerminalView: View {
         }
         .dockPadding(.horizontal, 14)
         .dockPadding(.vertical, 5)
-        .accessibilityLabel(
-            run.isComplete ? "Verification completed with exit code \(run.exitCode ?? -1)" : "Verification running")
+        .accessibilityLabel(accessibilityLabel)
     }
 }

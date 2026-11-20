@@ -1,10 +1,56 @@
 import Combine
+import Darwin
 import Foundation
 import Testing
 
 @testable import Herm
 
 struct LocalTerminalSessionTests {
+    @Test func terminalBatchPreservesBytesAndReachesEOF() throws {
+        let pipe = Pipe()
+        let bytes = Data((0..<2048).map { UInt8(truncatingIfNeeded: $0) })
+        try pipe.fileHandleForWriting.write(contentsOf: bytes)
+        try pipe.fileHandleForWriting.close()
+        #expect(LocalTerminalSession.readOutput(pipe.fileHandleForReading.fileDescriptor) == bytes)
+        #expect(LocalTerminalSession.readOutput(pipe.fileHandleForReading.fileDescriptor)?.isEmpty == true)
+    }
+
+    @Test func nonblockingTerminalReadDistinguishesWaitingFromEOF() throws {
+        let pipe = Pipe()
+        let fd = pipe.fileHandleForReading.fileDescriptor
+        try #require(fcntl(fd, F_SETFL, O_NONBLOCK) == 0)
+        #expect(LocalTerminalSession.readOutput(fd) == nil)
+        try pipe.fileHandleForWriting.write(contentsOf: Data("ready".utf8))
+        #expect(LocalTerminalSession.readOutput(fd) == Data("ready".utf8))
+        try pipe.fileHandleForWriting.close()
+        #expect(LocalTerminalSession.readOutput(fd)?.isEmpty == true)
+    }
+
+    @Test func burstIsDeliveredInOrderAcrossBoundedReads() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let bytes = Data((0..<24_576).map { UInt8(truncatingIfNeeded: $0) })
+        try bytes.write(to: url)
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        var delivered = Data()
+        while let batch = LocalTerminalSession.readOutput(file.fileDescriptor), !batch.isEmpty {
+            #expect(batch.count <= 8_192)
+            delivered.append(batch)
+        }
+        #expect(delivered == bytes)
+    }
+
+    @Test func outputSummaryPreservesUTF8AcrossBatches() {
+        let decoder = LocalTerminalSession.OutputDecoder()
+        for byte in "🧪".utf8.dropLast() {
+            #expect(decoder.decode(Data([byte])).isEmpty)
+        }
+        #expect(decoder.decode(Data("🧪".utf8.suffix(1))) == "🧪")
+        #expect(decoder.decode(Data([0xE2])).isEmpty)
+        #expect(decoder.decode(Data()) == "�")
+    }
+
     @MainActor @Test func terminalRendererAppliesCursorMovementAndColors() {
         let terminal = LocalTerminalSession()
         terminal.emulator.view.feed(text: "hello\r\u{1b}[31mworld\u{1b}[0m")
@@ -86,6 +132,36 @@ struct LocalTerminalSessionTests {
         #expect(LocalTerminalSession.verificationExitCode(marker: "MARK", in: "output\nMARK:0\n") == 0)
         #expect(LocalTerminalSession.verificationExitCode(marker: "MARK", in: "MARK:127\n") == 127)
         #expect(LocalTerminalSession.verificationExitCode(marker: "MARK", in: "MARK:error\n") == nil)
+    }
+
+    @Test func verificationReceiptWaitsForNewlineAndSkipsCommandEcho() throws {
+        let echo = #"command; printf '\nMARK:%s\n' "$?""# + "\n"
+        let partial = echo + "result\nMARK:12"
+        #expect(LocalTerminalSession.verificationReceipt(marker: "MARK", in: partial) == nil)
+        let complete = partial + "7\nshell prompt"
+        let receipt = try #require(LocalTerminalSession.verificationReceipt(marker: "MARK", in: complete))
+        #expect(receipt.exitCode == 127)
+        #expect(complete[receipt.range] == "MARK:127\n")
+        #expect(complete[receipt.range.upperBound...] == "shell prompt")
+    }
+
+    @Test func nonblockingInputReturnsWhenPeerStopsReading() throws {
+        var fds: [Int32] = [0, 0]
+        try #require(pipe(&fds) == 0)
+        defer {
+            Darwin.close(fds[0])
+            Darwin.close(fds[1])
+        }
+        try #require(fcntl(fds[1], F_SETFL, O_NONBLOCK) == 0)
+        let bytes = Data(repeating: 65, count: 1_048_576)
+        var offset = 0
+        while offset < bytes.count {
+            let count = LocalTerminalSession.writeInput(bytes, from: offset, to: fds[1])
+            try #require(count >= 0 && count <= 16384)
+            if count == 0 { break }
+            offset += count
+        }
+        #expect(offset > 0 && offset < bytes.count)
     }
 
     @Test func outputBufferPreservesNewestCompleteLines() {

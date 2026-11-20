@@ -976,7 +976,7 @@ Source control alongside a real Herm conversation:
   immediately, shows a waiting state, and refreshes saved replies automatically
   while open. Open its conversation to follow tool activity or answer the reviewer.
 - Terminals survive inspector and session navigation, support splits, and attach
-  selected output to chat. Closing the app or a Terminal tab ends its shells (Herm
+  selected output to chat. Large pastes and bursts of output are processed in order while the workspace stays responsive. Closing the app or a Terminal tab ends its shells (Herm
   asks first if a command is running); reopening starts fresh ones. Closing the
   Browser tab unloads its page until you reopen it; the profile's agent browser keeps running.
 - Source Control provides Git changes, commits, stash, and review comparisons without a project Actions menu.
