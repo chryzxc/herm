@@ -263,16 +263,17 @@ extension ControlCenterModel {
         // shared refresh so a relaunch or tab restoration cannot leave its
         // cards empty merely because no view-local change event fired.
         refreshGlobalKanban()
-        if remindersAdapter != nil { beginProjectionRefresh("reminders") }
+        var refreshing: [String] = []
+        var unavailable: [String] = []
+        if remindersAdapter != nil { refreshing.append("reminders") }
         if rpc != nil {
-            ["cron.jobs", "sessions", "agents", "processes", "projects"].forEach(
-                beginProjectionRefresh)
+            refreshing += ["cron.jobs", "sessions", "agents", "processes", "projects"]
+        } else {
+            unavailable += ["cron.jobs", "sessions", "latest.activity", "agents", "projects"]
         }
-        if dockModel != nil { beginProjectionRefresh("core") }
-        if rpc == nil {
-            ["cron.jobs", "sessions", "latest.activity", "agents", "projects"].forEach(recordProjectionUnavailable)
-        }
-        if dockModel == nil { recordProjectionUnavailable("core") }
+        if dockModel != nil { refreshing.append("core") } else { unavailable.append("core") }
+        beginProjectionRefreshes(refreshing)
+        recordProjectionsUnavailable(unavailable)
 
         refreshTask = Task { [weak self] in
             guard let self else { return }
