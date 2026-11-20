@@ -505,7 +505,9 @@ struct ChatComposerView: View {
                             // Right Toolbar Group: Thinking depth selector menu & circular submit button
                             HStack(alignment: .center, spacing: 8) {
                                 if !model.isRestoringSession && model.sessionActionsReady {
-                                    if let controlCenter, let selectedModelOptionID {
+                                    if let controlCenter, let selectedModelOptionID,
+                                        !model.isUpdatingSessionModel, !model.isLoadingRuntimeModelOptions
+                                    {
                                         ChatQuotaChip(
                                             control: controlCenter, openQuota: openQuota,
                                             selectedProvider: selectedModelOptionID.components(separatedBy: "|").first)

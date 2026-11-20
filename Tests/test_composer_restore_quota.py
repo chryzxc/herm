@@ -8,9 +8,10 @@ class ComposerRestoreQuotaTests(unittest.TestCase):
         toolbar = source[source.index('// Right Toolbar Group:'):source.index('if !speechInput.isRecording', source.index('// Right Toolbar Group:'))]
         self.assertIn('if !model.isRestoringSession && model.sessionActionsReady {', toolbar)
         self.assertLess(toolbar.index('if !model.isRestoringSession && model.sessionActionsReady {'), toolbar.index('ChatQuotaChip('))
-        self.assertIn('if let controlCenter, let selectedModelOptionID {', toolbar)
+        self.assertIn('if let controlCenter, let selectedModelOptionID,', toolbar)
+        self.assertIn('!model.isUpdatingSessionModel, !model.isLoadingRuntimeModelOptions', toolbar)
         self.assertIn('selectedProvider: selectedModelOptionID.components(separatedBy: "|").first)', toolbar)
-        self.assertLess(toolbar.index('SessionContextRing(model: model)'), toolbar.rindex('}'))
+        self.assertIn('                                    }\n                                    SessionContextRing(model: model)\n                                }', toolbar)
 
 
 if __name__ == '__main__':
