@@ -110,6 +110,24 @@ struct SidebarSplitLayoutTests {
         }
     }
 
+    @Test func offscreenPaneSwapCommitsTheNewGeometryWithoutMotion() {
+        let split = makeSplit(width: 1200)
+        split.wantsLayer = true
+        let leading = NSView()
+        let trailing = NSView()
+        split.addArrangedSubview(leading)
+        split.addArrangedSubview(trailing)
+        for hideLeading in [true, false, true] {
+            split.setCollapsed(leading: hideLeading, trailing: !hideLeading, animated: true)
+            split.layout()
+            let visible = hideLeading ? trailing : leading
+            let hidden = hideLeading ? leading : trailing
+            #expect(visible.frame.width >= 1198)
+            #expect(hidden.frame.width < 1)
+            #expect(split.layer?.animation(forKey: "herm.paneVisibility") == nil)
+        }
+    }
+
     @Test func fixedWidthDividerSurvivesCollapsingEitherPane() {
         let split = makeSplit(width: 1200)
         split.addArrangedSubview(NSView())

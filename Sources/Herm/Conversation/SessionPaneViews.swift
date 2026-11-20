@@ -118,21 +118,25 @@ struct SessionPaneRow<Primary: View>: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if let inspector, docked == nil {
-                    // After the active column, or before it when that would run off the window.
-                    let end = inspectorStart
-                    let x =
-                        end + Self.inspectorWidth <= geometry.size.width
-                        ? end : max(0, end - widths[activeSlot] - Self.inspectorWidth - DockLayout.hairline)
-                    HStack(spacing: 0) {
-                        Color.dockBorderLight.frame(width: DockLayout.hairline)
-                        inspector.frame(width: Self.inspectorWidth)
-                        Color.dockBorderLight.frame(width: DockLayout.hairline)
+                ZStack(alignment: .topLeading) {
+                    if let inspector, docked == nil {
+                        // After the active column, or before it when that would run off the window.
+                        let end = inspectorStart
+                        let x =
+                            end + Self.inspectorWidth <= geometry.size.width
+                            ? end : max(0, end - widths[activeSlot] - Self.inspectorWidth - DockLayout.hairline)
+                        HStack(spacing: 0) {
+                            Color.dockBorderLight.frame(width: DockLayout.hairline)
+                            inspector.frame(width: Self.inspectorWidth)
+                            Color.dockBorderLight.frame(width: DockLayout.hairline)
+                        }
+                        .frame(height: geometry.size.height)
+                        .background(Color.dockOpaqueCanvas)
+                        .transition(DockMotion.reveal(from: end == x ? .leading : .trailing, reduceMotion: reduceMotion))
+                        .offset(x: x)
                     }
-                    .frame(height: geometry.size.height)
-                    .background(Color.dockOpaqueCanvas)
-                    .offset(x: x)
                 }
+                .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: inspector != nil)
             }
             .overlay(alignment: .trailing) {
                 if target != nil, zone > 0 {

@@ -17,6 +17,7 @@ struct PullRequestDetailView: View {
         _detailTab = State(initialValue: initialTab)
     }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var reviewerRecord: PullRequestRecord?
     @State private var commitDiffTarget: PullRequestCommitDiffTarget?
     @State private var readingGuide = false
@@ -750,8 +751,16 @@ struct PullRequestDetailView: View {
                     actionTitle: "Refresh"
                 )
             case .loaded(let files):
-                HStack(alignment: .top, spacing: 14) {
-                    if reviewPreferences.showsFileTree { fileTree(files) }
+                HStack(alignment: .top, spacing: 0) {
+                    ZStack(alignment: .leading) {
+                        if reviewPreferences.showsFileTree {
+                            fileTree(files)
+                                .padding(.trailing, 14)
+                                .transition(.move(edge: .leading).combined(with: .opacity))
+                        }
+                    }
+                    .clipped()
+                    .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: reviewPreferences.showsFileTree)
                     ScrollViewReader { proxy in
                         ScrollView(.vertical) {
                             LazyVStack(alignment: .leading, spacing: 10) {
@@ -991,10 +1000,13 @@ struct PullRequestDetailView: View {
         return VStack(alignment: .leading, spacing: 0) {
             Button {
                 selectedFileID = file.id
-                reviewPreferences.toggleExpanded(file.id)
+                withAnimation(DockMotion.disclosure(reduceMotion: reduceMotion)) {
+                    reviewPreferences.toggleExpanded(file.id)
+                }
             } label: {
                 HStack(spacing: 8) {
-                    DockIcon(expanded ? .caretDown : .caretRight, size: 13, color: Color.dockMetadataText)
+                    DockIcon(.caretRight, size: 13, color: Color.dockMetadataText)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                     PullRequestFileIcon(path: file.path, size: 15)
                     Text(file.path).dockFont(.body, weight: .semibold, design: .monospaced).lineLimit(1)
                     Text(file.status.uppercased())
@@ -1013,10 +1025,14 @@ struct PullRequestDetailView: View {
             }
             .buttonStyle(.dockHover)
             if expanded {
-                fileContent(file)
-                if let pr = center.selected {
-                    PullRequestThreadListView(model: center.review(for: pr), record: pr, path: file.path).dockPadding(8)
+                VStack(alignment: .leading, spacing: 0) {
+                    fileContent(file)
+                    if let pr = center.selected {
+                        PullRequestThreadListView(model: center.review(for: pr), record: pr, path: file.path)
+                            .dockPadding(8)
+                    }
                 }
+                .transition(.dockPanelReveal)
             }
         }
         .background(Color.dockCanvas)

@@ -1574,6 +1574,8 @@ and resets its interactive inputs.
 
 Settings → Density offers Default and Compact. Compact tightens density-aware margins and padding across workspace and floating presentations without reducing text size. Previously saved Small scales open as Compact; Large and Larger open as Default.
 
+The desktop chat list and inspector crossfade into their new layout. Switching directly between single panes slides toward the pane being opened. Divider drags track the pointer immediately.
+
 Expand/collapse keeps the current workspace mounted: chat-list and inspector
 switches, shared list/detail layouts, and shared disclosure sections preserve
 local view state when reopened. This retention lasts for the mounted workspace;

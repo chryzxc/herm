@@ -27,6 +27,8 @@ final class FractionPreservingSplitView: NSSplitView {
     var minimumTrailingWidth: CGFloat = 360 {
         didSet { if oldValue != minimumTrailingWidth { invalidatePositions() } }
     }
+    private static let paneMotionKey = "herm.paneVisibility"
+    private var hasReceivedVisibility = false
     private var userAdjusted = false
     private(set) var isDraggingDivider = false
     var onUserResizeEnded: (() -> Void)?
@@ -103,18 +105,36 @@ final class FractionPreservingSplitView: NSSplitView {
         setCollapsed(leading: false, trailing: collapsed)
     }
 
-    func setCollapsed(leading: Bool, trailing: Bool) {
+    func setCollapsed(leading: Bool, trailing: Bool, animated: Bool = false) {
+        let trailing = trailing && !leading
+        let canAnimate = animated && hasReceivedVisibility && !inLiveResize && !isDraggingDivider
+            && window?.occlusionState.contains(.visible) == true && bounds.width > 0
+        hasReceivedVisibility = true
+        if !canAnimate { layer?.removeAnimation(forKey: Self.paneMotionKey) }
         guard leading != isLeadingCollapsed || trailing != isTrailingCollapsed else { return }
+        if canAnimate {
+            // Composite the old and new split once. Reflowing the transcript at
+            // every intermediate divider width is expensive and disturbs scrolling.
+            wantsLayer = true
+            let transition = CATransition()
+            let swapsSides = (isLeadingCollapsed && trailing) || (isTrailingCollapsed && leading)
+            transition.type = swapsSides ? .push : .fade
+            if swapsSides { transition.subtype = leading ? .fromRight : .fromLeft }
+            transition.duration = swapsSides ? 0.22 : 0.16
+            transition.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer?.add(transition, forKey: Self.paneMotionKey)
+        }
         if !isLeadingCollapsed, !isTrailingCollapsed {
             expandedLeadingWidth = arrangedSubviews.first?.frame.width
         }
         isLeadingCollapsed = leading
-        isTrailingCollapsed = trailing && !leading
+        isTrailingCollapsed = trailing
         for pane in arrangedSubviews {
             pane.wantsLayer = true
             pane.layer?.masksToBounds = true
         }
         invalidatePositions()
+        if canAnimate { layoutSubtreeIfNeeded() }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             layoutSubtreeIfNeeded()
@@ -145,7 +165,13 @@ final class FractionPreservingSplitView: NSSplitView {
         return super.hitTest(point)
     }
 
+    override func viewWillStartLiveResize() {
+        layer?.removeAnimation(forKey: Self.paneMotionKey)
+        super.viewWillStartLiveResize()
+    }
+
     override func mouseDown(with event: NSEvent) {
+        layer?.removeAnimation(forKey: Self.paneMotionKey)
         guard !isLeadingCollapsed, !isTrailingCollapsed else { return }
         userAdjusted = true
         isDraggingDivider = true

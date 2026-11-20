@@ -210,11 +210,14 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         )
         context.coordinator.leadingWidth = leadingWidth
         if let splitView = splitView as? FractionPreservingSplitView {
-            splitView.setCollapsed(leading: isLeadingCollapsed, trailing: isTrailingCollapsed)
             splitView.fraction = leadingFraction
             splitView.minimumLeadingWidth = minimumLeadingWidth
             splitView.maximumLeadingWidth = maximumLeadingWidth
             splitView.minimumTrailingWidth = minimumTrailingWidth
+            splitView.setCollapsed(
+                leading: isLeadingCollapsed, trailing: isTrailingCollapsed,
+                animated: context.environment.dockHostVisible && !context.environment.dockHostResizing
+                    && DockMotion.isEnabled(reduceMotion: context.environment.accessibilityReduceMotion))
         }
 
         guard !isLeadingCollapsed, !isTrailingCollapsed, !context.coordinator.hasSetInitialPosition else { return }

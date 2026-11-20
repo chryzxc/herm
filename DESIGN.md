@@ -1843,6 +1843,8 @@ hides the roster when both panels would crowd the scene.
 
 ### Navigation sidebar
 
+The desktop split commits its final widths once when visibility changes. A short layer crossfade bridges those layouts. Swapping between opposite single panes slides in the incoming side. Initial layout, live resize and Reduce Motion use the final geometry immediately.
+
 Working and unread activity follows each session through selection, pinned rows,
 and project summaries; the notch uses the same session activity state.
 Unseen failed turns show a warning triangle beside the independent unread count,
