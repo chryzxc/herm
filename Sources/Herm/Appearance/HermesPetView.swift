@@ -111,6 +111,8 @@ final class HermesPetSpriteView: NSView {
                 self.advanceFrame()
             }
         }
+        // Frame-accurate sprite timing isn't needed; let macOS coalesce wakeups.
+        timer?.tolerance = interval / 10
     }
 
     func advanceFrame() {

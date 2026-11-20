@@ -9,7 +9,7 @@ struct ComposerDictationRecordingBar: View {
     let send: () -> Void
 
     @State private var samples: [CGFloat] = []
-    private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    private let timer = Timer.publish(every: 0.1, tolerance: 0.02, on: .main, in: .common).autoconnect()
 
     var body: some View {
         HStack(spacing: 8) {

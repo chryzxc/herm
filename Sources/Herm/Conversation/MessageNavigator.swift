@@ -807,6 +807,7 @@ struct RailPointerStrip: NSViewRepresentable {
             timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refreshPointer() }
             }
+            timer?.tolerance = 1.0 / 120
         }
 
         isolated deinit {
