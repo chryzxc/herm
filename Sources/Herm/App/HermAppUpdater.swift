@@ -135,6 +135,7 @@ final class HermAppUpdater: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: Self.checkInterval, repeats: true) { _ in
             Task { @MainActor in HermAppUpdater.shared.checkForUpdates() }
         }
+        timer?.tolerance = Self.checkInterval / 10
         activationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { _ in

@@ -806,3 +806,22 @@ scroll the sidebar, then scroll a long chat. Read `running=` and the
 
 Verification: `ConversationChangeSummaryTests` and `HermPerformanceRecorderTests`.
 No live capture was taken for this change.
+
+## Idle battery drain from decorative motion — 20 November 2026
+
+A live Herm with working sessions, sitting in the background, sampled at about
+8% CPU (`sample`, 10 s) with no input. About 7% of the main thread was
+`CA::Transaction::commit` and window layout, driven by `DockMotionSchedule`
+ticks: the notch's working mark at 30 Hz and live Bot faces at 15 Hz, which keep
+moving while Herm is in the background by design. The clock ran just as fast
+with the screen locked or asleep, when nothing could see it.
+
+- `DockMotionBudget` holds every decorative clock when no Herm window is on
+  screen (`NSApp.occlusionState`, screens asleep, session switched out),
+  re-checking once a second. Visible motion keeps its full rate in the
+  background and in Low Power Mode: capping it made the notch visibly choppy.
+- The notch's always-on poll timers (delivery questions, Kanban/Bots, quota),
+  the pet's parked tick, the pet refresh and the update check now carry timer
+  tolerance so macOS can coalesce their wakeups.
+
+Not measured: a paired before/after energy capture; this needs a relaunch.
