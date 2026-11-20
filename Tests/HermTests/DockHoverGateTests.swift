@@ -11,13 +11,21 @@ struct DockHoverGateTests {
             windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
     }
 
-    @Test func admitsEachMoveOnceAcrossForwardedDeliveries() {
+    @Test func deliversOnlyTheLatestMoveThroughTheDeepestHost() async {
         let gate = DockHoverGate()
-        let event = move(at: 1_000)
-        #expect(gate.admit(event, replay: { _ in }))
-        // The same move forwarded up from a nested host is not re-dispatched.
-        #expect(!gate.admit(event, replay: { _ in }))
-        #expect(gate.admit(move(at: 1_000.01, x: 11), replay: { _ in }))
+        var deliveries: [String] = []
+        let first = move(at: 1_000)
+        let latest = move(at: 1_000.01, x: 11)
+        #expect(!gate.admit(first, depth: 2) { _ in deliveries.append("old") })
+        #expect(!gate.admit(latest, depth: 1) { _ in deliveries.append("root") })
+        let admitted = gate.admit(latest, depth: 2) { event in
+            deliveries.append("pane")
+            #expect(gate.admit(event, depth: 1) { _ in })
+        }
+        #expect(!admitted)
+        await gate.deferred?.value
+        #expect(deliveries == ["pane"])
+        #expect(!gate.admit(latest, depth: 1) { _ in })
     }
 
     private func scroll(at seconds: TimeInterval, phase: Int64) -> NSEvent {

@@ -115,9 +115,38 @@ enum DesktopWorkspaceFractions {
     static let conversationOfRemainder: CGFloat = conversation / (conversation + inspector)
 }
 
-/// AppKit owns the fullscreen divider so panel resizing stays responsive even
-/// while the conversation and inspector contain complex, frequently-updating
-/// SwiftUI content.
+/// Use the navigation views' rendered inputs to skip repeated shell deliveries.
+struct DesktopNavigationPane: View, Equatable {
+    enum Content: Equatable {
+        case sessions(SessionNavQueue)
+        case bots(BotChatsPage)
+    }
+
+    let content: Content
+    let history: DockNavigationHistory
+    let visible: Bool
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        MainActor.assumeIsolated {
+            lhs.content == rhs.content && lhs.visible == rhs.visible
+                && lhs.history.canGoBack == rhs.history.canGoBack
+                && lhs.history.canGoForward == rhs.history.canGoForward
+        }
+    }
+
+    var body: some View {
+        Group {
+            switch content {
+            case .sessions(let queue): queue.equatable()
+            case .bots(let page): page.equatable()
+            }
+        }
+        .environment(\.dockNavigationHistory, history)
+        .environment(\.dockHostVisible, visible)
+    }
+}
+
+/// AppKit owns the fullscreen divider so it stays responsive while SwiftUI updates each pane.
 struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresentable {
     let leading: Leading
     let trailing: Trailing
@@ -130,6 +159,8 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
     /// Hides the trailing pane without tearing it down, so its state survives.
     let isTrailingCollapsed: Bool
     let isLeadingCollapsed: Bool
+    let leadingMatches: ((Leading, Leading) -> Bool)?
+    let performanceRoles: (leading: String, trailing: String)
 
     init(
         leading: Leading,
@@ -141,7 +172,9 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         minimumTrailingWidth: CGFloat = 360,
         leadingWidth: Binding<CGFloat>? = nil,
         isTrailingCollapsed: Bool = false,
-        isLeadingCollapsed: Bool = false
+        isLeadingCollapsed: Bool = false,
+        leadingMatches: ((Leading, Leading) -> Bool)? = nil,
+        performanceRoles: (leading: String, trailing: String) = ("panelLeading", "panelTrailing")
     ) {
         self.isTrailingCollapsed = isTrailingCollapsed
         self.isLeadingCollapsed = isLeadingCollapsed
@@ -153,6 +186,8 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         self.maximumLeadingWidth = maximumLeadingWidth
         self.minimumTrailingWidth = minimumTrailingWidth
         self.leadingWidth = leadingWidth
+        self.leadingMatches = leadingMatches
+        self.performanceRoles = performanceRoles
     }
 
     func makeCoordinator() -> Coordinator {
@@ -162,7 +197,8 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
             minimumLeadingWidth: minimumLeadingWidth,
             maximumLeadingWidth: maximumLeadingWidth,
             minimumTrailingWidth: minimumTrailingWidth,
-            leadingWidth: leadingWidth
+            leadingWidth: leadingWidth,
+            performanceRoles: performanceRoles
         )
     }
 
@@ -192,11 +228,17 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
     func updateNSView(_ splitView: NSSplitView, context: Context) {
         let performanceStart = ProcessInfo.processInfo.systemUptime
         defer { HermPerformanceRecorder.recordWork("splitHostUpdate", since: performanceStart) }
-        context.coordinator.leadingHost.rootView = AnyView(
-            leading.dockThemedRoot().environment(\.self, context.environment)
-                .disabled(isLeadingCollapsed).accessibilityHidden(isLeadingCollapsed)
-        )
-        context.coordinator.trailingHost.rootView = AnyView(
+        let coordinator = context.coordinator
+        let visible = context.environment.dockHostVisible
+        if coordinator.acceptsLeading(
+            leading, environment: context.environment, collapsed: isLeadingCollapsed, matches: leadingMatches)
+        {
+            coordinator.leadingContent.update(visible: visible && !isLeadingCollapsed) {
+                leading.dockThemedRoot().environment(\.self, context.environment)
+                    .disabled(isLeadingCollapsed).accessibilityHidden(isLeadingCollapsed)
+            }
+        }
+        coordinator.trailingContent.update(visible: visible && !isTrailingCollapsed) {
             trailing.dockThemedRoot().environment(\.self, context.environment)
                 .disabled(isTrailingCollapsed).accessibilityHidden(isTrailingCollapsed)
                 .overlay(alignment: .leading) {
@@ -207,7 +249,7 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
                             .padding(.top, context.environment.dockShellToolbarHeight)
                     }
                 }
-        )
+        }
         context.coordinator.leadingWidth = leadingWidth
         if let splitView = splitView as? FractionPreservingSplitView {
             splitView.fraction = leadingFraction
@@ -242,11 +284,14 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         let minimumLeadingWidth: CGFloat
         let maximumLeadingWidth: CGFloat?
         let minimumTrailingWidth: CGFloat
-        let leadingHost = splitPaneHost(role: "panelLeading")
-        let trailingHost = splitPaneHost(role: "panelTrailing")
+        let leadingHost: NSHostingView<AnyView>
+        let trailingHost: NSHostingView<AnyView>
+        fileprivate let leadingContent = FullscreenSplitPaneContent()
+        fileprivate let trailingContent = FullscreenSplitPaneContent()
         weak var splitView: NSSplitView?
         var hasSetInitialPosition = false
         var leadingWidth: Binding<CGFloat>?
+        private var previousLeading: (Leading, NavigationEnvironment, Bool)?
 
         init(
             leadingFraction: CGFloat?,
@@ -254,7 +299,8 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
             minimumLeadingWidth: CGFloat,
             maximumLeadingWidth: CGFloat?,
             minimumTrailingWidth: CGFloat,
-            leadingWidth: Binding<CGFloat>?
+            leadingWidth: Binding<CGFloat>?,
+            performanceRoles: (leading: String, trailing: String)
         ) {
             self.leadingFraction = leadingFraction ?? 0.30
             self.initialLeadingWidth = initialLeadingWidth
@@ -262,6 +308,25 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
             self.maximumLeadingWidth = maximumLeadingWidth
             self.minimumTrailingWidth = minimumTrailingWidth
             self.leadingWidth = leadingWidth
+            leadingHost = splitPaneHost(role: performanceRoles.leading)
+            trailingHost = splitPaneHost(role: performanceRoles.trailing)
+            super.init()
+            leadingHost.rootView = AnyView(FullscreenSplitPaneRoot(content: leadingContent))
+            trailingHost.rootView = AnyView(FullscreenSplitPaneRoot(content: trailingContent))
+        }
+
+        func acceptsLeading(
+            _ leading: Leading, environment: EnvironmentValues, collapsed: Bool, matches: ((Leading, Leading) -> Bool)?
+        ) -> Bool {
+            guard let matches else { return true }
+            let presentation = NavigationEnvironment(environment)
+            if let (previous, previousPresentation, previousCollapsed) = previousLeading,
+                previousCollapsed == collapsed, previousPresentation == presentation, matches(previous, leading)
+            {
+                return false
+            }
+            previousLeading = (leading, presentation, collapsed)
+            return true
         }
 
         func minimumLeadingPosition(in splitView: NSSplitView) -> CGFloat {
@@ -313,4 +378,74 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
             if leadingWidth.wrappedValue != width { leadingWidth.wrappedValue = width }
         }
     }
+}
+
+/// The desktop navigation pane's environment crosses the separate AppKit host.
+@MainActor
+private struct NavigationEnvironment: Equatable {
+    let visible: Bool
+    let resizing: Bool
+    let enabled: Bool
+    let workspaceScale: CGFloat
+    let toolbarHeight: CGFloat
+    let displayScale: CGFloat
+    let scheme: ColorScheme
+    let contrast: ColorSchemeContrast
+    let reduceMotion: Bool
+    let reduceTransparency: Bool
+    let locale: Locale
+    let direction: LayoutDirection
+    let typeSize: DynamicTypeSize
+    let themeRevision: Int
+
+    init(_ environment: EnvironmentValues) {
+        visible = environment.dockHostVisible
+        resizing = environment.dockHostResizing
+        enabled = environment.isEnabled
+        workspaceScale = environment.dockWorkspaceScale
+        toolbarHeight = environment.dockShellToolbarHeight
+        displayScale = environment.displayScale
+        scheme = environment.colorScheme
+        contrast = environment.colorSchemeContrast
+        reduceMotion = environment.accessibilityReduceMotion
+        reduceTransparency = environment.accessibilityReduceTransparency
+        locale = environment.locale
+        direction = environment.layoutDirection
+        typeSize = environment.dynamicTypeSize
+        themeRevision = DockThemeRuntime.revision
+    }
+}
+
+@MainActor
+private final class FullscreenSplitPaneContent: ObservableObject {
+    @Published private(set) var view = AnyView(EmptyView())
+    private var visible: Bool?
+    private var pending: AnyView?
+
+    func update(visible: Bool, content: () -> some View) {
+        // Deliver the hidden transition, then resume with the latest inputs when reopened.
+        guard visible || self.visible != false else { return }
+        let next = AnyView(content())
+        if self.visible == nil {
+            view = next
+        } else {
+            let deliveryScheduled = pending != nil
+            pending = next
+            if !deliveryScheduled {
+                // Coalesce shell updates and publish outside AppKit's representable update.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, let next = pending else { return }
+                    pending = nil
+                    view = next
+                }
+            }
+        }
+        self.visible = visible
+    }
+}
+
+private struct FullscreenSplitPaneRoot: View {
+    @ObservedObject var content: FullscreenSplitPaneContent
+
+    var body: some View { content.view }
 }

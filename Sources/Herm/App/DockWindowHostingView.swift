@@ -6,40 +6,52 @@ final class DockWindowHostingView<Content: View>: NSHostingView<Content> {
     /// Names this host in performance captures (`hostLayout.<role>`).
     var performanceRole = "root"
 
-    /// Split panes set this. See `needsUpdateConstraints`.
-    var containsConstraintInvalidation = false
+    var handlesScrollConstraintsLocally = false
+    private var pendingScrollConstraints = false
 
-    /// A pane host publishes no constraints (`sizingOptions = []`), yet SwiftUI
-    /// still marks it `needsUpdateConstraints` on every scroll commit, and AppKit
-    /// forwards that up to the SwiftUI view hosting the split, which re-lays out
-    /// the whole window. A pane turns the request into its own layout pass,
-    /// which renders the same graph update without informing its ancestors.
     override var needsUpdateConstraints: Bool {
         get { super.needsUpdateConstraints }
         set {
-            if newValue, containsConstraintInvalidation {
+            // These panes are sized by NSSplitView and publish no intrinsic constraints.
+            // A scroll changes their contents without changing the enclosing window's layout.
+            if newValue, handlesScrollConstraintsLocally, !inLiveResize, !super.needsUpdateConstraints,
+                DockScrollActivity.isScrolling(in: self)
+            {
+                guard !pendingScrollConstraints else { return }
+                pendingScrollConstraints = true
                 needsLayout = true
-                return
+            } else {
+                pendingScrollConstraints = false
+                super.needsUpdateConstraints = newValue
             }
-            super.needsUpdateConstraints = newValue
         }
+    }
+
+    override func updateConstraints() {
+        pendingScrollConstraints = false
+        super.updateConstraints()
     }
 
     // Nested split-pane hosts relayout whenever the root re-renders; time it so
     // performance captures show whether that cascade is behind a dropped frame.
     override func layout() {
         guard HermPerformanceRecorder.active || DockHostLayoutTiming.layoutObserver != nil else {
-            super.layout()
+            layoutContent()
             return
         }
         let start = ProcessInfo.processInfo.systemUptime
         DockHostLayoutTiming.begin()
-        super.layout()
+        layoutContent()
         HermPerformanceRecorder.recordWork("hostLayout", since: start)
         DockHostLayoutTiming.end(role: performanceRole, since: start)
     }
 
-    private let hoverGate = DockHoverGate()
+    private func layoutContent() {
+        // Run the host's constraint pass before laying out newly exposed SwiftUI rows.
+        if pendingScrollConstraints { updateConstraints() }
+        super.layout()
+    }
+
     private let scrollHits = DockScrollHitCache()
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -47,7 +59,7 @@ final class DockWindowHostingView<Content: View>: NSHostingView<Content> {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard hoverGate.admit(event, replay: { [weak self] in self?.replayHover($0) }) else { return }
+        guard DockHoverGate.admit(event, in: self, replay: { [weak self] in self?.replayHover($0) }) else { return }
         super.mouseMoved(with: event)
     }
 
@@ -56,48 +68,74 @@ final class DockWindowHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
-/// Every mouse move re-hit-tests a host's whole SwiftUI tree for hover.
-/// Nested hosts receive each move more than once (their own tracking areas,
-/// then an inner host forwarding it up the responder chain), and moves that
-/// arrive mid-scroll only chase content sliding under a still pointer. The
-/// gate admits each move once, holds moves during a scroll, and replays the
-/// last held one after the scroll settles so hover ends up correct.
+/// Deliver the latest move through the deepest host once per window.
 @MainActor
 final class DockHoverGate {
-    private var lastAdmitted: (timestamp: TimeInterval, location: NSPoint)?
-    private var pendingEvent: NSEvent?
-    private var pendingReplay: ((NSEvent) -> Void)?
-    private var deferred: Task<Void, Never>?
+    private static let windows = NSMapTable<NSWindow, DockHoverGate>(
+        keyOptions: .weakMemory, valueOptions: .strongMemory)
+    private struct Move {
+        let event: NSEvent
+        let depth: Int
+        let replay: (NSEvent) -> Void
+    }
+    private var pending: Move?
+    private var delivered: NSEvent?
+    private var isReplaying = false
+    private(set) var deferred: Task<Void, Never>?
 
-    func admit(_ event: NSEvent, replay: @escaping (NSEvent) -> Void) -> Bool {
-        if let last = lastAdmitted, last.timestamp == event.timestamp, last.location == event.locationInWindow {
-            return false
+    static func admit(_ event: NSEvent, in host: NSView, replay: @escaping (NSEvent) -> Void) -> Bool {
+        guard let window = host.window else { return true }
+        let gate: DockHoverGate
+        if let existing = windows.object(forKey: window) {
+            gate = existing
+        } else {
+            gate = DockHoverGate()
+            windows.setObject(gate, forKey: window)
         }
-        lastAdmitted = (event.timestamp, event.locationInWindow)
-        guard DockScrollActivity.isScrolling(at: event.timestamp) else {
-            deferred?.cancel()
-            deferred = nil
-            pendingEvent = nil
-            pendingReplay = nil
-            return true
+        var depth = 0
+        var parent = host.superview
+        while let view = parent {
+            depth += 1
+            parent = view.superview
         }
-        pendingEvent = event
-        pendingReplay = replay
+        return gate.admit(event, depth: depth) { [weak host, weak window] move in
+            guard let window, host?.window === window, let content = window.contentView,
+                content.bounds.contains(content.convert(window.mouseLocationOutsideOfEventStream, from: nil))
+            else { return }
+            replay(move)
+        }
+    }
+
+    func admit(_ event: NSEvent, depth: Int, replay: @escaping (NSEvent) -> Void) -> Bool {
+        if let delivered, Self.isSameMove(delivered, event) { return isReplaying }
+        if let pending {
+            guard event.timestamp >= pending.event.timestamp,
+                !Self.isSameMove(pending.event, event) || depth > pending.depth
+            else { return false }
+        }
+        pending = Move(event: event, depth: depth, replay: replay)
         guard deferred == nil else { return false }
         deferred = Task { @MainActor [weak self] in
-            var remaining = DockScrollActivity.settleInterval
-            while remaining > 0 {
+            var remaining = 1.0 / 120
+            repeat {
                 try? await Task.sleep(for: .seconds(remaining))
                 guard !Task.isCancelled, self != nil else { return }
                 remaining = DockScrollActivity.remainingSettle(at: ProcessInfo.processInfo.systemUptime)
-            }
-            guard let self, let event = self.pendingEvent, let replay = self.pendingReplay else { return }
+            } while remaining > 0
+            guard let self, let move = self.pending else { return }
             self.deferred = nil
-            self.pendingEvent = nil
-            self.pendingReplay = nil
-            replay(event)
+            self.pending = nil
+            self.delivered = move.event
+            // Super may forward this move through ancestor responders.
+            self.isReplaying = true
+            move.replay(move.event)
+            self.isReplaying = false
         }
         return false
+    }
+
+    private static func isSameMove(_ lhs: NSEvent, _ rhs: NSEvent) -> Bool {
+        lhs.timestamp == rhs.timestamp && lhs.locationInWindow == rhs.locationInWindow
     }
 }
 
@@ -145,13 +183,42 @@ final class DockScrollHitCache {
 enum DockScrollActivity {
     static let settleInterval: TimeInterval = 0.15
     private static var lastScrollTimestamp: TimeInterval = -.infinity
-    private static let monitor: Any? = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-        let timestamp = event.timestamp
+    private static var lastInputTimestamp: TimeInterval = -.infinity
+    private static weak var lastScrollWindow: NSWindow?
+    private static var lastScrollPoint = NSPoint.zero
+    private static let monitor: Any? = NSEvent.addLocalMonitorForEvents(
+        matching: [
+            .scrollWheel, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged,
+            .rightMouseDragged, .otherMouseDragged,
+        ]
+    ) { event in
+        let isScrollWheel = event.type == .scrollWheel
+        let windowNumber = event.windowNumber
+        let location = event.locationInWindow
         MainActor.assumeIsolated {
-            lastScrollTimestamp = timestamp
-            HermPerformanceRecorder.mark("scrollWheel")
+            let now = ProcessInfo.processInfo.systemUptime
+            lastInputTimestamp = now
+            if isScrollWheel {
+                recordScroll(in: NSApp?.window(withWindowNumber: windowNumber), at: location, now: now)
+            } else {
+                lastScrollWindow = nil
+            }
         }
         return event
+    }
+
+    static func recordScroll(in window: NSWindow?, at point: NSPoint, now: TimeInterval) {
+        lastScrollWindow = window
+        lastScrollPoint = point
+        lastScrollTimestamp = now
+        HermPerformanceRecorder.mark("scrollWheel")
+    }
+
+    static func isScrolling(in view: NSView) -> Bool {
+        guard let window = view.window, isScrolling(at: ProcessInfo.processInfo.systemUptime),
+            lastScrollWindow === window
+        else { return false }
+        return view.bounds.contains(view.convert(lastScrollPoint, from: nil))
     }
 
     static func isScrolling(at timestamp: TimeInterval) -> Bool {
@@ -163,6 +230,20 @@ enum DockScrollActivity {
     static func remainingSettle(at timestamp: TimeInterval) -> TimeInterval {
         _ = monitor
         return max(0, lastScrollTimestamp + settleInterval - timestamp)
+    }
+
+    static func waitForInputIdle() async -> Bool {
+        while !Task.isCancelled {
+            let remaining = remainingInputSettle()
+            guard remaining > 0 else { return true }
+            do { try await Task.sleep(for: .seconds(remaining)) } catch { return false }
+        }
+        return false
+    }
+
+    static func remainingInputSettle() -> TimeInterval {
+        _ = monitor
+        return max(0, lastInputTimestamp + settleInterval - ProcessInfo.processInfo.systemUptime)
     }
 }
 
@@ -200,9 +281,9 @@ func splitPaneHost(role: String = "pane") -> NSHostingView<AnyView> {
     // The split view places panes by frame; don't publish SwiftUI's
     // intrinsic/min/max size as constraints for the outer layout to solve.
     host.sizingOptions = []
+    host.handlesScrollConstraintsLocally = true
     // Panes draw their own title row; inheriting the window's titlebar safe
     // area would push every pane down a second 52pt.
     host.safeAreaRegions = []
-    host.containsConstraintInvalidation = true
     return host
 }

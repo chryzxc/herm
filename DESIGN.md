@@ -3154,6 +3154,9 @@ programmatic corrections and resize events do not trigger edge paging. One sessi
 coordinator owns mounting, anchors, navigation, and deferred scroll work. A page remains
 pending until its session, generation, range, and anchor match the measured row batch;
 settling alone never completes it. Session changes and explicit navigation cancel stale work. Each message owns one geometry container around its activity and body; hidden messages still report a zero-height row, so complete page batches remain measurable.
+During a wheel gesture, the affected split pane updates its local constraints
+before laying out newly visible content. The split retains its frame and avoids
+an extra update of the surrounding window.
 Scrolling upward immediately suspends streaming follow until the reader
 returns to the bottom or chooses Jump to latest. Streamed output, new blocking
 prompts, and same-session transcript refreshes preserve the reader's position

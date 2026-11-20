@@ -874,17 +874,12 @@ Fixed:
 - The sprite frame timer, the message navigator's 30 Hz pointer poll and
   the dictation meter now carry timer tolerance.
 
-Scrolling a split pane re-laid out the root host twice per scroll tick.
-The pane's `ScrollViewCommitMutation` calls `NSHostingView.setNeedsUpdate`,
-which sets `needsUpdateConstraints` on the pane host; AppKit forwarded that
-to the parent SwiftUI graph (`_informContainerThatSubviewsNeedUpdateConstraints`
-→ `_layoutMetricsInvalidatedForHostedView`). Pane hosts publish no
-constraints, so they now turn that request into their own layout pass
-(`containsConstraintInvalidation`), which halved root layouts (62 → 30 over
-30 scroll steps) with the sibling pane still at 0. The remaining root layout
-per tick comes from SwiftUI itself: `ScrollViewCommitMutation.apply` dirties
-an attribute in the root graph, which no public API intercepts.
-`PaneLayoutBudgetTests` pins the ceiling (sibling 0, root ≤ 1 per step).
+Pane hosts use AppKit's normal constraint update pass so newly visible rows
+and changing reply content can lay out. Replacing that pass with a layout
+request reduced root layouts from 62 to 30 over 30 scroll steps but dropped
+constraint updates in the session list and transcript. The scroll budget
+allows two root layouts per step plus settling slack, with zero sibling
+layouts. `PaneLayoutBudgetTests` also checks that panes accept update requests.
 
 Not measured: the transcript pane's own ~2 ms layout per scroll tick needs an
 Instruments trace on a Release build. Debug (`-Onone`) builds run this

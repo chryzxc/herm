@@ -4,26 +4,16 @@ import Testing
 
 @testable import Herm
 
-/// Layout budget for scrolling inside a split pane.
-///
-/// Scrolling the transcript must not re-lay out the sibling pane, and the
-/// root host's relayouts must stay bounded. Pane hosts keep SwiftUI's
-/// per-commit `needsUpdateConstraints` from reaching the split's SwiftUI
-/// parent (`containsConstraintInvalidation`), which halved root layouts.
-/// The one root layout left per tick comes from SwiftUI itself:
-/// `ScrollViewCommitMutation.apply` dirties an attribute in the root graph.
-/// See docs/chat-performance.md.
+/// The scrolled pane can invalidate its constraints while its sibling stays idle.
 @MainActor
 @Suite("Pane layout budget", .serialized)
 struct PaneLayoutBudgetTests {
     private static let steps = 30
-    /// Measured 20 November 2026 over 30 steps: root 62 before pane hosts
-    /// contained constraint invalidation, 30 after; panelLeading 30,
-    /// panelTrailing 0.
-    private static let rootLayoutsPerStep = 1
     private static let slack = 2
 
     private struct Shell: View {
+        let onAppearRow: (Int) -> Void
+
         var body: some View {
             VStack(spacing: 0) {
                 Text("Header").frame(height: 52)
@@ -33,6 +23,7 @@ struct PaneLayoutBudgetTests {
                             ForEach(0..<400, id: \.self) { index in
                                 Text("Row \(index) with some text that wraps across the width of the pane")
                                     .padding(8)
+                                    .onAppear { onAppearRow(index) }
                             }
                         }
                     },
@@ -44,11 +35,38 @@ struct PaneLayoutBudgetTests {
         }
     }
 
+    @Test func paneSchedulesConstraintUpdates() throws {
+        let pane = splitPaneHost()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480), styleMask: [.borderless],
+            backing: .buffered, defer: false)
+        window.contentView = pane
+        window.layoutIfNeeded()
+        pane.updateConstraintsForSubtreeIfNeeded()
+        try #require(!pane.needsUpdateConstraints)
+        pane.needsUpdateConstraints = true
+        #expect(pane.needsUpdateConstraints)
+    }
+
+    @Test func unchangedLeadingContentSkipsDeliveryUntilPresentationChanges() {
+        let split = FullscreenPanelSplitView(leading: Text("Chats"), trailing: EmptyView())
+        let coordinator = split.makeCoordinator()
+        var environment = EnvironmentValues()
+        let text = Text("Chats")
+        #expect(coordinator.acceptsLeading(text, environment: environment, collapsed: false, matches: ==))
+        #expect(!coordinator.acceptsLeading(text, environment: environment, collapsed: false, matches: ==))
+        environment.dockWorkspaceScale = 1.5
+        #expect(coordinator.acceptsLeading(text, environment: environment, collapsed: false, matches: ==))
+        #expect(coordinator.acceptsLeading(text, environment: environment, collapsed: true, matches: ==))
+        #expect(coordinator.acceptsLeading(Text("Bots"), environment: environment, collapsed: true, matches: ==))
+    }
+
     @Test func scrollingLeadingPaneStaysWithinLayoutBudget() async throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: [.titled, .resizable],
             backing: .buffered, defer: false)
-        let root = DockWindowHostingView(rootView: AnyView(Shell()))
+        var seenRows = Set<Int>()
+        let root = DockWindowHostingView(rootView: AnyView(Shell { seenRows.insert($0) }))
         root.sizingOptions = []
         root.safeAreaRegions = []
         window.contentView = root
@@ -57,24 +75,31 @@ struct PaneLayoutBudgetTests {
         for _ in 0..<3 { try await settle(window) }
 
         let scrollView = try #require(Self.scrollViews(in: root).first)
+        let scrollPoint = scrollView.convert(NSPoint(x: scrollView.bounds.midX, y: scrollView.bounds.midY), to: nil)
+        let initialRows = seenRows
         var counts: [String: Int] = [:]
         DockHostLayoutTiming.layoutObserver = { counts[$0, default: 0] += 1 }
-        defer { DockHostLayoutTiming.layoutObserver = nil }
+        defer {
+            DockHostLayoutTiming.layoutObserver = nil
+            DockScrollActivity.recordScroll(in: nil, at: .zero, now: -.infinity)
+        }
 
         for step in 1...Self.steps {
+            DockScrollActivity.recordScroll(in: window, at: scrollPoint, now: ProcessInfo.processInfo.systemUptime)
             let clip = scrollView.contentView
             clip.scroll(to: NSPoint(x: 0, y: CGFloat(step) * 40))
             scrollView.reflectScrolledClipView(clip)
             try await settle(window)
         }
 
+        #expect(!seenRows.subtracting(initialRows).isEmpty, "new rows never appeared while the pane was scrolling")
         #expect(counts["panelTrailing", default: 0] == 0, "sibling pane re-laid out while scrolling: \(counts)")
         #expect(
             counts["panelLeading", default: 0] <= Self.steps + Self.slack,
             "scrolled pane re-laid out more than once per step: \(counts)")
         #expect(
-            counts["root", default: 0] <= Self.steps * Self.rootLayoutsPerStep + Self.slack,
-            "root host re-laid out more than \(Self.rootLayoutsPerStep)× per scroll step: \(counts)")
+            counts["root", default: 0] <= Self.steps + Self.slack,
+            "scrolling the pane scheduled an extra outer layout per step: \(counts)")
     }
 
     private func settle(_ window: NSWindow) async throws {

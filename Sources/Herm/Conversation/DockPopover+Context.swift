@@ -16,7 +16,7 @@ extension DockPopover {
     /// Fullscreen has a dedicated navigation rail. Unlike the compact session
     /// picker popover, it keeps the active queue visible while the user works
     /// through a conversation or task.
-    var sessionNavQueue: some View {
+    var sessionNavQueue: SessionNavQueue {
         SessionNavQueue(
             model: model,
             botMode: botMode,
@@ -128,7 +128,6 @@ extension DockPopover {
             isDockedWindow: usesWindowChrome,
             isSidebarCollapsed: chatListCollapsed
         )
-        .equatable()
     }
 
     var currentNavigationDestination: NavigationDestination {
@@ -472,7 +471,7 @@ extension DockPopover {
         }
     }
 
-    var botsListPanel: some View {
+    var botsListPanel: BotChatsPage {
         BotChatsPage(
             bots: botMode,
             groups: botMode.groupChats,
@@ -486,7 +485,6 @@ extension DockPopover {
             // Stays on Bots: the rail keeps Bots selected while the chat changes.
             onOpen: { bot in model.resumeBotChat(bot) }
         )
-        .equatable()
     }
 
     /// Left side of the conversation toolbar: the bot on the Bots page, else the session title.

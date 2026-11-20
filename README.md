@@ -468,7 +468,8 @@ status marks, timestamps, inline project pills, previews, and session actions.
 
 Workspace pages share Calendar’s top titlebar treatment, with sidebar toggles aligned
 beside the traffic lights. Chat uses three full-height panes: the session list,
-conversation, and inspector. The session title uses the available header space,
+conversation, and inspector. Session rows stay visible while scrolling, and live replies
+keep their place above the composer. The session title uses the available header space,
 with actions inside the conversation pane; the inspector's tabs extend to the top of its own pane.
 The Bots and Sessions switch responds across each tab, not just its label.
 The session sidebar places **New chat** above Pinned. Navigation distinguishes Chats (speech bubbles), Integrations (puzzle piece),

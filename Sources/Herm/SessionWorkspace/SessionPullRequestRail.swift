@@ -436,20 +436,16 @@ struct SessionRailCard: View {
 /// Every expanded rail section fits short content and scrolls overflow within the same cap.
 struct SessionRailExpandedContent<Content: View>: View {
     @ViewBuilder let content: () -> Content
-    @State private var contentHeight: CGFloat = 1
 
+    /// Sized in the same layout pass as its content: the scroll view's ideal height is the
+    /// content's, capped at 280. A measured @State height started at 1pt, so a disclosure
+    /// animated open to nothing and then snapped to the real height.
     var body: some View {
         ScrollView(.vertical) {
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .onGeometryChange(for: CGFloat.self) {
-                    $0.size.height
-                } action: {
-                    contentHeight = $0
-                }
+            content().frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(height: min(280, contentHeight))
+        .frame(maxHeight: 280)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

@@ -20,6 +20,7 @@ private func blameDetails(_ entry: RepositoryBlameLine) -> String {
 }
 
 struct NativeDiffCanvas: NSViewRepresentable {
+    @Environment(\.dockHostResizing) private var hostResizing
     @Environment(\.dockWorkspaceScale) private var workspaceScale
     let document: DiffDocument
     let split: Bool
@@ -36,6 +37,7 @@ struct NativeDiffCanvas: NSViewRepresentable {
     var noteEditor: ((@escaping () -> Void) -> DiffNoteEditor)? = nil
     func makeNSView(context: Context) -> DiffCanvasContainer { DiffCanvasContainer() }
     func updateNSView(_ view: DiffCanvasContainer, context: Context) {
+        view.hostResizing = hostResizing
         view.update(
             document, split: split, wraps: wraps, wordDiffs: wordDiffs, findRequest: findRequest, reveal: reveal,
             viewport: viewport, blame: blame,
@@ -58,6 +60,33 @@ struct DiffNoteEditor {
 }
 
 final class DiffCanvasContainer: NSView {
+    var hostResizing = false {
+        didSet { if oldValue && !hostResizing { needsLayout = true } }
+    }
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        needsLayout = true
+    }
+    private var waitingForDivider = false
+    private func deferDividerLayout() -> Bool {
+        if waitingForDivider { return true }
+        var parent = superview
+        while let view = parent {
+            if (view as? FractionPreservingSplitView)?.isDraggingDivider == true {
+                waitingForDivider = true
+                // The default run-loop mode resumes after AppKit's divider tracking loop exits.
+                RunLoop.main.perform(inModes: [.default]) { [weak self] in
+                    MainActor.assumeIsolated {
+                        self?.waitingForDivider = false
+                        self?.needsLayout = true
+                    }
+                }
+                return true
+            }
+            parent = view.superview
+        }
+        return false
+    }
     private let stack = NSStackView()
     private var textScale: CGFloat = 1
     private var codeFont: NSFont {
@@ -95,7 +124,8 @@ final class DiffCanvasContainer: NSView {
         // Whole-document sizing only changes with content or column width; scrolling re-enters layout.
         let scrolls = stack.arrangedSubviews.compactMap { $0 as? NSScrollView }
         let key = fingerprint + ":" + scrolls.map { String(Double($0.contentSize.width)) }.joined(separator: ",")
-        if sizingKey != key {
+        let deferSizing = sizingKey != key && (hostResizing || inLiveResize || deferDividerLayout())
+        if sizingKey != key && !deferSizing {
             sizingKey = key
             for scroll in scrolls {
                 guard let text = scroll.documentView as? NSTextView else { continue }
@@ -107,8 +137,8 @@ final class DiffCanvasContainer: NSView {
                 if !text.isHorizontallyResizable { text.frame.size.width = width }
             }
         }
-        alignWrappedRows()
-        if !pendingScroll.isEmpty {
+        if !deferSizing { alignWrappedRows() }
+        if !deferSizing, !pendingScroll.isEmpty {
             for (index, view) in stack.arrangedSubviews.enumerated() {
                 if pendingScroll.indices.contains(index), let scroll = view as? NSScrollView {
                     scroll.layoutSubtreeIfNeeded()
@@ -381,6 +411,7 @@ final class DiffCanvasContainer: NSView {
                         guard !Task.isCancelled, let text, text.string == source, let storage = text.textStorage else {
                             return
                         }
+                        storage.beginEditing()
                         storage.addAttributes(
                             attributes.filter { $0.key != .paragraphStyle },
                             range: NSRange(location: 0, length: storage.length))
@@ -406,6 +437,7 @@ final class DiffCanvasContainer: NSView {
                             }
                             offset += length + 1
                         }
+                        storage.endEditing()
                         text.sizeToFit()
                         text.applyNoteMarks()
                     })

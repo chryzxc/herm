@@ -107,7 +107,8 @@ final class FractionPreservingSplitView: NSSplitView {
 
     func setCollapsed(leading: Bool, trailing: Bool, animated: Bool = false) {
         let trailing = trailing && !leading
-        let canAnimate = animated && hasReceivedVisibility && !inLiveResize && !isDraggingDivider
+        let canAnimate =
+            animated && hasReceivedVisibility && !inLiveResize && !isDraggingDivider
             && window?.occlusionState.contains(.visible) == true && bounds.width > 0
         hasReceivedVisibility = true
         if !canAnimate { layer?.removeAnimation(forKey: Self.paneMotionKey) }
@@ -135,11 +136,6 @@ final class FractionPreservingSplitView: NSSplitView {
         }
         invalidatePositions()
         if canAnimate { layoutSubtreeIfNeeded() }
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            layoutSubtreeIfNeeded()
-            for pane in arrangedSubviews { pane.needsLayout = true }
-        }
     }
 
     private func invalidatePositions() {

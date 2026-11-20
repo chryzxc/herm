@@ -410,19 +410,19 @@ extension DockPopover {
                     leadingFraction: DesktopWorkspaceFractions.queue,
                     minimumLeadingWidth: 300,
                     minimumTrailingWidth: desktopTrailingMinimumWidth,
-                    isLeadingCollapsed: isNarrowLayout || !showsChatsPanel || hidesChatList
+                    isLeadingCollapsed: isNarrowLayout || !showsChatsPanel || hidesChatList,
+                    leadingMatches: { $0 == $1 },
+                    performanceRoles: ("chatsList", "desktopWorkspace")
                 )
             })
     }
 
     /// Sessions in Chats; every bot and group room on the Bots page.
-    var desktopLeadingPanel: AnyView {
-        AnyView(
-            (fullscreenSurface == .bots ? AnyView(botsListPanel) : AnyView(sessionNavQueue))
-                .environment(\.dockNavigationHistory, navigationHistoryControls)
-                .environment(
-                    \.dockHostVisible,
-                    hostPresentation.isVisible && showsChatsPanel && !isNarrowLayout && !hidesChatList))
+    var desktopLeadingPanel: DesktopNavigationPane {
+        DesktopNavigationPane(
+            content: fullscreenSurface == .bots ? .bots(botsListPanel) : .sessions(sessionNavQueue),
+            history: navigationHistoryControls,
+            visible: hostPresentation.isVisible && showsChatsPanel && !isNarrowLayout && !hidesChatList)
     }
 
     var openGroupRoom: GroupRoom? { botMode.groupChats.rooms.first { $0.id == openGroupRoomID } }
@@ -577,7 +577,8 @@ extension DockPopover {
                             ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
                         leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil,
                         isTrailingCollapsed: !isVisible || besideColumn,
-                        isLeadingCollapsed: isNarrowLayout && isVisible
+                        isLeadingCollapsed: isNarrowLayout && isVisible,
+                        performanceRoles: ("conversationPane", "sessionInspector")
                     )
                 }
             )

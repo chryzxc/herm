@@ -21,9 +21,63 @@ struct HoverPausingScrollView<Content: View>: View {
             ScrollView { content.allowsHitTesting(!isScrolling) }
                 .onScrollPhaseChange { _, phase in isScrolling = phase.isScrolling }
         } else {
-            ScrollView { content }
+            ScrollView {
+                content.allowsHitTesting(!isScrolling).background {
+                    LegacyScrollObserver(onPhase: { isScrolling = $0 }).allowsHitTesting(false)
+                }
+            }
+            .onDisappear { isScrolling = false }
         }
     }
+}
+
+private struct LegacyScrollObserver: NSViewRepresentable {
+    let onPhase: (Bool) -> Void
+    final class Probe: NSView {
+        var onPhase: ((Bool) -> Void)?
+        private var tracking = false
+        private weak var scroll: NSScrollView?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            bind()
+        }
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            bind()
+        }
+        private func bind() {
+            let next = window == nil ? nil : enclosingScrollView
+            guard scroll !== next else { return }
+            if let scroll {
+                for name in [NSScrollView.willStartLiveScrollNotification, NSScrollView.didEndLiveScrollNotification] {
+                    NotificationCenter.default.removeObserver(self, name: name, object: scroll)
+                }
+            }
+            if tracking {
+                tracking = false
+                Task { @MainActor [weak self] in
+                    guard let self, !tracking else { return }
+                    onPhase?(false)
+                }
+            }
+            scroll = next
+            guard let next else { return }
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(start), name: NSScrollView.willStartLiveScrollNotification, object: next)
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(end), name: NSScrollView.didEndLiveScrollNotification, object: next)
+        }
+        @objc private func start(_ note: Notification) {
+            tracking = true
+            onPhase?(true)
+        }
+        @objc private func end(_ note: Notification) {
+            tracking = false
+            onPhase?(false)
+        }
+    }
+    func makeNSView(context: Context) -> Probe { Probe() }
+    func updateNSView(_ view: Probe, context: Context) { view.onPhase = onPhase }
 }
 
 /// Sweeps an accent highlight across a working session's title. Static under
