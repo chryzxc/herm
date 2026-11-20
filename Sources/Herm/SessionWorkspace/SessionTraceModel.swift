@@ -9,6 +9,7 @@ final class SessionTraceModel: ObservableObject {
     @Published private(set) var isLoading = false
     /// An expanded copy is on screen and still needs updates while the inspector is covered.
     @Published var isExpanded = false
+    private var historyCache = SessionTraceProjection.HistoryCache()
     private var previous: Inputs?
     private var transcriptBots: [SessionBotParticipants.Participant] = []
     /// Set while hidden: a stop seen on resume happened at an unknown time.
@@ -23,6 +24,7 @@ final class SessionTraceModel: ObservableObject {
 
     private struct Inputs: Equatable {
         let identity: String
+        let historyRevision: UInt64
         let turns: [SessionTraceTurn]
         let live: [ActiveToolCall]
         let agents: [HermesSubagent]
@@ -82,6 +84,7 @@ final class SessionTraceModel: ObservableObject {
         if connected != model.isHermesConnected { connected = model.isHermesConnected }
         guard model.navigationSessionID != nil, !model.isRestoringSession else {
             if !turns.isEmpty { turns = [] }
+            historyCache = SessionTraceProjection.HistoryCache()
             previous = nil
             cachedHistory = nil
             transcriptBots = []
@@ -106,41 +109,49 @@ final class SessionTraceModel: ObservableObject {
         // Keep only boundaries observed while this session's trace is mounted.
         // Restored assistant timestamps have different semantics from live rows.
         if let previous, previous.identity == identity {
-            let prior = Dictionary(
-                previous.turns.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            for index in requests.indices {
-                requests[index].executionStart = prior[requests[index].id]?.executionStart
-                requests[index].executionEnd = prior[requests[index].id]?.executionEnd
-                if index == requests.count - 1, !suspended, requests[index].executionStart != nil,
-                    (previous.working && model.status != .working)
-                        || (previous.connected && !model.isHermesConnected)
-                {
-                    requests[index].executionEnd = Date()
+            if previous.historyRevision == model.messagesRevision, cachedHistory?.turns.isEmpty == false {
+                requests = previous.turns
+            } else {
+                let prior = Dictionary(
+                    previous.turns.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+                for index in requests.indices {
+                    requests[index].executionStart = prior[requests[index].id]?.executionStart
+                    requests[index].executionEnd = prior[requests[index].id]?.executionEnd
                 }
             }
+            if let last = requests.indices.last, !suspended, requests[last].executionStart != nil,
+                (previous.working && model.status != .working)
+                    || (previous.connected && !model.isHermesConnected)
+            {
+                requests[last].executionEnd = Date()
+            }
         }
-        if !requests.isEmpty, model.streamingMessageSessionID == model.sessionID,
-            let start = model.streamingResponseStartedAt
+        if let last = requests.indices.last, model.streamingMessageSessionID == model.sessionID,
+            let start = model.streamingResponseStartedAt, requests[last].executionStart != start
         {
-            requests[requests.count - 1].executionStart = start
+            requests[last].executionStart = start
         }
         let inputs = Inputs(
-            identity: identity, turns: requests,
+            identity: identity, historyRevision: model.messagesRevision, turns: requests,
             live: model.streamingTurnActivity + model.activeToolCalls,
             agents: model.agentPresentationSnapshot.displayedSubagents,
             activities: model.agentActivities,
             working: model.status == .working, connected: model.isHermesConnected,
             botRecords: SessionBotActivityPresentation.snapshot(
-                records: model.botActivityBySessionID.values.flatMap { $0 },
+                records: Set(model.botActivitySessionIDs.compactMap { $0 }).flatMap {
+                    model.botActivityBySessionID[$0] ?? []
+                },
                 sessionIDs: model.botActivitySessionIDs
             ).list, participants: transcriptBots)
         guard previous != inputs else { return }
+        if previous?.identity != identity { historyCache = SessionTraceProjection.HistoryCache() }
         previous = inputs
         projectionCount += 1
         if connected != inputs.connected { connected = inputs.connected }
         var projected = SessionTraceProjection.make(
             turns: requests, live: inputs.live, agents: inputs.agents,
-            working: inputs.working, connected: inputs.connected, activities: inputs.activities)
+            working: inputs.working, connected: inputs.connected, activities: inputs.activities, cache: historyCache,
+            historyRevision: model.messagesRevision)
         let botTurns = SessionCrewProjection.botTurns(inputs.botRecords, connected: inputs.connected)
             .sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
         // Transcript order is authoritative, including prepended history whose

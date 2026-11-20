@@ -119,68 +119,169 @@ enum SessionTraceProjection {
         call.agentID.map { "agent:\($0.utf8.count):\($0):\(call.id)" } ?? "session:" + call.id
     }
 
+    fileprivate struct Worker: Equatable {
+        let agent: HermesSubagent
+        let start: AgentActivity?
+        let completion: AgentActivity?
+        let markers: [AgentActivity]
+    }
+
+    fileprivate struct HistoryIndex {
+        let starts: [Date]
+        let ordered: Bool
+        let calls: [[String: ActiveToolCall]]
+        let ownerByCall: [String: Int]
+        let agentsByTurn: [Set<String>]
+
+        init(_ turns: [SessionTraceTurn]) {
+            starts = turns.map(\.start)
+            ordered = zip(starts, starts.dropFirst()).allSatisfy { $0.0 <= $0.1 }
+            calls = turns.map { turn in
+                Dictionary(turn.calls.map { (callKey($0), $0) }, uniquingKeysWith: { _, last in last })
+            }
+            var owners: [String: Int] = [:]
+            for index in calls.indices {
+                for key in calls[index].keys { owners[key] = index }
+            }
+            ownerByCall = owners
+            agentsByTurn = calls.map { Set($0.values.compactMap(\.agentID)) }
+        }
+
+        func lastTurn(startingBy date: Date) -> Int? {
+            guard ordered else { return starts.lastIndex { $0 <= date } }
+            var lower = 0
+            var upper = starts.count
+            while lower < upper {
+                let middle = lower + (upper - lower) / 2
+                if starts[middle] <= date { lower = middle + 1 } else { upper = middle }
+            }
+            return lower > 0 ? lower - 1 : nil
+        }
+
+        func turns(containing date: Date) -> [Int] {
+            if ordered { return lastTurn(startingBy: date).map { [$0] } ?? [] }
+            // The transcript can prepend imported turns with out-of-order timestamps.
+            return starts.indices.filter { index in
+                date >= starts[index]
+                    && date < (starts.indices.contains(index + 1) ? starts[index + 1] : .distantFuture)
+            }
+        }
+    }
+
+    /// Retain only historical turns from this session's previous projection.
+    final class HistoryCache {
+        fileprivate struct Entry {
+            let input: SessionTraceTurn
+            let workers: [Worker]
+            let calls: [String: ActiveToolCall]
+            let result: SessionTraceTurn
+        }
+        private var indexed: (revision: UInt64, count: Int, lastID: String?, lastStart: Date?, index: HistoryIndex)?
+        private(set) var indexBuildCount = 0
+
+        fileprivate func historyIndex(for turns: [SessionTraceTurn], revision: UInt64?) -> HistoryIndex {
+            if let indexed, indexed.revision == revision,
+                indexed.count == turns.count, indexed.lastID == turns.last?.id, indexed.lastStart == turns.last?.start
+            {
+                return indexed.index
+            }
+            let index = HistoryIndex(turns)
+            indexBuildCount += 1
+            indexed = revision.map { ($0, turns.count, turns.last?.id, turns.last?.start, index) }
+            return index
+        }
+
+        fileprivate var entries: [String: Entry] = [:]
+        fileprivate var connected = false
+        private(set) var reused = 0
+        fileprivate func recordReuse() { reused += 1 }
+    }
+
     static func make(
         turns input: [SessionTraceTurn], live: [ActiveToolCall], agents: [HermesSubagent],
-        working: Bool, connected: Bool, activities: [AgentActivity] = []
+        working: Bool, connected: Bool, activities: [AgentActivity] = [], cache: HistoryCache? = nil,
+        historyRevision: UInt64? = nil
     ) -> [SessionTraceTurn] {
+        var nextEntries: [String: HistoryCache.Entry] = [:]
+        let reuse = cache?.connected == connected
+        defer {
+            cache?.entries = nextEntries
+            cache?.connected = connected
+        }
         var turns = input
         guard !turns.isEmpty else { return [] }
-        var tables = turns.map { turn in
-            Dictionary(turn.calls.map { (callKey($0), $0) }, uniquingKeysWith: { _, b in b })
-        }
-        let agentByID = Dictionary(agents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        var ownerByCall: [String: Int] = [:]
-        for index in tables.indices { for key in tables[index].keys { ownerByCall[key] = index } }
+        let history = cache?.historyIndex(for: input, revision: historyRevision) ?? HistoryIndex(input)
+        var patchedCalls: [Int: [String: ActiveToolCall]] = [:]
+        let agentByID = Dictionary(agents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var liveOwners: [String: Int] = [:]
         let liveKeys = Set(live.map(callKey))
         let childCalls = agentCalls(activities).filter { !liveKeys.contains(callKey($0)) }
         for call in live + childCalls {
             let key = callKey(call)
             let actorStart = call.agentID.flatMap { agentByID[$0]?.startedAt } ?? call.startedAt
-            guard let owner = ownerByCall[key] ?? turns.lastIndex(where: { $0.start <= actorStart })
+            guard let owner = liveOwners[key] ?? history.ownerByCall[key] ?? history.lastTurn(startingBy: actorStart)
             else { continue }
-            tables[owner][key] = call
-            ownerByCall[key] = owner
+            patchedCalls[owner, default: history.calls[owner]][key] = call
+            liveOwners[key] = owner
+        }
+        var starts: [String: AgentActivity] = [:]
+        var completions: [String: AgentActivity] = [:]
+        var markers: [String: [AgentActivity]] = [:]
+        for event in activities {
+            guard let id = event.agentID else { continue }
+            if event.kind == "subagent.start", starts[id] == nil { starts[id] = event }
+            if event.kind == "subagent.complete" { completions[id] = event }
+            if event.kind == "subagent.tool", event.traceCallID == nil { markers[id, default: []].append(event) }
+        }
+        var seen = Set<String>()
+        let allWorkers: [Worker] = agents.compactMap { agent in
+            guard seen.insert(agent.id).inserted else { return nil }
+            return Worker(
+                agent: agent, start: starts[agent.id], completion: completions[agent.id],
+                markers: markers[agent.id] ?? [])
+        }
+        var placedWorkers: [Int: Set<String>] = [:]
+        let workerIndices = Dictionary(uniqueKeysWithValues: allWorkers.indices.map { (allWorkers[$0].agent.id, $0) })
+        for worker in allWorkers {
+            if let date = worker.agent.startedAt ?? worker.start?.timestamp ?? worker.agent.completedAt {
+                for turn in history.turns(containing: date) { placedWorkers[turn, default: []].insert(worker.agent.id) }
+            }
         }
         for index in turns.indices {
             let rootID = "turn:" + turns[index].id
-            let nextStart = turns.indices.contains(index + 1) ? turns[index + 1].start : nil
             let current = index == turns.count - 1
-            let ordered = tables[index].sorted {
+            let calls = patchedCalls[index] ?? history.calls[index]
+            let referenced =
+                patchedCalls[index].map { Set($0.values.compactMap(\.agentID)) }
+                ?? history.agentsByTurn[index]
+            let workers = referenced.union(placedWorkers[index] ?? [])
+                .compactMap { workerIndices[$0] }.sorted().map { allWorkers[$0] }
+            if !current, reuse, let entry = cache?.entries[input[index].id], entry.input == input[index],
+                entry.workers == workers, entry.calls == calls
+            {
+                turns[index] = entry.result
+                nextEntries[entry.input.id] = entry
+                cache?.recordReuse()
+                continue
+            }
+            let ordered = calls.sorted {
                 $0.value.startedAt == $1.value.startedAt
                     ? $0.key < $1.key : $0.value.startedAt < $1.value.startedAt
             }.map(\.value)
             turns[index].calls = ordered
-            let referenced = Set(ordered.compactMap(\.agentID))
-            var seen = Set<String>()
-            // Hermes often omits startedAt on delegates; its start event (or, failing
-            // that, completion) still places the delegate in the request it served.
-            let workers = agents.filter { agent in
-                guard seen.insert(agent.id).inserted else { return false }
-                let placed =
-                    agent.startedAt
-                    ?? activities.first { $0.agentID == agent.id && $0.kind == "subagent.start" }?
-                    .timestamp
-                    ?? agent.completedAt
-                return referenced.contains(agent.id)
-                    || (placed.map {
-                        $0 >= turns[index].start && $0 < (nextStart ?? .distantFuture)
-                    } ?? false)
-            }
-            let workerIDs = Set(workers.map(\.id))
+            let agents = workers.map(\.agent)
+            let workerIDs = Set(agents.map(\.id))
             let activeWorkerIDs = Set(
-                workers.filter {
+                agents.filter {
                     AgentActivityPresentation.isActiveStatus($0.status)
                         && !["queued", "pending"].contains($0.status.lowercased())
                 }.map(\.id))
-            var rows = workers.map { agent in
+            var rows = workers.map { worker in
+                let agent = worker.agent
                 let active = connected && activeWorkerIDs.contains(agent.id)
-                let startEvent = activities.first {
-                    $0.agentID == agent.id && $0.kind == "subagent.start"
-                }
+                let startEvent = worker.start
                 let eventTiming = startEvent.map { $0.traceTiming ?? .unavailable } ?? .observed
-                let endEvent = activities.last {
-                    $0.agentID == agent.id && $0.kind == "subagent.complete"
-                }
+                let endEvent = worker.completion
                 let end =
                     endEvent.map {
                         $0.traceTiming == nil || $0.traceTiming == .unavailable ? nil : $0.timestamp
@@ -249,24 +350,23 @@ enum SessionTraceProjection {
                 })
             // Unpaired delegate progress is a point event, never a made-up tool span.
             rows.append(
-                contentsOf: activities.compactMap { event -> SessionTraceRow? in
-                    guard event.kind == "subagent.tool", event.traceCallID == nil,
-                        let agentID = event.agentID, workerIDs.contains(agentID)
-                    else { return nil }
-                    return SessionTraceRow(
-                        id: "event:" + event.id.uuidString, parentID: "agent:" + agentID,
-                        kind: .marker,
-                        title: event.toolName.map {
-                            AgentActivityPresentation.toolActivityTitle(name: $0, context: event.text)
-                        } ?? "Reported tool activity",
-                        start: event.traceTiming == .unavailable || event.traceTiming == nil
-                            ? nil : event.timestamp,
-                        end: event.timestamp, duration: 0,
-                        timing: event.traceTiming ?? .unavailable,
-                        outcome: "Reported activity", result: event.text,
-                        relatedSessionID: event.childSessionID, toolName: event.toolName,
-                        context: event.text
-                    )
+                contentsOf: workers.flatMap { worker in
+                    worker.markers.map { event in
+                        SessionTraceRow(
+                            id: "event:" + event.id.uuidString, parentID: "agent:" + worker.agent.id,
+                            kind: .marker,
+                            title: event.toolName.map {
+                                AgentActivityPresentation.toolActivityTitle(name: $0, context: event.text)
+                            } ?? "Reported tool activity",
+                            start: event.traceTiming == .unavailable || event.traceTiming == nil
+                                ? nil : event.timestamp,
+                            end: event.timestamp, duration: 0,
+                            timing: event.traceTiming ?? .unavailable,
+                            outcome: "Reported activity", result: event.text,
+                            relatedSessionID: event.childSessionID, toolName: event.toolName,
+                            context: event.text
+                        )
+                    }
                 })
             rows.append(
                 contentsOf: modelSpans(
@@ -305,6 +405,10 @@ enum SessionTraceProjection {
                     start: start, end: active ? nil : end, timing: .observed, active: active,
                     outcome: active ? nil : turns[index].outcome ?? "Execution window"), at: 0)
             turns[index].rows = rows
+            if !current, cache != nil {
+                nextEntries[input[index].id] = .init(
+                    input: input[index], workers: workers, calls: calls, result: turns[index])
+            }
         }
         return turns
     }

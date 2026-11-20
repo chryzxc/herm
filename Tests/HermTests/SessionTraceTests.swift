@@ -32,6 +32,47 @@ struct SessionTraceTests {
             live: [], agents: agents, working: true, connected: connected)[0].rows
     }
 
+    @Test func cachedHistoryAcceptsLateToolCompletion() {
+        let turns = [
+            SessionTraceTurn(id: "first", title: "First", start: origin, calls: [call("old", 1)]),
+            SessionTraceTurn(id: "last", title: "Last", start: origin.addingTimeInterval(10)),
+        ]
+        let cache = SessionTraceProjection.HistoryCache()
+        func project(_ live: [ActiveToolCall], cache: SessionTraceProjection.HistoryCache?) -> [SessionTraceTurn] {
+            SessionTraceProjection.make(
+                turns: turns, live: live, agents: [], working: true, connected: true, cache: cache, historyRevision: 1)
+        }
+        _ = project([], cache: cache)
+        let current = [call("new", 12)]
+        #expect(project(current, cache: cache) == project(current, cache: nil))
+        #expect(cache.reused == 1)
+        #expect(cache.indexBuildCount == 1)
+        let late = current + [call("old", 1, duration: 2)]
+        #expect(project(late, cache: cache) == project(late, cache: nil))
+        #expect(cache.reused == 1)
+    }
+
+    @Test func newDelegateActivityKeepsUnrelatedHistoryCached() {
+        let turns = [
+            SessionTraceTurn(id: "first", title: "First", start: origin),
+            SessionTraceTurn(id: "last", title: "Last", start: origin.addingTimeInterval(10)),
+        ]
+        let worker = HermesSubagent(
+            id: "delegate", goal: "Read", status: "running", startedAt: origin.addingTimeInterval(11))
+        let progress = AgentActivity(
+            id: UUID(), timestamp: origin.addingTimeInterval(12), agentID: worker.id,
+            kind: "subagent.tool", text: "Reading", toolName: "read_file", handoffTarget: nil,
+            traceTiming: .observed)
+        let cache = SessionTraceProjection.HistoryCache()
+        _ = SessionTraceProjection.make(
+            turns: turns, live: [], agents: [], working: true, connected: true, cache: cache)
+        let projected = SessionTraceProjection.make(
+            turns: turns, live: [], agents: [worker], working: true, connected: true,
+            activities: [progress], cache: cache)
+        #expect(cache.reused == 1)
+        #expect(projected[1].rows.contains { $0.id == "event:" + progress.id.uuidString })
+    }
+
     @Test func parallelToolsKeepOffsetsAndMeasuredDuration() throws {
         let rows = project([call("a", 2, duration: 8), call("b", 4, duration: 3)])
         let a = try #require(rows.first { $0.id == "tool:session:a" })
