@@ -38,6 +38,13 @@ struct HermesUpdateServiceTests {
         #expect(release?.marketing == "0.20.5")
         #expect(release?.calendar == "2026.8.19")
         #expect(release?.publishedAt != nil)
+        #expect(release?.displayVersion == "v0.20.5 (v2026.8.19)")
+    }
+
+    @Test func matchingReleaseTagAppearsOnce() {
+        let release = HermesLatestRelease(
+            tag: "v0.23.3", marketing: "0.23.3", name: nil, publishedAt: nil, pageURL: nil)
+        #expect(release.displayVersion == "v0.23.3")
     }
 
     @Test func fallsBackToCalendarReleaseVersion() {

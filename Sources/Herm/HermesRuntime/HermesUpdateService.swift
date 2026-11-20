@@ -34,7 +34,8 @@ struct HermesLatestRelease: Equatable {
 
     var displayVersion: String {
         if let marketing {
-            return marketing == tag ? "v\(marketing)" : "v\(marketing) (\(tag))"
+            let version = "v\(marketing)"
+            return tag == version || tag == marketing ? version : "\(version) (\(tag))"
         }
         return tag
     }
