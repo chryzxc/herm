@@ -11,6 +11,8 @@ struct SessionInspectorTabItem: Identifiable {
     let close: () -> Void
     /// Set for a group chat tab, whose members' avatars replace the icon.
     var groupRoomID: String?
+    /// The Hermes profile a session tab belongs to; its bot's avatar replaces the icon.
+    var profileID: String?
 }
 
 struct SessionInspectorTabDrag: Codable, Transferable {

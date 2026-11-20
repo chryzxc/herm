@@ -246,15 +246,18 @@ struct SessionInspector: View {
                     if openSections.contains(selectedSection) {
                         baseContent
                     } else {
-                        SessionInspectorEmptyView(
-                            sections: visibleSections.filter { !openSections.contains($0) }, onOpen: reopen,
-                            bots: botMode.bots.filter {
-                                !$0.isHidden && $0.chat != nil && $0.chat?.sessionID != model.sessionID
-                            },
-                            botAvatars: botMode.avatarImages,
-                            sessions: model.sessions
-                                .filter { !$0.isHidden && $0.id != model.navigationSessionID },
-                            onDismiss: { onToggle?() })
+                        RecentSessionBots(model: model, roster: botMode.bots) { sessionBots, sessionsByBot in
+                            SessionInspectorEmptyView(
+                                sections: visibleSections.filter { !openSections.contains($0) }, onOpen: reopen,
+                                bots: botMode.bots.filter {
+                                    !$0.isHidden && $0.chat != nil && $0.chat?.sessionID != model.sessionID
+                                },
+                                botAvatars: botMode.avatarImages,
+                                sessions: model.sessions
+                                    .filter { !$0.isHidden && $0.id != model.navigationSessionID },
+                                sessionBots: sessionBots, sessionsByBot: sessionsByBot,
+                                onDismiss: { onToggle?() })
+                        }
                     }
                 }
                 .opacity(selectedExtraID == nil && selectedPreview == nil ? 1 : 0)
@@ -1156,5 +1159,32 @@ struct SessionInspector: View {
         }
         .dockPadding(12)
         .dockGlassPane()
+    }
+}
+
+/// Every bot's recent sessions for the empty inspector's Recent session grid: the all-profile
+/// scan merged with this profile's fresher rows, minus hidden ones and the open conversation.
+/// Observes the scan here so its refreshes redraw only the empty state, not every tab.
+private struct RecentSessionBots<Content: View>: View {
+    let model: DockModel
+    let roster: [BotSummary]
+    @ViewBuilder let content: (_ bots: [BotSummary], _ sessionsByBot: [String: [HermesSession]]) -> Content
+    @State private var revision = 0
+
+    var body: some View {
+        let _ = revision
+        let scanned: [HermesSession] =
+            switch model.allBotSessionsState {
+            case .ready(let rows), .stale(let rows, _): rows
+            case .loading, .empty, .unavailable, .failed: []
+            }
+        let merged = SidebarAgentGrouping.merged(
+            all: scanned, scoped: model.sessions, scopeProfileID: model.profileScopeID
+        ).filter { !$0.isHidden && $0.id != model.navigationSessionID }
+        let bots = roster.filter { !$0.isHidden }
+        let byBot = SidebarAgentGrouping.sessionsByBot(merged, scopeProfileID: model.profileScopeID, bots: bots)
+        content(bots.filter { byBot[$0.id] != nil }, byBot)
+            .onReceive(model.$allBotSessionsState.dropFirst()) { _ in revision &+= 1 }
+            .task { model.loadAllBotSessions() }
     }
 }

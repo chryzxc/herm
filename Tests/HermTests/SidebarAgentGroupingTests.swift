@@ -26,6 +26,25 @@ final class SidebarAgentGroupingTests: XCTestCase {
         XCTAssertEqual(merged[2].profileID, "coder")
     }
 
+    func testSessionsByBotGroupsByProfileAndFallsBackToDefaultBot() {
+        let bots = [bot("default", isDefault: true), bot("coder")]
+        let rows = [
+            session("a", profile: "coder", at: 10),
+            session("b", profile: nil, at: 30),
+            session("c", profile: "coder", at: 20),
+            session("d", profile: "default", at: 5),
+            session("e", profile: "gone", at: 50),
+        ]
+
+        let grouped = SidebarAgentGrouping.sessionsByBot(rows, scopeProfileID: nil, bots: bots)
+        XCTAssertEqual(grouped["coder"]?.map(\.id), ["c", "a"])
+        XCTAssertEqual(grouped["default"]?.map(\.id), ["b", "d"])
+        XCTAssertEqual(grouped.count, 2)
+
+        let scoped = SidebarAgentGrouping.sessionsByBot(rows, scopeProfileID: "coder", bots: bots)
+        XCTAssertEqual(scoped["coder"]?.map(\.id), ["b", "c", "a"])
+    }
+
     func testNewestFirstSortBreaksDateTiesByIDOrInputOrder() {
         let undated = HermesSession(
             id: "u", profileID: nil, title: "u", preview: "", startedAt: nil,

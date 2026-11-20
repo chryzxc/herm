@@ -2886,9 +2886,14 @@ longest. New tabs open beside the selected tab, and **Open in Split View**
 opens its column beside the active column rather than at the far right; when
 three columns are open it adds a tab to the active column. The inspector's **Open a
 new tab** grid adds one **Conversation** card. It opens a small `DockMenu` with **Bot chat**, **Group chat** and **Recent
-session**; Bot chat and Recent session are submenus with a search field on top: Bots show their avatars,
-sessions show their short last-updated time (20 at a time, most recent first;
-scrolling to the end reveals the next 20, and search matches every session). Picking one opens it in split view beside the active column and collapses the inspector, so the grid does not linger; the inspector toggle brings it back.
+session**. Bot chat is a submenu with a search field on top; Bots show their avatars. Recent session
+opens a three-column grid of Bots (32pt avatar over the name, only Bots that have recent sessions, in
+roster order); picking a Bot opens that Bot's sessions, merged from the all-profile scan and the
+selected profile's fresher rows. When the Bot roster is unavailable, Recent session lists every session
+directly. Session lists have a search field on top and show each session's short last-updated time
+(20 at a time, most recent first; scrolling to the end reveals the next 20, and search matches every session). Picking one opens it in split view beside the active column and collapses the inspector, so the grid does not linger; the inspector toggle brings it back.
+A split tab shows the avatar of the Bot its session belongs to (its Hermes profile), not the chat
+glyph; a Bot's main chat also shows the Bot's name, and a group chat its members' avatars.
 Split tabs hug their titles (up to 220pt, then truncate); when a column is
 too narrow for its tabs, the strip scrolls sideways (keeping the selected tab in
 view) rather than squeezing titles, and they show a Bot's avatar and name

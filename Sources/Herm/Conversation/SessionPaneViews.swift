@@ -292,7 +292,7 @@ struct SessionPaneTabStrip: View {
                 icon: tab.groupRoomID == nil ? .chatCircle : .usersThree,
                 isSelected: isSelected,
                 select: { store.select(id, in: panel.id) }, close: { store.closeTab(id, in: panel.id) },
-                groupRoomID: tab.groupRoomID)
+                groupRoomID: tab.groupRoomID, profileID: tab.profileID)
         }
     }
 
@@ -306,8 +306,17 @@ struct SessionPaneTabStrip: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
                     ForEach(tabs) { tab in
-                        // A Bot's main chat shows the Bot's avatar instead of the chat glyph.
-                        let bot = router?.bots?.bots.first { $0.chat?.sessionID == tab.id }
+                        // A Bot's main chat shows the Bot's avatar and name instead of the chat glyph.
+                        let mainChatBot = router?.bots?.bots.first { $0.chat?.sessionID == tab.id }
+                        // Any other session shows the avatar of the Bot it came from.
+                        let bot =
+                            mainChatBot
+                            ?? (tab.groupRoomID == nil
+                                ? router?.bots.flatMap {
+                                    SidebarAgentGrouping.ownerBot(
+                                        profileID: tab.profileID, scopeProfileID: $0.selectedProfileID,
+                                        bots: $0.bots.filter { !$0.isHidden })
+                                } : nil)
                         // A group chat shows its members' avatars instead of the group glyph.
                         let members: [BotSummary] =
                             tab.groupRoomID.flatMap { roomID in
@@ -316,7 +325,8 @@ struct SessionPaneTabStrip: View {
                                 }
                             } ?? []
                         SessionPaneTab(
-                            tab: tab, bot: bot, avatar: bot.flatMap { router?.bots?.avatarImages[$0.id] },
+                            tab: tab, bot: bot, isMainChat: mainChatBot != nil,
+                            avatar: bot.flatMap { router?.bots?.avatarImages[$0.id] },
                             members: members, avatarImages: router?.bots?.avatarImages ?? [:],
                             status: status.entries[tab.id]
                         )
@@ -357,6 +367,7 @@ private struct SessionPaneTabWidth: Layout {
 private struct SessionPaneTab: View {
     let tab: SessionInspectorTabItem
     let bot: BotSummary?
+    var isMainChat = false
     let avatar: Data?
     var members: [BotSummary] = []
     var avatarImages: [String: Data] = [:]
@@ -364,7 +375,7 @@ private struct SessionPaneTab: View {
     @State private var hovered = false
 
     /// A Bot's main chat carries Hermes' canonical "Bot Chat" title; the Bot's name identifies it.
-    private var title: String { bot?.name ?? tab.title }
+    private var title: String { isMainChat ? bot?.name ?? tab.title : tab.title }
 
     var body: some View {
         SessionPaneTabWidth(maxWidth: 220) {

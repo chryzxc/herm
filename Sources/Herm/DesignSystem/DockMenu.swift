@@ -12,6 +12,7 @@ struct DockMenu<Label: View, Content: View>: View {
     private let content: Content
     private let label: Label
     private let outlined: Bool
+    private let tile: Bool
     private let anchor: PopoverAttachmentAnchor
     @State private var isOpen = false
     @State private var isHovered = false
@@ -20,11 +21,13 @@ struct DockMenu<Label: View, Content: View>: View {
     @Environment(\.isEnabled) private var isEnabled
 
     /// `anchor` pins where the popover attaches; a label whose width changes should pass a fixed edge so the popover stays put.
+    /// `tile` draws a nested menu as a grid cell (no disclosure caret), for pickers laid out in a grid.
     init(
-        outlined: Bool = false, anchor: PopoverAttachmentAnchor = .rect(.bounds),
+        outlined: Bool = false, tile: Bool = false, anchor: PopoverAttachmentAnchor = .rect(.bounds),
         @ViewBuilder content: () -> Content, @ViewBuilder label: () -> Label
     ) {
         self.outlined = outlined
+        self.tile = tile
         self.anchor = anchor
         self.content = content()
         self.label = label()
@@ -47,7 +50,12 @@ struct DockMenu<Label: View, Content: View>: View {
 
     @ViewBuilder
     private var trigger: some View {
-        if depth > 0 {
+        if depth > 0, tile {
+            DockMenuRowChrome(isHovered: (isHovered || isOpen) && isEnabled, tint: nil) { label }
+                .onHover { isHovered = $0 }
+                .onTapGesture { if isEnabled { isOpen.toggle() } }
+                .accessibilityAddTraits(.isButton)
+        } else if depth > 0 {
             DockMenuRowChrome(isHovered: (isHovered || isOpen) && isEnabled, tint: nil) {
                 HStack(spacing: 8) {
                     label

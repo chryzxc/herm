@@ -8,14 +8,15 @@ struct SessionInspectorEmptyView: View {
     var botAvatars: [String: Data] = [:]
     /// Every pickable session; the menu shows the most recent until a search narrows it.
     var sessions: [HermesSession] = []
+    /// Bots with recent sessions, for the Recent session grid, and those sessions by bot id.
+    /// Empty when the bot roster is unavailable; the menu then lists `sessions` directly.
+    var sessionBots: [BotSummary] = []
+    var sessionsByBot: [String: [HermesSession]] = [:]
     /// Collapses the inspector once a card opens something outside it (a split column),
     /// so the grid doesn't linger; + or the inspector toggle brings it back.
     var onDismiss: () -> Void = {}
     @Environment(\.chatContextRouter) private var router
     @State private var botQuery = ""
-    @State private var sessionQuery = ""
-    @State private var sessionLimit = Self.sessionPage
-    private static let sessionPage = 20
 
     /// Most-used first: talking to the session, then working in its project, then reviewing it.
     private static let priority: [SessionInspector.Section] = [
@@ -84,7 +85,7 @@ struct SessionInspectorEmptyView: View {
     @ViewBuilder
     private var conversationCard: some View {
         let rooms = router?.bots?.groupChats.rooms ?? []
-        if !bots.isEmpty || !sessions.isEmpty || !rooms.isEmpty {
+        if !bots.isEmpty || !sessions.isEmpty || !sessionBots.isEmpty || !rooms.isEmpty {
             DockMenu {
                 if !bots.isEmpty {
                     DockMenu("Bot chat", icon: .robot) { botRows }
@@ -99,8 +100,12 @@ struct SessionInspectorEmptyView: View {
                         }
                     }
                 }
-                if !sessions.isEmpty {
-                    DockMenu("Recent session", icon: .chatCircle) { sessionRows }
+                if !sessionBots.isEmpty {
+                    DockMenu("Recent session", icon: .chatCircle) { botGrid }
+                } else if !sessions.isEmpty {
+                    DockMenu("Recent session", icon: .chatCircle) {
+                        SessionPickerRows(sessions: sessions, onPick: open)
+                    }
                 }
             } label: {
                 card(
@@ -154,20 +159,66 @@ struct SessionInspectorEmptyView: View {
         }
     }
 
-    @ViewBuilder
-    private var sessionRows: some View {
-        DockSearchField(placeholder: "Search sessions", text: $sessionQuery).frame(maxWidth: .infinity)
+    /// Bots in a three-column grid; each opens its own recent sessions.
+    private var botGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(84), spacing: 4), count: 3), spacing: 4) {
+            ForEach(sessionBots) { bot in
+                DockMenu(tile: true) {
+                    SessionPickerRows(sessions: sessionsByBot[bot.id] ?? [], onPick: open)
+                } label: {
+                    VStack(spacing: 6) {
+                        BotAvatarView(bot: bot, imageData: botAvatars[bot.id], size: 32, animated: false)
+                        Text(bot.name)
+                            .dockFont(.metadata, weight: .medium)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .dockPadding(.vertical, 8)
+                }
+                .accessibilityLabel("\(bot.name) recent sessions")
+            }
+        }
+    }
+
+    private func open(_ session: HermesSession) {
+        SessionPaneStore.shared.open(SessionPaneDrag(session: session))
+        onDismiss()
+    }
+
+    private var noMatches: some View { DockMenuNoMatches() }
+}
+
+private struct DockMenuNoMatches: View {
+    var body: some View {
+        Text("No matches")
+            .dockFont(.body)
+            .foregroundStyle(Color.dockMetadataText)
+            .dockPadding(.horizontal, 8)
+            .dockPadding(.vertical, 6)
+    }
+}
+
+/// Searchable, paged session rows inside a `DockMenu`; each menu keeps its own query.
+private struct SessionPickerRows: View {
+    let sessions: [HermesSession]
+    let onPick: (HermesSession) -> Void
+    @State private var query = ""
+    @State private var limit = Self.page
+    private static let page = 20
+
+    var body: some View {
+        DockSearchField(placeholder: "Search sessions", text: $query).frame(maxWidth: .infinity)
             .dockPadding(.bottom, 4)
-            .onChange(of: sessionQuery) { _, _ in sessionLimit = Self.sessionPage }
-        let all = SessionSidebarSearch.sessions(matching: sessionQuery, in: sessions, projects: [:])
-        let shown = all.prefix(sessionLimit)
-        if all.isEmpty { noMatches }
+            .onChange(of: query) { _, _ in limit = Self.page }
+        let all = SessionSidebarSearch.sessions(matching: query, in: sessions, projects: [:])
+        let shown = all.prefix(limit)
+        if all.isEmpty { DockMenuNoMatches() }
         // Lazy, so a row's onAppear means it actually scrolled into view.
         LazyVStack(alignment: .leading, spacing: 1) {
             ForEach(Array(shown)) { session in
                 Button {
-                    SessionPaneStore.shared.open(SessionPaneDrag(session: session))
-                    onDismiss()
+                    onPick(session)
                 } label: {
                     HStack(spacing: 8) {
                         Text(session.displayTitle).lineLimit(1).frame(maxWidth: 280, alignment: .leading)
@@ -180,17 +231,9 @@ struct SessionInspectorEmptyView: View {
                 }
                 // Reaching the last shown row reveals the next page.
                 .onAppear {
-                    if session.id == shown.last?.id, sessionLimit < all.count { sessionLimit += Self.sessionPage }
+                    if session.id == shown.last?.id, limit < all.count { limit += Self.page }
                 }
             }
         }
-    }
-
-    private var noMatches: some View {
-        Text("No matches")
-            .dockFont(.body)
-            .foregroundStyle(Color.dockMetadataText)
-            .dockPadding(.horizontal, 8)
-            .dockPadding(.vertical, 6)
     }
 }

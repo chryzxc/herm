@@ -21,6 +21,31 @@ enum SidebarAgentGrouping {
         return sortedNewestFirst(byKey.values, tieBreakByID: true)
     }
 
+    /// The bot that owns `session`: the bot whose profile it ran under. A row with no profile
+    /// (and no selected scope) or the "default" profile belongs to the default bot.
+    static func ownerBot(_ session: HermesSession, scopeProfileID: String?, bots: [BotSummary]) -> BotSummary? {
+        ownerBot(profileID: session.profileID, scopeProfileID: scopeProfileID, bots: bots)
+    }
+
+    static func ownerBot(profileID: String?, scopeProfileID: String?, bots: [BotSummary]) -> BotSummary? {
+        let owner = profileID ?? scopeProfileID
+        if let owner, let bot = bots.first(where: { $0.id == owner }) { return bot }
+        guard owner == nil || owner?.lowercased() == "default" else { return nil }
+        return bots.first(where: \.isDefault)
+    }
+
+    /// Each bot's sessions, newest first, keyed by bot id; bots without a session are absent.
+    static func sessionsByBot(_ sessions: [HermesSession], scopeProfileID: String?, bots: [BotSummary])
+        -> [String: [HermesSession]]
+    {
+        var byBot: [String: [HermesSession]] = [:]
+        for session in sessions {
+            guard let bot = ownerBot(session, scopeProfileID: scopeProfileID, bots: bots) else { continue }
+            byBot[bot.id, default: []].append(session)
+        }
+        return byBot.mapValues { sortedNewestFirst($0, tieBreakByID: true) }
+    }
+
     /// Orders sessions by `lastUpdatedAt`, newest first; ties go by id, or keep
     /// input order. Rail rebuilds sort hundreds of rows, often in scrambled
     /// dictionary order; sorting precomputed keys instead of the sessions
