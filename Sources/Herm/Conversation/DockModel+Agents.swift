@@ -492,6 +492,30 @@ extension DockModel {
         return ids.count == 1 ? ids.first : nil
     }
 
+    /// Inspect the decoded fields so unrelated tool output never needs a second JSON encoding.
+    static func kanbanCardReference(inToolPayload payload: [String: Any]) -> String? {
+        var mentionsKanban = false
+        var taskIDs = Set<String>()
+        func visit(_ value: Any) {
+            guard taskIDs.count < 2 else { return }
+            switch value {
+            case let text as String:
+                if !mentionsKanban { mentionsKanban = text.localizedCaseInsensitiveContains("kanban") }
+                if text.contains("t_") { taskIDs.formUnion(kanbanTaskIDs(in: text)) }
+            case let fields as [String: Any]:
+                for (key, value) in fields {
+                    visit(key)
+                    visit(value)
+                }
+            case let elements as [Any]:
+                for element in elements { visit(element) }
+            default: break
+            }
+        }
+        visit(payload)
+        return mentionsKanban && taskIDs.count == 1 ? taskIDs.first : nil
+    }
+
     /// IDs a `kanban <verb> <id>` command targets (never `list`).
     static func kanbanCommandReferences(in text: String) -> Set<String> {
         let pattern = #"(?i)\bkanban[ _-]+(?!list\b)[a-z-]+[ \t]+(t_[A-Za-z0-9][A-Za-z0-9_]*)\b"#

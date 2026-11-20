@@ -295,6 +295,19 @@ struct AgentProjectionTests {
         #expect(model.observedKanbanTaskIDs.isEmpty)
     }
 
+    @Test func decodedKanbanToolPayloadRequiresAnUnambiguousReference() {
+        let output = String(repeating: "Unrelated tool output.\n", count: 4096)
+        #expect(DockModel.kanbanCardReference(inToolPayload: ["output": output, "id": "t_123"]) == nil)
+        #expect(
+            DockModel.kanbanCardReference(inToolPayload: [
+                "args": ["command": "hermes Kanban show t_123"], "output": [output, ["id": "t_123"]],
+            ]) == "t_123")
+        #expect(
+            DockModel.kanbanCardReference(inToolPayload: [
+                "args": ["command": "hermes kanban list"], "output": [["id": "t_123"], ["id": "t_456"]],
+            ]) == nil)
+    }
+
     @Test func repeatedKanbanReferenceRequestsFreshStatus() {
         let model = DockModel(
             initialSessionID: "session-a",

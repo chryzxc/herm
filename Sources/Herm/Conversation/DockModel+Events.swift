@@ -228,9 +228,7 @@ extension DockModel {
             )
         else { return }
 
-        let text = Self.eventText(payload)
-        guard text.localizedCaseInsensitiveContains("kanban") else { return }
-        guard let taskID = Self.kanbanCardReference(in: text) else { return }
+        guard let taskID = Self.kanbanCardReference(inToolPayload: payload) else { return }
         let taskIDs: Set<String> = [taskID]
 
         let aliases = [currentSessionID, sessionStorageID, kanbanAttributionSessionID, kanbanSessionID]
