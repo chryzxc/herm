@@ -8,7 +8,7 @@ struct SessionInspectorEmptyView: View {
     var botAvatars: [String: Data] = [:]
     /// Every pickable session; the menu shows the most recent until a search narrows it.
     var sessions: [HermesSession] = []
-    /// Bots with recent sessions, for the Recent session grid, and those sessions by bot id.
+    /// Bots with recent sessions, for the Sessions grid, and those sessions by bot id.
     /// Empty when the bot roster is unavailable; the menu then lists `sessions` directly.
     var sessionBots: [BotSummary] = []
     var sessionsByBot: [String: [HermesSession]] = [:]
@@ -93,17 +93,19 @@ struct SessionInspectorEmptyView: View {
                 if !rooms.isEmpty {
                     DockMenu("Group chat", icon: .usersThree) {
                         ForEach(rooms) { room in
-                            Button(room.name) {
+                            Button {
                                 SessionPaneStore.shared.open(SessionPaneDrag(room: room))
                                 onDismiss()
+                            } label: {
+                                groupRoomRow(room)
                             }
                         }
                     }
                 }
                 if !sessionBots.isEmpty {
-                    DockMenu("Recent session", icon: .chatCircle) { botGrid }
+                    DockMenu("Sessions", icon: .chatCircle) { botGrid }
                 } else if !sessions.isEmpty {
-                    DockMenu("Recent session", icon: .chatCircle) {
+                    DockMenu("Sessions", icon: .chatCircle) {
                         SessionPickerRows(sessions: sessions, onPick: open)
                     }
                 }
@@ -159,27 +161,60 @@ struct SessionInspectorEmptyView: View {
         }
     }
 
-    /// Bots in a three-column grid; each opens its own recent sessions.
-    private var botGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.fixed(84), spacing: 4), count: 3), spacing: 4) {
-            ForEach(sessionBots) { bot in
-                DockMenu(tile: true) {
-                    SessionPickerRows(sessions: sessionsByBot[bot.id] ?? [], onPick: open)
-                } label: {
-                    VStack(spacing: 6) {
-                        BotAvatarView(bot: bot, imageData: botAvatars[bot.id], size: 32, animated: false)
-                        Text(bot.name)
-                            .dockFont(.metadata, weight: .medium)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+    /// A group chat's name over its members' avatars, side by side.
+    private func groupRoomRow(_ room: GroupRoom) -> some View {
+        let members = room.members.compactMap { router?.bots?.botsByID[$0.profile] }
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(room.name).lineLimit(1)
+            if !members.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(members) { bot in
+                        BotAvatarView(bot: bot, imageData: botAvatars[bot.id], size: 16, animated: false)
+                            .help(bot.name)
                     }
-                    .frame(maxWidth: .infinity)
-                    .dockPadding(.vertical, 8)
                 }
-                .accessibilityLabel("\(bot.name) recent sessions")
             }
         }
+        .dockPadding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(room.name), \(members.map(\.name).joined(separator: ", "))")
     }
+
+    /// Bots in a three-column grid; each opens its own recent sessions. The grid scrolls on its own
+    /// at three and a half rows, so a half-shown row hints at more; the menu panel's own height
+    /// can exceed the room the popover gets on screen, which clips rows instead of scrolling them.
+    private var botGrid: some View {
+        let rows = (sessionBots.count + 2) / 3
+        let visibleRows = min(CGFloat(rows), 3.5)
+        return ScrollView(.vertical, showsIndicators: rows > 3) {
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.fixed(84), spacing: Self.tileSpacing), count: 3),
+                spacing: Self.tileSpacing
+            ) {
+                ForEach(sessionBots) { bot in
+                    DockMenu(tile: true) {
+                        SessionPickerRows(sessions: sessionsByBot[bot.id] ?? [], onPick: open)
+                    } label: {
+                        VStack(spacing: 6) {
+                            BotAvatarView(bot: bot, imageData: botAvatars[bot.id], size: 32, animated: false)
+                            Text(bot.name)
+                                .dockFont(.metadata, weight: .medium)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Self.tileHeight)
+                    }
+                    .accessibilityLabel("\(bot.name) recent sessions")
+                }
+            }
+        }
+        .frame(width: 3 * 84 + 2 * Self.tileSpacing)
+        .frame(height: visibleRows * Self.tileHeight + max(visibleRows - 1, 0) * Self.tileSpacing)
+    }
+
+    private static let tileHeight: CGFloat = 72
+    private static let tileSpacing: CGFloat = 4
 
     private func open(_ session: HermesSession) {
         SessionPaneStore.shared.open(SessionPaneDrag(session: session))
