@@ -63,27 +63,41 @@ extension DockModel {
         }
         let failed =
             type == "error" || type == "message.error"
-            || (type == "message.complete" && (noticePayload["error"] as? String)?.isEmpty == false)
+            || (type == "message.complete" && Self.messageCompletionError(from: noticePayload) != nil)
         if type == "message.start", let owner = params["session_id"] as? String {
             let reference = interruptionNotice(.information, owner: owner)
             interruptionCoordinator?.clearFailure(owner: reference.sourceID, profileID: reference.profileID)
         }
-        if failed, let owner = params["session_id"] as? String {
+        if failed, let owner = (params["session_id"] as? String) ?? (noticePayload["session_id"] as? String) {
             let identity =
                 (params["seq"] as? NSNumber).map { "\(gatewayReplayEpoch ?? "legacy"):\($0.stringValue)" }
                 ?? UUID().uuidString
             completionNoticeIDs[rowSessionID(owner)] = identity
             interruptionCoordinator?.recordFailure(interruptionNotice(.failure, owner: owner, eventID: identity))
         }
-        if type == "message.complete", let owner = params["session_id"] as? String {
+        if type == "message.complete",
+            let owner = (params["session_id"] as? String) ?? (noticePayload["session_id"] as? String)
+        {
             let identity =
                 (failed ? completionNoticeIDs[rowSessionID(owner)] : nil)
                 ?? (params["seq"] as? NSNumber).map { "\(gatewayReplayEpoch ?? "legacy"):\($0.stringValue)" }
                 ?? UUID().uuidString
             completionNoticeIDs[rowSessionID(owner)] = identity
             if completionNoticeIDs.count > 256 { completionNoticeIDs = [rowSessionID(owner): identity] }
-            if !failed {
-                _ = interruptionCoordinator?.admit(interruptionNotice(.completion, owner: owner), channel: .record)
+            let matchingStops = sessionStopAttempts.filter { $0.key.sessionID == rowSessionID(owner) }
+            let stoppedTail =
+                matchingStops.count == 1
+                && matchingStops.first?.value.outcome == .accepted && matchingStops.first?.value.tailPending == true
+            let currentStoppedTail =
+                isDiscardingStoppedTurn
+                && sessionID.map {
+                    Self.eventBelongsToSession(
+                        type: type, envelopeSessionID: params["session_id"] as? String,
+                        eventSessionID: owner, payload: noticePayload, currentSessionID: $0,
+                        agents: sessionAgents + activeSubagents)
+                } == true
+            if !failed && !stoppedTail && !currentStoppedTail {
+                interruptionCoordinator?.recordCompletion(interruptionNotice(.completion, owner: owner))
             }
         }
         if let owner = params["session_id"] as? String, type == "message.start" || type == "message.complete" || failed

@@ -253,7 +253,7 @@ struct EdgeNotchStatusIndicator: View {
         switch m {
         case .working: .dockAccent
         case .done: .dockSuccess
-        case .blocked: .dockWarning
+        case .blocked: activity.attentionState.color
         case .offline, .idle: .dockSecondaryText
         }
     }
@@ -332,11 +332,11 @@ struct EdgeNotchStatusIndicator: View {
             case .done: activity.finishedBotID ?? ""
             default: ""
             }
-        let clarify = activity.status == .needsClarification
+        let attention = activity.attentionState
         let mood: BotMood =
             switch m {
             case .working: .tool
-            case .blocked: clarify ? .clarify : .approval
+            case .blocked: attention == .failed ? .failed : attention == .clarification ? .clarify : .approval
             case .done: .done
             case .offline: .offline
             case .idle: .sleepy
@@ -355,7 +355,7 @@ struct EdgeNotchStatusIndicator: View {
                 alignment: m == .blocked || m == .done ? .bottomLeading : .center)
             switch m {
             case .blocked:
-                DockActivityIndicator(state: clarify ? .clarification : .approval, role: .badge)
+                DockActivityIndicator(state: attention, role: .badge)
             case .done:
                 EdgeNotchFinishedBadge(count: max(1, activity.finishedCount))
             default:
@@ -372,7 +372,7 @@ struct EdgeNotchStatusIndicator: View {
         let symbol: String? =
             switch m {
             case .done: "checkmark"
-            case .blocked: activity.status == .needsClarification ? "questionmark" : "exclamationmark"
+            case .blocked: activity.attentionState.symbol
             case .offline: "moon.zzz.fill"
             default: nil
             }

@@ -25,7 +25,7 @@ struct EdgeNotchTests {
         let state = EdgeNotchState()
         state.tasks = tasks
         #expect(state.railActivity.attention)
-        #expect(state.railActivity.title == "Needs your attention")
+        #expect(state.railActivity.title == "Needs your approval")
         let stale = EdgeNotchTask.build(
             current: nil, sessions: sessions, currentSessionIDs: [], isOnline: false,
             attention: model.sessionAttention)
@@ -213,13 +213,14 @@ struct EdgeNotchTests {
             #expect(screen.contains(frame))
         }
     }
-    @Test func progressTransitionsExpandButRepeatedStateDoesNot() {
+    @Test func progressTransitionsStayCompactButAttentionExpands() {
         let idle = EdgeNotchActivity()
         let working = EdgeNotchActivity(status: .working)
         #expect(idle.quiet)
-        #expect(working.shouldAnnounce(after: idle))
+        #expect(!working.shouldAnnounce(after: idle))
         #expect(!working.shouldAnnounce(after: working))
-        #expect(EdgeNotchActivity(status: .working, runningCount: 2).shouldAnnounce(after: working))
+        #expect(!EdgeNotchActivity(status: .working, runningCount: 2).shouldAnnounce(after: working))
+        #expect(EdgeNotchActivity(status: .needsApproval).shouldAnnounce(after: working))
         #expect(!EdgeNotchActivity(unread: true).quiet)
     }
 

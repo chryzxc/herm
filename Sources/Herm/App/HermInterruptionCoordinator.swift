@@ -69,6 +69,11 @@ final class HermInterruptionCoordinator: ObservableObject {
     @Published private(set) var pendingDigest = false
     @Published private(set) var digestPresentationRevision = 0
     @Published private(set) var blockingFailure: HermNotice?
+    let sessionCompletions = PassthroughSubject<HermNotice, Never>()
+    func recordCompletion(_ notice: HermNotice) {
+        _ = admit(notice, channel: .record)
+        sessionCompletions.send(notice)
+    }
     private var failureReferences: [String: HermNotice] = [:]
     var failures: [HermNotice] { Array(failureReferences.values) }
     func recordFailure(_ notice: HermNotice) {

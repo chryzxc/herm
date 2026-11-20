@@ -1612,10 +1612,11 @@ in flight does not flicker the rows. Snapshot comparison can miss intermediate
 moves between reads. The rail includes running and blocked Kanban work even
 when no conversation is active.
 
-New responses, completions, and requests for attention expand the preview
-automatically for six seconds. Rapid tool chains are limited to one automatic
-announcement every four seconds. Tool progress updates the current card in
-place without expanding the preview. Only bounded response excerpts and tool
+Session completions and requests for attention expand the preview automatically
+for six seconds. Work, unread, background-task and tool progress update the
+compact status without expanding the preview. Approval, clarification and
+failure marks retain their distinct meanings across indicator styles.
+Only bounded response excerpts and tool
 names appear; full results and decisions stay in the workspace.
 
 **Quota tab.** While Quota is selected, the trailing slot holds a List/Grid

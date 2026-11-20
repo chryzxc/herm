@@ -156,7 +156,7 @@ The notch changes to reflect what Hermes is doing, so you don't have to keep a t
 | **Idle** | A thin, quiet rail on the screen edge. |
 | **Working** | A live indicator while Hermes is running a turn, a tool, or a background task. |
 | **Needs you** | An attention state when Hermes is waiting for an approval (for example, a dangerous command) or has asked you a clarifying question. |
-| **Finished** | A short announcement when a task completes, which stays marked until you open the result. |
+| **Finished** | A short announcement when a session completes, which stays marked until you open the result. Tool and background-task progress stays compact. |
 | **Offline** | A clear indicator when the local Hermes runtime isn't reachable. |
 
 The Tasks preview opens on **Activity** by default. Its list/grid toggle switches between session activity and **Kanban** cards, using the same controls as Quota. Both views use Herm’s compact status cards. Kanban shows running, blocked, and review cards across boards. Confirmed card moves and edits automatically expand the Kanban preview without changing your selected view; click a card to open its board and inspector. Kanban refreshes every five seconds while the workspace is closed. The initial load stays quiet, and unchanged or failed refreshes do not announce. Up to 30 recent card updates remain until opened; active cards stay visible.

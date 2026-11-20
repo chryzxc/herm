@@ -179,6 +179,15 @@ struct EdgeNotchRenderSnapshotTests {
 
     @Test func renderDisplayStyles() async throws {
         guard let dir = ProcessInfo.processInfo.environment["NOTCH_SNAPSHOT_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        _ = DockThemeStore.shared
+        let previousTheme = DockThemeRuntime.current
+        let previousAppearance = NSApplication.shared.appearance
+        defer {
+            DockThemeRuntime.current = previousTheme
+            DockThemeRuntime.revision &+= 1
+            NSApplication.shared.appearance = previousAppearance
+        }
         let activities: [(String, EdgeNotchActivity)] = [
             ("Idle", .init()),
             ("Working", .init(status: .working)),
@@ -187,47 +196,61 @@ struct EdgeNotchRenderSnapshotTests {
             ("Offline", .init(status: .offline)),
             ("Attention + work", .init(status: .needsApproval, runningCount: 1)),
             ("Update + work", .init(status: .working, unread: true)),
+            ("Question + work", .init(status: .needsClarification, runningCount: 1, responseCompleted: true)),
+            (
+                "Error + work",
+                .init(
+                    runningCount: 1, responseCompleted: true, sessionNeedsAttention: true,
+                    sessionAttentionState: .failed)
+            ),
         ]
-        let content = VStack(spacing: 16) {
-            NotchDisplaySettings()
-            Divider()
-            ForEach(NotchDisplayStyle.allCases) { style in
-                HStack(spacing: 12) {
-                    Text(style.title).frame(width: 90, alignment: .leading)
-                    ForEach(activities.indices, id: \.self) { index in
-                        VStack(spacing: 8) {
-                            EdgeNotchStatusIndicator(activity: activities[index].1, style: style)
-                                .frame(width: 22, height: 72)
-                                .background {
-                                    EdgeNotchShape(side: .right).fill(Color.dockCanvas)
-                                        .overlay { EdgeNotchShape(side: .right).stroke(Color.dockBorderStrong) }
-                                }
-                            Text(activities[index].0).font(.system(size: 11))
+        for theme in ["clean", "island", "glass", "mono"] {
+            DockThemeRuntime.current = try #require(DockThemeID(rawValue: theme))
+            DockThemeRuntime.revision &+= 1
+            let dark = theme != "clean"
+            NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            let content = VStack(spacing: 16) {
+                NotchDisplaySettings()
+                Divider()
+                ForEach(NotchDisplayStyle.allCases) { style in
+                    HStack(spacing: 12) {
+                        Text(style.title).frame(width: 90, alignment: .leading)
+                        ForEach(activities.indices, id: \.self) { index in
+                            VStack(spacing: 8) {
+                                EdgeNotchStatusIndicator(activity: activities[index].1, style: style)
+                                    .frame(width: 22, height: 72)
+                                    .background {
+                                        EdgeNotchShape(side: .right).fill(Color.dockCanvas)
+                                            .overlay { EdgeNotchShape(side: .right).stroke(Color.dockBorderStrong) }
+                                    }
+                                Text(activities[index].0).font(.system(size: 11))
+                            }
+                            .frame(width: 90)
                         }
-                        .frame(width: 90)
                     }
                 }
             }
+            .padding(24)
+            .foregroundStyle(Color.dockPrimaryText)
+            .background(Color.dockCanvas)
+            .dockThemedRoot()
+            .environment(\.colorScheme, dark ? .dark : .light)
+            let host = NSHostingView(rootView: content)
+            host.frame = NSRect(x: 0, y: 0, width: 1100, height: 520)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.appearance = NSApplication.shared.appearance
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer { window.orderOut(nil) }
+            for _ in 0..<3 {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: rep)
+            let data = try #require(rep.representation(using: .png, properties: [:]))
+            try data.write(to: URL(fileURLWithPath: dir).appendingPathComponent("display-styles-\(theme).png"))
         }
-        .padding(24)
-        .foregroundStyle(Color.dockPrimaryText)
-        .background(Color.dockCanvas)
-        .environment(\.colorScheme, .dark)
-        let host = NSHostingView(rootView: content)
-        host.frame = NSRect(x: 0, y: 0, width: 900, height: 520)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.appearance = NSAppearance(named: .darkAqua)
-        window.contentView = host
-        window.orderFrontRegardless()
-        defer { window.orderOut(nil) }
-        for _ in 0..<3 {
-            host.layoutSubtreeIfNeeded()
-            try await Task.sleep(for: .milliseconds(100))
-        }
-        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: rep)
-        let data = try #require(rep.representation(using: .png, properties: [:]))
-        try data.write(to: URL(fileURLWithPath: dir).appendingPathComponent("display-styles.png"))
     }
 
     @Test func renderTaskSources() async throws {
