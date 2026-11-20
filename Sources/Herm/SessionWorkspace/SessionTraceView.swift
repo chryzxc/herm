@@ -418,9 +418,11 @@ struct SessionTraceCanvas: View {
     private func clock<Content: View>(_ live: Bool, @ViewBuilder _ content: @escaping (Date) -> Content)
         -> some View
     {
+        // The shared clock holds through a live scroll and while no Herm window
+        // is on screen; `.animation` kept ticking through both.
         TimelineView(
-            .animation(
-                minimumInterval: animates ? 0.1 : 1,
+            .dockMotion(
+                rate: animates ? 10 : 1,
                 paused: !isVisible || (!live && replay?.resumedAt == nil)
             )
         ) { content($0.date) }

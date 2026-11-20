@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// Shared placeholder used by GitHub detail and list surfaces while their canonical
-/// payload is loading. It breathes with one slow opacity pulse that Core Animation
-/// drives, so dozens of blocks cost nothing on the main thread. It is static under
-/// Reduce Motion or when the host is hidden.
+/// payload is loading. It breathes with one slow opacity pulse on the shared
+/// `dockMotion` clock, so any number of blocks cost one render per tick and hold
+/// still while scrolling. (`repeatForever` re-rendered each block at the display
+/// rate.) It is static under Reduce Motion or when the host is hidden.
 struct RepositoryShimmerBlock: View {
     let width: CGFloat?
     let height: CGFloat
@@ -11,18 +12,16 @@ struct RepositoryShimmerBlock: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dockHostVisible) private var hostVisible
-    @State private var dim = false
 
     var body: some View {
         let animates = DockMotion.isEnabled(reduceMotion: reduceMotion) && hostVisible
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(Color.dockSurface4.opacity(animates && dim ? 0.16 : 0.30))
-            .frame(maxWidth: width ?? .infinity, alignment: .leading)
-            .frame(height: height)
-            .animation(
-                animates ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true) : nil, value: dim
-            )
-            .onAppear { dim = true }
-            .accessibilityHidden(true)
+        TimelineView(.dockMotion(rate: 15, paused: !animates)) { context in
+            let breath = animates ? DockMotionSchedule.breath(context.date, period: 2.4) : 0
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.dockSurface4.opacity(0.30 - 0.14 * breath))
+        }
+        .frame(maxWidth: width ?? .infinity, alignment: .leading)
+        .frame(height: height)
+        .accessibilityHidden(true)
     }
 }

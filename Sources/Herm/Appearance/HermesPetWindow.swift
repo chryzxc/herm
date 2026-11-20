@@ -348,6 +348,7 @@ private struct PetWindowContent: View {
                 wobble = false
                 return
             }
+            // perf-contract: allow wobble runs only while the pet is held by the pointer
             withAnimation(.easeInOut(duration: 0.18).repeatForever(autoreverses: true)) { wobble = true }
         }
         .overlay {

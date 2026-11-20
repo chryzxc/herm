@@ -666,8 +666,10 @@ private struct ChipStyle: ViewModifier {
 /// Running subagents as small orbs that pulse while they work.
 struct VoiceSubagentOrbs: View {
     let agents: [HermesSubagent]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let animates = DockMotion.isEnabled(reduceMotion: reduceMotion)
         HStack(spacing: 14) {
             ForEach(agents.prefix(6), id: \.id) { agent in
                 let running = !["completed", "complete", "done", "failed", "error", "cancelled"].contains(
@@ -677,16 +679,18 @@ struct VoiceSubagentOrbs: View {
                     ? .dockDestructive
                     : running ? .dockAccent : .dockSuccess
                 VStack(spacing: 4) {
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [tint, tint.opacity(0.2)], center: .center, startRadius: 1, endRadius: 11)
-                        )
-                        .frame(width: 18, height: 18)
-                        .shadow(color: tint.opacity(0.6), radius: running ? 8 : 3)
-                        .phaseAnimator(running ? [false, true] : [false]) { orb, pulse in
-                            orb.scaleEffect(pulse ? 1.15 : 0.9)
-                        }
+                    // Shared clock: a cyclic phaseAnimator per orb ran at the display rate.
+                    TimelineView(.dockMotion(rate: 15, paused: !(running && animates))) { context in
+                        let pulse = running && animates ? DockMotionSchedule.breath(context.date, period: 1.4) : 0
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [tint, tint.opacity(0.2)], center: .center, startRadius: 1, endRadius: 11)
+                            )
+                            .frame(width: 18, height: 18)
+                            .shadow(color: tint.opacity(0.6), radius: running ? 8 : 3)
+                            .scaleEffect(0.9 + 0.25 * pulse)
+                    }
                     Text(agent.name ?? "Agent")
                         .dockFont(.metadata, weight: .medium)
                         .foregroundStyle(Color.dockSecondaryText)
