@@ -120,7 +120,9 @@ final class HermesPetModel: ObservableObject {
                 if DockModel.messageCompletionError(from: payload) != nil { self.react(.failed) }
             }
         }
-        Timer.publish(every: 60, on: .main, in: .common).autoconnect().sink { [weak self] _ in self?.refresh() }.store(
+        Timer.publish(every: 60, tolerance: 10, on: .main, in: .common).autoconnect().sink { [weak self] _ in
+            self?.refresh()
+        }.store(
             in: &subscriptions)
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification).sink { [weak self] _ in
             self?.refresh()

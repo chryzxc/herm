@@ -74,7 +74,9 @@ final class HermesPetWindow {
         let interval: TimeInterval = allowed && destination != nil ? 0.05 : 1
         guard interval != tickInterval else { return }
         tickInterval = interval
-        timer = Timer.publish(every: interval, on: .main, in: .common).autoconnect()
+        // A parked pet's check can drift; coalesced wakeups cost less than an exact second.
+        timer = Timer.publish(every: interval, tolerance: interval >= 1 ? 0.3 : nil, on: .main, in: .common)
+            .autoconnect()
             .sink { [weak self] _ in self?.tick() }
     }
 

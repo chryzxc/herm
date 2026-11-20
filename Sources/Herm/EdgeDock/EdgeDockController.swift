@@ -248,12 +248,13 @@ final class EdgeDockController: NSObject {
             .sink { [weak self] _ in self?.refreshKanbanActivity() }
             .store(in: &subscriptions)
         // The notch remains alive when the workspace is unmounted.
-        Timer.publish(every: EdgeNotchPolling.deliveryQuestionInterval, on: .main, in: .common).autoconnect()
+        Timer.publish(every: EdgeNotchPolling.deliveryQuestionInterval, tolerance: 1, on: .main, in: .common)
+            .autoconnect()
             .sink { [weak self] _ in
                 self?.pollDeliveryQuestions()
             }
             .store(in: &subscriptions)
-        Timer.publish(every: EdgeNotchPolling.kanbanInterval, on: .main, in: .common).autoconnect()
+        Timer.publish(every: EdgeNotchPolling.kanbanInterval, tolerance: 3, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in
                 self?.pollKanban(force: false)
                 self?.pollBots()
@@ -288,7 +289,7 @@ final class EdgeDockController: NSObject {
         // The workspace only polls quota while its Quota page is open; keep
         // reading it (Dock open or closed) so drops surface. Quota is spent
         // by other apps too, so this runs whether or not Hermes is working.
-        Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+        Timer.publish(every: 30, tolerance: 6, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in self?.pollQuota() }
             .store(in: &subscriptions)
         model.presentationDemand.$hasVisibleHost.removeDuplicates()

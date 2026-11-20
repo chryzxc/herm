@@ -715,9 +715,11 @@ struct DockMotionSchedule: TimelineSchedule {
                     // Profiling only: publication-free seconds that still drop frames
                     // are often these ticks re-rendering the window.
                     HermPerformanceRecorder.mark(metric)
+                    // A live scroll or no Herm window on screen holds the clock.
+                    let settle = DockScrollActivity.remainingSettle(at: ProcessInfo.processInfo.systemUptime)
                     tick = Self.tick(
                         tick, rate: rate, now: Date().timeIntervalSinceReferenceDate,
-                        heldFor: DockScrollActivity.remainingSettle(at: ProcessInfo.processInfo.systemUptime))
+                        heldFor: max(settle, DockMotionBudgetMonitor.shared.budget.hold))
                 }
             }
             return Date(timeIntervalSinceReferenceDate: tick / rate)
