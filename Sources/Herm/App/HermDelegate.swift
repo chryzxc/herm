@@ -442,8 +442,15 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         let reply = (response as? UNTextInputNotificationResponse)?.userText
         let prURL = (response.notification.request.content.userInfo["herm.open-pr"] as? String).flatMap(
             URL.init(string:))
+        let info = response.notification.request.content.userInfo
+        let groupRoom = info[GroupReplyNotifier.roomKey] as? String
+        let groupEvent = info[GroupReplyNotifier.eventKey] as? String
         await MainActor.run { [weak self] in
-            if let choice, let requestID {
+            if let groupRoom {
+                self?.dockPanel?.showFromNotification()
+                _ = GroupReplyNotifier.open(
+                    userInfo: [GroupReplyNotifier.roomKey: groupRoom, GroupReplyNotifier.eventKey: groupEvent ?? ""])
+            } else if let choice, let requestID {
                 self?.model.answerApproval(requestID: requestID, choice: choice)
             } else if let requestID, let reply {
                 self?.model.answerClarification(requestID: requestID, text: reply)

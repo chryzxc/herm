@@ -26,6 +26,56 @@ struct GroupChatTests {
         #expect(store.pendingRooms.isEmpty)
     }
 
+    @Test func replyingMembersComeFromLiveDriverActivityInTheSelectedThread() throws {
+        let activity = try #require(
+            GroupMemberActivity.list(from: [
+                "member_activity": [
+                    ["member_id": "a", "status": "running", "thread_id": "main", "started_at": 1_700_000_000.0],
+                    ["member_id": "b", "status": "queued", "thread_id": "main"],
+                    ["member_id": "c", "status": "stopping"],
+                    ["member_id": "d", "status": "running", "thread_id": "t-1"],
+                    ["status": "running"],
+                ]
+            ]))
+        #expect(activity.count == 4)
+        // A stale turn.started row doesn't override the gateway's live view.
+        let stale = [GroupRoomEvent(id: "1", seq: 1, kind: .started(memberID: "z"), text: "")]
+        #expect(
+            GroupReplying.memberIDs(activity: activity, events: stale, thread: "main", isWorking: true) == ["a", "c"])
+        #expect(GroupReplying.memberIDs(activity: activity, events: [], thread: "t-1", isWorking: false) == ["d"])
+        #expect(GroupReplying.memberIDs(activity: [], events: stale, thread: "main", isWorking: true).isEmpty)
+    }
+
+    @Test func pollingStaysFastBetweenChainedMemberTurns() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let idle = { (ago: TimeInterval?) in
+            GroupChatStore.pollDelay(working: false, lastBusyAt: ago.map { now.addingTimeInterval(-$0) }, now: now)
+        }
+        #expect(GroupChatStore.pollDelay(working: true, lastBusyAt: nil, now: now) == .seconds(1))
+        // The next member's task appears a beat after the previous reply settles.
+        #expect(idle(2) == .seconds(1))
+        #expect(idle(60) == .seconds(5))
+        #expect(idle(nil) == .seconds(5))
+    }
+
+    @Test func olderGatewaysFallBackToOpenTurnStartedRows() {
+        #expect(GroupMemberActivity.list(from: ["working": true]) == nil)
+        let events = [
+            GroupRoomEvent(id: "1", seq: 1, kind: .started(memberID: "a"), text: ""),
+            GroupRoomEvent(id: "2", seq: 2, kind: .started(memberID: "b"), text: ""),
+            GroupRoomEvent(id: "3", seq: 3, kind: .member(memberID: "a"), text: "hi"),
+        ]
+        #expect(GroupReplying.memberIDs(activity: nil, events: events, thread: "main", isWorking: true) == ["b"])
+        #expect(GroupReplying.memberIDs(activity: nil, events: events, thread: "main", isWorking: false).isEmpty)
+    }
+
+    @Test func replyingLabelCollapsesLongStacks() {
+        #expect(GroupReplying.label([]) == "")
+        #expect(GroupReplying.label(["Ada"]) == "Ada is replying")
+        #expect(GroupReplying.label(["Ada", "Bo", "Cy"]).hasSuffix("are replying"))
+        #expect(GroupReplying.label(["Ada", "Bo", "Cy", "Di", "Ed"]) == "Ada, Bo and 3 others are replying")
+    }
+
     @Test func mapsRoomLogEventsAndSkipsBookkeeping() {
         let rows: [[String: Any]] = [
             ["seq": 1, "event_id": "a", "kind": "room.created", "payload": [:]],
@@ -502,6 +552,30 @@ struct GroupChatTests {
         let calls = client.sinceSeqs.count
         await store.refreshRooms()
         #expect(client.sinceSeqs.count == calls, "unchanged rooms are not re-read")
+    }
+
+    @Test func memberRepliesPostABannerOnlyAfterTheFirstSighting() async {
+        let client = RoomClient()
+        let store = GroupChatStore(defaults: freshDefaults())
+        store.bind(to: client)
+        var posted: [String] = []
+        store.replyNotifier = { _, event in posted.append(event.id) }
+        await store.refreshRooms()
+        await store.poll("r")
+        #expect(posted.isEmpty)
+        client.latest = 3
+        client.logOverrides[2] = [
+            "events": [
+                [
+                    "seq": 3, "event_id": "e3", "kind": "message.member",
+                    "payload": ["member_id": "m", "text": "done"],
+                ]
+            ],
+            "cursor": 3, "latest_seq": 3, "has_more": false,
+        ]
+        await store.poll("r")
+        await store.poll("r")
+        #expect(posted == ["e3"])
     }
 
     @Test func staysHiddenWithoutARoomDriver() async {

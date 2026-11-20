@@ -73,6 +73,14 @@ extension DockPopover {
                 }
                 showSessionRailInspector(.browser, browserTabID: browserTabID)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .hermOpenGroupRoom)) { notification in
+                guard let roomID = notification.userInfo?[GroupReplyNotifier.roomKey] as? String else { return }
+                if let eventID = notification.userInfo?[GroupReplyNotifier.eventKey] as? String, !eventID.isEmpty {
+                    botMode.groupChats.requestFocus(eventID, in: roomID)
+                }
+                openBotsPage()
+                openGroupRoomID = roomID
+            }
             .onReceive(NotificationCenter.default.publisher(for: .hermRevealInspector)) { notification in
                 guard let section = notification.object as? SessionInspector.Section else { return }
                 if section == .browser {
@@ -658,6 +666,8 @@ extension DockPopover {
                     openGroupRoomID = ""
                 } onOpenRoom: {
                     openGroupRoomID = $0
+                } onOpenBot: { bot in
+                    openBotsPage(with: bot)
                 }
                 .id(room.id)
                 .sessionPaneRoomDrop(

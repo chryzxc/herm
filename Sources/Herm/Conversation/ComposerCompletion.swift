@@ -11,6 +11,8 @@ struct ComposerCompletionItem: Identifiable, Equatable {
     let group: String
     /// Roster Bot behind an `@handle` row, shown with its avatar.
     var bot: BotSummary? = nil
+    /// A live face for the row's bot, e.g. a group member that is replying.
+    var mood: BotMood? = nil
 
     var id: String { "\(group)|\(text)" }
 }
@@ -238,7 +240,7 @@ struct ComposerCompletionPopover: View {
         } label: {
             HStack(spacing: 10) {
                 if let bot = item.bot {
-                    BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 18, orbits: false)
+                    BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 18, mood: item.mood, orbits: false)
                 }
                 // Bot rows read "Name [Role]: Description".
                 HStack(spacing: 6) {

@@ -117,12 +117,19 @@ struct GroupChatSidebarRow: View {
         let slots = room.members.count > 4 ? 3 : 4
         let shown = Array(room.members.prefix(slots))
         let extra = room.members.count - shown.count
+        // The open room knows who is replying; others fall back to the room's working flag.
+        // Activity freezes when the room closes, so it only narrows a room that is still working.
+        let replying = store.memberActivity[room.id]
+            .map { Set($0.filter(\.isReplying).map(\.memberID)) }
+            .flatMap { $0.isEmpty ? nil : $0 }
         let tile = RoundedRectangle(cornerRadius: 16 * 0.28, style: .continuous)
         return LazyVGrid(columns: Array(repeating: GridItem(.fixed(16), spacing: 2), count: 2), spacing: 2) {
             ForEach(shown, id: \.memberID) { member in
                 Group {
                     if let bot = botMode.botsByID[member.profile] {
-                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 16, orbits: isWorking)
+                        BotAvatarView(
+                            bot: bot, imageData: botMode.avatarImages[bot.id], size: 16,
+                            orbits: isWorking && (replying?.contains(member.memberID) ?? true))
                     } else {
                         Text(member.displayName.prefix(1).uppercased())
                             .dockFont(.metadata, weight: .semibold)
@@ -151,6 +158,10 @@ private struct GroupThreadChip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
     let isSelected: Bool
+    /// Members replying or queued in this thread.
+    var faces: [GroupRoom.Member] = []
+    var unread = false
+    var bot: (GroupRoom.Member) -> (BotSummary?, Data?) = { _ in (nil, nil) }
     let onClose: (() -> Void)?
     let onSelect: () -> Void
     @State private var isHovered = false
@@ -158,10 +169,25 @@ private struct GroupThreadChip: View {
     var body: some View {
         HStack(spacing: 2) {
             Button(action: onSelect) {
-                Text(title)
-                    .dockFont(.body, weight: isSelected ? .semibold : .regular)
-                    .lineLimit(1)
-                    .frame(maxWidth: isHovered ? 480 : 110, alignment: .leading)
+                HStack(spacing: 5) {
+                    if !faces.isEmpty {
+                        HStack(spacing: -3) {
+                            ForEach(faces.prefix(3), id: \.memberID) { member in
+                                let (bot, image) = bot(member)
+                                GroupMemberFace(member: member, bot: bot, imageData: image, size: 14, mood: .thinking)
+                                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+                            }
+                        }
+                    } else if unread {
+                        Circle().fill(DockAccentColor.unreadBadgeFill).frame(width: 6, height: 6)
+                            .accessibilityLabel("Unread")
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                    Text(title)
+                        .dockFont(.body, weight: isSelected || unread ? .semibold : .regular)
+                        .lineLimit(1)
+                        .frame(maxWidth: isHovered ? 480 : 110, alignment: .leading)
+                }
             }
             .buttonStyle(.dockHover)
             if let onClose {
@@ -179,6 +205,8 @@ private struct GroupThreadChip: View {
         .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
         .onHover { isHovered = $0 }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: isHovered)
+        .animation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.3), value: faces.map(\.memberID))
+        .animation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.3), value: unread)
     }
 }
 
@@ -490,7 +518,10 @@ struct GroupChatView: View {
     let onDisbanded: () -> Void
     /// Opens another room, e.g. the new group an edit with changed members creates.
     var onOpenRoom: (String) -> Void = { _ in }
+    /// Opens a member bot's own chat from its hover card.
+    var onOpenBot: ((BotSummary) -> Void)? = nil
     @Environment(\.dockWorkspaceScale) private var workspaceScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var voiceOutput = VoiceOutput()
     @State private var speakingEventID: String?
     @State private var replyQuote: ReplyQuote?
@@ -518,6 +549,18 @@ struct GroupChatView: View {
     @State private var showingFilePicker = false
     @State private var attachmentPicker: AttachmentPopoverFilePicker = .files
     @State private var previewImage: ChatImagePreview?
+    /// The reply that just landed: its row smiles and its header face hops.
+    @State private var landedEventID: String?
+    @State private var landedMemberID: String?
+    @State private var bounces: [String: Int] = [:]
+    /// The newest seq this view has seen, per room, to tell new rows from a first load.
+    @State private var seqMark: (room: String, seq: Int)?
+    /// The newest member reply seen in each thread; newer ones mark the chip unread.
+    @State private var threadSeen: [String: Int] = [:]
+    @State private var scrollTarget: String?
+    /// Rows already on screen, so only a single landing reply animates in.
+    @State private var settledEventCount = 0
+    @State private var highlightedEventID: String?
 
     private var room: GroupRoom? { store.rooms.first { $0.id == roomID } }
     private var allEvents: [GroupRoomEvent] { store.events[roomID] ?? [] }
@@ -552,19 +595,102 @@ struct GroupChatView: View {
     }
     private var isWorking: Bool { store.workingRooms.contains(roomID) }
 
-    /// Members whose latest turn started but has not posted or failed yet.
+    /// Members replying in the selected thread right now.
     private var thinkingMembers: [GroupRoom.Member] {
-        var open: [String] = []
-        for event in events {
-            switch event.kind {
-            case .started(let id): if !open.contains(id) { open.append(id) }
-            case .member(let id): open.removeAll { $0 == id }
-            case .failed(let id): open.removeAll { $0 == id }
-            default: break
+        GroupReplying.memberIDs(
+            activity: store.memberActivity[roomID], events: events, thread: thread, isWorking: isWorking
+        ).compactMap { room?.member($0) }
+    }
+
+    private var driver: GroupRoomDriverInfo? { store.driverInfo[roomID] }
+    private var roomSignals: [GroupRoomSignal] { store.signals[roomID] ?? [] }
+
+    private var presence: [String: (presence: GroupMemberPresence, threadID: String?)] {
+        GroupPresence.members(
+            room?.members ?? [], activity: store.memberActivity[roomID], approvals: store.approvals[roomID] ?? [],
+            driver: driver, stalled: store.stalledMembers[roomID] ?? [])
+    }
+
+    private func botInfo(_ member: GroupRoom.Member) -> (BotSummary?, Data?) {
+        let bot = botMode.botsByID[member.profile]
+        return (bot, bot.flatMap { botMode.avatarImages[$0.id] })
+    }
+
+    /// A member's live state, naming its thread when that isn't the open one.
+    private func stateLabel(_ memberID: String) -> String? {
+        guard let entry = presence[memberID] else { return nil }
+        let place = entry.threadID ?? GroupChatStore.mainThreadID
+        let title = place == thread ? nil : threads.first { $0.id == place }?.title
+        return entry.presence.label(threadTitle: title.map { String($0.prefix(40)) })
+    }
+
+    private func lastReply(of memberID: String) -> GroupRoomEvent? {
+        allEvents.last { $0.kind == .member(memberID: memberID) }
+    }
+
+    /// Newest member reply per thread.
+    private var latestReplySeq: [String: Int] {
+        var result: [String: Int] = [:]
+        for event in allEvents {
+            guard case .member = event.kind else { continue }
+            result[event.threadID ?? GroupChatStore.mainThreadID] = event.seq
+        }
+        return result
+    }
+
+    private func insertMention(_ handle: String) {
+        let separator = draft.isEmpty || draft.hasSuffix(" ") || draft.hasSuffix("\n") ? "" : " "
+        draft += separator + "@\(handle) "
+        pendingCaret = (draft as NSString).length
+        isEditorFocused = true
+    }
+
+    /// Opens a row's thread and scrolls it into view with a brief highlight.
+    private func jump(to eventID: String) {
+        guard let event = allEvents.first(where: { $0.id == eventID }) else { return }
+        let target = event.threadID ?? GroupChatStore.mainThreadID
+        closedThreads.remove(target)
+        thread = target
+        scrollTarget = eventID
+    }
+
+    /// A banner click asked for a row; honored once it has loaded.
+    private func honorFocusRequest() {
+        guard let eventID = store.focusRequests[roomID], !allEvents.isEmpty else { return }
+        _ = store.consumeFocus(roomID)
+        jump(to: eventID)
+    }
+
+    /// A new member reply lands: smile on its row, hop its header face.
+    private func noteNewRows() {
+        // Not loaded yet: the first page is history, not news.
+        guard store.events[roomID] != nil else { return }
+        let newest = allEvents.last?.seq ?? 0
+        defer {
+            seqMark = (roomID, newest)
+            threadSeen[thread] = latestReplySeq[thread] ?? threadSeen[thread]
+        }
+        guard let mark = seqMark, mark.room == roomID else {
+            threadSeen = latestReplySeq
+            return
+        }
+        guard newest > mark.seq,
+            let landed = allEvents.last(where: {
+                guard $0.seq > mark.seq, case .member = $0.kind else { return false }
+                return true
+            }),
+            case .member(let memberID) = landed.kind
+        else { return }
+        landedEventID = landed.id
+        landedMemberID = memberID
+        bounces[memberID, default: 0] += 1
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.6))
+            if landedEventID == landed.id {
+                landedEventID = nil
+                landedMemberID = nil
             }
         }
-        guard isWorking else { return [] }
-        return open.compactMap { room?.member($0) }
     }
 
     var body: some View {
@@ -597,14 +723,25 @@ struct GroupChatView: View {
             thread = GroupChatStore.mainThreadID
             newThreads = []
             closedThreads = []
+            landedEventID = nil
+            landedMemberID = nil
         }
+        .onChange(of: allEvents.last?.seq, initial: true) {
+            noteNewRows()
+            honorFocusRequest()
+        }
+        .onChange(of: thread) { threadSeen[thread] = latestReplySeq[thread] ?? threadSeen[thread] }
+        .onChange(of: store.focusRequests[roomID], initial: true) { honorFocusRequest() }
+        .onChange(of: store.events[roomID] == nil) { noteNewRows() }
         .onChange(of: room == nil) { _, gone in if gone, store.isAvailable { onDisbanded() } }
         .task(id: "\(roomID):\(hostVisible)") {
             guard hostVisible else { return }
+            store.setViewing(roomID, true)
+            defer { store.setViewing(roomID, false) }
             while !Task.isCancelled {
                 await store.poll(roomID, markRead: true)
                 // ponytail: fixed-interval polling; Hermes has no room push events.
-                try? await Task.sleep(for: .seconds(store.workingRooms.contains(roomID) ? 1.5 : 5))
+                try? await Task.sleep(for: store.pollDelay(roomID))
             }
         }
         .dockSheet(item: $previewImage) { ChatImagePreviewModal(image: $0.image) }
@@ -641,8 +778,6 @@ struct GroupChatView: View {
                 .lineLimit(1)
             if store.pendingRooms.contains(roomID) {
                 ProgressView().controlSize(.mini).accessibilityLabel("Updating group")
-            } else if isWorking {
-                ThinkingDots()
             }
         }
         .dockPadding(.horizontal, 8)
@@ -685,36 +820,61 @@ struct GroupChatView: View {
         return "\(room.members.count) members"
     }
 
-    /// Stacked member chips under the title; hover names the member, a working member gets an accent ring.
+    /// Stacked member faces beside the title. Each shows what its member is doing
+    /// anywhere in the room, perks up when a draft would reach it, hops when its
+    /// reply lands, and dozes once the room has been quiet a while.
     private var memberAvatars: some View {
-        let thinking = Set(thinkingMembers.map(\.memberID))
-        return HStack(spacing: -4) {
-            ForEach(room?.members ?? [], id: \.memberID) { member in
-                Group {
-                    if let bot = botMode.botsByID[member.profile] {
-                        BotAvatarView(
-                            bot: bot, imageData: botMode.avatarImages[bot.id], size: 24,
-                            orbits: thinking.contains(member.memberID))
-                    } else {
-                        Text(member.displayName.prefix(1).uppercased())
-                            .dockFont(.body, weight: .semibold)
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .frame(width: 24, height: 24)
-                            .background(Circle().fill(Color.dockSurface4))
-                    }
+        // A minute tick is enough to fall asleep on time; faces animate on their own clocks.
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let presence = self.presence
+            let members = room?.members ?? []
+            let attentive = GroupMentionTargets.attentive(draft: draft, members: members, driver: driver)
+            let dozing = GroupRoomQuiet.isDozing(
+                lastActivity: allEvents.last?.createdAt, working: isWorking, draft: draft, now: context.date)
+            HStack(spacing: -4) {
+                ForEach(members, id: \.memberID) { member in
+                    let (bot, image) = botInfo(member)
+                    let live = presence[member.memberID]?.presence ?? .idle
+                    let mood: BotMood? =
+                        if live.isActive {
+                            live.mood
+                        } else if landedMemberID == member.memberID {
+                            .happy
+                        } else if attentive.contains(member.memberID) {
+                            .listening
+                        } else if live == .offline {
+                            .offline
+                        } else if dozing {
+                            .sleepy
+                        } else {
+                            nil
+                        }
+                    GroupHeaderFace(
+                        member: member, bot: bot, imageData: image, mood: mood, bounce: bounces[member.memberID] ?? 0,
+                        state: stateLabel(member.memberID), lastReply: lastReply(of: member.memberID),
+                        onMention: { insertMention(member.handle) },
+                        onMessage: bot.flatMap { bot in
+                            guard let onOpenBot, !member.isRemote else { return nil }
+                            return { onOpenBot(bot) }
+                        },
+                        onJump: jump(to:))
                 }
-                .frame(width: 26, height: 26)
-                .help("\(member.displayName) · @\(member.handle)")
             }
+            .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.3), value: attentive)
         }
     }
 
     private var threadBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
+                let working = GroupPresence.threads(activity: store.memberActivity[roomID])
+                let latest = latestReplySeq
                 ForEach(threads, id: \.id) { item in
                     GroupThreadChip(
                         title: item.title, isSelected: item.id == thread,
+                        faces: item.id == thread ? [] : (working[item.id] ?? []).compactMap { room?.member($0) },
+                        unread: item.id != thread && (latest[item.id] ?? 0) > (threadSeen[item.id] ?? 0),
+                        bot: botInfo,
                         onClose: item.id == GroupChatStore.mainThreadID ? nil : { closeThread(item.id) }
                     ) { thread = item.id }
                 }
@@ -749,14 +909,8 @@ struct GroupChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    if events.isEmpty {
-                        Text(
-                            "Mention a member with @handle, or address everyone with @all. With no mention, every member may reply."
-                        )
-                        .dockFont(.body)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .frame(maxWidth: .infinity)
-                        .dockPadding(.top, 40)
+                    if events.isEmpty, store.events[roomID] != nil {
+                        GroupWelcome(members: room?.members ?? [], bot: botInfo, onMention: insertMention)
                     }
                     if (store.earliestLoadedSeq[roomID] ?? 0) > 0 {
                         DockAsyncButton("Load earlier messages") { await store.loadEarlier(roomID) }
@@ -765,25 +919,30 @@ struct GroupChatView: View {
                             .foregroundStyle(Color.dockAccent)
                             .frame(maxWidth: .infinity)
                     }
-                    ForEach(events) { event in row(event) }
-                    ForEach(thinkingMembers, id: \.memberID) { member in
-                        HStack(alignment: .top, spacing: 10) {
-                            avatar(for: member, working: true)
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(spacing: 8) {
-                                    Text(member.displayName)
-                                        .dockFont(.body, weight: .semibold)
-                                        .foregroundStyle(Color.dockSecondaryText)
-                                    ThinkingDots()
-                                }
-                                TurnActivityView(
-                                    activity: store.liveTools(for: member.memberID, in: roomID),
-                                    runningSince: startedAt(member.memberID) ?? .now,
-                                    duration: nil
-                                )
+                    let footers = roundFooters
+                    let receipts = GroupReadReceipts.anchors(
+                        events: events, signals: roomSignals, thread: thread,
+                        excluding: Set(thinkingMembers.map(\.memberID)))
+                    ForEach(events.filter { if case .started = $0.kind { false } else { true } }) { event in
+                        VStack(alignment: .leading, spacing: 8) {
+                            row(event)
+                            if let seen = receipts[event.id]?.compactMap({ room?.member($0) }), !seen.isEmpty {
+                                GroupReadReceiptRow(members: seen, bot: botInfo)
+                            }
+                            ForEach(footers[event.id] ?? [], id: \.discussionID) { summary in
+                                roundFooter(summary)
                             }
                         }
+                        .background {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.dockAccentMuted)
+                                .dockPadding(-6)
+                                .opacity(highlightedEventID == event.id ? 1 : 0)
+                        }
+                        .transition(.opacity.combined(with: .offset(y: 8)))
+                        .id(event.id)
                     }
+                    replyStage
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .dockPadding(.horizontal, metrics.contentInset)
@@ -791,7 +950,32 @@ struct GroupChatView: View {
                 .frame(maxWidth: metrics.readingWidth)
                 .frame(maxWidth: .infinity)
             }
-            .onChange(of: events.count) { proxy.scrollTo("bottom", anchor: .bottom) }
+            .animation(
+                DockMotion.animation(reduceMotion: reduceMotion, duration: 0.25),
+                // A room's history loads in bulk; animating it would leave the
+                // scroll short of the bottom while rows are still moving.
+                value: events.count == settledEventCount + 1 ? events.last?.id : nil
+            )
+            .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.4), value: highlightedEventID)
+            .onChange(of: events.count, initial: true) {
+                settledEventCount = events.count
+                if scrollTarget == nil { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .onChange(of: thinkingMembers.isEmpty) { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: scrollTarget) {
+                guard let target = scrollTarget else { return }
+                Task { @MainActor in
+                    // Let a thread switch lay out its rows first.
+                    try? await Task.sleep(for: .milliseconds(80))
+                    withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.3)) {
+                        proxy.scrollTo(target, anchor: .center)
+                    }
+                    scrollTarget = nil
+                    highlightedEventID = target
+                    try? await Task.sleep(for: .seconds(1.4))
+                    if highlightedEventID == target { highlightedEventID = nil }
+                }
+            }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
         }
     }
@@ -856,7 +1040,11 @@ struct GroupChatView: View {
         case .member(let memberID):
             let member = room?.member(memberID)
             HStack(alignment: .top, spacing: 10) {
-                avatar(for: member)
+                avatar(for: member, mood: landedEventID == event.id ? .done : nil)
+                    .scaleEffect(
+                        landedEventID == event.id && DockMotion.isEnabled(reduceMotion: reduceMotion) ? 1.08 : 1
+                    )
+                    .animation(.spring(duration: 0.35, bounce: 0.45), value: landedEventID == event.id)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(member?.displayName ?? memberID)
                         .dockFont(.body, weight: .semibold)
@@ -873,12 +1061,17 @@ struct GroupChatView: View {
                 }
             }
         case .failed(let memberID):
-            Label(
-                "\(room?.member(memberID)?.displayName ?? "A member"): \(event.text)",
-                systemImage: "exclamationmark.triangle"
-            )
-            .dockFont(.metadata)
-            .foregroundStyle(Color.dockWarning)
+            HStack(spacing: 8) {
+                if let member = memberID.flatMap({ room?.member($0) }) {
+                    let (bot, image) = botInfo(member)
+                    GroupMemberFace(member: member, bot: bot, imageData: image, size: 20, mood: .failed)
+                } else {
+                    DockIcon(.warning, size: 14, color: Color.dockWarning)
+                }
+                Text("\(memberID.flatMap { room?.member($0)?.displayName } ?? "A member"): \(event.text)")
+                    .dockFont(.metadata)
+                    .foregroundStyle(Color.dockWarning)
+            }
         case .notice:
             Text(event.text)
                 .dockFont(.metadata)
@@ -932,9 +1125,80 @@ struct GroupChatView: View {
         }
     }
 
-    /// When the member's open turn started, from the last `turn.started`.
-    private func startedAt(_ memberID: String) -> Date? {
-        events.last { $0.kind == .started(memberID: memberID) }?.createdAt
+    /// Each finished message in this thread worth a footer, keyed by the row it follows.
+    private var roundFooters: [String: [GroupRoundSummary]] {
+        let all = GroupRoundSummary.summaries(events: allEvents, signals: roomSignals)
+            .filter { $0.threadID == thread && ($0.isNotable || canContinue($0)) }
+        return GroupRoundSummary.anchors(all, events: events)
+    }
+
+    private func canContinue(_ summary: GroupRoundSummary) -> Bool {
+        store.supportsContinue
+            && summary.canContinue(signals: roomSignals, events: allEvents, maxContinues: driver?.maxContinues)
+    }
+
+    private func roundFooter(_ summary: GroupRoundSummary) -> some View {
+        GroupRoundFooter(
+            summary: summary, passed: summary.passed.compactMap { room?.member($0) }, bot: botInfo,
+            onContinue: canContinue(summary) && !isWorking
+                ? { await store.continueDiscussion(summary.discussionID, in: roomID) } : nil)
+    }
+
+    /// Who is answering in this thread: live faces, what they are doing, and who goes next.
+    @ViewBuilder
+    private var replyStage: some View {
+        let activity = store.memberActivity[roomID]
+        let stalled = store.stalledMembers[roomID] ?? []
+        let waiting = Set((store.approvals[roomID] ?? []).map(\.memberID))
+        let writing = thinkingMembers
+        let writingIDs = Set(writing.map(\.memberID))
+        let queued = GroupPresence.queued(activity: activity, thread: thread)
+            .filter { !writingIDs.contains($0) }.compactMap { room?.member($0) }
+        if !writing.isEmpty || !queued.isEmpty {
+            let rows = activity ?? []
+            let faces = writing.map { member in
+                let row = rows.first { $0.memberID == member.memberID && $0.isReplying }
+                let mood: BotMood =
+                    waiting.contains(member.memberID)
+                    ? .approval
+                    : stalled.contains(member.memberID) ? .sleepy : row?.tool == nil ? .thinking : .tool
+                return GroupReplyStage.Face(member: member, mood: mood)
+            }
+            let quiet = writing.filter { stalled.contains($0.memberID) }
+            GroupReplyStage(
+                replying: faces,
+                queued: queued.map { GroupReplyStage.Face(member: $0, mood: .queued) },
+                title: GroupReplying.stageTitle(
+                    replying: writing.map(\.displayName), stalled: quiet.map(\.displayName),
+                    queued: queued.map(\.displayName)),
+                detail: stageDetail(writing: writing, rows: rows, stalled: !quiet.isEmpty),
+                onStop: quiet.isEmpty ? nil : { await store.stop(roomID) },
+                bot: botInfo,
+                onTapFace: { id in if let reply = lastReply(of: id) { jump(to: reply.id) } }
+            )
+            .transition(.opacity.combined(with: .offset(y: 6)))
+        }
+    }
+
+    /// "↳ replying to Ada · Using terminal · Round 2 of 3", or the lead's handoff.
+    private func stageDetail(writing: [GroupRoom.Member], rows: [GroupMemberActivity], stalled: Bool) -> String? {
+        if stalled { return "No progress for \(Int(GroupMemberActivity.stallInterval / 60)) minutes" }
+        var parts: [String] = []
+        let names: (String) -> String = { room?.member($0)?.displayName ?? $0 }
+        let live = writing.compactMap { member in rows.first { $0.memberID == member.memberID && $0.isReplying } }
+        let round = live.compactMap(\.roundIndex).max()
+        if let first = live.first,
+            let target = GroupReacting.target(of: first.memberID, round: first.roundIndex, events: events)
+        {
+            parts.append("↳ replying to \(names(target))")
+        } else if let handoff = GroupHandoff.line(signals: roomSignals, events: events, thread: thread, names: names) {
+            parts.append(handoff.text)
+        }
+        if live.count == 1, let tool = live[0].tool { parts.append("Using \(tool)") }
+        if let round, round > 0, let cap = driver?.maxRounds, cap > 1 {
+            parts.append("Round \(min(round + 1, cap)) of \(cap)")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private func turnDuration(ending event: GroupRoomEvent) -> TimeInterval? {
@@ -960,11 +1224,11 @@ struct GroupChatView: View {
     }
 
     @ViewBuilder
-    private func avatar(for member: GroupRoom.Member?, working: Bool = false) -> some View {
+    private func avatar(for member: GroupRoom.Member?, size: CGFloat = 32, mood: BotMood? = nil) -> some View {
         if let member, let bot = botMode.botsByID[member.profile] {
-            BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 32, orbits: working)
+            BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: size, mood: mood, orbits: false)
         } else {
-            let side = DockWorkspaceScale.points(32, scale: workspaceScale)
+            let side = DockWorkspaceScale.points(size, scale: workspaceScale)
             Circle().fill(Color.dockSurface4).frame(width: side, height: side)
         }
     }
@@ -1003,10 +1267,12 @@ struct GroupChatView: View {
         guard let token = mentionToken, token != dismissedMentionToken, let room else { return [] }
         let query = token.dropFirst().lowercased()
         let rows =
-            room.members.map {
-                ComposerCompletionItem(
-                    text: "@\($0.handle)", display: "@\($0.handle)", meta: memberDescription($0), group: "Members",
-                    bot: botMode.botsByID[$0.profile])
+            room.members.map { member in
+                let live = presence[member.memberID]?.presence ?? .idle
+                return ComposerCompletionItem(
+                    text: "@\(member.handle)", display: "@\(member.handle)",
+                    meta: stateLabel(member.memberID) ?? memberDescription(member), group: "Members",
+                    bot: botMode.botsByID[member.profile], mood: live == .idle ? nil : live.mood)
             } + [ComposerCompletionItem(text: "@all", display: "@all", meta: "Everyone", group: "Members")]
         guard !query.isEmpty else { return rows }
         let names = Dictionary(

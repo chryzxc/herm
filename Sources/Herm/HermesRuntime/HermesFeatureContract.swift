@@ -106,6 +106,7 @@ enum HermesFeatureIDs {
         case groupsDisband = "groups.disband"
         case groupsApprove = "groups.approve"
         case groupsRetry = "groups.retry"
+        case groupsContinue = "groups.continue"
         case groupsPeerInvite = "groups.peer.invite"
         case groupsPeerRegister = "groups.peer.register"
         case promptBackground = "prompt.background"
@@ -211,8 +212,9 @@ enum HermesFeatureIDs {
         "command.dispatch", "bot_relay.deliver",
         "groups.capabilities", "groups.list", "groups.create", "groups.state", "groups.send",
         "groups.attachment.upload", "groups.attachment.download", "groups.log",
-        "groups.rename", "groups.stop", "groups.disband", "groups.approve", "groups.retry", "groups.peer.invite",
-        "groups.peer.register", "prompt.background", "prompt.btw", "session.title", "session.steer", "session.branch",
+        "groups.rename", "groups.stop", "groups.disband", "groups.approve", "groups.retry", "groups.continue",
+        "groups.peer.invite", "groups.peer.register", "prompt.background", "prompt.btw", "session.title",
+        "session.steer", "session.branch",
         "session.compress", "session.undo", "session.redirect", "session.control.read", "delegation.pause",
         "subagent.interrupt",
         "process.kill",

@@ -191,6 +191,105 @@ struct GroupRoomRetry: Hashable, Sendable {
     }
 }
 
+/// One live room task from `driver_status.member_activity`: the gateway's
+/// own record of who is replying, since the room log no longer carries
+/// `turn.started` rows.
+struct GroupMemberActivity: Hashable, Sendable {
+    let memberID: String
+    /// `queued`, `running` or `stopping`.
+    let status: String
+    let threadID: String?
+    /// 0-based round of the discussion this task works in.
+    var roundIndex: Int?
+    var startedAt: Date?
+    /// The tool the turn is in now; only the process running it reports this.
+    var tool: String?
+    /// The turn's last progress frame.
+    var progressAt: Date?
+
+    /// The member's turn is executing, not just waiting for admission.
+    var isReplying: Bool { status == "running" || status == "stopping" }
+    var isQueued: Bool { status == "queued" }
+
+    /// Hermes Desktop's stall rule: a running turn with no frame for two minutes.
+    static let stallInterval: TimeInterval = 120
+
+    func isStalled(now: Date) -> Bool {
+        guard status == "running", let last = progressAt ?? startedAt else { return false }
+        return now.timeIntervalSince(last) >= Self.stallInterval
+    }
+
+    init(
+        memberID: String, status: String, threadID: String? = nil, roundIndex: Int? = nil, startedAt: Date? = nil,
+        tool: String? = nil, progressAt: Date? = nil
+    ) {
+        self.memberID = memberID
+        self.status = status
+        self.threadID = threadID
+        self.roundIndex = roundIndex
+        self.startedAt = startedAt
+        self.tool = tool
+        self.progressAt = progressAt
+    }
+
+    init?(_ raw: [String: Any]) {
+        guard let memberID = raw["member_id"] as? String, !memberID.isEmpty,
+            let status = raw["status"] as? String, !status.isEmpty
+        else { return nil }
+        self.memberID = memberID
+        self.status = status
+        threadID = raw["thread_id"] as? String
+        roundIndex = raw["round_index"] as? Int
+        startedAt = (raw["started_at"] as? Double).map(Date.init(timeIntervalSince1970:))
+        tool = (raw["tool"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        progressAt = (raw["progress_at"] as? Double).map(Date.init(timeIntervalSince1970:))
+    }
+
+    /// nil when the gateway predates `member_activity`, so callers can fall back to the log.
+    static func list(from status: [String: Any]?) -> [GroupMemberActivity]? {
+        guard let rows = status?["member_activity"] as? [[String: Any]] else { return nil }
+        return rows.compactMap(GroupMemberActivity.init)
+    }
+}
+
+/// Who is replying in one thread right now, in admission order.
+@MainActor
+enum GroupReplying {
+    /// Prefers the gateway's live `member_activity`; older gateways fall back to
+    /// `turn.started` rows not yet followed by a reply or failure. `events` must
+    /// already be scoped to `thread`.
+    static func memberIDs(
+        activity: [GroupMemberActivity]?, events: [GroupRoomEvent], thread: String, isWorking: Bool
+    ) -> [String] {
+        var ids: [String] = []
+        if let activity {
+            for item in activity where item.isReplying && !ids.contains(item.memberID) {
+                if (item.threadID ?? GroupChatStore.mainThreadID) == thread { ids.append(item.memberID) }
+            }
+            return ids
+        }
+        guard isWorking else { return [] }
+        for event in events {
+            switch event.kind {
+            case .started(let id): if !ids.contains(id) { ids.append(id) }
+            case .member(let id): ids.removeAll { $0 == id }
+            case .failed(let id): ids.removeAll { $0 == id }
+            default: break
+            }
+        }
+        return ids
+    }
+
+    /// "Ada is replying", "Ada and Bo are replying", "Ada, Bo and 2 others are replying".
+    static func label(_ names: [String], shown: Int = 2) -> String {
+        guard let first = names.first else { return "" }
+        if names.count == 1 { return "\(first) is replying" }
+        if names.count <= shown + 1 { return "\(ListFormatter.localizedString(byJoining: names)) are replying" }
+        let others = names.count - shown
+        return "\(names.prefix(shown).joined(separator: ", ")) and \(others) others are replying"
+    }
+}
+
 /// One member turn as recorded in the member's hidden room session
 /// (`Group: <room_id>`, source `bot_room`): the tools it ran and its reply.
 /// Hermes doesn't put tool activity in the room log, so this is the only
@@ -300,9 +399,28 @@ final class GroupChatStore: ObservableObject {
     @Published private(set) var pendingRooms: Set<String> = []
     @Published private(set) var sendingRooms: Set<String> = []
     @Published private(set) var workingRooms: Set<String> = []
+    /// When each room was last seen working; keeps polling fast between chained turns.
+    private var lastBusyAt: [String: Date] = [:]
     @Published private(set) var approvals: [String: [GroupRoomApproval]] = [:]
     @Published private(set) var retries: [String: [GroupRoomRetry]] = [:]
     @Published private(set) var blockedRooms: Set<String> = []
+    /// Live member tasks per room; absent when the gateway doesn't report them.
+    @Published private(set) var memberActivity: [String: [GroupMemberActivity]] = [:]
+    /// Running members with no progress frame for `GroupMemberActivity.stallInterval`.
+    @Published private(set) var stalledMembers: [String: Set<String>] = [:]
+    /// Turn receipts, routing answers and outcomes from the loaded log window.
+    @Published private(set) var signals: [String: [GroupRoomSignal]] = [:]
+    @Published private(set) var driverInfo: [String: GroupRoomDriverInfo] = [:]
+    /// The gateway advertises `groups.continue`.
+    @Published private(set) var supportsContinue = false
+    /// A notification asked to open this room at this event; the room view consumes it.
+    @Published private(set) var focusRequests: [String: String] = [:]
+    /// Room views on screen, counted; replies there don't notify while Herm is active.
+    private var viewers: [String: Int] = [:]
+    /// Highest seq per room already shown or announced, so a reply notifies once.
+    private var announcedSeq: [String: Int] = [:]
+    /// Posts a reply banner; replaced in tests.
+    var replyNotifier: (GroupRoom, GroupRoomEvent) -> Void = { GroupReplyNotifier.post(room: $0, event: $1) }
     /// room → member → turns read from the member's hidden session.
     @Published private(set) var memberTurns: [String: [String: [GroupMemberTurn]]] = [:]
     /// First seq loaded per room; above zero means older history is unloaded.
@@ -370,7 +488,15 @@ final class GroupChatStore: ObservableObject {
         approvals = [:]
         retries = [:]
         workingRooms = []
+        lastBusyAt = [:]
         blockedRooms = []
+        memberActivity = [:]
+        stalledMembers = [:]
+        signals = [:]
+        driverInfo = [:]
+        supportsContinue = false
+        focusRequests = [:]
+        announcedSeq = [:]
         memberTurns = [:]
         memberSessionIDs = [:]
         earliestLoadedSeq = [:]
@@ -395,8 +521,9 @@ final class GroupChatStore: ObservableObject {
             isAvailable = true
             installID = caps["authority_gateway_id"] as? String
             isRoomLinkEnabled = (caps["room_link"] as? [String: Any])?["enabled"] as? Bool == true
-            supportsAttachments =
-                (caps["methods"] as? [String])?.contains(HermesFeatureIDs.ID.groupsAttachmentUpload.rawValue) == true
+            let methods = caps["methods"] as? [String] ?? []
+            supportsAttachments = methods.contains(HermesFeatureIDs.ID.groupsAttachmentUpload.rawValue)
+            supportsContinue = methods.contains(HermesFeatureIDs.ID.groupsContinue.rawValue)
         }
         var listed: [GroupRoom] = []
         var ids = Set<String>()
@@ -432,7 +559,10 @@ final class GroupChatStore: ObservableObject {
                     ])
             else { continue }
             guard generation == bindingGeneration, refresh == roomRefreshGeneration else { return false }
-            updateLastMessage(room.id, from: (page["events"] as? [[String: Any]] ?? []).compactMap(GroupRoomEvent.init))
+            let recent = (page["events"] as? [[String: Any]] ?? []).compactMap(GroupRoomEvent.init)
+            updateLastMessage(room.id, from: recent)
+            // Rooms on screen announce from their own poll.
+            if (viewers[room.id] ?? 0) == 0 { announce(recent, in: room.id) }
         }
         return generation == bindingGeneration && refresh == roomRefreshGeneration
     }
@@ -570,12 +700,27 @@ final class GroupChatStore: ObservableObject {
                 params: ["room_id": roomID, "event_id": UUID().uuidString.lowercased(), "payload": payload])
             guard generation == bindingGeneration else { return }
             workingRooms.insert(roomID)
+            lastBusyAt[roomID] = .now
             errorMessage = nil
             await poll(roomID)
         } catch {
             guard generation == bindingGeneration else { return }
             errorMessage = "Couldn't send: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
         }
+    }
+
+    /// How long the open room waits before its next poll.
+    func pollDelay(_ roomID: String, now: Date = .now) -> Duration {
+        Self.pollDelay(working: workingRooms.contains(roomID), lastBusyAt: lastBusyAt[roomID], now: now)
+    }
+
+    /// Fast while working and for a grace period after: Hermes queues a reacting
+    /// member's turn only once the previous reply lands, so the room briefly reads
+    /// idle between turns and a slow idle poll would miss the next one entirely.
+    nonisolated static func pollDelay(working: Bool, lastBusyAt: Date?, now: Date) -> Duration {
+        if working { return .seconds(1) }
+        if let lastBusyAt, now.timeIntervalSince(lastBusyAt) < 20 { return .seconds(1) }
+        return .seconds(5)
     }
 
     /// Hermes has no room push events; replay the log after the last cursor
@@ -586,6 +731,7 @@ final class GroupChatStore: ObservableObject {
         let pollGeneration = (pollGenerations[roomID] ?? 0) + 1
         pollGenerations[roomID] = pollGeneration
         var appended: [GroupRoomEvent] = []
+        var appendedSignals: [GroupRoomSignal] = []
         let initialLoad = cursors[roomID] == nil
         var start = cursors[roomID] ?? 0
         if initialLoad {
@@ -603,6 +749,7 @@ final class GroupChatStore: ObservableObject {
         repeat {
             cursor = start
             var pageEvents: [GroupRoomEvent] = []
+            var pageSignals: [GroupRoomSignal] = []
             while true {
                 guard
                     let page = try? await client.request(
@@ -617,10 +764,12 @@ final class GroupChatStore: ObservableObject {
                     let hasMore = page["has_more"] as? Bool, !hasMore || next > cursor
                 else { return }
                 pageEvents += rows.compactMap(GroupRoomEvent.init)
+                pageSignals += rows.compactMap(GroupRoomSignal.init)
                 cursor = next
                 guard hasMore else { break }
             }
             appended = pageEvents
+            appendedSignals = pageSignals
             let hasVisibleEvent = appended.contains { event in
                 if case .started = event.kind { return false }
                 return true
@@ -634,6 +783,12 @@ final class GroupChatStore: ObservableObject {
         }
         cursors[roomID] = cursor
         if !appended.isEmpty { events[roomID, default: []] += appended }
+        if !appendedSignals.isEmpty { signals[roomID, default: []] += appendedSignals }
+        if initialLoad {
+            announcedSeq[roomID] = max(announcedSeq[roomID] ?? 0, cursor)
+        } else {
+            announce(appended, in: roomID)
+        }
         if markRead && !Task.isCancelled { markSeen(roomID, through: cursor) }
         updateLastMessage(roomID, from: appended)
 
@@ -643,9 +798,17 @@ final class GroupChatStore: ObservableObject {
         guard generation == bindingGeneration, pollGenerations[roomID] == pollGeneration else { return }
         let status = state["driver_status"] as? [String: Any]
         let working = status?["working"] as? Bool == true
+        if working { lastBusyAt[roomID] = .now }
         if working != workingRooms.contains(roomID) {
             if working { workingRooms.insert(roomID) } else { workingRooms.remove(roomID) }
         }
+        let activity = GroupMemberActivity.list(from: status)
+        if memberActivity[roomID] != activity { memberActivity[roomID] = activity }
+        let now = Date.now
+        let stalled = Set((activity ?? []).filter { $0.isStalled(now: now) }.map(\.memberID))
+        if stalledMembers[roomID] ?? [] != stalled { stalledMembers[roomID] = stalled }
+        let info = GroupRoomDriverInfo(state: state, roomID: roomID)
+        if driverInfo[roomID] != info { driverInfo[roomID] = info }
         let actions = status?["pending_actions"] as? [[String: Any]] ?? []
         let pending = actions.compactMap(GroupRoomApproval.init)
         if approvals[roomID] ?? [] != pending { approvals[roomID] = pending }
@@ -722,10 +885,52 @@ final class GroupChatStore: ObservableObject {
         return memberTurns[roomID]?[memberID]?.last { $0.matches(event.text) }?.tools ?? []
     }
 
-    /// Tools a member's still-running turn has recorded so far.
-    func liveTools(for memberID: String, in roomID: String) -> [ActiveToolCall] {
-        guard let last = memberTurns[roomID]?[memberID]?.last, last.reply == nil else { return [] }
-        return last.tools
+    /// A room view came on screen or left it.
+    func setViewing(_ roomID: String, _ viewing: Bool) {
+        viewers[roomID] = max(0, (viewers[roomID] ?? 0) + (viewing ? 1 : -1))
+    }
+
+    func requestFocus(_ eventID: String, in roomID: String) { focusRequests[roomID] = eventID }
+
+    func consumeFocus(_ roomID: String) -> String? {
+        guard let eventID = focusRequests[roomID] else { return nil }
+        focusRequests[roomID] = nil
+        return eventID
+    }
+
+    /// Banners for member replies past the room's announced seq, unless the room
+    /// is on screen in an active Herm. The first sighting of a room only records it.
+    private func announce(_ newEvents: [GroupRoomEvent], in roomID: String) {
+        guard let newest = newEvents.map(\.seq).max() else { return }
+        guard let announced = announcedSeq[roomID] else {
+            announcedSeq[roomID] = newest
+            return
+        }
+        announcedSeq[roomID] = max(announced, newest)
+        let onScreen = (viewers[roomID] ?? 0) > 0 && NSApp?.isActive == true
+        guard !onScreen, let room = rooms.first(where: { $0.id == roomID }) else { return }
+        for event in newEvents where event.seq > announced {
+            if case .member = event.kind, !event.text.isEmpty { replyNotifier(room, event) }
+        }
+    }
+
+    /// Grants a discussion paused at its round cap one more budget (`groups.continue`).
+    func continueDiscussion(_ discussionID: String, in roomID: String) async {
+        guard let client, supportsContinue, pendingRooms.insert(roomID).inserted else { return }
+        let generation = bindingGeneration
+        defer { if generation == bindingGeneration { pendingRooms.remove(roomID) } }
+        do {
+            _ = try await client.request(
+                HermesFeatureIDs.ID.groupsContinue.rawValue,
+                params: ["room_id": roomID, "discussion_event_id": discussionID])
+            guard generation == bindingGeneration else { return }
+            workingRooms.insert(roomID)
+            lastBusyAt[roomID] = .now
+            await poll(roomID)
+        } catch {
+            guard generation == bindingGeneration else { return }
+            errorMessage = "Couldn't continue: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+        }
     }
 
     /// Prepends the window of log rows before the earliest loaded one.
@@ -734,6 +939,7 @@ final class GroupChatStore: ObservableObject {
         let generation = bindingGeneration
         let start = max(0, end - Self.historyWindow)
         var older: [GroupRoomEvent] = []
+        var olderSignals: [GroupRoomSignal] = []
         var cursor = start
         while cursor < end {
             guard
@@ -749,10 +955,12 @@ final class GroupChatStore: ObservableObject {
                 let hasMore = page["has_more"] as? Bool, !hasMore || next > cursor
             else { return }
             older += rows.compactMap(GroupRoomEvent.init).filter { $0.seq <= end }
+            olderSignals += rows.compactMap(GroupRoomSignal.init).filter { $0.seq <= end }
             cursor = next
             guard hasMore else { break }
         }
         events[roomID] = older + (events[roomID] ?? [])
+        signals[roomID] = olderSignals + (signals[roomID] ?? [])
         earliestLoadedSeq[roomID] = start
     }
 

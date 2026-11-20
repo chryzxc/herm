@@ -2938,6 +2938,38 @@ only on Glass and Clay; every other skin, and the saved PNG, is matte. Only movi
 idle face; Regenerate All re-renders it for every Bot. Glossy Herm faces saved by older builds are recognized alongside the matte
 PNG. The legacy blob renderer stays only to recognize older saves. Group chat stacks place faces
 side by side with no cut-out border.
+While members reply, the group transcript ends with one reply stage (`GroupReplyStage`) rather than a
+row per member: 28pt live faces side by side (up to four, then a `+N` chip) that think, use a tool,
+wait on approval or doze (sleepy) once a turn has made no progress for 120s; "Ada and Bo are replying"
+(three or more collapse to "Ada, Bo and N others"); and the chatter ribbon (`GroupChatterRibbon`),
+word-shaped capsules in the writers' identity fills that type in over a 2.4s cycle with a caret, in
+place of loading dots. A metadata line adds "↳ replying to X" for a later-round turn, the lead's
+handoff ("Ada gave this to Bo") from `room.assignment` / `room.routed`, "Using tool", and "Round 2 of
+3" from `max_rounds`. Queued members sit after an arrow as dimmed 20pt faces ("up next"); with nobody
+writing they lead the stage. A stalled stage says "has gone quiet" and offers Stop. One
+`DockBotFrameClock` drives every stage face and the ribbon, and only while someone is writing; text
+lives in an `Equatable` caption so frames never re-lay it out. There is no elapsed "Running for"
+timer or live tool rows. Who is replying comes from `groups.state` `driver_status.member_activity`,
+falling back to open `turn.started` log rows on gateways that don't report it.
+Header faces (`GroupHeaderFace`) show each member's live mood anywhere in the room: approval,
+sleepy (stalled), tool or thinking, queued, offline (RoomLink `peer_routes` not ready). They hop
+when that member's reply lands, turn attentive (listening) when the draft would reach them (`@handle`,
+`@all`, or no mention: everyone, or the lead in lead routing), and doze after 15 minutes of quiet.
+Clicking a face jumps to its last reply (thread switch, scroll, brief accent highlight); hovering
+450ms opens a card (name, handle, role, description, model, live state, last reply) with Mention,
+Message (opens the bot's chat) and Jump to reply; dragging a face into the composer inserts
+`@handle`. A landing reply's row face shows done for 1.6s. Failed rows show the member's failed face.
+Under a finished message, `GroupRoundFooter` sits between hairlines: who passed (dimmed 14pt faces),
+"3 replied · 1 passed · 14s", a round-cap pill, and Continue (`groups.continue`) while Hermes'
+paused-discussion rule allows it. It shows only for a pass, a cap or more than one participant.
+Read receipts (`GroupReadReceiptRow`, 14pt faces, "Seen by …") sit under the last row each member's
+turn had seen (`seen_through_seq`), unless that member replied after it. Thread chips show the faces
+working in that thread or an unread dot. Sidebar group tiles animate only the faces replying in an
+open room. The `@` list shows each member's live state and face. An empty room shows `GroupWelcome`:
+faces wave in turn and each handle is a chip that starts a mention. A member reply that lands while
+its room is not on screen in an active Herm posts a notification titled "Name in Room" with the
+member's face attached; clicking it opens the room at that message. All motion follows
+`DockMotion.isEnabled`; under Reduce Motion faces hold still and rows appear without movement.
 Group chat action errors use toast notifications without an inline error row above the composer. The group composer reuses the main chat composer chrome (`composerCard`, `composerTray`, `composerColumn`, `ComposerFolderBarSlot`, `ComposerControlLabel`, `ComposerSubmitLabel`), so its input sits at the same position and size as a session composer. When `groups.capabilities` lists `groups.attachment.upload`, the **+** popover adds Files and Images, and files dropped or pasted onto the editor upload through the same `ComposerInputEditor(onDropFiles:)` path as sessions; uploaded files show as removable chips above the controls (Send waits for uploads), and sent messages use the main chat's user-message chrome (`UserMessageImages`, `UserMessageAttachmentRow`, `.userMessageBubble()`): images read back with `groups.attachment.download` sit above the bubble and open the image preview, other files (and images Hermes refuses) are named rows inside it, and a timestamp and copy action sit underneath. Group actions (thread, Edit Group…, Disband…) sit at the trailing edge of the toolbar, including in a tab column where the tab row carries them. Edit Group renames the room in place and edits members with the New Group Chat checklist (`GroupMemberPicker`); Hermes fixes a room's members at creation, so a changed roster says so and creates a new group (the old one and its history stay). Groups with bots from another Mac keep their members read-only. A group chat opened from Bots accepts a dropped session like any chat: the room becomes the first column's tab and the session opens as a tab or new column beside it. Bot, group and session rows in the sidebar take their insets and gaps from `DockSidebarListMetrics`, so the Bots list spaces rows exactly like Recents, including the shared `titleToPreview` gap between a row title and its last message. The Bots | Sessions switch is a full-width tab track (`DockChatsScopeSwitch`) at the top of each list: above the bot picker in Sessions, above the search field in Bots, not in the title strip. In Sessions, New chat is an icon button (tooltip "New chat") to the right of the search field, mirroring the Bots + menu.
 
 ### Conversation workspace
