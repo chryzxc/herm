@@ -1119,7 +1119,6 @@ final class AgentBrowser: ObservableObject {
             navigation.updateHistory(result)
         }
     }
-    func select(_ page: Page) { Task { try? await attach(page.id) } }
 
     func mouse(
         _ type: String, at point: CGPoint, button: String = "none", buttons: Int = 0, clicks: Int = 0,

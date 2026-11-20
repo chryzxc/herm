@@ -4069,7 +4069,8 @@ and selected text as untrusted page context. Reattaching the same page refreshes
 its chip; navigation does not silently change attached context. Async selection
 capture is discarded if the session, page, or tab changes. The action shows pending
 feedback and is disabled on blank pages. Annotation and attachment stay in the
-toolbar at every width; More retains agent tab switching and console-context actions.
+toolbar at every width; More retains console-context actions. Herm opens additional
+pages as Browser tabs rather than a separate agent-tab switcher.
 
 The Browser toolbar uses 28pt controls and a compact themed address field. It
 first collapses viewport labels; phone-width
@@ -4091,9 +4092,10 @@ Chromium emulates page focus so focus rings and carets show in form fields.
 While Hermes drives, the page gets a 2pt accent
 frame and an accent "Herm" cursor that glides to each pointer move, click, and
 focused field Hermes produces in the main frame; clicks spread a ring. The
-cursor never takes input. Its last observed position remains visible between tool
-calls and survives reopening or resizing the pane; taking over, using the page,
-or changing pages clears it.
+cursor never takes input. A leading horse marker in an agent page title appears
+as a themed pointer icon in the tab. The cursor's last position remains visible
+between tool calls and survives reopening or resizing the pane. Taking over, using
+the page, or changing pages clears it.
 Pointer and focus events in supported nested and cross-origin frames map into the
 same page coordinates. Unavailable frame geometry suppresses the affected cursor
 event without blocking the browser. The browser owner tracks tool-call identity

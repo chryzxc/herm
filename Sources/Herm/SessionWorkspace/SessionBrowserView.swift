@@ -151,7 +151,7 @@ struct SessionBrowserView: View {
     let model: DockModel
     let workspace: SessionBrowserWorkspace
     let isPrimary: Bool
-    @AppStorage("sessionInspector.browserViewport") private var viewportRaw = 0
+    @AppStorage("sessionInspector.browserViewport") private var viewport = BrowserViewport.fit
     @ObservedObject private var browser: BrowserController
     @ObservedObject private var agent: AgentBrowser
     @ObservedObject private var signOut = BrowserSignOutState.shared
@@ -172,7 +172,6 @@ struct SessionBrowserView: View {
     }
 
     private var showsAgent: Bool { isPrimary && agent.isActive }
-    private var viewport: BrowserViewport { BrowserViewport(rawValue: viewportRaw) ?? .fit }
     private var palette: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
     private var consoleErrors: [String] { showsAgent ? agent.consoleErrors : browser.consoleErrors }
     private var annotating: Bool { showsAgent ? agent.annotating : browser.annotating }
@@ -254,7 +253,7 @@ struct SessionBrowserView: View {
             field = displayAddress(pageURL.isEmpty ? browser.address : pageURL)
             guard isPrimary else { return }
             agent.model = model
-            agent.presetWidth = viewportRaw
+            agent.presetWidth = viewport.rawValue
             if !agent.isActive { agent.start() }  // opening the tab retries a failed browser
             if !showsAgent { browser.loadAddressIfNeeded() }
         }
@@ -272,7 +271,7 @@ struct SessionBrowserView: View {
             if !isEditingAddress { field = displayAddress(url) }  // never clobber what you're typing
             if url != "about:blank" { browser.address = url }
         }
-        .onChange(of: viewportRaw) { _, raw in if isPrimary { agent.presetWidth = raw } }
+        .onChange(of: viewport) { _, option in if isPrimary { agent.presetWidth = option.rawValue } }
         .onChange(of: showsAgent) { _, agentMode in
             field = displayAddress(agentMode ? agent.activePage?.url ?? "" : browser.currentURL ?? browser.address)
             // Agent browser failed to start: carry on in WebKit.
@@ -387,7 +386,7 @@ struct SessionBrowserView: View {
             DockMenuSection("Responsive viewport") {
                 ForEach(BrowserViewport.allCases) { option in
                     DockMenuCheckRow(title: option.title, isSelected: option == viewport) {
-                        viewportRaw = option.rawValue
+                        viewport = option
                     }
                 }
             }
@@ -434,18 +433,6 @@ struct SessionBrowserView: View {
             }
             .disabled(signOut.isResetting)
             .help("Clear sign-ins from every Herm browser profile")
-            if showsAgent {
-                DockMenuSection("Agent Tabs") {
-                    ForEach(agent.pages) { page in
-                        Button {
-                            agent.select(page)
-                        } label: {
-                            let title = page.title.isEmpty ? page.url : page.title
-                            if page.id == agent.activeTargetID { Label(title, icon: .check) } else { Text(title) }
-                        }
-                    }
-                }
-            }
         } label: {
             DockIcon(.dotsThree)
                 .opacity(sendingPage ? 0 : 1)

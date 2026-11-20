@@ -108,9 +108,25 @@ final class SessionBrowserWorkspace: ObservableObject {
     }
 
     func tabTitle(for id: UUID? = nil, fallback: String = "Browser") -> String {
-        let title = (pageTitles[id ?? primary.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let tabID = id ?? primary.id
+        let rawTitle = tabID == primary.id ? primaryTabLabel.title : pageTitles[tabID] ?? ""
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty || title == "about:blank" || ["http", "https"].contains(URL(string: title)?.scheme)
             ? fallback : title
+    }
+
+    var primaryTabIcon: Ph { primaryTabLabel.icon }
+
+    private var primaryTabLabel: (title: String, icon: Ph) {
+        let title = pageTitles[primary.id] ?? ""
+        return agent.isActive ? Self.agentTabLabel(title) : (title, .globe)
+    }
+
+    static func agentTabLabel(_ rawTitle: String) -> (title: String, icon: Ph) {
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let marker = title.unicodeScalars.first, ["🐴", "🐎", "🎠"].contains(marker)
+        else { return (title, .globe) }
+        return (title.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines), .cursorClick)
     }
 
     /// The closed Browser tab unloads its page. The agent Chrome is the profile's and keeps running.

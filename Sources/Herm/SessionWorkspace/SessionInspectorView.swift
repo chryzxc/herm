@@ -832,7 +832,8 @@ struct SessionInspector: View {
 
     private func sectionTab(_ section: Section) -> SessionInspectorTabItem {
         SessionInspectorTabItem(
-            id: "section:" + section.rawValue, title: sectionTitle(section), icon: section.icon,
+            id: "section:" + section.rawValue, title: sectionTitle(section),
+            icon: section == .browser ? browserWorkspace?.primaryTabIcon ?? section.icon : section.icon,
             isSelected: selectedSection == section && selectedExtraID == nil && selectedPreview == nil,
             select: {
                 withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) {

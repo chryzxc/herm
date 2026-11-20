@@ -7,6 +7,17 @@ import WebKit
 
 @MainActor
 struct SessionBrowserTests {
+    @Test func agentDisplayUsesAPointerForTheHorsePrefix() {
+        for title in ["🐴 Compliance", "🐎 Compliance", "🎠\u{FE0F} Compliance"] {
+            let label = SessionBrowserWorkspace.agentTabLabel(title)
+            #expect(label.title == "Compliance")
+            #expect(label.icon == .cursorClick)
+        }
+        let ordinary = SessionBrowserWorkspace.agentTabLabel("Riding 🐴 Center")
+        #expect(ordinary.title == "Riding 🐴 Center")
+        #expect(ordinary.icon == .globe)
+    }
+
     @Test func onlyRealPagesCountAsLoaded() {
         // Suspending an unloaded tab must not load about:blank: that launches a web process.
         #expect(!SessionBrowserWorkspace.hasLoadedPage(nil))
