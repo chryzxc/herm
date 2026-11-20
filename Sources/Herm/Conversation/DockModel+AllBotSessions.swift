@@ -16,14 +16,20 @@ extension DockModel {
         {
             return
         }
-        scheduleTranscriptPreload(scanned: [])
-        allBotSessionsTask = Task { @MainActor [weak self] in
+        allBotSessionsTask = Task(priority: force ? .userInitiated : .utility) { @MainActor [weak self] in
             guard let self else { return }
             defer { allBotSessionsTask = nil }
             let startedAt = Date()
+            if !force {
+                guard await DockScrollActivity.waitForInputIdle() else { return }
+            }
             do {
                 let body = try await interruptRPC.allProfileSidebarSessions(limit: Self.allBotSessionsLimit)
-                let loaded = try Self.parseAllBotSessions(body)
+                let response = UncheckedTranscriptValue(value: body)
+                let loaded = try await Task.detached(priority: .utility) {
+                    try Self.parseAllBotSessions(response.value)
+                }.value
+                guard !Task.isCancelled, !hasShutDown else { return }
                 allBotSessionsLoadedAt = Date()
                 let projection: HermesProjectionState<[HermesSession]> = loaded.isEmpty ? .empty : .ready(loaded)
                 if projection != allBotSessionsState { allBotSessionsState = projection }
@@ -38,12 +44,13 @@ extension DockModel {
                     allBotSessionsState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
                 DebugLog.write(
                     "model: all-bot sessions failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                scheduleTranscriptPreload(scanned: [])
             }
         }
     }
 
     private func scheduleTranscriptPreload(scanned: [HermesSession]) {
-        sessionTranscriptPreloadTask?.cancel()
+        guard sessionTranscriptPreloadTask == nil, sessionTranscriptCache.hasPreloadCapacity else { return }
         let scope = profileScopeID
         let current = (pinnedSessions + sessions).map { ($0, $0.profileID ?? scope) }
         let remote = scanned.compactMap { session -> (HermesSession, String?)? in
@@ -53,16 +60,19 @@ extension DockModel {
         let candidates =
             current.filter { $0.0.isPinned } + remote.filter { $0.0.isPinned }
             + current.filter { !$0.0.isPinned } + remote.filter { !$0.0.isPinned }
-        sessionTranscriptPreloadTask = Task { @MainActor [weak self] in
-            await self?.preloadSessionTranscripts(candidates)
+        sessionTranscriptPreloadTask = Task(priority: .utility) { @MainActor [weak self] in
+            guard let self else { return }
+            defer { sessionTranscriptPreloadTask = nil }
+            await preloadSessionTranscripts(candidates, scope: scope)
         }
     }
 
-    private func preloadSessionTranscripts(_ candidates: [(HermesSession, String?)]) async {
+    private func preloadSessionTranscripts(_ candidates: [(HermesSession, String?)], scope: String?) async {
         var seen = Set<String>()
         var attempted = 0
         for (session, profile) in candidates {
-            guard !Task.isCancelled, !hasShutDown, sessionTranscriptCache.hasPreloadCapacity else { return }
+            guard !Task.isCancelled, !hasShutDown, profileScopeID == scope, sessionTranscriptCache.hasPreloadCapacity
+            else { return }
             guard let profile = Self.normalizedProfileID(profile) else { continue }
             let key = WorkspaceIdentity.session(profileID: profile, sessionID: session.id)
             guard seen.insert(key).inserted, session.id != BotService.canonicalBotChatTitle,
@@ -71,16 +81,19 @@ extension DockModel {
                     sessionID: session.id, profileID: profile, limit: TranscriptHistoryPaging.pageRowLimit, offset: 0)
             else { continue }
             guard attempted < Self.transcriptPreloadLimit else { return }
+            guard await DockScrollActivity.waitForInputIdle(), profileScopeID == scope else { return }
             attempted += 1
             do {
                 let response = try await sessionRPCClient.fetchHTTP(path)
                 guard let page = TranscriptHistoryPaging.page(from: response) else {
                     throw HermesGateway.GatewayError.malformedResponse
                 }
-                let rows = await Self.projectStoredRowsOffMain(page.rows)
+                guard await DockScrollActivity.waitForInputIdle(), profileScopeID == scope else { return }
+                let rows = await Self.projectStoredRowsOffMain(page.rows, priority: .utility)
                 let (restored, references) = await Self.parseMessagesOffMain(
-                    rows, defaultBotProfileID: nil, defaultBotDisplayName: nil)
-                guard !Task.isCancelled, !hasShutDown, key != transcriptPresentationID else { continue }
+                    rows, defaultBotProfileID: nil, defaultBotDisplayName: nil, priority: .utility)
+                guard !Task.isCancelled, !hasShutDown, profileScopeID == scope, key != transcriptPresentationID
+                else { continue }
                 sessionTranscriptCache.preload(restored, references: references, for: key)
             } catch is CancellationError {
                 return
@@ -93,7 +106,7 @@ extension DockModel {
 
     /// Parses `/api/profiles/sessions/sidebar`. A failed scan omits
     /// `recents.sessions`, so that shape throws instead of reading as empty.
-    static func parseAllBotSessions(_ body: [String: Any]) throws -> [HermesSession] {
+    nonisolated static func parseAllBotSessions(_ body: [String: Any]) throws -> [HermesSession] {
         guard let recents = body["recents"] as? [String: Any],
             let rows = recents["sessions"] as? [[String: Any]]
         else {

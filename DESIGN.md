@@ -1235,6 +1235,17 @@ Older sections are migrated to the template when they are next changed.
 
 ### Side activity notch
 
+The notch is visible during startup while Herm reads local workspace preferences
+and activity archives. Clicks and shortcut requests can open the workspace as soon
+as those reads finish. The normal notch preview becomes available at that point.
+
+When the workspace opens during startup, a full-workspace surface covers the
+session list, conversation, and inspector. The Herm mark sits between two accent
+traces that carry a signal inward while the initial profile and session list load.
+The surface gives way on the first available session rows, a confirmed empty list,
+or a failure. Older history continues loading in place. Reduce Motion and
+motion-free skins show the same mark and traces without the moving signal.
+
 As a pet approaches a side rail, the lower contour bends toward its docking point. During the drag it tracks proximity directly and settles on release; the top camera housing retains its outline. A held pet tips once. Sprite frames step through the Hermes sheet in Core Animation.
 
 **Hermes companion.** When the selected Hermes profile has an enabled pet, its
@@ -1900,13 +1911,15 @@ until the next section pushes it away. Headers are transparent in the list;
 at the scroll viewport edge they use the matching canvas or native window
 material to cover scrolling rows. Retain disclosure, actions, and section reordering.
 Routine session polls and runtime notifications reuse older loaded history
-for up to 60 seconds while fetching the recent page and current pins/activity.
+for up to five minutes while fetching the recent page and current pins/activity.
 Manual refreshes and profile switches bypass that reuse; older sessions remain
 searchable between full-history reads. External changes to older rows reconcile
 on the first refresh after expiry, or immediately through manual refresh.
-Projects show the overview's preview rows immediately and hydrate linked sessions
-as expanded groups enter view. The Office and Chats tiles request archived
-activity when opened.
+On a cold list load, the first recent page and pins appear while older pages load.
+Search covers the loaded rows while the existing refresh slot shows progress.
+Unread baselining waits for the full inventory. Projects show the overview's
+preview rows immediately and hydrate linked sessions as expanded groups enter view.
+The Office and Chats tiles request archived activity when opened.
 The floating desktop shell keeps the conversation and inspector side by side
 when the inspector opens, using a 360pt conversation minimum (520pt in
 fullscreen). Expanding the inspector must not replace the conversation.

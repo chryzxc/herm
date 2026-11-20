@@ -425,6 +425,7 @@ final class SessionNavSidebarModel: ObservableObject {
         return (sessions, rows)
     }
     let instanceID = UUID().uuidString.prefix(8).description
+    private let mountedAt = ProcessInfo.processInfo.systemUptime
 
     private let model: DockModel
     private let control: ControlCenterModel
@@ -454,9 +455,14 @@ final class SessionNavSidebarModel: ObservableObject {
     /// A rail rebuild costs 12–29 ms, and every running session publishes
     /// activity ticks, so several live agents would rebuild the rail many times
     /// a second and stall scrolling on any power source. Activity ticks
-    /// coalesce to 4 Hz; selection changes still refresh at once.
+    /// coalesce to 4 Hz. Navigation and inventory changes refresh at once.
     private func scheduleRefresh() {
-        guard model.navigationSessionID == snapshot.inputs.activeSessionID else {
+        let inputs = snapshot.inputs
+        if model.navigationSessionID != inputs.activeSessionID || model.profileScopeID != inputs.profileScopeID
+            || model.sessionProjectionState != inputs.sessionProjectionState
+            || (inputs.pinnedSessions.isEmpty && !model.pinnedSessions.isEmpty)
+            || (inputs.sessions.isEmpty && !model.sessions.isEmpty)
+        {
             coalescedRefreshTask?.cancel()
             coalescedRefreshTask = nil
             return refresh()
@@ -480,6 +486,12 @@ final class SessionNavSidebarModel: ObservableObject {
         let next = SessionNavSidebarSnapshot(inputs: inputs, reusing: snapshot)
         let previous = snapshot
         snapshot = next
+        if previous.conversations.isEmpty && previous.inputs.pinnedSessions.isEmpty,
+            !next.conversations.isEmpty || !next.inputs.pinnedSessions.isEmpty
+        {
+            let elapsed = Int((ProcessInfo.processInfo.systemUptime - mountedAt) * 1000)
+            DebugLog.writePerformance("session_index stage=sidebar_rows rows=\(next.conversations.count) ms=\(elapsed)")
+        }
         if inputs.sessions != previous.inputs.sessions || inputs.pinnedSessions != previous.inputs.pinnedSessions
             || inputs.activeSessions != previous.inputs.activeSessions
             || inputs.profileScopeID != previous.inputs.profileScopeID

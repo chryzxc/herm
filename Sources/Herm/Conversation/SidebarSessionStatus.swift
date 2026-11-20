@@ -154,11 +154,26 @@ final class SidebarSessionSeenStore: ObservableObject {
         let profileKey = profileID ?? ""
         guard !baselinedProfiles.contains(profileKey) else { return }
         let now = Date()
+        var next = seenAtByKey
         for session in sessions {
             let storageKey = key(profileID: profileID, sessionID: session.id)
-            seenAtByKey[storageKey] = session.lastUpdatedAt ?? now
+            next[storageKey] = session.lastUpdatedAt ?? now
         }
         baselinedProfiles.insert(profileKey)
+        // Baseline membership also drives the unread projection.
+        seenAtByKey = next
+        persist()
+    }
+
+    func markSeen(_ sessions: [HermesSession], fallbackProfileID: String?, at date: Date?) {
+        var next = seenAtByKey
+        let now = Date()
+        for session in sessions {
+            next[key(profileID: session.profileID ?? fallbackProfileID, sessionID: session.id)] =
+                date ?? session.lastUpdatedAt ?? now
+        }
+        guard next != seenAtByKey else { return }
+        seenAtByKey = next
         persist()
     }
 

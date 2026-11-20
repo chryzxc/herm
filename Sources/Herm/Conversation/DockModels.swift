@@ -895,7 +895,7 @@ struct KanbanNotice: Equatable {
     }
 }
 
-struct HermesSession: Identifiable, Equatable {
+struct HermesSession: Identifiable, Equatable, Sendable {
     let id: String
     /// Hermes profile that owns this session. Older launch-profile payloads
     /// omit it, so the value remains optional for compatibility.

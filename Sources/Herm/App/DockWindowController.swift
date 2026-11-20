@@ -105,7 +105,8 @@ final class DockWindowController: NSObject, NSWindowDelegate {
                         window?.close()
                         self?.onReturnToFloating?()
                     },
-                    usesWindowChrome: true
+                    usesWindowChrome: true,
+                    presentsStartup: !ScrollPerformanceFixture.isRequested
                 )
             })
         workspace.sizingOptions = []

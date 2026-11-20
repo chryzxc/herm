@@ -86,6 +86,7 @@ struct DockPopover: View {
     var onOpenWindow: (() -> Void)?
     /// The native window supplies its own frame, so drop the rounded surface.
     var usesWindowChrome = false
+    var presentsStartup = false
     @State var isShowingMessageSearch = false
     @State var isShowingMessagePins = false
     @State var pinnedMessageJumpID: UUID?
@@ -124,7 +125,7 @@ struct DockPopover: View {
     /// Not observed here: the transcript source subscribes to its pending
     /// actions, so a copy or reaction click no longer rebuilds every pane.
     @State var messageActionState = ConversationMessageActionState()
-    @StateObject var workspaceStore = WorkspaceStore()
+    @StateObject var workspaceStore = WorkspaceStore.shared
     @StateObject var agentUpdateService = HermesUpdateService.shared
     /// Not observed here: panes that show workflow state observe it themselves,
     /// and the root redraws only on `rootPresentationChanges`.

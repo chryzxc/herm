@@ -125,17 +125,19 @@ final class PinnedSessionTests: XCTestCase {
         ]
         // Only this gateway's sessions are listed live; its idle status wins.
         client.liveRows = [["session_key": "idle", "status": "idle"]]
-        var index = try await DockModel.fetchSessionIndex(client: client, profileID: nil)
-        XCTAssertEqual(index.working, ["lane"])
+        let model = DockModel(loadArchives: false, rpcClient: client)
+        model.profileScopeID = nil
+        await model.loadSessions()?.value
+        XCTAssertEqual(model.pinnedSessions.filter(\.isWorking).map(\.id), ["lane"])
 
         client.rows[0]["is_active"] = false
-        index = try await DockModel.fetchSessionIndex(client: client, profileID: nil)
-        XCTAssertEqual(index.working, [])
+        await model.loadSessions()?.value
+        XCTAssertFalse(model.pinnedSessions.contains(where: \.isWorking))
 
         client.rows[0]["is_active"] = true
         client.liveUnavailable = true
-        index = try await DockModel.fetchSessionIndex(client: client, profileID: nil)
-        XCTAssertNil(index.working)
+        await model.loadSessions()?.value
+        XCTAssertFalse(model.pinnedSessions.contains(where: \.isWorking))
     }
 
     func testSessionIndexPreservesSourceForConversationBadges() async throws {
@@ -153,8 +155,10 @@ final class PinnedSessionTests: XCTestCase {
             ["id": "project", "source": "projects", "pinned": true],
             ["id": "scheduled", "source": "cron", "pinned": true],
         ]
-        let index = try await DockModel.fetchSessionIndex(client: client, profileID: nil)
-        let labels = Dictionary(uniqueKeysWithValues: index.pinned.map { ($0.id, $0.sourceBadgeTitle) })
+        let model = DockModel(loadArchives: false, rpcClient: client)
+        model.profileScopeID = nil
+        await model.loadSessions()?.value
+        let labels = Dictionary(uniqueKeysWithValues: model.pinnedSessions.map { ($0.id, $0.sourceBadgeTitle) })
         XCTAssertEqual(labels["scheduled"]!, "Cron")
         XCTAssertEqual(labels["discord"]!, "Discord")
         XCTAssertEqual(labels["slack"]!, "Slack")
@@ -182,12 +186,14 @@ final class PinnedSessionTests: XCTestCase {
             ["id": "pinned", "title": "Pinned", "pinned": true],
         ]
 
-        let index = try await DockModel.fetchSessionIndex(client: client, profileID: "bot a")
+        let model = DockModel(loadArchives: false, rpcClient: client)
+        model.profileScopeID = "bot a"
+        await model.loadSessions()?.value
 
-        XCTAssertEqual(index.pinned.map(\.id), ["pinned"])
-        XCTAssertEqual(index.pinned.first?.profileID, "bot a")
-        XCTAssertEqual(client.fetchedPaths, ["/api/sessions?limit=100&order=recent&profile=bot%20a"])
-        XCTAssertEqual(index.lastActive["recent"], Date(timeIntervalSince1970: 900))
+        XCTAssertEqual(model.pinnedSessions.map(\.id), ["pinned"])
+        XCTAssertEqual(model.pinnedSessions.first?.profileID, "bot a")
+        XCTAssertEqual(client.fetchedPaths.first, "/api/sessions?limit=100&order=recent&profile=bot%20a")
+        XCTAssertEqual(model.sessions.first?.lastUpdatedAt, Date(timeIntervalSince1970: 900))
     }
 
     func testSessionListRowTakesLastActiveInsteadOfStartTime() {

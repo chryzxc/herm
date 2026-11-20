@@ -197,14 +197,19 @@ extension DockPopover {
             }
     }
 
+    private var showsStartupScreen: Bool {
+        presentsStartup && model.workspaceStartup.phase != .finished
+            && (fullscreenSurface == .conversation || fullscreenSurface == .chatGrid)
+    }
+
     var rootPopoverContent: some View {
         Group {
-            // Replaces the shell instead of overlaying it: the AppKit split
-            // panes draw above SwiftUI overlays, so side panels showed through.
-            // Only entering fades. The workspace remount on exit is not
-            // animated: AppKit panes draw above the fading stage anyway, and
-            // animating a full split relayout stutters.
-            if isVoiceImmersive && sessionWorkspaceMode == .voice {
+            if showsStartupScreen {
+                DockStartupScreen(usesWindowChrome: usesWindowChrome)
+                    .transition(.identity)
+            } else if isVoiceImmersive && sessionWorkspaceMode == .voice {
+                // AppKit split panes draw above SwiftUI overlays. Replace the
+                // shell and fade only the voice stage's entrance.
                 immersiveVoiceStage.padding(.top, titlebarInset)
                     .transition(.asymmetric(insertion: .opacity, removal: .identity))
             } else {
@@ -246,7 +251,7 @@ extension DockPopover {
             }
         }
         .overlay(alignment: .top) {
-            if let status = panelPresentation.islandStatus, panelPresentation.edgeSide == .top,
+            if !showsStartupScreen, let status = panelPresentation.islandStatus, panelPresentation.edgeSide == .top,
                 panelPresentation.isEdgeAttached, !usesWindowChrome, !isFullscreen
             {
                 EdgeIslandStatusStrip(

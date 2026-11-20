@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import Observation
 import SwiftUI
 import UniformTypeIdentifiers
 import UserNotifications
@@ -24,8 +25,19 @@ struct RestoredTranscript {
 }
 
 @MainActor
+@Observable
+final class DockWorkspaceStartup {
+    enum Phase {
+        case resolvingProfile, loadingSessions, finished
+    }
+
+    var phase: Phase = .resolvingProfile
+}
+
+@MainActor
 final class DockModel: ObservableObject {
     let presentationDemand = DockPresentationDemand()
+    let workspaceStartup = DockWorkspaceStartup()
     lazy var botMode = makeBotMode()
     lazy var workspacePresentationChanges = makeWorkspacePresentationChanges()
     lazy var inspectorPresentationChanges = makeInspectorPresentationChanges()
@@ -143,8 +155,29 @@ final class DockModel: ObservableObject {
     @Published var clarificationResponseError: String?
     @Published var isRespondingToClarification = false
     @Published var isRespondingToApproval = false
+    private var updatingSessionMetadata = false
+
+    /// A replacement produced by this call keeps every row's identity and position.
+    func updateSessionMetadata(_ update: () -> Void) {
+        let wasUpdating = updatingSessionMetadata
+        updatingSessionMetadata = true
+        defer { updatingSessionMetadata = wasUpdating }
+        update()
+    }
+
+    private(set) var recentIndexByID: [String: Int] = [:]
+    private(set) var pinnedIndexByID: [String: Int] = [:]
+    private(set) var allBotIndexByID: [String: Int] = [:]
+    private(set) var sessionIndexRevision: UInt64 = 0
+    private static func indices(_ rows: [HermesSession]) -> [String: Int] {
+        Dictionary(rows.indices.lazy.map { (rows[$0].id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
     @Published var sessions: [HermesSession] = [] {
-        didSet { syncBotActivitySignals() }
+        didSet {
+            sessionIndexRevision &+= 1
+            if !updatingSessionMetadata { recentIndexByID = Self.indices(sessions) }
+            syncBotActivitySignals()
+        }
     }
     /// What each session is doing right now (its latest tool), read from the
     /// global gateway stream so sessions that are not open can show it too.
@@ -196,14 +229,26 @@ final class DockModel: ObservableObject {
     /// Sessions carrying Hermes' durable pin flag (`sessions.pinned`) — the
     /// same flag Hermes Desktop's Pinned section and `hermes sessions pin` use.
     @Published var pinnedSessions: [HermesSession] = [] {
-        didSet { syncBotActivitySignals() }
+        didSet {
+            sessionIndexRevision &+= 1
+            if !updatingSessionMetadata { pinnedIndexByID = Self.indices(pinnedSessions) }
+            syncBotActivitySignals()
+        }
     }
     @Published var pinningSessionID: String?
     /// The conversation a `session.workspace.move` is in flight for.
     @Published var movingSessionToProjectID: String?
     /// Recent sessions across every bot profile, for the agent-grouped sidebar.
     @Published var allBotSessionsState: HermesProjectionState<[HermesSession]> = .loading {
-        didSet { syncBotActivitySignals() }
+        didSet {
+            if !updatingSessionMetadata {
+                switch allBotSessionsState {
+                case .ready(let rows), .stale(let rows, _): allBotIndexByID = Self.indices(rows)
+                default: allBotIndexByID = [:]
+                }
+            }
+            syncBotActivitySignals()
+        }
     }
     var allBotSessionsTask: Task<Void, Never>?
     var sessionTranscriptPreloadTask: Task<Void, Never>?
@@ -576,6 +621,7 @@ final class DockModel: ObservableObject {
         approvalSoundPlayer: @escaping () -> Void = { NSSound.beep() },
         initialSessionID: String? = nil,
         botActivityFileURL: URL? = nil,
+        loadArchives: Bool = true,
         rpcClient: HermesRPCClientProtocol? = nil,
         voicePlayback: HermesVoicePlaybackProtocol? = nil
     ) {
@@ -585,11 +631,11 @@ final class DockModel: ObservableObject {
                 .appendingPathComponent("message-pins-v1.json"))
         self.agentStateStore = agentStateStore
         self.agentStateWriter = SessionAgentStateWriter(store: agentStateStore)
-        self.agentStateBySessionID = agentStateStore.load()
+        self.agentStateBySessionID = loadArchives ? agentStateStore.load() : [:]
         let botActivityStore = BotActivityStore(fileURL: botActivityFileURL)
         self.botActivityStore = botActivityStore
         self.botActivityWriter = BotActivityWriter(store: botActivityStore)
-        self.botActivityBySessionID = botActivityStore.load()
+        self.botActivityBySessionID = loadArchives ? botActivityStore.load() : [:]
         self.defaults = defaults
         self.playApprovalSound = approvalSoundPlayer
         self.sessionID = initialSessionID
@@ -705,8 +751,6 @@ final class DockModel: ObservableObject {
 
     static let visionUnsupportedNotice =
         "This model can't read images. Use a vision-capable model in Hermes to analyze images."
-    static let sessionDateFormatter = ISO8601DateFormatter()
-
     nonisolated(unsafe) static let kanbanNoticeHead = /([^\p{L}\p{N}\s\[@`*#>-]\S*) (.*\bt_[0-9a-f]{8}\b.*)/
 
 }

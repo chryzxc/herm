@@ -124,8 +124,34 @@ final class WorkspaceStore: ObservableObject {
 
     let profilePickerOrder: DockProfilePickerOrder
     private let fileURL: URL
-    init(fileURL: URL? = nil, profilePickerDefaults: UserDefaults = .standard) {
-        self.profilePickerOrder = DockProfilePickerOrder(defaults: profilePickerDefaults)
+    private static var launchedStore: WorkspaceStore?
+    static var shared: WorkspaceStore {
+        if let launchedStore { return launchedStore }
+        let store = WorkspaceStore()
+        launchedStore = store
+        return store
+    }
+
+    static func prepareForLaunch() async {
+        guard launchedStore == nil else { return }
+        let url = defaultURL
+        let state = await Task.detached(priority: .userInitiated) { read(url) }.value
+        guard launchedStore == nil, !Task.isCancelled else { return }
+        launchedStore = WorkspaceStore(url: url, defaults: .standard, state: state)
+    }
+
+    convenience init(fileURL: URL? = nil, profilePickerDefaults: UserDefaults = .standard) {
+        let url = fileURL ?? Self.defaultURL
+        self.init(url: url, defaults: profilePickerDefaults, state: Self.read(url))
+    }
+
+    private init(url: URL, defaults: UserDefaults, state: WorkspaceState?) {
+        self.profilePickerOrder = DockProfilePickerOrder(defaults: defaults)
+        self.fileURL = url
+        if let state { apply(state) }
+    }
+
+    private static var defaultURL: URL {
         let supportRoot =
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
@@ -133,8 +159,7 @@ final class WorkspaceStore: ObservableObject {
         let support =
             supportRoot
             .appendingPathComponent("HermesWorkspace", isDirectory: true)
-        self.fileURL = fileURL ?? support.appendingPathComponent("workspace.json")
-        load()
+        return support.appendingPathComponent("workspace.json")
     }
 
     var activeTask: WorkspaceTask? { tasks.first(where: { $0.status != .done }) }
@@ -287,10 +312,12 @@ final class WorkspaceStore: ObservableObject {
         save()
     }
 
-    private func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-            let state = try? JSONDecoder.workspace.decode(WorkspaceState.self, from: data)
-        else { return }
+    nonisolated private static func read(_ url: URL) -> WorkspaceState? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder.workspace.decode(WorkspaceState.self, from: data)
+    }
+
+    private func apply(_ state: WorkspaceState) {
         lastIntegrationsCategory =
             state.lastIntegrationsCategory.flatMap(IntegrationsCategory.init(rawValue:)) ?? .skills
         tasks = state.tasks

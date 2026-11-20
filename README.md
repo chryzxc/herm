@@ -499,17 +499,21 @@ bot picker to merge every bot's pinned and recent conversations into one list; e
 row then shows a pill with its bot's avatar and name, and opening it switches to
 that bot. The sidebar reuses the loaded session list for unread counts while you hover, scroll, or search. Each section header stays at the top of the scrolling
 list until the next section replaces it; rows remain lazily rendered.
-Background polls and runtime notifications refresh the latest history page,
-reusing older loaded sessions for up to a minute. Explicit refreshes reconcile
-the full saved history immediately.
+Recent chats and pins appear as soon as the first page arrives. Older chats load
+in the background and join search as they become available. Background polls and
+runtime notifications refresh the latest history page, reusing older loaded sessions
+for up to five minutes. Explicit refreshes reconcile the full saved history immediately.
 One Hermes request loads recent chats for all bots. Switching to a bot shows its
 conversations at once: the list Herm last showed for that bot, or on a first visit
 its rows from that all-bot request. Hermes is then re-read quietly in the
 background. Returning to a bot reopens the chat it was left on, at the same
 reading position when that transcript is still cached. Retained lists stay keyed
 to their own profile and are cleared when the Hermes sign-in changes.
-Startup restoration shares the sidebar's session load, so reopening the latest
-conversation preserves the complete recent list without a manual refresh.
+Startup confirms the selected bot before reopening its last chat. Bot avatars and
+live status load independently of restoration.
+Recently opened chats can show a cached transcript while Hermes refreshes it.
+The conversation lands on the last reading position, unread messages, or the
+latest message using the new chat's layout.
 
 Talk, Pull requests and Issues open as inspector tabs from its **Open a new tab** grid; voice runs while the Talk tab shows. Opening the inspector in the floating desktop panel keeps the conversation visible beside it, with the inspector tab row matching the chat header. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
 
@@ -1358,6 +1362,13 @@ and delivery/execution settings.
    ```
 
 3. **Find the notch** on the edge of your screen. Hover over it, click it, or double-tap ⌘ to open the workspace.
+
+The notch appears while Herm loads local workspace preferences and activity archives.
+Clicking it or using the workspace shortcut during launch opens the workspace as soon as it is ready.
+On first opening the workspace, a full-window Herm animation covers the panes until
+the first session rows, an empty list, or a connection error is available. Older
+sessions continue to load in the background. Reduce Motion shows the Herm mark
+and signal traces in a still frame.
 
 To build and open the signed debug app bundle with its icon, run:
 

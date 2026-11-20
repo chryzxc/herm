@@ -70,6 +70,44 @@ struct BotServiceTests {
         #expect(client.methods.filter { $0 == "profiles.list" }.count == 5)
     }
 
+    @Test func workspaceSharesThePendingRosterAndStartsBeforeLiveStatusFinishes() async {
+        let profileKey = "hermes.dock.selected-profile.v1"
+        let previousProfile = UserDefaults.standard.object(forKey: profileKey)
+        UserDefaults.standard.set("startup-bot", forKey: profileKey)
+        defer { UserDefaults.standard.set(previousProfile, forKey: profileKey) }
+        let client = BotFixtureClient(result: ["profiles": [["name": "startup-bot"]]])
+        let (rosterStarted, signalRoster) = AsyncStream<Void>.makeStream()
+        let (rosterRelease, releaseRoster) = AsyncStream<Void>.makeStream()
+        let (statusStarted, signalStatus) = AsyncStream<Void>.makeStream()
+        let (statusRelease, releaseStatus) = AsyncStream<Void>.makeStream()
+        client.onProfileRequest = {
+            signalRoster.yield(())
+            for await _ in rosterRelease { break }
+        }
+        client.onLiveSessionsRequest = {
+            signalStatus.yield(())
+            for await _ in statusRelease { break }
+        }
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+        let refresh = Task { await model.refreshNow() }
+        var roster = rosterStarted.makeAsyncIterator()
+        await roster.next()
+
+        var resolved: [String?] = []
+        await model.refreshNow(force: true) { resolved.append($0) }
+        #expect(resolved.isEmpty)
+        releaseRoster.yield(())
+        var status = statusStarted.makeAsyncIterator()
+        await status.next()
+
+        #expect(resolved == ["startup-bot"])
+        #expect(client.methods.filter { $0 == "profiles.list" }.count == 1)
+        releaseStatus.yield(())
+        await refresh.value
+        #expect(model.selectedProfileID == "startup-bot")
+    }
+
     @Test func orbFacesRequireExplicitlyEnabledPlugin() async {
         let client = BotFixtureClient(result: ["profiles": [["name": "research"], ["name": "writer"]]])
         let model = BotModeModel()
@@ -991,6 +1029,7 @@ private final class BotFixtureClient: HermesRPCClientProtocol {
     var result: [String: Any]
     var stubNextResult: [String: Any]?
     var onProfileRequest: (() async -> Void)?
+    var onLiveSessionsRequest: (() async -> Void)?
     var failingMethod: String?
     private(set) var lastMethod: String?
     private(set) var lastParams: [String: Any]?
@@ -1004,6 +1043,7 @@ private final class BotFixtureClient: HermesRPCClientProtocol {
         lastMethod = method
         lastParams = params
         if method == "profiles.list" { await onProfileRequest?() }
+        if method == "session.active_list" { await onLiveSessionsRequest?() }
         defer { stubNextResult = nil }
         if method == failingMethod { throw URLError(.timedOut) }
         return stubNextResult ?? result

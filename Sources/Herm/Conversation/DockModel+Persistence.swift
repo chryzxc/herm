@@ -54,7 +54,7 @@ extension DockModel {
         return "\(lastSessionIDKey).\(suffix)"
     }
 
-    static func normalizedProfileID(_ raw: String?) -> String? {
+    nonisolated static func normalizedProfileID(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? nil : normalized

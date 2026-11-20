@@ -24,6 +24,12 @@ HERM_SESSION_PROFILE=1 swift test -c release --disable-automatic-resolution --no
   --filter ConversationTranscriptIntegrationTests.releaseSessionSwitchTimings
 ```
 
+With `--perf-trace`, `startup` records launcher installation and workspace
+readiness. The `session_index` stages record publication of recents, the complete
+inventory, and the first sidebar snapshot with rows. Compare the stages on the
+same profile in cold and warm Release launches, and use `session_open`'s
+`fresh_layout` for transcript readiness.
+
 ## Session composer drafts — 23 October 2026
 
 Draft snapshots run only during session/new-chat navigation. They retain existing

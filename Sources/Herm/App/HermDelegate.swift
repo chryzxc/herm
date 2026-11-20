@@ -101,6 +101,12 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     private let interruptions = HermInterruptionCoordinator(defaults: .standard)
     private let model: DockModel
     private let controlCenter: ControlCenterModel
+    private var startup: Task<Void, Never>?
+    private var ready = false
+    private var launchActions: [() -> Void] = []
+    private func whenReady(_ action: @escaping () -> Void) {
+        if ready { action() } else { launchActions.append(action) }
+    }
     private var dockPanel: DockPanelController?
     private var edgeDock: EdgeDockController?
     private var dockWindow: DockWindowController?
@@ -120,7 +126,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     static private(set) weak var current: HermDelegate?
 
     override init() {
-        model = DockModel()
+        model = DockModel(loadArchives: false)
         controlCenter = ControlCenterModel()
         super.init()
         model.interruptionCoordinator = interruptions
@@ -167,6 +173,10 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     }
 
     func showSettings() {
+        guard ready else {
+            launchActions.append { [weak self] in self?.showSettings() }
+            return
+        }
         if let dockWindow, dockWindow.isOpen {
             dockWindow.showSettings()
         } else {
@@ -174,23 +184,48 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         }
     }
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        guard HermesAppRuntime.supportsUserNotifications else { return }
+        let notifications = UNUserNotificationCenter.current()
+        notifications.delegate = self
+        notifications.setNotificationCategories(HermNotificationAction.categories)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let agents = model.agentStateStore
+        let bots = model.botActivityStore
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        let agentArchive = Task.detached(priority: .userInitiated) { agents.load() }
+        let botArchive = Task.detached(priority: .userInitiated) { bots.load() }
+        startup = Task {
+            async let workspace: Void = WorkspaceStore.prepareForLaunch()
+            let archives = await (agentArchive.value, botArchive.value)
+            await workspace
+            guard !Task.isCancelled else { return }
+            model.agentStateBySessionID = archives.0
+            model.botActivityBySessionID = archives.1
+            installApplication()
+            ready = true
+            DebugLog.writePerformance(
+                "startup stage=workspace_ready ms=\(Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1000))")
+            let actions = launchActions
+            launchActions = []
+            for action in actions { action() }
+            startup = nil
+        }
+        installLauncher()
+        DebugLog.writePerformance(
+            "startup stage=launcher_installed ms=\(Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1000))")
+    }
+
+    private func installLauncher() {
         // Apply the saved theme's appearance before any Dock window draws.
         _ = DockThemeStore.shared
         _ = NSScrollView.installDockScrollers
         NotchDisplayStyle.introduceBotsStyle()
-        // Devices Herm booted before a crash or force quit have no tab left to close them.
-        HermesSimulatorBridge.shutdownOwned()
-        actionErrorPresenter = DockActionErrorPresenter()
-        Task {
-            do { try await HermKeychain.restrictAccess(service: "io.github.chryzxc.Herm.gateway") } catch {
-                DockActionErrorCenter.shared.report("Could not secure saved credentials", error: error)
-            }
-        }
         // AppKit's first tooltip waits ~1s; later ones are instant. Make the
         // first match so icon-only buttons explain themselves on hover.
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 250])
-        DispatchQueue.global(qos: .utility).async { AgentBrowser.reapOrphans() }
         let edge = EdgeDockController(
             model: model, controlCenter: controlCenter, interruptions: interruptions,
             openQuota: { [weak self] in
@@ -204,9 +239,24 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
                 }
             },
             openDock: { [weak self] in
-                self?.dockPanel?.showFromNotification()
-            })
+                self?.whenReady { [weak self] in self?.dockPanel?.showFromNotification() }
+            }, startsRuntime: false)
         edgeDock = edge
+        installCommandDoubleTapShortcut()
+    }
+
+    private func installApplication() {
+        guard let edge = edgeDock else { return }
+        // Devices Herm booted before a crash or force quit have no tab left to close them.
+        HermesSimulatorBridge.shutdownOwned()
+        actionErrorPresenter = DockActionErrorPresenter()
+        Task {
+            do { try await HermKeychain.restrictAccess(service: "io.github.chryzxc.Herm.gateway") } catch {
+                DockActionErrorCenter.shared.report("Could not secure saved credentials", error: error)
+            }
+        }
+        DispatchQueue.global(qos: .utility).async { AgentBrowser.reapOrphans() }
+        edge.startRuntime()
         dockPanel = DockPanelController(
             model: model, controlCenter: controlCenter, notchPanel: edge.panel,
             placement: { [weak edge] in edge?.placement },
@@ -236,8 +286,6 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         // must still reflect the configured SOUL.md name at launch.
         model.refreshRuntimeConfiguration()
         if HermesAppRuntime.supportsUserNotifications {
-            UNUserNotificationCenter.current().delegate = self
-            UNUserNotificationCenter.current().setNotificationCategories(HermNotificationAction.categories)
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         } else {
             DebugLog.write("model: UserNotifications unavailable outside an app bundle")
@@ -245,7 +293,6 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         NSApp.servicesProvider = self
         observeKeepAwake()
         dockTileStatus = DockTileStatus(model: model)
-        installCommandDoubleTapShortcut()
         spotlightIndex = SessionSpotlightIndex(model: model)
         PullRequestWatchStore.shared.onNotice = { [weak model] reference, changes in
             model?.publishWorkflowNotice(
@@ -329,6 +376,10 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
 
     /// Puts outside text in the composer (when non-empty) and opens the panel.
     func stageAndShow(_ text: String) {
+        guard ready else {
+            launchActions.append { [weak self] in self?.stageAndShow(text) }
+            return
+        }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty { model.stageDraft(text) }
         dockPanel?.showFromNotification()
@@ -403,10 +454,12 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
             if commandDoubleTapDetector.handle(
                 isCommandDown: event.modifierFlags.contains(workspace.flag), at: event.timestamp)
             {
-                if dockWindow?.isOpen == true {
-                    dockWindow?.toggle()
-                } else {
-                    dockPanel?.toggleFromShortcut()
+                whenReady { [weak self] in
+                    if self?.dockWindow?.isOpen == true {
+                        self?.dockWindow?.toggle()
+                    } else {
+                        self?.dockPanel?.toggleFromShortcut()
+                    }
                 }
             }
             return
@@ -415,7 +468,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         if notch.keyCodes.contains(event.keyCode),
             optionDoubleTapDetector.handle(isCommandDown: event.modifierFlags.contains(notch.flag), at: event.timestamp)
         {
-            edgeDock?.toggleQuickPreview()
+            whenReady { [weak self] in self?.edgeDock?.toggleQuickPreview() }
         }
     }
 
@@ -428,14 +481,17 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
             let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String
         else { return false }
         let id = SessionSpotlightIndex.sessionID(from: identifier)
-        dockPanel?.switchToWindow()
-        if let session = model.sessions.first(where: { $0.id == id }) { model.resumeSession(session) }
+        whenReady { [weak self] in
+            guard let self else { return }
+            dockPanel?.switchToWindow()
+            if let session = model.sessions.first(where: { $0.id == id }) { model.resumeSession(session) }
+        }
         return true
     }
 
     /// Clicking the Dock icon (shown while the window is open) brings it back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        dockPanel?.switchToWindow()
+        whenReady { [weak self] in self?.dockPanel?.switchToWindow() }
         return true
     }
 
@@ -450,7 +506,8 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         // This is deliberately explicit: a menu-bar app can terminate without
         // releasing its delegate/model graph, so deinit is not a process-life
         // cycle hook for the local Hermes backend.
-        model.shutdown()
+        startup?.cancel()
+        if ready { model.shutdown() }
     }
 
     nonisolated func userNotificationCenter(
@@ -486,19 +543,23 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         let groupRoom = info[GroupReplyNotifier.roomKey] as? String
         let groupEvent = info[GroupReplyNotifier.eventKey] as? String
         await MainActor.run { [weak self] in
-            if let groupRoom {
-                self?.dockPanel?.showFromNotification()
-                _ = GroupReplyNotifier.open(
-                    userInfo: [GroupReplyNotifier.roomKey: groupRoom, GroupReplyNotifier.eventKey: groupEvent ?? ""])
-            } else if let choice, let requestID {
-                self?.model.answerApproval(requestID: requestID, choice: choice)
-            } else if let requestID, let reply {
-                self?.model.answerClarification(requestID: requestID, text: reply)
-            } else if let prURL, prURL.scheme == "https", prURL.host == "github.com" {
-                self?.dockPanel?.showFromNotification()
-                InAppBrowser.open(prURL)
-            } else {
-                self?.dockPanel?.showFromNotification()
+            self?.whenReady { [weak self] in
+                if let groupRoom {
+                    self?.dockPanel?.showFromNotification()
+                    _ = GroupReplyNotifier.open(
+                        userInfo: [
+                            GroupReplyNotifier.roomKey: groupRoom, GroupReplyNotifier.eventKey: groupEvent ?? "",
+                        ])
+                } else if let choice, let requestID {
+                    self?.model.answerApproval(requestID: requestID, choice: choice)
+                } else if let requestID, let reply {
+                    self?.model.answerClarification(requestID: requestID, text: reply)
+                } else if let prURL, prURL.scheme == "https", prURL.host == "github.com" {
+                    self?.dockPanel?.showFromNotification()
+                    InAppBrowser.open(prURL)
+                } else {
+                    self?.dockPanel?.showFromNotification()
+                }
             }
         }
     }
@@ -678,7 +739,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
                 },
                 onOpenWindow: { [weak self] in
                     self?.switchToWindow()
-                })
+                },
+                presentsStartup: !ScrollPerformanceFixture.isRequested)
         )
         hostingView.wantsLayer = true
         // DockPopover owns the contour so a shortcut can attach cleanly to the

@@ -267,10 +267,12 @@ extension DockPopover {
         botMode.setCapabilityAvailable(controlCenter.capabilityAvailable(HermesFeatureIDs.ID.bots.rawValue))
         agentUpdateService.checkForUpdates()
         Task { @MainActor in
-            await botMode.refreshNow(force: true)
-            handleProfileScopeChange(botMode.selectedProfileID)
-            model.restoreLatestSessionIfNeeded()
-            controlCenter.refresh()
+            await botMode.refreshNow(force: true) { profileID in
+                handleProfileScopeChange(profileID)
+                model.restoreLatestSessionIfNeeded()
+                if presentsStartup { model.loadInitialWorkspaceSessions() }
+                controlCenter.refresh()
+            }
         }
         // Seed the project name cache immediately after bind so the label is
         // visible from the first render if membership data is already loaded.

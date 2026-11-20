@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 
@@ -18,8 +19,14 @@ struct SessionReadTests {
         model.pinnedSessions = [recents[0], otherProfile]
         defaults.set(recents.map(\.id) + ["unlisted"], forKey: model.unreadSessionIDsKey)
         seenStore.baseline(profileID: "bot", sessions: [])
+        var updates = 0
+        let subscription = seenStore.objectWillChange.sink { updates += 1 }
+        defer { subscription.cancel() }
 
         model.markSessionsRead(recents, seenStore: seenStore)
+        #expect(updates == 1)
+        model.markSessionsRead(recents, seenStore: seenStore)
+        #expect(updates == 1)
 
         #expect(model.sessions.prefix(12).allSatisfy { !$0.hasUnreadUpdate })
         #expect(model.sessions.prefix(12).allSatisfy { resolve($0, seenStore: seenStore) == .none })

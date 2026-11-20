@@ -11,6 +11,8 @@ struct DockLayerMotion: NSViewRepresentable {
         case thinkingRelay
         /// Three transcript lines fold together as context is compacted.
         case compactLines
+        /// A pair of inward traces feeding the Herm mark on the startup screen.
+        case startupSignal
         /// A 70% arc turning clockwise over a faint ring.
         case spin(period: Double, lineWidth: CGFloat)
         /// A highlight travelling around a capsule without rotating its contents.
@@ -149,6 +151,31 @@ final class DockLayerMotionView: NSView {
                         line, "position.y", from: start, to: bounds.midY, duration: 0.7,
                         autoreverses: true, timing: .easeInEaseOut)
                 }
+            }
+
+        case .startupSignal:
+            let reach = bounds.width / 2 - 45
+            guard reach > 0 else { return }
+            let path = CGMutablePath()
+            for direction: CGFloat in [-1, 1] {
+                let center = bounds.midX
+                let terminal = center + direction * (reach + 44)
+                let terminalY = bounds.midY + direction * 20
+                path.addEllipse(in: CGRect(x: terminal - 2, y: terminalY - 2, width: 4, height: 4))
+                path.move(to: CGPoint(x: terminal - direction * 7, y: terminalY))
+                path.addLine(to: CGPoint(x: center + direction * (45 + reach * 0.46), y: terminalY))
+                path.addLine(to: CGPoint(x: center + direction * (45 + reach * 0.25), y: bounds.midY))
+                path.addLine(to: CGPoint(x: center + direction * 45, y: bounds.midY))
+            }
+            let trace = ring(path, lineWidth: 1, color: color)
+            trace.opacity = 0.46
+            host.addSublayer(trace)
+            if !spec.paused {
+                let pulse = ring(path, lineWidth: 2, color: color)
+                let spacing = Double(reach + 96)
+                pulse.lineDashPattern = [22, NSNumber(value: spacing - 22)]
+                host.addSublayer(pulse)
+                loop(pulse, "lineDashPhase", from: 0, to: -spacing, duration: 1.7)
             }
 
         case .spin(let period, let lineWidth):

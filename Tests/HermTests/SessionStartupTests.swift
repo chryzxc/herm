@@ -11,11 +11,16 @@ private final class SessionStartupRPCClient: HermesRPCClientProtocol {
         ["id": "older", "title": "Older", "last_activity_at": 100, "pinned": true],
     ]
     var holdsList = false
+    var failsList = false
     var storedRows: [[String: Any]]?
+    var holdsOlderPage = false
+    var failsOlderPage = false
     private(set) var listLimits: [Int] = []
     private(set) var sessionPageReads = 0
     private var listStarted: CheckedContinuation<Void, Never>?
     private var listResponse: CheckedContinuation<Void, Never>?
+    private var olderPageStarted: CheckedContinuation<Void, Never>?
+    private var olderPageResponse: CheckedContinuation<Void, Never>?
     private var connectionCount = 0
     private var connectionWaiter: (count: Int, continuation: CheckedContinuation<Void, Never>)?
 
@@ -31,6 +36,7 @@ private final class SessionStartupRPCClient: HermesRPCClientProtocol {
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         switch method {
         case "session.list":
+            if failsList { throw HermesGateway.GatewayError.disconnected }
             let limit = params["limit"] as? Int ?? 50
             listLimits.append(limit)
             let snapshot = Array(rows.prefix(limit))
@@ -58,9 +64,28 @@ private final class SessionStartupRPCClient: HermesRPCClientProtocol {
             let items = URLComponents(string: path)?.queryItems
             let offset = Int(items?.first(where: { $0.name == "offset" })?.value ?? "0") ?? 0
             let limit = Int(items?.first(where: { $0.name == "limit" })?.value ?? "100") ?? 100
+            if offset > 0, holdsOlderPage {
+                await withCheckedContinuation { continuation in
+                    olderPageResponse = continuation
+                    olderPageStarted?.resume()
+                    olderPageStarted = nil
+                }
+            }
+            if offset > 0, failsOlderPage { throw HermesGateway.GatewayError.disconnected }
             return ["sessions": Array(storedRows.dropFirst(offset).prefix(limit)), "total": storedRows.count]
         }
         return ["sessions": rows]
+    }
+
+    func waitForOlderPage() async {
+        if olderPageResponse != nil { return }
+        await withCheckedContinuation { olderPageStarted = $0 }
+    }
+
+    func releaseOlderPage() {
+        holdsOlderPage = false
+        olderPageResponse?.resume()
+        olderPageResponse = nil
     }
 
     func waitForList() async {
@@ -115,6 +140,117 @@ struct SessionStartupTests {
             await model.loadSessions()?.value
             #expect(model.sessions.contains { $0.id == "saved-150" })
             #expect(model.sessions.contains { $0.id == "live" })
+        }
+    }
+
+    @Test func coldListShowsRecentSessionsAndPinsWhileTheSecondPageIsHeld() async throws {
+        try await withModel { model, client in
+            client.rows = []
+            client.storedRows = (0..<1501).map { ["id": "saved-\($0)", "pinned": $0 == 0] }
+            client.holdsOlderPage = true
+            model.loadInitialWorkspaceSessions()
+            #expect(model.workspaceStartup.phase == .loadingSessions)
+            let load = model.sessionLoadTask
+            await client.waitForOlderPage()
+
+            #expect(model.sessions.count == 100)
+            #expect(model.pinnedSessions.map(\.id) == ["saved-0"])
+            #expect(model.sessionProjectionState == .loading)
+            #expect(model.workspaceStartup.phase == .finished)
+
+            client.releaseOlderPage()
+            await load?.value
+            #expect(model.sessions.count == 1501)
+            #expect(client.sessionPageReads == 16)
+            #expect(model.sessionProjectionState == .ready(model.sessions))
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func startupEndsWhenTheFirstReadIsEmptyOrFails(fails: Bool) async throws {
+        try await withModel { model, client in
+            client.rows = []
+            client.failsList = fails
+            model.loadInitialWorkspaceSessions()
+            await model.sessionLoadTask?.value
+
+            #expect(model.workspaceStartup.phase == .finished)
+            if fails {
+                guard case .failed = model.sessionProjectionState else {
+                    Issue.record("Expected an unavailable session list")
+                    return
+                }
+            } else {
+                #expect(model.sessionProjectionState == .empty)
+            }
+            let connections = client.listLimits.count
+            model.loadInitialWorkspaceSessions()
+            #expect(model.sessionLoadTask == nil)
+            #expect(client.listLimits.count == connections)
+        }
+    }
+
+    @Test func failedOlderPageKeepsRecentSessionsAndRetriesTheFullHistory() async throws {
+        try await withModel { model, client in
+            client.rows = []
+            client.storedRows = (0..<151).map { ["id": "saved-\($0)"] }
+            client.failsOlderPage = true
+
+            await model.loadSessions()?.value
+            #expect(model.sessions.count == 100)
+            #expect(model.sessionHistoryLoadedAt == nil)
+            #expect(
+                model.sessionProjectionState
+                    == .stale(
+                        model.sessions, safeMessage: "Hermes session data is unavailable. Try refreshing."))
+
+            client.failsOlderPage = false
+            await model.loadSessions(quiet: true)?.value
+            #expect(model.sessions.count == 151)
+            #expect(model.sessionProjectionState == .ready(model.sessions))
+        }
+    }
+
+    @Test func changingProfileDuringOlderHistoryKeepsTheNewProfilesRows() async throws {
+        try await withModel { model, client in
+            client.rows = []
+            client.storedRows = (0..<151).map { ["id": "saved-\($0)"] }
+            client.holdsOlderPage = true
+            let first = model.loadSessions()
+            await client.waitForOlderPage()
+
+            client.storedRows = [["id": "other-chat"]]
+            model.setProfileScope("other")
+            await model.sessionLoadTask?.value
+            client.releaseOlderPage()
+            await first?.value
+
+            #expect(model.sessions.map(\.id) == ["other-chat"])
+            #expect(model.sessions.first?.profileID == "other")
+            #expect(model.sessionProjectionState == .ready(model.sessions))
+        }
+    }
+
+    @Test func choosingARecentRowDuringHistoryLoadWinsOverStartupRestoration() async throws {
+        try await withModel { model, client in
+            client.rows = []
+            client.storedRows = (0..<151).map { ["id": "saved-\($0)"] }
+            client.holdsOlderPage = true
+            let restoration = model.restoreLatestSessionIfNeeded()
+            await client.waitForOlderPage()
+
+            if let chosen = model.sessions.first(where: { $0.id == "saved-50" }) {
+                model.resumeSession(chosen)
+                await model.sessionResumeTask?.value
+                #expect(!model.isRestoringSession)
+            } else {
+                Issue.record("Recent row was unavailable before the second page finished")
+            }
+            client.releaseOlderPage()
+            await restoration?.value
+
+            #expect(model.sessionID == "saved-50")
+            #expect(model.sessions.count == 151)
         }
     }
 

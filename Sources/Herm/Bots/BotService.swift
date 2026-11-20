@@ -47,7 +47,7 @@ final class BotService {
             }, uniquingKeysWith: { rank($0) >= rank($1) ? $0 : $1 })
     }
 
-    func list() async -> BotInventory {
+    func list(onRoster: ((BotInventory) -> Void)? = nil) async -> BotInventory {
         // Some runtimes expose Bots as a managed plugin; desktop-only toggles
         // are not included in this gateway contract.
         let pluginResult = try? await client.request(
@@ -65,6 +65,7 @@ final class BotService {
             pluginRows != nil
             && (botPlugin == nil || botPlugin?["status"] as? String == "enabled")
         guard roster.availability == .ready else { return roster }
+        onRoster?(roster)
         let statuses = await liveSessions()
         guard !statuses.isEmpty else { return roster }
         let live = statuses.mapValues { $0 != .idle }
@@ -759,6 +760,8 @@ final class BotModeModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     private var isPolling = false
     private var lastInventoryAttempt: Date?
+    private var isResolvingProfile = false
+    private var profileReadyActions: [(String?) -> Void] = []
     @Published private(set) var isCreatingBot = false
     @Published var searchText = ""
     @Published var botCreationError: String?
@@ -891,8 +894,16 @@ final class BotModeModel: ObservableObject {
     /// capability. `force` follows that model so a user-opened page verifies
     /// the contract even when the batch probe starved.
     func refreshNow(
-        force: Bool = false, probeCapability: Bool = false, minimumInterval: TimeInterval = 0, now: Date = Date()
+        force: Bool = false, probeCapability: Bool = false, minimumInterval: TimeInterval = 0, now: Date = Date(),
+        onProfileReady: ((String?) -> Void)? = nil
     ) async {
+        if let onProfileReady {
+            if isResolvingProfile {
+                profileReadyActions.append(onProfileReady)
+            } else if isRefreshing || isPolling || service == nil {
+                onProfileReady(selectedProfileID)
+            }
+        }
         guard let service, !isRefreshing, !isPolling else { return }
         // `.unavailable` is a transport failure, so polling keeps retrying it.
         let canProbe = force || probeCapability || capabilityAvailable
@@ -903,7 +914,12 @@ final class BotModeModel: ObservableObject {
         // Background polls stay unpublished so the sidebar rail does not
         // rebuild twice every 10s; only explicit refreshes show a spinner.
         if force { isRefreshing = true } else { isPolling = true }
-        let refreshed = await service.list()
+        isResolvingProfile = true
+        if let onProfileReady { profileReadyActions.append(onProfileReady) }
+        let refreshed = await service.list { [self] roster in
+            resolveSelectedProfile(in: roster)
+            finishProfileResolution()
+        }
         // A timeout while Hermes is busy or a dropped socket must not wipe a
         // roster Hermes already served: the selector, avatars and working
         // Bots would vanish until restart. Keep it; the next poll retries.
@@ -913,6 +929,7 @@ final class BotModeModel: ObservableObject {
                 retained.isPluginEnabled = refreshed.isPluginEnabled
                 inventory = retained
             }
+            finishProfileResolution()
             if force { isRefreshing = false } else { isPolling = false }
             return
         }
@@ -935,7 +952,7 @@ final class BotModeModel: ObservableObject {
             inventory = refreshed
             if !events.isEmpty { announce(events) }
         }
-        resolveSelectedProfile()
+        finishProfileResolution()
         // Every poll re-resolves, so a heartbeat that aged out clears too.
         resolveActivity()
         if force { isRefreshing = false } else { isPolling = false }
@@ -957,11 +974,18 @@ final class BotModeModel: ObservableObject {
         if board != activity { activity = board }
     }
 
-    /// Chooses a stable Hermes profile ID, never a display name. Hidden Bots
-    /// are intentionally excluded from the selector.
-    private func resolveSelectedProfile() {
-        guard inventory.availability == .ready else { return }
-        let visible = inventory.bots.filter { !$0.isHidden }
+    private func finishProfileResolution() {
+        guard isResolvingProfile else { return }
+        isResolvingProfile = false
+        let actions = profileReadyActions
+        profileReadyActions.removeAll()
+        for action in actions { action(selectedProfileID) }
+    }
+
+    /// Selects a visible profile by its stable Hermes ID.
+    private func resolveSelectedProfile(in roster: BotInventory) {
+        guard roster.availability == .ready else { return }
+        let visible = roster.bots.filter { !$0.isHidden }
         let candidate = Self.resolvedProfileID(currentSelection: selectedProfileID, visibleBots: visible)
         guard selectedProfileID != candidate else { return }
         selectedProfileID = candidate

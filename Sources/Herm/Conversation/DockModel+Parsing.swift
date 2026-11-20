@@ -10,7 +10,7 @@ extension DockModel {
     /// from the gateway. The index remains authoritative for session metadata,
     /// while a live event remains authoritative for recency until the index
     /// catches up.
-    static func mergingSessionIndex(
+    nonisolated static func mergingSessionIndex(
         _ loaded: [HermesSession], with existing: [HermesSession], keeping openSessionID: String? = nil,
         working: Set<String>? = nil
     ) -> [HermesSession] {
@@ -55,7 +55,7 @@ extension DockModel {
             }
     }
 
-    static func parseSession(_ row: [String: Any], profileID: String? = nil) -> HermesSession? {
+    nonisolated static func parseSession(_ row: [String: Any], profileID: String? = nil) -> HermesSession? {
         guard let id = row["id"] as? String else { return nil }
         let timestamp = (row["started_at"] as? NSNumber)?.doubleValue ?? (row["started_at"] as? Double)
         // Hermes persists canonical recency as `last_activity_at`. Older
@@ -81,12 +81,12 @@ extension DockModel {
         )
     }
 
-    static func dateValue(_ value: Any?) -> Date? {
+    nonisolated static func dateValue(_ value: Any?) -> Date? {
         if let value, !(value is Bool), let number = value as? NSNumber {
             return Date(timeIntervalSince1970: number.doubleValue)
         }
         if let string = value as? String {
-            return sessionDateFormatter.date(from: string)
+            return ISO8601Parsing.date(string)
         }
         return nil
     }
@@ -252,10 +252,11 @@ extension DockModel {
     static func parseMessagesOffMain(
         _ value: Any?,
         defaultBotProfileID: String?,
-        defaultBotDisplayName: String?
+        defaultBotDisplayName: String?,
+        priority: TaskPriority = .userInitiated
     ) async -> (RestoredTranscript, [UUID: StoredMessageReference]) {
         let rows = UncheckedTranscriptValue(value: value)
-        let task = Task.detached(priority: .userInitiated) {
+        let task = Task.detached(priority: priority) {
             let restored = parseMessages(
                 rows.value,
                 defaultBotProfileID: defaultBotProfileID,
@@ -271,9 +272,11 @@ extension DockModel {
         }
     }
 
-    static func projectStoredRowsOffMain(_ value: [[String: Any]]) async -> [[String: Any]] {
+    static func projectStoredRowsOffMain(
+        _ value: [[String: Any]], priority: TaskPriority = .userInitiated
+    ) async -> [[String: Any]] {
         let rows = UncheckedTranscriptValue(value: value)
-        let task = Task.detached(priority: .userInitiated) {
+        let task = Task.detached(priority: priority) {
             UncheckedTranscriptValue(
                 value: TranscriptHistoryPaging.displayRows(fromStoredRows: rows.value, cancelOnTask: true))
         }
@@ -629,6 +632,6 @@ extension DockModel {
     }
 }
 
-private struct UncheckedTranscriptValue<Value>: @unchecked Sendable {
+struct UncheckedTranscriptValue<Value>: @unchecked Sendable {
     let value: Value
 }

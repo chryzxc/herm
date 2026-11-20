@@ -12,7 +12,7 @@ extension DockModel {
     func touchSession(sessionID rawSessionID: String?, at date: Date, preview: String? = nil) {
         guard let rawSessionID, !rawSessionID.isEmpty else { return }
         let sessionID = rowSessionID(rawSessionID)
-        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else {
+        guard let index = recentIndexByID[sessionID] else {
             guard sessionID == navigationSessionID else { return }
             sessions.insert(
                 HermesSession(
@@ -29,19 +29,21 @@ extension DockModel {
         }
         let session = sessions[index]
         guard session.lastUpdatedAt.map({ date > $0 }) ?? true else { return }
-        sessions[index] = HermesSession(
-            id: session.id,
-            profileID: session.profileID,
-            title: session.title,
-            preview: preview ?? session.preview,
-            startedAt: session.startedAt,
-            updatedAt: date,
-            messageCount: session.messageCount,
-            source: session.source,
-            isHidden: session.isHidden,
-            isWorking: session.isWorking,
-            hasUnreadUpdate: session.hasUnreadUpdate, isPinned: session.isPinned, modelName: session.modelName
-        )
+        updateSessionMetadata {
+            sessions[index] = HermesSession(
+                id: session.id,
+                profileID: session.profileID,
+                title: session.title,
+                preview: preview ?? session.preview,
+                startedAt: session.startedAt,
+                updatedAt: date,
+                messageCount: session.messageCount,
+                source: session.source,
+                isHidden: session.isHidden,
+                isWorking: session.isWorking,
+                hasUnreadUpdate: session.hasUnreadUpdate, isPinned: session.isPinned, modelName: session.modelName
+            )
+        }
     }
 
     /// Tracks working/unread state for a session that is not necessarily the
@@ -70,10 +72,14 @@ extension DockModel {
                 hasUnreadUpdate: hasUnread, isPinned: session.isPinned, modelName: session.modelName
             )
         }
-        let recentIndex = sessions.firstIndex { $0.id == sessionID }
-        let pinnedIndex = pinnedSessions.firstIndex { $0.id == sessionID }
-        if let recentIndex, let row = updated(sessions[recentIndex]) { sessions[recentIndex] = row }
-        if let pinnedIndex, let row = updated(pinnedSessions[pinnedIndex]) { pinnedSessions[pinnedIndex] = row }
+        let recentIndex = recentIndexByID[sessionID]
+        let pinnedIndex = pinnedIndexByID[sessionID]
+        if let recentIndex, let row = updated(sessions[recentIndex]) {
+            updateSessionMetadata { sessions[recentIndex] = row }
+        }
+        if let pinnedIndex, let row = updated(pinnedSessions[pinnedIndex]) {
+            updateSessionMetadata { pinnedSessions[pinnedIndex] = row }
+        }
         // Other Bots' rows live in the all-Bot scan; patch them too so the Bot
         // activity board flips at the event, not at the next scan. Mid-turn
         // events repeat `isWorking: true`, so look up first and only copy the
@@ -81,19 +87,19 @@ extension DockModel {
         var foundInScan = false
         switch allBotSessionsState {
         case .ready(var rows):
-            if let index = rows.firstIndex(where: { $0.id == sessionID }) {
+            if let index = allBotIndexByID[sessionID] {
                 foundInScan = true
                 if let row = updated(rows[index]) {
                     rows[index] = row
-                    allBotSessionsState = .ready(rows)
+                    updateSessionMetadata { allBotSessionsState = .ready(rows) }
                 }
             }
         case .stale(var rows, let message):
-            if let index = rows.firstIndex(where: { $0.id == sessionID }) {
+            if let index = allBotIndexByID[sessionID] {
                 foundInScan = true
                 if let row = updated(rows[index]) {
                     rows[index] = row
-                    allBotSessionsState = .stale(rows, safeMessage: message)
+                    updateSessionMetadata { allBotSessionsState = .stale(rows, safeMessage: message) }
                 }
             }
         case .loading, .empty, .unavailable, .failed: break
@@ -121,11 +127,7 @@ extension DockModel {
             reviewed.map {
                 ProfileScopedID(profileID: $0.profileID ?? profileScopeID, resourceID: $0.id)
             })
-        for session in reviewed {
-            seenStore.markSeen(
-                profileID: session.profileID ?? profileScopeID,
-                sessionID: session.id, at: readAt ?? session.lastUpdatedAt)
-        }
+        seenStore.markSeen(reviewed, fallbackProfileID: profileScopeID, at: readAt)
         func clearingUnread(_ session: HermesSession) -> HermesSession {
             let identity = ProfileScopedID(profileID: session.profileID ?? profileScopeID, resourceID: session.id)
             guard reviewedIDs.contains(identity), session.hasUnreadUpdate else { return session }
@@ -135,11 +137,16 @@ extension DockModel {
                 source: session.source, isHidden: session.isHidden, isWorking: session.isWorking,
                 hasUnreadUpdate: false, isPinned: session.isPinned, modelName: session.modelName)
         }
-        sessions = sessions.map(clearingUnread)
-        pinnedSessions = pinnedSessions.map(clearingUnread)
+        let nextSessions = sessions.map(clearingUnread)
+        let nextPins = pinnedSessions.map(clearingUnread)
+        updateSessionMetadata {
+            if nextSessions != sessions { sessions = nextSessions }
+            if nextPins != pinnedSessions { pinnedSessions = nextPins }
+        }
         var unreadIDs = Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? [])
+        let unreadCount = unreadIDs.count
         unreadIDs.subtract(reviewed.map(\.id))
-        defaults.set(Array(unreadIDs), forKey: unreadSessionIDsKey)
+        if unreadIDs.count != unreadCount { defaults.set(Array(unreadIDs), forKey: unreadSessionIDsKey) }
     }
 
     func updateSessionActivityLabel(sessionID rawSessionID: String, type: String, payload: [String: Any]) {
@@ -163,7 +170,10 @@ extension DockModel {
     /// Restores unread state persisted across launches for sessions the
     /// in-memory index does not already carry a live value for.
     func applyPersistedUnreadState(_ loaded: [HermesSession]) -> [HermesSession] {
-        let unreadIDs = Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? [])
+        Self.applyingUnreadIDs(Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? []), to: loaded)
+    }
+
+    nonisolated static func applyingUnreadIDs(_ unreadIDs: Set<String>, to loaded: [HermesSession]) -> [HermesSession] {
         guard !unreadIDs.isEmpty else { return loaded }
         return loaded.map { session in
             guard unreadIDs.contains(session.id), !session.hasUnreadUpdate else { return session }

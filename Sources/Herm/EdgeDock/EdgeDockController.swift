@@ -28,6 +28,7 @@ final class EdgeDockController: NSObject {
     private var petDragging = false
     private var suppressClickUntil = Date.distantPast
     private var workspacePresented = false
+    private var runtimeStarted = false
     private var quickProfileID: String?
     private var completedTaskIDs: Set<String>?
     private var finishedBots = EdgeFinishedBotAcknowledgements()
@@ -59,7 +60,8 @@ final class EdgeDockController: NSObject {
     init(
         model: DockModel, controlCenter: ControlCenterModel, defaults: UserDefaults = .standard,
         interruptions: HermInterruptionCoordinator? = nil, openQuota: @escaping () -> Void,
-        openKanban: @escaping (KanbanTaskSummary) -> Void, openDock: @escaping () -> Void
+        openKanban: @escaping (KanbanTaskSummary) -> Void, openDock: @escaping () -> Void,
+        startsRuntime: Bool = true
     ) {
         self.model = model
         state = EdgeNotchState(store: .shared, interruptions: interruptions)
@@ -356,8 +358,14 @@ final class EdgeDockController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.ensureNotchVisible() }
             .store(in: &subscriptions)
-        controlCenter.bind(to: model)
         ensureNotchVisible()
+        if startsRuntime { startRuntime() }
+    }
+
+    func startRuntime() {
+        guard !runtimeStarted else { return }
+        runtimeStarted = true
+        controlCenter.bind(to: model)
     }
 
     private var notchEnabled: Bool { defaults.object(forKey: NotchDisplayStyle.enabledKey) as? Bool ?? true }
@@ -653,6 +661,7 @@ final class EdgeDockController: NSObject {
 
     /// Headless coordinator turns cannot ask; the delivery plugin queues their questions as files.
     private func pollDeliveryQuestions(force: Bool = false) {
+        guard runtimeStarted else { return }
         if force {
             deliveryQuestionPoll?.cancel()
             deliveryQuestionPoll = nil
@@ -727,12 +736,14 @@ final class EdgeDockController: NSObject {
     }
 
     private func refreshSelectedTasks() {
+        guard runtimeStarted else { return }
         pollKanban()
         pollBots()
         model.loadSessions()
     }
 
     private func pollKanban(force: Bool = true) {
+        guard runtimeStarted else { return }
         let now = Date()
         let shouldPoll = EdgeNotchPolling.shouldPollKanban(
             now: now, lastPoll: lastKanbanPoll, isWorking: state.activity.working,
@@ -743,7 +754,7 @@ final class EdgeDockController: NSObject {
     }
 
     private func pollBots() {
-        guard model.status != .offline else { return }
+        guard runtimeStarted, model.status != .offline else { return }
         Task { [weak self] in
             await self?.model.botMode.refreshNow(
                 probeCapability: true, minimumInterval: EdgeNotchPolling.kanbanInterval)
@@ -824,6 +835,7 @@ final class EdgeDockController: NSObject {
     }
 
     private func loadQuota() {
+        guard runtimeStarted else { return }
         collapseTask?.cancel()
         controlCenter.bind(to: model)
         guard controlCenter.refreshState(for: "provider.quota")?.isRefreshing != true else { return }
@@ -839,7 +851,7 @@ final class EdgeDockController: NSObject {
     /// final usage joins the completion preview.
     private func pollQuota(afterWork: Bool = false, force: Bool = false) {
         // Keeps reading while the workspace is open: the chat header shows it too.
-        guard controlCenter.refreshState(for: "provider.quota")?.isRefreshing != true else { return }
+        guard runtimeStarted, controlCenter.refreshState(for: "provider.quota")?.isRefreshing != true else { return }
         let now = Date()
         let interval: TimeInterval = model.presentationDemand.hasVisibleHost || state.expanded ? 30 : 300
         guard force || afterWork || (lastQuotaPoll.map { now.timeIntervalSince($0) >= interval } ?? true) else {
@@ -1079,7 +1091,7 @@ final class EdgeDockController: NSObject {
     }
 
     private func hoverChanged(_ value: Bool) {
-        guard !workspacePresented, !dragging, !petDragging else { return }
+        guard runtimeStarted, !workspacePresented, !dragging, !petDragging else { return }
         hovering = value
         collapseTask?.cancel()
         expandTask?.cancel()
@@ -1124,7 +1136,7 @@ final class EdgeDockController: NSObject {
 
     /// Explicit keyboard invocation owns focus until dismissal; hovering remains passive.
     func toggleQuickPreview() {
-        guard !workspacePresented, !dragging, !petDragging else { return }
+        guard runtimeStarted, !workspacePresented, !dragging, !petDragging else { return }
         if state.expanded, state.previewInteraction.mode == .keyboard {
             return dismissKeyboardPreview(returnFocus: true)
         }
@@ -1144,7 +1156,7 @@ final class EdgeDockController: NSObject {
 
     /// Opens the notch with a new-message composer focused, or closes it if it is already composing.
     func toggleQuickCapture() {
-        guard !workspacePresented, !dragging, !petDragging else { return }
+        guard runtimeStarted, !workspacePresented, !dragging, !petDragging else { return }
         if state.composing { return escapePreview() }
         previousApplication = NSWorkspace.shared.frontmostApplication
         if previousApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier {
