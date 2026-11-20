@@ -398,6 +398,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     /// against the latest mounted rows. The transcript gets a new scroll view
     /// per session that attaches after its first layout, so this also runs on attach.
     private func applyAnchor() {
+        guard pendingPage != nil || restoredAnchor != nil else { return }
         guard let geometry = controller.geometry, Set(rowViewports.map(\.index)) == Set(mountedRange) else { return }
         if pendingPage == nil, let anchor = restoredAnchor,
             let row = rowViewports.first(where: { $0.target.messageID == anchor.messageID })

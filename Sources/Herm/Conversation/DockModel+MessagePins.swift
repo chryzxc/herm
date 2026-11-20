@@ -33,14 +33,15 @@ extension DockModel {
 
     func reloadMessagePins() {
         guard let owner = navigationSessionID else { return }
-        pinnedMessages = messagePinStore.pins(profile: sessionProfileID, sessionID: owner).map { record in
+        let refreshed = messagePinStore.pins(profile: sessionProfileID, sessionID: owner).map { record in
             let reference = storedMessageReferences.first { pin(record, matches: $0.value) }
             let text = reference.flatMap { entry in messages.first { $0.id == entry.key }?.text } ?? ""
             return PinnedMessage(
                 record: record, preview: String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160)))
         }
-        messagePinsSupported = true
-        messagePinError = messagePinMutationFeedback?.error
+        if pinnedMessages != refreshed { pinnedMessages = refreshed }
+        if !messagePinsSupported { messagePinsSupported = true }
+        if messagePinError != messagePinMutationFeedback?.error { messagePinError = messagePinMutationFeedback?.error }
     }
 
     private func pin(_ record: MessagePinRecord, matches reference: StoredMessageReference) -> Bool {

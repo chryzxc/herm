@@ -124,6 +124,7 @@ struct ConversationTranscriptView: View, Equatable {
                                     .opacity(spotlightMessageID == nil || spotlightMessageID == message.id ? 1 : 0.3)
                                     .background {
                                         GeometryReader { geometry in
+                                            let frame = geometry.frame(in: .named("conversation-document"))
                                             Color.clear.preference(
                                                 key: ConversationTranscriptLayoutPreferenceKey.self,
                                                 value: ConversationTranscriptLayout(
@@ -134,12 +135,7 @@ struct ConversationTranscriptView: View, Equatable {
                                                             target: MessageNavigatorTarget(
                                                                 sessionID: sessionID ?? "", messageID: message.id),
                                                             index: descriptor.index,
-                                                            minY: geometry.frame(
-                                                                in: .named("conversation-document")
-                                                            ).minY,
-                                                            maxY: geometry.frame(
-                                                                in: .named("conversation-document")
-                                                            ).maxY)
+                                                            minY: frame.minY, maxY: frame.maxY)
                                                     ]))
                                         }
                                     }

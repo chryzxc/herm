@@ -211,7 +211,10 @@ struct EdgeNotchStatusIndicator: View {
 
     var body: some View {
         // A blocked-only pulse is a slow 2s breath; 15Hz keeps it smooth at half the renders.
-        TimelineView(.dockMotion(rate: activity.working ? 30 : 15, paused: !animates || style == .bots)) { timeline in
+        let spins = part != .badges && primary == .working && (style != .count || activity.workingCount == 0)
+        let pulses = (part != .badges && primary == .blocked) || (part != .primary && badges.contains(.blocked))
+        TimelineView(.dockMotion(rate: spins ? 30 : 15, paused: !animates || style == .bots || !(spins || pulses))) {
+            timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             let layout = axis == .vertical ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
             layout {

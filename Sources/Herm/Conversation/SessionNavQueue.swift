@@ -52,22 +52,15 @@ struct SessionNavQueue: View, Equatable {
     @State private var botUnreadCounts: [String: Int] = [:]
     @State private var botUnreadIncomplete = true
 
-    private struct BotUnreadRequest: Hashable {
-        struct Row: Hashable {
-            let profileID: String
-            let id: String
-            let updatedAt: Date?
-            let isHidden: Bool
-            let isAutomation: Bool
-        }
-        // Sets/dictionaries are order-independent without per-body string formatting and sorting.
-        let sessions: Set<Row>
+    private struct BotUnreadRequest: Equatable {
+        let sessions: Set<SidebarUnreadSession>
+        let scopeProfileID: String?
+        let baselinedProfiles: Set<String>
         let seen: [String: Date]
         let incomplete: Bool
     }
 
     private var botUnreadRequest: BotUnreadRequest {
-        let sessions = SessionDashboardProjection.sessions(in: sidebarSnapshot)
         let incomplete: Bool
         switch sidebarSnapshot.inputs.allBotSessionsState {
         case .ready(let rows): incomplete = rows.count >= DockModel.allBotSessionsLimit
@@ -75,12 +68,9 @@ struct SessionNavQueue: View, Equatable {
         case .loading, .stale, .unavailable, .failed: incomplete = true
         }
         return BotUnreadRequest(
-            sessions: Set(
-                sessions.map {
-                    BotUnreadRequest.Row(
-                        profileID: $0.profileID ?? model.profileScopeID ?? "", id: $0.id,
-                        updatedAt: $0.lastUpdatedAt, isHidden: $0.isHidden, isAutomation: $0.isAutomationSession)
-                }),
+            sessions: sidebar.unreadSessions.rows,
+            scopeProfileID: model.profileScopeID,
+            baselinedProfiles: sidebarSessionSeenStore.baselinedProfiles,
             seen: sidebarSessionSeenStore.seenAtByKey,
             incomplete: incomplete)
     }
@@ -88,7 +78,7 @@ struct SessionNavQueue: View, Equatable {
     private func refreshBotUnreadCounts(_ request: BotUnreadRequest) async {
         botUnreadCounts = [:]
         botUnreadIncomplete = true
-        let sessions = SessionDashboardProjection.sessions(in: sidebarSnapshot)
+        let sessions = sidebar.unreadSessions.sessions
         guard
             let result = try? await model.sessionUnreadReplies.botCounts(
                 sessions: sessions, scopeProfileID: model.profileScopeID,
@@ -285,10 +275,11 @@ struct SessionNavQueue: View, Equatable {
     var body: some View {
         let _ = HermPerformanceRecorder.countBody("SessionNavQueue")
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
+        let unreadRequest = botUnreadRequest
         listPanel(style: style)
             .dockShellPane()
-            .task(id: botUnreadRequest) {
-                await refreshBotUnreadCounts(botUnreadRequest)
+            .task(id: unreadRequest) {
+                await refreshBotUnreadCounts(unreadRequest)
             }
             // This queue can move between AppKit split-view hosts as the center
             // destination changes. Loading the index is an initial-popover task,

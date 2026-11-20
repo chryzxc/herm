@@ -28,6 +28,10 @@ final class DockWindowHostingView<Content: View>: NSHostingView<Content> {
     // Nested split-pane hosts relayout whenever the root re-renders; time it so
     // performance captures show whether that cascade is behind a dropped frame.
     override func layout() {
+        guard HermPerformanceRecorder.active || DockHostLayoutTiming.layoutObserver != nil else {
+            super.layout()
+            return
+        }
         let start = ProcessInfo.processInfo.systemUptime
         DockHostLayoutTiming.begin()
         super.layout()
@@ -70,19 +74,25 @@ final class DockHoverGate {
             return false
         }
         lastAdmitted = (event.timestamp, event.locationInWindow)
-        deferred?.cancel()
         guard DockScrollActivity.isScrolling(at: event.timestamp) else {
+            deferred?.cancel()
+            deferred = nil
             pendingEvent = nil
             pendingReplay = nil
             return true
         }
         pendingEvent = event
         pendingReplay = replay
+        guard deferred == nil else { return false }
         deferred = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(DockScrollActivity.settleInterval))
-            guard !Task.isCancelled, let self, let event = self.pendingEvent, let replay = self.pendingReplay else {
-                return
+            var remaining = DockScrollActivity.settleInterval
+            while remaining > 0 {
+                try? await Task.sleep(for: .seconds(remaining))
+                guard !Task.isCancelled, self != nil else { return }
+                remaining = DockScrollActivity.remainingSettle(at: ProcessInfo.processInfo.systemUptime)
             }
+            guard let self, let event = self.pendingEvent, let replay = self.pendingReplay else { return }
+            self.deferred = nil
             self.pendingEvent = nil
             self.pendingReplay = nil
             replay(event)

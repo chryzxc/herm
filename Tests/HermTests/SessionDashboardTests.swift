@@ -168,6 +168,28 @@ struct SessionDashboardTests {
         #expect(board.board.rows.count == 3)
     }
 
+    @Test @MainActor func unreadInventoryRefreshesWhenAnotherBotsHistoryChanges() {
+        let suite = "SidebarUnreadInventory.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = DockModel(defaults: defaults)
+        defer { model.shutdown() }
+        model.sessions = [session("mine")]
+        let sidebar = SessionNavSidebarModel(
+            model: model, control: ControlCenterModel(),
+            store: WorkspaceStore(fileURL: URL(fileURLWithPath: "/tmp/sidebar-unread-\(UUID()).json")))
+        #expect(Set(sidebar.unreadSessions.rows.map(\.id)) == ["mine"])
+
+        model.allBotSessionsState = .ready([session("other", profile: "bot", date: 2)])
+        sidebar.refresh()
+        #expect(Set(sidebar.unreadSessions.rows.map(\.id)) == ["mine", "other"])
+        #expect(sidebar.unreadSessions.sessions == SessionDashboardProjection.sessions(in: sidebar.snapshot))
+
+        model.allBotSessionsState = .empty
+        sidebar.refresh()
+        #expect(Set(sidebar.unreadSessions.rows.map(\.id)) == ["mine"])
+    }
+
     @Test func lateLoadsCannotEnableRepliesForAnotherSessionOrProfile() {
         var selection = SessionDashboardSelection()
         let first = selection.begin(session("first", profile: "bot"))

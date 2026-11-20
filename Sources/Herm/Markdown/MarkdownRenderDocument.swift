@@ -514,11 +514,6 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         }
         let keepAll = keepsAccessibilitySectionsMounted || NSApp?.isFullKeyboardAccessEnabled == true
         let range = keepAll || viewport == nil ? entries.indices : sectionRange(intersecting: viewport!)
-        // Unmount only past a wider band, so scrolling back and forth near the
-        // edge does not remove, re-add, and redraw the same text views.
-        let retained: Range<Int> =
-            keepAll || viewport == nil || visible.isEmpty
-            ? range : sectionRange(intersecting: viewport!.insetBy(dx: 0, dy: -observedClipView!.bounds.height))
         var focused = window?.firstResponder as? NSView
         var focusedIndex: Int?
         while let view = focused, view !== self {
@@ -529,6 +524,11 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
             focused = view.superview
         }
         if range == lastMountedRange, keepAll == lastKeepAll, focusedIndex == lastFocusedIndex { return }
+        // Unmount only past a wider band, so scrolling back and forth near the
+        // edge does not remove, re-add, and redraw the same text views.
+        let retained: Range<Int> =
+            keepAll || viewport == nil || visible.isEmpty
+            ? range : sectionRange(intersecting: viewport!.insetBy(dx: 0, dy: -observedClipView!.bounds.height))
         let carried = lastKeepAll ? [] : mountedIndices.filter(retained.contains)
         lastMountedRange = range
         lastKeepAll = keepAll

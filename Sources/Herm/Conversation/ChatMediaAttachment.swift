@@ -320,7 +320,7 @@ struct SessionAttachmentDiffTab: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(changes.files) { file in
                     if file.isStaged {
                         Text("Staged changes")

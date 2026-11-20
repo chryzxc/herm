@@ -2,6 +2,14 @@ import Combine
 import Foundation
 import SwiftUI
 
+struct SidebarUnreadSession: Hashable {
+    let profileID: String?
+    let id: String
+    let updatedAt: Date?
+    let isHidden: Bool
+    let isAutomation: Bool
+}
+
 /// One group of conversations in the left navigation rail: a project-backed
 /// bucket or the shared unlinked bucket.
 struct SessionNavConversationGroup: Identifiable, Equatable {
@@ -394,6 +402,22 @@ final class SessionNavSidebarModel: ObservableObject {
     }
 
     @Published private(set) var snapshot: SessionNavSidebarSnapshot
+    // Hover, search, and selection reevaluate the rail body. Build its unread task inputs
+    // once for each session inventory and share them with the count refresh.
+    private typealias UnreadInventory = (sessions: [HermesSession], rows: Set<SidebarUnreadSession>)
+    private var cachedUnreadSessions: UnreadInventory?
+    var unreadSessions: (sessions: [HermesSession], rows: Set<SidebarUnreadSession>) {
+        if let cachedUnreadSessions { return cachedUnreadSessions }
+        let sessions = SessionDashboardProjection.sessions(in: snapshot)
+        let rows = Set(
+            sessions.map {
+                SidebarUnreadSession(
+                    profileID: $0.profileID, id: $0.id, updatedAt: $0.updatedAt,
+                    isHidden: $0.isHidden, isAutomation: $0.isAutomationSession)
+            })
+        cachedUnreadSessions = (sessions, rows)
+        return (sessions, rows)
+    }
     let instanceID = UUID().uuidString.prefix(8).description
 
     private let model: DockModel
@@ -447,7 +471,16 @@ final class SessionNavSidebarModel: ObservableObject {
         let inputs = SessionNavSidebarSnapshot.inputs(
             model: model, control: control, localProjectPaths: store.projectPathsBySessionID)
         guard inputs != snapshot.inputs else { return }
-        snapshot = SessionNavSidebarSnapshot(inputs: inputs, reusing: snapshot)
+        let next = SessionNavSidebarSnapshot(inputs: inputs, reusing: snapshot)
+        let previous = snapshot
+        snapshot = next
+        if inputs.sessions != previous.inputs.sessions || inputs.pinnedSessions != previous.inputs.pinnedSessions
+            || inputs.activeSessions != previous.inputs.activeSessions
+            || inputs.profileScopeID != previous.inputs.profileScopeID
+            || next.allBotConversations != previous.allBotConversations
+        {
+            cachedUnreadSessions = nil
+        }
         DebugLog.writePerformance(
             "sidebar instance=\(instanceID) snapshot_refresh_ms=\(Int(Date().timeIntervalSince(startedAt) * 1000))"
         )
