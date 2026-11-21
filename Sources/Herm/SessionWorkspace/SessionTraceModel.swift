@@ -24,7 +24,6 @@ final class SessionTraceModel: ObservableObject {
 
     private struct Inputs: Equatable {
         let identity: String
-        let historyRevision: UInt64
         let turns: [SessionTraceTurn]
         let live: [ActiveToolCall]
         let agents: [HermesSubagent]
@@ -91,7 +90,8 @@ final class SessionTraceModel: ObservableObject {
             return
         }
         var requests: [SessionTraceTurn]
-        if let cachedHistory, cachedHistory.identity == identity, cachedHistory.revision == model.messagesRevision {
+        let reusesHistory = cachedHistory?.identity == identity && cachedHistory?.revision == model.messagesRevision
+        if let cachedHistory, reusesHistory {
             requests = cachedHistory.turns
         } else {
             historyScanCount += 1
@@ -109,7 +109,7 @@ final class SessionTraceModel: ObservableObject {
         // Keep only boundaries observed while this session's trace is mounted.
         // Restored assistant timestamps have different semantics from live rows.
         if let previous, previous.identity == identity {
-            if previous.historyRevision == model.messagesRevision, cachedHistory?.turns.isEmpty == false {
+            if reusesHistory, cachedHistory?.turns.isEmpty == false {
                 requests = previous.turns
             } else {
                 let prior = Dictionary(
@@ -132,7 +132,7 @@ final class SessionTraceModel: ObservableObject {
             requests[last].executionStart = start
         }
         let inputs = Inputs(
-            identity: identity, historyRevision: model.messagesRevision, turns: requests,
+            identity: identity, turns: requests,
             live: model.streamingTurnActivity + model.activeToolCalls,
             agents: model.agentPresentationSnapshot.displayedSubagents,
             activities: model.agentActivities,
