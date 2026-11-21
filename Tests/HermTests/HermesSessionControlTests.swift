@@ -41,4 +41,16 @@ struct HermesSessionControlTests {
         model.applySessionControlEvent(["control": [:]], sessionID: "one")
         #expect(model.sessionControlEventGeneration == 1)
     }
+
+    @Test func trayActionsFollowHermesStatus() {
+        typealias Action = HermesSessionControl.Action
+        #expect(Action.available(goalStatus: "active") == [.goalPause, .goalClear])
+        #expect(Action.available(goalStatus: "paused") == [.goalResume, .goalClear])
+        #expect(Action.available(goalStatus: "done") == [.goalClear])
+        #expect(Action.available(loopStatus: "active") == [.loopPause, .loopStop])
+        #expect(Action.available(loopStatus: "paused") == [.loopResume, .loopStop])
+        #expect(Action.available(heartbeatStatus: "paused") == [.heartbeatResume, .heartbeatClear])
+        #expect(Action.goalPause.rawValue == "goal.pause")
+        #expect(Action.loopStop.rawValue == "loop.stop")
+    }
 }

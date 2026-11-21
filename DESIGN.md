@@ -4798,7 +4798,7 @@ Browser cursors follow the webpage's cursor and the item under the pointer. Sele
 
 Chat history reveals prepared neighboring messages in order while preserving the visible message and its position.
 
-Session automation shares the composer tray: goal, loop, and heartbeat disclosures show only Hermes-reported values for the selected profile and session. Details are bounded and read-only; failed refreshes mark retained data stale.
+Session automation shares the composer tray: goal, loop, and heartbeat disclosures show only Hermes-reported values for the selected profile and session. Details are bounded; failed refreshes mark retained data stale. Each disclosure header ends with compact 22pt bare icon actions sent through `session.control`: pause or resume (matching status), then clear for goals and heartbeats or stop for loops; finished goals offer only clear. An action in flight shows a spinner and disables the others; resuming a goal submits the follow-up turn Hermes returns.
 
 ### Direct simulator display
 

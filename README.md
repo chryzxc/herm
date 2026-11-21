@@ -1683,4 +1683,4 @@ Settings → Models & tools groups model defaults, execution limits, skills, MCP
 
 Herm's browser reflects webpage cursors for links, controls, text, and editable fields. Markdown links use a pointing hand, and draggable provider and Kanban items use grab cursors.
 
-The chat composer shows read-only goal, loop, and heartbeat status when the connected Hermes session exposes it. Expand a row to inspect its details; unavailable or stale state is labeled.
+The chat composer shows goal, loop, and heartbeat status when the connected Hermes session exposes it. Expand a row to inspect its details; unavailable or stale state is labeled. Small icons on each row pause or resume it, clear a goal or heartbeat, or stop a loop.

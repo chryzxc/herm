@@ -116,6 +116,15 @@ final class HermesControlRPC {
         return HermesModelOption(provider: provider, model: model)
     }
 
+    /// Runs one allowlisted `session.control` action (for example `goal.pause`).
+    func sessionControlAction(
+        _ action: HermesSessionControl.Action, sessionID: String, profileID: String?
+    ) async throws -> [String: Any] {
+        try await client.request(
+            HermesFeatureIDs.ID.sessionControlAction.rawValue,
+            params: Self.profileParams(["session_id": sessionID, "action": action.rawValue], profileID: profileID))
+    }
+
     func activeSessions() async throws -> [String: Any] {
         try await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])
     }

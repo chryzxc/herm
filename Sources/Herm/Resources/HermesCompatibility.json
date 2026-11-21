@@ -580,6 +580,7 @@
     "session.close",
     "session.compress",
     "session.context_breakdown",
+    "session.control",
     "session.control.read",
     "session.create",
     "session.delete",
