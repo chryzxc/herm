@@ -183,6 +183,14 @@ struct SessionSimulatorDiagnosticsTests {
 
     @Test func rebuildingTabRetainsConnectionAndItsDiagnostics() throws {
         let capture = SessionSimulatorCapture()
+        let context = try #require(
+            CGContext(
+                data: nil, width: 20, height: 20, bitsPerComponent: 8,
+                bytesPerRow: 80, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let image = try #require(context.makeImage())
+        let png = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+        capture.receive(kind: 73, data: png)
         let root = SessionSimulatorView(platform: .ios, sessionKey: "fixture", isActive: false, capture: capture)
         let host = NSHostingView(rootView: root)
         host.frame = CGRect(x: 0, y: 0, width: 600, height: 700)
@@ -192,14 +200,6 @@ struct SessionSimulatorDiagnosticsTests {
         defer { window.close() }
         window.display()
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-        let context = try #require(
-            CGContext(
-                data: nil, width: 20, height: 20, bitsPerComponent: 8,
-                bytesPerRow: 80, space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-        let image = try #require(context.makeImage())
-        let png = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
-        capture.receive(kind: 73, data: png)
         host.layoutSubtreeIfNeeded()
         // Parent updates recreate the view value with a fresh default capture argument.
         host.rootView = SessionSimulatorView(platform: .ios, sessionKey: "fixture", isActive: false)
