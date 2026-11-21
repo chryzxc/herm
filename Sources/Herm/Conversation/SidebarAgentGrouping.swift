@@ -69,3 +69,31 @@ enum SidebarAgentGrouping {
         return lhs.id < rhs.id
     }
 }
+
+/// Reuses the inspector's recent-session grouping across unrelated layout passes.
+@MainActor
+final class RecentSessionBotProjection {
+    struct Inputs: Equatable {
+        let scanned: [HermesSession]
+        let scoped: [HermesSession]
+        let scopeProfileID: String?
+        let openSessionID: String?
+        let roster: [BotSummary]
+    }
+
+    private var inputs: Inputs?
+    private(set) var bots: [BotSummary] = []
+    private(set) var sessionsByBot: [String: [HermesSession]] = [:]
+
+    func update(_ next: Inputs) {
+        guard inputs != next else { return }
+        inputs = next
+        let sessions = SidebarAgentGrouping.merged(
+            all: next.scanned, scoped: next.scoped, scopeProfileID: next.scopeProfileID
+        ).filter { !$0.isHidden && $0.id != next.openSessionID }
+        let visibleBots = next.roster.filter { !$0.isHidden }
+        sessionsByBot = SidebarAgentGrouping.sessionsByBot(
+            sessions, scopeProfileID: next.scopeProfileID, bots: visibleBots)
+        bots = visibleBots.filter { sessionsByBot[$0.id] != nil }
+    }
+}

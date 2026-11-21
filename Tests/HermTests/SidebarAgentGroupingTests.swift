@@ -45,6 +45,25 @@ final class SidebarAgentGroupingTests: XCTestCase {
         XCTAssertEqual(scoped["coder"]?.map(\.id), ["b", "c", "a"])
     }
 
+    @MainActor
+    func testRecentInspectorProjectionUpdatesForTheOpenSessionAndScope() {
+        let projection = RecentSessionBotProjection()
+        let roster = [bot("default", isDefault: true), bot("coder")]
+        let scanned = [session("a", profile: "default", at: 10), session("b", profile: "coder", at: 20)]
+        let scoped = [session("c", profile: nil, at: 30)]
+        projection.update(
+            .init(
+                scanned: scanned, scoped: scoped, scopeProfileID: "default", openSessionID: "b", roster: roster))
+        XCTAssertEqual(projection.bots.map(\.id), ["default"])
+        XCTAssertEqual(projection.sessionsByBot["default"]?.map(\.id), ["c", "a"])
+
+        projection.update(
+            .init(
+                scanned: scanned, scoped: scoped, scopeProfileID: "coder", openSessionID: "a", roster: roster))
+        XCTAssertEqual(projection.bots.map(\.id), ["coder"])
+        XCTAssertEqual(projection.sessionsByBot["coder"]?.map(\.id), ["c", "b"])
+    }
+
     func testNewestFirstSortBreaksDateTiesByIDOrInputOrder() {
         let undated = HermesSession(
             id: "u", profileID: nil, title: "u", preview: "", startedAt: nil,

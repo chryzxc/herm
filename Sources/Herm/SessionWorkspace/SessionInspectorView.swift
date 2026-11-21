@@ -1171,22 +1171,35 @@ private struct RecentSessionBots<Content: View>: View {
     let model: DockModel
     let roster: [BotSummary]
     @ViewBuilder let content: (_ bots: [BotSummary], _ sessionsByBot: [String: [HermesSession]]) -> Content
+    @Environment(\.dockHostVisible) private var hostVisible
     @State private var revision = 0
+    @State private var projection = RecentSessionBotProjection()
+    @State private var requestedSessions = false
 
     var body: some View {
         let _ = revision
+        let _ = updateProjection()
+        content(projection.bots, projection.sessionsByBot)
+            .onReceive(model.$allBotSessionsState.dropFirst()) { _ in
+                if hostVisible { revision &+= 1 }
+            }
+            .task(id: hostVisible) {
+                guard hostVisible, !requestedSessions else { return }
+                requestedSessions = true
+                model.loadAllBotSessions()
+            }
+    }
+
+    private func updateProjection() {
+        guard hostVisible else { return }
         let scanned: [HermesSession] =
             switch model.allBotSessionsState {
             case .ready(let rows), .stale(let rows, _): rows
             case .loading, .empty, .unavailable, .failed: []
             }
-        let merged = SidebarAgentGrouping.merged(
-            all: scanned, scoped: model.sessions, scopeProfileID: model.profileScopeID
-        ).filter { !$0.isHidden && $0.id != model.navigationSessionID }
-        let bots = roster.filter { !$0.isHidden }
-        let byBot = SidebarAgentGrouping.sessionsByBot(merged, scopeProfileID: model.profileScopeID, bots: bots)
-        content(bots.filter { byBot[$0.id] != nil }, byBot)
-            .onReceive(model.$allBotSessionsState.dropFirst()) { _ in revision &+= 1 }
-            .task { model.loadAllBotSessions() }
+        projection.update(
+            .init(
+                scanned: scanned, scoped: model.sessions, scopeProfileID: model.profileScopeID,
+                openSessionID: model.navigationSessionID, roster: roster))
     }
 }
