@@ -6,8 +6,11 @@ struct SessionDataPreviewView: View {
     let content: SessionPreviewContent
     @ObservedObject var model: DockModel
     @ObservedObject var botMode: BotModeModel
+    var workspace: String? = nil
     @State private var activityRevision = 0
     let onOpenPullRequestChat: (PullRequestRecord) -> Void
+
+    private var previewWorkspace: String { workspace ?? WorkspaceIdentity.session(model) }
 
     var body: some View {
         let _ = activityRevision
@@ -42,7 +45,7 @@ struct SessionDataPreviewView: View {
         .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
             activityRevision &+= 1
         }
-        .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(model))
+        .environment(\.sessionPreviewWorkspace, previewWorkspace)
     }
 
     @ViewBuilder private var previewContent: some View {
@@ -108,7 +111,7 @@ struct SessionDataPreviewView: View {
             ForEach(Array(calls.enumerated()), id: \.element.id) { index, call in
                 group("Step \(index + 1)", icon: TurnActivityView.icon(for: call.name)) {
                     Button {
-                        SessionMessageTabs.shared.open(.tool(call), in: WorkspaceIdentity.session(model))
+                        SessionMessageTabs.shared.open(.tool(call), in: previewWorkspace)
                     } label: {
                         HStack(alignment: .top, spacing: 8) {
                             Text(AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context))

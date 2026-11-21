@@ -24,7 +24,7 @@ struct BrowserPageRenderingReproductionTests {
         #expect(canvas.pageRect.width == 500)
         let shown = try #require(canvas.subviews.first?.layer?.contents)
         #expect(CFGetTypeID(shown as CFTypeRef) == CGImage.typeID)
-        #expect((shown as CFTypeRef) === cachedImage)
+        #expect(ObjectIdentifier(shown as CFTypeRef) == ObjectIdentifier(cachedImage))
         #expect(browser.panelSize == canvas.bounds.size)
         #expect(browser.lastPointer?.kind == .move)
         let cursor = try #require(canvas.subviews.compactMap { $0 as? AgentCursorView }.first)

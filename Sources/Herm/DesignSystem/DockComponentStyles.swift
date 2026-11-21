@@ -2165,13 +2165,11 @@ extension View {
     func dockCard(padding: CGFloat = 12, isActive: Bool = false, tint: Color? = nil, isSolid: Bool = false)
         -> some View
     {
-        dockChrome { view, theme in
-            view.dockCard(padding: padding, isActive: isActive, tint: tint, isSolid: isSolid, theme: theme)
-        }
+        modifier(DockCardModifier(padding: padding, isActive: isActive, tint: tint, isSolid: isSolid))
     }
 
     @ViewBuilder
-    private func dockCard(padding: CGFloat, isActive: Bool, tint: Color?, isSolid: Bool, theme: DockThemeID)
+    fileprivate func dockCard(padding: CGFloat, isActive: Bool, tint: Color?, isSolid: Bool, theme: DockThemeID)
         -> some View
     {
         let shape = DockThemeShape(theme: theme, role: .pane)
@@ -2282,6 +2280,19 @@ extension View {
             y: style.cardShadow / 5
         )
         .shadow(color: Color.dockAccent.opacity(style.glow > 0 ? 0.22 : 0), radius: style.glow)
+    }
+}
+
+// The modifier keeps theme branches from expanding the caller's view type four times in release builds.
+private struct DockCardModifier: ViewModifier {
+    @DockChromeTheme private var theme
+    let padding: CGFloat
+    let isActive: Bool
+    let tint: Color?
+    let isSolid: Bool
+
+    func body(content: Content) -> some View {
+        content.dockCard(padding: padding, isActive: isActive, tint: tint, isSolid: isSolid, theme: theme)
     }
 }
 
