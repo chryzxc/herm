@@ -95,7 +95,7 @@ struct BotModelCard<Footer: View>: View {
                 .dockFont(.body, weight: .medium)
                 .foregroundStyle(Color.dockPrimaryText)
             if let provider = ref?.provider {
-                Text(provider).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                ProviderLabel(provider).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
             }
         }
         .lineLimit(1)
@@ -120,7 +120,7 @@ struct BotModelCard<Footer: View>: View {
                     !exclude.contains { $0.provider == choice.provider && $0.model == model }
                 }
                 if !models.isEmpty {
-                    DockMenuSection(choice.provider) {
+                    DockMenuSection(choice.provider, leading: ProviderLabel.leadingIcon(choice.provider)) {
                         ForEach(models, id: \.self) { model in
                             DockMenuCheckRow(
                                 title: model,

@@ -335,46 +335,53 @@ struct QuotaWorkspaceView: View {
         let attention = snapshots.filter(QuotaWorkspacePresentation.needsAttention)
         let reset = QuotaWorkspacePresentation.nextReset(snapshots, now: now)
 
-        let headroom =
-            if let best, let remaining = QuotaWorkspacePresentation.effectiveRemaining(best) {
-                overviewMetric(
-                    title: "Most headroom",
-                    value: "\(Int(remaining.rounded()))%",
-                    valueColor: Self.figureColor(for: ProviderQuotaWindow.threshold(forRemaining: remaining)),
-                    detail: [best.displayName, QuotaWorkspacePresentation.limitingWindow(best)?.label].compactMap { $0 }
-                        .joined(separator: " · "),
-                    help: "The provider with the most capacity left in its tightest window."
-                )
+        let remaining = best.flatMap(QuotaWorkspacePresentation.effectiveRemaining)
+        let headroom = overviewMetric(
+            title: "Most headroom",
+            value: remaining.map { "\(Int($0.rounded()))%" } ?? "—",
+            valueColor: remaining.map { Self.figureColor(for: ProviderQuotaWindow.threshold(forRemaining: $0)) }
+                ?? .dockMetadataText,
+            help: "The provider with the most capacity left in its tightest window."
+        ) {
+            if let best, remaining != nil {
+                overviewProvider(
+                    best, details: [QuotaWorkspacePresentation.limitingWindow(best)?.label].compactMap { $0 })
             } else {
-                overviewMetric(
-                    title: "Most headroom", value: "—", valueColor: .dockMetadataText,
-                    detail: "No provider reported a percentage", help: nil)
+                Text("No provider reported a percentage")
             }
+        }
         let needsAttention = overviewMetric(
             title: "Needs attention",
             value: "\(attention.count) of \(snapshots.count)",
             valueColor: attention.isEmpty ? .dockPrimaryText : .dockWarning,
-            detail: attention.isEmpty
-                ? "Every connected provider has headroom" : attention.map(\.displayName).joined(separator: ", "),
             help: "Providers with a window at or below 20% remaining."
-        )
-        let nextReset =
-            if let reset {
-                overviewMetric(
-                    title: reset.restoresAttention ? "Next recovery" : "Next reset",
-                    value: QuotaWorkspacePresentation.compactDuration(from: now, to: reset.date),
-                    valueColor: .dockPrimaryText,
-                    detail:
-                        "\(reset.snapshot.displayName) · \(reset.window.label) · \(reset.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))",
-                    help: reset.restoresAttention
-                        ? "The soonest reset of a window that is low or exhausted."
-                        : "The soonest reported window reset."
-                )
+        ) {
+            if attention.isEmpty {
+                Text("Every connected provider has headroom")
             } else {
-                overviewMetric(
-                    title: "Next reset", value: "—", valueColor: .dockMetadataText, detail: "No reset times reported",
-                    help: nil)
+                DockChipFlow(spacing: 8, hugsContent: true) {
+                    ForEach(attention, id: \.provider) { overviewProvider($0) }
+                }
             }
+        }
+        let nextReset = overviewMetric(
+            title: reset?.restoresAttention == true ? "Next recovery" : "Next reset",
+            value: reset.map { QuotaWorkspacePresentation.compactDuration(from: now, to: $0.date) } ?? "—",
+            valueColor: reset == nil ? .dockMetadataText : .dockPrimaryText,
+            help: reset?.restoresAttention == true
+                ? "The soonest reset of a window that is low or exhausted." : "The soonest reported window reset."
+        ) {
+            if let reset {
+                overviewProvider(
+                    reset.snapshot,
+                    details: [
+                        reset.window.label,
+                        reset.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()),
+                    ])
+            } else {
+                Text("No reset times reported")
+            }
+        }
 
         // Three columns when there is room, stacked rows on narrow windows.
         return ViewThatFits(in: .horizontal) {
@@ -403,16 +410,21 @@ struct QuotaWorkspaceView: View {
             .dockPadding(.vertical, 12)
     }
 
-    private func overviewMetric(title: String, value: String, valueColor: Color, detail: String, help: String?)
-        -> some View
-    {
+    private func overviewProvider(_ snapshot: ProviderQuotaSnapshot, details: [String] = []) -> some View {
+        ProviderLabel(
+            mark: Self.mark(for: snapshot), title: ([snapshot.displayName] + details).joined(separator: " · "))
+    }
+
+    private func overviewMetric<Detail: View>(
+        title: String, value: String, valueColor: Color, help: String? = nil, @ViewBuilder detail: () -> Detail
+    ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             DockSectionLabel(title: title)
             Text(value)
                 .dockFont(.metric)
                 .foregroundStyle(valueColor)
                 .lineLimit(1)
-            Text(detail)
+            detail()
                 .dockFont(.metadata)
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1)

@@ -57,8 +57,10 @@ struct EdgeSessionCapacity: View {
                     if let snapshot {
                         let provider = snapshot.modelID?.components(separatedBy: "|").first
                         if let reading = control.quotaReading(for: provider) {
-                            Text(
-                                "\(reading.snapshot.displayName): \(Int(reading.remaining.rounded()))% provider allowance remaining"
+                            ProviderLabel(
+                                reading.snapshot.hermesCredential?.provider ?? provider,
+                                title: "\(reading.snapshot.displayName): \(Int(reading.remaining.rounded()))%"
+                                    + " provider allowance remaining"
                             )
                             .dockFont(.body, weight: .semibold)
                             .foregroundStyle(QuotaWorkspaceView.color(for: reading.window.threshold))
@@ -78,14 +80,22 @@ struct EdgeSessionCapacity: View {
                         } else {
                             DockMenu(outlined: true) {
                                 ForEach(snapshot.options) { option in
-                                    Button(option.displayName) { confirmedModel = option }
+                                    Button {
+                                        confirmedModel = option
+                                    } label: {
+                                        ProviderLabel(option)
+                                    }
                                 }
                             } label: {
                                 Text("Choose configured session model…")
                             }.disabled(pending)
                         }
                         if let id = snapshot.modelID {
-                            Text("Current: \(id.replacingOccurrences(of: "|", with: " / "))").dockFont(.metadata)
+                            HStack(spacing: 4) {
+                                Text("Current:")
+                                ProviderLabel(provider, title: id.replacingOccurrences(of: "|", with: " / "))
+                            }
+                            .dockFont(.metadata)
                         }
                     } else if pending {
                         DockLoadingIndicator().controlSize(.small)

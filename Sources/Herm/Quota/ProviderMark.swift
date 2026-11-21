@@ -91,6 +91,42 @@ extension ProviderMark {
     }
 }
 
+struct ProviderLabel: View {
+    private let mark: ProviderMark?
+    private let title: String
+
+    init(_ provider: String?, title: String? = nil) {
+        self.init(
+            mark: provider.flatMap { $0.isEmpty ? nil : ProviderMark(hermesProvider: $0) },
+            title: title ?? provider ?? "")
+    }
+
+    init(mark: ProviderMark?, title: String) {
+        self.mark = mark
+        self.title = title
+    }
+
+    init(_ option: HermesModelOption) {
+        self.init(option.provider, title: option.displayName)
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let mark { Self.compactIcon(mark) }
+            Text(title)
+        }
+    }
+
+    /// For menu and modal controls that already supply the text label.
+    static func leadingIcon(_ provider: String) -> AnyView {
+        AnyView(compactIcon(ProviderMark(hermesProvider: provider)))
+    }
+
+    private static func compactIcon(_ mark: ProviderMark) -> ProviderMarkBadge {
+        ProviderMarkBadge(mark: mark, size: 15, tile: false)
+    }
+}
+
 /// A provider mark on a small rounded tile that follows the selected theme.
 struct ProviderMarkBadge: View {
     let mark: ProviderMark

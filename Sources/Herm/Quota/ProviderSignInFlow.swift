@@ -239,14 +239,9 @@ struct ProviderSignInFlow: View {
 
     private var success: some View {
         VStack(spacing: 12) {
-            ZStack(alignment: .bottomTrailing) {
-                ProviderMarkBadge(mark: mark, size: 52)
-                DockIcon(.checkCircle, size: 22, color: Color.dockSuccess)
-                    .background(Circle().fill(Color.dockSurface))
-                    .offset(x: 6, y: 6)
-            }
-            .dockPadding(.top, 12)
-            Text("\(providerName) account added")
+            DockIcon(.checkCircle, size: 40, color: Color.dockSuccess)
+                .dockPadding(.top, 12)
+            ProviderLabel(mark: mark, title: "\(providerName) account added")
                 .dockFont(.rowTitle, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
             if let label = prompt.accountLabel ?? (accountLabel.isEmpty ? nil : accountLabel) {

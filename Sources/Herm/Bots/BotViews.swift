@@ -991,11 +991,13 @@ struct SessionNavBotRow: View, Equatable {
     private var footer: some View {
         HStack(spacing: 6) {
             if let modelLabel {
-                Text(modelLabel)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(modelHelp)
+                ProviderLabel(
+                    bot.provider, title: [bot.provider, modelLabel].compactMap { $0 }.joined(separator: " · ")
+                )
+                .foregroundStyle(Color.dockSecondaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(modelHelp)
             }
             Spacer(minLength: 8)
             if status == .blocked {

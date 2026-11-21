@@ -1487,7 +1487,8 @@ private struct AutomationCreationSheet: View {
                                         ForEach(modelProviders) { provider in
                                             ForEach(provider.models, id: \.self) { model in
                                                 DockMenuOption(
-                                                    "\(model) · \(provider.name)", value: "\(provider.slug)\n\(model)")
+                                                    "\(provider.name) · \(model)", value: "\(provider.slug)\n\(model)",
+                                                    leading: ProviderLabel.leadingIcon(provider.slug))
                                             }
                                         }
                                     }

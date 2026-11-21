@@ -697,6 +697,16 @@ struct SystemEvent: Equatable {
         return "Switched to " + text.dropFirst(prefix.count).dropLast(suffix.count)
     }
 
+    static func modelSwitchProvider(_ text: String) -> (summary: String, provider: String)? {
+        let summary = modelSwitchSummary(text)
+        guard summary != text, let delimiter = summary.range(of: " via provider ", options: .backwards) else {
+            return nil
+        }
+        let provider = String(summary[delimiter.upperBound...])
+        guard !provider.isEmpty else { return nil }
+        return (String(summary[..<delimiter.upperBound]), provider)
+    }
+
     private static let prefixLabels: [(prefix: String, label: String)] = [
         ("[ASYNC DELEGATION BATCH COMPLETE", "Delegation complete"),
         ("[CONTEXT COMPACTION", "Context compaction"),

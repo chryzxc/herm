@@ -84,8 +84,10 @@ struct ModelSwitchNoticeTests {
         #expect(message.timestamp == Date(timeIntervalSince1970: 1000))
         #expect(restored.rowIDs[42] == message.id)
         #expect(SystemEvent.modelSwitchSummary(message.text) == "Switched to chosen via provider example")
+        #expect(SystemEvent.modelSwitchProvider(message.text)?.provider == "example")
         #expect(SystemEvent.classify(role: "user", text: marker, displayKind: nil)?.isModelSwitch == true)
         #expect(SystemEvent.modelSwitchSummary("Future marker format") == "Future marker format")
+        #expect(SystemEvent.modelSwitchProvider("Future marker format") == nil)
     }
 
     @Test func confirmedSwitchLoadsDurableNoticeAndDeduplicatesPaging() async throws {

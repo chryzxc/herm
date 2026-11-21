@@ -679,25 +679,37 @@ private struct HermesConfigFieldRow: View {
                 selection: Binding(
                     get: { stringValue },
                     set: { editor.set(key, $0) }
-                )
+                ),
+                leading: providerLeading(stringValue)
             ) {
                 if !options.contains(stringValue) {
-                    DockMenuOption(stringValue.isEmpty ? "Default" : stringValue, value: stringValue)
+                    DockMenuOption(
+                        stringValue.isEmpty ? "Default" : stringValue, value: stringValue,
+                        leading: providerLeading(stringValue))
                 }
                 ForEach(options, id: \.self) { option in
-                    DockMenuOption(option.isEmpty ? "Default" : option, value: option)
+                    DockMenuOption(
+                        option.isEmpty ? "Default" : option, value: option, leading: providerLeading(option))
                 }
             }
             .controlSize(.small)
         } else {
-            TextField(editor.type(of: key) == "number" ? "0" : "Default", text: $draft)
-                .textFieldStyle(.dockGlass)
-                .multilineTextAlignment(editor.type(of: key) == "number" ? .trailing : .leading)
-                .frame(width: editor.type(of: key) == "number" ? 90 : 220)
-                .onAppear { draft = stringValue }
-                .onChange(of: stringValue) { _, value in draft = value }
-                .onSubmit(commitDraft)
+            HStack(spacing: 4) {
+                providerLeading(draft)
+                TextField(editor.type(of: key) == "number" ? "0" : "Default", text: $draft)
+                    .textFieldStyle(.dockGlass)
+                    .multilineTextAlignment(editor.type(of: key) == "number" ? .trailing : .leading)
+                    .frame(width: editor.type(of: key) == "number" ? 90 : 220)
+                    .onAppear { draft = stringValue }
+                    .onChange(of: stringValue) { _, value in draft = value }
+                    .onSubmit(commitDraft)
+            }
         }
+    }
+
+    private func providerLeading(_ value: String) -> AnyView? {
+        guard key.hasSuffix(".provider"), !["", "auto", "none"].contains(value.lowercased()) else { return nil }
+        return ProviderLabel.leadingIcon(value)
     }
 
     private var stringValue: String {

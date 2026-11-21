@@ -222,7 +222,7 @@ struct ModelPickerView: View {
             if groups.count > 1 { providerRail(groups, active: railProvider) }
             VStack(alignment: .leading, spacing: 8) {
                 if let railProvider, query.isEmpty {
-                    Text(railProvider)
+                    ProviderLabel(railProvider)
                         .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
                         .dockPadding(.horizontal, 8)
@@ -356,7 +356,7 @@ struct ModelPickerView: View {
             ForEach(groups) { group in
                 VStack(alignment: .leading, spacing: 1) {
                     if provider == nil {
-                        Text(group.provider)
+                        ProviderLabel(group.provider)
                             .dockFont(.compactStatus, weight: .semibold)
                             .foregroundStyle(Color.dockMetadataText)
                             .dockPadding(.horizontal, 8)
@@ -518,7 +518,7 @@ private struct ModelPickerEditorView: View {
         let allShown = toggleable.allSatisfy(isEnabled)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text(group.provider)
+                ProviderLabel(group.provider)
                     .dockFont(.compactStatus, weight: .semibold, design: .monospaced)
                     .tracking(0.6)
                     .foregroundStyle(Color.dockMetadataText)

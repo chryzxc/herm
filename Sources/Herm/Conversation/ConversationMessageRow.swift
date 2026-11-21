@@ -728,11 +728,29 @@ struct SystemEventCard: View {
         if event.isModelSwitch {
             HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
                 DockIcon(.swap, size: 12, color: .dockMetadataText)
-                Text(SystemEvent.modelSwitchSummary(text))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .textSelection(.enabled)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                Group {
+                    if let switchProvider = SystemEvent.modelSwitchProvider(text) {
+                        let summary = Text(switchProvider.summary)
+                        let provider = ProviderLabel(switchProvider.provider).lineLimit(1)
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 4) {
+                                summary
+                                provider
+                            }
+                            .fixedSize(horizontal: true, vertical: false)
+                            VStack(spacing: 2) {
+                                summary
+                                provider
+                            }
+                        }
+                    } else {
+                        Text(SystemEvent.modelSwitchSummary(text))
+                    }
+                }
+                .foregroundStyle(Color.dockSecondaryText)
+                .textSelection(.enabled)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             }
             .dockFont(.metadata)
             .dockPadding(.horizontal, 6)

@@ -65,10 +65,7 @@ struct UsageSpendSummary: View {
     private func providerRow(_ provider: TokenUsageReport.Provider, total: Double) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
-                if !provider.provider.isEmpty {
-                    ProviderMarkBadge(mark: ProviderMark(hermesProvider: provider.provider), size: 16)
-                }
-                Text(provider.provider.isEmpty ? "Unknown provider" : provider.provider)
+                ProviderLabel(provider.provider, title: provider.provider.isEmpty ? "Unknown provider" : nil)
                     .dockFont(.body, weight: .semibold).lineLimit(1)
                 Spacer(minLength: 4)
                 Text(UsageWorkspaceView.cost(provider.estimatedCost)).dockFont(.machineMetadata).fixedSize()

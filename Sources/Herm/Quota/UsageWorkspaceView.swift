@@ -186,8 +186,8 @@ struct UsageReportContent: View, Equatable {
         }
     }
 
-    /// Indent that lines sub-rows up under the model name, past the provider icon.
-    private func inset(_ model: TokenUsageReport.Model) -> CGFloat { model.providers.isEmpty ? 18 : 44 }
+    /// Align sub-rows with the model name past the disclosure icon.
+    private let modelInset: CGFloat = 18
 
     // MARK: Spend overview
 
@@ -226,15 +226,12 @@ struct UsageReportContent: View, Equatable {
                                 .foregroundStyle(Color.dockMetadataText)
                                 .frame(width: 10)
                                 .opacity(model.tasks.isEmpty ? 0 : 1)
-                            if let provider = model.providers.first {
-                                ProviderMarkBadge(mark: ProviderMark(hermesProvider: provider), size: 18)
-                            }
                             Text(model.model)
                                 .dockFont(.rowTitle)
                                 .foregroundStyle(Color.dockPrimaryText)
                                 .lineLimit(1)
                             ForEach(model.providers, id: \.self) { provider in
-                                Text(provider)
+                                ProviderLabel(provider)
                                     .dockFont(.metadata)
                                     .foregroundStyle(Color.dockSecondaryText)
                                     .lineLimit(1)
@@ -253,7 +250,7 @@ struct UsageReportContent: View, Equatable {
                     .disabled(model.tasks.isEmpty)
 
                     meter(Double(model.totalTokens) / Double(maxTokens), tint: .dockInfoFill)
-                        .dockPadding(.leading, inset(model))
+                        .dockPadding(.leading, modelInset)
 
                     Text(
                         "\(UsageWorkspaceView.tokens(model.inputTokens)) in · \(UsageWorkspaceView.tokens(model.outputTokens)) out · \(model.sessions) sessions · \(model.apiCalls.formatted()) calls · \(model.estimatedCost > 0 ? UsageWorkspaceView.cost(model.estimatedCost) : "no per-token cost")"
@@ -261,7 +258,7 @@ struct UsageReportContent: View, Equatable {
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
-                    .dockPadding(.leading, inset(model))
+                    .dockPadding(.leading, modelInset)
 
                     if expandedModels.contains(model.id) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -269,7 +266,7 @@ struct UsageReportContent: View, Equatable {
                                 taskLine(task)
                             }
                         }
-                        .dockPadding(.leading, inset(model))
+                        .dockPadding(.leading, modelInset)
                         .dockPadding(.top, 2)
                     }
                 }

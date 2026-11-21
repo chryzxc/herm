@@ -405,6 +405,18 @@ extension DockPopover {
         return "LOADING…"
     }
 
+    private var sessionModelDisplayProvider: String? {
+        if let id = model.sessionModelOptionID, let separator = id.firstIndex(of: "|") {
+            let provider = String(id[..<separator])
+            let name = String(id[id.index(after: separator)...])
+            if HermesModelOption(provider: provider, model: name).displayName == sessionModelDisplayName {
+                return provider
+            }
+        }
+        if model.sessionModelValue?.isEmpty != false { return model.runtimeConfiguration?.provider }
+        return nil
+    }
+
     var sessionReasoningDisplayName: String {
         let reasoning =
             model.sessionID == nil
@@ -459,7 +471,7 @@ extension DockPopover {
                             model.updateSessionModel(option)
                         } label: {
                             HStack {
-                                Text(option.displayName)
+                                ProviderLabel(option)
                                 if option.id == selectedModelOptionID {
                                     Ph.check.image()
                                 }
@@ -472,6 +484,7 @@ extension DockPopover {
                     icon: .cpu,
                     title: "MODEL",
                     value: sessionModelDisplayName,
+                    provider: sessionModelDisplayProvider,
                     truncatesValue: true
                 )
             }
@@ -508,6 +521,7 @@ extension DockPopover {
         icon: Ph,
         title: String,
         value: String,
+        provider: String? = nil,
         truncatesValue: Bool = false
     ) -> some View {
         HStack(spacing: 7) {
@@ -520,7 +534,7 @@ extension DockPopover {
                 .tracking(0.6)
                 .foregroundStyle(Color.dockSecondaryText)
 
-            Text(value)
+            ProviderLabel(provider, title: value)
                 .dockFont(.body, weight: .medium)
                 .lineLimit(1)
                 .truncationMode(truncatesValue ? .middle : .tail)

@@ -233,16 +233,22 @@ private struct HermesSubagentDefaultsEditor: View {
             }
             SettingsPreferenceRow(title: "Provider", detail: "Inherit the main agent or choose a configured provider.")
             {
+                let inheritsProvider = ["", "auto"].contains(draft.provider)
                 DockMenuPicker(
-                    title: ["", "auto"].contains(draft.provider) ? "Inherit from main agent" : draft.provider,
-                    selection: $draft.provider
+                    title: inheritsProvider ? "Inherit from main agent" : draft.provider,
+                    selection: $draft.provider,
+                    leading: inheritsProvider ? nil : ProviderLabel.leadingIcon(draft.provider)
                 ) {
                     DockMenuOption("Inherit from main agent", value: saved.provider == "auto" ? "auto" : "")
-                    ForEach(model.providers) { DockMenuOption($0.name, value: $0.slug) }
+                    ForEach(model.providers) { provider in
+                        DockMenuOption(
+                            provider.name, value: provider.slug, leading: ProviderLabel.leadingIcon(provider.slug))
+                    }
                     if !["", "auto"].contains(saved.provider),
                         !model.providers.contains(where: { $0.slug == saved.provider })
                     {
-                        DockMenuOption(saved.provider, value: saved.provider)
+                        DockMenuOption(
+                            saved.provider, value: saved.provider, leading: ProviderLabel.leadingIcon(saved.provider))
                     }
                 }
                 .disabled(routeInactive || saved.directEndpoint)

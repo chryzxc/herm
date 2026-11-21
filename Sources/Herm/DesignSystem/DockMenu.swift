@@ -97,21 +97,26 @@ extension DockMenu where Label == SwiftUI.Label<Text, Image> {
 /// A section header inside a `DockMenu`.
 struct DockMenuSection<Content: View>: View {
     let title: String
+    let leading: AnyView?
     let content: Content
 
-    init(_ title: String, @ViewBuilder content: () -> Content) {
+    init(_ title: String, leading: AnyView? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.leading = leading
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(title)
-                .dockFont(.compactStatus, weight: .semibold)
-                .foregroundStyle(Color.dockMetadataText)
-                .dockPadding(.horizontal, 8)
-                .dockPadding(.top, 6)
-                .dockPadding(.bottom, 2)
+            HStack(spacing: 4) {
+                leading
+                Text(title)
+            }
+            .dockFont(.compactStatus, weight: .semibold)
+            .foregroundStyle(Color.dockMetadataText)
+            .dockPadding(.horizontal, 8)
+            .dockPadding(.top, 6)
+            .dockPadding(.bottom, 2)
             content
         }
     }
@@ -163,12 +168,17 @@ struct DockMenuOption<Value: Hashable>: View {
 struct DockMenuPicker<Value: Hashable, Content: View>: View {
     var label: String?
     let title: String
+    let leading: AnyView?
     @Binding var selection: Value
     let content: Content
 
-    init(_ label: String? = nil, title: String, selection: Binding<Value>, @ViewBuilder content: () -> Content) {
+    init(
+        _ label: String? = nil, title: String, selection: Binding<Value>, leading: AnyView? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
         self.label = label
         self.title = title
+        self.leading = leading
         self._selection = selection
         self.content = content()
     }
@@ -178,6 +188,7 @@ struct DockMenuPicker<Value: Hashable, Content: View>: View {
             DockMenuChoices(selection: $selection) { content }
         } label: {
             HStack(spacing: 6) {
+                leading
                 Text(title)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)

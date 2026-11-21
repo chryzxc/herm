@@ -2,6 +2,7 @@ import Foundation
 
 struct KanbanModelMetadataPresentation: Equatable {
     let label: String
+    let provider: String?
     let isOverride: Bool
 
     static func bot(for assignee: String?, in bots: [BotSummary]) -> BotSummary? {
@@ -13,14 +14,16 @@ struct KanbanModelMetadataPresentation: Equatable {
         let model = clean(taskModel)
         let provider = clean(taskProvider)
         if model != nil || provider != nil {
-            return Self(label: format(provider: provider, model: model), isOverride: true)
+            return Self(label: format(provider: provider, model: model), provider: provider, isOverride: true)
         }
         let configuredModel = clean(bot?.model)
         let configuredProvider = clean(bot?.provider)
         guard configuredModel != nil || configuredProvider != nil else {
-            return Self(label: "Model unavailable", isOverride: false)
+            return Self(label: "Model unavailable", provider: nil, isOverride: false)
         }
-        return Self(label: format(provider: configuredProvider, model: configuredModel), isOverride: false)
+        return Self(
+            label: format(provider: configuredProvider, model: configuredModel), provider: configuredProvider,
+            isOverride: false)
     }
 
     private static func clean(_ value: String?) -> String? {

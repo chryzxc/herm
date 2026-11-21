@@ -571,7 +571,7 @@ extension WorkspaceActivitySidebar {
                                     selectedModelID = option.id
                                 } label: {
                                     HStack {
-                                        Text(option.displayName)
+                                        ProviderLabel(option)
                                         if option.id == selectedModelID {
                                             Ph.check.image()
                                         }
@@ -580,11 +580,15 @@ extension WorkspaceActivitySidebar {
                             }
                         } label: {
                             HStack(spacing: 8) {
-                                Text(selectedModelDisplayName)
-                                    .dockFont(.body, weight: .medium)
-                                    .foregroundStyle(Color.dockPrimaryText)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
+                                ProviderLabel(
+                                    model.runtimeModelOptions.first(where: { $0.id == selectedModelID })?.provider
+                                        ?? configuration.provider,
+                                    title: selectedModelDisplayName
+                                )
+                                .dockFont(.body, weight: .medium)
+                                .foregroundStyle(Color.dockPrimaryText)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                                 Spacer(minLength: 4)
                                 DockIcon(.caretUpDown)
                                     .dockFont(.body, weight: .semibold)

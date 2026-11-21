@@ -14,7 +14,8 @@ struct RemoteProviderLoginSheet: View {
 
     var body: some View {
         DockModal(
-            title: "Backend sign-in", subtitle: "Sign in to \(provider) on the Hermes backend.", onClose: requestClose
+            badge: ProviderLabel.leadingIcon(provider),
+            title: "\(provider) sign-in", subtitle: "Sign in on the Hermes backend.", onClose: requestClose
         ) {
             VStack(alignment: .leading, spacing: 16) {
                 ModalNote(text: login.message, icon: .info)

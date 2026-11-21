@@ -150,11 +150,15 @@ struct MoASettingsView: View {
             DockMenu {
                 // A MoA preset cannot advise another preset; Hermes rejects recursion.
                 ForEach(model.runtimeModelOptions.filter { $0.provider != "moa" }) { option in
-                    Button(option.displayName) { onPick(option) }
+                    Button {
+                        onPick(option)
+                    } label: {
+                        ProviderLabel(option)
+                    }
                 }
             } label: {
                 HStack(spacing: 6) {
-                    Text("\(slot.provider)  ·  \(slot.model)")
+                    ProviderLabel(slot.provider, title: "\(slot.provider)  ·  \(slot.model)")
                         .dockFont(.body, weight: .medium)
                         .foregroundStyle(slot.enabled ? Color.dockPrimaryText : Color.dockMetadataText)
                         .lineLimit(1)

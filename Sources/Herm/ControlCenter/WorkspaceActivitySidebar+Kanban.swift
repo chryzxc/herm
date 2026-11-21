@@ -676,7 +676,8 @@ extension WorkspaceActivitySidebar {
         HStack(spacing: 5) {
             DockIcon(metadata.isOverride ? .arrowsClockwise : .cpu)
                 .dockFont(.metadata, weight: .semibold)
-            Text(metadata.isOverride ? "OVERRIDE · \(metadata.label)" : metadata.label)
+            if metadata.isOverride { Text("OVERRIDE ·") }
+            ProviderLabel(metadata.provider, title: metadata.label)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
