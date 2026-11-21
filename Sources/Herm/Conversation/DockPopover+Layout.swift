@@ -417,6 +417,7 @@ extension DockPopover {
                     minimumTrailingWidth: desktopTrailingMinimumWidth,
                     isLeadingCollapsed: isNarrowLayout || !showsChatsPanel || hidesChatList,
                     leadingMatches: { $0 == $1 },
+                    trailingIdentity: desktopPageIdentity,
                     performanceRoles: ("chatsList", "desktopWorkspace")
                 )
             })
@@ -587,6 +588,15 @@ extension DockPopover {
                     )
                 }
             )
+        }
+    }
+
+    /// Which page the desktop workspace shows; its split host delivers a change immediately.
+    var desktopPageIdentity: String {
+        switch fullscreenSurface {
+        case .global: "global:\(fullscreenGlobalTab)"
+        case .pullRequests, .issues: "github:\(sessionNavNavigation.selectedGitHubSection)"
+        default: String(describing: fullscreenSurface)
         }
     }
 

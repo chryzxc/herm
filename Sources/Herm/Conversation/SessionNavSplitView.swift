@@ -160,6 +160,9 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
     let isTrailingCollapsed: Bool
     let isLeadingCollapsed: Bool
     let leadingMatches: ((Leading, Leading) -> Bool)?
+    /// The page the trailing pane shows. A change delivers the new page in this update instead
+    /// of the coalesced next-tick one, so a page switch never shows the old page for a frame.
+    let trailingIdentity: AnyHashable?
     let performanceRoles: (leading: String, trailing: String)
 
     init(
@@ -174,6 +177,7 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         isTrailingCollapsed: Bool = false,
         isLeadingCollapsed: Bool = false,
         leadingMatches: ((Leading, Leading) -> Bool)? = nil,
+        trailingIdentity: AnyHashable? = nil,
         performanceRoles: (leading: String, trailing: String) = ("panelLeading", "panelTrailing")
     ) {
         self.isTrailingCollapsed = isTrailingCollapsed
@@ -187,6 +191,7 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         self.minimumTrailingWidth = minimumTrailingWidth
         self.leadingWidth = leadingWidth
         self.leadingMatches = leadingMatches
+        self.trailingIdentity = trailingIdentity
         self.performanceRoles = performanceRoles
     }
 
@@ -233,12 +238,15 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
         if coordinator.acceptsLeading(
             leading, environment: context.environment, collapsed: isLeadingCollapsed, matches: leadingMatches)
         {
-            coordinator.leadingContent.update(visible: visible && !isLeadingCollapsed) {
+            let leadingNow = coordinator.leadingContent.update(visible: visible && !isLeadingCollapsed) {
                 leading.dockThemedRoot().environment(\.self, context.environment)
                     .disabled(isLeadingCollapsed).accessibilityHidden(isLeadingCollapsed)
             }
+            if leadingNow { coordinator.leadingHost.rootView = coordinator.leadingContent.root }
         }
-        coordinator.trailingContent.update(visible: visible && !isTrailingCollapsed) {
+        let trailingNow = coordinator.trailingContent.update(
+            visible: visible && !isTrailingCollapsed, identity: trailingIdentity
+        ) {
             trailing.dockThemedRoot().environment(\.self, context.environment)
                 .disabled(isTrailingCollapsed).accessibilityHidden(isTrailingCollapsed)
                 .overlay(alignment: .leading) {
@@ -250,6 +258,7 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
                     }
                 }
         }
+        if trailingNow { coordinator.trailingHost.rootView = coordinator.trailingContent.root }
         context.coordinator.leadingWidth = leadingWidth
         if let splitView = splitView as? FractionPreservingSplitView {
             splitView.fraction = leadingFraction
@@ -258,7 +267,10 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
             splitView.minimumTrailingWidth = minimumTrailingWidth
             splitView.setCollapsed(
                 leading: isLeadingCollapsed, trailing: isTrailingCollapsed,
-                animated: context.environment.dockHostVisible && !context.environment.dockHostResizing
+                // A page switch swaps its columns in one step: animating them would show the old
+                // page's remaining panes resizing before the new page lands.
+                animated: !trailingNow && context.environment.dockHostVisible
+                    && !context.environment.dockHostResizing
                     && DockMotion.isEnabled(reduceMotion: context.environment.accessibilityReduceMotion))
         }
 
@@ -311,8 +323,8 @@ struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresenta
             leadingHost = splitPaneHost(role: performanceRoles.leading)
             trailingHost = splitPaneHost(role: performanceRoles.trailing)
             super.init()
-            leadingHost.rootView = AnyView(FullscreenSplitPaneRoot(content: leadingContent))
-            trailingHost.rootView = AnyView(FullscreenSplitPaneRoot(content: trailingContent))
+            leadingHost.rootView = leadingContent.root
+            trailingHost.rootView = trailingContent.root
         }
 
         func acceptsLeading(
@@ -418,34 +430,49 @@ private struct NavigationEnvironment: Equatable {
 
 @MainActor
 private final class FullscreenSplitPaneContent: ObservableObject {
-    @Published private(set) var view = AnyView(EmptyView())
+    private(set) var view = AnyView(EmptyView())
+    private var revision = 0
     private var visible: Bool?
     private var pending: AnyView?
+    private var identity: AnyHashable?
 
-    func update(visible: Bool, content: () -> some View) {
+    /// The host's root; a new revision makes the host re-read `view` in the current update.
+    var root: AnyView { AnyView(FullscreenSplitPaneRoot(content: self, revision: revision)) }
+
+    /// Stores the pane's next content. Returns true when the host must take `root` now: the
+    /// first delivery, or a new `identity` (a page switch). Other updates are coalesced and
+    /// published on the next tick, outside AppKit's representable update.
+    func update(visible: Bool, identity: AnyHashable? = nil, content: () -> some View) -> Bool {
         // Deliver the hidden transition, then resume with the latest inputs when reopened.
-        guard visible || self.visible != false else { return }
+        guard visible || self.visible != false else { return false }
+        defer { self.visible = visible }
         let next = AnyView(content())
-        if self.visible == nil {
+        let switched = identity != self.identity
+        self.identity = identity
+        if self.visible == nil || switched {
+            pending = nil
             view = next
-        } else {
-            let deliveryScheduled = pending != nil
-            pending = next
-            if !deliveryScheduled {
-                // Coalesce shell updates and publish outside AppKit's representable update.
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, let next = pending else { return }
-                    pending = nil
-                    view = next
-                }
+            revision &+= 1
+            return true
+        }
+        let deliveryScheduled = pending != nil
+        pending = next
+        if !deliveryScheduled {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let next = pending else { return }
+                pending = nil
+                objectWillChange.send()
+                view = next
             }
         }
-        self.visible = visible
+        return false
     }
 }
 
 private struct FullscreenSplitPaneRoot: View {
     @ObservedObject var content: FullscreenSplitPaneContent
+    /// Changes when the content is replaced inside a host update, so the root re-renders.
+    let revision: Int
 
     var body: some View { content.view }
 }
