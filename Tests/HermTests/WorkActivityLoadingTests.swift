@@ -58,6 +58,29 @@ struct WorkActivityLoadingTests {
         #expect(control.workCalendar == nil)
     }
 
+    @Test func monthCacheEvictsLeastRecentlyVisitedSourcesAndMetadata() throws {
+        let control = ControlCenterModel()
+        let calendar = Calendar.current
+        let current = try #require(calendar.dateInterval(of: .month, for: Date())?.start)
+        let months = try (0..<4).map { offset in
+            try #require(calendar.date(byAdding: .month, value: -offset, to: current))
+        }
+        for month in months.prefix(3) {
+            control.refreshWorkCalendar(month: month, repoPaths: [])
+            control.workCalendarSources[month] = (sessions: [], commits: [], pullRequests: [], usage: [])
+            control.workCalendarPaths[month] = []
+            control.workCalendarLoadedAt[month] = .now
+        }
+        control.refreshWorkCalendar(month: months[0], repoPaths: [])
+        control.refreshWorkCalendar(month: months[3], repoPaths: [])
+
+        #expect(control.workCalendarRecentMonths == [months[2], months[0], months[3]])
+        #expect(control.workCalendarSources[months[0]] != nil)
+        #expect(control.workCalendarSources[months[1]] == nil)
+        #expect(control.workCalendarPaths[months[1]] == nil)
+        #expect(control.workCalendarLoadedAt[months[1]] == nil)
+    }
+
     private func waitUntil(_ condition: () -> Bool) async throws {
         for _ in 0..<500 {
             if condition() { return }

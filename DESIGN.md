@@ -4189,6 +4189,7 @@ Week and Month share a search row with Agenda, a weekly list grouped by date.
 Search matches titles, source names, and locations within the displayed range;
 a type menu narrows the projection and Clear resets both filters. The month heading
 opens a date picker. Agenda rows select the day and expand the item in the inspector.
+Search and type changes reuse the full date index for the same range and sources.
 The inspector separates all-day items from the schedule and labels overlapping timed
 events using all enabled sources before search/type filtering. Touching event boundaries
 do not conflict. Plan in chat includes the complete selected day from enabled sources.
@@ -4238,6 +4239,7 @@ confirmation, posting feedback, and provider-authoritative metadata editing.
 
 Opening an Activity tab refreshes the data the tab uses. Recent activity history
 refreshes while Office or the Chats dashboard is visible.
+Activity Work retains source data for the three most recently visited months.
 
 Activity Work uses full-width count bars with aligned totals and wrapping day metadata.
 Its adaptive Usage grid shows reported input, output, cache-read and reasoning tokens,

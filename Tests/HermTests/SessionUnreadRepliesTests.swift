@@ -324,6 +324,34 @@ struct SessionUnreadRepliesTests {
         }
     }
 
+    @Test func largeBadgeInventoryRevalidatesOnlyTheChangedSession() async throws {
+        let client = Client()
+        client.rows = [row(1, role: "assistant", text: "Unread reply", timestamp: 101)]
+        let seen = SidebarSessionSeenStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        seen.baseline(profileID: "bot", sessions: [])
+        var now = Date(timeIntervalSince1970: 1_000)
+        let replies = SessionUnreadReplies(client: client, now: { now })
+        func conversation(_ id: Int, updated: Int = 102) -> HermesSession {
+            HermesSession(
+                id: "session-\(id)", profileID: "bot", title: "Chat", preview: "", startedAt: nil,
+                updatedAt: Date(timeIntervalSince1970: Double(updated)), messageCount: 1, source: "test")
+        }
+        var sessions = (0..<257).map { conversation($0) }
+        let initial = try await replies.botCounts(
+            sessions: sessions, scopeProfileID: nil, seenStore: seen, incomplete: false)
+        #expect(initial.counts == ["bot": 257])
+        #expect(client.paths.count == 257)
+
+        client.paths.removeAll()
+        now = now.addingTimeInterval(16)
+        sessions[0] = conversation(0, updated: 103)
+        let refreshed = try await replies.botCounts(
+            sessions: sessions, scopeProfileID: nil, seenStore: seen, incomplete: false)
+        #expect(refreshed == initial)
+        #expect(client.paths.count == 1)
+        #expect(client.paths.first?.contains("/session-0/messages?limit=1&") == true)
+    }
+
     @Test func missingTimestampsCannotBecomeUnreadReplies() async {
         let client = Client()
         client.rows = [["id": 1, "role": "assistant", "content": "Unknown date"]]

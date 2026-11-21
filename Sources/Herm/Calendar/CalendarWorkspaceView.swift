@@ -45,32 +45,37 @@ struct CalendarWorkspaceView: View {
         let jobs: [CronSummary]
         let tasks: [KanbanTaskSummary]
         let hidden: String
-        let query: String
-        let filter: CalendarAgenda.Filter
         let today: Date
         let range: DateInterval
         let calendar: Calendar
     }
     @MainActor private final class AgendaCache {
-        var inputs: AgendaInputs?
-        var full: [Date: [CalendarItem]] = [:]
-        var filtered: [Date: [CalendarItem]] = [:]
+        private var inputs: AgendaInputs?
+        private var items: [CalendarItem] = []
+        private var search: (query: String, filter: CalendarAgenda.Filter)?
+        private(set) var full: [Date: [CalendarItem]] = [:]
+        private(set) var filtered: [Date: [CalendarItem]] = [:]
 
-        func update(_ next: AgendaInputs) {
-            guard inputs != next else { return }
-            let excluded = Set(next.hidden.split(separator: "\n").map(String.init))
-            let items =
-                next.events.filter { $0.sourceID.map { !excluded.contains($0) } ?? true }
-                + CalendarAgenda.automationItems(next.jobs)
-                + CalendarAgenda.taskItems(next.tasks, now: next.today, calendar: next.calendar)
-            full = CalendarAgenda.build(items, in: next.range, calendar: next.calendar)
+        func update(_ next: AgendaInputs, query: String, filter: CalendarAgenda.Filter) {
+            if inputs != next {
+                let excluded = Set(next.hidden.split(separator: "\n").map(String.init))
+                items =
+                    next.events.filter { $0.sourceID.map { !excluded.contains($0) } ?? true }
+                    + CalendarAgenda.automationItems(next.jobs)
+                    + CalendarAgenda.taskItems(next.tasks, now: next.today, calendar: next.calendar)
+                full = CalendarAgenda.build(items, in: next.range, calendar: next.calendar)
+                inputs = next
+                search = nil
+            }
+            let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard search?.query != query || search?.filter != filter else { return }
             filtered =
-                next.filter == .all && next.query.isEmpty
+                filter == .all && query.isEmpty
                 ? full
                 : CalendarAgenda.build(
-                    CalendarAgenda.filtered(items, query: next.query, kind: next.filter), in: next.range,
+                    CalendarAgenda.filtered(items, query: query, kind: filter), in: next.range,
                     calendar: next.calendar)
-            inputs = next
+            search = (query, filter)
         }
     }
     @State private var cache = AgendaCache()
@@ -83,7 +88,7 @@ struct CalendarWorkspaceView: View {
         let _ = cache.update(
             AgendaInputs(
                 events: system.items, jobs: control.cronJobs, tasks: control.globalKanbanTasks,
-                hidden: hiddenRaw, query: query, filter: itemFilter, today: today, range: range, calendar: calendar))
+                hidden: hiddenRaw, today: today, range: range, calendar: calendar), query: query, filter: itemFilter)
         let agenda = cache.filtered
         let fullDay = cache.full[selected] ?? []
         VStack(alignment: .leading, spacing: 16) {

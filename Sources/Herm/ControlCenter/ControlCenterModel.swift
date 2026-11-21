@@ -111,6 +111,7 @@ final class ControlCenterModel: ObservableObject {
     var workCalendarBuildTask: Task<Void, Never>?
     var workCalendarBuildNeedsSuccess = false
     var workCalendarLoadedAt: [Date: Date] = [:]
+    var workCalendarRecentMonths: [Date] = []
     @Published var providerQuotas: [ProviderQuotaSnapshot] = []
     /// Hermes' provider catalog (Settings → Providers); nil until first loaded.
     /// It is the source of truth for which quota providers the Quota page offers.

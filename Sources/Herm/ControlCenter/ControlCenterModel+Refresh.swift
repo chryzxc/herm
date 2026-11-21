@@ -106,6 +106,7 @@ extension ControlCenterModel {
             workCalendarSources = [:]
             workCalendarPaths = [:]
             workCalendarLoadedAt = [:]
+            workCalendarRecentMonths = []
             workCalendarRepoPaths = []
             tokenUsage = nil
             sessionContext = nil

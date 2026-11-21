@@ -167,6 +167,14 @@ extension ControlCenterModel {
         workCalendarBuildNeedsSuccess = false
         workCalendarGeneration = UUID()
         workCalendarMonth = monthStart
+        workCalendarRecentMonths.removeAll { $0 == monthStart }
+        workCalendarRecentMonths.append(monthStart)
+        if workCalendarRecentMonths.count > 3 {
+            let expired = workCalendarRecentMonths.removeFirst()
+            workCalendarSources[expired] = nil
+            workCalendarLoadedAt[expired] = nil
+            workCalendarPaths[expired] = nil
+        }
         if globalKanbanTasks.isEmpty { refreshGlobalKanban(trigger: .background) }
         if cronRuns.isEmpty { refreshCronRuns() }
         if !force, workCalendarSources[monthStart] != nil,

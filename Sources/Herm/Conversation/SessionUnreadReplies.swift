@@ -1,3 +1,4 @@
+import CryptoKit
 import SwiftUI
 
 /// Reads Hermes history without resuming or mutating the session. Counts are
@@ -24,10 +25,10 @@ final class SessionUnreadReplies {
     /// The newest stored row a projection was read through, including its
     /// serialized fields. While the newest row is unchanged, the history behind
     /// the projection has neither grown nor had its tail rewritten in place.
-    private struct Tail: Equatable {
+    private struct Tail: Equatable, Sendable {
         let rowID: Int
         let timestamp: Double
-        let fingerprint: Data
+        let fingerprint: SHA256.Digest
     }
     private struct Entry {
         let projection: Projection
@@ -50,13 +51,15 @@ final class SessionUnreadReplies {
     /// full read at least this often.
     private static let maximumReuse: TimeInterval = 300
     private var cached: [Key: Entry] = [:]
+    private var botCountEntries: [Key: Entry] = [:]
+    private var botCountGeneration = 0
     /// In-flight reads also key on the caller's `updatedAt`, so a caller holding
     /// a newer session snapshot never joins a read started for an older one.
     private struct PendingKey: Hashable {
         let key: Key
         let updatedAt: Date?
     }
-    private var pending: [PendingKey: Task<Projection, Error>] = [:]
+    private var pending: [PendingKey: Task<Entry, Error>] = [:]
 
     private let now: () -> Date
 
@@ -70,6 +73,7 @@ final class SessionUnreadReplies {
     ) async throws -> BotCounts {
         var result = BotCounts(incomplete: incomplete)
         var visited: Set<ProfileScopedID> = []
+        var eligible: [(session: HermesSession, key: Key)] = []
         for session in sessions where !session.isHidden && !session.isAutomationSession {
             try Task.checkCancellation()
             guard let profileID = session.profileID ?? scopeProfileID else {
@@ -85,9 +89,30 @@ final class SessionUnreadReplies {
                 continue
             }
             guard updatedAt > seenAt else { continue }
+            eligible.append((session, Key(identity: identity, seenAt: seenAt, cutoff: nil)))
+        }
+        // Keep one compact projection per eligible session, including inventories larger than the row cache.
+        botCountGeneration &+= 1
+        let generation = botCountGeneration
+        let keys = Set(eligible.map(\.key))
+        botCountEntries = botCountEntries.filter { keys.contains($0.key) }
+        for (session, key) in eligible {
+            try Task.checkCancellation()
             do {
-                let unread = try await project(session: session, profileID: profileID, after: seenAt)
-                if unread.count > 0 { result.counts[profileID, default: 0] += 1 }
+                let previous = botCountEntries[key] ?? cached[key]
+                let entry: Entry
+                if let previous, previous.updatedAt == session.lastUpdatedAt,
+                    now().timeIntervalSince(previous.readAt) < Self.maximumReuse
+                {
+                    entry = previous
+                } else {
+                    entry = try await resolve(session: session, key: key, previous: previous)
+                }
+                try Task.checkCancellation()
+                if generation == botCountGeneration { botCountEntries[key] = entry }
+                if entry.projection.count > 0, let profileID = key.identity.profileID {
+                    result.counts[profileID, default: 0] += 1
+                }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -106,36 +131,35 @@ final class SessionUnreadReplies {
     {
         let key = Key(
             identity: ProfileScopedID(profileID: profileID, resourceID: session.id), seenAt: seenAt, cutoff: cutoff)
+        let entry = try await resolve(session: session, key: key, previous: cached[key] ?? botCountEntries[key])
+        if cached[key] == nil, cached.count >= 256, let expired = cached.keys.first { cached[expired] = nil }
+        cached[key] = entry
+        return entry.projection
+    }
+
+    private func resolve(session: HermesSession, key: Key, previous entry: Entry?) async throws -> Entry {
         let updatedAt = session.lastUpdatedAt
-        let entry = cached[key]
-        if let entry, entry.updatedAt == updatedAt, entry.expiresAt > now() { return entry.projection }
+        if let entry, entry.updatedAt == updatedAt, entry.expiresAt > now() { return entry }
         let pendingKey = PendingKey(key: key, updatedAt: updatedAt)
         if let task = pending[pendingKey] { return try await task.value }
-        let task = Task { () throws -> Projection in
+        let profileID = key.identity.profileID
+        let task = Task { () throws -> Entry in
             if let entry, let tail = entry.tail, self.now().timeIntervalSince(entry.readAt) < Self.maximumReuse,
                 try await self.newestRow(session: session, profileID: profileID) == tail
             {
-                self.store(
-                    Entry(
-                        projection: entry.projection, tail: tail, updatedAt: updatedAt,
-                        expiresAt: self.now().addingTimeInterval(Self.freshFor), readAt: entry.readAt), for: key)
-                return entry.projection
+                return Entry(
+                    projection: entry.projection, tail: tail, updatedAt: updatedAt,
+                    expiresAt: self.now().addingTimeInterval(Self.freshFor), readAt: entry.readAt)
             }
-            let read = try await self.read(session: session, profileID: profileID, after: seenAt, through: cutoff)
-            self.store(
-                Entry(
-                    projection: read.projection, tail: read.tail, updatedAt: updatedAt,
-                    expiresAt: self.now().addingTimeInterval(Self.freshFor), readAt: self.now()), for: key)
-            return read.projection
+            let read = try await self.read(
+                session: session, profileID: profileID, after: key.seenAt, through: key.cutoff)
+            return Entry(
+                projection: read.projection, tail: read.tail, updatedAt: updatedAt,
+                expiresAt: self.now().addingTimeInterval(Self.freshFor), readAt: self.now())
         }
         pending[pendingKey] = task
         defer { pending[pendingKey] = nil }
         return try await task.value
-    }
-
-    private func store(_ entry: Entry, for key: Key) {
-        if cached[key] == nil, cached.count >= 256 { cached.removeAll() }
-        cached[key] = entry
     }
 
     private func newestRow(session: HermesSession, profileID: String?) async throws -> Tail? {
@@ -144,16 +168,16 @@ final class SessionUnreadReplies {
                 sessionID: session.id, profileID: profileID, limit: 1, offset: 0),
             let page = TranscriptHistoryPaging.page(from: try await client.fetchHTTP(path))
         else { throw HermesGateway.GatewayError.malformedResponse }
-        return page.rows.last.flatMap(Self.tail(of:))
+        return await Self.tail(of: UncheckedTranscriptValue(value: page.rows.last))
     }
 
-    private static func tail(of row: [String: Any]) -> Tail? {
-        guard let id = (row["id"] as? NSNumber)?.intValue,
+    nonisolated private static func tail(of input: UncheckedTranscriptValue<[String: Any]?>) async -> Tail? {
+        guard let row = input.value, let id = (row["id"] as? NSNumber)?.intValue,
             let timestamp = (row["timestamp"] as? NSNumber)?.doubleValue,
             JSONSerialization.isValidJSONObject(row),
             let fingerprint = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys])
         else { return nil }
-        return Tail(rowID: id, timestamp: timestamp, fingerprint: fingerprint)
+        return Tail(rowID: id, timestamp: timestamp, fingerprint: SHA256.hash(data: fingerprint))
     }
 
     private func read(session: HermesSession, profileID: String?, after seenAt: Date, through cutoff: Date?)
@@ -190,7 +214,7 @@ final class SessionUnreadReplies {
                         count: unread.count, firstRowID: firstRowID,
                         hasUnseenFailedTurn: SessionFailureWarningPolicy.hasUnseenFailure(
                             in: projected, after: seenAt, through: cutoff)),
-                    tail: rows.last.flatMap(Self.tail(of:)))
+                    tail: await Self.tail(of: UncheckedTranscriptValue(value: rows.last)))
             }
         }
         // A partial history read cannot claim an exact unread count.

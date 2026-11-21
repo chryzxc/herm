@@ -359,15 +359,13 @@ extension DockModel {
             return true
         }
 
-        var processed = processedGatewaySequencesBySessionID[eventSessionID, default: []]
-        guard !processed.contains(sequence) else { return false }
+        guard processedGatewaySequencesBySessionID[eventSessionID, default: []].insert(sequence).inserted
+        else { return false }
         let previousHighest = highestGatewaySequenceBySessionID[eventSessionID] ?? 0
-        processed.insert(sequence)
-        if processed.count > 1024 {
+        if let processed = processedGatewaySequencesBySessionID[eventSessionID], processed.count > 1024 {
             let floor = max(0, sequence - 512)
-            processed = Set(processed.filter { $0 >= floor })
+            processedGatewaySequencesBySessionID[eventSessionID] = processed.filter { $0 >= floor }
         }
-        processedGatewaySequencesBySessionID[eventSessionID] = processed
         highestGatewaySequenceBySessionID[eventSessionID] = max(previousHighest, sequence)
 
         if previousHighest > 0, sequence > previousHighest + 1 {

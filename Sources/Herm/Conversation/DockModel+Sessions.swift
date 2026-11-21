@@ -432,10 +432,14 @@ extension DockModel {
             guard let sessions = page["sessions"] as? [[String: Any]], !sessions.isEmpty,
                 let pageTotal = page["total"] as? Int, pageTotal >= 0
             else { throw HermesGateway.GatewayError.malformedResponse }
-            rows.append(
-                contentsOf: sessions.filter { !isModellessFeed($0) }.compactMap {
-                    parseSession($0, profileID: profileID)
-                })
+            let raw = UncheckedTranscriptValue(value: sessions)
+            let parsed = await Task.detached(priority: Task.currentPriority) {
+                Array(
+                    raw.value.lazy.filter { !isModellessFeed($0) }.compactMap { parseSession($0, profileID: profileID) }
+                )
+            }.value
+            try Task.checkCancellation()
+            rows.append(contentsOf: parsed)
             offset += min(100, sessions.count)  // Pinned rows can be appended beyond the page.
             total = pageTotal
         }

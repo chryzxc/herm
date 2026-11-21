@@ -22,8 +22,6 @@ struct SessionNavConversationGroup: Identifiable, Equatable {
     /// creating a project-scoped chat.
     let projectPath: String?
     let isLinked: Bool
-    /// The project folder is a git checkout (`.git` dir, or file for worktrees).
-    var hasGit = false
 }
 
 /// Immutable row input for future native and SwiftUI rail renderers. Keeping
@@ -284,9 +282,7 @@ struct SessionNavSidebarSnapshot: Equatable {
                     declaredSessionCount: project.sessionCount,
                     projectID: project.id,
                     projectPath: project.name,
-                    isLinked: true,
-                    hasGit: FileManager.default.fileExists(
-                        atPath: (project.name as NSString).appendingPathComponent(".git"))
+                    isLinked: true
                 )
             )
         }
