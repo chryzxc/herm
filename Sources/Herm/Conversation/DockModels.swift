@@ -529,6 +529,8 @@ struct ChatMessage: Identifiable, Equatable {
     let attachmentURLs: [URL]
     let timestamp: Date
     let modelName: String?
+    /// The route returned by the completed prompt's receipt.
+    var responseRoute: HermesModelOption?
     let responseDuration: TimeInterval?
     /// Tokens this turn consumed: the delta between consecutive `session.usage`
     /// totals carried by `message.complete`. Nil for restored history.
@@ -635,6 +637,7 @@ struct ChatMessage: Identifiable, Equatable {
             attachmentURLs: attachmentURLs
         )
         copy.reactions = reactions
+        copy.responseRoute = responseRoute
         return copy
     }
 

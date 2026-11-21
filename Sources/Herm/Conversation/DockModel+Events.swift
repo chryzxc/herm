@@ -948,10 +948,22 @@ extension DockModel {
                     title: "Hermes could not complete the request", body: text,
                     identifier: "failure:\(sessionID ?? "hermes")")
             } else {
+                let completedReplyID = streamingMessageID
                 commitStreamingMessage(tokenCount: turnTokens)
                 applyMessagePinReceipt(
                     payload["persisted_turn"] as? [String: Any],
                     assistantMessageID: completedMessageIDForPin ?? messages.last?.id)
+                // A canonical completion carries the admission needed to read an exact turn receipt.
+                if payload["status"] as? String == "complete", let admissionID = payload["admission_id"] as? String,
+                    !admissionID.isEmpty, let completedReplyID
+                {
+                    let generation = sessionResumeGeneration
+                    Task { [weak self] in
+                        await self?.loadCompletedReplyRoute(
+                            sessionID: currentSessionID, admissionID: admissionID, generation: generation,
+                            messageID: completedReplyID)
+                    }
+                }
                 let deliveryOwner = composerDraftKey
                 let deliveryGeneration = sessionResumeGeneration
                 if pendingSessionSends.contains(where: { $0.owner == deliveryOwner && $0.phase == .acknowledged }) {

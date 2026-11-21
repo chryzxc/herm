@@ -87,6 +87,7 @@ enum HermesFeatureIDs {
         case projectFacts = "project.facts"
         case verificationStatus = "verification.status"
         case promptSubmit = "prompt.submit"
+        case promptReceipt = "prompt.receipt"
         case completeSlash = "complete.slash"
         case completePath = "complete.path"
         case commandsCatalog = "commands.catalog"
@@ -208,7 +209,8 @@ enum HermesFeatureIDs {
         "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.create",
         "session.cwd.set", "session.workspace.move", "session.close", "session.set_hidden", "session.events.since",
         "project.facts",
-        "verification.status", "prompt.submit", "complete.slash", "complete.path", "commands.catalog", "slash.exec",
+        "verification.status", "prompt.submit", "prompt.receipt", "complete.slash", "complete.path", "commands.catalog",
+        "slash.exec",
         "command.dispatch", "bot_relay.deliver",
         "groups.capabilities", "groups.list", "groups.create", "groups.state", "groups.send",
         "groups.attachment.upload", "groups.attachment.download", "groups.log",

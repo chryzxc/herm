@@ -43,7 +43,7 @@ struct HermesFeatureContractTests {
             "config.show",
             "projects.tree", "projects.project_sessions", "projects.create", "projects.archive", "projects.delete",
             "projects.set_active", "projects.add_folder", "shell.exec", "image.attach_bytes", "image.detach",
-            "pdf.attach", "file.attach", "session.create", "prompt.submit", "voice.toggle",
+            "pdf.attach", "file.attach", "session.create", "prompt.submit", "prompt.receipt", "voice.toggle",
             "complete.slash", "complete.path", "commands.catalog", "slash.exec", "command.dispatch", "prompt.btw",
             "voice.record", "voice.tts", "config.get", "config.set", "model.options",
             "profiles.list", "profiles.describe", "profiles.create", "profiles.configure",

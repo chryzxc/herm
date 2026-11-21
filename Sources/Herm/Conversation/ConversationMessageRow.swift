@@ -172,6 +172,7 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.message.images.elementsEqual(rhs.message.images, by: { $0 === $1 })
             && lhs.message.timestamp == rhs.message.timestamp
             && lhs.message.modelName == rhs.message.modelName
+            && lhs.message.responseRoute == rhs.message.responseRoute
             && lhs.message.activity == rhs.message.activity
             && lhs.message.systemEvent == rhs.message.systemEvent
             && lhs.message.kanbanNotice == rhs.message.kanbanNotice
@@ -512,8 +513,7 @@ struct ConversationMessageRow: View, Equatable {
     private var messageActions: some View {
         ConversationMessageFooter(anchor: .leading) {
             ConversationRowHoverTimestamp(
-                text: message.durationLabel != nil || message.tokenCount != nil || message.modelName != nil
-                    ? "· \(message.timeLabel)" : message.timeLabel,
+                text: hasMessageMetadata ? "· \(message.timeLabel)" : message.timeLabel,
                 hover: hoverPresentation,
                 alwaysVisible: message.isError
             )
@@ -627,10 +627,15 @@ struct ConversationMessageRow: View, Equatable {
         }
     }
 
-    /// Duration, tokens and model after the assistant's actions; empty when Hermes reported none.
+    private var hasMessageMetadata: Bool {
+        message.responseRoute != nil || message.modelName != nil || message.durationLabel != nil
+            || message.tokenCount != nil
+    }
+
+    /// Duration, tokens and route after the assistant's actions.
     @ViewBuilder
     private var messageMetadata: some View {
-        if message.durationLabel != nil || message.tokenCount != nil || message.modelName != nil {
+        if hasMessageMetadata {
             HStack(spacing: ConversationMessageFooterMetrics.itemSpacing) {
                 if let durationLabel = message.durationLabel {
                     HStack(spacing: 4) {
@@ -642,7 +647,11 @@ struct ConversationMessageRow: View, Equatable {
                     Text("· \(SessionTokenFormatting.format(tokenCount))")
                         .help("Tokens used by this turn, including tool calls and context")
                 }
-                if let modelName = message.modelName {
+                if let route = message.responseRoute {
+                    if message.durationLabel != nil || message.tokenCount != nil { Text("·") }
+                    ProviderLabel(route.provider, title: "\(route.provider) · \(route.model)")
+                        .help("\(route.provider) · \(route.model)")
+                } else if let modelName = message.modelName {
                     Text("· \(modelName)")
                 }
             }

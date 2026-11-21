@@ -6,6 +6,19 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 extension DockModel {
+    func loadCompletedReplyRoute(sessionID: String, admissionID: String, generation: Int, messageID: UUID) async {
+        let profile = sessionProfileID ?? profileScopeID
+        guard sessionResumeGeneration == generation, self.sessionID == sessionID,
+            messages.contains(where: { $0.id == messageID && $0.role == .hermes && $0.hasBodyText }),
+            let route = try? await interruptRPC.completedPromptRoute(
+                sessionID: sessionID, admissionID: admissionID, profileID: profile),
+            sessionResumeGeneration == generation, self.sessionID == sessionID,
+            (sessionProfileID ?? profileScopeID) == profile,
+            let index = messages.firstIndex(where: { $0.id == messageID && $0.role == .hermes && $0.hasBodyText })
+        else { return }
+        messages[index].responseRoute = route
+    }
+
     /// Reads the newest stored rows of a paged resume. When the REST read is
     /// unavailable, falls back to one resume that inlines the transcript
     /// (the session is live by now, so Hermes answers from memory).
@@ -171,7 +184,8 @@ extension DockModel {
                 signature = next
                 lastChange = Date()
                 let liveRow = self.messages.first { $0.id == self.streamingMessageID }
-                let stable = Self.keepingMessageIDs(restored, previous: self.transcriptMessageIDsByRowID)
+                let stable = Self.keepingMessageIDs(
+                    restored, previous: self.transcriptMessageIDsByRowID, previousMessages: self.messages)
                 self.transcriptHistoryCursor = loaded.cursor
                 self.transcriptMessageIDsByRowID = stable.rowIDs
                 self.storedMessageReferences = StoredMessageReference.references(
@@ -190,7 +204,9 @@ extension DockModel {
     /// A re-read transcript keeps the IDs its stored rows already had, so
     /// SwiftUI updates rows in place instead of rebuilding and re-measuring
     /// every message on each 3s poll of a running Bot turn.
-    static func keepingMessageIDs(_ restored: RestoredTranscript, previous: [Int: UUID]) -> (
+    static func keepingMessageIDs(
+        _ restored: RestoredTranscript, previous: [Int: UUID], previousMessages: [ChatMessage] = []
+    ) -> (
         messages: [ChatMessage], rowIDs: [Int: UUID]
     ) {
         var renamed: [UUID: UUID] = [:]
@@ -199,9 +215,15 @@ extension DockModel {
             guard let old = previous[rowID], taken.insert(old).inserted else { continue }
             renamed[id] = old
         }
+        let previousRoutes = Dictionary(
+            previousMessages.compactMap { message in message.responseRoute.map { (message.id, $0) } },
+            uniquingKeysWith: { first, _ in first })
         let messages = restored.messages.map { message in
             var message = message
-            message.id = renamed[message.id] ?? message.id
+            if let old = renamed[message.id] {
+                message.id = old
+                if message.role == .hermes, message.hasBodyText { message.responseRoute = previousRoutes[old] }
+            }
             return message
         }
         return (messages, restored.rowIDs.mapValues { renamed[$0] ?? $0 })

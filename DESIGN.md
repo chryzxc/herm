@@ -3086,6 +3086,16 @@ Group chat action errors use toast notifications without an inline error row abo
 
 ### Conversation workspace
 
+`ProviderLabel` pairs the name with its shared provider mark immediately on the
+left. It supplies the same unboxed mark to compact transcript metadata, menus,
+settings, and usage. Each named provider gets its own mark in a multi-provider
+row. The accessible label comes from the provider text.
+
+Completed assistant replies show the provider and model from their Hermes turn
+receipt when the gateway supplies it. A stored transcript row with a known
+identity can retain that label in the in-memory transcript cache. When there
+is no matching receipt or cached attribution, the footer omits the provider.
+
 When a conversation is loading, the shared loading bars appear above the status
 text. The collapsed review chat places the small mark beside the text.
 

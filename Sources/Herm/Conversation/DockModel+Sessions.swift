@@ -1112,7 +1112,9 @@ extension DockModel {
             recordSessionSwitch("parse", startedAt: parseStartedAt, generation: resumeGeneration, token: switchToken)
             try Task.checkCancellation()
             guard resumeGeneration == sessionResumeGeneration else { return false }
-            let stable = Self.keepingMessageIDs(parsed, previous: sessionTranscriptPreview?.rowIDs ?? [:])
+            let stable = Self.keepingMessageIDs(
+                parsed, previous: sessionTranscriptPreview?.rowIDs ?? [:],
+                previousMessages: sessionTranscriptPreview?.messages ?? [])
             let renamed = Dictionary(
                 parsed.rowIDs.compactMap { row, id in stable.rowIDs[row].map { (id, $0) } },
                 uniquingKeysWith: { first, _ in first })

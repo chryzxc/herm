@@ -15,6 +15,8 @@ private final class SessionIsolationRPCClient: HermesRPCClientProtocol {
     var resumeResponses: [[String: Any]] = []
     /// Closure invoked during the `session.resume` await, before its response resolves.
     var duringResume: (() -> Void)?
+    var duringReceipt: (() -> Void)?
+    var promptReceipt: [String: Any] = [:]
 
     func connect() async throws {}
 
@@ -26,6 +28,9 @@ private final class SessionIsolationRPCClient: HermesRPCClientProtocol {
             let index = requests.filter { $0.method == "session.resume" }.count - 1
             return index < resumeResponses.count
                 ? resumeResponses[index] : ["session_id": params["session_id"] as? String ?? "", "messages": []]
+        case "prompt.receipt":
+            duringReceipt?()
+            return promptReceipt
         default:
             return [:]
         }
@@ -64,6 +69,63 @@ private struct Fixtures {
 
 @MainActor
 struct SessionConversationIsolationTests {
+    @Test func completedReplyUsesTheProviderFromItsScopedReceipt() async throws {
+        let rpc = SessionIsolationRPCClient()
+        rpc.promptReceipt = [
+            "admission_id": "turn-a", "ref": ["session_id": Fixtures.sessionA],
+            "status": "terminal", "outcome": "completed",
+            "result": ["provider": "openrouter", "model": "anthropic/claude-sonnet"],
+        ]
+        let model = DockModel(initialSessionID: Fixtures.sessionA, rpcClient: rpc)
+        model.sessionProfileID = "secondary"
+        model.currentModelName = "selected-model"
+        model.handleEvent(
+            "message.complete",
+            params: [
+                "session_id": Fixtures.sessionA,
+                "payload": [
+                    "status": "complete", "admission_id": "turn-a", "text": "Answer.",
+                    "persisted_turn": ["complete": true, "final_assistant_row_id": 42],
+                ],
+            ])
+
+        try await waitUntil { model.messages.first?.responseRoute != nil }
+        let reply = try #require(model.messages.first)
+        #expect(reply.responseRoute == HermesModelOption(provider: "openrouter", model: "anthropic/claude-sonnet"))
+        let request = try #require(rpc.requests.first { $0.method == "prompt.receipt" })
+        #expect(request.params["session_id"] as? String == Fixtures.sessionA)
+        #expect(request.params["admission_id"] as? String == "turn-a")
+        #expect(request.params["profile"] as? String == "secondary")
+        #expect(request.params["include_result"] as? Bool == true)
+
+        let restored = DockModel.parseMessages([["row_id": 42, "role": "assistant", "text": reply.text]])
+        #expect(restored.messages.first?.responseRoute == nil)
+        let stable = DockModel.keepingMessageIDs(
+            restored, previous: model.transcriptMessageIDsByRowID, previousMessages: model.messages)
+        #expect(stable.messages.first?.responseRoute == reply.responseRoute)
+    }
+
+    @Test func replyRouteIgnoresMismatchedReceiptsAndLateResponses() async throws {
+        let rpc = SessionIsolationRPCClient()
+        rpc.promptReceipt = [
+            "admission_id": "turn-b", "ref": ["session_id": Fixtures.sessionA],
+            "status": "terminal", "outcome": "completed", "result": ["provider": "openrouter", "model": "claude"],
+        ]
+        let model = DockModel(initialSessionID: Fixtures.sessionA, rpcClient: rpc)
+        let reply = ChatMessage(role: .hermes, text: "Answer.")
+        model.messages = [reply]
+        let generation = model.sessionResumeGeneration
+        await model.loadCompletedReplyRoute(
+            sessionID: Fixtures.sessionA, admissionID: "turn-a", generation: generation, messageID: reply.id)
+        #expect(model.messages.first?.responseRoute == nil)
+
+        rpc.promptReceipt["admission_id"] = "turn-a"
+        rpc.duringReceipt = { model.sessionResumeGeneration &+= 1 }
+        await model.loadCompletedReplyRoute(
+            sessionID: Fixtures.sessionA, admissionID: "turn-a", generation: generation, messageID: reply.id)
+        #expect(model.messages.first?.responseRoute == nil)
+    }
+
     @Test func queuedMessagesSurviveSessionSwitchAndNewRuntimeHandle() async throws {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [

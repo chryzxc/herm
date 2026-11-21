@@ -97,6 +97,25 @@ final class HermesControlRPC {
             params: Self.profileParams(["session_id": sessionID], profileID: profileID))
     }
 
+    func completedPromptRoute(sessionID: String, admissionID: String, profileID: String?) async throws
+        -> HermesModelOption?
+    {
+        let receipt = try await client.request(
+            HermesFeatureIDs.ID.promptReceipt.rawValue,
+            params: Self.profileParams(
+                ["session_id": sessionID, "admission_id": admissionID, "include_result": true], profileID: profileID))
+        guard receipt["admission_id"] as? String == admissionID,
+            (receipt["ref"] as? [String: Any])?["session_id"] as? String == sessionID,
+            receipt["status"] as? String == "terminal", receipt["outcome"] as? String == "completed",
+            let result = receipt["result"] as? [String: Any],
+            let provider = (result["provider"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !provider.isEmpty,
+            let model = (result["model"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !model.isEmpty
+        else { return nil }
+        return HermesModelOption(provider: provider, model: model)
+    }
+
     func activeSessions() async throws -> [String: Any] {
         try await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])
     }

@@ -13,7 +13,7 @@ struct ConversationTranscriptSnapshot: Equatable {
             let b = rhs.message
             return lhs.index == rhs.index && a.id == b.id && a.contentRevision == b.contentRevision
                 && a.role == b.role && a.images.map(ObjectIdentifier.init) == b.images.map(ObjectIdentifier.init)
-                && a.timestamp == b.timestamp && a.modelName == b.modelName
+                && a.timestamp == b.timestamp && a.modelName == b.modelName && a.responseRoute == b.responseRoute
                 && a.responseDuration == b.responseDuration && a.tokenCount == b.tokenCount
                 && a.isSteering == b.isSteering && a.steeringStatus == b.steeringStatus && a.isError == b.isError
                 && a.botProfileID == b.botProfileID && a.botDisplayName == b.botDisplayName
