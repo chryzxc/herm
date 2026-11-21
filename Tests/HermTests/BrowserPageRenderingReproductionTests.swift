@@ -226,7 +226,9 @@ struct BrowserPageRenderingReproductionTests {
             #expect(reportedSize == viewport)
             #expect(reportedPixels.width <= pixels.width)
             #expect(reportedPixels.height <= pixels.height)
-            #expect(reportedPixels.width * reportedPixels.height >= pixels.width * pixels.height * 0.99)
+            // After retrying, Chrome can send a correctly proportioned frame at its native CSS resolution.
+            let minimumArea = min(pixels.width * pixels.height, viewport.width * viewport.height)
+            #expect(reportedPixels.width * reportedPixels.height >= minimumArea * 0.99)
             #expect(abs(canvas.pageRect.width - size.width) < 1)
             #expect(abs(canvas.pageRect.height - size.height) < 1)
             #expect(page.layer?.contents != nil)
