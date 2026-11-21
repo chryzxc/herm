@@ -232,7 +232,7 @@ struct ConversationTranscriptView: View, Equatable {
                 }
                 .onAppear {
                     coordinator.onScrollToBottom = { [weak coordinator = coordinator] animated in
-                        if animated {
+                        if animated, coordinator?.controller.clipView?.window?.isVisible == true {
                             withAnimation(.dockEase(duration: 0.22)) {
                                 proxy.scrollTo("conversation-bottom", anchor: .bottom)
                             }
