@@ -1254,7 +1254,8 @@ and activity archives. Clicks and shortcut requests can open the workspace as so
 as those reads finish. The normal notch preview becomes available at that point.
 
 Visible notch Bot status animations continue during workspace scrolling.
-The clocks still honor Reduce Motion, motion-free skins, and host visibility.
+Core Animation composites the reach, shake, and hop around the face's own
+expression updates. Reduce Motion and motion-free skins show the resting pose.
 Local delivery questions refresh on inbox changes, with a minute-scale recovery
 check. The background Bot roster backs off to a minute while the notch is idle.
 

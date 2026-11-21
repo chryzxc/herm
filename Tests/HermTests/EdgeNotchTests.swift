@@ -686,6 +686,24 @@ struct BotStatusMotionTests {
         #expect(BotStatusMotion.finished.pose(at: 3, live: true).lift == 0)
         #expect(BotStatusMotion.finished.pose(at: BotStatusMotion.finishedNudgePeriod + 0.5, live: true).lift > 0)
     }
+
+    @MainActor @Test func nativeNotchLoopsKeepTheExistingMotionPeriods() throws {
+        let layer = CALayer()
+        for (motion, duration) in [
+            (BotStatusMotion.working, BotWorkingPose.stridePeriod),
+            (.blocked, BotStatusMotion.blockedShakePeriod),
+            (.finished, BotStatusMotion.finishedNudgePeriod),
+        ] {
+            let loop = try #require(BotNotchFaceMotion.Host.loop(motion, size: 22, cue: 0, layer: layer))
+            let frames = try #require(loop.values as? [NSValue])
+            #expect(loop.duration == duration)
+            #expect(loop.repeatCount == .infinity)
+            #expect(loop.keyTimes?.first == 0 && loop.keyTimes?.last == 1)
+            #expect(frames.first == frames.last)
+            #expect(frames.contains { $0 != frames.first })
+        }
+        #expect(BotNotchFaceMotion.Host.loop(.resting, size: 22, cue: 0, layer: layer) == nil)
+    }
 }
 
 struct NotchBotsStyleIntroductionTests {

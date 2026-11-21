@@ -352,12 +352,13 @@ struct EdgeNotchStatusIndicator: View {
             case .offline: .offline
             case .idle: .sleepy
             }
-        let face = BotFaceMark(id: id, size: size, animated: !reduceMotion, mood: mood, live: true)
-            .botStatusMotion(
-                reduceMotion ? .resting : BotStatusMotion(mood: mood), size: size, live: true,
-                cue: activity.finishedCount
-            )
-            .opacity(m == .offline || m == .idle ? 0.55 : 1)
+        let face = BotNotchFaceMotion(
+            face: BotFaceMark(id: id, size: size, animated: !reduceMotion, mood: mood, live: true),
+            cue: activity.finishedCount
+        )
+        .frame(width: size * 1.4, height: size * 1.4)
+        .frame(width: size, height: size)
+        .opacity(m == .offline || m == .idle ? 0.55 : 1)
         // Face and badge share one box that fits the 28pt rail and the island
         // ear, so nothing hangs past the screen edge or the menu bar.
         ZStack(alignment: .topTrailing) {

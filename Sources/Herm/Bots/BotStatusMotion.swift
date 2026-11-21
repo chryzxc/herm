@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The one status choreography every Bot surface shares, so a Bot doing the
@@ -22,6 +23,8 @@ enum BotStatusMotion: Equatable {
 
     /// How often a live finished Bot re-hops while its result waits unopened.
     static let finishedNudgePeriod: TimeInterval = 6
+    static let blockedShakePeriod: TimeInterval = 2
+    static let blockedShakeDuration: TimeInterval = 0.5
 
     /// The pose `t` seconds into this state. A finished hop in flight wins.
     func pose(at t: TimeInterval, hopAge: TimeInterval? = nil, variation: Int = 0, live: Bool = false)
@@ -39,12 +42,103 @@ enum BotStatusMotion: Equatable {
             return .at(t)
         case .blocked:
             // A quick head shake at the top of each 2s beat, then still.
-            let beat = max(0, t).truncatingRemainder(dividingBy: 2) / 2
-            let phase = min(beat / 0.25, 1)
+            let beat = max(0, t).truncatingRemainder(dividingBy: Self.blockedShakePeriod)
+            let phase = min(beat / Self.blockedShakeDuration, 1)
             let shake = sin(phase * 4 * .pi) * sin(phase * .pi) * (1 - phase) * 8
             return BotWorkingPose(rotation: shake)
         case .finished, .resting:
             return .rest
+        }
+    }
+}
+
+/// Composites the notch's whole-face motion with no SwiftUI layout tick for each pose.
+struct BotNotchFaceMotion: NSViewRepresentable {
+    let face: BotFaceMark
+    let cue: Int
+
+    func makeNSView(context: Context) -> Host { Host(size: face.size) }
+
+    func updateNSView(_ view: Host, context: Context) {
+        let environment = context.environment
+        view.face.rootView = AnyView(face.environment(\.self, environment))
+        let motion = BotStatusMotion(mood: face.mood ?? .idle)
+        let enabled =
+            environment.dockHostVisible && !environment.dockHostResizing
+            && DockMotion.isEnabled(reduceMotion: environment.accessibilityReduceMotion)
+        view.apply(enabled ? motion : .resting, cue: cue)
+    }
+
+    static func dismantleNSView(_ view: Host, coordinator: ()) { view.apply(.resting, cue: 0) }
+
+    final class Host: NSView {
+        let face = NSHostingView(rootView: AnyView(EmptyView()))
+        private let size: CGFloat
+        private var motion = BotStatusMotion.resting
+        private var cue = 0
+        private static let animationKey = "bot.statusMotion"
+
+        init(size: CGFloat) {
+            self.size = size
+            let canvas = size * 1.4
+            super.init(frame: NSRect(x: 0, y: 0, width: canvas, height: canvas))
+            wantsLayer = true
+            clipsToBounds = false
+            face.frame = bounds
+            face.autoresizingMask = [.width, .height]
+            face.sizingOptions = []
+            face.wantsLayer = true
+            addSubview(face)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { nil }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        func apply(_ motion: BotStatusMotion, cue: Int) {
+            let newResult = motion == .finished && cue > self.cue
+            self.cue = cue
+            guard motion != self.motion || newResult, let layer = face.layer else { return }
+            self.motion = motion
+            layer.removeAnimation(forKey: Self.animationKey)
+            if let animation = Self.loop(motion, size: size, cue: cue, layer: layer) {
+                layer.add(animation, forKey: Self.animationKey)
+            }
+        }
+
+        static func loop(_ motion: BotStatusMotion, size: CGFloat, cue: Int, layer: CALayer) -> CAKeyframeAnimation? {
+            let (period, movingDuration): (TimeInterval, TimeInterval)
+            switch motion {
+            case .working: (period, movingDuration) = (BotWorkingPose.stridePeriod, BotWorkingPose.strideDuration)
+            case .blocked:
+                (period, movingDuration) = (BotStatusMotion.blockedShakePeriod, BotStatusMotion.blockedShakeDuration)
+            case .finished:
+                (period, movingDuration) = (BotStatusMotion.finishedNudgePeriod, BotWorkingPose.reactionDuration)
+            case .resting: return nil
+            }
+            let steps = Int((movingDuration * 30).rounded())
+            let times = (0...steps).map { movingDuration * Double($0) / Double(steps) } + [period]
+            let direction: CGFloat = layer.superlayer?.isGeometryFlipped == true ? -1 : 1
+            let center = CGPoint(
+                x: (0.5 - layer.anchorPoint.x) * layer.bounds.width,
+                y: (0.5 - layer.anchorPoint.y) * layer.bounds.height)
+            let animation = CAKeyframeAnimation(keyPath: "transform")
+            animation.keyTimes = times.map { NSNumber(value: $0 / period) }
+            animation.values = times.map { time in
+                let pose = time < movingDuration ? motion.pose(at: time, variation: cue, live: true) : .rest
+                let transform = CGAffineTransform(
+                    translationX: center.x + size * pose.reach,
+                    y: center.y + direction * size * 0.2 * pose.lift
+                )
+                .rotated(by: -direction * pose.rotation * .pi / 180)
+                .scaledBy(x: pose.scaleX, y: pose.scaleY)
+                .translatedBy(x: -center.x, y: -center.y)
+                return NSValue(caTransform3D: CATransform3DMakeAffineTransform(transform))
+            }
+            animation.duration = period
+            animation.repeatCount = .infinity
+            return animation
         }
     }
 }
@@ -60,11 +154,8 @@ extension BotWorkingPose {
 }
 
 extension View {
-    /// Plays the shared status choreography. `live` keeps a status carrier
-    /// (the notch) moving while Herm is in the background; `cue` replays the
-    /// finished hop when another result lands without the state changing.
-    func botStatusMotion(_ motion: BotStatusMotion, size: CGFloat, live: Bool = false, cue: Int = 0) -> some View {
-        modifier(BotStatusMotionModifier(motion: motion, size: size, live: live, cue: cue))
+    func botStatusMotion(_ motion: BotStatusMotion, size: CGFloat, live: Bool = false) -> some View {
+        modifier(BotStatusMotionModifier(motion: motion, size: size, live: live))
     }
 }
 
@@ -72,7 +163,6 @@ private struct BotStatusMotionModifier: ViewModifier {
     let motion: BotStatusMotion
     let size: CGFloat
     let live: Bool
-    let cue: Int
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dockHostVisible) private var hostVisible
     @Environment(\.dockHostResizing) private var hostResizing
@@ -91,16 +181,13 @@ private struct BotStatusMotionModifier: ViewModifier {
                 running
                 ? motion.pose(
                     at: context.date.timeIntervalSince(startedAt),
-                    hopAge: hopAt.map { context.date.timeIntervalSince($0) }, variation: cue, live: live)
+                    hopAge: hopAt.map { context.date.timeIntervalSince($0) }, live: live)
                 : .rest
             pose.applied(to: content, size: size)
         }
         .onChange(of: motion) { old, new in
             startedAt = Date()
             if new == .finished, old != .finished { hop() }
-        }
-        .onChange(of: cue) { old, new in
-            if motion == .finished, new > old { hop() }
         }
         .onChange(of: moves) { _, moving in
             // Never replay a stale hop when motion resumes.

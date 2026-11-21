@@ -199,10 +199,12 @@ struct BotWorkingPose {
     var scaleY: CGFloat = 1
 
     static let rest = BotWorkingPose()
+    static let stridePeriod: TimeInterval = 2.8
+    static let strideDuration: TimeInterval = 1.2
     static let reactionDuration: TimeInterval = 1.2
 
     static func stridePhase(at elapsed: TimeInterval) -> Double {
-        min(max(0, elapsed).truncatingRemainder(dividingBy: 2.8) / 1.2, 1)
+        min(max(0, elapsed).truncatingRemainder(dividingBy: stridePeriod) / strideDuration, 1)
     }
 
     static func at(_ elapsed: TimeInterval) -> BotWorkingPose {
