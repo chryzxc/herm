@@ -11,7 +11,7 @@ struct PullRequestFloatingChatView: View {
             if let conversation = chat.conversation {
                 PullRequestSessionChatView(model: conversation, runtime: runtime, record: record, expanded: $expanded)
             } else {
-                DockLoadingState(title: "Loading conversation…", minHeight: expanded ? 100 : 28)
+                ConversationLoadingState(minHeight: expanded ? 100 : 28, compact: !expanded)
             }
         }
         .frame(idealWidth: expanded ? 520 : nil, maxWidth: expanded ? 620 : 200)

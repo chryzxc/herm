@@ -1379,8 +1379,9 @@ The notch appears while Herm loads local workspace preferences and activity arch
 Clicking it or using the workspace shortcut during launch opens the workspace as soon as it is ready.
 On first opening the workspace, a full-window Herm animation covers the panes until
 the first session rows, an empty list, or a connection error is available. Older
-sessions continue to load in the background. Reduce Motion shows the Herm mark
-and signal traces in a still frame.
+sessions continue to load in the background. The strokes of Herm’s H settle into place at startup. When a conversation
+opens, two speech bubbles slide into position while its history loads. Reduce Motion
+shows the finished artwork on both surfaces.
 
 To build and open the signed debug app bundle with its icon, run:
 

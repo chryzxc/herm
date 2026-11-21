@@ -102,8 +102,8 @@ struct ConversationTranscriptView: View, Equatable {
                                     .frame(maxWidth: .infinity)
                                     .frame(minHeight: max(300, viewport.size.height - 16))
                                 } else if snapshot.messages.isEmpty && snapshot.context.conversationApproval == nil {
-                                    DockLoadingState(
-                                        title: "Loading conversation…", minHeight: max(300, viewport.size.height - 16))
+                                    ConversationLoadingState(
+                                        minHeight: max(300, viewport.size.height - 16))
                                 }
                                 let range = snapshot.range
                                 let generation = snapshot.layoutGeneration

@@ -131,7 +131,7 @@ struct SessionDashboard<Conversation: View>: View {
         VStack(spacing: 0) {
             if isNewConversation || selection.session != nil {
                 if selection.isLoading {
-                    DockLoadingState(title: "Loading conversation…", minHeight: 120)
+                    ConversationLoadingState()
                         .frame(maxHeight: .infinity)
                 } else if canRespond {
                     conversation()

@@ -39,7 +39,7 @@ struct DockLayerMotionTests {
 
     @Test func pausingEveryLoopKeepsItsArtworkAndRemovesAnimations() throws {
         let kinds: [DockLayerMotion.Kind] = [
-            .thinkingRelay, .compactLines,
+            .thinkingRelay, .compactLines, .openingMonogram, .openingConversation,
             .spin(period: 1.6, lineWidth: 1.5), .capsuleRim(period: 2.4, lineWidth: 1),
             .breathe(period: 2), .sweep(period: 1.6, fraction: 0.4, clamp: 0...80),
             .tide(period: 2, depth: 4),

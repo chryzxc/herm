@@ -5,16 +5,10 @@ struct DockStartupScreen: View {
 
     var body: some View {
         DockExpandedPage(title: "Herm", subtitle: "Opening workspace…") {
-            ZStack {
-                DockLayerMotion(kind: .startupSignal, color: .dockAccent)
-                    .frame(maxWidth: 342)
-                    .frame(height: 112)
-                DockAppIcon()
-                    .frame(width: 112, height: 112)
-            }
-            .dockPadding(.horizontal, 24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityHidden(true)
+            DockLayerMotion(kind: .openingMonogram, color: .dockPrimaryText, glow: DockAccentColor.teal.fill)
+                .frame(width: 116, height: 104)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityHidden(true)
         }
         .environment(
             \.dockTitleRow,

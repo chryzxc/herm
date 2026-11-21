@@ -639,7 +639,7 @@ struct SessionPaneChatContent: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            DockLoadingState(title: "Loading conversation…")
+            ConversationLoadingState()
         }
     }
 }

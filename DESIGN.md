@@ -1240,11 +1240,11 @@ and activity archives. Clicks and shortcut requests can open the workspace as so
 as those reads finish. The normal notch preview becomes available at that point.
 
 When the workspace opens during startup, a full-workspace surface covers the
-session list, conversation, and inspector. The Herm mark sits between two accent
-traces that carry a signal inward while the initial profile and session list load.
+session list, conversation, and inspector. The stems and crossbar of Herm’s H settle into alignment,
+followed by its colored dot, while the initial profile and session list load.
 The surface gives way on the first available session rows, a confirmed empty list,
 or a failure. Older history continues loading in place. Reduce Motion and
-motion-free skins show the same mark and traces without the moving signal.
+motion-free skins show the assembled mark.
 
 As a pet approaches a side rail, the lower contour bends toward its docking point. During the drag it tracks proximity directly and settles on release; the top camera housing retains its outline. A held pet tips once. Sprite frames step through the Hermes sheet in Core Animation.
 
@@ -3067,6 +3067,10 @@ member's face attached; clicking it opens the room at that message. All motion f
 Group chat action errors use toast notifications without an inline error row above the composer. The group composer reuses the main chat composer chrome (`composerCard`, `composerTray`, `composerColumn`, `ComposerFolderBarSlot`, `ComposerControlLabel`, `ComposerSubmitLabel`), so its input sits at the same position and size as a session composer. When `groups.capabilities` lists `groups.attachment.upload`, the **+** popover adds Files and Images, and files dropped or pasted onto the editor upload through the same `ComposerInputEditor(onDropFiles:)` path as sessions; uploaded files show as removable chips above the controls (Send waits for uploads), and sent messages use the main chat's user-message chrome (`UserMessageImages`, `UserMessageAttachmentRow`, `.userMessageBubble()`): images read back with `groups.attachment.download` sit above the bubble and open the image preview, other files (and images Hermes refuses) are named rows inside it, and a timestamp and copy action sit underneath. Group actions (thread, Edit Group…, Disband…) sit at the trailing edge of the toolbar, including in a tab column where the tab row carries them. Edit Group renames the room in place and edits members with the New Group Chat checklist (`GroupMemberPicker`); Hermes fixes a room's members at creation, so a changed roster says so and creates a new group (the old one and its history stay). Groups with bots from another Mac keep their members read-only. A group chat opened from Bots accepts a dropped session like any chat: the room becomes the first column's tab and the session opens as a tab or new column beside it. Bot, group and session rows in the sidebar take their insets and gaps from `DockSidebarListMetrics`, so the Bots list spaces rows exactly like Recents, including the shared `titleToPreview` gap between a row title and its last message. The Bots | Sessions switch is a full-width tab track (`DockChatsScopeSwitch`) at the top of each list: above the bot picker in Sessions, above the search field in Bots, not in the title strip. In Sessions, New chat is an icon button (tooltip "New chat") to the right of the search field, mirroring the Bots + menu.
 
 ### Conversation workspace
+
+When a conversation is loading, two offset speech bubbles settle into place in
+reading order above the status text. The collapsed review chat places the small
+mark beside the text. Reduce Motion shows the resting pair.
 
 The send arrow folds into a square in the same button when its action changes to Stop. Thinking uses a three-bead relay, and live compaction folds the outer two lines into the middle line. Both use native layers and retain static marks when motion is paused. The shared progress meter interpolates its filled path inside a fixed track.
 
