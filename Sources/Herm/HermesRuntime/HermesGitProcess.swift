@@ -6,15 +6,21 @@ enum HermesGitProcessError: Error { case limit, unavailable, unsupported }
 final class HermesGitProcessCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
+    private var waiter: DispatchSemaphore?
     func cancel() {
-        lock.lock()
-        cancelled = true
-        lock.unlock()
+        lock.withLock {
+            cancelled = true
+            waiter?.signal()
+        }
     }
     var isCancelled: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return cancelled
+        lock.withLock { cancelled }
+    }
+    func setWaiter(_ waiter: DispatchSemaphore?) {
+        lock.withLock {
+            self.waiter = waiter
+            if cancelled { waiter?.signal() }
+        }
     }
 }
 struct HermesGitOutput {
@@ -59,6 +65,15 @@ enum HermesGitProcess {
             }
         }
         guard spawned == 0 else { throw HermesGitProcessError.unsupported }
+        let wake = DispatchSemaphore(value: 0)
+        let exit = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global(qos: .utility))
+        exit.setEventHandler { wake.signal() }
+        exit.activate()
+        cancellation.setWaiter(wake)
+        defer {
+            cancellation.setWaiter(nil)
+            exit.cancel()
+        }
         var status: Int32 = 0
         var failure: Error?
         var nextSizeCheck = Date.distantPast
@@ -89,7 +104,9 @@ enum HermesGitProcess {
                 while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
                 break
             }
-            usleep(10_000)
+            // Exit and cancellation wake immediately. Only the size and time budgets need a timed check.
+            let nextCheck = min(nextSizeCheck, deadline)
+            _ = wake.wait(timeout: .now() + max(0, nextCheck.timeIntervalSinceNow))
         }
         if let failure { throw failure }
         if cancellation.isCancelled { throw CancellationError() }
