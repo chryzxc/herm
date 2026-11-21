@@ -40,7 +40,7 @@ extension DockThemeID {
         switch self {
         case .retro:
             DockSkinPresentation(
-                composerPlaceholder: "C:\\> Type a message_", restoringPlaceholder: "Please wait…",
+                composer: .desktop, composerPlaceholder: "C:\\> Type a message_", restoringPlaceholder: "Please wait…",
                 answerPlaceholder: "Reply to Herm_")
         case .eInk:
             DockSkinPresentation(transcript: .document, composer: .desktop)
@@ -48,7 +48,8 @@ extension DockThemeID {
             DockSkinPresentation(composerPlaceholder: "Say anything")
         case .pixel:
             DockSkinPresentation(
-                composerPlaceholder: "Insert coin ▸ type a message", restoringPlaceholder: "Loading save file…",
+                composer: .desktop, composerPlaceholder: "Insert coin ▸ type a message",
+                restoringPlaceholder: "Loading save file…",
                 answerPlaceholder: "Player 1, answer Herm…")
         case .notebook:
             DockSkinPresentation(
@@ -56,7 +57,7 @@ extension DockThemeID {
                 restoringPlaceholder: "Opening your notebook…")
         case .hud:
             DockSkinPresentation(
-                composerPlaceholder: "Awaiting input…", restoringPlaceholder: "Restoring session…",
+                composer: .desktop, composerPlaceholder: "Awaiting input…", restoringPlaceholder: "Restoring session…",
                 answerPlaceholder: "Respond to Herm…")
         case .storm:
             DockSkinPresentation(
@@ -64,6 +65,8 @@ extension DockThemeID {
                 answerPlaceholder: "Signal your answer…")
         case .swiss:
             DockSkinPresentation(transcript: .document, composer: .line, composerPlaceholder: "Ask anything")
+        case .ares, .terminal, .hiFi, .origami, .capiz, .highContrast, .hermesClassic, .slate, .brutalist, .mono:
+            DockSkinPresentation(composer: .desktop)
         default: DockSkinPresentation()
         }
     }

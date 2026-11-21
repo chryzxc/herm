@@ -51,7 +51,10 @@ struct DockSkinSpecimen: View {
                         .dockFont(.metadata, weight: .regular, design: .monospaced)
                         .foregroundStyle(palette.secondaryText)
                     Spacer(minLength: 0)
-                    Circle().fill(palette.accent).frame(width: 7, height: 7)
+                    DockSkinSwitch(theme: theme, isOn: true)
+                        .frame(width: 38, height: 22)
+                        .scaleEffect(0.65)
+                        .frame(width: 25, height: 15)
                 }
                 .dockPadding(10)
                 .background { surface }

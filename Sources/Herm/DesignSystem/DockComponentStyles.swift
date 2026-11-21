@@ -121,6 +121,27 @@ struct DockThemeShape: Shape {
 
     func path(in rect: CGRect) -> Path {
         switch geometry {
+        case .leaf:
+            let radius = min(min(rect.width, rect.height) / 2, cornerRadius + 4)
+            return UnevenRoundedRectangle(
+                topLeadingRadius: radius, bottomLeadingRadius: 3,
+                bottomTrailingRadius: radius, topTrailingRadius: 3
+            ).path(in: rect)
+        case .capsule:
+            let radius = role == .control ? rect.height / 2 : min(26, rect.height / 3)
+            return RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: rect)
+        case .facet, .clipped:
+            let cut = min(role.cut, min(rect.width, rect.height) / 4)
+            let other = geometry == .facet ? cut : 0
+            var p = Path()
+            p.addLines([
+                CGPoint(x: rect.minX + other, y: rect.minY), CGPoint(x: rect.maxX - cut, y: rect.minY),
+                CGPoint(x: rect.maxX, y: rect.minY + cut), CGPoint(x: rect.maxX, y: rect.maxY - other),
+                CGPoint(x: rect.maxX - other, y: rect.maxY), CGPoint(x: rect.minX + other, y: rect.maxY),
+                CGPoint(x: rect.minX, y: rect.maxY - other), CGPoint(x: rect.minX, y: rect.minY + other),
+            ])
+            p.closeSubpath()
+            return p
         case .pixel: return pixelPath(in: rect)
         case .sketch: return sketchPath(in: rect)
         case .chamfered: return chamferPath(in: rect)
@@ -228,6 +249,33 @@ private struct DockCornerBrackets: Shape {
             p.addLine(to: CGPoint(x: corner.x, y: corner.y + dy * length))
         }
         return p
+    }
+}
+
+/// Small details inside the panel margin, independent of the content's height.
+private struct DockPanelRules: Shape {
+    let finish: DockPanelFinish
+
+    func path(in rect: CGRect) -> Path {
+        guard rect.width >= 60, rect.height >= 24 else { return Path() }
+        var path = Path()
+        switch finish {
+        case .bound:
+            path.move(to: CGPoint(x: rect.minX + 5, y: rect.minY + 10))
+            path.addLine(to: CGPoint(x: rect.minX + 5, y: rect.maxY - 10))
+        case .folio:
+            for inset: CGFloat in [3, 5] {
+                path.move(to: CGPoint(x: rect.minX + inset + 2, y: rect.maxY - inset))
+                path.addLine(to: CGPoint(x: rect.maxX - inset - 2, y: rect.maxY - inset))
+            }
+        case .phosphor:
+            for x in [rect.minX + 3, rect.maxX - 13] {
+                path.move(to: CGPoint(x: x, y: rect.minY + 3))
+                path.addLine(to: CGPoint(x: x + 10, y: rect.minY + 3))
+            }
+        default: break
+        }
+        return path
     }
 }
 
@@ -409,14 +457,18 @@ private struct DockSelectionSurface<S: Shape>: View {
             switch mode {
             case .underline:
                 Color.clear
-            case .bar where theme.style.finish == .machined:
+            case .bar:
                 shape.fill(fill)
                     .overlay(alignment: .leading) {
-                        palette.accent.frame(width: 3).padding(.vertical, 3)
+                        palette.accent.frame(width: theme.style.finish == .machined ? 3 : 2)
+                            .padding(.vertical, theme.style.geometry == .chamfered ? 6 : 3)
                     }
                     .clipShape(shape)
             case .invert where allowsInvert:
                 shape.fill(palette.primaryText)
+            case .invert:
+                // Rich rows keep their own text and status inks. Give selection an ink contour.
+                shape.fill(fill).overlay(shape.stroke(palette.primaryText, lineWidth: max(1, theme.style.outlineWidth)))
             case .highlight:
                 // A marker swipe behind the label, set slightly off-level.
                 Color.dockMarker.opacity(0.5)
@@ -562,6 +614,22 @@ extension View {
                 }
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
+            } else if theme.style.finish == .horizon {
+                DockThemeShape(theme: theme, role: .pane)
+                    .stroke(
+                        LinearGradient(
+                            colors: [DockThemePalette(theme: theme).accent.opacity(0.6), .clear],
+                            startPoint: .topLeading, endPoint: .center), lineWidth: 1.5
+                    )
+                    .allowsHitTesting(false)
+            } else if [.bound, .folio, .phosphor].contains(theme.style.finish) {
+                DockPanelRules(finish: theme.style.finish)
+                    .stroke(
+                        DockThemePalette(theme: theme).accent.opacity(theme.style.finish == .bound ? 0.32 : 0.64),
+                        lineWidth: 1
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             } else if !neon.isEmpty {
                 // Neon rim: a faint gradient outline with a brighter lit top edge.
                 let rim = DockThemeShape(cornerRadius: theme.style.paneRadius, role: .pane, geometry: geometry)
@@ -911,6 +979,69 @@ enum DockPointerCursor {
     }
 }
 
+/// Drawn inside the action's existing bounds. Key travel changes the visible lip,
+/// while the printed treatments keep the baseline and target stationary.
+struct DockActionSurface: View {
+    let theme: DockThemeID
+    let tint: Color
+    let pressed: Bool
+    let hovered: Bool
+    let destructive: Bool
+
+    var body: some View {
+        let style = theme.style
+        let palette = DockThemePalette(theme: theme)
+        let shape = DockThemeShape(theme: theme)
+        let wash = pressed ? 0.30 : hovered ? 0.24 : 0.14
+        switch style.actionFace {
+        case .ink where !destructive:
+            shape.fill(style.backdrop == .scanlines ? palette.accent : palette.primaryText)
+                .opacity(pressed ? 0.84 : hovered ? 0.92 : 1)
+        case .rule:
+            shape.fill(tint.opacity(pressed ? 0.18 : hovered ? 0.12 : 0.05))
+                .overlay(alignment: .bottom) { tint.frame(height: pressed ? 3 : 2) }
+                .clipShape(shape)
+        case .marker:
+            Rectangle().fill(tint.opacity(wash + 0.08))
+                .rotationEffect(.degrees(-1.5)).padding(.vertical, pressed ? 2 : 4)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(tint).frame(height: 1).padding(.horizontal, 4).padding(.bottom, 3)
+                }
+                .clipShape(shape)
+        case .keycap:
+            let lip: CGFloat = pressed ? 0 : (style.stickerShadow > 0 || style.bevel ? 3 : 2)
+            shape.fill(palette.divider)
+                .overlay {
+                    shape.fill(palette.surface)
+                        .overlay(shape.fill(tint.opacity(wash)))
+                        .overlay {
+                            if style.emboss > 0 && !pressed {
+                                shape.fill(
+                                    LinearGradient(
+                                        colors: [palette.primaryText.opacity(0.13), .clear],
+                                        startPoint: .top, endPoint: .center))
+                            }
+                        }
+                        .overlay(
+                            shape.stroke(tint.opacity(hovered ? 0.78 : 0.5), lineWidth: max(1, style.outlineWidth))
+                        )
+                        .padding(.bottom, lip)
+                }
+                .clipShape(shape)
+        default:
+            shape.fill(tint.opacity(wash))
+                .background(shape.fill(palette.background))
+                .overlay(shape.stroke(tint.opacity(hovered ? 0.6 : 0.35), lineWidth: style.outlineWidth))
+                .overlay {
+                    if style.accentGradient {
+                        shape.fill(
+                            LinearGradient(colors: [.white.opacity(0.16), .clear], startPoint: .top, endPoint: .center))
+                    }
+                }
+        }
+    }
+}
+
 /// The single accent-tinted action treatment from DESIGN.md. Use it only for the
 /// primary action in a section; secondary actions keep a neutral outline.
 struct DockPrimaryButtonStyle: ButtonStyle {
@@ -918,8 +1049,11 @@ struct DockPrimaryButtonStyle: ButtonStyle {
     var dimsWhenDisabled = true
     static var foregroundColor: Color { foregroundColor(DockThemeRuntime.current) }
     static func foregroundColor(_ theme: DockThemeID) -> Color {
-        theme.style.material == .glass || !DockThemePalette(theme: theme).neonHues.isEmpty
-            ? .dockOnAccentText : .dockPrimaryText
+        let palette = DockThemePalette(theme: theme)
+        if theme.style.actionFace == .ink {
+            return theme.style.backdrop == .scanlines ? palette.onAccent : palette.background
+        }
+        return theme.style.material == .glass || !palette.neonHues.isEmpty ? palette.onAccent : palette.primaryText
     }
     @Environment(\.isFocused) private var isFocused
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -935,7 +1069,10 @@ struct DockPrimaryButtonStyle: ButtonStyle {
         let isGlass = theme.style.material == .glass
         let neon = DockThemePalette(theme: theme).neonHues
         configuration.label
-            .foregroundStyle(Self.foregroundColor(theme))
+            .foregroundStyle(
+                configuration.role == .destructive && theme.style.actionFace == .ink
+                    ? Color.dockPrimaryText : Self.foregroundColor(theme)
+            )
             .dockButtonMetrics()
             .background {
                 if isGlass {
@@ -955,19 +1092,9 @@ struct DockPrimaryButtonStyle: ButtonStyle {
                         color: (configuration.role == .destructive ? tint : neon[1]).opacity(highlighted ? 0.55 : 0.3),
                         radius: highlighted ? 10 : 6)
                 } else {
-                    shape.fill(tint.opacity(configuration.isPressed ? 0.30 : highlighted ? 0.24 : 0.14))
-                        .background(shape.fill(Color.dockCanvas))
-                        .overlay(
-                            shape.stroke(tint.opacity(highlighted ? 0.6 : 0.35), lineWidth: theme.style.outlineWidth)
-                        )
-                        // Glossy skins add a top-down sheen.
-                        .overlay {
-                            if theme.style.accentGradient {
-                                shape.fill(
-                                    LinearGradient(
-                                        colors: [.white.opacity(0.16), .clear], startPoint: .top, endPoint: .center))
-                            }
-                        }
+                    DockActionSurface(
+                        theme: theme, tint: tint, pressed: configuration.isPressed, hovered: highlighted,
+                        destructive: configuration.role == .destructive)
                 }
             }
             .dockStickerShadow(shape, pressed: configuration.isPressed)
@@ -1059,6 +1186,7 @@ struct DockSecondaryButtonStyle: ButtonStyle {
 /// native macOS switch chrome out of the sci-fi glass system while retaining
 /// a clear on/off state through the label, track, and thumb position.
 struct DockToggleStyle: ToggleStyle {
+    @DockChromeTheme private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
@@ -1067,19 +1195,8 @@ struct DockToggleStyle: ToggleStyle {
         } label: {
             HStack(spacing: 8) {
                 configuration.label
-                ZStack {
-                    Capsule()
-                        .fill(configuration.isOn ? Color.dockAccent.opacity(0.24) : Color.dockSurface6)
-                        .overlay {
-                            Capsule()
-                                .stroke(
-                                    configuration.isOn ? Color.dockAccent.opacity(0.72) : Color.dockBorderStrong,
-                                    lineWidth: max(0.7, DockLayout.outline))
-                        }
-                    DockSwitchThumb(position: configuration.isOn ? 1 : 0)
-                        .fill(configuration.isOn ? Color.dockAccent : Color.dockSecondaryText)
-                }
-                .frame(width: 38, height: 22)
+                DockSkinSwitch(theme: theme, isOn: configuration.isOn)
+                    .frame(width: 38, height: 22)
             }
             .foregroundStyle(Color.dockSecondaryText)
             .contentShape(Rectangle())
@@ -1090,10 +1207,48 @@ struct DockToggleStyle: ToggleStyle {
     }
 }
 
+/// A mechanical slider has a short slot and a ridged key. Paper prints the outline;
+/// soft materials retain the full track. All use the same end positions.
+struct DockSkinSwitch: View {
+    let theme: DockThemeID
+    let isOn: Bool
+    @Environment(\.layoutDirection) private var direction
+
+    var body: some View {
+        let style = theme.style
+        let palette = DockThemePalette(theme: theme)
+        let mechanical =
+            (style.motion == .mechanical && style.actionFace != .rule) || style.bevel || style.geometry == .pixel
+        let paper = style.actionFace == .ink || style.actionFace == .rule || style.actionFace == .marker
+        let track = DockThemeShape(theme: theme)
+        let progress: CGFloat = isOn == (direction == .leftToRight) ? 1 : 0
+        ZStack {
+            track.fill(isOn ? palette.accent.opacity(0.22) : palette.surface4)
+                .overlay(track.stroke(paper || mechanical ? palette.secondaryText : palette.divider, lineWidth: 1))
+                .frame(height: mechanical ? 9 : paper ? 18 : 22)
+            DockSwitchThumb(position: progress, geometry: style.geometry, radius: mechanical ? 2 : style.controlRadius)
+                .fill(isOn ? palette.accent : palette.secondaryText)
+                .overlay {
+                    if mechanical {
+                        HStack(spacing: 2) {
+                            Rectangle().frame(width: 1)
+                            Rectangle().frame(width: 1)
+                        }
+                        .foregroundStyle(palette.background).frame(height: 8)
+                        .offset(x: (progress - 0.5) * 18)
+                    }
+                }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 /// One end leads the other during travel. The thumb rounds back into a
 /// circle at either stop, including when a toggle reverses mid-flight.
 struct DockSwitchThumb: Shape {
     var position: CGFloat
+    var geometry: DockThemeGeometry = .rounded
+    var radius: CGFloat = 16
 
     var animatableData: CGFloat {
         get { position }
@@ -1109,13 +1264,14 @@ struct DockSwitchThumb: Shape {
         let thumb = CGRect(
             x: center - (diameter + stretch) / 2, y: rect.midY - diameter / 2,
             width: diameter + stretch, height: diameter)
-        return Capsule().path(in: thumb)
+        return DockThemeShape(cornerRadius: radius, geometry: geometry).path(in: thumb)
     }
 }
 
 /// Themed checkbox: a rounded square that fills with a check when on. Replaces
 /// the native macOS checkbox for every unstyled `Toggle`.
 struct DockCheckboxStyle: ToggleStyle {
+    @DockChromeTheme private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
 
@@ -1124,7 +1280,8 @@ struct DockCheckboxStyle: ToggleStyle {
             configuration.isOn.toggle()
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+                let shape = DockThemeShape(
+                    cornerRadius: min(5, theme.style.controlRadius), geometry: theme.style.geometry)
                 shape.fill(configuration.isOn ? Color.dockPrimaryText : Color.dockSurface4)
                     .overlay(shape.stroke(Color.dockBorderStrong, lineWidth: DockLayout.hairline))
                     .overlay {
@@ -1881,14 +2038,15 @@ extension Shape {
         }
     }
 
-    /// Theme-aware row selection: the selected row becomes interactive glass on
-    /// the glass skin (hover keeps `fallback`); other skins always use `fallback`.
+    /// Rich rows retain their own text inks. Selection follows the skin's material or mark.
     @MainActor
     func dockSelectionFill(_ isSelected: Bool, fallback: Color) -> some View {
         dockChrome { shape, theme in
             if isSelected && theme.style.material == .glass {
                 Color.clear.dockLiquidGlass(shape, interactive: true)
                     .overlay(shape.stroke(Color.dockGlassSelectionEdge, lineWidth: 1))
+            } else if isSelected && theme.style.selection != .fill {
+                DockSelectionSurface(shape: shape, fill: fallback, allowsInvert: false, explicit: theme)
             } else {
                 shape.fill(fallback)
                     .overlay(shape.stroke(isSelected ? Color.dockPrimaryText.opacity(0.75) : .clear, lineWidth: 1))

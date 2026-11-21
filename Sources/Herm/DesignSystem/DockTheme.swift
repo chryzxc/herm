@@ -177,55 +177,61 @@ enum DockBuiltInTheme: String, CaseIterable, Sendable {
         switch self {
         case .canopy:
             DockThemeStyle(
-                controlRadius: 10, paneRadius: 16, outlineWidth: 0, backdrop: .leaf,
+                controlRadius: 10, paneRadius: 16, outlineWidth: 0, geometry: .leaf, backdrop: .leaf,
                 pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
         case .capiz:
             DockThemeStyle(
-                controlRadius: 3, paneRadius: 5, outlineWidth: 1, selection: .underline,
-                motion: .float, pressScale: 0.99, cardFill: 1, tintedSidebar: true, finish: .pearl)
+                controlRadius: 3, paneRadius: 5, outlineWidth: 1, geometry: .facet, selection: .underline,
+                motion: .float, pressScale: 0.99, cardFill: 1, tintedSidebar: true, finish: .pearl, actionFace: .rule)
         case .hiFi:
             DockThemeStyle(
                 controlRadius: 3, paneRadius: 6, outlineWidth: 1, selection: .bar, emboss: 1,
-                motion: .mechanical, pressScale: 0.98, cardFill: 1, tintedSidebar: true, finish: .machined)
+                motion: .mechanical, pressScale: 0.98, cardFill: 1, tintedSidebar: true, finish: .machined,
+                actionFace: .keycap)
         case .highContrast:
             DockThemeStyle(
                 controlRadius: 3, paneRadius: 4, outlineWidth: 2, selection: .invert,
-                animates: false, pressScale: 1, cardFill: 1, strongFocus: true)
+                animates: false, pressScale: 1, cardFill: 1, strongFocus: true, actionFace: .ink)
         case .hermesClassic:
             DockThemeStyle(
                 controlRadius: 2, paneRadius: 3, outlineWidth: 0.5, backdrop: .etching, motion: .snap, pressScale: 1,
-                cardFill: 1, tintedSidebar: true, flatShell: true)
+                cardFill: 1, tintedSidebar: true, flatShell: true, actionFace: .keycap)
         case .warmLight:
             DockThemeStyle(
                 controlRadius: 12, paneRadius: 16, outlineWidth: 0.5, selection: .fill,
-                cardShadow: 4, emboss: 2, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+                cardShadow: 4, emboss: 2, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true,
+                finish: .bound, actionFace: .keycap)
         case .ares:
             DockThemeStyle(
-                controlRadius: 2, paneRadius: 4, outlineWidth: 1.5, stickerShadow: 3, selection: .bar,
-                accentGradient: true, motion: .mechanical, pressScale: 0.97, cardFill: 1, tintedSidebar: true)
+                controlRadius: 2, paneRadius: 4, outlineWidth: 1.5, stickerShadow: 3, geometry: .clipped,
+                selection: .bar,
+                accentGradient: true, motion: .mechanical, pressScale: 0.97, cardFill: 1, tintedSidebar: true,
+                actionFace: .keycap)
         case .mono:
             DockThemeStyle(
                 controlRadius: 2, paneRadius: 4, outlineWidth: 0.5, selection: .invert,
-                motion: .mechanical, pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+                motion: .mechanical, pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true,
+                actionFace: .ink)
         case .clay:
             DockThemeStyle(
                 controlRadius: 16, paneRadius: 22, outlineWidth: 0, cardShadow: 3,
-                accentGradient: true, emboss: 3, motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
+                accentGradient: true, emboss: 3, motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true,
+                actionFace: .keycap)
         case .pixel:
             DockThemeStyle(
                 controlRadius: 0, paneRadius: 0, outlineWidth: 3, stickerShadow: 4, geometry: .pixel,
                 selection: .invert, animates: false, backdrop: .grid, pressScale: 1,
-                cardFill: 1, tintedSidebar: true)
+                cardFill: 1, tintedSidebar: true, actionFace: .keycap)
         case .notebook:
             DockThemeStyle(
                 controlRadius: 6, paneRadius: 8, outlineWidth: 1.5, geometry: .sketch,
                 selection: .highlight, backdrop: .ruled, pressScale: 0.97, cardFill: 1, neutralUserBubble: true,
-                tintedSidebar: true)
+                tintedSidebar: true, actionFace: .marker)
         case .hud:
             DockThemeStyle(
                 controlRadius: 2, paneRadius: 4, outlineWidth: 1, geometry: .chamfered,
                 selection: .bar, glow: 5, backdrop: .crosshairs, motion: .mechanical, pressScale: 0.98, cardFill: 0.8,
-                tintedSidebar: true)
+                tintedSidebar: true, actionFace: .keycap)
         case .storm:
             DockThemeStyle(
                 controlRadius: 8, paneRadius: 12, outlineWidth: 1, selection: .bar, cardShadow: 5,
@@ -234,27 +240,28 @@ enum DockBuiltInTheme: String, CaseIterable, Sendable {
         case .cartoon:
             DockThemeStyle(
                 controlRadius: 14, paneRadius: 18, outlineWidth: 2.5, stickerShadow: 4,
-                motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
+                motion: .bouncy, pressScale: 0.94, cardFill: 1, tintedSidebar: true, actionFace: .keycap)
         case .retro:
             DockThemeStyle(
                 controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .invert, animates: false, bevel: true,
-                pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+                pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true, actionFace: .keycap)
         case .terminal:
             DockThemeStyle(
                 controlRadius: 2, paneRadius: 2, outlineWidth: 1, selection: .invert, glow: 3,
-                backdrop: .scanlines, motion: .mechanical, pressScale: 1, cardFill: 0.85, tintedSidebar: true)
+                backdrop: .scanlines, motion: .mechanical, pressScale: 1, cardFill: 0.85, tintedSidebar: true,
+                finish: .phosphor, actionFace: .ink)
         case .brutalist:
             DockThemeStyle(
                 controlRadius: 2, paneRadius: 2, outlineWidth: 3, stickerShadow: 5, selection: .invert, backdrop: .dots,
-                motion: .mechanical, pressScale: 1, cardFill: 1, tintedSidebar: true)
+                motion: .mechanical, pressScale: 1, cardFill: 1, tintedSidebar: true, actionFace: .ink)
         case .dusk:
             DockThemeStyle(
                 controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 1, cardShadow: 3, accentGradient: true,
-                motion: .float, pressScale: 0.98, cardFill: 1, tintedSidebar: true)
+                motion: .float, pressScale: 0.98, cardFill: 1, tintedSidebar: true, finish: .horizon)
         case .origami:
             DockThemeStyle(
                 controlRadius: 3, paneRadius: 4, outlineWidth: 1, geometry: .folded, selection: .bar, cardShadow: 6,
-                pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+                pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true, actionFace: .keycap)
         case .glass:
             DockThemeStyle(
                 controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 0, motion: .float,
@@ -262,11 +269,11 @@ enum DockBuiltInTheme: String, CaseIterable, Sendable {
         case .eInk:
             DockThemeStyle(
                 controlRadius: 0, paneRadius: 0, outlineWidth: 1, selection: .invert, animates: false, pressScale: 1,
-                cardFill: 1, neutralUserBubble: true)
+                cardFill: 1, neutralUserBubble: true, finish: .folio, actionFace: .ink)
         case .swiss:
             DockThemeStyle(
                 controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .underline, chrome: .open,
-                motion: .mechanical, pressScale: 1, neutralUserBubble: true)
+                motion: .mechanical, pressScale: 1, neutralUserBubble: true, actionFace: .rule)
         case .clean:
             DockThemeStyle(
                 controlRadius: 12, paneRadius: 16, outlineWidth: 0.5, cardShadow: 2, pressScale: 0.98, cardFill: 1,
@@ -274,17 +281,18 @@ enum DockBuiltInTheme: String, CaseIterable, Sendable {
         case .slate:
             DockThemeStyle(
                 controlRadius: 4, paneRadius: 6, outlineWidth: 1, selection: .bar, backdrop: .grid, motion: .mechanical,
-                pressScale: 0.98, cardFill: 0.8, tintedSidebar: true)
+                pressScale: 0.98, cardFill: 0.8, tintedSidebar: true, actionFace: .keycap)
         case .island:
             DockThemeStyle(
-                controlRadius: 14, paneRadius: 22, outlineWidth: 0, motion: .float, pressScale: 0.97, cardFill: 1,
+                controlRadius: 14, paneRadius: 22, outlineWidth: 0, geometry: .capsule, motion: .float,
+                pressScale: 0.97, cardFill: 1,
                 neutralUserBubble: true, tintedSidebar: true)
         }
     }
 }
 
 enum DockThemeGeometry: Equatable {
-    case rounded
+    case rounded, leaf, facet, capsule, clipped
     case folded
     /// Stepped, pixel-art corners.
     case pixel
@@ -318,7 +326,10 @@ enum DockThemeChrome: Equatable { case boxed, open }
 
 /// Component geometry a theme controls beyond color. Shared controls, cards,
 /// and `DockLayout` read it, so a theme can reshape the UI from one place.
-enum DockPanelFinish { case plain, pearl, machined }
+enum DockPanelFinish { case plain, pearl, machined, folio, bound, phosphor, horizon }
+
+/// Construction of the committing action, independent of its hit target and role.
+enum DockActionFace { case tonal, ink, rule, marker, keycap }
 
 struct DockThemeStyle: Equatable {
     var controlRadius: CGFloat = 8
@@ -357,6 +368,7 @@ struct DockThemeStyle: Equatable {
     var flatShell: Bool = false
     var finish: DockPanelFinish = .plain
     var strongFocus = false
+    var actionFace: DockActionFace = .tonal
 
     static var current: DockThemeStyle { DockThemeRuntime.current.style }
 }

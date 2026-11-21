@@ -681,14 +681,20 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         .dockPadding(.trailing, DockSidebarListMetrics.rowTrailing)
         .dockPadding(.vertical, DockSidebarListMetrics.rowVertical)
         .frame(minHeight: Self.rowHeight)
-        .background(
-            RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).fill(rowFill)
+        .dockSelectionBackground(
+            DockThemeShape(theme: style.theme), active: isSelected, fill: style.selectedFill,
+            allowsInvert: false, theme: style.theme
         )
-        .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
+        .background {
+            if isHovered && !isSelected {
+                DockThemeShape(theme: style.theme).fill(style.selectedFill.opacity(0.4))
+            }
+        }
+        .contentShape(Rectangle())
         // The rail stacks rows flush; the gap keeps adjacent highlighted rows apart,
         // the same spacing the Bots list uses (`DockSidebarListMetrics`).
         .dockPadding(.vertical, DockSidebarListMetrics.rowGap)
-        // rowFill already tracks hover; a second hover tracker doubled the work per row while scrolling.
+        // The row background already tracks hover; a second hover tracker doubled the work per row while scrolling.
         .dockTapAction { if !isEditingTitle { onSelect(session) } }
         .sessionPaneDraggable(SessionPaneDrag(session: session), isEnabled: !isEditingTitle)
         .focusable(!isEditingTitle)
@@ -794,11 +800,6 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         .fixedSize()
         .accessibilityLabel("Project: \(name)")
         .help("Wired to \(name)")
-    }
-
-    private var rowFill: Color {
-        if isSelected { return style.selectedFill }
-        return isHovered ? style.selectedFill.opacity(0.4) : .clear
     }
 
     private var tooltip: String {

@@ -36,6 +36,17 @@ struct DockThemeContrastTests {
         }
     }
 
+    @Test func printedPrimaryActionsKeepReadableInk() {
+        for theme in DockThemeID.allCases where theme.style.actionFace == .ink {
+            let palette = DockThemePalette(theme: theme)
+            let fill = theme.style.backdrop == .scanlines ? palette.accent : palette.primaryText
+            for dark in [false, true] {
+                let ink = resolve(DockPrimaryButtonStyle.foregroundColor(theme), dark: dark)
+                #expect(ratio(ink, resolve(fill, dark: dark)) >= 4.5, "\(theme), dark=\(dark)")
+            }
+        }
+    }
+
     @Test func buildBadgeTextContrastsWithTintedToolbar() {
         for theme in DockThemeID.allCases {
             let palette = DockThemePalette(theme: theme)

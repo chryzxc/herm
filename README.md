@@ -435,6 +435,10 @@ way: Hermes snaps like its desktop app, instrument skins move crisply, Cartoon
 and Clay spring, and Glass, Dusk, Storm, and Island settle softly. E-Ink,
 Pixel, and Retro remain motion-free; other skins respect Reduce Motion.
 
+Skin changes also reshape controls. Terminal uses phosphor keys, Notebook marks actions with an
+ink swipe, Swiss uses ruled actions, and mechanical skins use ridged slide switches. The gallery
+shows each skin’s switch beside its type sample.
+
 Canopy pairs matte evergreen with a lichen-colored frond. Capiz has pearl-rimmed ivory panels and teal underlines. Hi-Fi has graphite faceplates and amber tuning marks. High Contrast adds bold outlines and checked navigation in both macOS appearances.
 
 To use a T3Code palette, choose **Copy theme JSON** on the theme page, then

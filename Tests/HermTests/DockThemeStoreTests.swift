@@ -348,10 +348,19 @@ struct DockThemeStoreTests {
         let option = DockAppearanceCatalog.options(installedSkins: []).first { $0.themeID == .retro }
         #expect(option != nil && option?.isHermesInstalled == false)
         #expect(DockThemeID.retro.appearance == .light && DockThemeID.retro.style.bevel)
-        for theme in DockThemeID.allCases
-        where ![.retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .storm].contains(theme) {
-            #expect(theme.presentation == DockSkinPresentation())
+    }
+
+    @Test func materialSkinsUseTheirAuthoredComposerAndSilhouette() {
+        for theme in [
+            DockThemeID.retro, .pixel, .hud, .ares, .terminal, .hiFi, .origami, .capiz, .highContrast,
+            .hermesClassic, .slate, .brutalist, .mono,
+        ] {
+            #expect(theme.presentation.composer == .desktop)
         }
+        #expect(DockThemeID.glass.presentation.composer == .floating)
+        #expect(DockThemeID.canopy.style.geometry == .leaf)
+        #expect(DockThemeID.capiz.style.geometry == .facet)
+        #expect(DockThemeID.island.style.geometry == .capsule)
     }
 
     @Test func switchingSkinRestylesUnchangedNativeTextAndRestoresDefaults() {
