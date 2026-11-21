@@ -721,6 +721,7 @@ struct DockMotionSchedule: TimelineSchedule {
     /// instants, so slower clocks share those renders instead of adding their own.
     var rate = 30
     var paused = false
+    var pausesOnScroll = true
 
     func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
         if paused { return AnyIterator([startDate].makeIterator()) }
@@ -737,10 +738,10 @@ struct DockMotionSchedule: TimelineSchedule {
                     // are often these ticks re-rendering the window.
                     HermPerformanceRecorder.mark(metric)
                     // A live scroll or no Herm window on screen holds the clock.
-                    let settle = DockScrollActivity.remainingSettle(at: ProcessInfo.processInfo.systemUptime)
-                    tick = Self.tick(
+                    tick = nextTick(
                         tick, rate: rate, now: Date().timeIntervalSinceReferenceDate,
-                        heldFor: max(settle, DockMotionBudgetMonitor.shared.budget.hold))
+                        scrollHold: DockScrollActivity.remainingSettle(at: ProcessInfo.processInfo.systemUptime),
+                        hiddenHold: DockMotionBudgetMonitor.shared.budget.hold)
                 }
             }
             return Date(timeIntervalSinceReferenceDate: tick / rate)
@@ -755,6 +756,12 @@ struct DockMotionSchedule: TimelineSchedule {
     /// re-checking at the 150 ms settle time kept every clock near 7 Hz
     /// through a long scroll.
     static let heldRecheck: TimeInterval = 0.5
+
+    func nextTick(_ tick: Double, rate: Double, now: TimeInterval, scrollHold: TimeInterval, hiddenHold: TimeInterval)
+        -> Double
+    {
+        Self.tick(tick, rate: rate, now: now, heldFor: max(pausesOnScroll ? scrollHold : 0, hiddenHold))
+    }
 
     static func tick(_ tick: Double, rate: Double, now: TimeInterval, heldFor hold: TimeInterval) -> Double {
         guard hold > 0 else { return tick }
@@ -773,7 +780,7 @@ struct DockMotionSchedule: TimelineSchedule {
 }
 
 extension TimelineSchedule where Self == DockMotionSchedule {
-    static func dockMotion(rate: Int = 30, paused: Bool = false) -> DockMotionSchedule {
-        DockMotionSchedule(rate: rate, paused: paused)
+    static func dockMotion(rate: Int = 30, paused: Bool = false, pausesOnScroll: Bool = true) -> DockMotionSchedule {
+        DockMotionSchedule(rate: rate, paused: paused, pausesOnScroll: pausesOnScroll)
     }
 }

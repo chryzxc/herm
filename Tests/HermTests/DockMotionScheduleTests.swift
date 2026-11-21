@@ -49,4 +49,10 @@ extension DockMotionScheduleTests {
         // Slower clocks resume on whole ticks of their own rate.
         #expect(DockMotionSchedule.tick(1_500, rate: 15, now: 100, heldFor: 0.15) == 1_508)
     }
+
+    @Test func statusMotionKeepsTickingDuringScrollAndStillHoldsWhenHidden() {
+        let schedule = DockMotionSchedule(rate: 15, pausesOnScroll: false)
+        #expect(schedule.nextTick(1_500, rate: 15, now: 100, scrollHold: 0.15, hiddenHold: 0) == 1_500)
+        #expect(schedule.nextTick(1_500, rate: 15, now: 100, scrollHold: 0.15, hiddenHold: 1) == 1_515)
+    }
 }

@@ -69,6 +69,7 @@ struct BotAvatarView: View {
     var orbits: Bool?
     /// Off when a wrapper already drives the pose (the chat's working Bot).
     var statusMotion = true
+    var live = false
     @Environment(\.dockBotIndicatorFrame) private var indicatorFrame
     @Environment(\.dockBotIndicatorLive) private var indicatorLive
     @Environment(\.dockWorkspaceScale) private var workspaceScale
@@ -96,7 +97,8 @@ struct BotAvatarView: View {
                 DockBotFrameClock { canvas(herm: herm, mood: face, frame: $0) }
             } else {
                 standalone(herm: herm, mood: face)
-                    .botStatusMotion(statusMotion && animated ? BotStatusMotion(mood: face) : .resting, size: points)
+                    .botStatusMotion(
+                        statusMotion && animated ? BotStatusMotion(mood: face) : .resting, size: points, live: live)
             }
         }
         .onHover { hovering = $0 }
@@ -111,11 +113,11 @@ struct BotAvatarView: View {
 
     @ViewBuilder private func standalone(herm: Bool, mood: BotMood) -> some View {
         if !herm, let imageData, let image = Self.decoded(imageData) {
-            BotLiveImage(image: image, id: bot.id, size: points, busy: mood.moves, animated: animated)
+            BotLiveImage(image: image, id: bot.id, size: points, busy: mood.moves, animated: animated, live: live)
                 .frame(width: points, height: points)
                 .clipShape(RoundedRectangle(cornerRadius: points * 0.28, style: .continuous))
         } else {
-            BotFaceMark(id: bot.id, size: points, animated: animated, mood: mood)
+            BotFaceMark(id: bot.id, size: points, animated: animated, mood: mood, live: live)
         }
     }
 
@@ -392,7 +394,7 @@ private struct BotMotion<Content: View>: View {
             && (live || focus.engaged)
         {
             let phase = Double(BotAvatarPresentation.seed(for: id) % 1000) / 100
-            TimelineView(.dockMotion(rate: 15)) { context in
+            TimelineView(.dockMotion(rate: 15, pausesOnScroll: !live)) { context in
                 content(.at(context.date.timeIntervalSinceReferenceDate + phase, busy: true))
             }
         } else {
@@ -409,9 +411,10 @@ private struct BotLiveImage: View {
     let size: CGFloat
     let busy: Bool
     let animated: Bool
+    let live: Bool
 
     var body: some View {
-        BotMotion(id: id, animated: animated, busy: busy) { pose in
+        BotMotion(id: id, animated: animated, busy: busy, live: live) { pose in
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()

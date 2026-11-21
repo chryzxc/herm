@@ -654,7 +654,7 @@ struct EdgeTaskPreview: View {
                 let bot = bots.bot(for: assignee)
                 Group {
                     if let bot {
-                        BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: Self.avatarSize)
+                        BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: Self.avatarSize, live: true)
                     } else {
                         KanbanAssigneeInitialAvatar(assignee: assignee, size: Self.avatarSize)
                     }
@@ -672,7 +672,7 @@ struct EdgeTaskPreview: View {
                 BotAvatarView(
                     bot: bot, imageData: avatarImages[bot.id], size: Self.avatarSize,
                     mood: BotMood(ask: task.activityState),
-                    orbits: working
+                    orbits: working, live: true
                 )
                 .overlay(alignment: .bottomTrailing) {
                     if !working || !BotAvatarView.showsHermFace(avatarImages[bot.id], id: bot.id) {

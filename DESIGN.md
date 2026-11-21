@@ -1239,6 +1239,9 @@ The notch is visible during startup while Herm reads local workspace preferences
 and activity archives. Clicks and shortcut requests can open the workspace as soon
 as those reads finish. The normal notch preview becomes available at that point.
 
+Visible notch Bot status animations continue during workspace scrolling.
+The clocks still honor Reduce Motion, motion-free skins, and host visibility.
+
 When the workspace opens during startup, a full-workspace surface covers the
 session list, conversation, and inspector. The stems and crossbar of Herm’s H settle into alignment,
 followed by its colored dot, while the initial profile and session list load.
