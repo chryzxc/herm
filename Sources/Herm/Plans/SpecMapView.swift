@@ -243,6 +243,7 @@ struct SpecMapView: View, Equatable {
         Group {
             if isTree { treeLayout } else { listLayout }
         }
+        .id(isTree)
         .dockPadding(Metrics.inset)
         // Stacked phases chain down the left side, so leave room for that loop.
         .dockPadding(.leading, isTree ? 0 : Metrics.loop)
@@ -360,7 +361,15 @@ struct SpecMapView: View, Equatable {
                     ? "Show as list: phases stacked top to bottom with each step indented under its parent. Suits a narrow pane and long step text."
                     : "Show as tree: each step’s nested items branch out to its right, so you see the plan’s shape at a glance. Fold a branch with the port on its card’s edge."
             ) {
-                withAnimation(.dockEase(duration: 0.25)) { isTree.toggle() }
+                // Both layouts measure under the same keys. An animated swap keeps the outgoing
+                // layout reporting its frames, so wires drew for the layout just left. Swap
+                // instantly and measure the new layout from scratch.
+                var swap = Transaction()
+                swap.disablesAnimations = true
+                withTransaction(swap) {
+                    frames = [:]
+                    isTree.toggle()
+                }
             }
             if !isExpanded {
                 DockIconAction(
