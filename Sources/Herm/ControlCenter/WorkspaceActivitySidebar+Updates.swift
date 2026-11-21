@@ -186,11 +186,13 @@ extension WorkspaceActivitySidebar {
                     .dockFont(.body, weight: .semibold)
                     .foregroundStyle(statusColor)
                 if showsUpdateButton {
-                    Button("Update Hermes Agent") { isShowingAgentUpdateConfirmation = true }
+                    Button("Update") { isShowingAgentUpdateConfirmation = true }
                         .buttonStyle(.dockPrimary)
+                        .accessibilityLabel("Update Hermes Agent")
                         .disabled(!agentUpdateService.canStartUpdate)
                 }
             }
+            .dockButtonSize(.inline)
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                 if let installed = agentUpdateService.installed {
                     GridRow {
