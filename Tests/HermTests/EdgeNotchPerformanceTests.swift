@@ -19,7 +19,28 @@ struct EdgeNotchPerformanceTests {
         #expect(view.contains("controlCenter.notchPresentationChanges"))
         #expect(!text.contains("BotService(client: model.controlRPCClient)"))
         #expect(text.contains("EdgeNotchPolling.kanbanInterval"))
-        #expect(text.contains("EdgeNotchPolling.deliveryQuestionInterval"))
+        #expect(text.contains("EdgeNotchPolling.deliveryQuestionRecoveryInterval"))
+    }
+
+    @Test func deliveryWatchFindsAnInboxCreatedAfterLaunchAndDetectsAtomicReplacement() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = root.appendingPathComponent("delivery/questions", isDirectory: true)
+        let question = inbox.appendingPathComponent("question.json")
+        var reads: [String] = []
+        let watch = EdgeDeliveryQuestionWatch(directory: inbox) {
+            if let text = try? String(contentsOf: question, encoding: .utf8) { reads.append(text) }
+        }
+        watch.restart()
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        try Data("first".utf8).write(to: question, options: .atomic)
+        try await waitForFileEvent { reads.contains("first") }
+        try Data("second".utf8).write(to: question, options: .atomic)
+        try await waitForFileEvent { reads.contains("second") }
+        #expect(reads.contains("first"))
+        #expect(reads.contains("second"))
+        withExtendedLifetime(watch) {}
     }
 
     @Test func workspaceHostsReuseModelBotOwner() throws {
@@ -78,6 +99,13 @@ struct EdgeNotchPerformanceTests {
     private func drainRunLoop() async {
         await withCheckedContinuation { continuation in
             RunLoop.main.perform { continuation.resume() }
+        }
+    }
+
+    private func waitForFileEvent(_ received: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !received(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
         }
     }
 }

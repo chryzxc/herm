@@ -45,7 +45,9 @@ final class EdgeDockController: NSObject {
     private var latestAttention: [String: DockModel.SessionAttention] = [:]
     private var latestAnswers: [AttentionRequest: AttentionAnswerState] = [:]
     private var deliveryQuestions: [EdgeDeliveryQuestion] = []
+    private var deliveryQuestionWatch: EdgeDeliveryQuestionWatch?
     private var deliveryQuestionPoll: Task<Void, Never>?
+    private var deliveryQuestionRefreshPending = false
     private var latestActivityLabels: [String: String] = [:]
     private var lastQuotas: [ProviderQuotaSnapshot]?
     /// Quota readers whose usage has moved; these are the services being
@@ -267,13 +269,6 @@ final class EdgeDockController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refreshKanbanActivity() }
             .store(in: &subscriptions)
-        // The notch remains alive when the workspace is unmounted.
-        Timer.publish(every: EdgeNotchPolling.deliveryQuestionInterval, tolerance: 1, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                self?.pollDeliveryQuestions()
-            }
-            .store(in: &subscriptions)
         Timer.publish(every: EdgeNotchPolling.kanbanInterval, tolerance: 3, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in
                 self?.pollKanban(force: false)
@@ -366,6 +361,21 @@ final class EdgeDockController: NSObject {
         guard !runtimeStarted else { return }
         runtimeStarted = true
         controlCenter.bind(to: model)
+        // Delivery questions are files in this Mac's Hermes home. A remote backend writes its own.
+        if GatewayConnectionStore.isLocalBackend {
+            deliveryQuestionWatch = EdgeDeliveryQuestionWatch(directory: EdgeDeliveryQuestion.directory) {
+                [weak self] in
+                self?.pollDeliveryQuestions()
+            }
+            refreshDeliveryQuestionWatch()
+            // Recover from a replaced ancestor or a filesystem that missed a notification.
+            Timer.publish(
+                every: EdgeNotchPolling.deliveryQuestionRecoveryInterval, tolerance: 12, on: .main, in: .common
+            )
+            .autoconnect()
+            .sink { [weak self] _ in self?.refreshDeliveryQuestionWatch() }
+            .store(in: &subscriptions)
+        }
     }
 
     private var notchEnabled: Bool { defaults.object(forKey: NotchDisplayStyle.enabledKey) as? Bool ?? true }
@@ -659,19 +669,27 @@ final class EdgeDockController: NSObject {
             attention: state.railActivity.attention || tasks.contains { $0.isStatusCurrent && $0.phase == .attention })
     }
 
+    private func refreshDeliveryQuestionWatch() {
+        deliveryQuestionWatch?.restart()
+        pollDeliveryQuestions()
+    }
+
     /// Headless coordinator turns cannot ask; the delivery plugin queues their questions as files.
-    private func pollDeliveryQuestions(force: Bool = false) {
-        guard runtimeStarted else { return }
-        if force {
-            deliveryQuestionPoll?.cancel()
-            deliveryQuestionPoll = nil
+    private func pollDeliveryQuestions() {
+        guard deliveryQuestionWatch != nil else { return }
+        guard deliveryQuestionPoll == nil else {
+            deliveryQuestionRefreshPending = true
+            return
         }
-        // Delivery questions are files in this Mac's Hermes home; a remote backend writes its own.
-        guard deliveryQuestionPoll == nil, GatewayConnectionStore.isLocalBackend else { return }
         deliveryQuestionPoll = Task { [weak self] in
             let questions = await EdgeDeliveryQuestion.loadOffMain()
             guard !Task.isCancelled, let self else { return }
             self.deliveryQuestionPoll = nil
+            if self.deliveryQuestionRefreshPending {
+                self.deliveryQuestionRefreshPending = false
+                self.pollDeliveryQuestions()
+                return
+            }
             guard questions != self.deliveryQuestions else { return }
             let isNew = questions.contains { !self.deliveryQuestions.contains($0) }
             self.deliveryQuestions = questions
@@ -706,7 +724,7 @@ final class EdgeDockController: NSObject {
                     _ = try await self.model.submitQuickDraft(question.answerDraft(choice), progress: { _ in })
                 } catch {
                     guard await EdgeDeliveryQuestion.loadOffMain().contains(question) else {
-                        self.pollDeliveryQuestions(force: true)
+                        self.pollDeliveryQuestions()
                         return
                     }
                     let message = DockModel.safeUserDiagnostic(error.localizedDescription)
@@ -718,7 +736,7 @@ final class EdgeDockController: NSObject {
                 }
                 do {
                     guard try await question.removeIfCurrent() else {
-                        self.pollDeliveryQuestions(force: true)
+                        self.pollDeliveryQuestions()
                         return
                     }
                 } catch {
@@ -727,7 +745,7 @@ final class EdgeDockController: NSObject {
                     self.rebuildTasks()
                     return
                 }
-                self.pollDeliveryQuestions(force: true)
+                self.pollDeliveryQuestions()
             }
             return
         }
@@ -738,7 +756,7 @@ final class EdgeDockController: NSObject {
     private func refreshSelectedTasks() {
         guard runtimeStarted else { return }
         pollKanban()
-        pollBots()
+        pollBots(interactive: true)
         model.loadSessions()
     }
 
@@ -753,11 +771,15 @@ final class EdgeDockController: NSObject {
         controlCenter.refreshGlobalKanban(trigger: .background)
     }
 
-    private func pollBots() {
+    private func pollBots(interactive: Bool = false) {
         guard runtimeStarted, model.status != .offline else { return }
+        let active =
+            interactive || model.presentationDemand.hasVisibleHost || state.expanded
+            || state.railActivity.working || state.railActivity.attention
+        let interval = active ? EdgeNotchPolling.kanbanInterval : EdgeNotchPolling.idleInventoryInterval
         Task { [weak self] in
             await self?.model.botMode.refreshNow(
-                probeCapability: true, minimumInterval: EdgeNotchPolling.kanbanInterval)
+                probeCapability: true, minimumInterval: interval)
         }
     }
 
@@ -1256,6 +1278,8 @@ final class EdgeDockController: NSObject {
     }
 
     func shutdown() {
+        deliveryQuestionWatch = nil
+        deliveryQuestionPoll?.cancel()
         interactionMonitors.forEach(NSEvent.removeMonitor)
         interactionMonitors = []
     }

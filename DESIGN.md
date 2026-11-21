@@ -1255,6 +1255,8 @@ as those reads finish. The normal notch preview becomes available at that point.
 
 Visible notch Bot status animations continue during workspace scrolling.
 The clocks still honor Reduce Motion, motion-free skins, and host visibility.
+Local delivery questions refresh on inbox changes, with a minute-scale recovery
+check. The background Bot roster backs off to a minute while the notch is idle.
 
 When the workspace opens during startup, a full-workspace surface covers the
 session list, conversation, and inspector. The shared loading bars appear while
