@@ -191,7 +191,7 @@ private struct BotActivityRow: View {
                 .dockPadding(.leading, 56)
                 .dockPadding(.trailing, 12)
                 .dockPadding(.bottom, 10)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.dockPanelReveal)
             }
         }
         .background(hovering ? Color.dockSurface6.opacity(0.8) : Color.dockSurface4.opacity(0.72))

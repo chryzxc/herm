@@ -46,6 +46,11 @@ struct DockRetainedDisclosureContent<Content: View>: View {
         DockDisclosureLayout(progress: isExpanded ? 1 : 0) {
             if isExpanded || hasExpanded {
                 VStack(alignment: .leading, spacing: 0) { content() }
+                    // Only the reveal animates. The toggle's transaction would otherwise reach the
+                    // rows, scroll views and hover chrome inside and move them from stale frames,
+                    // so content drifted while the clip opened.
+                    .transaction(value: isExpanded) { $0.animation = nil }
+                    .geometryGroup()
                     .opacity(isExpanded ? 1 : 0)
                     .transition(.identity)
             }
@@ -99,7 +104,8 @@ private struct DockPanelReveal: AnimatableModifier {
     }
 
     func body(content: Content) -> some View {
-        DockDisclosureLayout(progress: progress) { content }
+        // Children take their final frames at once; only the clip and fade move.
+        DockDisclosureLayout(progress: progress) { content.geometryGroup() }
             .clipped()
             .opacity(Double(min(1, max(0, progress))))
     }

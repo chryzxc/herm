@@ -211,6 +211,7 @@ struct AgentBoardView: View {
                             .dockPadding(.horizontal, 12)
                             .dockPadding(.top, 2)
                             .dockPadding(.bottom, 12)
+                            .transition(.dockPanelReveal)
                     }
                 }
                 .background(Color.dockSurface4.opacity(expandedAgentID == subagent.id ? 1 : 0.72))

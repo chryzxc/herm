@@ -198,6 +198,7 @@ struct RepositoryChangesBrowser: View {
                     }
                 }
                 .dockPadding(.leading, 12)
+                .transition(.dockPanelReveal)
             }
         }
         .dockPadding(.top, 8)
@@ -274,6 +275,7 @@ struct RepositoryChangesBrowser: View {
                     }
                 }
                 .dockPadding(.leading, 12)
+                .transition(.dockPanelReveal)
             }
         }
         .dockPadding(.top, 12)

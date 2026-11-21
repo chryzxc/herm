@@ -202,6 +202,8 @@ struct SessionNavProjectList: View {
                     }
                 }
             }
+            // Each lazy row reveals clipped, so it doesn't slide over the rows below.
+            .transition(.dockPanelReveal)
             .sessionSidebarFadesUnderStickyHeader()
         } header: {
             DockSectionHeader(title: "Projects", count: groups.count, isExpanded: $isExpanded, style: style) {

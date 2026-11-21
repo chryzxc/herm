@@ -1073,6 +1073,7 @@ struct TurnActivityView: View, Equatable {
                 }
                 if isExpanded {
                     steps(prepared.segments)
+                        .transition(.dockPanelReveal)
                 } else if prepared.segments.contains(where: { !$0.records.isEmpty }) {
                     // Bot interactions stay in the conversation as pills, collapsed or not.
                     VStack(alignment: .leading, spacing: 6) {

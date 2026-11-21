@@ -1349,6 +1349,7 @@ extension WorkspaceActivitySidebar {
                 content()
                     .dockPadding(.top, 10)
                     .dockPadding(.bottom, 8)
+                    .transition(.dockPanelReveal)
             }
         }
     }

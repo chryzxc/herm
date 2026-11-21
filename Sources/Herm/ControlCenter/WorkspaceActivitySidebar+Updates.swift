@@ -347,6 +347,7 @@ extension WorkspaceActivitySidebar {
                     .dockPadding(.vertical, 2)
                 }
                 .frame(maxHeight: 150)
+                .transition(.dockPanelReveal)
             }
         }
     }

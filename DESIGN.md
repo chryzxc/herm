@@ -399,7 +399,10 @@ These effects animate only presentation, retain view identity, and never delay
 input or data. Shared disclosures fade their contents with a small upward offset
 while their caret rotates. Retained disclosures centrally animate their reveal and
 collapse (0.2s), keeping nested inputs mounted and disabling hidden interaction
-immediately. Shared progress meters ease only their fill as confirmed values change (0.22s);
+immediately. Any section that inserts content under an animated toggle uses
+`.transition(.dockPanelReveal)` (or `DockDisclosureGroupStyle`): it clips the height and
+isolates child geometry, so the body never slides over its siblings or drifts from stale
+frames. Never reveal a section with a bare fade or `.move(edge:)`. Shared progress meters ease only their fill as confirmed values change (0.22s);
 section counts use a short numeric transition. Pending-action labels use the shared
 loading indicator and fade between confirmed and pending text. `DockLoadingIndicator`
 uses three rounded bars at fixed sizes. Their brightness moves left to right in Core

@@ -194,6 +194,7 @@ struct ProvidersSettingsView: View {
                     .dockPadding(.horizontal, 12)
                     .dockPadding(.leading, 34)
                     .dockPadding(.bottom, 12)
+                    .transition(.dockPanelReveal)
             }
         }
     }
