@@ -414,6 +414,7 @@ struct SessionNavRail: View {
                     }
                     .buttonStyle(.dockHover)
                     .accessibilityAddTraits(selected ? .isSelected : [])
+                    .dockSkinContextMenu(for: theme, store: dockThemeStore)
                 }
             }
             .dockPadding(8)

@@ -57,6 +57,7 @@ struct DockOnboardingAppearance: View {
         .accessibilityLabel("\(skin.title), \(skin.originLabel)")
         .accessibilityValue(selected ? "Selected" : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .dockSkinContextMenu(for: skin, store: theme)
     }
 }
 

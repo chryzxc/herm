@@ -1,6 +1,25 @@
 import AppKit
 import SwiftUI
 
+extension View {
+    @MainActor @ViewBuilder
+    func dockSkinContextMenu(for theme: DockThemeID, store: DockThemeStore) -> some View {
+        if case .imported = theme {
+            contextMenu {
+                Button("Remove skin", icon: .trash, role: .destructive) {
+                    do {
+                        try store.removeImportedTheme(theme)
+                    } catch {
+                        DockActionErrorCenter.shared.report("Couldn’t remove skin", error: error)
+                    }
+                }
+            }
+        } else {
+            self
+        }
+    }
+}
+
 struct DockSkinImportSettings: View {
     @ObservedObject var store: DockThemeStore
     var body: some View {

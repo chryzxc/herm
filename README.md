@@ -447,7 +447,7 @@ action is available in **Settings → Appearance**. Herm applies the palette to 
 on this Mac. Embedded SVG conversation wallpapers such as Pixel Quest animate behind chat messages.
 Reimport older copies to pick up their artwork. Reduce Motion uses the plain palette.
 Palettes with light and dark variants follow macOS. Reimport a
-theme to update it, or select it and choose **Remove skin**. [T3 Themes](https://t3themes.com/)
+theme to update it. To remove an imported skin, right-click its card and choose **Remove skin**. [T3 Themes](https://t3themes.com/)
 
 Herm uses one centralized solid accent palette throughout the app: teal, amber,
 violet, coral, blue, orange, pink, green, cyan, indigo, and tangerine. Neutral skins use gray actions and selection;

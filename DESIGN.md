@@ -2169,7 +2169,9 @@ opens at the top when the category changes.
   Two-appearance imports follow macOS. Imports appear at the start of the
   settings gallery and persist on this Mac. The import applies the palette
   immediately. Reimporting the same theme ID updates that palette. Removing
-  the selected import returns to Glass. An import error appears in a dialog.
+  the selected import returns to Glass. In each gallery, right-clicking an imported card
+  opens a menu with **Remove skin** for that card, including when another skin is active.
+  An import error appears in a dialog.
   Unmapped skins and installed companions are quiet lists below the grid.
 - **Color and copy.** The Quota rule applies: healthy and ready states stay
   neutral, and warning or destructive hues mark only states that need action.

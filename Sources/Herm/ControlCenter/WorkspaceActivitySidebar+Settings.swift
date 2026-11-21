@@ -1181,6 +1181,7 @@ extension WorkspaceActivitySidebar {
             "\(theme.title), \(theme.originLabel), \(theme.signature), \(modeLabel)\(option.isHermesActive ? ", active in Hermes" : "")"
         )
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .dockSkinContextMenu(for: theme, store: dockThemeStore)
     }
 
     var emergencyStopSection: some View {

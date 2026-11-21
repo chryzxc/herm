@@ -95,6 +95,24 @@ struct DockThemeImportTests {
         #expect(DockThemeStore(defaults: defaults).importedThemes.map(\.id) == ["t3:second"])
     }
 
+    @Test func removingAnInactiveCardPreservesTheActiveImport() throws {
+        let suite = "DockThemeImportTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = DockThemeStore(defaults: defaults)
+        try store.importTheme(json: json)
+        let card = store.selectedThemeID
+        try store.importTheme(json: json.replacingOccurrences(of: "\"glass\"", with: "\"second\""))
+        let active = store.selectedThemeID
+
+        try store.removeImportedTheme(card)
+
+        let restored = DockThemeStore(defaults: defaults)
+        #expect(store.selectedThemeID == active)
+        #expect(restored.selectedThemeID == active)
+        #expect(restored.importedThemes == [active])
+    }
+
     private func expectColor(_ color: Color, appearance: NSAppearance.Name, hex: String) throws {
         var resolved: NSColor?
         NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
