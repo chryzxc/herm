@@ -69,4 +69,30 @@ import Testing
         #expect(Set(container.mountedSectionViews.map(ObjectIdentifier.init)) != mountedBefore)
         #expect(!container.needsLayout)
     }
+
+    @Test func scrollSkipsAnOffscreenReplyUntilItEntersTheClip() throws {
+        let fixture = makeFixture()
+        let documentView = try #require(fixture.scroll.documentView)
+        let source = "A reply below the fold"
+        let other = NativeMarkdownDocumentContainerView(frame: .zero)
+        other.apply(
+            document: MarkdownRenderDocumentBuilder.build(
+                source: source, key: MarkdownRenderKey(messageID: UUID(), contentRevision: 1, themeRevision: 1)))
+        let y = fixture.height + 200
+        other.frame = NSRect(x: 0, y: y, width: 620, height: other.measuredHeight(forWidth: 620))
+        documentView.setFrameSize(NSSize(width: 640, height: y + 600))
+        documentView.addSubview(other)
+        fixture.window.layoutIfNeeded()
+        let initialUpdates = other.viewportUpdateCount
+        #expect(other.mountedSectionViews.isEmpty)
+
+        for offset in stride(from: 10, through: 200, by: 10) {
+            fixture.scroll.contentView.scroll(to: NSPoint(x: 0, y: CGFloat(offset)))
+        }
+        #expect(other.viewportUpdateCount == initialUpdates)
+        #expect(other.mountedSectionViews.isEmpty)
+
+        fixture.scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+        #expect(!other.mountedSectionViews.isEmpty)
+    }
 }

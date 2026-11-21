@@ -331,6 +331,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     private var lastMountedRange: Range<Int>?
     private var lastKeepAll = false
     private var lastFocusedIndex: Int?
+    private(set) var viewportUpdateCount = 0
     private(set) var viewportSectionVisits = 0
     private(set) var viewportMountChanges = 0
     /// All mounted documents in one scroller share the clip's notification registration.
@@ -351,10 +352,15 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
             clip.postsFrameChangedNotifications = true
             for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
                 observers.append(
-                    NotificationCenter.default.addObserver(forName: name, object: clip, queue: .main) { [weak self] _ in
+                    NotificationCenter.default.addObserver(forName: name, object: clip, queue: .main) {
+                        [weak self, weak clip] _ in
                         MainActor.assumeIsolated {
-                            guard let self else { return }
-                            for document in self.documents.allObjects { document.viewportDidChange() }
+                            guard let self, let clip else { return }
+                            let bounds = clip.bounds
+                            let keyboardAccess = NSApp?.isFullKeyboardAccessEnabled == true
+                            for document in self.documents.allObjects {
+                                document.clipViewportDidChange(bounds, keyboardAccess: keyboardAccess)
+                            }
                         }
                     })
             }
@@ -367,6 +373,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
 
     private var clipViewport: ClipViewport?
     private weak var observedClipView: NSClipView?
+    private var frameInClip: NSRect?
     private var observedAncestors: [ObjectIdentifier] = []
     nonisolated(unsafe) private var viewportObservers: [NSObjectProtocol] = []
     var keepsAccessibilitySectionsMounted = false {
@@ -394,6 +401,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     }
 
     private func observeViewport() {
+        frameInClip = nil
         let clip = window == nil ? nil : enclosingScrollView?.contentView
         if observedClipView !== clip {
             clipViewport?.documents.remove(self)
@@ -426,7 +434,12 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                     NotificationCenter.default.addObserver(
                         forName: name, object: view, queue: .main
                     ) { [weak self] _ in
-                        MainActor.assumeIsolated { self?.viewportDidChange() }
+                        MainActor.assumeIsolated {
+                            guard let self else { return }
+                            self.frameInClip = nil
+                            self.viewportDidChange(
+                                keepAll: self.keepsAccessibilitySectionsMounted || self.fullKeyboardAccess)
+                        }
                     })
             }
         }
@@ -526,34 +539,47 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         super.layout()
         guard bounds.width > 1 else { return }
         _ = measuredHeight(forWidth: bounds.width)
-        updateMountedSections()
+        updateMountedSections(keepAll: keepsAccessibilitySectionsMounted || fullKeyboardAccess)
+    }
+
+    private var fullKeyboardAccess: Bool { NSApp?.isFullKeyboardAccessEnabled == true }
+
+    private func clipViewportDidChange(_ clipBounds: NSRect, keyboardAccess: Bool) {
+        let keepAll = keepsAccessibilitySectionsMounted || keyboardAccess
+        // Clip scrolling keeps the document's frame in clip coordinates unchanged.
+        if let frameInClip, let lastMountedRange, keepAll == lastKeepAll {
+            if lastMountedRange.isEmpty, viewIndices.isEmpty, !clipBounds.intersects(frameInClip) { return }
+            if lastMountedRange == entries.indices, clipBounds.contains(frameInClip) { return }
+        }
+        viewportDidChange(keepAll: keepAll)
     }
 
     /// A scroll tick or an ancestor move changes what is visible, not how this
     /// document is laid out. Mounting the newly visible sections directly keeps
     /// the scroll's display cycle from queueing a layout pass per frame; the
     /// layout pass is only needed when the solved geometry is out of date.
-    private func viewportDidChange() {
+    private func viewportDidChange(keepAll: Bool) {
         let start = HermPerformanceRecorder.active ? CACurrentMediaTime() : 0
         defer { if start > 0 { HermPerformanceRecorder.recordWork("markdown.viewport", since: start) } }
         guard bounds.width > 1, cachedSolveWidth == bounds.width, entries.count == cachedFrames.count else {
             needsLayout = true
             return
         }
-        updateMountedSections()
+        updateMountedSections(keepAll: keepAll)
     }
 
-    private func updateMountedSections() {
+    private func updateMountedSections(keepAll: Bool) {
         guard entries.count == cachedFrames.count,
             window != nil || keepsAccessibilitySectionsMounted
         else { return }
+        viewportUpdateCount += 1
+        if frameInClip == nil, let clip = observedClipView { frameInClip = convert(bounds, to: clip) }
         let visible = visibleRect
         // Keep a viewport of buffer without making offscreen text views take
         // part in every AppKit layout, hit-test, and cursor-rect update.
         let viewport: NSRect? = observedClipView.map { clip in
             visible.isEmpty ? .zero : visible.insetBy(dx: 0, dy: -clip.bounds.height)
         }
-        let keepAll = keepsAccessibilitySectionsMounted || NSApp?.isFullKeyboardAccessEnabled == true
         let range = keepAll || viewport == nil ? entries.indices : sectionRange(intersecting: viewport!)
         if range == entries.indices, lastMountedRange == range, lastKeepAll == keepAll { return }
         var focused = viewIndices.isEmpty ? nil : window?.firstResponder as? NSView
@@ -572,6 +598,8 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
             keepAll || viewport == nil || visible.isEmpty
             ? range : sectionRange(intersecting: viewport!.insetBy(dx: 0, dy: -observedClipView!.bounds.height))
         let carried = lastKeepAll ? [] : mountedIndices.filter(retained.contains)
+        let framesChanged = lastMountedRange == nil
+        let previouslyMounted = mountedIndices
         lastMountedRange = range
         lastKeepAll = keepAll
         lastFocusedIndex = focusedIndex
@@ -590,8 +618,13 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
             if Self.tracksPerformance { Self.totalViewportMountChanges += 1 }
         }
         mountedIndices = desired
+        inactiveIndices.removeAll(where: desired.contains)
         var nextMounted: NSView?
         for index in desired.sorted().reversed() {
+            if !framesChanged, previouslyMounted.contains(index), let view = entries[index].view {
+                nextMounted = view
+                continue
+            }
             viewportSectionVisits += 1
             if Self.tracksPerformance { Self.totalViewportSectionVisits += 1 }
             let entry = entries[index]
@@ -602,12 +635,12 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                 view = existing
             } else {
                 view = Self.makeView(for: entry.section)
-                let context = MeasurementContext(
-                    width: bounds.width, bodySize: bodySize, bodyWeight: bodyWeight,
-                    themeRevision: DockThemeRuntime.revision, mentionRevision: BotMentions.revision,
-                    themeID: DockThemeRuntime.current)
                 let preparedSize: NSSize?
                 if !isStreamingDocument, case .code = entry.section.kind {
+                    let context = MeasurementContext(
+                        width: bounds.width, bodySize: bodySize, bodyWeight: bodyWeight,
+                        themeRevision: DockThemeRuntime.revision, mentionRevision: BotMentions.revision,
+                        themeID: DockThemeRuntime.current)
                     let key = Self.measurementKey(for: entry.section, context: context)
                     preparedSize =
                         scrollController?.preparedPage?.measurements[key]?.codeSize
@@ -625,7 +658,6 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                 }
                 created = true
             }
-            inactiveIndices.removeAll { $0 == index }
             if view.superview !== self {
                 if let nextMounted {
                     addSubview(view, positioned: .below, relativeTo: nextMounted)

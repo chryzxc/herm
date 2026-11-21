@@ -910,12 +910,22 @@ receives same-size frames directly. Diff highlighting batches text edits, the
 Timeline cache uses each turn’s activity, row-only updates preserve session
 indexes, and Calendar keeps one EventKit event query in flight.
 
-Transcript Markdown documents share clip-view observation. Streaming keeps
+Transcript Markdown documents share clip-view observation. A clip scroll skips
+documents wholly outside the clip with no native sections and documents fully
+visible with every section mounted. As a long reply crosses a section boundary,
+existing sections keep their native frames and newly visible sections are mounted.
+Ancestor geometry changes invalidate the clip-relative frame. Streaming keeps
 only the short suffix needed to detect a phrase split across flushes. The
 Timeline reuses historical call indexes by transcript revision, and Kanban
 dragging scans only the destination lane up to the drop slot. Control Center
 reuses client-wide capability results and verifies process support from the
 focused session’s own process listing. New frame-pacing measurements are pending.
+
+In a standalone AppKit fixture, 30 scroll steps across a 160-section reply
+reduced viewport updates to 20 offscreen replies from 600 to zero. The scrolling
+reply visited eight sections instead of 204 and mounted the same eight new
+sections. This fixture used fixed-height native section views and measured
+viewport work rather than text layout or live frame pacing.
 
 Long streamed replies keep their rendered body during completion. Final Markdown
 parses off the main actor, and native layout reuses matching stable-section heights.
