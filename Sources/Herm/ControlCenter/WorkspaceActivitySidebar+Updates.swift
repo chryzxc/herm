@@ -52,7 +52,7 @@ extension WorkspaceActivitySidebar {
                 if appUpdater.phase == .downloading {
                     DockStatusDot(tone: .working, size: 7, pulses: true)
                 } else if appUpdater.phase == .checking {
-                    ProgressView().controlSize(.small)
+                    DockLoadingIndicator().controlSize(.small)
                 } else {
                     Circle().fill(color).frame(width: 7, height: 7)
                 }
@@ -123,7 +123,7 @@ extension WorkspaceActivitySidebar {
                 Spacer()
                 if agentUpdateService.phase == .checking {
                     HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
+                        DockLoadingIndicator().controlSize(.small)
                         Text("Checking…")
                             .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText)

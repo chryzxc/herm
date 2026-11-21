@@ -496,7 +496,7 @@ private struct KanbanTaskCard: View, Equatable {
             } label: {
                 Group {
                     if isMutationPending {
-                        ProgressView().controlSize(.mini)
+                        DockLoadingIndicator().controlSize(.mini)
                     } else {
                         Ph.dotsThree.image(size: 14, color: NSColor(Color.dockSecondaryText))
                     }

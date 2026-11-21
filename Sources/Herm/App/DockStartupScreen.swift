@@ -5,7 +5,7 @@ struct DockStartupScreen: View {
 
     var body: some View {
         DockExpandedPage(title: "Herm", subtitle: "Opening workspace…") {
-            DockLayerMotion(kind: .openingMonogram, color: .dockPrimaryText, glow: DockAccentColor.teal.fill)
+            DockLoadingIndicator(size: 42)
                 .frame(width: 116, height: 104)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityHidden(true)

@@ -17,7 +17,7 @@ struct PullRequestMergeButton: View {
             HStack(spacing: 6) {
                 Group {
                     if isBusy {
-                        ProgressView().controlSize(.mini).frame(width: 16, height: 16)
+                        DockLoadingIndicator().controlSize(.mini).frame(width: 16, height: 16)
                     } else {
                         DockIcon(.gitMerge, size: 16)
                     }

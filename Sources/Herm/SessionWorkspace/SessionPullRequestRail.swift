@@ -328,7 +328,7 @@ struct SessionRailCard: View {
                     .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 0)
                 if isRefreshing {
-                    ProgressView().controlSize(.mini).frame(width: 24, height: 24)
+                    DockLoadingIndicator().controlSize(.mini).frame(width: 24, height: 24)
                 } else {
                     DockMenu {
                         Button("Refresh session rail", icon: .arrowsClockwise, action: onRefresh)

@@ -103,7 +103,7 @@ struct SessionKanbanActivityView: View {
             if snapshot.activeRows.isEmpty, snapshot.completedCount == 0 {
                 if refreshState?.isRefreshing == true {
                     HStack(spacing: 8) {
-                        ProgressView().controlSize(.small).tint(Color.dockAccent)
+                        DockLoadingIndicator().controlSize(.small)
                         Text("LOADING SESSION KANBAN")
                     }
                     .dockFont(.compactStatus, weight: .semibold)

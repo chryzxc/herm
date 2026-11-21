@@ -796,7 +796,7 @@ struct SessionTraceCanvas: View {
                         .frame(width: 20, height: 20)
                         .background(tile(row), in: RoundedRectangle(cornerRadius: 5))
                     if row.active {
-                        ProgressView().controlSize(.mini).accessibilityLabel("Running")
+                        DockLoadingIndicator().controlSize(.mini).accessibilityLabel("Running")
                     }
                     Text(title(row))
                         .dockFont(.body, weight: hasChildren ? .semibold : .regular)

@@ -47,7 +47,7 @@ struct EdgeSubagentSteering: View {
             }
             Divider().overlay(Color.dockBorderLight)
             HStack {
-                if pending { ProgressView().controlSize(.mini) }
+                if pending { DockLoadingIndicator().controlSize(.mini) }
                 Spacer()
                 Button("Open parent session", action: open).buttonStyle(.dockCompact)
             }.dockFont(.body).dockPadding(10)

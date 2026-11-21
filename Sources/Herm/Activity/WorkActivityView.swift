@@ -151,7 +151,7 @@ struct WorkActivityView: View {
                     Text("Activity unavailable").dockFont(.body, weight: .semibold)
                     Text(error).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                 } else {
-                    ProgressView().controlSize(.small)
+                    DockLoadingIndicator().controlSize(.small)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

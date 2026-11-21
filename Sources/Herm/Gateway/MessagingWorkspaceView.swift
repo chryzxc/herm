@@ -244,7 +244,7 @@ struct MessagingWorkspaceView: View {
                         }
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 6) {
-                                ProgressView()
+                                DockLoadingIndicator()
                                 Text(
                                     pairing.qrPayload.isEmpty
                                         ? "Preparing QR code…"

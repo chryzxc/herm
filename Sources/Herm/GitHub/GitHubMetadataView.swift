@@ -243,7 +243,7 @@ struct GitHubMetadataEditor: View {
         DockModal(title: "Edit \(section.rawValue.lowercased())", subtitle: model.reference.title, width: 520) {
             TextField("Filter choices", text: $search).textFieldStyle(.dockGlass)
             if busy && !loaded {
-                ProgressView("Loading choices…")
+                DockLoadingIndicator("Loading choices…")
                     .frame(maxWidth: .infinity, minHeight: 180)
             } else {
                 ScrollView {

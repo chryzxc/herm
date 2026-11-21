@@ -212,7 +212,7 @@ struct PullRequestDescription: View {
                         } else if phase.error != nil {
                             Link("Image unavailable: \(alt)", destination: url).buttonStyle(.dockLink)
                         } else {
-                            ProgressView().accessibilityLabel("Loading \(alt)")
+                            DockLoadingIndicator().accessibilityLabel("Loading \(alt)")
                         }
                     }
                 }

@@ -394,7 +394,10 @@ while their caret rotates. Retained disclosures centrally animate their reveal a
 collapse (0.2s), keeping nested inputs mounted and disabling hidden interaction
 immediately. Shared progress meters ease only their fill as confirmed values change (0.22s);
 section counts use a short numeric transition. Pending-action labels use the shared
-native loading arc and fade between confirmed and pending text. Native layer loops
+loading indicator and fade between confirmed and pending text. `DockLoadingIndicator`
+uses three rounded bars at fixed sizes. Their brightness moves left to right in Core
+Animation, using the active skin's accent or the enclosing status tone. Reduce Motion
+and motion-free skins show the same bars at rest. Native layer loops
 centrally honor Reduce Motion, motion-free skins, and host visibility, and release
 animations on dismantle. No extra continuous animation clock is introduced.
 Reduce Motion and motion-free skins suppress shared motion, including press
@@ -457,7 +460,8 @@ and `DockComponentStyles.swift`.
 | Icon button | `DockIconButton(icon:label:isProminent:isBusy:size:style:action:)` | Icon-only actions in header bars (28pt) and section headers (24pt) |
 | Copy button | `DockCopyButton(_:label:accessibilityLabel:presentation:iconSize:color:confirmationColor:)` | Copy actions that confirm in place with a temporary check; use icon, text, or icon-and-text presentation to preserve the surrounding control treatment |
 | Status dot | `DockStatusDot(tone:size:pulses:)` | State beside a title; `pulses` only on live rows |
-| Activity mark | `DockActivityIndicator(state:role:)` | Running, done, approval, question, failed. `role` sets size: `.compact` 10pt rail spinner, `.inline` 14pt beside a title, `.badge` 15pt on an avatar corner with a canvas ring, `.row` 20pt in the 34pt notch avatar column. Never pass a size at the call site |
+| Loading indicator | `DockLoadingIndicator` | Shared indeterminate loading mark for buttons, rows, and placeholders. The existing control size sets its footprint |
+| Activity mark | `DockActivityIndicator(state:role:)` | Running uses the shared loading indicator. Done, approval, question, and failed use status glyphs. `role` sets size: `.compact` 10pt, `.inline` 14pt, `.badge` 15pt on an avatar corner with a canvas ring, `.row` 20pt in the 34pt notch avatar column |
 | Status pill | `DockStatusPill(tone:text:symbol:)` | A standalone state, such as an inspector status or an offline marker |
 | Signage card | `.dockSignageCard(tone:emphasized:highlighted:)` | One unit of work in a list: a session, task, or bot |
 | Shimmer track | `DockShimmerTrack(tone:)` | Indeterminate progress under a working card |
@@ -650,7 +654,7 @@ Disconnected state stops the live spinner. The tooltip and accessibility value
 explain both states; Reduce Motion and motion-free skins keep the spinner static.
 The badge owns a cached aggregate from the filtered sidebar publisher, independent
 of parent view rendering and transcript deltas. Publish only changed aggregates.
-Keep spinner ticks within the badge's shared motion clock, and skip session
+Composite the loading bars in their own layers, and skip session
 polls while the workspace is hidden or disconnected; do not refresh immediately
 on every navigation remount.
 
@@ -1243,11 +1247,10 @@ Visible notch Bot status animations continue during workspace scrolling.
 The clocks still honor Reduce Motion, motion-free skins, and host visibility.
 
 When the workspace opens during startup, a full-workspace surface covers the
-session list, conversation, and inspector. The stems and crossbar of Herm’s H settle into alignment,
-followed by its colored dot, while the initial profile and session list load.
+session list, conversation, and inspector. The shared loading bars appear while
+the initial profile and session list load.
 The surface gives way on the first available session rows, a confirmed empty list,
-or a failure. Older history continues loading in place. Reduce Motion and
-motion-free skins show the assembled mark.
+or a failure. Older history continues loading in place.
 
 As a pet approaches a side rail, the lower contour bends toward its docking point. During the drag it tracks proximity directly and settles on release; the top camera housing retains its outline. A held pet tips once. Sprite frames step through the Hermes sheet in Core Animation.
 
@@ -1870,7 +1873,7 @@ The desktop split commits its final widths once when visibility changes. A short
 Working and unread activity follows each session through selection, pinned rows,
 and project summaries; the notch uses the same session activity state.
 Unseen failed turns show a warning triangle beside the independent unread count,
-including in All profiles. Leading status marks (spinner, approval, warning, unread
+including in All profiles. Leading status marks (running, approval, warning, unread
 count, done) share `DockSidebarListMetrics.statusMark` (16pt) inside a 28pt
 `statusSlotWidth`, via `DockActivityIndicator`'s `.status` role; never size one locally. Opening the session acknowledges the history warning
 while retaining error details in the transcript.
@@ -3071,9 +3074,8 @@ Group chat action errors use toast notifications without an inline error row abo
 
 ### Conversation workspace
 
-When a conversation is loading, two offset speech bubbles settle into place in
-reading order above the status text. The collapsed review chat places the small
-mark beside the text. Reduce Motion shows the resting pair.
+When a conversation is loading, the shared loading bars appear above the status
+text. The collapsed review chat places the small mark beside the text.
 
 The send arrow folds into a square in the same button when its action changes to Stop. Thinking uses a three-bead relay, and live compaction folds the outer two lines into the middle line. Both use native layers and retain static marks when motion is paused. The shared progress meter interpolates its filled path inside a fixed track.
 

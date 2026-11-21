@@ -188,6 +188,7 @@ struct EdgeNotchStatusIndicator: View {
     enum Part { case all, primary, badges }
     var part: Part = .all
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @DockChromeTheme private var theme
 
     private enum Mark { case working, done, blocked, offline, idle }
     private static let slot: CGFloat = 20
@@ -261,7 +262,7 @@ struct EdgeNotchStatusIndicator: View {
 
     private func color(_ m: Mark) -> Color {
         switch m {
-        case .working: .dockAccent
+        case .working: DockThemePalette(theme: theme).accent
         case .done: .dockSuccess
         case .blocked: activity.attentionState.color
         case .offline, .idle: .dockSecondaryText
@@ -314,8 +315,12 @@ struct EdgeNotchStatusIndicator: View {
     private func ring(_ m: Mark, _ c: Color, _ level: Double) -> some View {
         switch m {
         case .working:
-            DockLayerMotion(kind: .spin(period: 1.6, lineWidth: 2), color: c, paused: !animates)
+            Circle().strokeBorder(c.opacity(0.45), lineWidth: 1.5)
                 .frame(width: 16, height: 16)
+                .overlay {
+                    DockLoadingIndicator(size: 10, color: c, paused: !animates)
+                        .accessibilityHidden(true)
+                }
         case .done, .blocked:
             Circle().stroke(c.opacity(level), lineWidth: 2).frame(width: 16, height: 16)
                 .overlay { Circle().fill(c.opacity(level)).frame(width: 8, height: 8) }

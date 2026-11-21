@@ -183,7 +183,7 @@ struct ChatMediaAttachmentCard: View {
                 AsyncImage(url: url) {
                     $0.resizable().scaledToFit()
                 } placeholder: {
-                    ProgressView().controlSize(.small)
+                    DockLoadingIndicator().controlSize(.small)
                 }
             }
         }

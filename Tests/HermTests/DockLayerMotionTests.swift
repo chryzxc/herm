@@ -39,8 +39,7 @@ struct DockLayerMotionTests {
 
     @Test func pausingEveryLoopKeepsItsArtworkAndRemovesAnimations() throws {
         let kinds: [DockLayerMotion.Kind] = [
-            .thinkingRelay, .compactLines, .openingMonogram, .openingConversation,
-            .spin(period: 1.6, lineWidth: 1.5), .capsuleRim(period: 2.4, lineWidth: 1),
+            .thinkingRelay, .compactLines, .loading, .capsuleRim(period: 2.4, lineWidth: 1),
             .breathe(period: 2), .sweep(period: 1.6, fraction: 0.4, clamp: 0...80),
             .tide(period: 2, depth: 4),
         ]
@@ -59,6 +58,22 @@ struct DockLayerMotionTests {
         }
     }
 
+    @Test func loadingBarsStayWithinTheCompactSlotAndAnimateInSequence() throws {
+        let view = DockLayerMotionView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
+        let color = NSColor.systemPurple.cgColor
+        view.spec = .init(kind: .loading, color: color, paused: false)
+        let bars = try #require(view.layer?.sublayers)
+        #expect(bars.count == 3)
+        #expect(bars.allSatisfy { view.bounds.contains($0.frame) && $0.backgroundColor == color })
+        let pulses = bars.compactMap { $0.animation(forKey: "opacity") as? CAKeyframeAnimation }
+        #expect(pulses.count == 3)
+        #expect(Set(pulses.map(\.timeOffset)).count == 3)
+
+        view.spec?.paused = true
+        #expect(view.layer?.sublayers?.map(\.frame) == bars.map(\.frame))
+        #expect(view.layer?.sublayers?.allSatisfy { $0.animationKeys()?.isEmpty ?? true } == true)
+    }
+
     @Test func layerLoopsRespectThemeAndHostVisibility() async throws {
         let previous = DockThemeRuntime.current
         defer { DockThemeRuntime.current = previous }
@@ -67,7 +82,7 @@ struct DockLayerMotionTests {
         ] {
             DockThemeRuntime.current = theme
             let host = NSHostingView(
-                rootView: DockLayerMotion(kind: .spin(period: 1.6, lineWidth: 1.5), color: .dockAccent)
+                rootView: DockLoadingIndicator(size: 24)
                     .environment(\.dockHostVisible, visible)
                     .environment(\.dockHostResizing, resizing)
                     .frame(width: 24, height: 24))
@@ -85,6 +100,27 @@ struct DockLayerMotionTests {
                             reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, theme: theme))
             )
         }
+    }
+
+    @Test func loadingIndicatorUsesTheSurfaceThemeOverride() async throws {
+        let previous = DockThemeRuntime.current
+        DockThemeRuntime.current = .glass
+        defer { DockThemeRuntime.current = previous }
+        let host = NSHostingView(
+            rootView: DockLoadingIndicator(size: 16)
+                .environment(\.dockChromeThemeOverride, .eInk)
+                .environment(\.colorScheme, .light))
+        host.frame = NSRect(x: 0, y: 0, width: 16, height: 16)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(30))
+
+        let spec = try #require(motionView(in: host)?.spec)
+        let ink = try #require(NSColor(cgColor: spec.color)?.usingColorSpace(.sRGB))
+        #expect(spec.paused)
+        #expect(ink.redComponent == 0 && ink.greenComponent == 0 && ink.blueComponent == 0)
     }
 
     @Test func pendingActionRetainsItsFootprint() {

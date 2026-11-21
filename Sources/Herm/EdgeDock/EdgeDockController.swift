@@ -2430,7 +2430,7 @@ struct EdgeNotchView: View {
         return Button(action: onTasksRefresh) {
             Group {
                 if refreshing {
-                    ProgressView().controlSize(.small).scaleEffect(0.7)
+                    DockLoadingIndicator().controlSize(.small).scaleEffect(0.7)
                 } else {
                     DockIcon(
                         unavailable ? .warningCircle : .arrowClockwise, size: 13,

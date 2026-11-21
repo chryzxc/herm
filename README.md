@@ -464,7 +464,7 @@ orange is reserved for attention rather than normal draft or modified state.
 
 Shared tabs carry their selection highlight between choices. Navigation glyphs respond to selection, floating-skin controls lift gently on hover, and retained disclosures ease open and closed while preserving nested inputs.
 
-Shared interface motion includes smoothly updating progress meters and section counts, in-place pending-action spinners, short tab and navigation selection transitions, rotating disclosures, and subtle page/modal content reveals. Effects follow the active skin and respect Reduce Motion; controls remain immediately usable and content keeps its layout footprint.
+Shared interface motion includes smoothly updating progress meters and section counts, short tab and navigation selection transitions, rotating disclosures, and subtle page and modal reveals. Loading screens, pending actions, and running session indicators use the same three rounded bars. They follow the active skin and stay still with Reduce Motion or a motion-free skin. Controls remain usable and keep their layout footprint.
 
 ### Conversations
 
@@ -1379,11 +1379,10 @@ and delivery/execution settings.
 
 The notch appears while Herm loads local workspace preferences and activity archives.
 Clicking it or using the workspace shortcut during launch opens the workspace as soon as it is ready.
-On first opening the workspace, a full-window Herm animation covers the panes until
+On first opening the workspace, a loading screen covers the panes until
 the first session rows, an empty list, or a connection error is available. Older
-sessions continue to load in the background. The strokes of Herm’s H settle into place at startup. When a conversation
-opens, two speech bubbles slide into position while its history loads. Reduce Motion
-shows the finished artwork on both surfaces.
+sessions continue to load in the background. Startup and conversation history use
+the shared loading bars. Reduce Motion keeps the bars still.
 
 To build and open the signed debug app bundle with its icon, run:
 

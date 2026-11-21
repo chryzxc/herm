@@ -21,7 +21,7 @@ struct SessionPullRequestPreview: View {
         Group {
             if isLoading {
                 VStack(spacing: 8) {
-                    ProgressView()
+                    DockLoadingIndicator()
                     Text("Loading pull request…")
                 }
             } else if let loadError {

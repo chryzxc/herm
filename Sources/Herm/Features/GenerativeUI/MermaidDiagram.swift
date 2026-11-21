@@ -257,7 +257,7 @@ struct MermaidDiagramView: View {
                         Button("Show code") { showsCode = true }.buttonStyle(.dockLink)
                     }
                 } else {
-                    ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 120)
+                    DockLoadingIndicator().controlSize(.small).frame(maxWidth: .infinity, minHeight: 120)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -65,7 +65,7 @@ struct EdgeRecallView: View {
                 DockTextField("Search \(profileID ?? "Launch profile")", text: $query).textFieldStyle(
                     .dockGlass
                 ).focused($focused)
-                if search.loading { ProgressView().controlSize(.mini) }
+                if search.loading { DockLoadingIndicator().controlSize(.mini) }
             }.dockPadding(10).frame(height: 48)
             Divider().overlay(Color.dockBorderLight)
             ScrollView {

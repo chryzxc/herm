@@ -64,7 +64,7 @@ struct PullRequestReviewerPicker: View {
         DockModal(title: "Select reviewers", subtitle: record.reference.title, width: 520) {
             TextField("Filter reviewers", text: $search).textFieldStyle(.dockGlass)
             if busy && !loaded {
-                ProgressView("Loading reviewers…")
+                DockLoadingIndicator("Loading reviewers…")
                     .frame(maxWidth: .infinity, minHeight: 180)
             } else {
                 ScrollView {

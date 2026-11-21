@@ -11,10 +11,8 @@ struct DockLayerMotion: NSViewRepresentable {
         case thinkingRelay
         /// Three transcript lines fold together as context is compacted.
         case compactLines
-        case openingMonogram
-        case openingConversation
-        /// A 70% arc turning clockwise over a faint ring.
-        case spin(period: Double, lineWidth: CGFloat)
+        /// Three rounded bars pass a highlight while work is pending.
+        case loading
         /// A highlight travelling around a capsule without rotating its contents.
         case capsuleRim(period: Double, lineWidth: CGFloat)
         /// A filled dot dimming to 30% and back once per `period`.
@@ -153,66 +151,31 @@ final class DockLayerMotionView: NSView {
                 }
             }
 
-        case .openingMonogram:
-            // Two stems, a crossbar, and the period from the Herm app mark.
-            let scale = min(bounds.width / 116, bounds.height / 104)
-            let origin = CGPoint(x: bounds.midX - 53 * scale, y: bounds.midY - 39 * scale)
-            let strokes: [(CGRect, CGFloat, CGFloat, Double)] = [
-                (CGRect(x: 0, y: 0, width: 23, height: 78), 0, -10, 0.20),
-                (CGRect(x: 45, y: 0, width: 23, height: 78), 0, 10, 0.28),
-                (CGRect(x: 11, y: 30, width: 48, height: 18), -12, 0, 0.35),
-                (CGRect(x: 77, y: 0, width: 17, height: 17), 0, 14, 0.44),
-            ]
-            for (index, stroke) in strokes.enumerated() {
-                let (rect, dx, dy, arrival) = stroke
-                let part = CALayer()
-                part.bounds.size = CGSize(width: rect.width * scale, height: rect.height * scale)
-                part.position = CGPoint(x: origin.x + rect.midX * scale, y: origin.y + rect.midY * scale)
-                part.cornerRadius = (index == 3 ? rect.height / 2 : 6) * scale
-                part.backgroundColor = index == 3 ? (spec.glow ?? color) : color
-                host.addSublayer(part)
+        case .loading:
+            let side = min(bounds.width, bounds.height)
+            let width = side * 0.17
+            let period = 1.2
+            let phase = CACurrentMediaTime().truncatingRemainder(dividingBy: period)
+            for (index, height) in [0.40, 0.64, 0.49].enumerated() {
+                let bar = CALayer()
+                bar.bounds.size = CGSize(width: width, height: side * height)
+                bar.position = CGPoint(x: bounds.midX + CGFloat(index - 1) * side * 0.25, y: bounds.midY)
+                bar.cornerRadius = width / 2
+                bar.backgroundColor = color
+                bar.opacity = index == 1 ? 1 : 0.62
+                host.addSublayer(bar)
                 if !spec.paused {
-                    settle(part, dx: dx * scale, dy: dy * scale, arrival: arrival)
+                    let pulse = CAKeyframeAnimation(keyPath: "opacity")
+                    pulse.keyTimes = [0, 0.19, 0.42, 1]
+                    pulse.values = [0.48, 1, 0.48, 0.48]
+                    pulse.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 3)
+                    pulse.duration = period
+                    pulse.repeatCount = .infinity
+                    pulse.timeOffset = (phase + period - Double(index) * period / 3).truncatingRemainder(
+                        dividingBy: period)
+                    bar.add(pulse, forKey: "opacity")
                 }
             }
-
-        case .openingConversation:
-            let scale = min(bounds.width / 64, bounds.height / 48)
-            for reply in [false, true] {
-                let width = (reply ? 31.0 : 38.0) * scale
-                let height = 15 * scale
-                let rect = CGRect(x: 0, y: 0, width: width, height: height)
-                let path = CGMutablePath()
-                path.addRoundedRect(in: rect, cornerWidth: 5 * scale, cornerHeight: 5 * scale)
-                let tail = reply ? width - 6 * scale : 6 * scale
-                path.move(to: CGPoint(x: tail, y: 0))
-                path.addLine(to: CGPoint(x: tail, y: -4 * scale))
-                path.addLine(to: CGPoint(x: tail + (reply ? -6 : 6) * scale, y: 0))
-                path.closeSubpath()
-                let line = rect.insetBy(dx: 7 * scale, dy: 6.5 * scale)
-                path.addRoundedRect(in: line, cornerWidth: scale, cornerHeight: scale)
-                let bubble = CAShapeLayer()
-                bubble.path = path
-                bubble.fillRule = .evenOdd
-                bubble.fillColor = reply ? color : color.copy(alpha: color.alpha * 0.55)
-                bubble.position = CGPoint(
-                    x: bounds.midX + (reply ? -5 : -29) * scale,
-                    y: bounds.midY + (reply ? -17 : 4) * scale)
-                host.addSublayer(bubble)
-                if !spec.paused {
-                    settle(bubble, dx: (reply ? 5 : -3) * scale, dy: -4 * scale, arrival: reply ? 0.46 : 0.22)
-                }
-            }
-
-        case .spin(let period, let lineWidth):
-            let path = CGPath(ellipseIn: bounds.insetBy(dx: lineWidth / 2, dy: lineWidth / 2), transform: nil)
-            let track = ring(path, lineWidth: lineWidth, color: color.copy(alpha: color.alpha * 0.25) ?? color)
-            let arc = ring(path, lineWidth: lineWidth, color: color)
-            arc.strokeEnd = 0.7
-            host.addSublayer(track)
-            host.addSublayer(arc)
-            // Negative turns clockwise in AppKit's y-up layer space.
-            if !spec.paused { loop(arc, "transform.rotation.z", from: 0, to: -2 * Double.pi, duration: period) }
 
         case .capsuleRim(let period, let lineWidth):
             let rect = bounds.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
@@ -313,18 +276,6 @@ final class DockLayerMotionView: NSView {
     }
 
     /// Each piece arrives in order, holds its reading position, then resets together.
-    private func settle(_ layer: CALayer, dx: CGFloat, dy: CGFloat, arrival: Double) {
-        let rest = layer.position
-        let start = CGPoint(x: rest.x + dx, y: rest.y + dy)
-        let move = CAKeyframeAnimation(keyPath: "position")
-        move.values = [start, start, rest, rest, start]
-        move.keyTimes = [0, NSNumber(value: arrival - 0.17), NSNumber(value: arrival), 0.79, 1]
-        move.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 4)
-        move.duration = 2.4
-        move.repeatCount = .infinity
-        layer.add(move, forKey: "settle")
-    }
-
     private func ring(_ path: CGPath, lineWidth: CGFloat, color: CGColor) -> CAShapeLayer {
         let ring = CAShapeLayer()
         ring.frame = bounds

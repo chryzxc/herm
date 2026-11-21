@@ -530,7 +530,7 @@ struct EdgeTaskPreview: View {
             }
             if let submission = task.answerState {
                 HStack(alignment: .top, spacing: 6) {
-                    if case .sending = submission { ProgressView().controlSize(.mini) }
+                    if case .sending = submission { DockLoadingIndicator().controlSize(.mini) }
                     Text(submission.message)
                         .dockFont(.metadata)
                         .foregroundStyle(Color.dockSecondaryText)

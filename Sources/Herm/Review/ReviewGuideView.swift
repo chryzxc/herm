@@ -54,7 +54,7 @@ struct ReviewGuideView: View {
                             if coordinator.requesting
                                 || coordinator.session != nil && content.error == nil && coordinator.requestError == nil
                             {
-                                ProgressView().controlSize(.small)
+                                DockLoadingIndicator().controlSize(.small)
                             }
                             Text(
                                 coordinator.requestError != nil

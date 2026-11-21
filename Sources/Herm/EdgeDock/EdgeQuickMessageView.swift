@@ -352,7 +352,7 @@ struct EdgeQuickMessageView: View {
             Button(action: submit) {
                 ComposerSubmitLabel(isEnabled: canSend) {
                     if state.quickSending {
-                        ProgressView().controlSize(.mini)
+                        DockLoadingIndicator().controlSize(.mini)
                     } else {
                         DockIcon(.arrowUp)
                             .dockFont(.body, weight: .semibold)

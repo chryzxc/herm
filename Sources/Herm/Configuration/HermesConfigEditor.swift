@@ -568,7 +568,7 @@ struct HermesConfigCategoryView: View {
                 switch editor.state {
                 case .idle, .loading:
                     HStack(spacing: 7) {
-                        ProgressView().controlSize(.small)
+                        DockLoadingIndicator().controlSize(.small)
                         Text("READING HERMES CONFIG…").dockFont(.body).tracking(0.6).foregroundStyle(
                             Color.dockSecondaryText)
                     }
@@ -628,7 +628,7 @@ private struct HermesConfigFieldRow: View {
                             .dockFont(.body, weight: .semibold)
                             .foregroundStyle(Color.dockAccent)
                     } else if editor.savingKeys.contains(key) {
-                        ProgressView().controlSize(.small)
+                        DockLoadingIndicator().controlSize(.small)
                     }
                 }
                 TextEditor(text: $listDraft)
@@ -652,7 +652,7 @@ private struct HermesConfigFieldRow: View {
         default:
             SettingsPreferenceRow(title: title, detail: detail) {
                 HStack(spacing: 8) {
-                    if editor.savingKeys.contains(key) { ProgressView().controlSize(.small) }
+                    if editor.savingKeys.contains(key) { DockLoadingIndicator().controlSize(.small) }
                     control
                 }
             }

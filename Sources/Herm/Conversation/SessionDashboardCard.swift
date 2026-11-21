@@ -185,7 +185,7 @@ struct SessionDashboardCard: View, Equatable {
         }
         if let answer {
             HStack(spacing: 6) {
-                if case .sending = answer { ProgressView().controlSize(.mini) }
+                if case .sending = answer { DockLoadingIndicator().controlSize(.mini) }
                 Text(answer.message).lineLimit(3)
                 if case .uncertain = answer {
                     Button("Check request") { model?.recheckAttention(target) }.buttonStyle(.dockSecondary)

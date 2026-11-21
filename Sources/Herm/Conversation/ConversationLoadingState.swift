@@ -7,7 +7,7 @@ struct ConversationLoadingState: View {
     var body: some View {
         let layout = compact ? AnyLayout(HStackLayout(spacing: 6)) : AnyLayout(VStackLayout(spacing: 8))
         layout {
-            DockLayerMotion(kind: .openingConversation, color: .dockPrimaryText)
+            DockLoadingIndicator(size: compact ? 16 : 28)
                 .frame(width: compact ? 28 : 64, height: compact ? 21 : 48)
                 .accessibilityHidden(true)
             Text("Loading conversation…")

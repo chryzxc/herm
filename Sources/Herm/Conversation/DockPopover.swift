@@ -407,7 +407,7 @@ struct DockPopover: View {
             .overlay(alignment: .bottomTrailing) {
                 if let reference = gitHubInspector.opening[WorkspaceIdentity.session(model)] {
                     HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
+                        DockLoadingIndicator().controlSize(.small)
                         Text("Opening \(reference.kind == .pullRequest ? "pull request" : "issue") \(reference.title)…")
                             .dockFont(.body)
                             .lineLimit(2)

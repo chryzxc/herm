@@ -41,11 +41,11 @@ struct DockAsyncButton<Label: View>: View {
         } label: {
             HStack(spacing: 6) {
                 label
-                ProgressView()
-                    .controlSize(.mini)
-                    .frame(width: 12, height: 12)
-                    .opacity(activity.isPending ? 1 : 0)
-                    .accessibilityHidden(true)
+                ZStack {
+                    if activity.isPending { DockLoadingIndicator(size: 10) }
+                }
+                .frame(width: 12, height: 12)
+                .accessibilityHidden(true)
             }
         }
         .disabled(activity.isPending)

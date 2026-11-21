@@ -53,7 +53,7 @@ struct WorkActivitySummaryView: View {
             HStack(spacing: 8) {
                 Text("\(input?.scope ?? "Activity") summary").dockFont(.body, weight: .semibold)
                 Spacer(minLength: 0)
-                if isGenerating { ProgressView().controlSize(.small) }
+                if isGenerating { DockLoadingIndicator().controlSize(.small) }
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {

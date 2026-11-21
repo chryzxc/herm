@@ -285,7 +285,7 @@ struct SessionNavProjectList: View {
                         } label: {
                             Group {
                                 if isCreatingHere {
-                                    ProgressView().controlSize(.small)
+                                    DockLoadingIndicator().controlSize(.small)
                                 } else {
                                     DockIcon(
                                         .chatTeardropText, size: 15,
@@ -852,7 +852,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
                     color: isPinned ? style.primaryText : style.metadataText
                 )
                 .opacity(isPinning ? 0 : 1)
-                .overlay { if isPinning { ProgressView().controlSize(.mini) } }
+                .overlay { if isPinning { DockLoadingIndicator().controlSize(.mini) } }
                 .frame(width: 24, height: 24)
                 .accessibilityAddTraits(isPinned ? .isSelected : [])
                 .contentShape(Rectangle())
@@ -863,7 +863,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             .accessibilityLabel(isPinned ? "Unpin \(session.displayTitle)" : "Pin \(session.displayTitle)")
 
             if pendingAction != nil {
-                ProgressView().controlSize(.mini).frame(width: 24, height: 24)
+                DockLoadingIndicator().controlSize(.mini).frame(width: 24, height: 24)
             } else {
                 // Menu labels on macOS only reliably render Text/Image.
                 DockMenu {

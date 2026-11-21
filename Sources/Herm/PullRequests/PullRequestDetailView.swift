@@ -204,7 +204,7 @@ struct PullRequestDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
+                        DockLoadingIndicator().controlSize(.small)
                         Text("Loading pull request")
                             .dockFont(.body, weight: .medium)
                             .foregroundStyle(Color.dockMetadataText)
@@ -600,7 +600,7 @@ struct PullRequestDetailView: View {
                 }
             } label: {
                 HStack(spacing: 7) {
-                    if center.updatingStatusID == pr.id { ProgressView().controlSize(.mini) }
+                    if center.updatingStatusID == pr.id { DockLoadingIndicator().controlSize(.mini) }
                     if center.updatingStatusID != pr.id {
                         DockIcon(pr.presentationIcon, size: 12, color: pr.presentationColor)
                     }
@@ -737,7 +737,7 @@ struct PullRequestDetailView: View {
         return VStack(alignment: .leading, spacing: 10) {
             switch projection {
             case .loading:
-                ProgressView("Loading changed files…").foregroundStyle(Color.dockMetadataText)
+                DockLoadingIndicator("Loading changed files…").foregroundStyle(Color.dockMetadataText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             case .unavailable:
                 codeState(
@@ -873,7 +873,7 @@ struct PullRequestDetailView: View {
                         }
                         if guide.requesting {
                             HStack(spacing: 8) {
-                                ProgressView().controlSize(.small)
+                                DockLoadingIndicator().controlSize(.small)
                                 Text("Starting review…").dockFont(.body)
                             }.foregroundStyle(Color.dockSecondaryText).dockPadding(8)
                         }

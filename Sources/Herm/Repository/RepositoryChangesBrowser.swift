@@ -423,7 +423,7 @@ struct RepositoryChangesBrowser: View {
                     Color.dockWarning)
             } else {
                 HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
+                    DockLoadingIndicator().controlSize(.small)
                     Text("Loading changed files…").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 }
             }
@@ -613,9 +613,7 @@ struct RepositoryChangesBrowser: View {
                         .dockFont(.metadata)
                         .foregroundStyle(Color.dockSecondaryText)
                     Spacer(minLength: 8)
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(Color.dockAccent)
+                    DockLoadingIndicator().controlSize(.small)
                 }
                 if let code = workflow.githubAuthenticationCode {
                     Text(code)
@@ -629,9 +627,7 @@ struct RepositoryChangesBrowser: View {
             .dockPadding(.vertical, 2)
         } else if workflow.isSigningOutGitHub {
             HStack(spacing: 7) {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(Color.dockAccent)
+                DockLoadingIndicator().controlSize(.small)
                 Text(workflow.githubAuthenticationNotice ?? "Signing out of GitHub…")
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockSecondaryText)
@@ -854,7 +850,7 @@ struct RepositoryChangesBrowser: View {
                 if diff.isTruncated { diffNotice("Diff truncated for safe display.", color: .dockWarning) }
             } else if loadingFileIDs.contains(file.id) {
                 HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
+                    DockLoadingIndicator().controlSize(.small)
                     Text("Loading diff…").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 }
                 .dockPadding(10)

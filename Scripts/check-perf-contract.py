@@ -10,6 +10,8 @@ Rejects patterns that have caused frame drops, idle CPU, or battery drain:
 * `TimelineView(.animation...)`: same per-frame cost; use `.dockMotion`.
 * `TimelineView(.periodic(... by: <1s))`: a sub-second wall clock is motion;
   use `.dockMotion` so it holds while scrolling and off screen.
+* Indeterminate `ProgressView`: use `DockLoadingIndicator` so indeterminate
+  states share the theme and visibility rules.
 * Allocate-and-use formatters (`ISO8601DateFormatter().date(...)`): building
   a formatter loads ICU state and costs several times the parse. Use
   `ISO8601Parsing` or a stored static formatter.
@@ -50,6 +52,10 @@ LINE_RULES: list[tuple[re.Pattern[str], str]] = [
     (
         re.compile(r'\b(?:' + FORMATTERS + r')\(\)\s*\.'),
         'formatter allocated per call; use ISO8601Parsing or a stored static formatter',
+    ),
+    (
+        re.compile(r'\bProgressView\s*\(\s*(?:"(?:[^"\\]|\\.)*"\s*)?\)'),
+        'use DockLoadingIndicator for indeterminate progress',
     ),
 ]
 PERIODIC = re.compile(r'\.periodic\s*\(\s*from:[^)]*\bby:\s*([0-9]*\.?[0-9]+)')

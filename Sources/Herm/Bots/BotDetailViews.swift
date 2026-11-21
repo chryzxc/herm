@@ -513,7 +513,7 @@ private struct BotEditorLoadingState: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
+                DockLoadingIndicator().controlSize(.small)
                 Text("Loading profile configuration…")
                     .dockFont(.body, weight: .medium)
                     .foregroundStyle(Color.dockSecondaryText)

@@ -441,7 +441,7 @@ struct SessionNavQueue: View, Equatable {
                 allProfilesMark(size: 28, style: style)
             } else if let bot, botMode.isAvatarPending(bot) {
                 // Startup: the avatar is still loading, so hold its slot instead of a stand-in face.
-                ProgressView().controlSize(.small).frame(width: 28, height: 28)
+                DockLoadingIndicator().controlSize(.small).frame(width: 28, height: 28)
                     .accessibilityLabel("Loading \(bot.name)'s avatar")
             } else if let bot {
                 BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 28)
@@ -816,7 +816,7 @@ struct SessionNavQueue: View, Equatable {
                 .foregroundStyle(style.secondaryText)
             // Fixed-size slot so a routine refresh never shifts the list below
             // or reads as activity inside a conversation row.
-            ProgressView()
+            DockLoadingIndicator()
                 .controlSize(.mini)
                 .frame(width: 12, height: 12)
                 .opacity(sidebarSnapshot.inputs.isLoadingSessions ? 1 : 0)

@@ -283,7 +283,7 @@ struct FilePreviewPane: View {
                 SessionSurfacePreviewPlaceholder(
                     icon: .file, title: "No inline preview", detail: "Open it in its default app.")
             case nil:
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+                DockLoadingIndicator().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }

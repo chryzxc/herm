@@ -539,7 +539,7 @@ extension WorkspaceActivitySidebar {
                     Spacer()
                     Button(action: { model.refreshRuntimeConfiguration(force: true) }) {
                         if model.isLoadingRuntimeConfiguration {
-                            ProgressView().controlSize(.small).tint(Color.dockAccent)
+                            DockLoadingIndicator().controlSize(.small)
                         } else {
                             DockIcon(.arrowsClockwise)
                                 .dockFont(.body, weight: .medium)
@@ -553,14 +553,14 @@ extension WorkspaceActivitySidebar {
 
                 if model.isLoadingRuntimeConfiguration && model.runtimeConfiguration == nil {
                     HStack(spacing: 7) {
-                        ProgressView().controlSize(.small)
+                        DockLoadingIndicator().controlSize(.small)
                         Text("READING HERMES RUNTIME…").dockFont(.body).tracking(0.6).foregroundStyle(
                             Color.dockSecondaryText)
                     }
                 } else if let configuration = model.runtimeConfiguration {
                     if model.runtimeModelOptions.isEmpty {
                         HStack(spacing: 7) {
-                            ProgressView().controlSize(.small)
+                            DockLoadingIndicator().controlSize(.small)
                             Text("LOADING HERMES MODEL CATALOG…").dockFont(.body).tracking(0.5).foregroundStyle(
                                 Color.dockSecondaryText)
                         }
@@ -1394,7 +1394,7 @@ extension WorkspaceActivitySidebar {
         if let state = control.refreshState(for: projection) {
             if state.isRefreshing {
                 HStack(spacing: 6) {
-                    ProgressView().controlSize(.mini)
+                    DockLoadingIndicator().controlSize(.mini)
                     Text(state.isStale ? "Refreshing — showing last successful data" : "Refreshing…")
                 }
                 .dockFont(.metadata)

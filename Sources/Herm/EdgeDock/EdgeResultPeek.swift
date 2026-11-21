@@ -96,7 +96,7 @@ struct EdgeResultPeek: View {
                         Color.dockSecondaryText)
                 }
                 Spacer(minLength: 4)
-                if isLoading { ProgressView().controlSize(.mini) }
+                if isLoading { DockLoadingIndicator().controlSize(.mini) }
                 DockMenu {
                     Button(hasNewerResult ? "Update saved reply" : "Refresh saved reply") {
                         refresh()

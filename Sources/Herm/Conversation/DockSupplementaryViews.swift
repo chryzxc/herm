@@ -506,7 +506,7 @@ struct CronEditEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if isLoading {
-                        ProgressView("Loading automation details…").controlSize(.small)
+                        DockLoadingIndicator("Loading automation details…").controlSize(.small)
                     }
                     Group {
                         editSection("What runs")
@@ -616,7 +616,7 @@ struct CronReportDetailSheet: View {
             Group {
                 if isLoading {
                     VStack(spacing: 10) {
-                        ProgressView()
+                        DockLoadingIndicator()
                         Text("Loading report…")
                             .dockFont(.body)
                             .foregroundStyle(Color.dockSecondaryText)
@@ -700,7 +700,7 @@ struct RepositoryFleetRow: View {
                         .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 }
                 Spacer()
-                if isRefreshing { ProgressView().controlSize(.small) }
+                if isRefreshing { DockLoadingIndicator().controlSize(.small) }
                 if path == activePath {
                     Text("ACTIVE").dockFont(.metadata, weight: .semibold).foregroundStyle(Color.dockAccent)
                 }

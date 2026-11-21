@@ -348,7 +348,7 @@ struct SessionBrowserView: View {
             .help(navigation.isLoading ? "Loading page…" : "Search or enter address (⌘L)")
             .overlay(alignment: .trailing) {
                 if navigation.isLoading, !isEditingAddress {
-                    ProgressView().controlSize(.mini).dockPadding(.trailing, 8)
+                    DockLoadingIndicator().controlSize(.mini).dockPadding(.trailing, 8)
                         .accessibilityLabel("Loading page")
                         .allowsHitTesting(false)
                 }
@@ -360,7 +360,7 @@ struct SessionBrowserView: View {
             Task { await sendPage() }
         } label: {
             HStack(spacing: 4) {
-                if sendingPage { ProgressView().controlSize(.mini) }
+                if sendingPage { DockLoadingIndicator().controlSize(.mini) }
                 Text(compact ? "Attach" : "Attach Page").fixedSize()
             }
         }
@@ -437,7 +437,9 @@ struct SessionBrowserView: View {
             DockIcon(.dotsThree)
                 .opacity(sendingPage ? 0 : 1)
                 .overlay {
-                    if sendingPage { ProgressView().controlSize(.mini).accessibilityLabel("Adding page to chat") }
+                    if sendingPage {
+                        DockLoadingIndicator().controlSize(.mini).accessibilityLabel("Adding page to chat")
+                    }
                 }
                 .dockFont(.conversation, weight: .medium)
                 .foregroundStyle(consoleErrors.isEmpty ? Color.dockSecondaryText : Color.dockWarning)

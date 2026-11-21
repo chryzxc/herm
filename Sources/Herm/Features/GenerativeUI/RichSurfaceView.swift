@@ -26,7 +26,7 @@ struct RichDocumentView: View {
                 case .preview(let file): HermesInlinePreviewView(file: file)
                 case .pending:
                     HStack(spacing: 8) {
-                        ProgressView().controlSize(.small).frame(width: 16, height: 16)
+                        DockLoadingIndicator().controlSize(.small).frame(width: 16, height: 16)
                         Text("Preparing interactive view…").foregroundStyle(Color.dockSecondaryText)
                     }.dockFont(.body)
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -414,7 +414,7 @@ private struct RichFormView: View {
                 Task { await context.submit(draft, surface: surface, fields: fields) }
             } label: {
                 HStack(spacing: 6) {
-                    if draft.pending { ProgressView().controlSize(.small) }
+                    if draft.pending { DockLoadingIndicator().controlSize(.small) }
                     Text(draft.sent ? "Answer sent" : block.submitLabel ?? "Send answer")
                 }
             }.buttonStyle(.dockPrimary)

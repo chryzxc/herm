@@ -354,7 +354,7 @@ struct ChatComposerView: View {
                                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                             .overlay {
                                                 if model.extractingImageTextIDs.contains(image.id) {
-                                                    ProgressView().controlSize(.mini).accessibilityLabel(
+                                                    DockLoadingIndicator().controlSize(.mini).accessibilityLabel(
                                                         "Reading image text")
                                                 }
                                             }

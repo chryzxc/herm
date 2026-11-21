@@ -562,7 +562,7 @@ struct ConversationMessageRow: View, Equatable {
                 DockIcon(.dotsThree, size: 16, color: .dockSecondaryText)
                     .opacity(pendingAction != nil && pendingAction != .refresh ? 0 : 1)
                 if pendingAction != nil && pendingAction != .refresh {
-                    ProgressView().controlSize(.small)
+                    DockLoadingIndicator().controlSize(.small)
                 }
             }
             .frame(width: 24, height: 28)
@@ -606,7 +606,7 @@ struct ConversationMessageRow: View, Equatable {
         if let delivery {
             HStack(spacing: 4) {
                 if delivery == .sending || deliveryChecking {
-                    ProgressView().controlSize(.small)
+                    DockLoadingIndicator().controlSize(.small)
                 } else if delivery == .unconfirmed {
                     Image(systemName: "exclamationmark.triangle").accessibilityHidden(true)
                 }
@@ -686,7 +686,7 @@ struct ConversationMessageRow: View, Equatable {
                 : Color.dockSecondaryText
             Button(action: action) {
                 if isPending {
-                    ProgressView().controlSize(.small)
+                    DockLoadingIndicator().controlSize(.small)
                 } else {
                     DockIcon(icon, size: 12, weight: isActive ? .fill : .regular, color: iconColor)
                 }

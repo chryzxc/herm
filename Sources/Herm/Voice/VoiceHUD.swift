@@ -574,7 +574,7 @@ private struct MediaCard: View {
                     AsyncImage(url: url) {
                         $0.resizable().aspectRatio(contentMode: .fit)
                     } placeholder: {
-                        ProgressView()
+                        DockLoadingIndicator()
                     }
                 }
             }

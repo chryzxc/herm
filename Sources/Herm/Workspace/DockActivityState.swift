@@ -19,7 +19,7 @@ enum DockActivityState: Int, Comparable, CaseIterable, Sendable {
         }
     }
 
-    /// nil means a spinner (running).
+    /// Running uses the shared loading indicator.
     var icon: Ph? {
         switch self {
         case .approval: .warningCircle
@@ -51,13 +51,13 @@ enum DockActivityState: Int, Comparable, CaseIterable, Sendable {
     }
 }
 
-/// Spinner for running, a filled glyph for everything else. Fixed footprint so
+/// Loading indicator for running, a filled glyph for other states. Fixed footprint so
 /// titles stay aligned whether or not a state is showing. Sizes live in `Role`,
 /// never at the call site, so a state reads the same everywhere it appears.
 struct DockActivityIndicator: View {
     /// Where the mark sits. Each role owns its size and treatment.
     enum Role {
-        /// Spinner in a dense rail or tab strip.
+        /// Status in a dense rail or tab strip.
         case compact
         /// Beside a title or label.
         case inline
@@ -86,7 +86,7 @@ struct DockActivityIndicator: View {
     /// Only a session that finished work with news you haven't seen shows a dot instead of the check.
     var unreadDot = false
     var animates = true
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @DockChromeTheme private var theme
 
     private var size: CGFloat { role.size }
 
@@ -107,7 +107,10 @@ struct DockActivityIndicator: View {
                         .foregroundStyle(color)
                 }
             } else {
-                spinner(tint ?? state.color)
+                DockLoadingIndicator(
+                    size: size, color: tint ?? DockStatusTone.working.color(in: theme), paused: !animates
+                )
+                .accessibilityHidden(true)
             }
         }
         .frame(width: size, height: size)
@@ -115,28 +118,8 @@ struct DockActivityIndicator: View {
             if role == .badge { Circle().fill(Color.dockOpaqueCanvas).dockPadding(-1.5) }
         }
         .help(state.label)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(state.label)
-    }
-
-    /// Drawn arc rather than ProgressView, which ignores tint and washes out on avatars.
-    @ViewBuilder private func spinner(_ color: Color) -> some View {
-        if reduceMotion || !animates {
-            spinnerArc(color, turn: 0)
-        } else {
-            // Core Animation turns the arc: it keeps spinning inside collapsed task
-            // disclosures and costs no window render per frame, however many rows spin.
-            DockLayerMotion(kind: .spin(period: 0.9, lineWidth: max(1.8, size * 0.16)), color: color)
-        }
-    }
-
-    private func spinnerArc(_ color: Color, turn: Double) -> some View {
-        let line = max(1.8, size * 0.16)
-        return Circle().stroke(color.opacity(0.25), lineWidth: line)
-            .overlay {
-                Circle().trim(from: 0, to: 0.7).stroke(color, style: StrokeStyle(lineWidth: line, lineCap: .round))
-                    .rotationEffect(.degrees(turn * 360))
-            }
-            .dockPadding(line / 2)
     }
 }
 

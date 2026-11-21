@@ -47,7 +47,7 @@ extension WorkspaceActivitySidebar {
                 .dockPadding(.top, 2)
             } else if control.isSearching {
                 HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
+                    DockLoadingIndicator().controlSize(.small)
                     Text("SEARCHING HERMES SOURCES…")
                         .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
@@ -171,7 +171,7 @@ extension WorkspaceActivitySidebar {
                     }
                 }
                 Spacer(minLength: 0)
-                if isRefreshingRepository { ProgressView().controlSize(.small) }
+                if isRefreshingRepository { DockLoadingIndicator().controlSize(.small) }
             }
             if workflow.repository.isGitRepository {
                 DockMenu {

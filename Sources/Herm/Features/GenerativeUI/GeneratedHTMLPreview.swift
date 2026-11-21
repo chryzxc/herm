@@ -174,7 +174,7 @@ struct GeneratedHTMLPreview: View {
                 )
                 .frame(minHeight: expanded ? 500 : 420, maxHeight: expanded ? .infinity : 420)
                 .overlay {
-                    if state.loading { ProgressView().controlSize(.small).allowsHitTesting(false) }
+                    if state.loading { DockLoadingIndicator().controlSize(.small).allowsHitTesting(false) }
                 }
             }
         }

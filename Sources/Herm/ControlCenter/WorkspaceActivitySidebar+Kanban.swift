@@ -584,7 +584,7 @@ extension WorkspaceActivitySidebar {
                 } label: {
                     Group {
                         if control.isCreatingKanbanTask {
-                            ProgressView().controlSize(.small).tint(Color.dockPrimaryText)
+                            DockLoadingIndicator(color: .dockPrimaryText).controlSize(.small)
                         } else {
                             DockIcon(.arrowUpRight)
                                 .dockFont(.navigation, weight: .bold)
@@ -776,7 +776,7 @@ extension WorkspaceActivitySidebar {
                     }
                     if control.loadingKanbanDetailTaskID == task.id {
                         HStack(spacing: 7) {
-                            ProgressView().controlSize(.small)
+                            DockLoadingIndicator().controlSize(.small)
                             Text("Refreshing task details…")
                         }
                         .dockFont(.metadata)

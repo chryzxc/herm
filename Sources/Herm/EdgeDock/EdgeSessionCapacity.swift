@@ -88,7 +88,7 @@ struct EdgeSessionCapacity: View {
                             Text("Current: \(id.replacingOccurrences(of: "|", with: " / "))").dockFont(.metadata)
                         }
                     } else if pending {
-                        ProgressView().controlSize(.small)
+                        DockLoadingIndicator().controlSize(.small)
                     }
                     if let error { Text(error).foregroundStyle(Color.dockWarning) }
                     Button("Refresh") { revision += 1 }.buttonStyle(.dockCompact).disabled(pending)

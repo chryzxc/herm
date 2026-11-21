@@ -45,7 +45,7 @@ struct PullRequestCommitDiffView: View {
                         Button("Retry") { attempt += 1 }.buttonStyle(.dockSecondary)
                     }.dockPadding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
-                    ProgressView("Loading commit diff…")
+                    DockLoadingIndicator("Loading commit diff…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }

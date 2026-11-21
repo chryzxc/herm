@@ -409,7 +409,7 @@ extension WorkspaceActivitySidebar {
                 } label: {
                     Group {
                         if control.routineRunRequestIDs.contains(control.routineReference(for: job).id) {
-                            ProgressView().controlSize(.small)
+                            DockLoadingIndicator().controlSize(.small)
                         } else {
                             DockIcon(.play, weight: .fill)
                                 .dockFont(.body, weight: .semibold)

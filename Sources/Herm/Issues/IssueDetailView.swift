@@ -54,7 +54,7 @@ struct IssueDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
+                        DockLoadingIndicator().controlSize(.small)
                         Text("Loading issue")
                             .dockFont(.body, weight: .medium)
                             .foregroundStyle(Color.dockMetadataText)

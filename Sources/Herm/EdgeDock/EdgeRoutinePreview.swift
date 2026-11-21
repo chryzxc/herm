@@ -57,7 +57,7 @@ struct EdgeRoutinePreview: View {
                         if let report {
                             Text(report.text).textSelection(.enabled)
                         } else if loading {
-                            ProgressView().controlSize(.small)
+                            DockLoadingIndicator().controlSize(.small)
                         }
                         if let error = error ?? control.routineActionErrors[reference.id] {
                             Text(error).foregroundStyle(Color.dockWarning)

@@ -231,7 +231,7 @@ struct WorkspaceActivitySidebar: View {
             .overlay(alignment: .bottomTrailing) {
                 if confirmedAction.isPending {
                     HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
+                        DockLoadingIndicator().controlSize(.small)
                         Text("Applying change…").dockFont(.body)
                     }
                     .dockPadding(10)

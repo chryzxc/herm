@@ -35,7 +35,7 @@ extension DockPopover {
                 Text("Reasoning")
                     .dockFont(.body, weight: .medium)
                 if !reasoning.isComplete {
-                    ProgressView()
+                    DockLoadingIndicator()
                         .controlSize(.small)
                         .scaleEffect(0.6)
                 }

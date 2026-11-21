@@ -139,7 +139,12 @@ enum DockStatusTone: CaseIterable, Hashable {
     }
 
     var nsColor: NSColor { NSColor(color) }
-    var color: Color { accent?.color ?? .dockMetadataText }
+    var color: Color { color(in: DockThemeRuntime.current) }
+
+    func color(in theme: DockThemeID) -> Color {
+        let palette = DockThemePalette(theme: theme)
+        return accent.map { palette.color($0) } ?? palette.metadataText
+    }
     var fill: Color { accent?.fill ?? .dockMetadataText }
 
     /// Live states breathe; attention breathes faster. Settled states hold still.
@@ -454,7 +459,7 @@ struct DockIconButtonLabel: View {
         let shape = DockThemeShape(theme: theme, delta: -1)
         Group {
             if isBusy {
-                ProgressView().controlSize(.mini)
+                DockLoadingIndicator().controlSize(.mini)
             } else {
                 DockIcon(
                     icon, size: size * 0.5,

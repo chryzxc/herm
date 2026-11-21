@@ -1062,7 +1062,7 @@ struct SessionNavBotRow: View, Equatable {
             deleteAction
         } label: {
             Group {
-                if isDeleting { ProgressView().controlSize(.small) } else { DockIcon(.dotsThree) }
+                if isDeleting { DockLoadingIndicator().controlSize(.small) } else { DockIcon(.dotsThree) }
             }
             .dockFont(.conversation, weight: .medium)
             .foregroundStyle(Color.dockSecondaryText)

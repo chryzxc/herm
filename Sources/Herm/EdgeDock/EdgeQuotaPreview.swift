@@ -84,7 +84,7 @@ struct EdgeQuotaToolbar: View {
             } label: {
                 Group {
                     if refreshing {
-                        ProgressView().controlSize(.small).scaleEffect(0.7)
+                        DockLoadingIndicator().controlSize(.small).scaleEffect(0.7)
                     } else {
                         DockIcon(.arrowClockwise).dockFont(.body, weight: .semibold)
                     }

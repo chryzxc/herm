@@ -66,7 +66,7 @@ struct GitHubAccessRecoveryView: View {
                     }.buttonStyle(.dockSecondary)
                     Button(action: retry) {
                         HStack(spacing: 6) {
-                            if isRetrying { ProgressView().controlSize(.mini) }
+                            if isRetrying { DockLoadingIndicator().controlSize(.mini) }
                             Text("Retry")
                         }
                     }.buttonStyle(.dockPrimary).disabled(isRetrying)

@@ -200,7 +200,7 @@ struct MCPAppCard: View {
                             .id("\(appID):\(callID):\(DockThemeRuntime.revision)")
                             .frame(height: height)
                             .overlay {
-                                if state.loading { ProgressView().controlSize(.small).allowsHitTesting(false) }
+                                if state.loading { DockLoadingIndicator().controlSize(.small).allowsHitTesting(false) }
                             }
                     }
                 }

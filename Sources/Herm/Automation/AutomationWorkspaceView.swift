@@ -799,7 +799,7 @@ struct AutomationWorkspaceView: View {
             if jobRuns.isEmpty {
                 if state?.isRefreshing == true {
                     HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
+                        DockLoadingIndicator().controlSize(.small)
                         Text("Loading run history…")
                     }
                     .dockFont(.body)
@@ -1234,7 +1234,7 @@ private struct AutomationRunDetailPanel: View {
     private var output: some View {
         if isLoading {
             HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
+                DockLoadingIndicator().controlSize(.small)
                 Text("Loading output…")
             }
             .dockFont(.body)

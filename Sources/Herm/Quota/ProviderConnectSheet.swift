@@ -385,7 +385,7 @@ struct ProviderConnectSheet: View {
                             tone: result.ok ? .dockSuccess : .dockWarning)
                     } else {
                         HStack(spacing: 6) {
-                            ProgressView().controlSize(.mini)
+                            DockLoadingIndicator().controlSize(.mini)
                             ModalNote(text: "Testing the key…")
                         }
                     }

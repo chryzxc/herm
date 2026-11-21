@@ -337,7 +337,7 @@ struct RepositoryCodeWorkspaceView: View {
         switch blameState {
         case .loading:
             HStack(spacing: 5) {
-                ProgressView().controlSize(.mini)
+                DockLoadingIndicator().controlSize(.mini)
                 Text("Loading blame…")
             }
         case .unavailable(let reason):
@@ -476,7 +476,7 @@ struct ExplorerToolbarIcon: View {
     var body: some View {
         Group {
             if isBusy {
-                ProgressView().controlSize(.small)
+                DockLoadingIndicator().controlSize(.small)
             } else {
                 DockIcon(icon, size: 15)
             }

@@ -170,7 +170,7 @@ struct SessionSimulatorView: View {
                 Text(platform.title).dockFont(.body, weight: .semibold)
                 Spacer(minLength: 0)
             }
-            ProgressView().controlSize(.small).frame(width: 16)
+            DockLoadingIndicator().controlSize(.small).frame(width: 16)
                 .opacity(capture.isLoading ? 1 : 0)
                 .accessibilityHidden(!capture.isLoading)
             DockIconButton(

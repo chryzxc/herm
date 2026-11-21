@@ -220,7 +220,9 @@ struct GitHubItemEditor: View {
                 }
                 if kind == .pullRequest {
                     HStack {
-                        if loadingBranches { ProgressView().controlSize(.mini).accessibilityLabel("Loading branches") }
+                        if loadingBranches {
+                            DockLoadingIndicator().controlSize(.mini).accessibilityLabel("Loading branches")
+                        }
                         DockOptionPicker(
                             label: "Head branch", placeholder: "Choose branch", selection: $head,
                             options: branches.map { ($0, $0) })

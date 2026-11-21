@@ -51,7 +51,7 @@ struct PullRequestReadinessView: View {
                             if analyzing { analysisTask?.cancel() } else { analyze() }
                         } label: {
                             HStack(spacing: 6) {
-                                if analyzing { ProgressView().controlSize(.mini) }
+                                if analyzing { DockLoadingIndicator().controlSize(.mini) }
                                 Text(analyzing ? "Cancel analysis" : "Analyze conflict files")
                             }
                         }.buttonStyle(.dockCompact)

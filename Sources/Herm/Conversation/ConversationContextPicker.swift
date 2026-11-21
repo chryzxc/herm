@@ -24,7 +24,7 @@ struct ConversationContextPicker: View {
                 }.frame(minWidth: 180)
                 ScrollView {
                     VStack(alignment: .leading, spacing: DockSpacing.control) {
-                        if excerpts.loading { ProgressView().controlSize(.small) }
+                        if excerpts.loading { DockLoadingIndicator().controlSize(.small) }
                         if excerpts.messages.isEmpty && !excerpts.loading {
                             Text(
                                 excerpts.source == nil

@@ -95,7 +95,7 @@ struct ProvidersSettingsView: View {
                 Button {
                     load()
                 } label: {
-                    if isLoading { ProgressView().controlSize(.small) } else { DockIcon(.arrowsClockwise) }
+                    if isLoading { DockLoadingIndicator().controlSize(.small) } else { DockIcon(.arrowsClockwise) }
                 }
                 .buttonStyle(.dockHover)
                 .help("Reload providers from Hermes")
@@ -285,7 +285,7 @@ struct ProvidersSettingsView: View {
                     .buttonStyle(.dockSecondary)
                 }
                 Spacer()
-                if busy { ProgressView().controlSize(.small) }
+                if busy { DockLoadingIndicator().controlSize(.small) }
                 if row.authenticated && !row.isUserDefined && row.access != .external {
                     Button("Disconnect", role: .destructive) { confirmingDisconnect = row }
                         .buttonStyle(.dockSecondary)

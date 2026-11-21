@@ -701,9 +701,7 @@ struct AgentBoardView: View {
     @ViewBuilder
     private func pipelineStatusIndicator(for item: PipelineItem) -> some View {
         if isInProgress(item.status) {
-            ProgressView()
-                .controlSize(.mini)
-                .tint(item.color)
+            DockLoadingIndicator(size: 8, color: item.color)
                 .frame(width: 5, height: 5)
         } else {
             Circle()

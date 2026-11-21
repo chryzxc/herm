@@ -241,7 +241,7 @@ extension DockPopover {
                 color: isSessionMenuHovering ? style.primaryText : style.secondaryText
             )
             .opacity(sessionActionPending ? 0 : 1)
-            .overlay { if sessionActionPending { ProgressView().controlSize(.mini) } }
+            .overlay { if sessionActionPending { DockLoadingIndicator().controlSize(.mini) } }
             .frame(width: 28, height: 28)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)

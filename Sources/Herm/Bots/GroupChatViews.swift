@@ -38,7 +38,7 @@ struct GroupChatSidebarRow: View {
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if store.pendingRooms.contains(room.id) {
-                        ProgressView().controlSize(.mini).accessibilityLabel("Updating group")
+                        DockLoadingIndicator().controlSize(.mini).accessibilityLabel("Updating group")
                     }
                     if isHovered {
                         DockMenu {
@@ -789,7 +789,7 @@ struct GroupChatView: View {
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1)
             if store.pendingRooms.contains(roomID) {
-                ProgressView().controlSize(.mini).accessibilityLabel("Updating group")
+                DockLoadingIndicator().controlSize(.mini).accessibilityLabel("Updating group")
             }
         }
         .dockPadding(.horizontal, 8)
@@ -1426,7 +1426,7 @@ struct GroupChatView: View {
                     )
                     .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                 }
-                if uploadingCount > 0 { ProgressView().controlSize(.small).help("Uploading") }
+                if uploadingCount > 0 { DockLoadingIndicator().controlSize(.small).help("Uploading") }
             }
             .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: attachments.count)
         }
@@ -1497,7 +1497,7 @@ struct GroupChatView: View {
         return Button(action: canStop ? { Task { await store.stop(roomID) } } : send) {
             ComposerSubmitLabel(isEnabled: !canStop && canSend, isFullscreen: metrics == .resolve(isFullscreen: true)) {
                 if store.pendingRooms.contains(roomID) && !canStop {
-                    ProgressView().controlSize(.small)
+                    DockLoadingIndicator().controlSize(.small)
                 } else if canStop {
                     DockIcon(.stop, weight: .fill)
                         .dockFont(.compactStatus, weight: .bold)

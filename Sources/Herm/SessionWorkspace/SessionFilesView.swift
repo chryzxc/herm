@@ -110,7 +110,7 @@ struct SessionFilesView: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if isLoading, entries.isEmpty {
                         HStack(spacing: 7) {
-                            ProgressView().controlSize(.small)
+                            DockLoadingIndicator().controlSize(.small)
                             Text("Loading files…")
                         }
                         .dockFont(.body)
@@ -170,7 +170,7 @@ struct SessionFilesView: View {
                     .strikethrough(status == .deleted)
                 Spacer(minLength: 4)
                 if isOpeningFile && selectedPath == entry.path {
-                    ProgressView().controlSize(.mini)
+                    DockLoadingIndicator().controlSize(.mini)
                 } else if let status {
                     if entry.isDirectory {
                         Circle().fill(Self.color(for: status)).frame(width: 5, height: 5).dockPadding(.trailing, 3)

@@ -41,6 +41,12 @@ class PerfContractTests(unittest.TestCase):
         self.assertFalse(perf.violations('private static let formatter = ISO8601DateFormatter()'))
         self.assertFalse(perf.violations('let date = ISO8601Parsing.date(raw)'))
 
+    def test_requires_shared_indeterminate_loading_indicator(self):
+        self.assertTrue(perf.violations('ProgressView().controlSize(.mini)'))
+        self.assertTrue(perf.violations('ProgressView("Loading…")'))
+        self.assertFalse(perf.violations('ProgressView("Downloading…", value: fraction)'))
+        self.assertFalse(perf.violations('DockLoadingIndicator("Loading…")'))
+
     def test_repeating_timers_need_tolerance(self):
         self.assertTrue(perf.violations('timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in }'))
         self.assertTrue(perf.violations('let timer = Timer.publish(every: 0.1, on: .main, in: .common)'))

@@ -532,7 +532,7 @@ struct QuotaWorkspaceView: View {
             if control.isActionPending(ControlCenterModel.hermesCredentialRemovalActionID(snapshot.provider))
                 || control.isActionPending(ControlCenterModel.hermesCredentialPrimaryActionID(snapshot.provider))
             {
-                ProgressView()
+                DockLoadingIndicator()
                     .controlSize(.small)
                     .frame(width: DockControlMetrics.compactHeight, height: DockControlMetrics.compactHeight)
                     .accessibilityLabel("Removing \(snapshot.displayName) from Hermes")

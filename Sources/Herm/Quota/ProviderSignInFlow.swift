@@ -204,7 +204,7 @@ struct ProviderSignInFlow: View {
                 }
             }
             HStack(spacing: 7) {
-                ProgressView().controlSize(.small)
+                DockLoadingIndicator().controlSize(.small)
                 Text(usesBrowser ? "Waiting for you to finish signing in…" : "Adding the account…")
                     .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)

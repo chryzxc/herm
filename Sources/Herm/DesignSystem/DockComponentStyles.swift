@@ -1495,7 +1495,7 @@ struct DockActionLabel: View {
     let title: String
     let pendingTitle: String
     let isPending: Bool
-    var tint: Color = .dockAccent
+    var tint: Color? = nil
 
     var body: some View {
         let distance = DockMotion.isEnabled(reduceMotion: reduceMotion) ? DockMotion.revealDistance : 0
@@ -1506,7 +1506,7 @@ struct DockActionLabel: View {
             HStack(spacing: 6) {
                 ZStack {
                     if isPending {
-                        DockLayerMotion(kind: .spin(period: 1.2, lineWidth: 1.5), color: tint)
+                        DockLoadingIndicator(size: 12, color: tint)
                     }
                 }
                 .frame(width: 12, height: 12)
@@ -1721,9 +1721,8 @@ struct DockLoadingState: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            ProgressView()
+            DockLoadingIndicator()
                 .controlSize(.regular)
-                .tint(Color.dockAccent)
             Text(title)
                 .dockFont(.navigation, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)

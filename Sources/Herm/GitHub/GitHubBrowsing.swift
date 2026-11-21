@@ -92,7 +92,7 @@ struct GitHubBrowseControls: View {
                 .accessibilityLabel("State")
                 .disabled(isLoading)
                 .onChange(of: options.state) { _, _ in refresh() }
-                ProgressView().controlSize(.mini)
+                DockLoadingIndicator().controlSize(.mini)
                     .frame(width: 14, height: 14)
                     .opacity(isLoading ? 1 : 0)
                     .accessibilityLabel(

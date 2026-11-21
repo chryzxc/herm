@@ -744,7 +744,7 @@ struct WorkflowIntegrationView: View {
                     ScrollView { sections }.frame(height: 440)
                 } footer: {
                     HStack {
-                        if model.busy { ProgressView() }
+                        if model.busy { DockLoadingIndicator() }
                         Spacer()
                         Button("Done") { dismiss() }.buttonStyle(.dockSecondary)
                     }
@@ -1352,7 +1352,7 @@ struct WorkflowIntegrationView: View {
                     .foregroundStyle(Color.dockPrimaryText)
                 Spacer(minLength: 0)
             }
-            ProgressView().progressViewStyle(.linear).tint(Color.dockAccent)
+            DockLoadingIndicator().controlSize(.small)
             Text(
                 installing
                     ? "Hermes is fetching, security-scanning and installing it. This can take a minute."

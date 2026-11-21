@@ -93,7 +93,7 @@ struct SessionPullRequestsSurface: View {
                 LazyVStack(spacing: 2) {
                     if center.isInitialLoad {
                         VStack(spacing: 12) {
-                            ProgressView().controlSize(.small)
+                            DockLoadingIndicator().controlSize(.small)
                             Text("Loading pull requests…")
                                 .dockFont(.body)
                                 .foregroundStyle(Color.dockMetadataText)
@@ -177,7 +177,7 @@ struct SessionIssuesSurface: View {
                         LazyVStack(spacing: 2) {
                             if center.isRefreshing && center.records.isEmpty {
                                 VStack(spacing: 12) {
-                                    ProgressView().controlSize(.small)
+                                    DockLoadingIndicator().controlSize(.small)
                                     Text("Loading issues…")
                                         .dockFont(.body)
                                         .foregroundStyle(Color.dockMetadataText)
@@ -328,7 +328,7 @@ struct SessionChangeDiffPreview: View {
     private func content(_ file: RepositoryFileChange) -> some View {
         if isLoading && diff == nil {
             HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
+                DockLoadingIndicator().controlSize(.small)
                 Text("Loading diff…")
                     .dockFont(.body)
                     .foregroundStyle(Color.dockMetadataText)

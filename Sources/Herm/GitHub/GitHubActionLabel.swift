@@ -6,7 +6,7 @@ struct GitHubActionLabel: View {
     let isBusy: Bool
     var body: some View {
         HStack(spacing: 6) {
-            if isBusy { ProgressView().controlSize(.mini).frame(width: 12, height: 12) }
+            if isBusy { DockLoadingIndicator().controlSize(.mini).frame(width: 12, height: 12) }
             Text(title)
         }
     }

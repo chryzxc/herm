@@ -1177,7 +1177,7 @@ struct TurnActivityView: View, Equatable {
                 HStack(spacing: 8) {
                     stepIcon(.brain)
                     Text(title).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                    if !call.isComplete { ProgressView().controlSize(.mini) }
+                    if !call.isComplete { DockLoadingIndicator().controlSize(.mini) }
                     DockIcon(.caretRight, size: 9, color: Color.dockMetadataText)
                         .rotationEffect(.degrees(isOpen ? 90 : 0))
                 }

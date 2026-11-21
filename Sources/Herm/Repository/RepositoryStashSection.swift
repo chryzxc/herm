@@ -156,7 +156,7 @@ private struct RepositoryStashRow: View {
                     .disabled(actionsDisabled)
                     Text(stash.date.formatted()).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                     if isLoading {
-                        ProgressView().controlSize(.small)
+                        DockLoadingIndicator().controlSize(.small)
                     } else if let patch {
                         if patch.isEmpty {
                             Text("No textual changes in this stash.").dockFont(.body).foregroundStyle(

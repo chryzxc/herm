@@ -26,7 +26,7 @@ struct MoASettingsView: View {
                 presetEditor(config)
             } else if error == nil {
                 HStack(spacing: 7) {
-                    ProgressView().controlSize(.small)
+                    DockLoadingIndicator().controlSize(.small)
                     Text("Loading Mixture of Agents presets…").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
                 }
             }
@@ -67,7 +67,7 @@ struct MoASettingsView: View {
                 Text(preset).dockFont(.body, weight: .medium).foregroundStyle(Color.dockPrimaryText)
             }
             Spacer(minLength: 8)
-            if isSaving { ProgressView().controlSize(.small) }
+            if isSaving { DockLoadingIndicator().controlSize(.small) }
             Toggle(
                 "Enabled",
                 isOn: Binding(
