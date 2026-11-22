@@ -2085,92 +2085,92 @@ struct EdgeNotchView: View {
 
     var body: some View {
         let _ = controlPresentationRevision
-        GeometryReader { geometry in
-            // Pin the shell to its edge: the window stays expanded-wide while it collapses,
-            // and default center alignment made the shrinking notch drift to the middle.
-            VStack(alignment: state.side.alignment.horizontal, spacing: 4) {
-                HStack(spacing: 0) {
-                    if open {
-                        // The outer contour already supplies visual breathing room.
-                        // Keep the preview close to it so its content does not float
-                        // in the middle of the expanded notch.
-                        preview.frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .dockPadding(.horizontal, state.side == .top ? 34 : 8)
-                            .dockPadding(.top, state.side == .top ? 8 : 26)
-                            .dockPadding(.bottom, state.side == .top ? 16 : 26)
-                            .transition(
-                                reduceMotion
-                                    ? .opacity
-                                    : .asymmetric(
-                                        insertion: .islandContent(side: state.side).animation(
-                                            .easeOut(duration: 0.24).delay(0.1)),
-                                        removal: .opacity.animation(.easeIn(duration: 0.1))))
-                    } else if state.side == .top {
-                        EdgeIslandRail(
-                            activity: state.railActivity, notchWidth: state.notchSize.width, ears: state.islandEars,
-                            height: state.notchSize.height, action: openDock
-                        )
-                        .contextMenu { railMenu }
-                        .accessibilityLabel("\(state.name), \(state.railActivity.title). Open Herm")
-                        .accessibilityHint("Drag to a screen edge to dock it there")
-                        .transition(.opacity.animation(.easeOut(duration: 0.16)))
-                    } else {
-                        rail.transition(.opacity.animation(.easeOut(duration: 0.16)))
-                    }
-                }
-                // Sized from state only, never the window: the window grows ahead of
-                // the shape (non-animated), and tying the shape to it made the
-                // preview pop to full size instead of growing with the spring.
-                .frame(
-                    width: open
-                        ? state.openSize.width
-                        : state.side == .top ? state.islandShellWidth : state.collapsedSize.width,
-                    height: open ? state.openSize.height : state.collapsedSize.height,
-                    alignment: state.side.alignment
-                )
-                // The content is revealed through the growing shell rather than
-                // appearing at full size beside it.
-                .mask { shell(outline.fill(.black)) }
-                // One persistent shell: the rail bar itself stretches into the preview
-                // panel and back, so the two states read as a single growing notch.
-                .background {
-                    // The top island is always black to match the camera housing.
-                    if state.side == .top {
-                        shell(EdgeNotchShape(side: .top).fill(.black))
-                    } else {
-                        // Side previews retain a contour even when Glass blends into the desktop.
-                        shell(
-                            DockWindowBackground(shape: AnyShape(outline))
-                                .overlay {
-                                    // Doubled stroke clipped to the shape leaves a uniform inner 1pt line;
-                                    // a centered 1pt stroke loses its outer half to the clip on every edge.
-                                    if state.side != .top {
-                                        outline.stroke(Color.dockBorderStrong, lineWidth: 2)
-                                    }
-                                }
-                                .clipShape(outline))
-                    }
-                }
-                // Attach drag gesture to parent so it works in both collapsed and expanded states
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 6)
-                        .onChanged { _ in onDrag(false) }
-                        .onEnded { _ in onDrag(true) }
-                )
-                .offset(x: !open && state.side == .top ? state.islandShellOffset : 0)
-                if state.hasPet && !state.externalPet {
-                    HermesNotchPetButton(pet: controlCenter.pet, mirrored: state.side == .left)
-                        .frame(maxWidth: .infinity, alignment: state.side == .left ? .leading : .trailing)
-                } else if state.hasPet && state.side != .top {
-                    Color.clear.frame(height: max(44, state.petReserve - 4)).allowsHitTesting(false)
+        // Pin the shell to its edge: the window stays expanded-wide while it collapses,
+        // and default center alignment made the shrinking notch drift to the middle.
+        VStack(alignment: state.side.alignment.horizontal, spacing: 4) {
+            HStack(spacing: 0) {
+                if open {
+                    // The outer contour already supplies visual breathing room.
+                    // Keep the preview close to it so its content does not float
+                    // in the middle of the expanded notch.
+                    preview.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .dockPadding(.horizontal, state.side == .top ? 34 : 8)
+                        .dockPadding(.top, state.side == .top ? 8 : 26)
+                        .dockPadding(.bottom, state.side == .top ? 16 : 26)
+                        .transition(
+                            reduceMotion
+                                ? .opacity
+                                : .asymmetric(
+                                    insertion: .islandContent(side: state.side).animation(
+                                        .easeOut(duration: 0.24).delay(0.1)),
+                                    removal: .opacity.animation(.easeIn(duration: 0.1))))
+                } else if state.side == .top {
+                    EdgeIslandRail(
+                        activity: state.railActivity, notchWidth: state.notchSize.width, ears: state.islandEars,
+                        height: state.notchSize.height, action: openDock
+                    )
+                    .contextMenu { railMenu }
+                    .accessibilityLabel("\(state.name), \(state.railActivity.title). Open Herm")
+                    .accessibilityHint("Drag to a screen edge to dock it there")
+                    .transition(.opacity.animation(.easeOut(duration: 0.16)))
+                } else {
+                    rail.transition(.opacity.animation(.easeOut(duration: 0.16)))
                 }
             }
+            // Sized from state only, never the window: the window grows ahead of
+            // the shape (non-animated), and tying the shape to it made the
+            // preview pop to full size instead of growing with the spring.
             .frame(
-                width: geometry.size.width, height: geometry.size.height,
-                alignment: state.side == .top ? .top : state.side == .left ? .topLeading : .topTrailing
+                width: open
+                    ? state.openSize.width
+                    : state.side == .top ? state.islandShellWidth : state.collapsedSize.width,
+                height: open ? state.openSize.height : state.collapsedSize.height,
+                alignment: state.side.alignment
             )
-            .offset(y: state.side == .top ? 0 : state.windowTop - (open ? state.openTop : state.collapsedTop))
+            // The content is revealed through the growing shell rather than
+            // appearing at full size beside it.
+            .mask { shell(outline.fill(.black)) }
+            // One persistent shell: the rail bar itself stretches into the preview
+            // panel and back, so the two states read as a single growing notch.
+            .background {
+                // The top island is always black to match the camera housing.
+                if state.side == .top {
+                    shell(EdgeNotchShape(side: .top).fill(.black))
+                } else {
+                    // Side previews retain a contour even when Glass blends into the desktop.
+                    shell(
+                        DockWindowBackground(shape: AnyShape(outline))
+                            .overlay {
+                                // Doubled stroke clipped to the shape leaves a uniform inner 1pt line;
+                                // a centered 1pt stroke loses its outer half to the clip on every edge.
+                                if state.side != .top {
+                                    outline.stroke(Color.dockBorderStrong, lineWidth: 2)
+                                }
+                            }
+                            .clipShape(outline))
+                }
+            }
+            // Attach drag gesture to parent so it works in both collapsed and expanded states
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 6)
+                    .onChanged { _ in onDrag(false) }
+                    .onEnded { _ in onDrag(true) }
+            )
+            .offset(x: !open && state.side == .top ? state.islandShellOffset : 0)
+            if state.hasPet && !state.externalPet {
+                HermesNotchPetButton(pet: controlCenter.pet, mirrored: state.side == .left)
+                    .frame(maxWidth: .infinity, alignment: state.side == .left ? .leading : .trailing)
+            } else if state.hasPet && state.side != .top {
+                Color.clear.frame(height: max(44, state.petReserve - 4)).allowsHitTesting(false)
+            }
         }
+        // Fills the window without reading its size: a GeometryReader here rebuilt the whole
+        // preview on every step of the window's resize, a 5ms layout per frame of the open.
+        .frame(
+            minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity,
+            alignment: state.side == .top ? .top : state.side == .left ? .topLeading : .topTrailing
+        )
+        .offset(y: state.side == .top ? 0 : state.windowTop - (open ? state.openTop : state.collapsedTop))
         .clipped()
         .environment(\.botActivity, state.botActivity)
         .onReceive(controlCenter.notchPresentationChanges) { _ in controlPresentationRevision &+= 1 }

@@ -27,9 +27,10 @@ struct EdgeIslandRail: View {
     }
 }
 
-/// The open top workspace's menu-bar band: what Hermes is doing left of the
-/// camera, what needs you right of it. Reads the notch's own state so the
-/// band and the collapsed island never disagree.
+/// The open top workspace's reserved menu-bar band. Left of the camera: the
+/// Bots working right now and what they are doing. Right of it: what needs
+/// you, what finished, and quota. It reads the notch's own state, so the band
+/// and the collapsed island never disagree.
 struct EdgeIslandStatusStrip: View {
     @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .defaultStyle
     @ObservedObject var state: EdgeNotchState
@@ -38,8 +39,30 @@ struct EdgeIslandStatusStrip: View {
     let openTask: (EdgeNotchTask) -> Void
     let openQuota: () -> Void
 
+    /// Faces shown before the rest collapse into a "+N" count.
+    static let crewLimit = 3
+    static let avatarSize: CGFloat = 22
+
+    struct CrewMember: Identifiable {
+        let task: EdgeNotchTask
+        let bot: BotSummary
+        var id: String { bot.id }
+    }
+
+    /// One face per working Bot, in task order, so a Bot running two sessions shows once.
+    static func crew(_ tasks: [EdgeNotchTask], bots: [BotSummary]) -> [CrewMember] {
+        var seen = Set<String>()
+        return tasks.compactMap { task in
+            guard task.isStatusCurrent, task.phase == .working, let bot = task.bot(in: bots),
+                seen.insert(bot.id).inserted
+            else { return nil }
+            return CrewMember(task: task, bot: bot)
+        }
+    }
+
     private var live: [EdgeNotchTask] { state.tasks.filter(\.isStatusCurrent) }
     private var attention: [EdgeNotchTask] { live.filter { $0.phase == .attention } }
+    private var finished: [EdgeNotchTask] { live.filter { $0.phase == .finished } }
 
     private var headline: (text: String, task: EdgeNotchTask?) {
         if state.showingAnnouncement, let task = state.glimpseTasks.first {
@@ -60,26 +83,36 @@ struct EdgeIslandStatusStrip: View {
     var body: some View {
         HStack(spacing: 0) {
             let headline = headline
-            Button {
-                headline.task.map(openTask)
-            } label: {
-                HStack(spacing: 6) {
+            let crew = Self.crew(state.tasks, bots: state.bots)
+            HStack(spacing: 8) {
+                if crew.isEmpty {
                     EdgeNotchStatusIndicator(
                         activity: state.railActivity, style: displayStyle, axis: .horizontal, part: .primary)
+                } else {
+                    crewStack(crew)
+                }
+                Button {
+                    headline.task.map(openTask)
+                } label: {
                     Text(headline.text).lineLimit(1).truncationMode(.tail)
                         .contentTransition(.opacity)
                         .animation(.dockEase(duration: 0.25), value: headline.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .disabled(headline.task == nil)
+                .help(headline.text)
             }
-            .disabled(headline.task == nil)
-            .help(headline.text)
+            .frame(maxWidth: .infinity, alignment: .leading)
             Color.clear.frame(width: state.notchSize.width + 24)
             HStack(spacing: 10) {
                 if let first = attention.first {
                     chip("exclamationmark.circle.fill", "\(attention.count)", tint: .dockWarning) { openTask(first) }
                         .help("\(attention.count) need\(attention.count == 1 ? "s" : "") your attention")
+                }
+                if let first = finished.first {
+                    chip("checkmark.circle.fill", "\(finished.count)", tint: .dockSuccess) { openTask(first) }
+                        .help("\(finished.count) finished · open \(first.title)")
                 }
                 if let quota {
                     chip(
@@ -95,6 +128,32 @@ struct EdgeIslandStatusStrip: View {
         .dockFont(.body, weight: .medium)
         .foregroundStyle(Color.dockSecondaryText)
         .frame(height: height)
+    }
+
+    /// Overlapping faces of the working Bots; each opens the session it is running.
+    private func crewStack(_ crew: [CrewMember]) -> some View {
+        HStack(spacing: -6) {
+            ForEach(crew.prefix(Self.crewLimit)) { member in
+                Button {
+                    openTask(member.task)
+                } label: {
+                    BotAvatarView(
+                        bot: member.bot, imageData: state.avatarImages[member.bot.id], size: Self.avatarSize,
+                        orbits: true, live: true)
+                }
+                .help("\(member.bot.name) · \(member.task.title)")
+                .accessibilityLabel("\(member.bot.name), working on \(member.task.title)")
+            }
+            if crew.count > Self.crewLimit {
+                Text("+\(crew.count - Self.crewLimit)")
+                    .dockFont(.metadata, weight: .semibold)
+                    .monospacedDigit()
+                    .dockPadding(.leading, 10)
+                    .help("\(crew.count) Bots working")
+            }
+        }
+        // The band is only on screen while the workspace is open, so its Bots keep moving.
+        .environment(\.dockBotIndicatorLive, true)
     }
 
     private func chip(_ symbol: String, _ text: String, tint: Color, action: @escaping () -> Void) -> some View {

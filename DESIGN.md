@@ -1146,7 +1146,10 @@ The model chip shows the current thinking effort beside the model name and a lig
 
 Floating panels expose chat-list collapse/restore and Switch to window; the side navigation omits Expand panel.
 Side-attached workspaces use 24pt vertical and 12pt trailing clearance; the navigation
-rail owns its leading padding. The top island retains its menu-bar clearance. The sidebar surface fills the side panel’s outer clearance,
+rail owns its leading padding. The top island retains its menu-bar clearance as a reserved status band, not empty black: left of the
+camera, up to three overlapping 22pt faces of the Bots working now (one per Bot, `+N` beyond; each opens its session) and the
+running headline; right of it, attention, finished and quota chips, each shown only when it has a real count. Opening the
+workspace from the notch commits the collapsed notch shape first, then grows it with the island spring. The sidebar surface fills the side panel’s outer clearance,
 so decorative gutters do not surround the navigation and conversation list. Navigation destinations scroll on short displays while
 connection and window actions remain reachable. When a desktop chat cannot fit its list,
 conversation, and inspector, the list temporarily collapses. Restoring it hides the

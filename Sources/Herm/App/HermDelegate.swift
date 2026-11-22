@@ -943,6 +943,10 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
         if !panelPresentation.isRevealed {
+            // Commit the collapsed notch shape before animating. Otherwise the collapse and the
+            // reveal land in one SwiftUI update and the panel appears at full size, with no morph.
+            panel.contentView?.layoutSubtreeIfNeeded()
+            panel.displayIfNeeded()
             // Also reverse an unfinished close when reopening the still-visible panel.
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.isWorkspaceVisible else { return }

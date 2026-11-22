@@ -79,6 +79,15 @@ struct EdgeNotchTask: Identifiable, Equatable {
     var profileID: String? = nil
 
     var attentionState: DockActivityState? = nil
+
+    /// The Bot running this session row: its profile's Bot, else the default Bot.
+    /// Nil for rows with no session (Kanban, routines) or when no Bots are loaded.
+    func bot(in bots: [BotSummary]) -> BotSummary? {
+        guard session != nil || profileID != nil || isCurrent else { return nil }
+        let profile = session?.profileID ?? profileID
+        return bots.first { $0.id == profile } ?? bots.first(where: \.isDefault)
+    }
+
     var resolvedAttentionState: DockActivityState {
         if let attentionState { return attentionState }
         if isFailure { return .failed }
@@ -733,11 +742,7 @@ struct EdgeTaskPreview: View {
 
     /// The Bot running a session row: its profile's Bot, else the default
     /// Bot. Empty when the Bots plugin is off, which keeps the spinner.
-    private func sessionBot(_ task: EdgeNotchTask) -> BotSummary? {
-        guard task.session != nil || task.profileID != nil || task.isCurrent else { return nil }
-        let profileID = task.session?.profileID ?? task.profileID
-        return bots.first { $0.id == profileID } ?? bots.first(where: \.isDefault)
-    }
+    private func sessionBot(_ task: EdgeNotchTask) -> BotSummary? { task.bot(in: bots) }
 
     @ViewBuilder
     private func trailing(for task: EdgeNotchTask, now: Date) -> some View {
