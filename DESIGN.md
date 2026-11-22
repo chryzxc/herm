@@ -3148,8 +3148,9 @@ bounded, read-only Check status action, never automatic resend; a missing row in
 Every message footer is a `ConversationMessageFooter`, anchored to the side its bubble hugs: always-shown
 actions sit on that side, status (Sending, Delivery unconfirmed, Steering, duration/tokens/model) beside them,
 and the hover-only timestamp at the outer edge, so its hidden slot never opens a gap between visible items.
-Text items are `ConversationMessageFooterMetrics.itemSpacing` (6pt) apart and actions sit flush, since their
-24pt boxes already inset the glyph by the same 6pt.
+Text items are `ConversationMessageFooterMetrics.itemSpacing` (6pt) apart. User
+message footers reserve the same 6pt gap before Copy. Adjacent icon buttons sit
+flush, with their 24pt boxes insetting each glyph by 6pt.
 
 Completed replies group delivered files and edit diff previews into one compact,
 headerless file list. Exact matching paths share a row; uncertain matches remain

@@ -262,6 +262,7 @@ struct ConversationMessageRow: View, Equatable {
                         userMessageStatus
                     } actions: {
                         actionButton(.copy, action: onCopy)
+                            .dockPadding(.leading, ConversationMessageFooterMetrics.itemSpacing)
                         if showsPinAction { actionButton(.pin, action: onPin, isAvailable: isPinAvailable) }
                     }
                     // Reserve space for the taller unconfirmed status and its action.
