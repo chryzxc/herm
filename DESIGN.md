@@ -3486,6 +3486,8 @@ Between activity changes the avatar leans into a short hop as three diamond tile
 Activity rows appear immediately; their insertion and the Bot's movement share
 one short spring transition. Disclosure and completion transitions use the same
 motion preference, with no delayed or queued row reveals.
+The live activity highlight uses a native gradient layer so its motion continues
+during scrolling without relaying out the activity row.
 Unavailable bot rosters use the ordinary activity glyph. An explicit disabled
 `hermes-bots` runtime plugin status prevents roster loading. Desktop-only plugin
 preferences require a gateway contract before Herm can mirror them. Custom avatar

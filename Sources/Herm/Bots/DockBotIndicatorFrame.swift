@@ -10,13 +10,6 @@ struct DockBotIndicatorFrame {
         let phase = Double(BotAvatarPresentation.seed(for: id) % 1000) / 100
         return .at(date.timeIntervalSinceReferenceDate + phase, busy: busy)
     }
-
-    /// Quantize the cosmetic sweep without slowing authoritative elapsed labels.
-    var sweep: Double {
-        guard moves else { return 0 }
-        let tick = floor(date.timeIntervalSinceReferenceDate * 10) / 10
-        return DockMotionSchedule.loop(Date(timeIntervalSinceReferenceDate: tick), period: 1.8)
-    }
 }
 
 private struct DockBotIndicatorFrameKey: EnvironmentKey {

@@ -31,7 +31,6 @@ struct DockBotIndicatorFrameTests {
             #expect(pose.look == BotFacePose.rest.look)
             #expect(pose.bob == 0)
             #expect(pose.blink == 1)
-            #expect(frame.sweep == 0)
             #expect(DockBotHuddleLayout(partnerCount: 4, leadDone: false).turn(at: frame).active == -1)
         }
     }
@@ -64,14 +63,6 @@ struct DockBotIndicatorFrameTests {
                 }
             }
         }
-    }
-
-    @Test func cosmeticSweepUsesLowerCadenceThanFrameClock() {
-        let first = DockBotIndicatorFrame(date: Date(timeIntervalSinceReferenceDate: 10.01), moves: true)
-        let next = DockBotIndicatorFrame(date: Date(timeIntervalSinceReferenceDate: 10.09), moves: true)
-        let later = DockBotIndicatorFrame(date: Date(timeIntervalSinceReferenceDate: 10.11), moves: true)
-        #expect(first.sweep == next.sweep)
-        #expect(first.sweep != later.sweep)
     }
 
     // Clock ownership and compositing are structural contracts, not timing benchmarks.

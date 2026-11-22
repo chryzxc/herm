@@ -166,6 +166,43 @@ struct DockLayerMotionTests {
         #expect(ink.redComponent == 0 && ink.greenComponent == 0 && ink.blueComponent == 0)
     }
 
+    @Test func liveActivitySweepKeepsAnimatingAcrossScrollChanges() async throws {
+        let previous = DockThemeRuntime.current
+        DockThemeRuntime.current = .glass
+        defer { DockThemeRuntime.current = previous }
+        let host = NSHostingView(
+            rootView: ScrollView {
+                DockLiveActivityDecoration {
+                    Color.clear.frame(width: 180, height: 150)
+                }
+                Color.clear.frame(height: 160)
+            }
+            .environment(\.dockHostVisible, true))
+        host.frame = NSRect(x: 0, y: 0, width: 200, height: 180)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(30))
+
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            #expect(motionView(in: host) == nil)
+            return
+        }
+        let motion = try #require(motionView(in: host))
+        let scroll = try #require(motion.enclosingScrollView)
+        let band = try #require(motion.layer?.sublayers?.first)
+        #expect(motion.bounds.height == 1)
+        #expect(band.animation(forKey: "position.x") != nil)
+
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 28))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        host.layoutSubtreeIfNeeded()
+        #expect(scroll.contentView.bounds.minY == 28)
+        #expect(motion.layer?.sublayers?.first === band)
+        #expect(band.animation(forKey: "position.x") != nil)
+    }
+
     @Test func pendingActionRetainsItsFootprint() {
         let sizes = [false, true].map { pending in
             NSHostingView(
