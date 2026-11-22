@@ -169,7 +169,7 @@ Working and waiting Bots in the notch keep animating while you scroll the worksp
 
 Activity rows in the side notch and top island have no background fill at rest, including the current session. Both previews offer a labelled **Quick message** entry. Reply controls reserve their space so activity titles stay still on hover.
 
-Conversation approvals, clarification choices, and secret/login requests share a compact neutral card with explicit status, labeled inputs, and grouped actions that stack in narrow panes. Multi-select answers show their selected state; submitting keeps an in-place progress indicator and disables duplicate responses.
+Conversation approvals, clarification choices, and secret/login requests share a compact neutral card with explicit status, labeled inputs, and grouped actions that stack in narrow panes. Reopening a chat restores its pending clarification and answer choices. Multi-select answers show their selected state; submitting keeps an in-place progress indicator and disables duplicate responses.
 
 The latest conversation approval stays visible as resolved after it is answered in the conversation or notch. This presentation is kept in memory for the current Herm process, not reconstructed after restart.
 

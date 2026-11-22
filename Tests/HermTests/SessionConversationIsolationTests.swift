@@ -310,6 +310,30 @@ struct SessionConversationIsolationTests {
         #expect(model.approvalText == nil)
     }
 
+    @Test func resumedOpenClarificationUsesTheStoredSessionIdentity() async throws {
+        let rpc = SessionIsolationRPCClient()
+        rpc.resumeResponses = [
+            [
+                "session_id": "runtime-b", "session_key": Fixtures.sessionB, "messages": [],
+                "open_requests": [
+                    [
+                        "id": "srq-b", "method": "clarify",
+                        "params": ["session_id": Fixtures.sessionB, "question": "Which task?", "choices": ["A", "B"]],
+                    ]
+                ],
+            ]
+        ]
+        let model = DockModel(rpcClient: rpc)
+        model.resumeSession(
+            HermesSession(
+                id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        try await waitUntil { model.sessionID == "runtime-b" && model.sessionActionsReady }
+        #expect(model.status == .needsClarification)
+        #expect(model.clarificationRequestID == "srq-b")
+        #expect(model.clarificationChoices == ["A", "B"])
+        #expect(model.messages.map(\.text) == ["Which task?"])
+    }
+
     @Test func pendingClarificationReturnsWhenItsSessionIsReopened() async throws {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [

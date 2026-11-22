@@ -61,6 +61,21 @@ struct AttentionAnswerTests {
         Issue.record("Timed out waiting for the answer")
     }
 
+    @Test func reconnectRestoresAnOpenQuestionMissingFromEventHistory() async throws {
+        let rpc = AttentionAnswerRPC()
+        let model = makeModel(rpc)
+        rpc.openRequests = [
+            ["id": "srq-replay", "method": "clarify", "params": ["session_id": "current", "question": "Which task?"]]
+        ]
+        for _ in 0..<2 {
+            model.replayGatewayEvents(for: "current", after: 1)
+            try await waitUntil { model.gatewayReplayInFlight.isEmpty }
+        }
+        #expect(model.status == .needsClarification)
+        #expect(model.clarificationRequestID == "srq-replay")
+        #expect(model.messages.map(\.text) == ["Which task?"])
+    }
+
     @Test func currentQuickAnswerPreservesWorkspaceAndBlocksOtherAnswerSurfaces() async throws {
         let rpc = AttentionAnswerRPC()
         let model = makeModel(rpc)

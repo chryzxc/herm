@@ -421,6 +421,13 @@ extension DockModel {
                     replayed["herm_trace_replayed"] = true
                     self.receiveGatewayEvent(type, params: replayed)
                 }
+                // Server requests are returned separately from the sequenced event history.
+                for request in result["open_requests"] as? [[String: Any]] ?? [] {
+                    guard let event = HermesGateway.event(forServerRequest: request), event.type == "clarify.request",
+                        let owner = event.params["session_id"] as? String, owner == sessionID
+                    else { continue }
+                    self.receiveGatewayEvent(event.type, params: event.params)
+                }
                 if (result["truncated"] as? Bool) == true {
                     self.refreshDelegationStatus()
                 }
@@ -859,6 +866,8 @@ extension DockModel {
             voiceState = .interrupted
             recoverNativeVoiceCaptureIfInterruptedTranscriptIsMissing(generation: interruptionGeneration)
         case "message.start":
+            // A replayed start cannot resume a turn waiting for the user to answer.
+            guard status != .needsClarification else { return }
             status = .working
             isSending = true
             if voiceState.isNativeConversationActive, !isVoicePromptActive, streamingMessageID == nil {

@@ -142,6 +142,22 @@ struct DockNotificationTests {
         #expect(model.messages.last?.text == "Which task list should I check?")
     }
 
+    @Test func repeatedMessageStartKeepsTheClarificationCardAvailable() {
+        let model = DockModel(initialSessionID: "session-clarify")
+        let start: [String: Any] = ["session_id": "session-clarify", "payload": [:]]
+        model.receiveGatewayEvent("message.start", params: start)
+        model.receiveGatewayEvent(
+            "clarify.request",
+            params: [
+                "session_id": "session-clarify",
+                "payload": ["request_id": "srq-task", "question": "Which task?"],
+            ])
+        model.receiveGatewayEvent("message.start", params: start)
+        #expect(model.status == .needsClarification)
+        #expect(!model.isSending)
+        #expect(model.clarificationRequestID == "srq-task")
+    }
+
     @Test func clarificationReplyUsesHermesRequestIDAndAnswerFields() async throws {
         let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
         let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)

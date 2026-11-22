@@ -1219,7 +1219,6 @@ extension DockModel {
                         "model: unread history unavailable: \(Self.safeUserDiagnostic(error.localizedDescription))")
                 }
             }
-            restorePendingClarification(for: [session.id, resolvedSessionID, sessionStorageID])
             // Questions still waiting on this session (Herm was detached when Hermes asked).
             for request in result["open_requests"] as? [[String: Any]] ?? [] {
                 if let event = HermesGateway.event(forServerRequest: request) {
@@ -1228,6 +1227,7 @@ extension DockModel {
             }
             // Open requests captured above land in the pending map but are not
             // presented by the session-filtered handler; project them now.
+            restorePendingClarification(for: [session.id, resolvedSessionID, sessionStorageID])
             restorePendingApproval(for: [session.id, resolvedSessionID, sessionStorageID])
             mergePersistedBotActivities(for: [session.id, sessionStorageID, kanbanAttributionSessionID])
             projectBotMessagesIntoActivity()

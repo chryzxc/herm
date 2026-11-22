@@ -3525,7 +3525,8 @@ indicator. Plan updates preserve disclosure; changing sessions resets it.
 
 In-chat approvals, clarification requests, input prompts, and errors use the shared
 neutral callout surface with a tone-colored icon and status. Decision actions use
-compact button sizing and wrap when the available width requires it.
+compact button sizing and wrap when the available width requires it. Reopening a chat
+restores its pending clarification card, including its answer choices.
 
 #### Pop-out conversation windows
 
