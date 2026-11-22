@@ -14,6 +14,7 @@ final class ConversationWorktreeState: ObservableObject {
     private weak var model: DockModel?
     private weak var control: ControlCenterModel?
     private var link: AnyCancellable?
+    private var projectsLink: AnyCancellable?
     private var loadTask: Task<Void, Never>?
 
     /// Follows the session's folder, which a worktree move or Hermes can change.
@@ -26,10 +27,14 @@ final class ConversationWorktreeState: ObservableObject {
                 // The publishers fire in willSet; read the model once the change lands.
                 DispatchQueue.main.async { self?.reload() }
             }
+        // Hermes' project list can arrive after the window opens; resolve the folder again.
+        projectsLink = control.$projects.dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.reload() } }
     }
 
     func stop() {
         link = nil
+        projectsLink = nil
         loadTask?.cancel()
         loadTask = nil
     }
@@ -42,7 +47,8 @@ final class ConversationWorktreeState: ObservableObject {
             ?? store.projectPath(forSessionID: model.navigationSessionID)
             ?? store.resolvedProjectPath(
                 forSessionID: model.sessionID,
-                hermesProjectPath: model.sessionID.flatMap { control?.project(forSessionID: $0)?.name })
+                hermesProjectPath: model.sessionID.flatMap { control?.project(forSessionID: $0)?.name },
+                createdSessionProjectPath: model.sessionID.flatMap { model.createdSessionProjectPaths[$0] })
         if path != repositoryPath { worktrees = nil }
         repositoryPath = path
         loadTask?.cancel()

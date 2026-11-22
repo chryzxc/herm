@@ -3550,10 +3550,10 @@ chip and banner, and session-scoped previews. Outside a Git folder the composer
 drops the empty folder-bar slot, and the composer sits 6pt above the window's
 rounded bottom. There is no inspector; instead, what the chat opens as a tab (Open
 as new tab on a message, a file, tool call, task or bot) opens a 380pt trailing
-preview panel: the session inspector's tab strip over `SessionDataPreviewView`,
-separated by a hairline. Opening it widens the window by the panel (kept on its
-screen) and raises the minimum width; closing it, or its last tab, narrows the
-window back. A trailing sidebar toggle in the title row (shown only while tabs
+preview panel showing only the selected (or newest) tab's `SessionDataPreviewView`,
+separated by a hairline, with no tab strip: the title row's toggle already collapses
+it. Opening it widens the window by the panel (kept on its screen) and raises the
+minimum width; closing it narrows the window back. A trailing sidebar toggle in the title row (shown only while tabs
 exist) hides and reopens it; the rest of the title row still drags the window. It sits
 under a compact title row (an empty `.unifiedCompact` toolbar centers the traffic
 lights; the 12pt semibold session title sits on their line, and a metadata

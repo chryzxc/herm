@@ -35,7 +35,6 @@ struct ConversationPopoutView: View {
     /// Resizes the window for the preview panel opening (`true`) or closing.
     var onPreviewPanel: (Bool) -> Void = { _ in }
     @ObservedObject private var previews = SessionMessageTabs.shared
-    @ObservedObject private var tabOrder = SessionInspectorTabOrder.shared
     @State private var showsPreviews = false
 
     private var workspace: String? { chat.conversation.map { WorkspaceIdentity.session($0) } }
@@ -49,7 +48,7 @@ struct ConversationPopoutView: View {
                 Color.dockBorderLight.frame(width: DockLayout.hairline)
                 ConversationPopoutPreviewPanel(
                     model: model, bots: bots, workspace: workspace, tabs: previewTabs,
-                    selection: previews.selection[workspace], tabOrder: tabOrder
+                    selection: previews.selection[workspace]
                 )
                 .frame(width: Self.previewWidth)
             }
@@ -123,49 +122,27 @@ struct ConversationPopoutView: View {
     }
 }
 
-/// The popout's tab panel: only what this chat opened, in the session inspector's tab strip,
-/// with the selected tab's preview below. Closing the last tab closes the panel.
+/// The popout's preview panel: the selected (or newest) preview this chat opened, with no tab
+/// strip. The title row's trailing toggle collapses it.
 private struct ConversationPopoutPreviewPanel: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let model: DockModel
     let bots: BotModeModel
     let workspace: String
     let tabs: [SessionPreviewTab]
     let selection: UUID?
-    let tabOrder: SessionInspectorTabOrder
 
     /// The selected tab, or the newest when the selection was closed elsewhere.
     private var selected: SessionPreviewTab? { tabs.first { $0.id == selection } ?? tabs.last }
 
-    private var items: [SessionInspectorTabItem] {
-        let store = SessionMessageTabs.shared
-        let items = tabs.map { tab in
-            SessionInspectorTabItem(
-                id: "preview:" + tab.id.uuidString, title: tab.content.title, icon: tab.content.icon,
-                isSelected: tab.id == selected?.id,
-                select: { [workspace] in store.select(tab.id, in: workspace) },
-                close: { [workspace] in store.close(tab.id, in: workspace) },
-                fileName: tab.content.fileName)
-        }
-        return tabOrder.ordered(items.map(\.id), in: workspace).compactMap { id in items.first { $0.id == id } }
-    }
-
     var body: some View {
-        VStack(spacing: 0) {
-            SessionInspectorTabStrip(tabs: items, workspace: workspace) { drag, target in
-                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) {
-                    tabOrder.move(drag, to: target, available: items.map(\.id), in: workspace)
-                }
-            }
-            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
-            if let selected {
-                // Pull request tabs open only from the main window's rail, which starts their chats.
-                SessionDataPreviewView(
-                    content: selected.content, model: model, botMode: bots, onOpenPullRequestChat: { _ in }
-                )
-                .id(selected.id)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+        if let selected {
+            // Pull request tabs open only from the main window's rail, which starts their chats.
+            SessionDataPreviewView(
+                content: selected.content, model: model, botMode: bots, workspace: workspace,
+                onOpenPullRequestChat: { _ in }
+            )
+            .id(selected.id)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
