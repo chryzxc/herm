@@ -38,10 +38,16 @@ enum SidebarAgentGrouping {
     static func sessionsByBot(_ sessions: [HermesSession], scopeProfileID: String?, bots: [BotSummary])
         -> [String: [HermesSession]]
     {
+        let botIDs = Set(bots.map(\.id))
+        let defaultID = bots.first(where: \.isDefault)?.id
         var byBot: [String: [HermesSession]] = [:]
         for session in sessions {
-            guard let bot = ownerBot(session, scopeProfileID: scopeProfileID, bots: bots) else { continue }
-            byBot[bot.id, default: []].append(session)
+            let profile = owner(session, scopeProfileID: scopeProfileID)
+            if let profile, botIDs.contains(profile) {
+                byBot[profile, default: []].append(session)
+            } else if let defaultID, profile == nil || profile?.lowercased() == "default" {
+                byBot[defaultID, default: []].append(session)
+            }
         }
         return byBot.mapValues { sortedNewestFirst($0, tieBreakByID: true) }
     }
@@ -85,8 +91,9 @@ final class RecentSessionBotProjection {
     private(set) var bots: [BotSummary] = []
     private(set) var sessionsByBot: [String: [HermesSession]] = [:]
 
-    func update(_ next: Inputs) {
-        guard inputs != next else { return }
+    @discardableResult
+    func update(_ next: Inputs) -> Bool {
+        guard inputs != next else { return false }
         inputs = next
         let sessions = SidebarAgentGrouping.merged(
             all: next.scanned, scoped: next.scoped, scopeProfileID: next.scopeProfileID
@@ -95,5 +102,6 @@ final class RecentSessionBotProjection {
         sessionsByBot = SidebarAgentGrouping.sessionsByBot(
             sessions, scopeProfileID: next.scopeProfileID, bots: visibleBots)
         bots = visibleBots.filter { sessionsByBot[$0.id] != nil }
+        return true
     }
 }

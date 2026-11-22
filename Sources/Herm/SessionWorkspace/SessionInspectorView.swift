@@ -1178,11 +1178,19 @@ private struct RecentSessionBots<Content: View>: View {
 
     var body: some View {
         let _ = revision
-        let _ = updateProjection()
         content(projection.bots, projection.sessionsByBot)
-            .onReceive(model.$allBotSessionsState.dropFirst()) { _ in
-                if hostVisible { revision &+= 1 }
+            .onReceive(
+                model.$allBotSessionsState.combineLatest(
+                    model.$sessions, model.$profileScopeID, model.$sessionID.combineLatest(model.$sessionStorageID)
+                )
+                .dropFirst()
+                .map { _ in () }
+                .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main)
+            ) { _ in
+                updateProjection()
             }
+            .onChange(of: roster, initial: true) { _, _ in updateProjection() }
+            .onChange(of: hostVisible) { _, _ in updateProjection() }
             .task(id: hostVisible) {
                 guard hostVisible, !requestedSessions else { return }
                 requestedSessions = true
@@ -1197,9 +1205,12 @@ private struct RecentSessionBots<Content: View>: View {
             case .ready(let rows), .stale(let rows, _): rows
             case .loading, .empty, .unavailable, .failed: []
             }
-        projection.update(
+        if projection.update(
             .init(
                 scanned: scanned, scoped: model.sessions, scopeProfileID: model.profileScopeID,
                 openSessionID: model.navigationSessionID, roster: roster))
+        {
+            revision &+= 1
+        }
     }
 }
