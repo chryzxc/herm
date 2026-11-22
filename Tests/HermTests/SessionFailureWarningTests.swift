@@ -109,127 +109,121 @@ struct SessionFailureWarningTests {
         }
     }
 
-    private func labels(_ element: Any) -> [String] {
-        if let view = element as? NSView {
-            return [view.accessibilityLabel()].compactMap { $0 }
-                + (view.accessibilityChildren() ?? []).flatMap(labels)
-        }
-        if let element = element as? NSAccessibilityElement {
-            return [element.accessibilityLabel()].compactMap { $0 }
-                + (element.accessibilityChildren() ?? []).flatMap(labels)
-        }
-        return []
-    }
-
-    @Test func latePreviousProfileCannotReplaceNewProfileBadge() async throws {
-        let client = SuspendedClient()
-        let replies = SessionUnreadReplies(client: client)
-        let suite = "SessionFailureWarningTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = SidebarSessionSeenStore(defaults: defaults)
-        let sessionID = "failure-warning-race-test"
-        for profile in ["warning-test-a", "warning-test-b"] {
-            store.markSeen(profileID: profile, sessionID: sessionID, at: seen)
-        }
-        func root(_ profile: String) -> some View {
-            let session = HermesSession(
-                id: sessionID, profileID: profile, title: "Chat", preview: "", startedAt: nil,
-                messageCount: 0, source: "test")
-            return SessionRowActivityIndicators(session: session, attention: nil, seenStore: store)
-                .environment(\.sessionUnreadReplies, SessionUnreadReplyContext(replies: replies, profileID: nil))
-        }
-        let host = NSHostingView(rootView: root("warning-test-a"))
-        host.frame = NSRect(x: 0, y: 0, width: 200, height: 40)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        window.orderFrontRegardless()
-        defer {
-            client.release()
-            window.close()
-        }
-        for _ in 0..<1_000 {
-            host.layoutSubtreeIfNeeded()
-            if client.pending != nil { break }
-            await Task.yield()
-        }
-        #expect(client.pending != nil)
-        host.rootView = root("warning-test-b")
-        for _ in 0..<1_000 {
-            host.layoutSubtreeIfNeeded()
-            if labels(host).contains("2 unread AI responses") { break }
-            await Task.yield()
-        }
-        #expect(labels(host).contains("2 unread AI responses"))
-        client.release()
-        for _ in 0..<1_000 {
-            host.layoutSubtreeIfNeeded()
-            if client.released { break }
-            await Task.yield()
-        }
-        #expect(client.released)
-        for _ in 0..<100 {
-            host.layoutSubtreeIfNeeded()
-            await Task.yield()
-        }
-        let current = labels(host)
-        #expect(current.contains("2 unread AI responses"))
-        #expect(!current.contains("1 unread AI response"))
-        #expect(!current.contains("Failed turn. Open conversation for details."))
-    }
-
-    @Test func idleAttentionKeepsUnreadAndWarningAcrossProfileReplacement() async throws {
-        let client = Client()
-        let replies = SessionUnreadReplies(client: client)
-        let sessionID = "failure-warning-render-test"
-        let suite = "SessionFailureWarningTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = SidebarSessionSeenStore(defaults: defaults)
-        for profile in ["warning-test-a", "warning-test-b"] {
-            store.markSeen(profileID: profile, sessionID: sessionID, at: seen)
-        }
-        func session(_ profile: String) -> HermesSession {
-            HermesSession(
-                id: sessionID, profileID: profile, title: "Chat", preview: "", startedAt: nil,
-                messageCount: 0, source: "test")
-        }
-        func root(_ profile: String, _ attention: SessionAttentionDot) -> some View {
-            SessionRowActivityIndicators(session: session(profile), attention: attention, seenStore: store)
-                .environment(\.sessionUnreadReplies, SessionUnreadReplyContext(replies: replies, profileID: nil))
-        }
-        let host = NSHostingView(rootView: root("warning-test-a", .warning))
-        host.frame = NSRect(x: 0, y: 0, width: 200, height: 40)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        window.orderFrontRegardless()
-        defer { window.close() }
-        for attention in [SessionAttentionDot.warning, .clarification, .activity] {
-            host.rootView = root("warning-test-a", attention)
+    #if DEBUG
+        @Test func latePreviousProfileCannotReplaceNewProfileBadge() async throws {
+            let client = SuspendedClient()
+            let replies = SessionUnreadReplies(client: client)
+            let suite = "SessionFailureWarningTests.\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let store = SidebarSessionSeenStore(defaults: defaults)
+            let sessionID = "failure-warning-race-test"
+            for profile in ["warning-test-a", "warning-test-b"] {
+                store.markSeen(profileID: profile, sessionID: sessionID, at: seen)
+            }
+            var labels: [String] = []
+            func root(_ profile: String) -> some View {
+                let session = HermesSession(
+                    id: sessionID, profileID: profile, title: "Chat", preview: "", startedAt: nil,
+                    messageCount: 0, source: "test")
+                return SessionRowActivityIndicators(session: session, attention: nil, seenStore: store)
+                    .environment(\.sessionUnreadReplies, SessionUnreadReplyContext(replies: replies, profileID: nil))
+                    .onPreferenceChange(SessionStatusLabels.self) { labels = $0 }
+            }
+            let host = NSHostingView(rootView: root("warning-test-a"))
+            host.frame = NSRect(x: 0, y: 0, width: 200, height: 40)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer {
+                client.release()
+                window.close()
+            }
             for _ in 0..<1_000 {
                 host.layoutSubtreeIfNeeded()
-                if labels(host).contains("1 unread AI response") { break }
+                if client.pending != nil { break }
                 await Task.yield()
             }
-            let current = labels(host)
-            #expect(current.contains("1 unread AI response"))
-            #expect(current.contains("Failed turn. Open conversation for details."))
-            if let state = attention.activityState {
-                #expect(current.contains(state.label))
+            #expect(client.pending != nil)
+            host.rootView = root("warning-test-b")
+            for _ in 0..<1_000 {
+                host.layoutSubtreeIfNeeded()
+                if labels.contains("2 unread AI responses") { break }
+                await Task.yield()
             }
+            #expect(labels.contains("2 unread AI responses"))
+            client.release()
+            for _ in 0..<1_000 {
+                host.layoutSubtreeIfNeeded()
+                if client.released { break }
+                await Task.yield()
+            }
+            #expect(client.released)
+            for _ in 0..<100 {
+                host.layoutSubtreeIfNeeded()
+                await Task.yield()
+            }
+            let current = labels
+            #expect(current.contains("2 unread AI responses"))
+            #expect(!current.contains("1 unread AI response"))
+            #expect(!current.contains("Failed turn. Open conversation for details."))
         }
-        host.rootView = root("warning-test-b", .warning)
-        for _ in 0..<1_000 {
-            host.layoutSubtreeIfNeeded()
-            if client.paths.contains(where: { $0.contains("profile=warning-test-b") }) { break }
-            await Task.yield()
+
+        @Test func idleAttentionKeepsUnreadAndWarningAcrossProfileReplacement() async throws {
+            let client = Client()
+            let replies = SessionUnreadReplies(client: client)
+            let sessionID = "failure-warning-render-test"
+            let suite = "SessionFailureWarningTests.\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let store = SidebarSessionSeenStore(defaults: defaults)
+            for profile in ["warning-test-a", "warning-test-b"] {
+                store.markSeen(profileID: profile, sessionID: sessionID, at: seen)
+            }
+            func session(_ profile: String) -> HermesSession {
+                HermesSession(
+                    id: sessionID, profileID: profile, title: "Chat", preview: "", startedAt: nil,
+                    messageCount: 0, source: "test")
+            }
+            var labels: [String] = []
+            func root(_ profile: String, _ attention: SessionAttentionDot) -> some View {
+                SessionRowActivityIndicators(session: session(profile), attention: attention, seenStore: store)
+                    .environment(\.sessionUnreadReplies, SessionUnreadReplyContext(replies: replies, profileID: nil))
+                    .onPreferenceChange(SessionStatusLabels.self) { labels = $0 }
+            }
+            let host = NSHostingView(rootView: root("warning-test-a", .warning))
+            host.frame = NSRect(x: 0, y: 0, width: 200, height: 40)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer { window.close() }
+            for attention in [SessionAttentionDot.warning, .clarification, .activity] {
+                host.rootView = root("warning-test-a", attention)
+                for _ in 0..<1_000 {
+                    host.layoutSubtreeIfNeeded()
+                    if labels.contains("1 unread AI response") { break }
+                    await Task.yield()
+                }
+                let current = labels
+                #expect(current.contains("1 unread AI response"))
+                #expect(current.contains("Failed turn. Open conversation for details."))
+                if let state = attention.activityState {
+                    #expect(current.contains(state.label))
+                }
+            }
+            host.rootView = root("warning-test-b", .warning)
+            for _ in 0..<1_000 {
+                host.layoutSubtreeIfNeeded()
+                if client.paths.contains(where: { $0.contains("profile=warning-test-b") }) { break }
+                await Task.yield()
+            }
+            for _ in 0..<50 { await Task.yield() }
+            #expect(client.paths.contains { $0.contains("profile=warning-test-a") })
+            #expect(client.paths.contains { $0.contains("profile=warning-test-b") })
+            #expect(!labels.contains("Failed turn. Open conversation for details."))
+            #expect(!labels.contains("1 unread AI response"))
         }
-        for _ in 0..<50 { await Task.yield() }
-        #expect(client.paths.contains { $0.contains("profile=warning-test-a") })
-        #expect(client.paths.contains { $0.contains("profile=warning-test-b") })
-        #expect(!labels(host).contains("Failed turn. Open conversation for details."))
-        #expect(!labels(host).contains("1 unread AI response"))
-    }
+    #endif
 }

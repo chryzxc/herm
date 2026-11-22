@@ -21,6 +21,7 @@ struct SessionFailureWarning: View {
             .frame(width: DockSidebarListMetrics.statusMark, height: DockSidebarListMetrics.statusMark)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(description)
+            .reportSessionStatusLabel(description)
             .help(description)
     }
 }
@@ -40,10 +41,32 @@ struct SessionRowActivityIndicators: View {
             if let attention, attention != .success, attention != .failure {
                 if let state = attention.activityState {
                     DockActivityIndicator(state: state, role: .status, unreadDot: true)
+                        .reportSessionStatusLabel(state.label)
                 } else {
                     Circle().fill(attention.color).frame(width: 6, height: 6)
                 }
             }
         }
+    }
+}
+
+// Native render tests observe the labels from the mounted SwiftUI views without
+// depending on whether AppKit exposes an accessibility tree for the test process.
+#if DEBUG
+    struct SessionStatusLabels: PreferenceKey {
+        static let defaultValue: [String] = []
+        static func reduce(value: inout [String], nextValue: () -> [String]) {
+            value.append(contentsOf: nextValue())
+        }
+    }
+#endif
+
+extension View {
+    @ViewBuilder func reportSessionStatusLabel(_ label: String) -> some View {
+        #if DEBUG
+            preference(key: SessionStatusLabels.self, value: [label])
+        #else
+            self
+        #endif
     }
 }

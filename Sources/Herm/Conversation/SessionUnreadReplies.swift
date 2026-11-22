@@ -337,12 +337,13 @@ struct SessionUnreadReplyBadge: View {
     private var countBadge: some View {
         switch result {
         case .loaded(let projection) where projection.count > 0:
+            let label = "\(projection.count) unread AI \(projection.count == 1 ? "response" : "responses")"
             UnreadCountPill(
                 label: projection.count > 99 ? "99+" : "\(projection.count)",
                 markSize: DockSidebarListMetrics.statusMark
             )
-            .accessibilityLabel(
-                "\(projection.count) unread AI \(projection.count == 1 ? "response" : "responses")")
+            .accessibilityLabel(label)
+            .reportSessionStatusLabel(label)
         case .unavailable where showUnavailable:
             Text("?")
                 .dockFont(.compactStatus, weight: .semibold)
