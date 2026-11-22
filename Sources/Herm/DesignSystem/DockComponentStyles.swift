@@ -128,7 +128,9 @@ struct DockThemeShape: Shape {
                 bottomTrailingRadius: radius, topTrailingRadius: 3
             ).path(in: rect)
         case .capsule:
-            let radius = role == .control ? rect.height / 2 : min(26, rect.height / 3)
+            // Controls are pills up to the 44pt accessible height; taller control-role
+            // wells (lists, scrollers) keep a fixed radius instead of becoming stadiums.
+            let radius = role == .control ? min(22, rect.height / 2) : min(26, rect.height / 3)
             return RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: rect)
         case .facet, .clipped:
             let cut = min(role.cut, min(rect.width, rect.height) / 4)

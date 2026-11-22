@@ -138,7 +138,8 @@ Shared action faces follow each skin’s material. Terminal uses a phosphor key,
 E-Ink print primary actions in reverse, Swiss and Capiz underline them, and Notebook uses a
 marker stroke. Mechanical keys expose a bottom lip that recedes on press. Switches on instrument
 skins slide a ridged thumb along a narrow slot. Canopy curves two opposing corners, Capiz clips
-four facets, Ares clips one corner, and Island uses capsule controls. Those silhouettes carry
+four facets, Ares clips one corner, and Island uses capsule controls (control-role wells taller
+than 44pt keep a 22pt radius instead of a stadium). Those silhouettes carry
 through cards, selection, and inputs. Machinery and paper skins seat the composer against its tray.
 
 Every palette keeps its authored identity. Raised surfaces separate from the canvas,
