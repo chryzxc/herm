@@ -938,13 +938,16 @@ extension DockModel {
             let isUnprovenAlias =
                 session.id == BotService.canonicalBotChatTitle
                 || storageIDsByRuntimeID[session.id].map { $0 != session.id } == true
-            sessionTranscriptPreview = isUnprovenAlias ? nil : sessionTranscriptCache.value(for: previewKey)
+            sessionTranscriptPreview =
+                isUnprovenAlias ? nil : openingPreview(for: previewKey, storageID: requestedStorageID)
         }
         sessionTranscriptLoadState = sessionTranscriptPreview == nil ? .loading : .refreshing
         recordSessionSwitch(
             "selection", startedAt: switchStartedAt,
             extra: "cache_hit=\(sessionTranscriptPreview == nil ? 0 : 1)")
         loadPreviewImages()
+        let openingRowIDs =
+            sessionTranscriptPreview?.rowIDs ?? (isRefreshingActiveSession ? transcriptMessageIDsByRowID : [:])
         transcriptHistoryCursor = nil
         isLoadingEarlierTranscript = false
         isLoadingTranscriptHistory = false
@@ -1121,8 +1124,8 @@ extension DockModel {
             try Task.checkCancellation()
             guard resumeGeneration == sessionResumeGeneration else { return false }
             let stable = Self.keepingMessageIDs(
-                parsed, previous: sessionTranscriptPreview?.rowIDs ?? [:],
-                previousMessages: sessionTranscriptPreview?.messages ?? [])
+                parsed, previous: openingRowIDs,
+                previousMessages: sessionTranscriptPreview?.messages ?? (isRefreshingActiveSession ? messages : []))
             let renamed = Dictionary(
                 parsed.rowIDs.compactMap { row, id in stable.rowIDs[row].map { (id, $0) } },
                 uniquingKeysWith: { first, _ in first })

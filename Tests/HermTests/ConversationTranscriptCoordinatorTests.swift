@@ -417,6 +417,30 @@ struct ConversationTranscriptCoordinatorTests {
         #expect(coordinator.mountedRange.upperBound <= 3)
     }
 
+    @Test func promotingACachedWindowWithOlderHistoryKeepsTheNativeReadingPosition() throws {
+        let model = DockModel(initialSessionID: "preview")
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 3_600))
+        controller.clipView = scroll.contentView
+        let cached = Array(messages().prefix(36))
+        coordinator.reset(
+            sessionID: model.transcriptPresentationID, totalCount: cached.count, bubbleCount: cached.count)
+        coordinator.receiveLayout(layout(coordinator))
+        controller.shiftVisibleTop(by: 750 - (try #require(controller.geometry)).visibleTop)
+        coordinator.presentation.isAtBottom = false
+        let before = try #require(controller.geometry).visibleTop
+        let range = coordinator.mountedRange
+        let rows = range.map { ConversationTranscriptSnapshot.Row(index: $0, message: cached[$0]) }
+        model.messages = Array(messages().suffix(100)) + cached
+        coordinator.promotePreview(model: model, previewRows: rows)
+        #expect(coordinator.mountedRange == (range.lowerBound + 100)..<(range.upperBound + 100))
+        #expect(coordinator.pendingPage == nil)
+        #expect(controller.geometry?.visibleTop == before)
+        #expect(!controller.isConcealed)
+    }
+
     @Test func firstMessagesLandAtTheTailOnceTheirRowsHaveLaidOut() async throws {
         let controller = ConversationScrollController()
         let coordinator = ConversationTranscriptCoordinator(controller: controller)
@@ -429,10 +453,12 @@ struct ConversationTranscriptCoordinatorTests {
 
         coordinator.contentResized()
         for _ in 0..<10 { await Task.yield() }
+        #expect(controller.isConcealed)
         #expect(controller.geometry?.visibleTop == initialTop)
 
         coordinator.receiveLayout(layout(coordinator))
         #expect(controller.geometry?.distanceToBottom == 0)
+        #expect(!controller.isConcealed)
     }
 
     private func messages() -> [ChatMessage] {

@@ -232,7 +232,7 @@ final class ConversationTranscriptSource: ObservableObject {
     private func refreshSnapshot() {
         let hasPreview = model.sessionTranscriptPreview != nil
         if showingPreview && !hasPreview && model.sessionActionsReady {
-            coordinator.promotePreview(model: model)
+            coordinator.promotePreview(model: model, previewRows: snapshot.rows)
         } else {
             coordinator.synchronize(model: model)
         }

@@ -533,7 +533,7 @@ reading position when that transcript is still cached. Retained lists stay keyed
 to their own profile and are cleared when the Hermes sign-in changes.
 Startup confirms the selected bot before reopening its last chat. Bot avatars and
 live status load independently of restoration.
-Recently opened chats can show a cached transcript while Hermes refreshes it.
+Recently opened chats can show a cached transcript while Hermes refreshes it. The opening preview includes bot replies received while you were away.
 On a first visit, Herm waits for the unread check and opens directly at the first
 unread reply, or at the latest message when all replies have been read.
 

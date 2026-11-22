@@ -145,6 +145,30 @@ struct SessionSwitchCacheTests {
         Issue.record("Timed out waiting for session switch")
     }
 
+    @Test func backgroundBotReplyAlreadyHasItsFinalPositionAndIdentityInOpeningPreview() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        model.resumeSession(session("a"))
+        try await waitUntil { model.sessionActionsReady && model.sessionStorageID == "a" }
+        model.resumeSession(session("b"))
+        try await waitUntil { model.sessionActionsReady && model.sessionStorageID == "b" }
+
+        model.insertBotActivity(
+            BotActivityRecord(
+                originSessionID: "a", botID: "cypher", botName: "Cypher", summary: "Bot response",
+                state: .completed, createdAt: .distantFuture, updatedAt: .distantFuture, result: "Report"))
+        rpc.holdNextA = true
+        model.resumeSession(session("a"))
+        try await waitUntil { rpc.held != nil }
+        let preview = try #require(model.sessionTranscriptPreview)
+        #expect(preview.messages.map(\.text) == ["question a", "answer a", "Report"])
+        #expect(model.messages.isEmpty)
+        rpc.release()
+        try await waitUntil { model.sessionActionsReady && model.sessionStorageID == "a" }
+        #expect(model.messages.map(\.id) == preview.messages.map(\.id))
+    }
+
     @Test func cachedTranscriptAppearsBeforeResumeAndIsReadOnlyUntilConfirmed() async throws {
         let rpc = SessionSwitchRPC()
         let model = makeModel(rpc)

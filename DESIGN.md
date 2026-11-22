@@ -3182,7 +3182,9 @@ for editing; Send submits through the normal composer. The waveform reflects act
 input levels and the controls retain accessible labels and the active skin.
 
 On a return to a recently viewed conversation, show its cached transcript while
-Hermes refreshes it. The session title uses its existing slot for “Refreshing…”
+Hermes refreshes it. Include saved bot replies in the cached tail before positioning
+the viewport. On a cold open, assemble the transcript before revealing the initial
+reading position. The session title uses its existing slot for “Refreshing…”
 or “Not current”; retry belongs in the conversation actions menu. Cached text
 remains selectable and the draft editable, while session actions wait for a
 confirmed fresh transcript. Session replacement and refresh retain the transcript

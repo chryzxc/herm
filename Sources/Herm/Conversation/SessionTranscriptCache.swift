@@ -43,6 +43,7 @@ final class SessionTranscriptCache {
         let cost: Int
     }
 
+    static let messageLimit = 36
     private let maximumEntries = 8
     private let maximumCost = 16 * 1024 * 1024
     private var entries: [String: Entry] = [:]
@@ -79,7 +80,7 @@ final class SessionTranscriptCache {
     }
 
     private func makeEntry(_ restored: RestoredTranscript, references: [UUID: StoredMessageReference]) -> Entry? {
-        let messages = Array(restored.messages.suffix(36))
+        let messages = Array(restored.messages.suffix(Self.messageLimit))
         let ids = Set(messages.map(\.id))
         let cost = messages.reduce(0) { total, message in
             total + message.text.utf8.count
@@ -125,6 +126,19 @@ final class SessionTranscriptCache {
 }
 
 extension DockModel {
+    /// A preload contains Hermes rows. A bot may also have finished since the last visit.
+    func openingPreview(for key: String, storageID: String) -> SessionTranscriptPreview? {
+        guard let preview = sessionTranscriptCache.value(for: key) else { return nil }
+        guard botActivityBySessionID[storageID]?.isEmpty == false else { return preview }
+        let tail = Array(
+            transcriptWithBotActivities(preview.messages, for: [storageID]).suffix(SessionTranscriptCache.messageLimit))
+        let ids = Set(tail.map(\.id))
+        return SessionTranscriptPreview(
+            messages: tail, rowIDs: preview.rowIDs.filter { ids.contains($0.value) },
+            references: preview.references.filter { ids.contains($0.key) },
+            pendingImages: preview.pendingImages.filter { ids.contains($0.messageID) })
+    }
+
     func recordSessionSwitch(
         _ stage: String, startedAt: UInt64, extra: String = "", generation: Int? = nil, token: String? = nil
     ) {

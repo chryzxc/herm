@@ -154,7 +154,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             if restore(saved, messages: messages, rowIDs: rowIDs) { return }
         }
         setRange(ConversationMessageWindow.rangeForSessionReplacement(totalCount: totalCount))
-        if totalCount > 0 { navigationAfterLayout = { [weak self] in self?.followTail() } }
+        if totalCount > 0 { queueTailLanding(afterAttachment: true) }
     }
 
     private func restore(_ saved: SavedPosition, messages: [ChatMessage], rowIDs: [Int: UUID]) -> Bool {
@@ -188,6 +188,10 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         presentation.isAtBottom = false
         pendingPage = PageTransaction(sessionID: sessionID, generation: generation, range: mountedRange, anchor: anchor)
         restoredAnchor = anchor
+        concealUntilLanding()
+    }
+
+    private func concealUntilLanding() {
         controller.isConcealed = true
         let landing = generation
         // ponytail: fixed failsafe; a page that never measures still reveals.
@@ -289,10 +293,15 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         return true
     }
 
-    private func queueTailLanding() {
+    private func queueTailLanding(afterAttachment: Bool = false) {
+        concealUntilLanding()
         navigationAfterLayout = { [weak self] in
-            guard let self, self.presentation.isAtBottom else { return }
-            self.controller.scrollToBottom()
+            guard let self else { return }
+            let land: @MainActor () -> Void = {
+                if self.presentation.isAtBottom { self.controller.scrollToBottom() }
+                self.controller.isConcealed = false
+            }
+            if afterAttachment { self.scheduleScroll(land) } else { land() }
         }
     }
 
@@ -538,6 +547,11 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     /// The first unread row can be outside the cached tail. Wait for the review
     /// before mounting a first-visit window that would immediately be replaced.
     func openingMessages(model: DockModel) -> [ChatMessage] {
+        if model.sessionTranscriptLoadState == .loading,
+            sessionID != model.transcriptPresentationID || totalCount == 0
+        {
+            return []
+        }
         if model.positionsAtUnreadOnResume,
             model.sessionTranscriptLoadState == .loading || model.sessionTranscriptLoadState == .refreshing,
             let id = model.transcriptPresentationID, !viewedSessionIDs.contains(id)
@@ -595,7 +609,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
                 totalCount = count
                 presentation.isAtBottom = true
                 setRange(ConversationMessageWindow.rangeForSessionReplacement(totalCount: count))
-                navigationAfterLayout = { [weak self] in self?.followTail() }
+                queueTailLanding()
             }
         } else if let prepend = model.lastTranscriptPrepend,
             prepend.generation != consumedPrependGeneration, prepend.removedCount > 0,
@@ -612,8 +626,30 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         reconcileAnchor(messages: messages)
     }
 
-    func promotePreview(model: DockModel) {
+    func promotePreview(model: DockModel, previewRows: [ConversationTranscriptSnapshot.Row] = []) {
         let messages = model.messages
+        // Fresh history may add hundreds of older rows above exactly the same visible window.
+        // Rebase its indices while preserving the native viewport and the reader’s scroll offset.
+        if sessionID == model.transcriptPresentationID, pendingPage == nil, awaitingRestore == nil,
+            navigationAfterLayout == nil, let first = previewRows.first,
+            first.index == mountedRange.lowerBound, previewRows.count == mountedRange.count,
+            let start = messages.firstIndex(where: { $0.id == first.message.id })
+        {
+            let end = start + previewRows.count
+            if end <= messages.count, !presentation.isAtBottom || end == messages.count,
+                zip(previewRows, messages[start..<end]).allSatisfy({ $0.message.id == $1.id })
+            {
+                if mountedRange != start..<end {
+                    cancelMounting()
+                    setRange(start..<end)
+                }
+                totalCount = messages.count
+                countedMessagesRevision = model.messagesRevision
+                lastResponseCount = ConversationUnreadMessagePolicy.assistantResponseCount(messages)
+                messageIDsByRowID = model.transcriptMessageIDsByRowID
+                return
+            }
+        }
         guard sessionID == model.transcriptPresentationID, !presentation.isAtBottom else {
             synchronize(model: model)
             return
@@ -726,6 +762,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         guard presentation.isAtBottom, pendingPage == nil else { return }
         scheduleScroll { [weak self] in
             guard let self, self.presentation.isAtBottom, self.pendingPage == nil else { return }
+            if let geometry = self.controller.geometry, geometry.distanceToBottom <= 0.5 { return }
             if let scroll = self.onScrollToBottom {
                 scroll(animated)
             } else {
