@@ -81,28 +81,29 @@ struct EdgeQuickMessageView: View {
                     icon: .x, label: "Close quick message",
                     style: DockThemePalette(theme: chrome), action: close)
             }
-            Divider().overlay(Color.dockBorderLight)
-            Group {
-                if let conversation = chat.conversation {
-                    EdgeQuickConversationTranscript(
-                        model: conversation, control: control,
-                        onReply: { quote in
-                            guard !state.quickSending, !state.quickNeedsReview else { return }
-                            state.quickDraft = quote.composing(state.quickDraft)
-                            focused = true
-                        },
-                        onSessionChanged: { session in
-                            guard session.id != state.captureRecord().destination.sessionID else { return }
-                            state.selectQuickTarget(session)
-                        }
-                    )
-                    .id(ObjectIdentifier(conversation))
-                } else {
-                    Color.clear
+            if !startsNewSession {
+                Divider().overlay(Color.dockBorderLight)
+                Group {
+                    if let conversation = chat.conversation {
+                        EdgeQuickConversationTranscript(
+                            model: conversation, control: control,
+                            onReply: { quote in
+                                guard !state.quickSending, !state.quickNeedsReview else { return }
+                                state.quickDraft = quote.composing(state.quickDraft)
+                                focused = true
+                            },
+                            onSessionChanged: { session in
+                                guard session.id != state.captureRecord().destination.sessionID else { return }
+                                state.selectQuickTarget(session)
+                            }
+                        )
+                        .id(ObjectIdentifier(conversation))
+                    } else {
+                        Color.clear
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay { if startsNewSession && chat.conversation?.messages.isEmpty != false { emptyState } }
             if chat.loadFailed {
                 Button("Reload conversation") {
                     Task { await chat.load(state.captureRecord().destination, runtime: model) }
@@ -115,64 +116,99 @@ struct EdgeQuickMessageView: View {
         }
         .dockPadding(DockSpacing.group)
         .foregroundStyle(Color.dockPrimaryText)
+        .fixedSize(horizontal: false, vertical: startsNewSession)
+        .onGeometryChange(for: CGFloat.self) { geometry in
+            ceil(geometry.size.height)
+        } action: { height in
+            if startsNewSession, state.quickDraftHeight != height { state.quickDraftHeight = height }
+        }
         .accessibilityLabel("Quick message")
     }
 
-    private var messageComposer: some View {
-        let hasAttachments = !state.quickFiles.isEmpty || !state.quickSources.isEmpty
-        let inputHeight = hasAttachments ? min(composerHeight, 80) : composerHeight
-        return VStack(spacing: ComposerLayout.rowSpacing) {
-            ZStack(alignment: .topLeading) {
-                ComposerInputEditor(
-                    text: $state.quickDraft, isFocused: focused, onSubmit: submit,
-                    onCompletionKey: { _ in false }, onDropFiles: { state.stageQuickFiles($0) },
-                    onPaste: {
-                        paste()
-                        return true
-                    },
-                    onFocusChanged: { focused = $0 }, onCaretMoved: { _, _ in },
-                    takePendingCaret: { nil }, onTextChanged: { _, _ in },
-                    onContentHeightChanged: { composerHeight = ComposerLayout.height(for: $0) }
-                )
-                .frame(height: inputHeight)
-                .disabled(state.quickSending || state.quickNeedsReview)
-                .accessibilityLabel(inline ? "Reply" : "Quick message")
-                if state.quickDraft.isEmpty {
-                    Text(inline ? "Reply…" : "Message \(destinationName)…")
-                        .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .dockPadding(.leading, 16)
-                        .allowsHitTesting(false)
+    @ViewBuilder private var messageComposer: some View {
+        if inline {
+            VStack(spacing: ComposerLayout.rowSpacing) {
+                draftEditor
+                    .dockPadding(.top, 4)
+                    .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
+                attachmentTray
+                HStack(spacing: DockSpacing.control) {
+                    attachmentMenu
+                    Spacer(minLength: 0)
+                    sendButton
                 }
+                .dockFont(.control)
             }
-            .dockPadding(.top, 4)
-            .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
-            if hasAttachments {
-                ScrollView {
-                    attachments.frame(maxWidth: .infinity, alignment: .leading)
+            .dockPadding(.leading, 6)
+            .dockPadding(.trailing, 8)
+            .dockPadding(.vertical, 6)
+            .modifier(ComposerInputSurface(isFocused: focused))
+        } else {
+            VStack(spacing: DockSpacing.control) {
+                Divider()
+                attachmentTray
+                HStack(alignment: .bottom, spacing: DockSpacing.control) {
+                    attachmentMenu
+                    draftEditor
+                    sendButton
                 }
-                .frame(height: 48)
-                .dockPadding(.horizontal, DockSpacing.control)
+                .dockFont(.control)
             }
-            captureActions
         }
-        .dockPadding(.leading, 6)
-        .dockPadding(.trailing, 8)
-        .dockPadding(.vertical, 6)
-        .modifier(ComposerInputSurface(isFocused: focused))
     }
 
-    private var messageFeedback: some View {
-        VStack(alignment: .leading, spacing: DockSpacing.tight) {
-            if let status = state.quickPreparing > 0
-                ? "Preparing captured files…"
-                : state.quickResult ?? state.draftStore.error ?? unavailableReason
-            {
-                Text(status)
-                    .dockFont(.metadata)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+    private var hasAttachments: Bool { !state.quickFiles.isEmpty || !state.quickSources.isEmpty }
+
+    @ViewBuilder private var attachmentTray: some View {
+        if hasAttachments {
+            ScrollView {
+                attachments.frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(height: 48)
+            .dockPadding(.horizontal, DockSpacing.control)
+        }
+    }
+
+    private var draftEditor: some View {
+        let inputHeight = hasAttachments ? min(composerHeight, 80) : composerHeight
+        return ZStack(alignment: .topLeading) {
+            ComposerInputEditor(
+                text: $state.quickDraft, isFocused: focused, onSubmit: submit,
+                onCompletionKey: { _ in false }, onDropFiles: { state.stageQuickFiles($0) },
+                onPaste: {
+                    paste()
+                    return true
+                },
+                onFocusChanged: { focused = $0 }, onCaretMoved: { _, _ in },
+                takePendingCaret: { nil }, onTextChanged: { _, _ in },
+                onContentHeightChanged: { composerHeight = ComposerLayout.height(for: $0) },
+                inset: inline ? NSSize(width: 16, height: 0) : NSSize(width: 0, height: 7)
+            )
+            .frame(height: inputHeight)
+            .disabled(state.quickSending || state.quickNeedsReview)
+            .accessibilityLabel(inline ? "Reply" : "Quick message")
+            if state.quickDraft.isEmpty {
+                Text(inline ? "Reply…" : "Message \(destinationName)…")
+                    .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(1)
+                    .padding(.leading, inline ? 16 : 0)
+                    .padding(.top, inline ? 0 : 7)
+                    .accessibilityHidden(true)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    @ViewBuilder private var messageFeedback: some View {
+        if let status = state.quickPreparing > 0
+            ? "Preparing captured files…"
+            : state.quickResult ?? state.draftStore.error ?? unavailableReason
+        {
+            Text(status)
+                .dockFont(.metadata)
+                .foregroundStyle(Color.dockSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -197,7 +233,7 @@ struct EdgeQuickMessageView: View {
         }
     }
 
-    private var startsNewSession: Bool { state.quickTarget == nil && state.quickCreatedSession == nil }
+    private var startsNewSession: Bool { state.startsNewQuickSession }
 
     private var destinationBot: BotSummary? {
         let profile = state.captureRecord().destination.profileID
@@ -212,15 +248,6 @@ struct EdgeQuickMessageView: View {
             DockIcon(.chatCenteredText, size: size * 0.6, color: Color.dockSecondaryText).frame(
                 width: size, height: size)
         }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: DockSpacing.control) {
-            destinationArt(size: 56)
-            Text("Message \(destinationName)").dockFont(.body, weight: .semibold)
-            Text("Your first message starts a new session.").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-        }
-        .allowsHitTesting(false)
     }
 
     private var destination: some View {
@@ -257,6 +284,8 @@ struct EdgeQuickMessageView: View {
         .disabled(state.quickSending || state.quickPreparing > 0)
         .help("Choose message destination")
         .accessibilityLabel("Choose message destination")
+        .accessibilityValue(
+            startsNewSession ? "\(destinationName), new session" : state.captureRecord().destination.title)
     }
 
     private var destinationPicker: some View {
@@ -297,76 +326,75 @@ struct EdgeQuickMessageView: View {
         .buttonStyle(.dockHover)
     }
 
-    private var captureActions: some View {
-        HStack(spacing: DockSpacing.control) {
-            DockMenu {
-                Button("Attach files…", icon: .paperclip) {
-                    let picker = NSOpenPanel()
-                    picker.canChooseDirectories = false
-                    picker.allowsMultipleSelection = true
-                    if picker.runModal() == .OK { state.stageQuickFiles(picker.urls) }
-                }
-                .disabled(state.quickNeedsReview)
-                Button("Paste", icon: .clipboard, action: paste).disabled(state.quickNeedsReview)
-                Divider()
-                if !state.recoverableDrafts.isEmpty || !state.savedPrompts.isEmpty {
-                    DockMenu("Drafts") {
-                        ForEach(state.recoverableDrafts) { record in
-                            Button(
-                                "\(record.destination.title) · \(record.text.isEmpty ? "Attachments" : String(record.text.prefix(32)))"
-                            ) { state.restoreQuickDraft(record) }
-                        }
-                        if !state.savedPrompts.isEmpty {
-                            DockMenu("Saved prompts") {
-                                ForEach(state.savedPrompts) { record in
-                                    Button(record.savedName ?? "Prompt") { state.restoreQuickDraft(record) }
-                                }
+    private var attachmentMenu: some View {
+        DockMenu {
+            Button("Attach files…", icon: .paperclip) {
+                let picker = NSOpenPanel()
+                picker.canChooseDirectories = false
+                picker.allowsMultipleSelection = true
+                if picker.runModal() == .OK { state.stageQuickFiles(picker.urls) }
+            }
+            .disabled(state.quickNeedsReview)
+            Button("Paste", icon: .clipboard, action: paste).disabled(state.quickNeedsReview)
+            Divider()
+            if !state.recoverableDrafts.isEmpty || !state.savedPrompts.isEmpty {
+                DockMenu("Drafts") {
+                    ForEach(state.recoverableDrafts) { record in
+                        Button(
+                            "\(record.destination.title) · \(record.text.isEmpty ? "Attachments" : String(record.text.prefix(32)))"
+                        ) { state.restoreQuickDraft(record) }
+                    }
+                    if !state.savedPrompts.isEmpty {
+                        DockMenu("Saved prompts") {
+                            ForEach(state.savedPrompts) { record in
+                                Button(record.savedName ?? "Prompt") { state.restoreQuickDraft(record) }
                             }
                         }
                     }
                 }
-                Button("Capture window") { state.captureWindow() }
-                if state.quickTarget == nil && state.quickCreatedSession == nil {
-                    Button("Choose project…") {
-                        let picker = NSOpenPanel()
-                        picker.canChooseFiles = false
-                        picker.canChooseDirectories = true
-                        if picker.runModal() == .OK { state.setQuickProject(picker.url?.path) }
-                    }
-                    if state.captureRecord().destination.projectPath != nil {
-                        Button("Use profile directory") { state.setQuickProject(nil) }
-                    }
-                }
-                if state.quickNeedsReview {
-                    Button("Review destination in Herm", action: review)
-                    Button("I checked the session; allow retry…") { confirmingReview = true }
-                }
-                Button("Discard draft…", role: .destructive) { confirmingDiscard = true }
-            } label: {
-                ComposerControlLabel(icon: .plus)
             }
-            .buttonStyle(.dockHover)
-            .disabled(state.quickSending || state.quickPreparing > 0)
-            .help("Attach or insert content").accessibilityLabel("Message actions")
-            Spacer(minLength: 0)
-            Button(action: submit) {
-                ComposerSubmitLabel(isEnabled: canSend) {
-                    if state.quickSending {
-                        DockLoadingIndicator().controlSize(.mini)
-                    } else {
-                        DockIcon(.arrowUp)
-                            .dockFont(.body, weight: .semibold)
-                            .foregroundStyle(canSend ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
-                    }
+            Button("Capture window") { state.captureWindow() }
+            if state.quickTarget == nil && state.quickCreatedSession == nil {
+                Button("Choose project…") {
+                    let picker = NSOpenPanel()
+                    picker.canChooseFiles = false
+                    picker.canChooseDirectories = true
+                    if picker.runModal() == .OK { state.setQuickProject(picker.url?.path) }
+                }
+                if state.captureRecord().destination.projectPath != nil {
+                    Button("Use profile directory") { state.setQuickProject(nil) }
                 }
             }
-            .buttonStyle(.dockHover)
-            .keyboardShortcut(.return, modifiers: .command)
-            .disabled(!canSend)
-            .help("Send message (↩; ⇧↩ for newline)")
-            .accessibilityLabel(state.quickSending ? "Sending message" : "Send message")
+            if state.quickNeedsReview {
+                Button("Review destination in Herm", action: review)
+                Button("I checked the session; allow retry…") { confirmingReview = true }
+            }
+            Button("Discard draft…", role: .destructive) { confirmingDiscard = true }
+        } label: {
+            ComposerControlLabel(icon: .plus)
         }
-        .dockFont(.control)
+        .buttonStyle(.dockHover)
+        .disabled(state.quickSending || state.quickPreparing > 0)
+        .help("Attach or insert content").accessibilityLabel("Message actions")
+    }
+
+    private var sendButton: some View {
+        Button(action: submit) {
+            ComposerSubmitLabel(isEnabled: canSend) {
+                if state.quickSending {
+                    DockLoadingIndicator().controlSize(.mini)
+                } else {
+                    DockIcon(.arrowUp)
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(canSend ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
+                }
+            }
+        }
+        .buttonStyle(.dockHover)
+        .keyboardShortcut(.return, modifiers: .command)
+        .disabled(!canSend)
+        .help("Send message (↩; ⇧↩ for newline)")
+        .accessibilityLabel(state.quickSending ? "Sending message" : "Send message")
     }
 
     private var attachments: some View {

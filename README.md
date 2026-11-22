@@ -212,8 +212,7 @@ Chat message timestamps appear on hover, with no separator after the assistant m
 
 Quick message opens a clean message-only panel with a destination picker and Close.
 Tasks, Quota, Quiet, refresh, and Open Herm controls stay out of the way while composing.
-It reuses the chat session's growing text editor, themed input surface, attachment
-control, and send button. The taller 560pt panel shows your sent messages and live
+The attachment button, growing text editor, and send button share one borderless row. A new draft opens directly beneath the destination picker and grows with the text and attachments. Once the session exists, the 560pt conversation panel shows your sent messages and live
 replies using the session chat's transcript and message actions. Follow-up messages
 stay in that conversation; the destination menu starts a new one when you choose it.
 The workspace's selected session and draft stay separate. The composer stays at the

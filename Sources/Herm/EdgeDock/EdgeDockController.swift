@@ -234,7 +234,11 @@ final class EdgeDockController: NSObject {
                 guard let self else { return }
                 self.panel.appearance = EdgeNotchState.themeSurface(for: side).windowAppearance
             }.store(in: &subscriptions)
-        state.$composing.removeDuplicates().receive(on: RunLoop.main)
+        state.$composing.combineLatest(state.$quickTarget, state.$quickCreatedSession, state.$quickDraftHeight)
+            .map { composing, target, created, height in
+                composing ? (target == nil && created == nil ? height : EdgeNotchState.quickMessageHeight) : 0
+            }
+            .removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.position(animated: true) }.store(in: &subscriptions)
         Publishers.CombineLatest3(state.interruptions.$pendingDigest, state.$composing, model.$isHermesConnected)
             .receive(on: RunLoop.main)
@@ -1978,6 +1982,8 @@ final class EdgeNotchState: ObservableObject {
     @Published var kanbanUnavailable = false
     /// Fixed so refreshes and task arrivals never resize the preview.
     static let expandedSize = CGSize(width: 368, height: 360)
+    @Published var quickDraftHeight: CGFloat = 160
+    var startsNewQuickSession: Bool { quickTarget == nil && quickCreatedSession == nil }
     static let quickMessageHeight: CGFloat = 560
     /// The island opens landscape: wide and short, like an expanded Dynamic Island.
     static let islandSize = CGSize(width: 560, height: 300)
@@ -2046,9 +2052,11 @@ final class EdgeNotchState: ObservableObject {
     }
     var openSize: CGSize {
         if isComposingQuickMessage {
+            let verticalInsets: CGFloat = side == .top ? 24 : 52
+            let height = startsNewQuickSession ? quickDraftHeight + verticalInsets : Self.quickMessageHeight
             return CGSize(
                 width: side == .top ? Self.islandSize.width : Self.expandedSize.width,
-                height: Self.quickMessageHeight + (side == .top ? notchSize.height : 0))
+                height: height + (side == .top ? notchSize.height : 0))
         }
         if glimpsing {
             // Matches the preview padding below: 8 + 16 under the notch, 26 + 26 on an edge.

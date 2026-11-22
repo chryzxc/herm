@@ -132,7 +132,7 @@ struct EdgeNotchRenderSnapshotTests {
                     state.quickResult =
                         mode == "failed" ? "The message could not be sent. Your draft is saved; try again." : nil
                     model.status = mode == "offline" ? .offline : .idle
-                    let height: CGFloat = EdgeNotchState.quickMessageHeight
+                    let height = state.openSize.height
                     let view = Group {
                         if width == 368 {
                             EdgeNotchView(state: state, controlCenter: control, quickMessageModel: model, openDock: {})
@@ -140,7 +140,7 @@ struct EdgeNotchRenderSnapshotTests {
                             EdgeQuickMessageView(model: model, control: control, state: state, close: {}, openDock: {})
                         }
                     }
-                    .frame(width: width, height: height)
+                    .frame(width: width)
                     .background(Color.dockCanvas)
                     .dockThemedRoot()
                     .environment(\.colorScheme, dark ? .dark : .light)
@@ -160,6 +160,9 @@ struct EdgeNotchRenderSnapshotTests {
                         host.layoutSubtreeIfNeeded()
                         try await Task.sleep(for: .milliseconds(50))
                     }
+                    let fittedHeight = width == 368 ? state.openSize.height : state.quickDraftHeight
+                    window.setContentSize(CGSize(width: width, height: fittedHeight))
+                    host.layoutSubtreeIfNeeded()
                     let text = try #require(editor(in: host))
                     let container = try #require(text.textContainer)
                     let textHeight = try #require(text.layoutManager).usedRect(for: container).height

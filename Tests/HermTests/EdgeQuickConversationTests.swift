@@ -196,15 +196,20 @@ struct EdgeQuickConversationTests {
         #expect(state.captureRecord().destination.sessionID == "created")
     }
 
-    @Test func standaloneConversationHasMoreRoomOnEveryEdge() {
+    @Test func standaloneDraftFitsContentAndExpandsForConversationOnEveryEdge() {
         let state = EdgeNotchState()
         state.expanded = true
         for side in [EdgeDockSide.left, .right, .top] {
             state.side = side
-            state.composing = false
-            let previewHeight = state.panelSize.height
+            state.quickTarget = nil
+            state.quickDraftHeight = 160
             state.composing = true
-            #expect(state.panelSize.height > previewHeight)
+            let clearance = side == .top ? state.notchSize.height : 0
+            #expect(state.openSize.height == 160 + (side == .top ? 24 : 52) + clearance)
+            state.quickDraftHeight += 40
+            #expect(state.openSize.height == 200 + (side == .top ? 24 : 52) + clearance)
+            state.quickTarget = HermesSession(
+                id: "quick", title: "Quick", preview: "", startedAt: nil, messageCount: 1, source: "test")
             #expect(
                 state.openSize.height == EdgeNotchState.quickMessageHeight + (side == .top ? state.notchSize.height : 0)
             )

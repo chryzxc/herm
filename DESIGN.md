@@ -1469,7 +1469,7 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   "Hermes is offline", with one line saying what will appear. A failed Kanban
   read explicitly shows "Kanban is unavailable" when no cards are cached.
 - The footer holds Quick message and Open Herm actions. Quick message replaces
-  the preview with a taller conversation panel. Entering Quick message starts a
+  the preview with a compact drafting panel. Entering Quick message starts a
   new session, even when another chat is selected or busy; acknowledged sends keep
   that destination for follow-ups until the user chooses another destination.
   Each session row also has Reply, which opens a composer beneath that row
@@ -1482,7 +1482,7 @@ with a result the user has not opened. The list has no cap; the body scrolls.
 - Quick message hides the Tasks/Quota tabs, Quiet, refresh, activity banners, and
   Open Herm footer while its standalone composer is visible. A quiet destination
   picker and icon-only Close action are the only header controls. The composer
-  anchors to the bottom of a 560pt panel (plus the top island's camera clearance).
+  sits directly under the destination in a new session. The shell fits the editor, attachments, and feedback. An existing session uses a 560pt panel with the composer anchored at the bottom (plus the top island's camera clearance).
   Above it, `ConversationTranscriptView` renders Hermes-owned sent messages,
   streamed replies, activity, approval/clarification controls, and message actions.
   A disposable `DockModel` shares the gateway's event router and existing session
@@ -1490,9 +1490,10 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   destinations or closing detaches the projection. Failed history reads show the
   existing chat error and a Reload conversation action without resending.
 - Quick message and inline reply reuse the session composer's native growing
-  editor, input surface, attachment control, and circular send treatment, including
-  theme-specific line and shaped variants. Return and Command-Return send;
-  Shift-Return inserts a newline. Attachments scroll inside the input surface.
+  editor, attachment control, and send button. In the standalone notch, a divider
+  separates the header or conversation from one borderless input row. The editor
+  grows between the attachment and send controls. Inline replies use the themed input surface. Return and Command-Return send;
+  Shift-Return inserts a newline. Attachments scroll within the composer.
   The + menu contains files, paste, capture, saved drafts when available, and
   discard; interrupted sends also expose review and retry. Project choices appear
   only for a new session, with a directory reset only when a project has been chosen.
