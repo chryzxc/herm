@@ -186,7 +186,7 @@ struct ConversationMessageRowTests {
                 )
                 try await checkHover(
                     row.equatable(), hover: hover, parent: "message", leaf: "timestamp",
-                    resting: message.isError ? 1 : 0, hovering: 1)
+                    resting: message.isError ? nil : 0, hovering: message.isError ? nil : 1)
             }
         }
 
@@ -214,7 +214,7 @@ struct ConversationMessageRowTests {
 
         private func checkHover<Content: View>(
             _ content: Content, hover: ConversationRowHoverPresentation,
-            parent: String, leaf: String, resting: Double, hovering: Double
+            parent: String, leaf: String, resting: Double?, hovering: Double?
         ) async throws {
             let recorder = RowEvaluationRecorder()
             let host = NSHostingView(

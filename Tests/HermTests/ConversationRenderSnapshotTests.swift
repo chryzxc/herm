@@ -119,7 +119,7 @@ struct ConversationRenderSnapshotTests {
                 [true, false].map { (theme, scale, $0) }
             }
         }
-        var timestampPositions: [String: CGFloat] = [:]
+        var footersWithStatus: [String: (timestampWidth: CGFloat, trailingEdge: CGFloat)] = [:]
         for (theme, scale, hasStatus) in variants {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
@@ -147,15 +147,20 @@ struct ConversationRenderSnapshotTests {
                 try await Task.sleep(for: .milliseconds(30))
             }
             let labels = elements(host).filter { $0.accessibilityRole?() == .staticText }
-            #expect(labels.count == (hasStatus ? 2 : 1))
-            let timeFrame = try #require(labels.last?.accessibilityFrame?())
+            let frames = labels.compactMap { $0.accessibilityFrame?() }
+                .map { window.convertFromScreen($0) }
+                .sorted { $0.minX < $1.minX }
+            try #require(frames.count == (hasStatus ? 2 : 1))
+            let timeFrame = frames[0]
             let key = "\(theme.rawValue)-\(scale)"
             if hasStatus {
-                let statusFrame = try #require(labels.first?.accessibilityFrame?())
-                #expect(timeFrame.minX - statusFrame.maxX >= 3)
-                timestampPositions[key] = timeFrame.minX
+                let statusFrame = frames[1]
+                #expect(statusFrame.minX - timeFrame.maxX >= 3)
+                footersWithStatus[key] = (timeFrame.width, statusFrame.maxX)
             } else {
-                #expect(timeFrame.minX == timestampPositions[key])
+                let footer = try #require(footersWithStatus[key])
+                #expect(abs(timeFrame.width - footer.timestampWidth) <= 1)
+                #expect(abs(timeFrame.maxX - footer.trailingEdge) <= 1)
             }
             if let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] {
                 try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
