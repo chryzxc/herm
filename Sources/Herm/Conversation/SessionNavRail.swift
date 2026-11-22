@@ -143,7 +143,6 @@ struct SessionNavRail: View {
     let model: DockModel
     let controlCenter: ControlCenterModel
     let workspaceStore: WorkspaceStore
-    let isWorkspaceVisible: Bool
     @ObservedObject var agentUpdateService: HermesUpdateService
     @ObservedObject var appUpdater = HermAppUpdater.shared
     @ObservedObject var navigationState: SessionNavigationState
@@ -185,7 +184,7 @@ struct SessionNavRail: View {
                     VStack(spacing: 4) {
                         ChatRailButton(
                             model: model, control: controlCenter, store: workspaceStore,
-                            isSelected: isChatsActive, isVisible: isWorkspaceVisible, style: style, action: onOpenChats
+                            isSelected: isChatsActive, style: style, action: onOpenChats
                         )
                     }
                     ForEach(dragOrder ?? orderedPins) { item in

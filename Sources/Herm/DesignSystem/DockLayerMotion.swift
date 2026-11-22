@@ -11,8 +11,9 @@ struct DockLayerMotion: NSViewRepresentable {
         case thinkingRelay
         /// Three transcript lines fold together as context is compacted.
         case compactLines
-        /// Three rounded bars pass a highlight while work is pending.
+        /// Four mosaic tiles lift and brighten in clockwise order while work is pending.
         case loading
+        case startupLogo
         /// A highlight travelling around a capsule without rotating its contents.
         case capsuleRim(period: Double, lineWidth: CGFloat)
         /// A filled dot dimming to 30% and back once per `period`.
@@ -27,7 +28,7 @@ struct DockLayerMotion: NSViewRepresentable {
     let kind: Kind
     let color: Color
     var glow: Color?
-    /// Tide only: a hairline inside the edge line, so it separates from whatever is underneath.
+    /// Edge color for the tide, or the graphite casing of the startup logo.
     var rim: Color?
     var paused = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -151,29 +152,37 @@ final class DockLayerMotionView: NSView {
                 }
             }
 
+        case .startupLogo:
+            DockStartupLogo.install(
+                in: host, flipped: isFlipped, ivory: color, mint: spec.glow ?? color,
+                graphite: spec.rim ?? color, paused: spec.paused)
+
         case .loading:
             let side = min(bounds.width, bounds.height)
-            let width = side * 0.17
-            let period = 1.2
-            let phase = CACurrentMediaTime().truncatingRemainder(dividingBy: period)
-            for (index, height) in [0.40, 0.64, 0.49].enumerated() {
-                let bar = CALayer()
-                bar.bounds.size = CGSize(width: width, height: side * height)
-                bar.position = CGPoint(x: bounds.midX + CGFloat(index - 1) * side * 0.25, y: bounds.midY)
-                bar.cornerRadius = width / 2
-                bar.backgroundColor = color
-                bar.opacity = index == 1 ? 1 : 0.62
-                host.addSublayer(bar)
-                if !spec.paused {
-                    let pulse = CAKeyframeAnimation(keyPath: "opacity")
-                    pulse.keyTimes = [0, 0.19, 0.42, 1]
-                    pulse.values = [0.48, 1, 0.48, 0.48]
-                    pulse.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 3)
-                    pulse.duration = period
-                    pulse.repeatCount = .infinity
-                    pulse.timeOffset = (phase + period - Double(index) * period / 3).truncatingRemainder(
-                        dividingBy: period)
-                    bar.add(pulse, forKey: "opacity")
+            let up = isFlipped ? -side : side
+            let corners: [(CGFloat, CGFloat)] = [(-1, 1), (1, 1), (1, -1), (-1, -1)]
+            let period = 1.6
+            for (index, corner) in corners.enumerated() {
+                let tile = CALayer()
+                tile.bounds.size = CGSize(width: side * 0.31, height: side * 0.31)
+                tile.position = CGPoint(x: bounds.midX + corner.0 * side * 0.20, y: bounds.midY + corner.1 * up * 0.20)
+                tile.cornerRadius = side * 0.04
+                tile.backgroundColor = color
+                host.addSublayer(tile)
+                guard !spec.paused else { continue }
+
+                let rest = tile.position.y
+                let lift = CAKeyframeAnimation(keyPath: "position.y")
+                lift.values = [rest + up * 0.10, rest, rest, rest + up * 0.10]
+                let highlight = CAKeyframeAnimation(keyPath: "opacity")
+                highlight.values = [1, 0.45, 0.45, 1]
+                for animation in [lift, highlight] {
+                    animation.keyTimes = [0, 0.25, 0.75, 1]
+                    animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 3)
+                    animation.duration = period
+                    animation.repeatCount = .infinity
+                    animation.timeOffset = period * Double((4 - index) % 4) / 4
+                    tile.add(animation, forKey: animation.keyPath)
                 }
             }
 

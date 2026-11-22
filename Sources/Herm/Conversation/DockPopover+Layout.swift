@@ -469,7 +469,6 @@ extension DockPopover {
             model: model,
             controlCenter: controlCenter,
             workspaceStore: workspaceStore,
-            isWorkspaceVisible: isWorkspaceVisible,
             agentUpdateService: agentUpdateService,
             navigationState: sessionNavNavigation,
             dockThemeStore: dockThemeStore,

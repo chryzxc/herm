@@ -27,6 +27,10 @@ enum DockAccentColor: Int, CaseIterable {
     var fill: Color { DockThemePalette(theme: DockThemeRuntime.current).fill(self) }
     /// Contrast-safe text on the solid reference fill.
     var onFill: Color { Color(nsColor: NSColor(hex: DockThemePalette.onAccentHex(forAccent: hex))) }
+    // Source colors from the Herm app icon.
+    static let brandGraphite = Color(nsColor: NSColor(hex: "#141416"))
+    static let brandMint = Color(nsColor: NSColor(hex: "#8FD9B6"))
+    static let brandIvory = Color(nsColor: NSColor(hex: "#EEF1EC"))
     static var unreadBadgeText: Color { .white }
     static let unreadBadgeHex = "#E00000"
     static var unreadBadgeFill: Color { Color(nsColor: NSColor(hex: unreadBadgeHex)) }

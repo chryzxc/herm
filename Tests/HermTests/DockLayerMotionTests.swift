@@ -39,7 +39,8 @@ struct DockLayerMotionTests {
 
     @Test func pausingEveryLoopKeepsItsArtworkAndRemovesAnimations() throws {
         let kinds: [DockLayerMotion.Kind] = [
-            .thinkingRelay, .compactLines, .loading, .capsuleRim(period: 2.4, lineWidth: 1),
+            .thinkingRelay, .compactLines, .loading, .startupLogo,
+            .capsuleRim(period: 2.4, lineWidth: 1),
             .breathe(period: 2), .sweep(period: 1.6, fraction: 0.4, clamp: 0...80),
             .tide(period: 2, depth: 4),
         ]
@@ -58,20 +59,27 @@ struct DockLayerMotionTests {
         }
     }
 
-    @Test func loadingBarsStayWithinTheCompactSlotAndAnimateInSequence() throws {
+    @Test func loadingMosaicLiftsFourTilesInSequenceWithinTheCompactSlot() throws {
         let view = DockLayerMotionView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
         let color = NSColor.systemPurple.cgColor
         view.spec = .init(kind: .loading, color: color, paused: false)
-        let bars = try #require(view.layer?.sublayers)
-        #expect(bars.count == 3)
-        #expect(bars.allSatisfy { view.bounds.contains($0.frame) && $0.backgroundColor == color })
-        let pulses = bars.compactMap { $0.animation(forKey: "opacity") as? CAKeyframeAnimation }
-        #expect(pulses.count == 3)
-        #expect(Set(pulses.map(\.timeOffset)).count == 3)
-
-        view.spec?.paused = true
-        #expect(view.layer?.sublayers?.map(\.frame) == bars.map(\.frame))
-        #expect(view.layer?.sublayers?.allSatisfy { $0.animationKeys()?.isEmpty ?? true } == true)
+        let tiles = try #require(view.layer?.sublayers)
+        try #require(tiles.count == 4)
+        var phases: [Double] = []
+        for tile in tiles {
+            #expect(tile.backgroundColor == color)
+            let lift = try #require(tile.animation(forKey: "position.y") as? CAKeyframeAnimation)
+            let highlight = try #require(tile.animation(forKey: "opacity"))
+            #expect(highlight.timeOffset == lift.timeOffset)
+            phases.append(lift.timeOffset / lift.duration)
+            let heights = try #require(lift.values as? [CGFloat])
+            for height in heights {
+                #expect(view.bounds.contains(tile.frame.offsetBy(dx: 0, dy: height - tile.position.y)))
+            }
+        }
+        for (phase, expected) in zip(phases, [0, 0.75, 0.5, 0.25]) {
+            #expect(abs(phase - expected) < 0.0001)
+        }
     }
 
     @Test func layerLoopsRespectThemeAndHostVisibility() async throws {
@@ -99,6 +107,41 @@ struct DockLayerMotionTests {
                         || !DockMotion.isEnabled(
                             reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, theme: theme))
             )
+        }
+    }
+
+    @Test func chatsRailMosaicRespondsToHostVisibility() async throws {
+        let previous = DockThemeRuntime.current
+        DockThemeRuntime.current = .glass
+        defer { DockThemeRuntime.current = previous }
+        let model = DockModel(defaults: UserDefaults(suiteName: "ChatRailMotion.\(UUID())")!)
+        model.isHermesConnected = true
+        model.status = .working
+        let button = ChatRailButton(
+            model: model, control: ControlCenterModel(),
+            store: WorkspaceStore(
+                fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+            isSelected: false, style: DockThemePalette(theme: .glass), action: {})
+        func root(visible: Bool) -> some View {
+            button.environment(\.dockHostVisible, visible)
+                .environment(\.dockChromeThemeOverride, .glass)
+                .frame(width: 52, height: 52)
+        }
+        let host = NSHostingView(rootView: root(visible: true))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 52, height: 52), styleMask: [.borderless],
+            backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil }
+        for visible in [true, false, true] {
+            host.rootView = root(visible: visible)
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(30))
+            let mark = try #require(motionView(in: host))
+            let tiles = try #require(mark.layer?.sublayers)
+            #expect(tiles.count == 4)
+            let shouldAnimate = visible && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            #expect(tiles.allSatisfy { ($0.animation(forKey: "position.y") != nil) == shouldAnimate })
         }
     }
 

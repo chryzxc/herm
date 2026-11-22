@@ -405,9 +405,9 @@ isolates child geometry, so the body never slides over its siblings or drifts fr
 frames. Never reveal a section with a bare fade or `.move(edge:)`. Shared progress meters ease only their fill as confirmed values change (0.22s);
 section counts use a short numeric transition. Pending-action labels use the shared
 loading indicator and fade between confirmed and pending text. `DockLoadingIndicator`
-uses three rounded bars at fixed sizes. Their brightness moves left to right in Core
-Animation, using the active skin's accent or the enclosing status tone. Reduce Motion
-and motion-free skins show the same bars at rest. Native layer loops
+uses a two-by-two mosaic in the active skin's accent or the enclosing status tone.
+Core Animation lifts and brightens each tile in clockwise order. Reduce Motion
+and motion-free skins show all four tiles at rest. Native layer loops
 centrally honor Reduce Motion, motion-free skins, and host visibility, and release
 animations on dismantle. No extra continuous animation clock is introduced.
 Visible animations keep their cadence during direct scrolling and momentum.
@@ -661,11 +661,11 @@ the shared running spinner plus the unread completed-session count (capped at
 99+), independently visible. Deduplicate pinned/index rows, omit hidden sessions,
 and prioritize working over unread for each session. Keep the selected bot's
 session index refreshed while the workspace is visible, including other pages.
-Disconnected state stops the live spinner. The tooltip and accessibility value
+The running mosaic follows rail visibility independently of inspector expansion. Disconnected state stops the live spinner. The tooltip and accessibility value
 explain both states; Reduce Motion and motion-free skins keep the spinner static.
 The badge owns a cached aggregate from the filtered sidebar publisher, independent
 of parent view rendering and transcript deltas. Publish only changed aggregates.
-Composite the loading bars in their own layers, and skip session
+Composite the loading mark in its own layer, and skip session
 polls while the workspace is hidden or disconnected; do not refresh immediately
 on every navigation remount.
 
@@ -1264,8 +1264,9 @@ Local delivery questions refresh on inbox changes, with a minute-scale recovery
 check. The background Bot roster backs off to a minute while the notch is idle.
 
 When the workspace opens during startup, a full-workspace surface covers the
-session list, conversation, and inspector. The shared loading bars appear while
-the initial profile and session list load.
+session list, conversation, and inspector. The startup mark uses the app icon’s graphite tile, ivory H and mint period.
+The period arcs over the right stem, depresses the crossbar and rebounds to its place beside the letter.
+“Opening workspace…” stays below the mark. Reduce Motion and motion-free skins show the assembled logo.
 The surface gives way on the first available session rows, a confirmed empty list,
 or a failure. Older history continues loading in place.
 
@@ -3108,7 +3109,7 @@ receipt when the gateway supplies it. A stored transcript row with a known
 identity can retain that label in the in-memory transcript cache. When there
 is no matching receipt or cached attribution, the footer omits the provider.
 
-When a conversation is loading, the shared loading bars appear above the status
+When a conversation is loading, the shared loading mark appears above the status
 text. The collapsed review chat places the small mark beside the text.
 
 The send arrow folds into a square in the same button when its action changes to Stop. Thinking uses a three-bead relay, and live compaction folds the outer two lines into the middle line. Both use native layers and retain static marks when motion is paused. The shared progress meter interpolates its filled path inside a fixed track.

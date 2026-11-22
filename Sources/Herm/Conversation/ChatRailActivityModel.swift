@@ -65,17 +65,15 @@ final class ChatRailActivityModel: ObservableObject {
 struct ChatRailButton: View {
     @StateObject private var source: ChatRailActivityModel
     let isSelected: Bool
-    let isVisible: Bool
     let style: DockThemePalette
     let action: () -> Void
 
     init(
         model: DockModel, control: ControlCenterModel, store: WorkspaceStore,
-        isSelected: Bool, isVisible: Bool, style: DockThemePalette, action: @escaping () -> Void
+        isSelected: Bool, style: DockThemePalette, action: @escaping () -> Void
     ) {
         _source = StateObject(wrappedValue: ChatRailActivityModel(model: model, control: control, store: store))
         self.isSelected = isSelected
-        self.isVisible = isVisible
         self.style = style
         self.action = action
     }
@@ -94,13 +92,11 @@ struct ChatRailButton: View {
     private var badge: some View {
         HStack(spacing: 2) {
             if chatActivity.isWorking {
-                DockActivityIndicator(
-                    state: .running, role: .compact, animates: isVisible && style.theme.style.animates
-                )
-                .dockPadding(.horizontal, 3)
-                .frame(minWidth: 14, minHeight: 14)
-                .background(Capsule().fill(style.sidebarBackground))
-                .overlay(Capsule().strokeBorder(style.secondaryText.opacity(0.3), lineWidth: 0.5))
+                DockActivityIndicator(state: .running, role: .compact)
+                    .dockPadding(.horizontal, 3)
+                    .frame(minWidth: 14, minHeight: 14)
+                    .background(Capsule().fill(style.sidebarBackground))
+                    .overlay(Capsule().strokeBorder(style.secondaryText.opacity(0.3), lineWidth: 0.5))
             }
             if chatActivity.unreadCount > 0 { UnreadCountPill(label: chatActivity.unreadBadgeLabel) }
         }

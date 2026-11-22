@@ -470,7 +470,7 @@ orange is reserved for attention rather than normal draft or modified state.
 
 Shared tabs carry their selection highlight between choices. Navigation glyphs respond to selection, floating-skin controls lift gently on hover, and retained disclosures ease open and closed while preserving nested inputs.
 
-Shared interface motion includes smoothly updating progress meters and section counts, short tab and navigation selection transitions, rotating disclosures, and subtle page and modal reveals. Loading screens, pending actions, and running session indicators use the same three rounded bars. They follow the active skin and stay still with Reduce Motion or a motion-free skin. Controls remain usable and keep their layout footprint.
+Shared interface motion includes smoothly updating progress meters and section counts, short tab and navigation selection transitions, rotating disclosures, and subtle page and modal reveals. Loading screens, pending actions, and running session indicators use a four-tile mosaic. Each tile lifts and brightens in clockwise order, including on the Chats rail when the inspector is closed. These indicators follow the active skin and stay still with Reduce Motion or a motion-free skin. Controls remain usable and keep their layout footprint.
 
 ### Conversations
 
@@ -1389,8 +1389,7 @@ The notch appears while Herm loads local workspace preferences and activity arch
 Clicking it or using the workspace shortcut during launch opens the workspace as soon as it is ready.
 On first opening the workspace, a loading screen covers the panes until
 the first session rows, an empty list, or a connection error is available. Older
-sessions continue to load in the background. Startup and conversation history use
-the shared loading bars. Reduce Motion keeps the bars still.
+sessions continue to load in the background. The mint period hops onto the H, presses its crossbar, and springs home above “Opening workspace…”. Reduce Motion keeps the mark still.
 
 To build and open the signed debug app bundle with its icon, run:
 
