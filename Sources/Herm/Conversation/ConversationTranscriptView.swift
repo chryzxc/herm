@@ -90,7 +90,8 @@ struct ConversationTranscriptView: View, Equatable {
                 ZStack(alignment: .bottom) {
                     // Each scroll frame otherwise re-hit-tests every mounted
                     // row's hover, tooltip and action-button region.
-                    HoverPausingScrollView {
+                    // Use AppKit's gesture boundaries without observing SwiftUI scroll state.
+                    HoverPausingScrollView(usesAppKitScrollPhase: true) {
                         VStack(spacing: 0) {
                             VStack(spacing: 0) {
                                 if snapshot.messages.isEmpty && snapshot.context.conversationApproval == nil

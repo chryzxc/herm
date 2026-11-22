@@ -28,6 +28,22 @@ struct DockHoverGateTests {
         #expect(!gate.admit(latest, depth: 1) { _ in })
     }
 
+    @Test func deliversMovesImmediatelyToEachHostOutsideAScroll() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 200), styleMask: [], backing: .buffered,
+            defer: true)
+        let root = NSView(frame: window.contentLayoutRect)
+        let pane = NSView(frame: root.bounds)
+        window.contentView = root
+        root.addSubview(pane)
+        let event = move(at: ProcessInfo.processInfo.systemUptime)
+        // Hover must land in the same event as AppKit's own cursor update, in every host.
+        #expect(DockHoverGate.admit(event, in: pane) { _ in })
+        #expect(DockHoverGate.admit(event, in: root) { _ in })
+        // A move forwarded up the responder chain reaches a host only once.
+        #expect(!DockHoverGate.admit(event, in: pane) { _ in })
+    }
+
     private func scroll(at seconds: TimeInterval, phase: Int64) -> NSEvent {
         let cg = CGEvent(
             scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 4, wheel2: 0, wheel3: 0)!

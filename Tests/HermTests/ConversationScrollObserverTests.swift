@@ -51,6 +51,29 @@ struct ConversationScrollObserverTests {
         var scrollsAwayFromBottom = 0
     }
 
+    @Test func hoverPauseFollowsTheOwningAppKitScrollView() {
+        let frame = NSRect(x: 0, y: 0, width: 300, height: 400)
+        let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        let scroll = NSScrollView(frame: frame)
+        let document = NSView(frame: frame)
+        scroll.documentView = document
+        window.contentView = scroll
+        let probe = AppKitScrollPhaseObserver.Probe()
+        var phases: [Bool] = []
+        probe.onPhase = { phases.append($0) }
+        document.addSubview(probe)
+        let notifications = NotificationCenter.default
+        let otherScroll = NSScrollView(frame: frame)
+
+        notifications.post(name: NSScrollView.willStartLiveScrollNotification, object: otherScroll)
+        #expect(phases.isEmpty)
+        notifications.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+        notifications.post(name: NSScrollView.didEndLiveScrollNotification, object: otherScroll)
+        #expect(phases == [true])
+        notifications.post(name: NSScrollView.didEndLiveScrollNotification, object: scroll)
+        #expect(phases == [true, false])
+    }
+
     /// The observer must live inside the scrolled content: as a background of
     /// the ScrollView it is a sibling of the NSScrollView, never attaches, and
     /// history paging silently stops.

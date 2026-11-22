@@ -61,7 +61,8 @@ struct PaneLayoutBudgetTests {
         #expect(coordinator.acceptsLeading(Text("Bots"), environment: environment, collapsed: true, matches: ==))
     }
 
-    @Test func scrollingLeadingPaneStaysWithinLayoutBudget() async throws {
+    @Test(arguments: [false, true])
+    func scrollingLeadingPaneStaysWithinLayoutBudget(wheel: Bool) async throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: [.titled, .resizable],
             backing: .buffered, defer: false)
@@ -75,17 +76,16 @@ struct PaneLayoutBudgetTests {
         for _ in 0..<3 { try await settle(window) }
 
         let scrollView = try #require(Self.scrollViews(in: root).first)
-        let scrollPoint = scrollView.convert(NSPoint(x: scrollView.bounds.midX, y: scrollView.bounds.midY), to: nil)
         let initialRows = seenRows
         var counts: [String: Int] = [:]
         DockHostLayoutTiming.layoutObserver = { counts[$0, default: 0] += 1 }
         defer {
             DockHostLayoutTiming.layoutObserver = nil
-            DockScrollActivity.recordScroll(in: nil, at: .zero, now: -.infinity)
+            DockScrollActivity.recordScroll(at: -.infinity)
         }
 
         for step in 1...Self.steps {
-            DockScrollActivity.recordScroll(in: window, at: scrollPoint, now: ProcessInfo.processInfo.systemUptime)
+            if wheel { DockScrollActivity.recordScroll(at: ProcessInfo.processInfo.systemUptime) }
             let clip = scrollView.contentView
             clip.scroll(to: NSPoint(x: 0, y: CGFloat(step) * 40))
             scrollView.reflectScrolledClipView(clip)
@@ -100,6 +100,62 @@ struct PaneLayoutBudgetTests {
         #expect(
             counts["root", default: 0] <= Self.steps + Self.slack,
             "scrolling the pane scheduled an extra outer layout per step: \(counts)")
+    }
+
+    @MainActor
+    private final class Toggle: ObservableObject { @Published var expanded = true }
+
+    private struct CollapsingPane: View {
+        @ObservedObject var toggle: Toggle
+        var body: some View {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        if toggle.expanded {
+                            ForEach(0..<40, id: \.self) { Text("Pinned \($0)").frame(height: 40) }
+                        }
+                    } header: {
+                        Text("Pinned").frame(height: 30)
+                    }
+                    Section {
+                        ForEach(0..<5, id: \.self) { Text("Recent \($0)").frame(height: 40) }
+                    } header: {
+                        Text("Recents").frame(height: 30)
+                    }
+                }
+            }
+        }
+    }
+
+    /// A section collapse resizes the scroll content; the pane must lay it out at the new size.
+    @Test func collapsingASectionResizesThePanesScrollContent() async throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: [.titled, .resizable],
+            backing: .buffered, defer: false)
+        let toggle = Toggle()
+        let root = DockWindowHostingView(
+            rootView: AnyView(
+                FullscreenPanelSplitView(leading: CollapsingPane(toggle: toggle), trailing: Text("Inspector"))))
+        root.sizingOptions = []
+        root.safeAreaRegions = []
+        window.contentView = root
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        for _ in 0..<3 { try await settle(window) }
+        let scrollView = try #require(Self.scrollViews(in: root).first)
+        let expandedHeight = try #require(scrollView.documentView).frame.height
+        // As the header does: an animated toggle, then only AppKit's own display cycle.
+        var roles: [String] = []
+        DockHostLayoutTiming.layoutObserver = { roles.append($0) }
+        defer { DockHostLayoutTiming.layoutObserver = nil }
+        withAnimation(.easeInOut(duration: 0.2)) { toggle.expanded = false }
+        try await Task.sleep(for: .milliseconds(600))
+        let collapsedHeight = try #require(scrollView.documentView).frame.height
+        #expect(collapsedHeight < expandedHeight - 1000, "expanded \(expandedHeight), collapsed \(collapsedHeight)")
+        // Once the animation settles, the pane stops invalidating and re-laying itself out.
+        roles.removeAll()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(roles.isEmpty, "pane kept re-laying out after the collapse: \(roles.count) passes")
     }
 
     private func settle(_ window: NSWindow) async throws {

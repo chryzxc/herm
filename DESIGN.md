@@ -1882,6 +1882,7 @@ hides the roster when both panels would crowd the scene.
 ### Navigation sidebar
 
 The desktop split commits its final widths once when visibility changes. A short layer crossfade bridges those layouts. Swapping between opposite single panes slides in the incoming side. Initial layout, live resize and Reduce Motion use the final geometry immediately.
+Frame-sized panes service content constraint updates before their own layout. Scrolling and content refreshes can update a pane without scheduling another window-wide layout pass.
 
 Working and unread activity follows each session through selection, pinned rows,
 and project summaries; the notch uses the same session activity state.
@@ -3269,6 +3270,7 @@ programmatic corrections and resize events do not trigger edge paging. One sessi
 coordinator owns mounting, anchors, navigation, and deferred scroll work. A page remains
 pending until its session, generation, range, and anchor match the measured row batch;
 settling alone never completes it. Session changes and explicit navigation cancel stale work. Each message owns one geometry container around its activity and body; hidden messages still report a zero-height row, so complete page batches remain measurable.
+AppKit scroll phase notifications pause transcript hover while the viewport moves.
 An explicit jump to the latest reply positions the native scroll view immediately
 when its window is hidden.
 During a wheel gesture, the affected split pane updates its local constraints

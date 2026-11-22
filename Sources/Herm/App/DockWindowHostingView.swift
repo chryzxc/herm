@@ -6,29 +6,32 @@ final class DockWindowHostingView<Content: View>: NSHostingView<Content> {
     /// Names this host in performance captures (`hostLayout.<role>`).
     var performanceRole = "root"
 
-    var handlesScrollConstraintsLocally = false
-    private var pendingScrollConstraints = false
+    var handlesConstraintsLocally = false
+    private var pendingLocalConstraints = false
 
     override var needsUpdateConstraints: Bool {
         get { super.needsUpdateConstraints }
         set {
-            // These panes are sized by NSSplitView and publish no intrinsic constraints.
-            // A scroll changes their contents without changing the enclosing window's layout.
-            if newValue, handlesScrollConstraintsLocally, !inLiveResize, !super.needsUpdateConstraints,
-                DockScrollActivity.isScrolling(in: self)
+            // These panes are sized by NSSplitView and publish no intrinsic constraints. A scroll
+            // changes their rows without changing the window's layout, so it updates locally.
+            // Any other change (a section collapsing, rows inserted) can resize the scroll content
+            // and must take the window's constraint pass, or rows keep stale positions and overlap.
+            if newValue, handlesConstraintsLocally, window != nil, !inLiveResize, !super.needsUpdateConstraints,
+                let split = superview as? NSSplitView,
+                (split as? FractionPreservingSplitView)?.isDraggingDivider != true
             {
-                guard !pendingScrollConstraints else { return }
-                pendingScrollConstraints = true
+                guard !pendingLocalConstraints else { return }
+                pendingLocalConstraints = true
                 needsLayout = true
             } else {
-                pendingScrollConstraints = false
+                pendingLocalConstraints = false
                 super.needsUpdateConstraints = newValue
             }
         }
     }
 
     override func updateConstraints() {
-        pendingScrollConstraints = false
+        pendingLocalConstraints = false
         super.updateConstraints()
     }
 
@@ -47,8 +50,14 @@ final class DockWindowHostingView<Content: View>: NSHostingView<Content> {
     }
 
     private func layoutContent() {
-        // Run the host's constraint pass before laying out newly exposed SwiftUI rows.
-        if pendingScrollConstraints { updateConstraints() }
+        // Run the host's constraint pass before laying out SwiftUI content. It must be a real
+        // subtree pass: calling updateConstraints() bare leaves SwiftUI's update unconsumed, so it
+        // invalidates again every pass and an animated change (a section collapse) never lands.
+        if pendingLocalConstraints {
+            pendingLocalConstraints = false
+            super.needsUpdateConstraints = true
+            updateConstraintsForSubtreeIfNeeded()
+        }
         super.layout()
     }
 
@@ -68,11 +77,13 @@ final class DockWindowHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
-/// Deliver the latest move through the deepest host once per window.
+/// During a scroll, deliver the latest move through the deepest host once per window after
+/// the scroll settles. Otherwise each host takes each move immediately, once.
 @MainActor
 final class DockHoverGate {
     private static let windows = NSMapTable<NSWindow, DockHoverGate>(
         keyOptions: .weakMemory, valueOptions: .strongMemory)
+    private static let seen = NSMapTable<NSView, NSEvent>(keyOptions: .weakMemory, valueOptions: .strongMemory)
     private struct Move {
         let event: NSEvent
         let depth: Int
@@ -91,6 +102,14 @@ final class DockHoverGate {
         } else {
             gate = DockHoverGate()
             windows.setObject(gate, forKey: window)
+        }
+        // Outside a scroll each host handles a move once, in the same event as AppKit's own
+        // cursor updates. Deferring it lets text views set the I-beam or link hand, then SwiftUI
+        // hover resets the cursor a frame later, so the pointer flickers on every move.
+        if gate.deferred == nil, !DockScrollActivity.isScrolling(at: ProcessInfo.processInfo.systemUptime) {
+            if let last = seen.object(forKey: host), isSameMove(last, event) { return false }
+            seen.setObject(event, forKey: host)
+            return true
         }
         var depth = 0
         var parent = host.superview
@@ -184,8 +203,6 @@ enum DockScrollActivity {
     static let settleInterval: TimeInterval = 0.15
     private static var lastScrollTimestamp: TimeInterval = -.infinity
     private static var lastInputTimestamp: TimeInterval = -.infinity
-    private static weak var lastScrollWindow: NSWindow?
-    private static var lastScrollPoint = NSPoint.zero
     private static let monitor: Any? = NSEvent.addLocalMonitorForEvents(
         matching: [
             .scrollWheel, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged,
@@ -193,32 +210,17 @@ enum DockScrollActivity {
         ]
     ) { event in
         let isScrollWheel = event.type == .scrollWheel
-        let windowNumber = event.windowNumber
-        let location = event.locationInWindow
         MainActor.assumeIsolated {
             let now = ProcessInfo.processInfo.systemUptime
             lastInputTimestamp = now
-            if isScrollWheel {
-                recordScroll(in: NSApp?.window(withWindowNumber: windowNumber), at: location, now: now)
-            } else {
-                lastScrollWindow = nil
-            }
+            if isScrollWheel { recordScroll(at: now) }
         }
         return event
     }
 
-    static func recordScroll(in window: NSWindow?, at point: NSPoint, now: TimeInterval) {
-        lastScrollWindow = window
-        lastScrollPoint = point
-        lastScrollTimestamp = now
+    static func recordScroll(at timestamp: TimeInterval) {
+        lastScrollTimestamp = timestamp
         HermPerformanceRecorder.mark("scrollWheel")
-    }
-
-    static func isScrolling(in view: NSView) -> Bool {
-        guard let window = view.window, isScrolling(at: ProcessInfo.processInfo.systemUptime),
-            lastScrollWindow === window
-        else { return false }
-        return view.bounds.contains(view.convert(lastScrollPoint, from: nil))
     }
 
     static func isScrolling(at timestamp: TimeInterval) -> Bool {
@@ -281,7 +283,7 @@ func splitPaneHost(role: String = "pane") -> NSHostingView<AnyView> {
     // The split view places panes by frame; don't publish SwiftUI's
     // intrinsic/min/max size as constraints for the outer layout to solve.
     host.sizingOptions = []
-    host.handlesScrollConstraintsLocally = true
+    host.handlesConstraintsLocally = true
     // Panes draw their own title row; inheriting the window's titlebar safe
     // area would push every pane down a second 52pt.
     host.safeAreaRegions = []

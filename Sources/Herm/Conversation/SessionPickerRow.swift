@@ -12,18 +12,22 @@ import UniformTypeIdentifiers
 /// (`EventBindingManager.enqueueHoverUpdateIfNeeded`), even with the pointer still.
 struct HoverPausingScrollView<Content: View>: View {
     let content: Content
+    private let usesAppKitScrollPhase: Bool
     @State private var isScrolling = false
 
-    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    init(usesAppKitScrollPhase: Bool = false, @ViewBuilder content: () -> Content) {
+        self.usesAppKitScrollPhase = usesAppKitScrollPhase
+        self.content = content()
+    }
 
     var body: some View {
-        if #available(macOS 15, *) {
+        if #available(macOS 15, *), !usesAppKitScrollPhase {
             ScrollView { content.allowsHitTesting(!isScrolling) }
                 .onScrollPhaseChange { _, phase in isScrolling = phase.isScrolling }
         } else {
             ScrollView {
                 content.allowsHitTesting(!isScrolling).background {
-                    LegacyScrollObserver(onPhase: { isScrolling = $0 }).allowsHitTesting(false)
+                    AppKitScrollPhaseObserver(onPhase: { isScrolling = $0 }).allowsHitTesting(false)
                 }
             }
             .onDisappear { isScrolling = false }
@@ -31,7 +35,7 @@ struct HoverPausingScrollView<Content: View>: View {
     }
 }
 
-private struct LegacyScrollObserver: NSViewRepresentable {
+struct AppKitScrollPhaseObserver: NSViewRepresentable {
     let onPhase: (Bool) -> Void
     final class Probe: NSView {
         var onPhase: ((Bool) -> Void)?
