@@ -108,8 +108,12 @@ struct SpecMapView: View, Equatable {
     @FocusState private var isMapFocused: Bool
     /// A tree branches right to show the plan's shape; a list suits a narrow pane and long text.
     @AppStorage(Self.layoutKey) private var isTree = true
-    /// Node frames in the canvas space, keyed `root`, `phase:`, `card:` and `head:`.
-    @State private var frames: [String: CGRect] = [:]
+    /// Node frames in the canvas space, keyed `root`, `phase:`, `card:` and `head:`, one set per
+    /// layout: both layouts use the same keys, and a card the outgoing layout still measures
+    /// must never move the wires of the layout on screen.
+    @State private var treeFrames: [String: CGRect] = [:]
+    @State private var listFrames: [String: CGRect] = [:]
+    private var frames: [String: CGRect] { isTree ? treeFrames : listFrames }
     /// The hovered node lights up its dependency wires, like selection does. Held outside
     /// view state so a hover, which fires on every card the pointer crosses while scrolling,
     /// redraws only the wires instead of every card.
@@ -248,7 +252,8 @@ struct SpecMapView: View, Equatable {
         // Stacked phases chain down the left side, so leave room for that loop.
         .dockPadding(.leading, isTree ? 0 : Metrics.loop)
         .coordinateSpace(.named(Self.space))
-        .background { wires }
+        // A fresh wire canvas per layout, so nothing drawn for the other layout survives.
+        .background { wires.id(isTree) }
     }
 
     /// Phases stacked top to bottom, each an indented list under its phase card.
@@ -310,8 +315,17 @@ struct SpecMapView: View, Equatable {
             })
     }
 
-    /// Only real moves write: every write re-runs body, and geometry reports repeat values.
-    private func store(_ key: String, _ frame: CGRect) { if frames[key] != frame { frames[key] = frame } }
+    /// Records into the layout that drew the card, captured now; `isTree` read later would be
+    /// the current layout. Only real moves write: every write re-runs body, and geometry
+    /// reports repeat values.
+    private var store: (String, CGRect) -> Void {
+        let tree = isTree
+        let (treeFrames, listFrames) = ($treeFrames, $listFrames)
+        return { key, frame in
+            let target = tree ? treeFrames : listFrames
+            if target.wrappedValue[key] != frame { target.wrappedValue[key] = frame }
+        }
+    }
 
     // MARK: Toolbar
 
@@ -361,13 +375,12 @@ struct SpecMapView: View, Equatable {
                     ? "Show as list: phases stacked top to bottom with each step indented under its parent. Suits a narrow pane and long step text."
                     : "Show as tree: each step’s nested items branch out to its right, so you see the plan’s shape at a glance. Fold a branch with the port on its card’s edge."
             ) {
-                // Both layouts measure under the same keys. An animated swap keeps the outgoing
-                // layout reporting its frames, so wires drew for the layout just left. Swap
-                // instantly and measure the new layout from scratch.
+                // Swap instantly and measure the incoming layout from scratch; its frames from
+                // the last visit predate any fold or edit made since.
                 var swap = Transaction()
                 swap.disablesAnimations = true
                 withTransaction(swap) {
-                    frames = [:]
+                    if isTree { listFrames = [:] } else { treeFrames = [:] }
                     isTree.toggle()
                 }
             }
