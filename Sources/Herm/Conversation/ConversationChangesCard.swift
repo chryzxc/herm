@@ -9,7 +9,7 @@ struct ConversationChangesCard: View {
     @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
             ForEach(files) { file in
                 let isOpen = expanded.contains(file.path)
                 let fileName = (file.path as NSString).lastPathComponent
@@ -82,6 +82,8 @@ struct ConversationChangesCard: View {
                         }
                     }
                     .dockButtonSize(.inline)
+                    // Actions sit as far from the trailing edge as the file name does from the leading one.
+                    .dockPadding(.trailing, file.delivery == nil ? 0 : 4)
 
                     if let path = file.delivery, let message = status[path] {
                         Text(message).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
@@ -114,7 +116,8 @@ struct ConversationChangesCard: View {
         }
         .dockFont(.body)
         .foregroundStyle(Color.dockSecondaryText)
-        .dockPadding(4)
+        .dockPadding(.horizontal, 4)
+        .dockPadding(.vertical, 6)
         .dockWell()
     }
 
