@@ -21,6 +21,7 @@ final class EdgeDockController: NSObject {
     private var interactionMonitors: [Any] = []
     private var previousApplication: NSRunningApplication?
     private var collapseTask: DispatchWorkItem?
+    private var deferredCompletionDetail: DispatchWorkItem?
     private var expandTask: DispatchWorkItem?
     private lazy var frameTransition = EdgePanelFrameTransition(panel: panel)
     private var hovering = false
@@ -319,6 +320,12 @@ final class EdgeDockController: NSObject {
                 self.state.name = self.model.agentDisplayName
                 self.updateDetail()
             }.store(in: &subscriptions)
+        model.$messages
+            .map { $0.last(where: { $0.role == .hermes }) }
+            .removeDuplicates { $0?.id == $1?.id && $0?.contentRevision == $1?.contentRevision }
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateDetail() }.store(in: &subscriptions)
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.position(animated: false) }
@@ -921,6 +928,8 @@ final class EdgeDockController: NSObject {
     }
 
     private func updateDetail() {
+        deferredCompletionDetail?.cancel()
+        deferredCompletionDetail = nil
         state.sessionTitle = model.currentSessionTitle ?? (model.sessionID == nil ? "Herm" : "Current session")
         state.updateTitle = state.activity.title
         if state.activity.attention {
@@ -1107,8 +1116,7 @@ final class EdgeDockController: NSObject {
                 if let notice { state.glimpseIDs.append(notice.sourceID) }
             }
         }
-        state.expanded = true
-        position(animated: true)
+        setExpanded(true)
         scheduleCollapse(after: 6)
     }
 
@@ -1148,11 +1156,25 @@ final class EdgeDockController: NSObject {
                 return
             }
             self.state.showingAnnouncement = false
-            self.state.activity.backgroundCompleted = false
-            self.state.activity.responseCompleted = false
+            var activity = self.state.activity
+            let clearsCompletion = activity.backgroundCompleted || activity.responseCompleted
+            if clearsCompletion {
+                activity.backgroundCompleted = false
+                activity.responseCompleted = false
+                self.state.activity = activity
+            }
             self.setExpanded(false)
+            if clearsCompletion { self.scheduleCompletionDetailRefresh() }
         }
         collapseTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
+    }
+
+    private func scheduleCompletionDetailRefresh() {
+        deferredCompletionDetail?.cancel()
+        let task = DispatchWorkItem { [weak self] in self?.updateDetail() }
+        deferredCompletionDetail = task
+        let delay = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : EdgeDockMotion.morphSettle
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
     }
 
@@ -1278,6 +1300,7 @@ final class EdgeDockController: NSObject {
     }
 
     func shutdown() {
+        deferredCompletionDetail?.cancel()
         deliveryQuestionWatch = nil
         deliveryQuestionPoll?.cancel()
         interactionMonitors.forEach(NSEvent.removeMonitor)
@@ -1294,9 +1317,10 @@ final class EdgeDockController: NSObject {
             panel.acceptsWorkspaceFocus = false
             panel.resignKey()
         }
-        state.expanded = expanded
-        updateDetail()
+        let changed = state.expanded != expanded
+        if changed { state.expanded = expanded }
         position(animated: true)
+        if changed, deferredCompletionDetail != nil { scheduleCompletionDetailRefresh() }
     }
 
     private func moveNotch(ended: Bool) {

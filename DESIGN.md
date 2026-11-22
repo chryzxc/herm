@@ -1258,6 +1258,10 @@ and activity archives. Clicks and shortcut requests can open the workspace as so
 as those reads finish. The normal notch preview becomes available at that point.
 
 Visible notch Bot status animations continue during workspace scrolling.
+The native notch window fits the opening or closing shell in a single resize.
+The shell animates inside that frame, and task rows update as their sources change.
+Clearing a completion updates its status immediately. The task list refreshes
+after the shell settles.
 Core Animation composites the reach, shake, and hop around the face's own
 expression updates. Reduce Motion and motion-free skins show the resting pose.
 Local delivery questions refresh on inbox changes, with a minute-scale recovery

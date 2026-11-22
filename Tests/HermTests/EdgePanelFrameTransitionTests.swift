@@ -65,6 +65,26 @@ struct EdgePanelFrameTransitionTests {
         #expect(panel.contentView?.frame.size == left.size)
     }
 
+    @Test func theShellMorphUsesOneNativeResizePerDirection() async throws {
+        let panel = makePanel()
+        defer { panel.close() }
+        let transition = EdgePanelFrameTransition(panel: panel)
+        let collapsed = panel.frame
+        let expanded = NSRect(x: 632, y: 200, width: 368, height: 360)
+        panel.frameUpdates = 0
+
+        transition.position(to: expanded, animated: true)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(panel.frame == expanded)
+        #expect(panel.frameUpdates == 1)
+
+        transition.position(to: collapsed, animated: true)
+        #expect(panel.frame == expanded)
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(panel.frame == collapsed)
+        #expect(panel.frameUpdates == 2)
+    }
+
     @Test func activityRefreshesDoNotKeepPostponingTheShrink() async throws {
         let panel = makePanel()
         defer { panel.close() }

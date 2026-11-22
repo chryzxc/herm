@@ -115,6 +115,8 @@ The design priorities are **useful attention rather than constant activity**, **
 
 The notch is the main way to use Herm. It sits against the left or right edge of your screen, stays out of the way while nothing is happening, and shows you when Hermes needs attention.
 Side-notch previews and expanded side panels keep a visible themed border, including in Liquid Glass.
+The preview animates within a window sized once per transition. Clearing a
+completion leaves the task-list refresh until the collapse settles.
 
 [![The Herm side panel showing tasks and provider quota from the screen edge](docs/media/notch-side-poster.webp)](docs/media/notch-side.mp4)
 

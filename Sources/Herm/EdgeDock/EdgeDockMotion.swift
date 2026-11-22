@@ -15,7 +15,6 @@ enum EdgeDockMotion {
     /// uncovers the camera housing, so it settles critically damped.
     static let islandCollapse = Animation.spring(response: 0.36, dampingFraction: 1)
     static let morphSettle: TimeInterval = 0.45
-    static let windowResize: TimeInterval = 0.12
 
     /// The panel grows and shrinks with the notch's own springs.
     static func panelMorph(side: EdgeDockSide, opening: Bool) -> Animation {
