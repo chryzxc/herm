@@ -142,6 +142,7 @@ struct SessionFailureWarningTests {
         let host = NSHostingView(rootView: root("warning-test-a"))
         host.frame = NSRect(x: 0, y: 0, width: 200, height: 40)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.contentView = host
         window.orderFrontRegardless()
         defer {
@@ -201,6 +202,7 @@ struct SessionFailureWarningTests {
         let host = NSHostingView(rootView: root("warning-test-a", .warning))
         host.frame = NSRect(x: 0, y: 0, width: 200, height: 40)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.contentView = host
         window.orderFrontRegardless()
         defer { window.close() }
