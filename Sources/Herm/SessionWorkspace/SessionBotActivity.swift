@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// A Dock-owned, session-scoped projection of an explicitly dispatched Bot
@@ -20,6 +21,7 @@ struct BotActivityRecord: Identifiable, Equatable, Sendable, Codable {
     var result: String?
     var linkedCardID: String?
     var botChatSessionID: String?
+    var requestMessageID: UUID?
     /// Hermes background process running a Bot DM (`proc_…`); its completion
     /// notice carries the Bot's reply and session.
     var processID: String?
@@ -44,6 +46,12 @@ struct BotActivityRecord: Identifiable, Equatable, Sendable, Codable {
 }
 
 extension BotActivityRecord {
+    /// One stable transcript identity per projected row, across cache, refresh and relaunch.
+    func transcriptRowID(_ slot: String) -> UUID {
+        let key = "Herm.bot-activity\u{0}\(originSessionID)\u{0}\(id)\u{0}\(slot)"
+        return SHA256.hash(data: Data(key.utf8)).withUnsafeBytes { UUID(uuid: $0.loadUnaligned(as: uuid_t.self)) }
+    }
+
     /// A durable exact card reference captured from trusted Hermes tool
     /// activity. It is lookup evidence, not a fabricated Bot task row.
     var isKanbanReference: Bool { botID == "kanban-reference" && linkedCardID != nil }
@@ -86,14 +94,17 @@ struct BotActivityStore {
         try? Self.encoder.encode(BotActivityArchive(recordsBySessionID: recordsBySessionID))
     }
 
-    func saveEncoded(_ data: Data) {
+    @discardableResult
+    func saveEncoded(_ data: Data) -> Bool {
         do {
             try FileManager.default.createDirectory(
                 at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: fileURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+            return true
         } catch {
             print("[Herm] bot activity persistence failed")
+            return false
         }
     }
 
@@ -111,7 +122,9 @@ struct BotActivityStore {
     }
 }
 
-actor BotActivityWriter {
+/// Mutable archive state stays on the serial queue. Shutdown drains that queue before AppKit exits.
+final class BotActivityWriter: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "io.github.chryzxc.Herm.bot-activity", qos: .utility)
     private let store: BotActivityStore
     private var pending: [String: [BotActivityRecord]]?
     private var generation = 0
@@ -120,30 +133,24 @@ actor BotActivityWriter {
     init(store: BotActivityStore) { self.store = store }
 
     func enqueue(_ recordsBySessionID: [String: [BotActivityRecord]]) {
-        pending = recordsBySessionID
-        generation &+= 1
-        let expected = generation
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled, let self else { return }
-            await self.commitIfCurrent(expected)
+        queue.async {
+            self.pending = recordsBySessionID
+            self.generation &+= 1
+            let expected = self.generation
+            self.queue.asyncAfter(deadline: .now() + .milliseconds(250)) {
+                if self.generation == expected { self.commit() }
+            }
         }
     }
 
     func flush() {
-        generation &+= 1
-        commit()
-    }
-
-    private func commitIfCurrent(_ expected: Int) {
-        guard expected == generation else { return }
-        commit()
+        queue.sync { commit() }
     }
 
     private func commit() {
-        guard let pending, let data = store.encoded(pending), data != lastEncoded else { return }
+        guard let pending, let data = store.encoded(pending) else { return }
+        guard data == lastEncoded || store.saveEncoded(data) else { return }
         lastEncoded = data
-        store.saveEncoded(data)
         self.pending = nil
     }
 }

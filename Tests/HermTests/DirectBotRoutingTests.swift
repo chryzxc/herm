@@ -441,6 +441,42 @@ struct DirectBotRoutingTests {
         #expect(model.botLiveSteps[id] == (completesDuringRead ? nil : "Thinking"))
     }
 
+    @Test func streamingCrewRetainsMentionUntilRecipientFinishes() async {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = model(rpc)
+        defer { model.shutdown() }
+        model.sendDirectBotRequest(profileID: "default", displayName: "Nexus", text: "audit")
+        await waitForSubmission(rpc)
+        let followUp = ChatMessage(role: .user, text: "Second request")
+        let reply = ChatMessage(role: .hermes, text: "")
+        model.messages.append(contentsOf: [followUp, reply])
+        model.streamingMessageID = reply.id
+        let source = ConversationTranscriptSource(
+            model: model, bots: BotModeModel(), actions: ConversationMessageActionState(),
+            voice: VoiceOutput(), coordinator: ConversationTranscriptCoordinator())
+        let roster = [nexus.id: nexus]
+        #expect(source.snapshot.context.streamingID == reply.id)
+        #expect(source.snapshot.context.streamingCrew(botsByID: roster) == [nexus])
+        let dispatch = BotActivityRecord(
+            id: "bot-dispatch:other", originSessionID: "cypher-chat", botID: nexus.id, botName: nexus.name,
+            summary: "Other work", state: .working)
+        model.insertBotActivity(dispatch)
+        source.refresh()
+        #expect(source.snapshot.context.streamingCrew(botsByID: roster) == [nexus])
+        model.updateBotActivity(id: dispatch.id, state: .completed)
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "Done"]])
+        source.refresh()
+        let expected = ["@Nexus audit", "Done", followUp.text, reply.text]
+        #expect(model.messages.map(\.text) == expected)
+        model.messages = [followUp, reply]
+        model.mergePersistedBotActivities(for: ["cypher-chat"])
+        model.mergePersistedBotActivities(for: ["cypher-chat"])
+        #expect(model.messages.map(\.text) == expected)
+        #expect(source.snapshot.context.streamingCrew(botsByID: roster).isEmpty)
+        #expect(source.snapshot.context.streamingID == reply.id)
+    }
+
     @Test func mentionLoadingAreaIncludesTheReplyingBotsOwnActivity() {
         let row = BotCrewRow(
             from: nexus, partners: [], since: .now, repliesToUser: true, steps: ["default": "Read README.md"])
@@ -495,17 +531,41 @@ struct DirectBotRoutingTests {
         #expect(model.pendingBotMentions.isEmpty)
     }
 
+    @Test func identicalDeliveriesFromDifferentBotsSurviveTranscriptRefresh() {
+        let model = model(DirectBotRoutingRPCClient())
+        defer { model.shutdown() }
+        model.messages = [
+            ChatMessage(role: .hermes, text: "Done", botProfileID: "cypher", botDisplayName: "Cypher"),
+            ChatMessage(role: .hermes, text: "Done", botProfileID: "default", botDisplayName: "Nexus"),
+        ]
+        model.projectBotMessagesIntoActivity()
+        model.messages = []
+        model.mergePersistedBotActivities(for: ["cypher-chat"])
+        model.mergePersistedBotActivities(for: ["cypher-chat"])
+        #expect(model.messages.map(\.botProfileID) == ["cypher", "default"])
+    }
+
     @Test func mentionedBotReplyRehydratesFromSavedActivity() async throws {
         let rpc = DirectBotRoutingRPCClient()
         let model = model(rpc)
         defer { model.shutdown() }
-        model.sendDirectBotRequest(profileID: "sentry", displayName: "Sentry", text: "audit")
+        let report = "    Audit complete.\n"
+        model.sendDirectBotRequest(profileID: "sentry", displayName: "Sentry", text: "first audit")
         await waitForSubmission(rpc)
+        model.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "recipient-chat", "payload": ["delta": report]])
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": ""]])
+        model.sendDirectBotRequest(profileID: "default", displayName: "Nexus", text: "second audit")
+        for _ in 0..<50 where rpc.requests.filter({ $0.method == "prompt.submit" }).count < 2 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         model.newChat()
         model.receiveGatewayEvent(
-            "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": "Audit complete."]])
-        await model.botActivityWriter.enqueue(model.botActivityBySessionID)
-        await model.botActivityWriter.flush()
+            "message.delta", params: ["session_id": "recipient-chat", "payload": ["delta": report]])
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": "recipient-chat", "payload": ["text": ""]])
+        model.shutdown()
 
         let restored = DockModel(botActivityFileURL: model.botActivityStore.fileURL, rpcClient: rpc)
         defer { restored.shutdown() }
@@ -515,9 +575,8 @@ struct DirectBotRoutingTests {
                 HermesSession(
                     id: "cypher-chat", title: "Cypher", preview: "", startedAt: nil, messageCount: 0, source: "herm"),
                 reportFailure: true))
-        #expect(restored.messages.map(\.text) == ["@Sentry audit", "Audit complete."])
-        #expect(restored.messages.last?.botProfileID == "sentry")
-        #expect(restored.messages.last?.botDisplayName == "Sentry")
+        #expect(restored.messages.map(\.text) == ["@Sentry first audit", report, "@Nexus second audit", report])
+        #expect(restored.messages.filter { $0.role == .hermes }.map(\.botProfileID) == ["sentry", "default"])
     }
 
     @Test func botCompletionDuringNavigationStaysOutOfTheLoadingConversation() async {

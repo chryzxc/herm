@@ -3039,7 +3039,10 @@ Bot Chat is persistent and hidden from the regular session list by Hermes;
 opening its bot on the Bots page reaches that same conversation.
 
 The existing replying huddle shows the mentioned bot’s latest reported activity
-below its elapsed time. Exact recipient-session events supply thinking, tool
+below its elapsed time. When a plain message starts a foreground turn, pending mentioned bots
+join the session bot side by side in the streaming huddle. Each bot appears once
+and stays visible while its work is active. A mentioned bot’s reply appears directly under its request, including after quitting Herm and reopening the session. Replies with identical text keep their individual bot attribution.
+Exact recipient-session events supply thinking, tool
 titles, responding and approval/question waits; raw reasoning and tool output
 never enter this caption. Navigation retains that disposable projection and
 completion removes it. Ordinary handoffs keep their existing partner captions.

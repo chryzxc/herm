@@ -153,7 +153,9 @@ struct ConversationTranscriptView: View, Equatable {
                                 }
                                 if model.sessionActionsReady {
                                     botHandoffRow(context: snapshot.context)
-                                        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: workingCrewIDs)
+                                        .animation(
+                                            reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.8),
+                                            value: workingCrewIDs)
                                 }
                             }
                             .task(
@@ -322,9 +324,9 @@ struct ConversationTranscriptView: View, Equatable {
         let from =
             fromID.flatMap { botMode.botsByID[$0] } ?? botMode.visibleBots.first(where: \.isDefault)
         let partners = workingCrew.filter { $0.id != from?.id }
-        let mentions = model.pendingBotMentions
+        let mentions = context.mentions
         let replying = mentionedBots
-        // While the turn runs the huddle is its loading row instead.
+        // The streaming turn includes both mentions and dispatches in its huddle.
         if context.streamingID == nil {
             VStack(alignment: .leading, spacing: 4) {
                 if let lead = replying.first {
@@ -402,7 +404,12 @@ struct ConversationTranscriptView: View, Equatable {
                 botAvatar: workingBot.flatMap { botMode.avatarImages[$0.id] },
                 dispatches: rowDispatches,
                 botLiveSteps: rowSteps,
-                crew: isStreaming ? workingCrew : [],
+                crew: isStreaming ? context.streamingCrew(botsByID: botMode.botsByID) : [],
+                crewSteps: isStreaming
+                    ? Dictionary(
+                        context.mentions.compactMap { record in
+                            context.botSteps[record.id].map { (record.botID, $0) }
+                        }, uniquingKeysWith: { first, _ in first }) : [:],
                 botsByID: botMode.botsByID,
                 avatars: botMode.avatarImages,
                 rosterRevision: botMode.rosterRevision,

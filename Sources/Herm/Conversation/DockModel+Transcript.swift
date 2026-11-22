@@ -191,6 +191,13 @@ extension DockModel {
                 self.storedMessageReferences = StoredMessageReference.references(
                     rows: loaded.rows, rowIDs: stable.rowIDs)
                 self.messages = stable.messages + [liveRow].compactMap { $0 }
+                // Recipient Bot Chat replies belong to the origin transcript but live outside its stored rows.
+                let activityOwners = [self.sessionID, self.sessionStorageID, self.kanbanAttributionSessionID]
+                if activityOwners.compactMap({ $0 }).contains(where: {
+                    self.botActivityBySessionID[$0]?.isEmpty == false
+                }) {
+                    self.mergePersistedBotActivities(for: activityOwners)
+                }
                 if restored.trailingActivity.isEmpty {
                     self.endExternalTurn(commit: false)
                     self.scrollToLatestMessageRequest &+= 1

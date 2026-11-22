@@ -1085,7 +1085,7 @@ These screenshots show a real bot handoff; a project name has been redacted.
 
 Once sent, a mentioned bot keeps answering when you switch conversations. Return to see its replying bubble or completed reply with the same bot attribution; replies received while you are elsewhere are restored from saved activity. Mentions reuse the recipient’s persistent **Bot Chat**, which Hermes hides from the regular session list. Click the recipient on the **Bots** page to view that conversation; each mention does not create a separate session.
 
-The replying area shows the mentioned bot’s latest reported activity, including thinking, tool work, responding, and waiting for approval or an answer. Activity follows the confirmed recipient and remains available when you switch away and return.
+If you send a plain message while a mentioned bot is still working, the chat shows both animated avatars side by side until one finishes. A mentioned bot’s reply appears directly under its request, including after quitting Herm and reopening the session. Replies with identical text keep their individual bot attribution. The replying area shows the mentioned bot’s latest reported activity, including thinking, tool work, responding, and waiting for approval or an answer. Activity follows the confirmed recipient and remains available when you switch away and return.
 
 The forward-message composer keeps the insertion point with newly typed text when a delayed completion update arrives.
 

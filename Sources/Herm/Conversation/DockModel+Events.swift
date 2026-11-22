@@ -309,15 +309,12 @@ extension DockModel {
                 let completedText = Self.completedMessageText(from: payload).flatMap { $0.isEmpty ? nil : $0 }
                 let reply = error ?? completedText ?? activity.replyText
                 if currentSessionIDs.contains(activity.originSessionID), !currentSessionIDs.contains(eventSessionID),
-                    !reply.isEmpty
+                    !reply.isEmpty,
+                    let record = botActivityBySessionID[activity.originSessionID]?.first(where: {
+                        $0.id == activity.activityID
+                    })
                 {
-                    let name =
-                        botActivityBySessionID[activity.originSessionID]?.first(where: { $0.id == activity.activityID }
-                        )?.botName ?? activity.botID
-                    messages.append(
-                        ChatMessage(
-                            role: .hermes, text: reply, isError: error != nil,
-                            botProfileID: activity.botID, botDisplayName: name))
+                    insertMentionReply(reply, for: record, isError: error != nil)
                 }
                 updateBotActivity(
                     id: activity.activityID, state: error == nil ? .completed : .failed,

@@ -84,8 +84,8 @@ struct SessionBotActivityTests {
             id: "persisted", originSessionID: "session-a", botID: "forge", botName: "Forge", summary: "Persist me",
             state: .working)
         let writer = BotActivityWriter(store: store)
-        await writer.enqueue(["session-a": [record]])
-        await writer.flush()
+        writer.enqueue(["session-a": [record]])
+        writer.flush()
         let loaded = try #require(store.load()["session-a"]?.first)
         #expect(loaded.id == record.id)
         #expect(loaded.originSessionID == record.originSessionID)

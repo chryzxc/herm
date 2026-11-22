@@ -37,10 +37,8 @@ extension DockModel {
         sessionStopAttempts.removeAll()
         gateway.close()
         detachInFlightBotActivities(as: .canceled)
-        Task {
-            await agentStateWriter.flush()
-            await botActivityWriter.flush()
-        }
+        botActivityWriter.flush()
+        Task { await agentStateWriter.flush() }
         DebugLog.write("model: shutdown complete")
     }
 

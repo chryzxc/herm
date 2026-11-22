@@ -56,9 +56,11 @@ extension DockModel {
             chatSessionID
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .flatMap { $0.isEmpty ? nil : $0 }
-        let activity = BotActivityRecord(
+        let requestID = UUID()
+        var activity = BotActivityRecord(
             originSessionID: originSessionID, botID: profileID, botName: displayName, summary: request,
             botChatSessionID: explicitBotSessionID)
+        activity.requestMessageID = requestID
         inFlightBotActivities[activity.id] = InFlightBotActivity(
             activityID: activity.id, originSessionID: originSessionID, botID: profileID,
             botChatSessionID: explicitBotSessionID, clarificationRequestID: nil)
@@ -81,7 +83,8 @@ extension DockModel {
         }
         messages.append(
             ChatMessage(
-                role: .user, text: transcriptText, botProfileID: profileID, botDisplayName: displayName,
+                id: requestID, role: .user, text: transcriptText, timestamp: activity.createdAt,
+                botProfileID: profileID, botDisplayName: displayName,
                 botMentions: ComposerBotMention.rebasing(botMentions, from: visibleText, to: transcriptText)))
         // A running foreground turn keeps owning status/isSending; the request
         // is tracked by its activity and must not mark that turn idle.
@@ -131,10 +134,7 @@ extension DockModel {
                 guard self.sessionResumeGeneration == sendGeneration,
                     self.sessionID == currentSessionID
                 else { return }
-                messages.append(
-                    ChatMessage(
-                        role: .hermes, text: message, isError: true, botProfileID: profileID,
-                        botDisplayName: displayName))
+                insertMentionReply(message, for: activity, isError: true)
                 if ownsTurn {
                     status = .idle
                     isSending = false
@@ -184,11 +184,12 @@ extension DockModel {
 
     func projectBotMessagesIntoActivity() {
         guard let originSessionID = sessionStorageID ?? sessionID, !originSessionID.isEmpty else { return }
-        var existing = Set(botActivityBySessionID[originSessionID, default: []].compactMap { $0.result })
+        var existing = Dictionary(grouping: botActivityBySessionID[originSessionID, default: []], by: \.botID)
+            .mapValues { Set($0.compactMap(\.result)) }
         for (index, message) in messages.enumerated() {
             guard message.role == .hermes, let botID = message.botProfileID,
                 !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                !existing.contains(message.text)
+                existing[botID]?.contains(message.text) != true
             else { continue }
             let request =
                 index > 0 && messages[index - 1].role == .user
@@ -205,7 +206,7 @@ extension DockModel {
                     updatedAt: message.timestamp,
                     result: message.text
                 ))
-            existing.insert(message.text)
+            existing[botID, default: []].insert(message.text)
         }
     }
 
@@ -221,13 +222,62 @@ extension DockModel {
             "[CURRENT SESSION CONTEXT — reference only]\n\(context)\n[END CURRENT SESSION CONTEXT]\n\nRespond to this request: \(request)"
     }
 
+    func insertMentionReply(_ text: String, for record: BotActivityRecord, isError: Bool) {
+        let reply = ChatMessage(
+            id: UUID(uuidString: record.id) ?? UUID(), role: .hermes, text: text, isError: isError,
+            botProfileID: record.botID, botDisplayName: record.botName)
+        let request = messages.firstIndex { $0.id == record.requestMessageID }
+        messages.insert(reply, at: request.map { $0 + 1 } ?? messages.endIndex)
+    }
+
     func mergePersistedBotActivities(for sessionIDs: [String?]) {
+        messages = transcriptWithBotActivities(messages, for: sessionIDs)
+    }
+
+    func transcriptWithBotActivities(_ base: [ChatMessage], for sessionIDs: [String?]) -> [ChatMessage] {
+        guard sessionIDs.compactMap({ $0 }).contains(where: { botActivityBySessionID[$0]?.isEmpty == false })
+        else { return base }
+        var messages = base
         var seenActivityIDs = Set<String>()
+        var repliesByRequest: [UUID: ChatMessage] = [:]
         for sessionID in sessionIDs.compactMap({ $0 }).filter({ !$0.isEmpty }) {
             guard let records = botActivityBySessionID[sessionID] else { continue }
             for record in records {
                 guard seenActivityIDs.insert(record.id).inserted else { continue }
                 let result = record.result?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                // Sent mentions carry an exact request identity. Older accepted mentions
+                // can reconstruct the pair from their recipient session and activity ID.
+                let legacyMention =
+                    record.botChatSessionID != nil && !record.id.hasPrefix("bot-dispatch:")
+                    && record.summary != "Bot response" && record.linkedCardID == nil
+                if let replyID = UUID(uuidString: record.id), record.requestMessageID != nil || legacyMention,
+                    record.botChatSessionID.map({ !sessionIDs.contains($0) }) ?? true
+                {
+                    let request =
+                        record.requestMessageID.flatMap { id in messages.first { $0.id == id } }
+                        ?? (record.requestMessageID == nil
+                            ? messages.first {
+                                $0.role == .user && $0.botProfileID == record.botID
+                                    && $0.timestamp == record.createdAt && $0.text.hasSuffix(record.summary)
+                            } : nil)
+                    let requestID = request?.id ?? record.requestMessageID ?? record.transcriptRowID("request")
+                    if request == nil {
+                        messages.append(
+                            ChatMessage(
+                                id: requestID, role: .user, text: "@\(record.botName) \(record.summary)",
+                                timestamp: record.createdAt, botProfileID: record.botID, botDisplayName: record.botName)
+                        )
+                    }
+                    if !result.isEmpty, !record.isLive {
+                        repliesByRequest[requestID] =
+                            messages.first { $0.id == replyID }
+                            ?? ChatMessage(
+                                id: replyID, role: .hermes, text: record.result ?? result, timestamp: record.updatedAt,
+                                isError: record.state == .failed || record.state == .canceled,
+                                botProfileID: record.botID, botDisplayName: record.botName)
+                    }
+                    continue
+                }
                 // The request bubble belongs to this session even while the bot
                 // is still working, has no inline reply, or failed.
                 if result.isEmpty || record.isLive {
@@ -238,7 +288,8 @@ extension DockModel {
                     {
                         messages.append(
                             ChatMessage(
-                                role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt,
+                                id: record.transcriptRowID("request"), role: .user,
+                                text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt,
                                 botProfileID: record.botID, botDisplayName: record.botName))
                     }
                     continue
@@ -247,10 +298,17 @@ extension DockModel {
                 guard !alreadyPresent else { continue }
                 // Kanban notices replay as notice cards, not as a bot request.
                 if let notices = Self.kanbanNotices(from: result) {
-                    for notice in notices {
+                    for (index, notice) in notices.enumerated() {
+                        guard
+                            !messages.contains(where: {
+                                $0.kanbanNotice != nil && $0.text == notice.body && $0.botProfileID == record.botID
+                                    && $0.timestamp == record.updatedAt
+                            })
+                        else { continue }
                         messages.append(
                             ChatMessage(
-                                role: .hermes, text: notice.body, timestamp: record.updatedAt,
+                                id: record.transcriptRowID("notice-\(index)"), role: .hermes, text: notice.body,
+                                timestamp: record.updatedAt,
                                 botProfileID: record.botID, botDisplayName: record.botName,
                                 kanbanNotice: KanbanNotice(text: notice.body)))
                     }
@@ -266,7 +324,8 @@ extension DockModel {
                     else { continue }
                     messages.append(
                         ChatMessage(
-                            role: .hermes, text: reply, timestamp: record.updatedAt, botProfileID: record.botID,
+                            id: record.transcriptRowID("reply"), role: .hermes, text: reply,
+                            timestamp: record.updatedAt, botProfileID: record.botID,
                             botDisplayName: record.botName, isBotHandoffReply: true))
                     continue
                 }
@@ -279,18 +338,23 @@ extension DockModel {
                 {
                     messages.append(
                         ChatMessage(
-                            role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt,
+                            id: record.transcriptRowID("request"), role: .user,
+                            text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt,
                             botProfileID: record.botID, botDisplayName: record.botName))
                 }
                 messages.append(
                     ChatMessage(
-                        role: .hermes, text: result, timestamp: record.updatedAt,
+                        id: record.transcriptRowID("reply"), role: .hermes, text: result, timestamp: record.updatedAt,
                         isError: record.state == .failed || record.state == .canceled,
                         botProfileID: record.botID, botDisplayName: record.botName))
             }
         }
         // Saved timestamps can tie; stable sorting keeps requests before their replies.
-        messages.sort { $0.timestamp < $1.timestamp }
+        let pairedIDs = Set(repliesByRequest.values.map(\.id))
+        let ordered = messages.filter { !pairedIDs.contains($0.id) }.sorted { $0.timestamp < $1.timestamp }
+        return ordered.flatMap { message in
+            repliesByRequest[message.id].map { [message, $0] } ?? [message]
+        }
     }
 
     /// A Bot this turn hands work to: Hermes' `message_agent` tool, a
@@ -689,8 +753,7 @@ extension DockModel {
     }
 
     func enqueueBotActivityPersistence() {
-        let snapshot = botActivityBySessionID
-        Task { await botActivityWriter.enqueue(snapshot) }
+        botActivityWriter.enqueue(botActivityBySessionID)
     }
 
     func markBotActivityFailed(originSessionID: String?, result: String) {

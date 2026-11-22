@@ -67,6 +67,13 @@ struct ConversationTranscriptSnapshot: Equatable {
         let deliveryChecking: Bool
         let deliveryCheckNote: String?
         let deliveryCheckAvailable: Bool
+
+        func streamingCrew(botsByID: [String: BotSummary]) -> [BotSummary] {
+            var seen = Set<String>()
+            return (mentions + workingBots).compactMap { record in
+                seen.insert(record.botID).inserted ? botsByID[record.botID] : nil
+            }
+        }
     }
 
     let sessionID: String?

@@ -966,6 +966,7 @@ struct TurnActivityView: View, Equatable {
     var botLiveSteps: [String: String] = [:]
     /// Bots this session messaged that are still working, shown in the huddle.
     var crew: [BotSummary] = []
+    var crewSteps: [String: String] = [:]
     var botsByID: [String: BotSummary] = [:]
     var avatars: [String: Data] = [:]
     /// Stands in for `botsByID`, `avatars` and `botAvatar` in `==`.
@@ -984,7 +985,7 @@ struct TurnActivityView: View, Equatable {
     nonisolated static func == (lhs: TurnActivityView, rhs: TurnActivityView) -> Bool {
         lhs.activity == rhs.activity && lhs.runningSince == rhs.runningSince
             && lhs.duration == rhs.duration && lhs.expandsByDefault == rhs.expandsByDefault
-            && lhs.bot == rhs.bot && lhs.crew == rhs.crew
+            && lhs.bot == rhs.bot && lhs.crew == rhs.crew && lhs.crewSteps == rhs.crewSteps
             && lhs.dispatches == rhs.dispatches && lhs.botLiveSteps == rhs.botLiveSteps
             && lhs.rosterRevision == rhs.rosterRevision
     }
@@ -1017,7 +1018,7 @@ struct TurnActivityView: View, Equatable {
                                 lead: bot, partners: crew,
                                 avatars: avatars.merging(botAvatar.map { [bot.id: $0] } ?? [:]) { a, _ in a },
                                 leadSignature: activity.map { "\($0.id):\($0.isComplete)" },
-                                leadIcon: SignalTrace.glyph(for: activity.last))
+                                leadIcon: SignalTrace.glyph(for: activity.last), lines: crewSteps)
                         } else {
                             SignalTrace(phase: phase, activity: activity, bot: bot, botAvatar: botAvatar)
                         }
@@ -1038,7 +1039,7 @@ struct TurnActivityView: View, Equatable {
                                 Text(
                                     "Running for about \(Self.roughDuration(context.date.timeIntervalSince(runningSince)))"
                                         + (crew.isEmpty
-                                            ? "" : " · \(crew.count) Bot\(crew.count == 1 ? "" : "s") working")
+                                            ? "" : " · \(crew.count + 1) Bots working")
                                 )
                                 .dockFont(.metadata)
                                 .foregroundStyle(Color.dockMetadataText)
