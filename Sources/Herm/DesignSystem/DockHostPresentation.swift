@@ -18,10 +18,26 @@ final class DockHostPresentation: ObservableObject {
     @Published private(set) var isVisible = false
     @Published private(set) var isResizing = false
     private var displaysAsleep = false
+    /// The observer that last reported. SwiftUI can attach a new observer before it dismantles
+    /// the old one, so a late detach from the old observer must not hide the new one's window.
+    private var owner: ObjectIdentifier?
+    var ownerForTesting: ObjectIdentifier? { owner }
 
     func setDisplaysAsleep(_ asleep: Bool, window: NSWindow?) {
         displaysAsleep = asleep
         update(window: window)
+    }
+
+    func update(window: NSWindow?, owner: ObjectIdentifier) {
+        self.owner = owner
+        update(window: window)
+    }
+
+    /// Hides the host only if `owner` is still the observer reporting for it.
+    func detach(owner: ObjectIdentifier) {
+        guard self.owner == nil || self.owner == owner else { return }
+        self.owner = nil
+        update(window: nil)
     }
 
     func update(window: NSWindow?) {
@@ -99,7 +115,7 @@ struct DockHostPresentationObserver: NSViewRepresentable {
             let token = generation
             DispatchQueue.main.async { [weak self] in
                 guard let self, generation == token else { return }
-                presentation.update(window: window)
+                presentation.update(window: window, owner: ObjectIdentifier(self))
             }
         }
         func stop() {
@@ -109,7 +125,8 @@ struct DockHostPresentationObserver: NSViewRepresentable {
             for observer in workspaceObservers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
             workspaceObservers.removeAll()
             let presentation = presentation
-            DispatchQueue.main.async { presentation.update(window: nil) }
+            let owner = ObjectIdentifier(self)
+            DispatchQueue.main.async { presentation.detach(owner: owner) }
         }
     }
 }
