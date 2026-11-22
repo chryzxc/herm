@@ -189,19 +189,28 @@ struct ArtifactIndexLoaderTests {
         #expect(results.count == 5)
     }
 
-    @Test func readsEveryMessagePageAndKeepsFirstMention() async {
+    @Test func publishesRecentMessagesFirstAndKeepsEarliestMentionAfterFullScan() async {
         var offsets: [Int] = []
-        let results = await ArtifactIndexLoader.load(sessions: [session]) { _, offset in
-            offsets.append(offset)
-            let messages: [[String: Any]] = (offset..<min(offset + 100, 650)).map { index in
-                [
-                    "role": "assistant", "content": "MEDIA: /tmp/\(index == 600 ? 0 : index).png",
-                    "timestamp": Double(index + 1),
-                ]
-            }
-            return ["messages": messages, "pagination": ["limit": 100]]
-        }
+        let probe = ArtifactProgressProbe()
+        let results = await ArtifactIndexLoader.load(
+            sessions: [session],
+            onProgress: { progress in
+                if progress.pagesRead == 1 { probe.first = progress }
+            },
+            messages: { _, offset in
+                offsets.append(offset)
+                let end = 650 - offset
+                let messages: [[String: Any]] = (max(0, end - 100)..<end).map { index in
+                    [
+                        "role": "assistant", "content": "MEDIA: /tmp/\(index == 600 ? 0 : index).png",
+                        "timestamp": Double(index + 1),
+                    ]
+                }
+                return ["messages": messages, "pagination": ["limit": 100]]
+            })
         #expect(offsets == [0, 100, 200, 300, 400, 500, 600])
+        #expect(probe.first?.records.contains { $0.value == "/tmp/649.png" } == true)
+        #expect(probe.first?.records.first { $0.value == "/tmp/0.png" }?.timestamp == Date(timeIntervalSince1970: 601))
         #expect(results.first?.records.count == 649)
         #expect(results.first?.records.first { $0.value == "/tmp/0.png" }?.timestamp == Date(timeIntervalSince1970: 1))
         #expect(results.first?.records.contains { $0.value == "/tmp/649.png" } == true)
@@ -243,6 +252,30 @@ struct ArtifactIndexLoaderTests {
             #expect(refreshed.first?.records.isEmpty == true)
         }
         #expect(reads == 4)
+    }
+
+    @Test func scanningOlderSessionsKeepsRecentResultsCached() async {
+        let index = ArtifactIndexStore()
+        let owner = NSObject()
+        let ownerID = ObjectIdentifier(owner)
+        let sessions = (0...64).reversed().map { time in
+            HermesSession(
+                id: "archive-\(time)", title: "Archive", preview: "",
+                startedAt: Date(timeIntervalSince1970: Double(time)),
+                messageCount: 1, source: "hermes")
+        }
+        for session in sessions {
+            _ = await index.load(owner: ownerID, session: session, force: false) {
+                .init(sessionID: session.id, profileID: session.profileID, records: [], error: nil)
+            }
+        }
+        var reads: [String] = []
+        _ = await ArtifactIndexLoader.load(sessions: [sessions[0], sessions[64]], index: index, owner: ownerID) {
+            session, _ in
+            reads.append(session.id)
+            return ["data": []]
+        }
+        #expect(reads == [sessions[64].id])
     }
 
     @Test func laterPageFailureDoesNotPublishIncompleteSession() async {

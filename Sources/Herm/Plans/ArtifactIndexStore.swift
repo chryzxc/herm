@@ -36,8 +36,13 @@ final class ArtifactIndexStore {
         var consumers: [UUID: ArtifactProgressConsumer]
         var latestProgress: ArtifactIndexLoader.SessionProgress?
     }
-    private var cached: [Key: ArtifactIndexLoader.CachedSession] = [:]
-    private var order: [Key] = []
+    private struct CacheEntry {
+        let value: ArtifactIndexLoader.CachedSession
+        let updatedAt: Date
+        let bytes: Int
+    }
+    private var cached: [Key: CacheEntry] = [:]
+    private var cachedBytes = 0
     private var pending: [Key: Pending] = [:]
 
     func load(
@@ -55,7 +60,7 @@ final class ArtifactIndexStore {
             ArtifactIndexLoader.SessionResult
     ) async -> ArtifactIndexLoader.SessionResult {
         let key = Key(owner: owner, session: session.scopedID)
-        if !force, let value = cached[key], value.matches(session) {
+        if !force, let value = cached[key]?.value, value.matches(session) {
             return .init(sessionID: session.id, profileID: session.profileID, records: value.records, error: nil)
         }
         let token = UUID()
@@ -89,9 +94,12 @@ final class ArtifactIndexStore {
             Task { @MainActor in self.release(key, token: token, generation: generation) }
         }
         if !Task.isCancelled, pending[key]?.generation == generation, result.error == nil {
-            cached[key] = .init(session: session, records: result.records)
-            order.removeAll { $0 == key }
-            order.append(key)
+            let entry = CacheEntry(
+                value: .init(session: session, records: result.records),
+                updatedAt: session.lastUpdatedAt ?? .distantPast,
+                bytes: result.records.reduce(0) { $0 + ($1.generated?.source.utf8.count ?? $1.value.utf8.count) })
+            let replaced = cached.updateValue(entry, forKey: key)
+            cachedBytes += entry.bytes - (replaced?.bytes ?? 0)
             trim()
         }
         release(key, token: token, generation: generation)
@@ -116,14 +124,11 @@ final class ArtifactIndexStore {
         }
     }
     private func trim() {
-        func bytes(_ value: ArtifactIndexLoader.CachedSession) -> Int {
-            value.records.reduce(0) { $0 + ($1.generated?.source.utf8.count ?? $1.value.utf8.count) }
-        }
-        var count = cached.values.reduce(0) { $0 + bytes($1) }
-        while order.count > 64 || count > 32 * 1_048_576 {
-            guard !order.isEmpty else { break }
-            let key = order.removeFirst()
-            if let value = cached.removeValue(forKey: key) { count -= bytes(value) }
+        while cached.count > 64 || cachedBytes > 32 * 1_048_576 {
+            // Scanning older transcripts must not evict the recent entries shown on open.
+            guard let oldest = cached.min(by: { $0.value.updatedAt < $1.value.updatedAt }) else { break }
+            cached.removeValue(forKey: oldest.key)
+            cachedBytes -= oldest.value.bytes
         }
     }
 }

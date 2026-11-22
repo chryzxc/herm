@@ -96,7 +96,8 @@ enum ArtifactIndexLoader {
                 try Task.checkCancellation()
                 let page = try await messages(session, offset)
                 let extracted = try await ArtifactService.extractPageInBackground(session: session, page: page)
-                for record in extracted.records where found[record.id] == nil {
+                // Later pages are older, so repeated outputs retain their first citation.
+                for record in extracted.records {
                     found[record.id] = record
                 }
                 pagesRead += 1

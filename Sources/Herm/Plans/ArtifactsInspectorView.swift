@@ -72,15 +72,16 @@ struct ArtifactsInspectorView: View {
         nonmutating set { recordIndex = RichArtifactIndex.Snapshot(newValue) }
     }
     @State private var presentationCache = ArtifactBrowserProjectionCache()
-    @State private var indexedSessions: [HermesSession] = []
+    @State private var indexedSessions: [ProfileScopedID: HermesSession] = [:]
     @State private var artifactCache: [ProfileScopedID: ArtifactIndexLoader.CachedSession] = [:]
-    @State private var artifactProgress: [ProfileScopedID: ArtifactIndexLoader.SessionProgress] = [:]
+    @State private var artifactProgress: [ProfileScopedID: [ArtifactRecord]] = [:]
+    @State private var pendingArtifactUpdates: [ProfileScopedID: (records: [ArtifactRecord], isComplete: Bool)] = [:]
     @State private var artifactProgressTask: Task<Void, Never>?
     @State private var query = ""
     @State private var filter: ArtifactFilter = .all
     @State private var imagePage = 1
     @State private var filePage = 1
-    @State private var isLoading = false
+    @State private var isLoading = true
     @State private var refreshID = 0
     @State private var automaticRefreshID = 0
     @State private var completedManualRefreshID = 0
@@ -753,7 +754,7 @@ struct ArtifactsInspectorView: View {
     }
 
     private func sourceSession(for record: ArtifactRecord) -> HermesSession? {
-        indexedSessions.first { $0.id == record.sessionID && $0.profileID == record.profileID }
+        indexedSessions[record.scopedSessionID]
     }
 
     private func openSession(_ session: HermesSession) {
@@ -1205,6 +1206,32 @@ struct ArtifactsInspectorView: View {
         )
     }
 
+    private func publishArtifactUpdates(generation: UUID) {
+        guard artifactProgressTask == nil else { return }
+        artifactProgressTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(33))
+            guard !Task.isCancelled, refreshGeneration == generation else { return }
+            artifactProgressTask = nil
+            let updates = pendingArtifactUpdates
+            pendingArtifactUpdates.removeAll()
+            var merged: [String: ArtifactRecord] = [:]
+            for record in records where updates[record.scopedSessionID]?.isComplete != true {
+                merged[record.id] = record
+            }
+            for update in updates.values {
+                for record in update.records { merged[record.id] = record }
+            }
+            guard merged.count != records.count || !records.allSatisfy({ merged[$0.id] == $0 }) else { return }
+            records = merged.values.sorted(by: Self.newestFirst)
+            reconcileSelection()
+        }
+    }
+
+    private static func newestFirst(_ lhs: ArtifactRecord, _ rhs: ArtifactRecord) -> Bool {
+        if lhs.timestamp != rhs.timestamp { return lhs.timestamp > rhs.timestamp }
+        return lhs.id < rhs.id
+    }
+
     private func refresh(force: Bool) async {
         let manualRefreshID = refreshID
         let automaticID = automaticRefreshID
@@ -1220,6 +1247,7 @@ struct ArtifactsInspectorView: View {
         artifactProgressTask?.cancel()
         artifactProgressTask = nil
         artifactProgress = [:]
+        pendingArtifactUpdates = [:]
         isLoading = true
         defer {
             if refreshGeneration == generation {
@@ -1230,10 +1258,39 @@ struct ArtifactsInspectorView: View {
         }
         errorMessage = nil
         let previous = records
-        let sessions: [HermesSession]
+        var sessionsByID: [ProfileScopedID: HermesSession] = [:]
+        var results: [ArtifactIndexLoader.SessionResult] = []
+        let invalidatedSessions = Set(changedSession.map { [$0] } ?? [])
+        func indexBatch(_ sessions: [HermesSession]) async {
+            guard !Task.isCancelled, refreshGeneration == generation else { return }
+            let batch = Dictionary(sessions.map { ($0.scopedID, $0) }, uniquingKeysWith: { first, _ in first })
+            sessionsByID.merge(batch) { _, current in current }
+            indexedSessions.merge(batch) { _, current in current }
+            let loaded = await ArtifactIndexLoader.load(
+                sessions: sessions, cache: artifactCache, index: .shared,
+                owner: ObjectIdentifier(model), force: force, invalidatedSessions: invalidatedSessions,
+                onSession: { result in
+                    guard !Task.isCancelled, refreshGeneration == generation, result.error == nil else { return }
+                    let key = ProfileScopedID(profileID: result.profileID, resourceID: result.sessionID)
+                    artifactProgress.removeValue(forKey: key)
+                    pendingArtifactUpdates[key] = (result.records, true)
+                    publishArtifactUpdates(generation: generation)
+                },
+                onProgress: { progress in
+                    guard refreshGeneration == generation, !progress.records.isEmpty else { return }
+                    let key = ProfileScopedID(profileID: progress.profileID, resourceID: progress.sessionID)
+                    guard artifactProgress[key] != progress.records else { return }
+                    artifactProgress[key] = progress.records
+                    pendingArtifactUpdates[key] = (progress.records, false)
+                    publishArtifactUpdates(generation: generation)
+                },
+                messages: { session, offset in
+                    try await model.artifactMessages(for: session, offset: offset)
+                })
+            results.append(contentsOf: loaded)
+        }
         let indexIncomplete: Bool
         do {
-            let index: (sessions: [HermesSession], isIncomplete: Bool)
             if let sessionScope {
                 var selected = model.sessions.filter { $0.scopedID == sessionScope }
                 if selected.isEmpty, model.navigationSessionID == sessionScope.resourceID,
@@ -1246,14 +1303,12 @@ struct ArtifactsInspectorView: View {
                             messageCount: model.messages.count, source: HermesFeatureIDs.sessionSource)
                     ]
                 }
-                index = (selected, false)
+                await indexBatch(selected)
+                indexIncomplete = false
             } else {
-                let result = try await model.artifactSessions()
-                index = (result.sessions, result.isIncomplete)
+                indexIncomplete = try await model.artifactSessions(onPage: indexBatch)
             }
             guard !Task.isCancelled, refreshGeneration == generation else { return }
-            sessions = index.sessions
-            indexIncomplete = index.isIncomplete
             if indexIncomplete {
                 errorMessage = "Some Hermes sessions could not be indexed. Results may be incomplete. Refresh to retry."
             }
@@ -1265,43 +1320,13 @@ struct ArtifactsInspectorView: View {
             return
         }
         guard !Task.isCancelled, refreshGeneration == generation else { return }
-        indexedSessions = sessions
-        let results = await ArtifactIndexLoader.load(
-            sessions: sessions, cache: artifactCache, index: .shared,
-            owner: ObjectIdentifier(model), force: force,
-            invalidatedSessions: Set(changedSession.map { [$0] } ?? []),
-            onSession: { result in
-                guard !Task.isCancelled, refreshGeneration == generation, result.error == nil else { return }
-                let key = ProfileScopedID(profileID: result.profileID, resourceID: result.sessionID)
-                records = (records.filter { $0.scopedSessionID != key } + result.records)
-                    .sorted { $0.timestamp > $1.timestamp }
-                reconcileSelection()
-            },
-            onProgress: { progress in
-                guard refreshGeneration == generation else { return }
-                let key = ProfileScopedID(profileID: progress.profileID, resourceID: progress.sessionID)
-                artifactProgress[key] = progress
-                guard artifactProgressTask == nil else { return }
-                artifactProgressTask = Task { @MainActor in
-                    await Task.yield()
-                    guard !Task.isCancelled, refreshGeneration == generation else { return }
-                    artifactProgressTask = nil
-                    var merged = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-                    for record in artifactProgress.values.flatMap(\.records) { merged[record.id] = record }
-                    records = merged.values.sorted { $0.timestamp > $1.timestamp }
-                    reconcileSelection()
-                }
-            },
-            messages: { session, offset in
-                try await model.artifactMessages(for: session, offset: offset)
-            })
-        guard !Task.isCancelled, refreshGeneration == generation else { return }
         artifactProgressTask?.cancel()
         artifactProgressTask = nil
+        pendingArtifactUpdates.removeAll()
+        if !indexIncomplete { indexedSessions = sessionsByID }
         var next: [ArtifactRecord] = []
         var failedSessionIDs = Set<ProfileScopedID>()
         var lastFailure: String?
-        let sessionsByID = Dictionary(sessions.map { ($0.scopedID, $0) }, uniquingKeysWith: { first, _ in first })
         var nextCache: [ProfileScopedID: ArtifactIndexLoader.CachedSession] = [:]
         for result in results {
             if let error = result.error {
@@ -1316,7 +1341,7 @@ struct ArtifactsInspectorView: View {
             }
         }
         artifactCache = nextCache
-        next.append(contentsOf: artifactProgress.filter { failedSessionIDs.contains($0.key) }.values.flatMap(\.records))
+        next.append(contentsOf: artifactProgress.values.flatMap { $0 })
         artifactProgress = [:]
         // Keep the prior artifacts for sessions that could not be read this
         // cycle, while allowing successful sessions and removed sessions to
@@ -1327,27 +1352,27 @@ struct ArtifactsInspectorView: View {
                     || (indexIncomplete && sessionsByID[$0.scopedSessionID] == nil)
             })
         failedSessionCount = failedSessionIDs.count
-        records = Dictionary(grouping: next, by: \.id)
-            .compactMap(\.value.first)
-            .sorted { $0.timestamp > $1.timestamp }
-        if !failedSessionIDs.isEmpty && records.isEmpty {
+        var finalRecords = Dictionary(next.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        if !failedSessionIDs.isEmpty && finalRecords.isEmpty {
             errorMessage =
-                "Hermes couldn't read \(failedSessionIDs.count) of \(sessions.count) sessions. \(lastFailure ?? "")"
+                "Hermes couldn't read \(failedSessionIDs.count) of \(sessionsByID.count) sessions. \(lastFailure ?? "")"
         }
-        for bookmark in savedTools.resourceBookmarks where !records.contains(where: { $0.id == bookmark.id }) {
+        for bookmark in savedTools.resourceBookmarks where finalRecords[bookmark.id] == nil {
             guard sessionScope == nil || sessionScope == bookmark.record.scopedSessionID else { continue }
-            records.append(bookmark.record)
+            finalRecords[bookmark.id] = bookmark.record
         }
-        savedTools.reconcile(records.compactMap { $0.generated?.reference })
-        for bookmark in savedTools.bookmarks where !records.contains(where: { $0.id == bookmark.id }) {
+        var ordered = finalRecords.values.sorted(by: Self.newestFirst)
+        savedTools.reconcile(ordered.compactMap { $0.generated?.reference })
+        for bookmark in savedTools.bookmarks where finalRecords[bookmark.id] == nil {
             let reference = bookmark.reference
             let scope = ProfileScopedID(profileID: reference.profileID, resourceID: reference.sessionID)
             guard sessionScope == nil || sessionScope == scope else { continue }
-            records.append(
+            ordered.append(
                 ArtifactRecord(
                     value: "", sessionID: reference.sessionID, sessionTitle: bookmark.sessionTitle,
                     timestamp: .distantPast, profileID: reference.profileID, unavailableBookmark: bookmark))
         }
+        if records != ordered { records = ordered }
         completedManualRefreshID = manualRefreshID
         completedAutomaticRefreshID = automaticID
         resetPages()

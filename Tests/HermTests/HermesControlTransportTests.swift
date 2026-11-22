@@ -377,9 +377,14 @@ extension HermesControlTransportTests {
             ["sessions": first, "total": 101],
             ["sessions": [["id": "older", "profile": "personal"]], "total": 101],
         ])
-        let index = try await HermesControlRPC(client: client).artifactSessions()
-        let rows = index.rows
-        #expect(!index.isIncomplete)
+        var rows: [[String: Any]] = []
+        var requestsAtPublication: [Int] = []
+        let incomplete = try await HermesControlRPC(client: client).artifactSessions { page in
+            rows.append(contentsOf: page)
+            requestsAtPublication.append(client.requestedPaths.count)
+        }
+        #expect(!incomplete)
+        #expect(requestsAtPublication == [1, 2])
         #expect(rows.count == 101)
         #expect(rows.last?["profile"] as? String == "personal")
         #expect(
@@ -392,10 +397,10 @@ extension HermesControlTransportTests {
     @Test func artifactTranscriptsIncludeCompactedMessagesAndExplicitOffsets() async throws {
         let client = HTTPEnvelopeRPCClient(responses: [["messages": [], "pagination": ["limit": 100]]])
         _ = try await HermesControlRPC(client: client).sessionMessages(
-            sessionID: "s", profileID: "work", limit: 100, offset: 500, includeCompacted: true)
+            sessionID: "s", profileID: "work", latest: true, limit: 100, offset: 500, includeCompacted: true)
         #expect(
             client.requestedPaths == [
-                "/api/sessions/s/messages?limit=100&profile=work&offset=500&order=oldest&include_compacted=true"
+                "/api/sessions/s/messages?limit=100&order=latest&profile=work&offset=500&include_compacted=true"
             ])
     }
 
@@ -406,9 +411,12 @@ extension HermesControlTransportTests {
                 "errors": [["profile": "work"]],
             ]
         ])
-        let index = try await HermesControlRPC(client: client).artifactSessions()
-        #expect(index.isIncomplete)
-        #expect(index.rows.first?["id"] as? String == "readable")
+        var ids: [String] = []
+        let incomplete = try await HermesControlRPC(client: client).artifactSessions { page in
+            ids.append(contentsOf: page.compactMap { $0["id"] as? String })
+        }
+        #expect(incomplete)
+        #expect(ids == ["readable"])
     }
 
     @Test func earlyEndOfIndexKeepsEarlierPagesWithWarning() async throws {
@@ -416,8 +424,18 @@ extension HermesControlTransportTests {
             ["sessions": [["id": "readable"]], "total": 2],
             ["sessions": [], "total": 2],
         ])
-        let index = try await HermesControlRPC(client: client).artifactSessions()
-        #expect(index.isIncomplete)
-        #expect(index.rows.count == 1)
+        var rowCount = 0
+        let incomplete = try await HermesControlRPC(client: client).artifactSessions { rowCount += $0.count }
+        #expect(incomplete)
+        #expect(rowCount == 1)
+    }
+
+    @Test func failedLaterIndexPageKeepsEarlierPagesWithWarning() async throws {
+        let client = HTTPEnvelopeRPCClient(responses: [["sessions": [["id": "readable"]], "total": 2]])
+        var rowCount = 0
+        let incomplete = try await HermesControlRPC(client: client).artifactSessions { rowCount += $0.count }
+        #expect(incomplete)
+        #expect(rowCount == 1)
+        #expect(client.requestedPaths.count == 2)
     }
 }

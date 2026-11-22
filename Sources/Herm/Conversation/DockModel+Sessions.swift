@@ -57,23 +57,24 @@ extension DockModel {
         return shown?.openSession
     }
 
-    func artifactSessions() async throws -> (sessions: [HermesSession], isIncomplete: Bool) {
-        let index = try await interruptRPC.artifactSessions()
+    func artifactSessions(onPage: @MainActor ([HermesSession]) async -> Void) async throws -> Bool {
         var seen = Set<ProfileScopedID>()
-        let sessions = index.rows.compactMap { row -> HermesSession? in
-            guard let session = Self.parseSession(row, profileID: row["profile"] as? String),
-                seen.insert(session.scopedID).inserted
-            else { return nil }
-            return session
+        return try await interruptRPC.artifactSessions { rows in
+            let raw = UncheckedTranscriptValue(value: rows)
+            let parsed = await Task.detached(priority: .utility) {
+                raw.value.compactMap { Self.parseSession($0, profileID: $0["profile"] as? String) }
+            }.value
+            guard !Task.isCancelled else { return }
+            let sessions = parsed.filter { seen.insert($0.scopedID).inserted }
+            if !sessions.isEmpty { await onPage(sessions) }
         }
-        return (sessions, index.isIncomplete)
     }
 
     func artifactMessages(for session: HermesSession, offset: Int) async throws -> [String: Any] {
-        // Include pre-compaction output and page through the entire transcript.
+        // Show recent output early, then page back through the pre-compaction history.
         do {
             return try await interruptRPC.sessionMessages(
-                sessionID: session.id, profileID: session.profileID,
+                sessionID: session.id, profileID: session.profileID, latest: true,
                 limit: 100, offset: offset, includeCompacted: true)
         } catch HermesGateway.GatewayError.httpError(404) {
             return ["data": []]  // pruned since the session list was read

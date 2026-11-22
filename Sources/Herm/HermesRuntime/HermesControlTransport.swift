@@ -180,33 +180,35 @@ final class HermesControlRPC {
         canonical["data"] = messages
         return canonical
     }
-    struct ArtifactSessionIndex {
-        let rows: [[String: Any]]
-        let isIncomplete: Bool
-    }
-
     /// Artifacts use the archive, independently of the sidebar's recent-session window.
-    func artifactSessions() async throws -> ArtifactSessionIndex {
-        var rows: [[String: Any]] = []
+    /// Returns whether any part of the archive was unavailable.
+    func artifactSessions(onPage: @MainActor ([[String: Any]]) async -> Void) async throws -> Bool {
         var offset = 0
         var isIncomplete = false
         while true {
             try Task.checkCancellation()
-            let page = try await client.fetchHTTP(
-                "/api/profiles/sessions?limit=100&offset=\(offset)&min_messages=1&archived=exclude&order=recent&profile=all"
-            )
-            guard let sessions = page["sessions"] as? [[String: Any]],
-                let total = page["total"] as? Int, total >= 0
-            else {
-                throw HermesGateway.GatewayError.malformedResponse
+            do {
+                let page = try await client.fetchHTTP(
+                    "/api/profiles/sessions?limit=100&offset=\(offset)&min_messages=1&archived=exclude&order=recent&profile=all"
+                )
+                guard let sessions = page["sessions"] as? [[String: Any]],
+                    let total = page["total"] as? Int, total >= 0
+                else {
+                    throw HermesGateway.GatewayError.malformedResponse
+                }
+                isIncomplete =
+                    isIncomplete || !(page["errors"] as? [[String: Any]] ?? []).isEmpty
+                    || !(page["storage"] as? [String: String] ?? [:]).isEmpty
+                if sessions.isEmpty { return isIncomplete || offset < total }
+                await onPage(sessions)
+                try Task.checkCancellation()
+                offset += min(100, sessions.count)  // Hermes may back-fill pinned rows beyond the page window.
+                if offset >= total { return isIncomplete }
+            } catch {
+                try Task.checkCancellation()
+                guard offset > 0 else { throw error }
+                return true
             }
-            isIncomplete =
-                isIncomplete || !(page["errors"] as? [[String: Any]] ?? []).isEmpty
-                || !(page["storage"] as? [String: String] ?? [:]).isEmpty
-            rows.append(contentsOf: sessions)
-            offset += min(100, sessions.count)  // Hermes may back-fill pinned rows beyond the page window.
-            if offset >= total { return ArtifactSessionIndex(rows: rows, isIncomplete: isIncomplete) }
-            if sessions.isEmpty { return ArtifactSessionIndex(rows: rows, isIncomplete: true) }
         }
     }
 

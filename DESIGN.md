@@ -3610,12 +3610,15 @@ retains its existing grid/list and pagination presentation. Both read a paginate
 profile-aware index of unarchived sessions independently of the sidebar window, including
 pre-compaction messages, assistant links, and producer/terminal outputs. Transcript
 extraction runs off the main actor in bounded pages, with at most four concurrent
-session reads. Outputs appear as transcript pages complete, with indexing status in
+session reads. Indexing starts as each session-list page arrives and reads recent transcript
+pages first, keeping the earliest citation for repeated output when the scan completes.
+The browser groups incremental updates before rebuilding its results, with indexing status in
 the fixed header; only complete sessions enter the shared cache. Sidebar updates do not
 cancel indexing. Opening the page or using Refresh starts a scan. Partial profile/index
 failures keep readable results and prior outputs for unreadable sessions, with a warning
-in the existing header subtitle. An in-memory cache reuses artifacts only while Hermes session
-recency, message count, and display title agree; raw transcripts are not cached. Refresh
+in the existing header subtitle. The bounded in-memory cache retains the most recent sessions
+and reuses artifacts only while Hermes session recency, message count, and display title agree.
+Raw transcripts are not cached. Refresh
 failures stay in the fixed header subtitle and preserve the last loaded output.
 
 ### Agent Board and activity disclosure
