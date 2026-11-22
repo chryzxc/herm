@@ -240,7 +240,7 @@ struct SessionProcessIsolationTests {
             rpc: HermesControlRPC(client: client),
             capabilities: [
                 CapabilityState(
-                    id: "rpc-activity", title: "Activity", detail: "Available", isAvailable: true, recovery: nil)
+                    id: "rpc-sessions", title: "Sessions", detail: "Available", isAvailable: true, recovery: nil)
             ])
         control.dockModel = dock
         control.focus(sessionID: dock.sessionID)
@@ -265,7 +265,7 @@ struct SessionProcessIsolationTests {
             rpc: HermesControlRPC(client: client),
             capabilities: [
                 CapabilityState(
-                    id: "rpc-activity", title: "Activity", detail: "Available", isAvailable: true, recovery: nil)
+                    id: "rpc-sessions", title: "Sessions", detail: "Available", isAvailable: true, recovery: nil)
             ])
         control.dockModel = dock
         dock.sessionID = "session-a"
@@ -296,7 +296,7 @@ struct SessionProcessIsolationTests {
             rpc: HermesControlRPC(client: client),
             capabilities: [
                 CapabilityState(
-                    id: "rpc-activity", title: "Activity", detail: "Available", isAvailable: true, recovery: nil)
+                    id: "rpc-sessions", title: "Sessions", detail: "Available", isAvailable: true, recovery: nil)
             ])
         control.dockModel = dock
         control.focus(sessionID: "session-a")
@@ -328,6 +328,7 @@ struct SessionProcessIsolationTests {
             CapabilityState(
                 id: "rpc-sessions", title: "Sessions", detail: "Available", isAvailable: true, recovery: nil)
         ]
+        try await waitForFocusedProcessRead(control, sessionID: "session-a")
         client.deferNextProcess = true
         let oldTask: Task<Void, Never>
         if broad {
@@ -339,16 +340,16 @@ struct SessionProcessIsolationTests {
                     for: "session-a", generation: control.sessionProcessesGeneration))
         }
         await client.waitForDeferredProcess()
-        // Do not launch a second focused read while installing the new projection.
-        control.capabilities = []
+        defer { client.completeDeferredProcess(fails: fails) }
+        let otherDock = transition == 2 ? DockModel(defaults: defaults, rpcClient: client) : nil
+        defer { withExtendedLifetime(otherDock) {} }
         if transition == 0 {
             dock.sessionID = nil
             control.focus(sessionID: nil)
         } else if transition == 1 {
             dock.sessionID = "session-b"
             control.focus(sessionID: "session-b")
-        } else if transition == 2 {
-            let otherDock = DockModel(defaults: defaults, rpcClient: client)
+        } else if let otherDock {
             otherDock.sessionID = "session-a"
             control.bind(to: otherDock)
         } else {
@@ -356,6 +357,9 @@ struct SessionProcessIsolationTests {
             control.focus(sessionID: "session-b")
             dock.sessionID = "session-a"
             control.focus(sessionID: "session-a")
+        }
+        if let focusedSessionID = control.processSessionID {
+            try await waitForFocusedProcessRead(control, sessionID: focusedSessionID)
         }
         // Keep the broad refresh's unrelated CLI history read from changing lastError.
         control.cli = nil
@@ -368,9 +372,12 @@ struct SessionProcessIsolationTests {
         await oldTask.value
         #expect(control.processes.map(\.id) == ["new"])
         #expect(control.refreshState(for: "processes") == expectedState)
-        // A broad refresh that finishes derives lastError from projection
-        // states (all clean here); a rebind cancels it. The stale failure must never leak.
-        #expect(control.lastError == expectedError || (broad && control.lastError == nil))
+        if broad {
+            // Other projections can publish their own diagnostics during a broad refresh.
+            #expect(control.lastError != SessionProcessIsolationClient.deferredReadFailure)
+        } else {
+            #expect(control.lastError == expectedError)
+        }
     }
 
     @Test(arguments: [false, true], [false, true])
@@ -383,21 +390,23 @@ struct SessionProcessIsolationTests {
             rpc: HermesControlRPC(client: client),
             capabilities: [
                 CapabilityState(
-                    id: "rpc-activity", title: "Activity", detail: "Available", isAvailable: true, recovery: nil)
+                    id: "rpc-sessions", title: "Sessions", detail: "Available", isAvailable: true, recovery: nil)
             ])
         control.dockModel = dock
         control.focus(sessionID: "session-a")
+        try await waitForFocusedProcessRead(control, sessionID: "session-a")
         client.deferNextProcess = true
         let oldPoll = Task { await control.pollProcesses() }
         await client.waitForDeferredProcess()
 
         let otherDock = DockModel(defaults: defaults, rpcClient: client)
+        defer { withExtendedLifetime(otherDock) {} }
         otherDock.sessionID = "session-a"
         if rebind {
             control.bind(to: otherDock)
             control.capabilities = [
                 CapabilityState(
-                    id: "rpc-activity", title: "Activity", detail: "Available", isAvailable: true, recovery: nil)
+                    id: "rpc-sessions", title: "Sessions", detail: "Available", isAvailable: true, recovery: nil)
             ]
         } else {
             dock.sessionID = "session-b"
@@ -455,7 +464,7 @@ struct SessionProcessIsolationTests {
             rpc: HermesControlRPC(client: client),
             capabilities: [
                 CapabilityState(
-                    id: "rpc-activity", title: "Activity", detail: "Available", isAvailable: true, recovery: nil)
+                    id: "rpc-sessions", title: "Sessions", detail: "Available", isAvailable: true, recovery: nil)
             ])
         control.dockModel = dock
         let owner = HermesSession(
@@ -468,10 +477,24 @@ struct SessionProcessIsolationTests {
         #expect(client.processSessionIDs == ["runtime-owner"])
         #expect(control.processes.map(\.id) == ["finished-in-a"])
     }
+
+    private func waitForFocusedProcessRead(_ control: ControlCenterModel, sessionID: String) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while control.verifiedProcessSessionID != sessionID, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try #require(control.verifiedProcessSessionID == sessionID)
+    }
 }
 
 @MainActor
 private final class SessionProcessIsolationClient: HermesRPCClientProtocol {
+    nonisolated static let deferredReadFailure = "Deferred process read failed"
+
+    private struct DeferredReadError: LocalizedError {
+        var errorDescription: String? { SessionProcessIsolationClient.deferredReadFailure }
+    }
+
     var activeSessionRequests = 0
     var onEvent: ((String, [String: Any]) -> Void)?
     private(set) var processSessionIDs: [String] = []
@@ -491,7 +514,7 @@ private final class SessionProcessIsolationClient: HermesRPCClientProtocol {
 
     func completeDeferredProcess(fails: Bool) {
         if fails {
-            deferredProcess?.resume(throwing: HermesGateway.GatewayError.malformedResponse)
+            deferredProcess?.resume(throwing: DeferredReadError())
         } else {
             deferredProcess?.resume(returning: ["processes": [["id": "stale", "state": "running"]]])
         }
