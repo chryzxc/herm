@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 
 @MainActor
 enum ConversationThumbnailCache {
@@ -24,20 +25,36 @@ enum ConversationThumbnailCache {
         "\(messageID.uuidString):\(index):\(imageCount):\(contentRevision):\(Int(size.rounded()))"
     }
 
-    static func image(_ source: NSImage, key: String, size: CGFloat = 220) -> NSImage {
-        let cacheKey = key as NSString
-        if let cached = cache.object(forKey: cacheKey) { return cached.image }
+    static func cachedImage(forKey key: String) -> NSImage? {
+        cache.object(forKey: key as NSString)?.image
+    }
 
-        let sourceSize = source.size
-        let scale = min(size / max(1, sourceSize.width), size / max(1, sourceSize.height))
-        // Keep the bitmap fitted too, or the view scales square padding a second time.
-        let target = NSSize(width: max(1, sourceSize.width * scale), height: max(1, sourceSize.height * scale))
+    static func image(_ source: NSImage, key: String, size: CGFloat = 220) -> NSImage {
+        if let cached = cachedImage(forKey: key) { return cached }
+
+        let target = fittedSize(source.size, size: size)
         let result = NSImage(size: target)
         result.lockFocus()
         NSGraphicsContext.current?.imageInterpolation = .high
         source.draw(in: NSRect(origin: .zero, size: target), from: .zero, operation: .copy, fraction: 1)
         result.unlockFocus()
-        cache.setObject(Entry(result), forKey: cacheKey, cost: Int(target.width * target.height * 4))
+        cache.setObject(Entry(result), forKey: key as NSString, cost: Int(target.width * target.height * 4))
         return result
+    }
+
+    nonisolated static func prepare(_ data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        // Chat renders at up to 220 points, so keep enough pixels for a Retina display.
+        return AttachmentThumbnailLoader.thumbnail(from: source, maximumPixelSize: 440)
+    }
+
+    static func storePrepared(_ thumbnail: CGImage, source: NSImage, key: String) {
+        let image = NSImage(cgImage: thumbnail, size: fittedSize(source.size, size: 220))
+        cache.setObject(Entry(image), forKey: key as NSString, cost: thumbnail.bytesPerRow * thumbnail.height)
+    }
+
+    private static func fittedSize(_ source: NSSize, size: CGFloat) -> NSSize {
+        let scale = min(size / max(1, source.width), size / max(1, source.height))
+        return NSSize(width: max(1, source.width * scale), height: max(1, source.height * scale))
     }
 }

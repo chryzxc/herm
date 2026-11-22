@@ -3383,7 +3383,8 @@ horizontal stack to measure both a spacer and the message. Fenced
 code blocks carry a quiet header with the lowercase language and a Copy action.
 User image attachments sit above the text bubble. Single images fit within 220pt
 in each dimension and retain their aspect ratio without transparent square padding;
-multiple images fill square grid tiles. Clicking a thumbnail opens the full preview. Sent documents show file-type labels inside the message bubble, and composer attachment chips align to the leading edge. PDFs are submitted as original files. Several PDFs (up to 25 MB each) can be dropped or picked together; each gets its own removable chip, and a rejected PDF is named in the attachment error while the rest still stage.
+multiple images fill square grid tiles. History prepares thumbnails in the background as it loads images.
+Clicking a thumbnail opens the full preview. Sent documents show file-type labels inside the message bubble, and composer attachment chips align to the leading edge. PDFs are submitted as original files. Several PDFs (up to 25 MB each) can be dropped or picked together; each gets its own removable chip, and a rejected PDF is named in the attachment error while the rest still stage.
 Completed assistant
 responses keep a compact action rail permanently visible beneath the content.
 The rail uses compact labelled Copy and Retry actions plus an ellipsis More menu.

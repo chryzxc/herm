@@ -616,7 +616,7 @@ when that page is enabled in Settings and GitHub resolves the item. Each chat ke
 its own GitHub selection; opening a link leaves the conversation visible. Disabled pages,
 unavailable items, and links to anchors or subpages retain the browser fallback.
 
-- **Streaming chat** with Markdown (including tables with optional outer pipes and table text sized to match reply prose), images, tool output, and inline clarification requests. Response text reflows at the current pane width, keeping its action rail beneath the content when resizing.
+- **Streaming chat** with Markdown (including tables with optional outer pipes and table text sized to match reply prose), images, tool output, and inline clarification requests. History prepares image thumbnails in the background. Response text reflows at the current pane width, keeping its action rail beneath the content when resizing.
 - **Image previews** preserve their original proportions without square padding, so wide and tall screenshots fill their intended thumbnail size. Click an image to open the full preview.
 - **Website links** show an inline favicon beside their underlined label. GitHub links use a bundled, theme-aware mark; bare PR and issue URLs display as `PR #123` or `Issue #123`. Other public sites load `/favicon.ico` over HTTPS with a globe fallback.
 - **Working bot**: three diamond tiles light in sequence beneath the avatar as it leans into a hop. The borderless 40pt avatar reacts to activity with reaches, tilts, and hops, including a soft landing and the current activity icon. Rapid updates blend smoothly, and new activity rows appear immediately. Reduce Motion and motion-free themes keep it still.

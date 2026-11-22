@@ -36,18 +36,22 @@ actor AttachmentThumbnailLoader {
         } else {
             source = (try? Data(contentsOf: url)).flatMap { CGImageSourceCreateWithData($0 as CFData, nil) }
         }
-        guard let source,
-            let image = CGImageSourceCreateThumbnailAtIndex(
-                source, 0,
-                [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
-                ] as CFDictionary)
-        else { return nil }
+        guard let source, let image = Self.thumbnail(from: source, maximumPixelSize: maximumPixelSize) else {
+            return nil
+        }
         cache.setObject(Entry(image), forKey: key as NSString, cost: image.bytesPerRow * image.height)
         return image
+    }
+
+    static func thumbnail(from source: CGImageSource, maximumPixelSize: Int) -> CGImage? {
+        CGImageSourceCreateThumbnailAtIndex(
+            source, 0,
+            [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
+            ] as CFDictionary)
     }
 }
 

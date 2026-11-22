@@ -765,6 +765,34 @@ struct SessionConversationIsolationTests {
         #expect(model.messages.isEmpty)
     }
 
+    @Test func restoringHistoryPreparesThumbnailBeforeDisplayingImage() async throws {
+        let session = "history-image"
+        let model = DockModel(initialSessionID: session, rpcClient: SessionIsolationRPCClient())
+        let message = ChatMessage(role: .user, text: "Image from history")
+        model.messages = [message]
+        let original = NSImage(size: NSSize(width: 640, height: 320), flipped: false) { rect in
+            NSColor.white.setFill()
+            rect.fill()
+            return true
+        }
+        let data = try #require(original.tiffRepresentation)
+        let source = try #require(NSImage(data: data))
+        let pending = RestoredTranscript.PendingImages(
+            messageID: message.id, fileURLs: [URL(fileURLWithPath: "/tmp/history-image.tiff")])
+
+        await model.rehydratePendingTranscriptImages([pending], requestedSessionID: session, loadData: { _ in data })
+            .value
+
+        let restored = try #require(model.messages.first)
+        let image = try #require(restored.images.first)
+        let key = ConversationThumbnailCache.key(
+            messageID: restored.id, index: 0, imageCount: 1, contentRevision: restored.contentRevision)
+        let thumbnail = try #require(ConversationThumbnailCache.cachedImage(forKey: key))
+        #expect(image.size == source.size)
+        #expect(thumbnail.size == NSSize(width: 220, height: 110))
+        #expect(ConversationThumbnailCache.image(image, key: key) === thumbnail)
+    }
+
     @Test func restoredAssistantMarkdownPreservesLineBreaksForTheTranscriptRenderer() {
         let markdown = """
             ## Completed

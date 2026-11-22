@@ -214,13 +214,16 @@ extension DockModel {
         guard !pending.isEmpty else { return Task<Void, Never> {} }
         let generation = sessionResumeGeneration
         return Task { @MainActor in
-            let worker = Task.detached(priority: .userInitiated) { () -> [(UUID, [Data])] in
+            let worker = Task.detached(priority: .userInitiated) {
+                () -> [(UUID, [(data: Data, thumbnail: CGImage?)])] in
                 pending.map { entry in
                     (
                         entry.messageID,
-                        entry.fileURLs.compactMap { url -> Data? in
-                            guard !Task.isCancelled else { return nil }
-                            return loadData.map { loader in loader(url) } ?? Self.transcriptImageData(url)
+                        entry.fileURLs.compactMap { url in
+                            guard !Task.isCancelled,
+                                let data = loadData.map({ loader in loader(url) }) ?? Self.transcriptImageData(url)
+                            else { return nil }
+                            return (data, ConversationThumbnailCache.prepare(data))
                         }
                     )
                 }
@@ -237,11 +240,23 @@ extension DockModel {
             var updated = messages
             var changed = false
             for entry in loaded where !entry.1.isEmpty {
-                let images = entry.1.compactMap { NSImage(data: $0) }
+                let images = entry.1.compactMap { item in
+                    NSImage(data: item.data).map { (source: $0, thumbnail: item.thumbnail) }
+                }
                 guard !images.isEmpty,
                     let index = updated.firstIndex(where: { $0.id == entry.0 })
                 else { continue }
-                updated[index] = updated[index].attachingImages(images)
+                let message = updated[index]
+                let previousCount = message.images.count
+                let imageCount = previousCount + images.count
+                for (offset, image) in images.enumerated() {
+                    guard let thumbnail = image.thumbnail else { continue }
+                    let key = ConversationThumbnailCache.key(
+                        messageID: message.id, index: previousCount + offset,
+                        imageCount: imageCount, contentRevision: message.contentRevision)
+                    ConversationThumbnailCache.storePrepared(thumbnail, source: image.source, key: key)
+                }
+                updated[index] = message.attachingImages(images.map(\.source))
                 changed = true
             }
             if changed { messages = updated }
