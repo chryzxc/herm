@@ -822,12 +822,12 @@ extension DockPopover {
                 openQuota: { panelPresentation.quotaRequest += 1 },
                 projectPicker: newChatProjectPicker,
                 worktreeBar: activeSessionRepositoryScope.flatMap { scope in
-                    guard developerWorkflow.repository.isGitRepository,
-                        developerWorkflow.repository.path == scope.repositoryPath
-                    else { return nil }
+                    // The snapshot path is standardized; a project stored with a trailing slash
+                    // or `./` segment still matches, as it does for the session rail.
+                    guard scope.containsGitRepository(developerWorkflow.repository) else { return nil }
                     return WorktreePicker(
                         worktrees: developerWorkflow.worktrees,
-                        selection: scope.repositoryPath,
+                        selection: developerWorkflow.repository.path,
                         worktreesUnavailable: developerWorkflow.repository.isGitRepository
                             && developerWorkflow.worktreesUnavailable,
                         onOpenWorktree: { await openWorktreeInNewChat($0) },
