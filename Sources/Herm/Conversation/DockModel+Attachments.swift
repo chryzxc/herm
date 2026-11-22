@@ -32,7 +32,8 @@ extension DockModel {
             pendingAttachmentError = "Could not paste image: the clipboard image could not be read."
             return false
         }
-        return stageImage(nsImage)
+        // A PNG clipboard is written as-is; re-encoding a full screenshot blocked the paste for frames.
+        return stageImage(nsImage, pngData: imageType == .png ? data : nil)
     }
 
     func stageImageFile(at url: URL) {
@@ -127,10 +128,12 @@ extension DockModel {
     }
 
     @discardableResult
-    func stageImage(_ nsImage: NSImage) -> Bool {
-        guard let tiff = nsImage.tiffRepresentation,
-            let rep = NSBitmapImageRep(data: tiff),
-            let png = rep.representation(using: .png, properties: [:])
+    func stageImage(_ nsImage: NSImage, pngData: Data? = nil) -> Bool {
+        guard
+            let png = pngData
+                ?? nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap({
+                    NSBitmapImageRep(cgImage: $0).representation(using: .png, properties: [:])
+                })
         else {
             pendingAttachmentError = "Could not paste image: the image could not be encoded."
             DebugLog.write("model: failed to encode pasted image as PNG")

@@ -58,12 +58,13 @@ actor AttachmentThumbnailLoader {
 struct AttachmentThumbnailView: View {
     let url: URL
     var maximumPixelSize = AttachmentThumbnailLoader.maximumPixelSize
+    var contentMode: ContentMode = .fit
     @State private var image: CGImage?
 
     var body: some View {
         Group {
             if let image {
-                Image(decorative: image, scale: 2).resizable().scaledToFit()
+                Image(decorative: image, scale: 2).resizable().aspectRatio(contentMode: contentMode)
             } else {
                 Color.clear
             }

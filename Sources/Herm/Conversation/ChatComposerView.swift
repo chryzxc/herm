@@ -347,17 +347,19 @@ struct ChatComposerView: View {
                             HStack(spacing: 8) {
                                 ForEach(model.pendingImages) { image in
                                     HStack(spacing: 6) {
-                                        Image(nsImage: image.image)
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 32, height: 32)
-                                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                            .overlay {
-                                                if model.extractingImageTextIDs.contains(image.id) {
-                                                    DockLoadingIndicator().controlSize(.mini).accessibilityLabel(
-                                                        "Reading image text")
-                                                }
+                                        // A downsampled file thumbnail: drawing the full-size image at
+                                        // 32pt resampled it on every frame of the chip's entrance.
+                                        AttachmentThumbnailView(
+                                            url: image.fileURL, maximumPixelSize: 96, contentMode: .fill
+                                        )
+                                        .frame(width: 32, height: 32)
+                                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                        .overlay {
+                                            if model.extractingImageTextIDs.contains(image.id) {
+                                                DockLoadingIndicator().controlSize(.mini).accessibilityLabel(
+                                                    "Reading image text")
                                             }
+                                        }
                                         Button(action: { model.removePendingImage(image) }) {
                                             DockIcon(.x)
                                                 .dockFont(.compactStatus, weight: .bold)
@@ -1138,9 +1140,7 @@ private struct QueuedPromptList: View {
                     ForEach(prompts) { prompt in
                         HStack(spacing: 8) {
                             ForEach(prompt.images) { image in
-                                Image(nsImage: image.image)
-                                    .resizable()
-                                    .scaledToFill()
+                                AttachmentThumbnailView(url: image.fileURL, maximumPixelSize: 84, contentMode: .fill)
                                     .frame(width: 28, height: 28)
                                     .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                                     .help(image.fileName)
