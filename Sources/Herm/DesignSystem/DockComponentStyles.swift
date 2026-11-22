@@ -2237,12 +2237,15 @@ extension View {
     /// On Glass a wash reads as a muddy stain over the translucent canvas, so pills
     /// become frosted chips: white lift, light wash, and a tinted (or neutral) rim.
     @MainActor
-    func dockPill(tint: Color? = nil, solid: Bool = false, compact: Bool = false) -> some View {
-        dockChrome { view, theme in view.dockPill(tint: tint, solid: solid, compact: compact, theme: theme) }
+    /// `outline` rims a solid pill drawn in another skin's colors (an appearance specimen).
+    func dockPill(tint: Color? = nil, solid: Bool = false, compact: Bool = false, outline: Color? = nil) -> some View {
+        dockChrome { view, theme in
+            view.dockPill(tint: tint, solid: solid, compact: compact, outline: outline, theme: theme)
+        }
     }
 
     @MainActor
-    private func dockPill(tint: Color?, solid: Bool, compact: Bool, theme: DockThemeID) -> some View {
+    private func dockPill(tint: Color?, solid: Bool, compact: Bool, outline: Color?, theme: DockThemeID) -> some View {
         let glassChip = !solid && theme.usesNativeMaterial
         return dockPadding(.horizontal, compact ? 4 : 6).dockPadding(.vertical, compact ? 1 : 2)
             .background {
@@ -2254,6 +2257,9 @@ extension View {
                         .overlay(Capsule().strokeBorder(rim.opacity(tint == nil ? 0.16 : 0.22), lineWidth: 0.75))
                 } else {
                     Capsule().fill(tint.map { solid ? $0 : $0.opacity(0.14) } ?? Color.dockSurface4)
+                        .overlay {
+                            if let outline { Capsule().strokeBorder(outline, lineWidth: DockLayout.hairline) }
+                        }
                 }
             }
     }

@@ -87,11 +87,12 @@ struct DockSkinSpecimen: View {
 
     /// Built-in or Imported, in the skin's own ink and surface so it reads on any specimen.
     private var origin: some View {
+        // The skin's own ink and outline, not the app's: the pill must read on every specimen.
         Text(theme.originLabel)
-            .dockFont(.metadata, weight: .medium)
+            .dockFont(.compactStatus, weight: .medium)
             .foregroundStyle(palette.secondaryText)
             .fixedSize()
-            .dockPill(tint: palette.surface2, solid: true)
+            .dockPill(tint: palette.surface2, solid: true, outline: palette.divider)
             .dockPadding(8)
     }
 
