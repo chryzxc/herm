@@ -252,7 +252,7 @@ struct SessionRailSummarySection<Content: View, Footer: View>: View {
                 }
             }
         }
-        .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top))
+        .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top, animatesExpansion: false))
         .dockFont(.body)
     }
 }

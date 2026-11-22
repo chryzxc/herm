@@ -568,6 +568,7 @@ Workspace uses the palette's amber folder icon and violet branch icon, adapting 
 monochrome skins. Expanded details lead with the project name and secondary path,
 followed by labelled Branch and Latest commit rows with their existing Git icons.
 These are disclosures with the same bounded inline scroll area as Changes and PRs.
+Rail sections expand and collapse immediately so the scroll areas and neighboring headers settle together.
 Rail disclosures align their caret and 14pt icon to the first title row, keeping
 wrapped titles, task summaries, and secondary metadata below that shared line.
 Pull requests uses the same section disclosure, icon, count, and 280pt list cap;

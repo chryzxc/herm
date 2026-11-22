@@ -555,7 +555,7 @@ nonterminal history without current live evidence is shown as status not current
 Tasks share the composer's status indicators and ordering: in-progress tasks first,
 pending next, and completed or cancelled tasks last. The active task remains visible
 in the Tasks summary and uses a highlighted row and progress indicator when expanded.
-Empty sections stay hidden. Expand a section for details; **Respond in chat** reveals
+Empty sections stay hidden. Sections open and close immediately. Expand a section for details; **Respond in chat** reveals
 the existing request at the end of chat and focuses the composer, a pinned item jumps to its message, and
 **View all outputs** opens Artifacts in the third panel. Output rows use the shared
 file-type icons for images, documents, archives, and code. Outputs reuse the shared

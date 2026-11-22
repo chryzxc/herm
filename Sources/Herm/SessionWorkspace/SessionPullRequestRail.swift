@@ -363,7 +363,7 @@ struct SessionRailCard: View {
                 } label: {
                     changesRow(changes)
                 }
-                .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top))
+                .disclosureGroupStyle(DockDisclosureGroupStyle(alignment: .top, animatesExpansion: false))
                 .accessibilityIdentifier("session-rail.changes")
             } else if changesUnavailable {
                 Text("Changes unavailable. Refresh to retry.")

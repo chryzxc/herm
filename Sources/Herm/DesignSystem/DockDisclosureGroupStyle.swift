@@ -3,12 +3,13 @@ import SwiftUI
 /// macOS's default disclosure only toggles from its caret; make the header a button.
 struct DockDisclosureGroupStyle: DisclosureGroupStyle {
     var alignment: VerticalAlignment = .center
+    var animatesExpansion = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(DockMotion.disclosure(reduceMotion: reduceMotion)) {
+                withAnimation(DockMotion.disclosure(reduceMotion: reduceMotion || !animatesExpansion)) {
                     configuration.isExpanded.toggle()
                 }
             } label: {
@@ -26,7 +27,7 @@ struct DockDisclosureGroupStyle: DisclosureGroupStyle {
             .buttonStyle(.dockHover)
             .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
 
-            DockRetainedDisclosureContent(isExpanded: configuration.isExpanded) {
+            DockRetainedDisclosureContent(isExpanded: configuration.isExpanded, animatesExpansion: animatesExpansion) {
                 configuration.content
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .dockPadding(.leading, 16)
@@ -39,6 +40,7 @@ struct DockDisclosureGroupStyle: DisclosureGroupStyle {
 struct DockRetainedDisclosureContent<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var isExpanded: Bool
+    var animatesExpansion = true
     @ViewBuilder var content: () -> Content
     @State private var hasExpanded = false
 
@@ -59,7 +61,7 @@ struct DockRetainedDisclosureContent<Content: View>: View {
         .disabled(!isExpanded)
         .allowsHitTesting(isExpanded)
         .accessibilityHidden(!isExpanded)
-        .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: isExpanded)
+        .animation(DockMotion.disclosure(reduceMotion: reduceMotion || !animatesExpansion), value: isExpanded)
         .onChange(of: isExpanded, initial: true) { _, expanded in
             if expanded { hasExpanded = true }
         }
