@@ -3373,7 +3373,8 @@ fixed-size inline site icon. GitHub uses the bundled theme-aware mark; other
 public websites load their HTTPS origin's `/favicon.ico` without cookies or
 redirects and retain a theme-aware globe when unavailable. Custom labels are
 preserved; bare GitHub PR and issue URLs may use `PR #123` and `Issue #123`.
-Icon loading changes neither the text layout nor the link destination.
+When an icon finishes loading, only its text run redraws.
+Fixed icon bounds preserve text layout and the link destination.
 
 Assistant responses are open document content; user prompts use
 restrained right-aligned navy bubbles with a tighter sender-side corner, and a

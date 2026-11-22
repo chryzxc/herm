@@ -3,6 +3,18 @@ import AppKit
 @MainActor
 enum MarkdownWebsiteIcon {
     static let didLoad = Notification.Name("herm.markdownWebsiteIconLoaded")
+
+    final class PendingAttachment: NSTextAttachment {
+        private(set) var isLoading = true
+
+        @MainActor func complete(with image: NSImage?) {
+            isLoading = false
+            guard let image else { return }
+            self.image = image
+            NotificationCenter.default.post(name: MarkdownWebsiteIcon.didLoad, object: self)
+        }
+    }
+
     private static let cache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
         cache.countLimit = 256
@@ -39,15 +51,15 @@ enum MarkdownWebsiteIcon {
 
     static func attachment(for url: URL, size: CGFloat, color: NSColor) -> NSTextAttachment? {
         guard let host = host(for: url) else { return nil }
-        let attachment = NSTextAttachment()
+        let faviconURL = host == "github.com" ? nil : faviconURL(for: url)
+        let cached = faviconURL.flatMap { _ in cache.object(forKey: host as NSString) }
+        let attachment: NSTextAttachment = faviconURL != nil && cached == nil ? PendingAttachment() : NSTextAttachment()
         attachment.bounds = CGRect(x: 0, y: -2, width: size, height: size)
         // GitHub's bundled mark is crisp and follows the active theme, even offline.
-        attachment.image = (host == "github.com" ? Ph.githubLogo : Ph.globe).appKitMenuImage(size: size, color: color)
-        guard host != "github.com", let faviconURL = faviconURL(for: url) else { return attachment }
-        if let image = cache.object(forKey: host as NSString) {
-            attachment.image = image
-            return attachment
-        }
+        attachment.image =
+            cached
+            ?? (host == "github.com" ? Ph.githubLogo : Ph.globe).appKitMenuImage(size: size, color: color)
+        guard let faviconURL, let pending = attachment as? PendingAttachment else { return attachment }
         let task: Task<NSImage?, Never>
         if let existing = loads.object(forKey: host as NSString) {
             task = existing.task
@@ -72,10 +84,9 @@ enum MarkdownWebsiteIcon {
             }
             loads.setObject(Load(task), forKey: host as NSString)
         }
-        Task { [weak attachment] in
-            guard let image = await task.value else { return }
-            attachment?.image = image
-            NotificationCenter.default.post(name: didLoad, object: nil)
+        Task { [weak pending] in
+            let image = await task.value
+            pending?.complete(with: image)
         }
         return attachment
     }
@@ -101,6 +112,37 @@ enum MarkdownWebsiteIcon {
             completionHandler: @escaping @Sendable (URLRequest?) -> Void
         ) {
             completionHandler(nil)
+        }
+    }
+}
+
+@MainActor
+extension NSTextView {
+    func setMarkdownText(_ text: NSAttributedString) {
+        let center = NotificationCenter.default
+        center.removeObserver(self, name: MarkdownWebsiteIcon.didLoad, object: nil)
+        textStorage?.setAttributedString(text)
+        var observed: Set<ObjectIdentifier> = []
+        text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: text.length)) { value, _, _ in
+            guard let icon = value as? MarkdownWebsiteIcon.PendingAttachment, icon.isLoading,
+                observed.insert(ObjectIdentifier(icon)).inserted
+            else { return }
+            center.addObserver(
+                self, selector: #selector(markdownWebsiteIconDidLoad(_:)), name: MarkdownWebsiteIcon.didLoad,
+                object: icon)
+        }
+    }
+
+    @objc private func markdownWebsiteIconDidLoad(_ notification: Notification) {
+        guard let icon = notification.object as? MarkdownWebsiteIcon.PendingAttachment, let textStorage else {
+            return
+        }
+        NotificationCenter.default.removeObserver(self, name: MarkdownWebsiteIcon.didLoad, object: icon)
+        textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: textStorage.length)) {
+            value, range, _ in
+            if value as? MarkdownWebsiteIcon.PendingAttachment === icon {
+                layoutManager?.invalidateDisplay(forCharacterRange: range)
+            }
         }
     }
 }

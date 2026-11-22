@@ -197,14 +197,6 @@ final class NativeMarkdownTextView: NSTextView {
         isAutomaticLinkDetectionEnabled = false
         isAutomaticQuoteSubstitutionEnabled = false
         isAutomaticDashSubstitutionEnabled = false
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(websiteIconLoaded), name: MarkdownWebsiteIcon.didLoad, object: nil)
-    }
-
-    @objc private func websiteIconLoaded() {
-        guard let textStorage else { return }
-        layoutManager?.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: textStorage.length))
-        needsDisplay = true
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

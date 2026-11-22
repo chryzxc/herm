@@ -1457,14 +1457,6 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         isAutomaticDashSubstitutionEnabled = false
         // Proposals own the width; apply this after NSTextView's resizing setup.
         container.widthTracksTextView = false
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(websiteIconLoaded), name: MarkdownWebsiteIcon.didLoad, object: nil)
-    }
-
-    @objc private func websiteIconLoaded() {
-        guard let textStorage else { return }
-        layoutManager?.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: textStorage.length))
-        needsDisplay = true
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -1521,7 +1513,7 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         typingAttributes = output.string.length > 0 ? output.string.attributes(at: 0, effectiveRange: nil) : [:]
         defaultParagraphStyle = typingAttributes[.paragraphStyle] as? NSParagraphStyle
         let installStarted = DispatchTime.now().uptimeNanoseconds
-        textStorage?.setAttributedString(output.string)
+        setMarkdownText(output.string)
         textRevision &+= 1
         let installed = DispatchTime.now().uptimeNanoseconds
         DebugLog.writePerformance(

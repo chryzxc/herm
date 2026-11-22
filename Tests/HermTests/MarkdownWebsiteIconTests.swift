@@ -84,4 +84,43 @@ struct MarkdownWebsiteIconTests {
             MarkdownWebsiteIcon.attachment(
                 for: try #require(URL(string: "mailto:me@example.com")), size: 13, color: .labelColor) == nil)
     }
+
+    @Test func completedIconRedrawsOnlyTheMatchingTextRange() {
+        final class RecordingLayout: NSLayoutManager {
+            var redrawn: [NSRange] = []
+
+            override func invalidateDisplay(forCharacterRange charRange: NSRange) {
+                redrawn.append(charRange)
+                super.invalidateDisplay(forCharacterRange: charRange)
+            }
+        }
+        func textView() -> (NSTextView, RecordingLayout) {
+            let view = NSTextView(frame: .zero)
+            let layout = RecordingLayout()
+            view.textContainer?.replaceLayoutManager(layout)
+            return (view, layout)
+        }
+
+        let icon = MarkdownWebsiteIcon.PendingAttachment()
+        let otherIcon = MarkdownWebsiteIcon.PendingAttachment()
+        let text = NSMutableAttributedString(string: "Read ")
+        text.append(NSAttributedString(attachment: icon))
+        text.append(NSAttributedString(string: " the docs."))
+        let (owner, ownerLayout) = textView()
+        let (other, otherLayout) = textView()
+        let (reused, reusedLayout) = textView()
+        owner.setMarkdownText(text)
+        other.setMarkdownText(NSAttributedString(attachment: otherIcon))
+        reused.setMarkdownText(text)
+        reused.setMarkdownText(NSAttributedString(string: "Another message"))
+        ownerLayout.redrawn = []
+        otherLayout.redrawn = []
+        reusedLayout.redrawn = []
+
+        icon.complete(with: NSImage(size: CGSize(width: 13, height: 13)))
+
+        #expect(ownerLayout.redrawn == [NSRange(location: 5, length: 1)])
+        #expect(otherLayout.redrawn.isEmpty)
+        #expect(reusedLayout.redrawn.isEmpty)
+    }
 }
