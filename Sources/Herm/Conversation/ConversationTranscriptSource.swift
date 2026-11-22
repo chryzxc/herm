@@ -293,10 +293,10 @@ final class ConversationTranscriptSource: ObservableObject {
             let context = coordinator.controller.markdownMeasurementContext
         else { return .init(count: range.count, preparedPage: nil) }
         if holdingPrefetch, heldMeasurementContext != context {
-            coordinator.cancelHistoryRequest()
+            // Keep the edge request alive while remeasuring at the new width.
+            // A clip already at its edge may not emit another bounds change.
+            holdingPrefetch = false
             markdownPrefetch.cancel()
-            prefetch()
-            return .init(count: 0, preparedPage: nil)
         }
         prefetch()
         holdingPrefetch = true

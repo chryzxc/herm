@@ -658,6 +658,9 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                 }
                 created = true
             }
+            // Give TextKit its final width before AppKit registers the section for layout and tracking.
+            if view.isHidden != (frame.height <= 0) { view.isHidden = frame.height <= 0 }
+            if view.frame != frame { view.frame = frame }
             if view.superview !== self {
                 if let nextMounted {
                     addSubview(view, positioned: .below, relativeTo: nextMounted)
@@ -668,8 +671,6 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                 if Self.tracksPerformance { Self.totalViewportMountChanges += 1 }
             }
             nextMounted = view
-            if view.isHidden != (frame.height <= 0) { view.isHidden = frame.height <= 0 }
-            if view.frame != frame { view.frame = frame }
             if created, let code = view as? NativeMarkdownCodeView {
                 code.restoreHorizontalOffset(entry.horizontalOffset)
             }

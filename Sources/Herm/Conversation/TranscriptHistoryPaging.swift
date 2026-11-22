@@ -33,6 +33,14 @@ struct TranscriptHistoryPrepend: Equatable {
     let count: Int
     let resultingCount: Int
     var removedCount: Int = 0
+    var messagesRevision: UInt64? = nil
+
+    func isInsertion(after revision: UInt64, previousCount: Int, revision current: UInt64, count currentCount: Int)
+        -> Bool
+    {
+        removedCount == 0 && count > 0 && messagesRevision == current && current == revision &+ 1
+            && resultingCount == currentCount && currentCount - count == previousCount
+    }
 }
 
 enum TranscriptHistoryPaging {

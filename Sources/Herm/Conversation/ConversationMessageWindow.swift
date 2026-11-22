@@ -146,7 +146,11 @@ enum ConversationMessageWindow {
         available: Int, isFullyReady: Bool, edgeDistance: CGFloat, visibleHeight: CGFloat
     ) -> Bool {
         guard available > 0 else { return false }
-        return isFullyReady || available >= minimumPartialPage || edgeDistance < visibleHeight / 2
+        return isFullyReady || available >= minimumPartialPage || isNearHistoryEdge(edgeDistance, visibleHeight)
+    }
+
+    static func isNearHistoryEdge(_ distance: CGFloat, _ visibleHeight: CGFloat) -> Bool {
+        distance < visibleHeight / 2
     }
 
     /// True only when the window is open to the very newest message. Reading

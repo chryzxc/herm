@@ -60,8 +60,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         var fromEnd: Int
     }
     private var savedAnchors: [String: SavedPosition] = [:]
-    /// Hermes row id of each shown message, as of the last synchronize.
-    private var rowIDByMessage: [UUID: Int] = [:]
+    private var messageIDsByRowID: [Int: UUID] = [:]
     /// A session reopened before its transcript arrived restores once it does.
     private var awaitingRestore: SavedPosition?
     private var savedAnchorOrder: [String] = []
@@ -82,6 +81,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         let id = UUID()
         let target: Range<Int>
         let direction: CGFloat
+        var wasNearEdge = false
     }
     private var historyRequest: HistoryRequest?
     var hasHistoryRequest: Bool { historyRequest != nil }
@@ -97,6 +97,10 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     /// The reader repinned to the bottom of a widened window during a gesture.
     private var compactsWhenSettled = false
 
+    private func storedRowID(for messageID: UUID) -> Int? {
+        messageIDsByRowID.first { $0.value == messageID }?.key
+    }
+
     init(controller: ConversationScrollController = ConversationScrollController()) {
         self.controller = controller
     }
@@ -110,7 +114,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         else { return }
         savedAnchors[id] = SavedPosition(
             anchor: ConversationScrollAnchor(messageID: row.target.messageID, offset: row.minY - geometry.visibleTop),
-            rowID: rowIDByMessage[row.target.messageID], fromEnd: totalCount - row.index)
+            rowID: storedRowID(for: row.target.messageID), fromEnd: totalCount - row.index)
         savedAnchorOrder.removeAll { $0 == id }
         savedAnchorOrder.append(id)
         if savedAnchorOrder.count > 8 { savedAnchors[savedAnchorOrder.removeFirst()] = nil }
@@ -224,7 +228,6 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         if let request = historyRequest, request.direction * delta < 0 {
             cancelHistoryRequest()
         }
-        if historyRequest != nil { preparingDirection = 0 }
         if delta < 0 { presentation.isAtBottom = false }
         if delta > 0, geometry.distanceToBottom <= ConversationScrollMetrics.pastEndTolerance {
             updatePosition(geometry, compacts: false)
@@ -299,7 +302,10 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             applyAnchor()
             return
         }
-        guard presentation.isAtBottom, let geometry = controller.geometry else { return }
+        guard presentation.isAtBottom, let geometry = controller.geometry else {
+            retryPreparedPage()
+            return
+        }
         // A collapse can already have clamped the native clip to the new tail.
         let bottom = max(0, geometry.documentHeight - geometry.visibleHeight)
         guard abs(geometry.visibleTop - bottom) > 0.5 else { return }
@@ -329,25 +335,33 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             queuedDirection = direction
             return
         }
-        let distance = max(480, geometry.visibleHeight)
-        let range = ConversationMessageWindow.visibleRange(mountedRange, totalCount: totalCount)
-        let proposed: Range<Int>
-        if direction < 0, geometry.visibleTop < distance {
-            guard range.lowerBound > 0 else {
-                cancelHistoryRequest()
-                onEarlierHistory()
-                return
-            }
-            proposed = ConversationMessageWindow.revealEarlier(
-                range, totalCount: totalCount, visibleSpan: visibleSpan(geometry))
-        } else if direction > 0, geometry.distanceToBottom < distance {
-            proposed = ConversationMessageWindow.revealLater(
-                range, totalCount: totalCount, visibleSpan: visibleSpan(geometry))
-        } else {
-            if historyRequest != nil { preparingDirection = direction }
+        let edgeDistance = direction < 0 ? geometry.visibleTop : geometry.distanceToBottom
+        guard edgeDistance < max(480, geometry.visibleHeight) else {
+            preparingDirection = 0
             return
         }
-        if preparingDirection == direction { return }
+        let range = ConversationMessageWindow.visibleRange(mountedRange, totalCount: totalCount)
+        if direction < 0, range.lowerBound == 0 {
+            if historyRequest != nil { cancelHistoryRequest() }
+            onEarlierHistory()
+            return
+        }
+        // Preparation reports progress itself. Wheel events only need to recheck
+        // when crossing into the area where a smaller ready page can be mounted.
+        let isNearEdge = ConversationMessageWindow.isNearHistoryEdge(edgeDistance, geometry.visibleHeight)
+        if preparingDirection == direction, !isNearEdge || historyRequest?.wasNearEdge == true {
+            historyRequest?.wasNearEdge = isNearEdge
+            return
+        }
+        let span = visibleSpan(geometry)
+        let proposed: Range<Int>
+        if direction < 0 {
+            proposed = ConversationMessageWindow.revealEarlier(
+                range, totalCount: totalCount, visibleSpan: span)
+        } else {
+            proposed = ConversationMessageWindow.revealLater(
+                range, totalCount: totalCount, visibleSpan: span)
+        }
         guard proposed != range,
             let row = rowViewports.filter({
                 $0.maxY > geometry.visibleTop && $0.minY < geometry.visibleTop + geometry.visibleHeight
@@ -358,6 +372,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             historyRequest = HistoryRequest(target: target, direction: direction)
         }
         guard let request = historyRequest, request.direction == direction else { return }
+        historyRequest?.wasNearEdge = isNearEdge
         let readiness =
             pageReadiness?(request.target, direction)
             ?? ConversationPageReadiness(count: request.target.count, preparedPage: nil)
@@ -370,19 +385,21 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         guard
             ConversationMessageWindow.mountsPartialPage(
                 available: available, isFullyReady: ready == request.target.count,
-                edgeDistance: direction < 0 ? geometry.visibleTop : geometry.distanceToBottom,
+                edgeDistance: edgeDistance,
                 visibleHeight: geometry.visibleHeight)
         else {
             preparingDirection = direction
             return
         }
+        // Keep preparing the whole page while distributing row layout across scroll updates.
+        let count = controller.isUserScrolling ? min(ConversationMessageWindow.pageSize / 2, available) : available
         let next =
             direction < 0
             ? ConversationMessageWindow.revealEarlier(
-                range, totalCount: totalCount, visibleSpan: visibleSpan(geometry), count: available)
+                range, totalCount: totalCount, visibleSpan: span, count: count)
             : ConversationMessageWindow.revealLater(
-                range, totalCount: totalCount, visibleSpan: visibleSpan(geometry), count: available)
-        if ready == request.target.count {
+                range, totalCount: totalCount, visibleSpan: span, count: count)
+        if ready == request.target.count, count == available {
             cancelHistoryRequest()
         } else {
             preparingDirection = direction
@@ -547,12 +564,25 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             reconcileAnchor(messages: messages)
             return
         }
-        let responses = ConversationUnreadMessagePolicy.assistantResponseCount(messages)
+        let responses: Int
+        if sessionID == presentationID, model.sessionTranscriptPreview == nil, let countedMessagesRevision,
+            let prepend = model.lastTranscriptPrepend,
+            prepend.isInsertion(
+                after: countedMessagesRevision, previousCount: totalCount, revision: model.messagesRevision,
+                count: count)
+        {
+            responses =
+                lastResponseCount
+                + ConversationUnreadMessagePolicy.assistantResponseCount(
+                    Array(messages.prefix(prepend.count)))
+        } else {
+            responses = ConversationUnreadMessagePolicy.assistantResponseCount(messages)
+        }
         if countedMessagesRevision != nil, countedMessagesRevision != model.messagesRevision, historyRequest != nil {
             cancelHistoryRequest()
         }
         let rowIDs = model.sessionTranscriptPreview?.rowIDs ?? model.transcriptMessageIDsByRowID
-        defer { rowIDByMessage = Dictionary(rowIDs.map { ($1, $0) }, uniquingKeysWith: { first, _ in first }) }
+        defer { messageIDsByRowID = rowIDs }
         if sessionID != presentationID {
             reset(
                 sessionID: presentationID, totalCount: count, bubbleCount: responses, messages: messages, rowIDs: rowIDs
@@ -591,9 +621,19 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         // A restore still in flight carries over to the fresh transcript.
         let carried =
             awaitingRestore
-            ?? restoredAnchor.map { SavedPosition(anchor: $0, rowID: rowIDByMessage[$0.messageID], fromEnd: -1) }
+            ?? restoredAnchor.map { SavedPosition(anchor: $0, rowID: storedRowID(for: $0.messageID), fromEnd: -1) }
         let rowIDs = model.transcriptMessageIDsByRowID
-        rowIDByMessage = Dictionary(rowIDs.map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        messageIDsByRowID = rowIDs
+        if let carried, restoredAnchor != nil,
+            let index = messages.firstIndex(where: { $0.id == carried.anchor.messageID }),
+            mountedRange == ConversationMessageWindow.jumpWindow(aroundIndex: index, totalCount: messages.count)
+        {
+            // Stable row identity keeps the existing anchor through the refresh.
+            totalCount = messages.count
+            lastResponseCount = ConversationUnreadMessagePolicy.assistantResponseCount(messages)
+            countedMessagesRevision = model.messagesRevision
+            return
+        }
         if let carried {
             awaitingRestore = nil
             lastResponseCount = ConversationUnreadMessagePolicy.assistantResponseCount(messages)

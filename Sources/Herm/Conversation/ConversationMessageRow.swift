@@ -210,14 +210,13 @@ struct ConversationMessageRow: View, Equatable {
         #if DEBUG
             let _ = evaluation?("message", -1)
         #endif
-        HStack(alignment: .top, spacing: 0) {
+        Group {
             if message.role == .user {
                 let fullText = GenerativeUIIntegration.displayUserText(message.text).trimmingCharacters(
                     in: .whitespacesAndNewlines)
                 let attachments = UserMessageAttachments.split(fullText)
                 let replySplit = ReplyQuote.split(attachments.text)
                 let userText = replySplit?.body ?? attachments.text
-                Spacer(minLength: 40)
                 VStack(alignment: .trailing, spacing: 4) {
                     // Attachments sit above the text surface instead of inside
                     // the bubble, keeping media visually distinct from copy.
@@ -276,6 +275,8 @@ struct ConversationMessageRow: View, Equatable {
                 }
                 .onHover { hoverPresentation.isHovering = $0 }
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.leading, 40)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     let attributedBotID =

@@ -117,11 +117,21 @@ extension DockModel {
             return cached.snapshot
         }
         if cachedMessageNavigatorItems?.sessionID != owner { cachedMessageNavigatorRows.removeAll() }
-        let items = MessageNavigator.items(
-            messages: messages,
-            earlierPrompts: unloadedTranscriptPrompts,
-            sessionID: owner, reusing: &cachedMessageNavigatorRows
-        )
+        let items: [MessageNavigatorItem]
+        if let cached = cachedMessageNavigatorItems, cached.sessionID == owner,
+            let prepend = lastTranscriptPrepend,
+            prepend.isInsertion(
+                after: cached.messagesRevision, previousCount: cached.messageCount,
+                revision: messagesRevision, count: messages.count)
+        {
+            items = MessageNavigator.items(
+                prepending: messages.prefix(prepend.count), to: cached.snapshot.items.suffix(cached.messageCount),
+                earlierPrompts: unloadedTranscriptPrompts, sessionID: owner, reusing: &cachedMessageNavigatorRows)
+        } else {
+            items = MessageNavigator.items(
+                messages: messages, earlierPrompts: unloadedTranscriptPrompts, sessionID: owner,
+                reusing: &cachedMessageNavigatorRows)
+        }
         // Metadata-only message edits must not invalidate navigator identity.
         let snapshot: MessageNavigatorSnapshot
         if let cached = cachedMessageNavigatorItems, cached.sessionID == owner, cached.snapshot.items == items {
@@ -129,7 +139,7 @@ extension DockModel {
         } else {
             snapshot = MessageNavigatorSnapshot(items: items)
         }
-        cachedMessageNavigatorItems = (owner, snapshot)
+        cachedMessageNavigatorItems = (owner, snapshot, messages.count, messagesRevision)
         messageNavigatorNeedsRefresh = false
         return snapshot
     }

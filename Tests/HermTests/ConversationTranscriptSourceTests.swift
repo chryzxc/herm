@@ -5,6 +5,56 @@ import Testing
 
 @MainActor
 struct ConversationTranscriptSourceTests {
+    @Test func historyAtTheTopContinuesPreparingAfterWidthChanges() async throws {
+        let model = DockModel(initialSessionID: "resize-paging")
+        model.messages = (0..<40).map { ChatMessage(role: .hermes, text: "**Saved reply** \($0)") }
+        let controller = ConversationScrollController()
+        controller.allowsOccludedPreparationForTesting = true
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let scroll = NSScrollView(frame: window.contentView!.bounds)
+        scroll.documentView = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 3_600))
+        window.contentView = scroll
+        window.orderFrontRegardless()
+        controller.clipView = scroll.contentView
+        controller.shiftVisibleTop(by: -3_600)
+        func measurement(width: CGFloat) -> NativeMarkdownDocumentContainerView.MeasurementContext {
+            .init(
+                width: width, bodySize: 14, bodyWeight: .regular,
+                themeRevision: DockThemeRuntime.revision, mentionRevision: BotMentions.revision,
+                themeID: DockThemeRuntime.current)
+        }
+        controller.markdownMeasurementContext = measurement(width: 520)
+        let source = ConversationTranscriptSource(
+            model: model, bots: BotModeModel(), actions: ConversationMessageActionState(),
+            voice: VoiceOutput(), coordinator: coordinator)
+        defer { source.suspend() }
+        let before = coordinator.mountedRange
+        coordinator.receiveLayout(
+            .init(
+                sessionID: coordinator.sessionID, generation: coordinator.generation, range: before,
+                rows: before.enumerated().map { position, index in
+                    .init(
+                        target: .init(sessionID: "resize-paging", messageID: model.messages[index].id),
+                        index: index, minY: CGFloat(position * 300), maxY: CGFloat((position + 1) * 300))
+                }))
+        controller.shiftVisibleTop(by: -3_600)
+        coordinator.userMoved(try #require(controller.geometry), delta: -20)
+        try #require(coordinator.hasHistoryRequest)
+        controller.markdownMeasurementContext = measurement(width: 460)
+        coordinator.contentResized()
+        #expect(coordinator.hasHistoryRequest)
+        for _ in 0..<120 where coordinator.mountedRange == before {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(coordinator.mountedRange.lowerBound < before.lowerBound)
+    }
+
     @Test func hiddenNavigatorDefersPreviewProjectionUntilRequested() {
         let model = DockModel(initialSessionID: "hidden-navigator")
         model.messages = (0..<30).map { ChatMessage(role: .hermes, text: "Message \($0)") }
@@ -105,19 +155,28 @@ struct ConversationTranscriptSourceTests {
             actions: ConversationMessageActionState(), voice: VoiceOutput(),
             coordinator: ConversationTranscriptCoordinator())
         let original = source.snapshot.navigator
-        model.transcriptTimeline = [.init(rowID: 7, preview: "Older prompt", timestamp: nil)]
+        model.transcriptTimeline = [
+            .init(rowID: 6, preview: "Still unloaded", timestamp: nil),
+            .init(rowID: 7, preview: "Older prompt", timestamp: nil),
+        ]
         source.refresh()
         #expect(source.snapshot.navigator !== original)
-        #expect(source.snapshot.navigatorItems.first?.storedRowID == 7)
+        #expect(source.snapshot.navigatorItems.map(\.storedRowID) == [6, 7, nil])
         let stored = source.snapshot.navigator
         let cursor = TranscriptHistoryCursor(storageSessionID: "stored-history", profileID: nil, seenRowIDs: [7])
         model.prependEarlierTranscript([["role": "user", "text": "Older prompt", "row_id": 7]], cursor: cursor)
         source.refresh()
         #expect(source.snapshot.navigator !== stored)
-        #expect(source.snapshot.navigatorItems.count == 2)
-        #expect(source.snapshot.navigatorItems.allSatisfy { $0.storedRowID == nil })
-        #expect(source.snapshot.navigatorItems.first?.messageID == model.messages.first?.id)
-        #expect(source.snapshot.navigatorItems.map(\.ordinal) == [1, 2])
+        #expect(source.snapshot.navigatorItems.map(\.storedRowID) == [6, nil, nil])
+        #expect(source.snapshot.navigatorItems[1].messageID == model.messages.first?.id)
+        #expect(source.snapshot.navigatorItems.map(\.ordinal) == [1, 2, 3])
+        #expect(source.snapshot.navigatorItems.last?.searchText == "Loaded reply")
+
+        let retainedID = model.messages[1].id
+        model.messages[1] = ChatMessage(id: retainedID, role: .hermes, text: "Updated reply")
+        source.refresh()
+        #expect(source.snapshot.navigatorItems.last?.messageID == retainedID)
+        #expect(source.snapshot.navigatorItems.last?.searchText == "Updated reply")
     }
 
     @Test func backgroundBotStepsDoNotPublishIntoTheSelectedSession() async throws {

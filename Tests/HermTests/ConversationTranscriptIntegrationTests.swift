@@ -523,7 +523,7 @@ struct ConversationTranscriptIntegrationTests {
             let revealed =
                 earlier ? previousRange.lowerBound - range.lowerBound : range.upperBound - previousRange.upperBound
             let remaining = earlier ? previousRange.lowerBound : fixture.model.messages.count - previousRange.upperBound
-            #expect(revealed == min(8, remaining))
+            #expect(revealed == min(ConversationMessageWindow.pageSize / 2, remaining))
             #expect(fixture.coordinator.performance.pageTransactions == previousPages + 1)
             #expect(fixture.coordinator.performance.anchorCorrections == previousCorrections + 1)
         }

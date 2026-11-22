@@ -267,11 +267,9 @@ extension DockModel {
                     limit: TranscriptHistoryPaging.pageRowLimit,
                     minimumDisplayRows: 1
                 )
-                guard generation == sessionResumeGeneration,
-                    sessionStorageID == cursor.storageSessionID
-                else { return }
-                earlierTranscriptRetryAfter = nil
-                prependEarlierTranscript(loaded.rows, cursor: loaded.cursor)
+                try await prepareEarlierTranscript(loaded, previousCursor: cursor, generation: generation)
+            } catch is CancellationError {
+                return
             } catch {
                 guard generation == sessionResumeGeneration else { return }
                 // Scroll events call this continuously at the top edge; back
@@ -284,14 +282,40 @@ extension DockModel {
     }
 
     func prependEarlierTranscript(_ rows: [[String: Any]], cursor: TranscriptHistoryCursor) {
-        transcriptHistoryCursor = cursor
-        // Loaded prompts leave the navigator's unloaded list with the cursor.
-        messageNavigatorNeedsRefresh = true
         let restored = Self.parseMessages(
             rows,
             defaultBotProfileID: activeBotProfileID,
             defaultBotDisplayName: activeBotDisplayName
         )
+        let references = StoredMessageReference.references(rows: rows, rowIDs: restored.rowIDs)
+        prependEarlierTranscript(restored, references: references, cursor: cursor)
+    }
+
+    private func prepareEarlierTranscript(
+        _ loaded: (rows: [[String: Any]], cursor: TranscriptHistoryCursor),
+        previousCursor: TranscriptHistoryCursor,
+        generation: Int
+    ) async throws {
+        try Task.checkCancellation()
+        guard generation == sessionResumeGeneration, transcriptHistoryCursor == previousCursor else {
+            throw CancellationError()
+        }
+        let (restored, references) = await Self.parseMessagesOffMain(
+            loaded.rows, defaultBotProfileID: activeBotProfileID, defaultBotDisplayName: activeBotDisplayName)
+        try Task.checkCancellation()
+        guard generation == sessionResumeGeneration, sessionStorageID == previousCursor.storageSessionID,
+            transcriptHistoryCursor == previousCursor
+        else { throw CancellationError() }
+        earlierTranscriptRetryAfter = nil
+        prependEarlierTranscript(restored, references: references, cursor: loaded.cursor)
+    }
+
+    private func prependEarlierTranscript(
+        _ restored: RestoredTranscript, references: [UUID: StoredMessageReference], cursor: TranscriptHistoryCursor
+    ) {
+        transcriptHistoryCursor = cursor
+        // Loaded prompts leave the navigator's unloaded list with the cursor.
+        messageNavigatorNeedsRefresh = true
         guard !restored.messages.isEmpty else { return }
         let reconciliation = reconcilePendingSends(
             for: composerDraftKey, restored: restored.messages, rowIDs: restored.rowIDs, visibleHistory: true)
@@ -304,11 +328,11 @@ extension DockModel {
             restored.rowIDs.compactMap { row, id in stable.rowIDs[row].map { (id, $0) } },
             uniquingKeysWith: { first, _ in first })
         let superseded = Set(reconciliation.resolved.map(\.messageID))
-        let existing = Set(messages.map(\.id)).subtracting(superseded)
+        let existing = Set(messages.lazy.map(\.id)).subtracting(superseded)
         let inserted = stable.messages.filter { !existing.contains($0.id) }
-        let retained = messages.filter { !superseded.contains($0.id) }
+        let retained = superseded.isEmpty ? messages : messages.filter { !superseded.contains($0.id) }
         transcriptMessageIDsByRowID.merge(stable.rowIDs) { current, _ in current }
-        storedMessageReferences.merge(StoredMessageReference.references(rows: rows, rowIDs: stable.rowIDs)) {
+        storedMessageReferences.merge(references.lazy.map { (renamed[$0.key] ?? $0.key, $0.value) }) {
             current, _ in current
         }
         transcriptPrependGeneration &+= 1
@@ -316,7 +340,8 @@ extension DockModel {
             generation: transcriptPrependGeneration,
             count: inserted.count,
             resultingCount: retained.count + inserted.count,
-            removedCount: messages.count - retained.count
+            removedCount: messages.count - retained.count,
+            messagesRevision: messagesRevision &+ 1
         )
         messages = inserted + retained
         if let sessionID {
@@ -412,11 +437,9 @@ extension DockModel {
                 maximumPages: .max,
                 through: rowID
             )
-            guard generation == sessionResumeGeneration,
-                sessionStorageID == cursor.storageSessionID
-            else { return nil }
-            earlierTranscriptRetryAfter = nil
-            prependEarlierTranscript(loaded.rows, cursor: loaded.cursor)
+            try await prepareEarlierTranscript(loaded, previousCursor: cursor, generation: generation)
+        } catch is CancellationError {
+            return nil
         } catch {
             guard generation == sessionResumeGeneration else { return nil }
             DebugLog.write(

@@ -21,6 +21,7 @@ struct InlineBotMentionText: NSViewRepresentable {
 
     final class Coordinator {
         var applied: RenderKey?
+        var measuredSizes: [(width: CGFloat, size: CGSize)] = []
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -41,7 +42,8 @@ struct InlineBotMentionText: NSViewRepresentable {
             bodySize: DockTypography.size(.conversation, scale: context.environment.dockWorkspaceScale))
         guard key != context.coordinator.applied else { return }
         context.coordinator.applied = key
-        view.textStorage?.setAttributedString(
+        context.coordinator.measuredSizes.removeAll(keepingCapacity: true)
+        view.setMarkdownText(
             Self.attributedString(
                 text: text, botMentions: botMentions, colorScheme: key.colorScheme, bodySize: key.bodySize))
         view.setAccessibilityLabel(text)
@@ -72,6 +74,8 @@ struct InlineBotMentionText: NSViewRepresentable {
         } else {
             width = NativeMarkdownDocumentSizing.fallbackWidth
         }
+        let coordinator = context.coordinator
+        if let measured = coordinator.measuredSizes.first(where: { $0.width == width }) { return measured.size }
         guard let container = nsView.textContainer, let layout = nsView.layoutManager else { return nil }
         // A trial proposal must not change wrapping in the displayed bubble.
         defer {
@@ -86,6 +90,10 @@ struct InlineBotMentionText: NSViewRepresentable {
         let huggedWidth = min(width, ceil(textBounds.width) + 1)
         container.size = NSSize(width: huggedWidth, height: .greatestFiniteMagnitude)
         layout.ensureLayout(for: container)
-        return CGSize(width: huggedWidth, height: ceil(layout.usedRect(for: container).height))
+        let size = CGSize(width: huggedWidth, height: ceil(layout.usedRect(for: container).height))
+        // Stack layout repeats a handful of trial widths while adjacent rows move.
+        coordinator.measuredSizes.append((width, size))
+        if coordinator.measuredSizes.count > 4 { coordinator.measuredSizes.removeFirst() }
+        return size
     }
 }

@@ -120,12 +120,49 @@ struct ConversationTranscriptCoordinatorTests {
         // Continue after the reader returns to the edge; the original target stays fixed.
         controller.shiftVisibleTop(by: -1_000)
         ready = 4
-        coordinator.retryPreparedPage()
+        coordinator.userMoved(try #require(controller.geometry), delta: -1_000)
         #expect(coordinator.mountedRange.lowerBound == original.lowerBound - 4)
         #expect(targets.count >= 2 && targets.first == targets.last)
         #expect(coordinator.hasHistoryRequest)
         coordinator.userMoved(try #require(controller.geometry), delta: 10)
         #expect(!coordinator.hasHistoryRequest)
+    }
+
+    @Test func readyHistoryMountsInTwoLayoutsDuringScroll() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        let document = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 3_600))
+        scroll.documentView = document
+        controller.clipView = scroll.contentView
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500)
+        let original = layout(coordinator)
+        coordinator.receiveLayout(original)
+        var requests: [Range<Int>] = []
+        coordinator.pageReadiness = { range, _ in
+            requests.append(range)
+            return .init(count: range.count, preparedPage: nil)
+        }
+        controller.userScrollDidMove()
+        for batch in 1...2 {
+            controller.shiftVisibleTop(by: 40 - (try #require(controller.geometry)).visibleTop)
+            let current = try #require(controller.geometry)
+            let anchor = try #require(coordinator.rowViewports.first)
+            coordinator.userMoved(current, delta: -10)
+            #expect(coordinator.mountedRange.lowerBound == original.range.lowerBound - batch * 4)
+            #expect(coordinator.hasHistoryRequest == (batch == 1))
+
+            let mounted = layout(coordinator)
+            document.setFrameSize(NSSize(width: 640, height: CGFloat(mounted.rows.count) * 300))
+            coordinator.receiveLayout(mounted)
+            let retained = try #require(coordinator.rowViewports.first { $0.target == anchor.target })
+            let settled = try #require(controller.geometry)
+            #expect(abs(retained.minY - settled.visibleTop - (anchor.minY - current.visibleTop)) <= 0.5)
+            #expect(coordinator.pendingPage == nil)
+            // Recheck with the new geometry before simulating the next movement.
+            coordinator.retryPreparedPage()
+        }
+        #expect(requests.count == 2 && requests.first == requests.last)
     }
 
     @Test func laterHistoryRevealsOnlyTheReadyContiguousRows() throws {
@@ -174,6 +211,38 @@ struct ConversationTranscriptCoordinatorTests {
         coordinator.retryPreparedPage()
         #expect(coordinator.mountedRange.upperBound == original.upperBound + ready)
         #expect(coordinator.pendingPage != nil)
+    }
+
+    @Test func wheelTicksRecheckAWaitingPageOnlyWhenItBecomesUrgent() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        let document = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 7_500))
+        scroll.documentView = document
+        controller.clipView = scroll.contentView
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500)
+        coordinator.jump(to: 250)
+        coordinator.receiveLayout(layout(coordinator))
+        let original = coordinator.mountedRange
+        var checks = 0
+        coordinator.pageReadiness = { _, _ in
+            checks += 1
+            return .init(count: 1, preparedPage: nil)
+        }
+
+        controller.shiftVisibleTop(by: 6_400)
+        coordinator.userMoved(try #require(controller.geometry), delta: 12)
+        for _ in 0..<10 {
+            controller.shiftVisibleTop(by: 8)
+            coordinator.userMoved(try #require(controller.geometry), delta: 8)
+        }
+        #expect(checks == 1)
+        #expect(coordinator.mountedRange == original)
+
+        controller.shiftVisibleTop(by: 150)
+        coordinator.userMoved(try #require(controller.geometry), delta: 150)
+        #expect(checks == 2)
+        #expect(coordinator.mountedRange.upperBound == original.upperBound + 1)
     }
 
     @Test func partialPagePolicyMountsWholePagesHalfPagesAndUrgentRows() {

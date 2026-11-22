@@ -109,6 +109,28 @@ enum MessageNavigator {
         return addingEarlierPrompts(earlierPrompts, to: loaded, sessionID: sessionID, previewLimit: defaultPreviewLimit)
     }
 
+    /// A verified prepend leaves every existing loaded item valid. Keep its preview
+    /// and update only its position in the combined list.
+    static func items(
+        prepending messages: ArraySlice<ChatMessage>, to retained: ArraySlice<MessageNavigatorItem>,
+        earlierPrompts: [TranscriptTimelineEntry], sessionID: String,
+        reusing cache: inout [RowKey: MessageNavigatorItem]
+    ) -> [MessageNavigatorItem] {
+        var items = earlierPromptItems(earlierPrompts, sessionID: sessionID, previewLimit: defaultPreviewLimit)
+        items.reserveCapacity(items.count + messages.count + retained.count)
+        for message in messages {
+            let row = item(
+                for: message, ordinal: items.count + 1, sessionID: sessionID, previewLimit: defaultPreviewLimit)
+            cache[RowKey(message)] = row
+            items.append(row)
+        }
+        for var row in retained {
+            row.ordinal = items.count + 1
+            items.append(row)
+        }
+        return items
+    }
+
     private static func item(
         for message: ChatMessage, ordinal: Int, sessionID: String, previewLimit: Int
     ) -> MessageNavigatorItem {
@@ -124,8 +146,21 @@ enum MessageNavigator {
         previewLimit: Int
     ) -> [MessageNavigatorItem] {
         guard !earlierPrompts.isEmpty else { return loaded }
+        let prompts = earlierPromptItems(earlierPrompts, sessionID: sessionID, previewLimit: previewLimit)
+        let offset = prompts.count
+        return prompts
+            + loaded.map { item in
+                var item = item
+                item.ordinal += offset
+                return item
+            }
+    }
+
+    private static func earlierPromptItems(
+        _ earlierPrompts: [TranscriptTimelineEntry], sessionID: String, previewLimit: Int
+    ) -> [MessageNavigatorItem] {
         let limit = max(minimumPreviewLimit, previewLimit)
-        let prompts = earlierPrompts.enumerated().map { index, entry in
+        return earlierPrompts.enumerated().map { index, entry in
             MessageNavigatorItem(
                 target: MessageNavigatorTarget(
                     sessionID: sessionID, messageID: placeholderMessageID(forRowID: entry.rowID)),
@@ -138,13 +173,6 @@ enum MessageNavigator {
                 storedRowID: entry.rowID
             )
         }
-        let offset = prompts.count
-        return prompts
-            + loaded.map { item in
-                var item = item
-                item.ordinal += offset
-                return item
-            }
     }
 
     /// Deterministic identity for a stored prompt that has no loaded message.

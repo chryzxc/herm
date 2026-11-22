@@ -34,6 +34,10 @@ final class ConversationMarkdownPrefetch {
         var context: NativeMarkdownDocumentContainerView.MeasurementContext?
         var offset: Int?
     }
+    @MainActor private final class SectionMeasurers {
+        lazy var text = NativeMarkdownTextSectionView()
+        lazy var code = NativeMarkdownCodeView()
+    }
     private enum WarmResult { case finished, waiting, worked, progressed }
     private var identity: Identity?
     private var task: Task<Void, Never>?
@@ -76,8 +80,7 @@ final class ConversationMarkdownPrefetch {
         if let controller, let context = controller.markdownMeasurementContext,
             context.themeRevision == key.themeRevision
         {
-            let text = NativeMarkdownTextSectionView()
-            let code = NativeMarkdownCodeView()
+            let measurers = SectionMeasurers()
             var sliceStart = DispatchTime.now().uptimeNanoseconds
             func resumePreparation() async -> Bool {
                 guard !Task.isCancelled else { return false }
@@ -101,6 +104,7 @@ final class ConversationMarkdownPrefetch {
                 let measurement = NativeMarkdownDocumentContainerView.measurementKey(for: section, context: context)
                 if NativeMarkdownCompletedHeightCache.height(for: measurement) != nil { continue }
                 if case .code(let language) = section.kind {
+                    let code = measurers.code
                     code.update(
                         code: section.source, language: language, bodySize: context.bodySize, deferMeasurement: true)
                     code.beginIncrementalLayout()
@@ -114,6 +118,7 @@ final class ConversationMarkdownPrefetch {
                     NativeMarkdownCompletedHeightCache.store(
                         code.measuredHeight(forWidth: context.width), for: measurement, codeSize: code.contentSize)
                 } else {
+                    let text = measurers.text
                     text.update(
                         markdown: section.source, kind: section.kind, bodySize: context.bodySize,
                         bodyWeight: context.bodyWeight)
@@ -281,8 +286,7 @@ final class ConversationMarkdownPrefetch {
         guard warmTask == nil else { return }
         let generation = generation
         warmTask = Task { @MainActor [weak self, weak controller] in
-            let textMeasurer = NativeMarkdownTextSectionView()
-            let codeMeasurer = NativeMarkdownCodeView()
+            let measurers = SectionMeasurers()
             var sliceWork: UInt64 = 0
             while !Task.isCancelled {
                 guard let controller else { return }
@@ -290,7 +294,7 @@ final class ConversationMarkdownPrefetch {
                 let result =
                     self?.warmNext(
                         controller: controller, generation: generation, isCurrent: isCurrent,
-                        textMeasurer: textMeasurer, codeMeasurer: codeMeasurer) ?? .finished
+                        measurers: measurers) ?? .finished
                 let elapsed = DispatchTime.now().uptimeNanoseconds &- workStarted
                 if case .worked = result {
                     self?.recordPreparationSlice(elapsed)
@@ -319,8 +323,7 @@ final class ConversationMarkdownPrefetch {
 
     private func warmNext(
         controller: ConversationScrollController, generation: UInt64,
-        isCurrent: @MainActor (UUID, Int) -> Bool,
-        textMeasurer: NativeMarkdownTextSectionView, codeMeasurer: NativeMarkdownCodeView
+        isCurrent: @MainActor (UUID, Int) -> Bool, measurers: SectionMeasurers
     ) -> WarmResult {
         guard self.generation == generation else { return .finished }
         guard !warmQueue.isEmpty else {
@@ -357,48 +360,43 @@ final class ConversationMarkdownPrefetch {
         if job.offset == nil, let measurement = NativeMarkdownCompletedHeightCache.measurement(for: key) {
             if isRequested(job.input) { requestedMeasurements[key] = measurement }
             job.index += 1
-        } else {
+        } else if case .code(let language) = section.kind {
+            let codeMeasurer = measurers.code
             if job.offset == nil {
-                if case .code(let language) = section.kind {
-                    codeMeasurer.update(
-                        code: section.source, language: language, bodySize: context.bodySize, deferMeasurement: true)
-                    codeMeasurer.beginIncrementalLayout()
-                } else {
-                    textMeasurer.update(
-                        markdown: section.source, kind: section.kind,
-                        bodySize: context.bodySize, bodyWeight: context.bodyWeight)
-                    textMeasurer.beginIncrementalLayout(forWidth: context.width)
-                }
-                job.offset = 0
+                codeMeasurer.update(
+                    code: section.source, language: language, bodySize: context.bodySize, deferMeasurement: true)
+                codeMeasurer.beginIncrementalLayout()
             }
-            if case .code = section.kind {
-                let offset = codeMeasurer.advanceIncrementalLayout(from: job.offset ?? 0)
-                job.offset = offset
-                if offset >= codeMeasurer.incrementalTextLength {
-                    codeMeasurer.finishIncrementalLayout()
-                    NativeMarkdownCompletedHeightCache.store(
-                        codeMeasurer.measuredHeight(forWidth: context.width), for: key,
-                        codeSize: codeMeasurer.contentSize)
-                    if isRequested(job.input) {
-                        requestedMeasurements[key] = .init(
-                            height: codeMeasurer.measuredHeight(forWidth: context.width),
-                            codeSize: codeMeasurer.contentSize)
-                    }
-                    job.index += 1
-                    job.offset = nil
+            let offset = codeMeasurer.advanceIncrementalLayout(from: job.offset ?? 0)
+            job.offset = offset
+            if offset >= codeMeasurer.incrementalTextLength {
+                codeMeasurer.finishIncrementalLayout()
+                let height = codeMeasurer.measuredHeight(forWidth: context.width)
+                NativeMarkdownCompletedHeightCache.store(height, for: key, codeSize: codeMeasurer.contentSize)
+                if isRequested(job.input) {
+                    requestedMeasurements[key] = .init(height: height, codeSize: codeMeasurer.contentSize)
                 }
-            } else {
-                let offset = textMeasurer.advanceIncrementalLayout(from: job.offset ?? 0)
-                job.offset = offset
-                if offset >= textMeasurer.incrementalTextLength {
-                    let size = textMeasurer.finishIncrementalLayout(forWidth: context.width)
-                    NativeMarkdownCompletedHeightCache.store(size.height, for: key)
-                    if isRequested(job.input) {
-                        requestedMeasurements[key] = .init(height: size.height, codeSize: nil)
-                    }
-                    job.index += 1
-                    job.offset = nil
+                job.index += 1
+                job.offset = nil
+            }
+        } else {
+            let textMeasurer = measurers.text
+            if job.offset == nil {
+                textMeasurer.update(
+                    markdown: section.source, kind: section.kind,
+                    bodySize: context.bodySize, bodyWeight: context.bodyWeight)
+                textMeasurer.beginIncrementalLayout(forWidth: context.width)
+            }
+            let offset = textMeasurer.advanceIncrementalLayout(from: job.offset ?? 0)
+            job.offset = offset
+            if offset >= textMeasurer.incrementalTextLength {
+                let size = textMeasurer.finishIncrementalLayout(forWidth: context.width)
+                NativeMarkdownCompletedHeightCache.store(size.height, for: key)
+                if isRequested(job.input) {
+                    requestedMeasurements[key] = .init(height: size.height, codeSize: nil)
                 }
+                job.index += 1
+                job.offset = nil
             }
         }
         if job.index < job.document.sections.count { warmQueue.insert(job, at: 0) }

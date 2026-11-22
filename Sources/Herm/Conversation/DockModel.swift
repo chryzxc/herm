@@ -61,7 +61,10 @@ final class DockModel: ObservableObject {
         }
     }
     private(set) var messagesRevision: UInt64 = 0
-    var cachedMessageNavigatorItems: (sessionID: String, snapshot: MessageNavigatorSnapshot)?
+    var cachedMessageNavigatorItems:
+        (
+            sessionID: String, snapshot: MessageNavigatorSnapshot, messageCount: Int, messagesRevision: UInt64
+        )?
     var cachedMessageNavigatorRows: [MessageNavigator.RowKey: MessageNavigatorItem] = [:]
     var messageNavigatorNeedsRefresh = true
 

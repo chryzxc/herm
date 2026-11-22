@@ -3272,8 +3272,9 @@ The transcript mounts a bounded window of messages and pages earlier or later
 history automatically as the reader scrolls within one viewport of either edge.
 A first visit that needs an unread check keeps the loading state until the opening
 row is known. Refreshing the unread divider preserves the current reading position.
-History pages reveal eight messages in either direction. The initial window stays
-at 12 messages and the normal mounting backstop stays at 36; a larger visible span
+History pages prepare up to eight messages in either direction. During scrolling, each
+layout adds at most four ready messages and keeps the remaining page prepared. The initial
+window stays at 12 messages and the normal mounting backstop stays at 36; a larger visible span
 is protected from eviction.
 There are no show-more buttons, and the reader's position is held while a page
 mounts. Page anchors track reader movement during layout and repair native origin clamps;
@@ -3296,7 +3297,7 @@ only when Reduce Motion is off. The floating latest-message control has an opaqu
 themed background so transcript text cannot show through it. An unread count adds a
 thin theme-ink highlight travelling around the capsule (2.4s). The same outer rim
 also indicates the current session's working state when there are no unread
-messages. The down arrow stays still, with no inner loading ring. A native layer
+messages. The down arrow stays still, with no inner loading mark. A native layer
 drives the single loop without per-frame SwiftUI invalidation. A short fade/rise and 0.94-to-1 scale introduce the control;
 count changes use a numeric transition. These effects belong to the floating
 control only, never the transcript layout or paging transaction. Under Reduce
@@ -3307,6 +3308,7 @@ Transcript snapshots include live activity only while its streaming row is mount
 and bot-step inputs are scoped to the selected conversation’s dispatches and mentions.
 Background tool progress updates session activity without rebuilding the attention list.
 Activity labels format only the tool arguments they display.
+User prompts reuse their measured size at each wrapping width until their rendered text changes.
 The canonical stream and activity continue accumulating while browsing history;
 returning to the live reply presents the current state without replaying UI updates.
 The jump-to-message rail sits on the left edge of wide conversations, with hover
@@ -3324,8 +3326,15 @@ replies over 8 KB. Long native Markdown documents retain their full measured hei
 only visible sections and one viewport of buffer. Adjacent completed pages prefetch pure
 Markdown sections away from the main actor. Adjacent pages prepare native layout in
 small slices, and the current page stays visible until its next page is ready.
+Preparation creates native measurement views only for sections missing a cached size.
 Requested pages continue preparing during scrolling; speculative work waits for
-the reader to pause. Prepared documents and measurements survive cache eviction
+the reader to pause. Older stored pages parse and prepare message references off
+the main thread. A waiting page rechecks readiness when preparation advances or
+the reader crosses into the area where a smaller page can be revealed.
+A width change restarts measurement for the same waiting page so it can appear
+while the reader is already at the edge. Prepending older messages reuses the
+navigator rows and counts for unchanged history.
+Prepared documents and measurements survive cache eviction
 until the matching page layout completes. A bounded 32,000-entry memory cache reuses numeric completed-section heights by exact
 source, kind, width, body style, theme identity/revision, and mention revision. Stable
 streamed sections share these measurements with the completed reply. During a long
@@ -3334,7 +3343,8 @@ prepared in slices that yield to input. Matching native text sections stay mount
 with their selection. Code entries also retain their numeric content size.
 Reusable text and code views
 measure sections before their display views are created, so cold history pages
-do not construct a text view for every offscreen paragraph. Scrolling remounts the same
+do not construct a text view for every offscreen paragraph. Sections receive their
+measured frame before joining the scroll view's hierarchy. Scrolling remounts the same
 section views without reparsing their content. Focused text remains mounted so
 selection and Copy survive scrolling; VoiceOver, Switch Control, and full
 keyboard access retain the complete section hierarchy.
@@ -3367,7 +3377,9 @@ Icon loading changes neither the text layout nor the link destination.
 
 Assistant responses are open document content; user prompts use
 restrained right-aligned navy bubbles with a tighter sender-side corner, and a
-steering prompt's status sits in sentence case beside its timestamp. Fenced
+steering prompt's status sits in sentence case beside its timestamp. The prompt's
+40pt leading clearance is applied as an inset, so scrolling does not ask a
+horizontal stack to measure both a spacer and the message. Fenced
 code blocks carry a quiet header with the lowercase language and a Copy action.
 User image attachments sit above the text bubble. Single images fit within 220pt
 in each dimension and retain their aspect ratio without transparent square padding;
