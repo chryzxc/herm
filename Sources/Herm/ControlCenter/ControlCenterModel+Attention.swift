@@ -147,6 +147,14 @@ extension ControlCenterModel {
     /// be enriched by later partial events without creating another row.
     func ingestEvent(_ type: String, params: [String: Any]) {
         guard !HermesHighFrequencyEvent.includes(type) else { return }
+        switch type {
+        case "tool.call", "tool.start", "tool.use", "tool_use", "tool.result", "tool_result", "tool.complete",
+            "tool_complete":
+            // Tool progress carries no attention transition. Avoid rebuilding the inbox on each call or result.
+            return
+        default:
+            break
+        }
         let payload = params["payload"] as? [String: Any] ?? [:]
         let sessionID =
             (params["session_id"] as? String)
@@ -506,8 +514,7 @@ extension ControlCenterModel {
             if lhsRank != rhsRank { return lhsRank < rhsRank }
             return lhs.createdAt > rhs.createdAt
         }
-        // Runs on every gateway event; an unchanged list must not republish
-        // and re-render every view observing the control center.
+        // Avoid re-rendering every observer of the control center when the list is unchanged.
         if sorted != attention { attention = sorted }
     }
 

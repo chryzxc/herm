@@ -12,55 +12,77 @@ enum ToolStep {
     static func describe(name: String, args a: [String: String], isComplete: Bool = false) -> (
         icon: Ph, title: String, detail: String?
     ) {
-        let file = a["path"].map { ($0 as NSString).lastPathComponent }
+        describe(name: name, isComplete: isComplete, argument: { a[$0] })
+    }
+
+    /// An activity label formats only the fields it displays, even if Hermes sends a large tool input.
+    static func describe(name: String, rawArgs: Any?) -> (icon: Ph, title: String, detail: String?) {
+        var parsed: [String: Any]?
+        return describe(name: name, isComplete: false) { key in
+            if parsed == nil { parsed = DockModel.parseArgsDict(rawArgs) ?? [:] }
+            return parsed?[key].map(DockModel.toolArgumentText)
+        }
+    }
+
+    private static func describe(name: String, isComplete: Bool, argument: (String) -> String?)
+        -> (icon: Ph, title: String, detail: String?)
+    {
+        var file: String? { argument("path").map { ($0 as NSString).lastPathComponent } }
         func quoted(_ text: String?) -> String? { text.map { "“\($0.prefix(80))”" } }
         let lower = name.lowercased()
         switch lower {
         case "browser_exec": return (.globe, "Working in the browser", nil)
         case "browser_cdp": return (.globe, "Working in the browser", nil)
-        case "browser_navigate": return (.globe, "Browsing \(host(a["url"]) ?? "the web")", a["url"])
+        case "browser_navigate":
+            let url = argument("url")
+            return (.globe, "Browsing \(host(url) ?? "the web")", url)
         case "browser_click": return (.cursorClick, "Clicking on the page", nil)
         // Typed text may be a password, so it is never shown here.
         case "browser_type": return (.keyboard, "Filling in a field", nil)
-        case "browser_scroll": return (.arrowsDownUp, "Scrolling \(a["direction"] ?? "the page")", nil)
+        case "browser_scroll": return (.arrowsDownUp, "Scrolling \(argument("direction") ?? "the page")", nil)
         case "browser_back": return (.arrowLeft, "Going back", nil)
-        case "browser_press": return (.keyboard, "Pressing \(a["key"] ?? "a key")", nil)
+        case "browser_press": return (.keyboard, "Pressing \(argument("key") ?? "a key")", nil)
         case "browser_snapshot": return (.eye, "Reading the page", nil)
-        case "browser_vision": return (.eye, "Looking at the page", a["question"])
+        case "browser_vision": return (.eye, "Looking at the page", argument("question"))
         case "browser_get_images": return (.image, "Collecting images", nil)
         case "browser_console": return (.code, "Checking the console", nil)
-        case "web_search": return (.magnifyingGlass, "Searching the web", quoted(a["query"]))
+        case "web_search": return (.magnifyingGlass, "Searching the web", quoted(argument("query")))
         case "web_extract":
-            let link = a["urls"].flatMap(VoicePillQueue.target(in:))
+            let link = argument("urls").flatMap(VoicePillQueue.target(in:))
             return (.fileText, "Reading \(host(link) ?? "a page")", nil)
-        case "terminal": return (.terminalWindow, "Running a command", a["command"].map { String($0.prefix(90)) })
+        case "terminal":
+            return (.terminalWindow, "Running a command", argument("command").map { String($0.prefix(90)) })
         case "write_file": return (.pencilSimple, "Writing \(file ?? "a file")", nil)
         case "patch": return (.pencilSimple, "Editing \(file ?? "a file")", nil)
         case "read_file": return (.fileText, "Reading \(file ?? "a file")", nil)
-        case "search_files": return (.magnifyingGlass, "Searching files", quoted(a["pattern"]))
+        case "search_files": return (.magnifyingGlass, "Searching files", quoted(argument("pattern")))
         case "memory":
-            let forgets = a["action"]?.lowercased().contains("remove") == true
+            let forgets = argument("action")?.lowercased().contains("remove") == true
             let title = forgets ? (isComplete ? "Forgot" : "Forgetting") : (isComplete ? "Remembered" : "Remembering")
             return (
-                .bookmarkSimple, title, (a["content"] ?? a["new_text"] ?? a["old_text"]).map { String($0.prefix(100)) }
+                .bookmarkSimple, title,
+                (argument("content") ?? argument("new_text") ?? argument("old_text")).map { String($0.prefix(100)) }
             )
         case "skill_view":
-            return (.bookOpen, "Using skill \(a["name"] ?? "")".trimmingCharacters(in: .whitespaces), nil)
+            return (.bookOpen, "Using skill \(argument("name") ?? "")".trimmingCharacters(in: .whitespaces), nil)
         case "image_generate":
             return (
-                .image, isComplete ? "Image ready" : "Generating an image", a["prompt"].map { String($0.prefix(90)) }
+                .image, isComplete ? "Image ready" : "Generating an image",
+                argument("prompt").map { String($0.prefix(90)) }
             )
-        case "vision_analyze": return (.eye, "Looking at an image", a["question"])
+        case "vision_analyze": return (.eye, "Looking at an image", argument("question"))
         case "delegate_task": return (.robot, "Delegating", nil)
         case "todo", "todo_list", "todo_write": return (.listChecks, "Updating the plan", nil)
-        case "cronjob", "cronjob_manage": return (.calendarCheck, "Scheduling", a["action"])
+        case "cronjob", "cronjob_manage": return (.calendarCheck, "Scheduling", argument("action"))
         case "clarify": return (.chatCircleText, "Asking you", nil)
         case "execute_code": return (.code, "Running code", nil)
         case "text_to_speech": return (.waveform, "Speaking", nil)
         default:
             if lower.contains("send") || lower.hasSuffix("_dm") {
-                let to = a["to"] ?? a["target"] ?? a["recipient"] ?? a["chat_id"] ?? a["channel"] ?? a["user"]
-                let text = a["message"] ?? a["text"] ?? a["content"]
+                let to =
+                    argument("to") ?? argument("target") ?? argument("recipient") ?? argument("chat_id") ?? argument(
+                        "channel") ?? argument("user")
+                let text = argument("message") ?? argument("text") ?? argument("content")
                 let detail = [to, text.map { "“\($0.prefix(70))”" }].compactMap { $0 }.joined(separator: " · ")
                 return (
                     .paperPlaneTilt, isComplete ? "Message sent" : "Sending a message", detail.isEmpty ? nil : detail

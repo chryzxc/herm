@@ -156,7 +156,7 @@ extension DockModel {
             let name =
                 (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String)
                 ?? "tool"
-            let step = ToolStep.describe(name: name, args: Self.textArgs(Self.parseArgsDict(payload["args"])) ?? [:])
+            let step = ToolStep.describe(name: name, rawArgs: payload["args"])
             let preview = (payload["tool_preview"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             sessionActivityLabels[sessionID] = [step.title, step.detail ?? (preview.isEmpty ? nil : preview)].compactMap
             { $0 }.joined(separator: ": ")

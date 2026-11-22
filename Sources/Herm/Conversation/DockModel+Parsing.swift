@@ -180,12 +180,14 @@ extension DockModel {
     /// Tool arguments as short strings: text as-is, anything else as JSON.
     nonisolated static func textArgs(_ args: [String: Any]?) -> [String: String]? {
         guard let args, !args.isEmpty else { return nil }
-        return args.mapValues { value in
-            let text =
-                (value as? String) ?? (try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]))
-                .flatMap { String(data: $0, encoding: .utf8) } ?? "\(value)"
-            return String(text.prefix(600))
-        }
+        return args.mapValues(toolArgumentText)
+    }
+
+    nonisolated static func toolArgumentText(_ value: Any) -> String {
+        let text =
+            (value as? String) ?? (try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "\(value)"
+        return String(text.prefix(600))
     }
 
     nonisolated static func parseArgsDict(_ value: Any?) -> [String: Any]? {

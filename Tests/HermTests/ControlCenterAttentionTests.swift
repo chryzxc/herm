@@ -136,6 +136,25 @@ struct ControlCenterAttentionTests {
         model.eventRefreshTask?.cancel()
     }
 
+    @Test func toolProgressDoesNotRebuildAttention() {
+        let suite = "attention-tool-progress-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = ControlCenterModel(presentationDefaults: defaults)
+        model.upsertAttention(
+            AttentionItem(
+                id: "approval:earlier", reference: .init(source: .hermesApproval, sourceID: "earlier"),
+                kind: .approval, title: "Pending approval", detail: "Review the request",
+                createdAt: .distantPast, state: .open, actions: [.approve]))
+
+        model.ingestEvent("tool.call", params: ["session_id": "background", "payload": ["name": "terminal"]])
+        model.ingestEvent("tool.result", params: ["session_id": "background"])
+        #expect(model.attention.isEmpty)
+
+        model.ingestEvent("approval.request", params: ["session_id": "background"])
+        #expect(Set(model.attention.map(\.id)) == ["approval:earlier", "approval:background"])
+    }
+
     @Test func hiddenMessageRefreshOnlyReadsSharedSessionsWithoutPublishingUnchangedState() async {
         let client = ClarificationResponseRPCClient()
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client), capabilities: [])

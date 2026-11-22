@@ -3299,6 +3299,8 @@ holds still. The accessible value reports response progress independently of mot
 
 Transcript snapshots include live activity only while its streaming row is mounted,
 and bot-step inputs are scoped to the selected conversation’s dispatches and mentions.
+Background tool progress updates session activity without rebuilding the attention list.
+Activity labels format only the tool arguments they display.
 The canonical stream and activity continue accumulating while browsing history;
 returning to the live reply presents the current state without replaying UI updates.
 The jump-to-message rail sits on the left edge of wide conversations, with hover

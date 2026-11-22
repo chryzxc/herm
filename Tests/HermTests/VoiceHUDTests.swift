@@ -99,6 +99,23 @@ struct VoiceHUDTests {
                 == "sam · “hi”")
     }
 
+    @Test func toolLabelsMatchExistingFormattingForRawAndEncodedArguments() throws {
+        let args: [String: Any] = [
+            "path": "/tmp/example.md", "command": String(repeating: "echo ", count: 200),
+            "urls": ["https://example.com/search"], "unrelated": ["bytes": Array(repeating: 42, count: 500)],
+        ]
+        let encoded = String(decoding: try JSONSerialization.data(withJSONObject: args), as: UTF8.self)
+        for name in ["browser_exec", "terminal", "web_extract", "read_file"] {
+            let expected = ToolStep.describe(name: name, args: DockModel.textArgs(args) ?? [:])
+            for source: Any in [args, encoded] {
+                let actual = ToolStep.describe(name: name, rawArgs: source)
+                #expect(actual.icon == expected.icon)
+                #expect(actual.title == expected.title)
+                #expect(actual.detail == expected.detail)
+            }
+        }
+    }
+
     /// Voice processing's channel 0 is the echo-cancelled voice; the others would mix the reply back in.
     @Test func echoCancelledMicKeepsOnlyTheCleanedChannel() throws {
         let layout = try #require(AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | 3))
