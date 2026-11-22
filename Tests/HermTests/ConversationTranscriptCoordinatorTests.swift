@@ -165,6 +165,44 @@ struct ConversationTranscriptCoordinatorTests {
         #expect(requests.count == 2 && requests.first == requests.last)
     }
 
+    @Test func historyPreparesAheadWithoutMountingOrRepeatingRequests() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 3_600))
+        controller.clipView = scroll.contentView
+        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500)
+        coordinator.receiveLayout(layout(coordinator))
+        let original = coordinator.mountedRange
+        var requested: [Range<Int>] = []
+        coordinator.pageReadiness = { range, _ in
+            requested.append(range)
+            return .init(count: range.count, preparedPage: nil)
+        }
+        controller.userScrollDidMove()
+        controller.shiftVisibleTop(by: 900 - (try #require(controller.geometry)).visibleTop)
+        coordinator.userMoved(try #require(controller.geometry), delta: -150)
+        coordinator.retryPreparedPage()
+        #expect(requested == [(original.lowerBound - ConversationMessageWindow.pageSize)..<original.lowerBound])
+        #expect(coordinator.mountedRange == original)
+
+        controller.shiftVisibleTop(by: -450)
+        let beforeReveal = try #require(controller.geometry)
+        coordinator.userMoved(beforeReveal, delta: -450)
+        let expectedStart = original.lowerBound - ConversationMessageWindow.minimumPartialPage
+        #expect(coordinator.mountedRange.lowerBound == expectedStart)
+        #expect(coordinator.performance.pageTransactions == 1)
+        #expect(coordinator.hasHistoryRequest)
+        let anchor = try #require(coordinator.pendingPage?.anchor)
+        let mounted = layout(coordinator)
+        scroll.documentView?.setFrameSize(NSSize(width: 640, height: CGFloat(mounted.rows.count) * 300))
+        coordinator.receiveLayout(mounted)
+        let retained = try #require(mounted.rows.first { $0.target.messageID == anchor.messageID })
+        let geometry = try #require(controller.geometry)
+        #expect(abs(retained.minY - geometry.visibleTop - anchor.offset) <= 0.5)
+        #expect(coordinator.pendingPage == nil)
+    }
+
     @Test func laterHistoryRevealsOnlyTheReadyContiguousRows() throws {
         let controller = ConversationScrollController()
         let coordinator = ConversationTranscriptCoordinator(controller: controller)

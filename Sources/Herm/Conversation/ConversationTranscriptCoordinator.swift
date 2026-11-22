@@ -77,11 +77,14 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     private var consumedPrependGeneration = 0
     private var queuedDirection: CGFloat = 0
     private var preparingDirection: CGFloat = 0
+    private enum HistoryProximity {
+        case preparing, revealing, urgent
+    }
     private struct HistoryRequest {
         let id = UUID()
         let target: Range<Int>
         let direction: CGFloat
-        var wasNearEdge = false
+        var proximity: HistoryProximity
     }
     private var historyRequest: HistoryRequest?
     var hasHistoryRequest: Bool { historyRequest != nil }
@@ -321,16 +324,6 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         followTail()
     }
 
-    private func visibleSpan(_ geometry: ConversationScrollGeometry) -> ClosedRange<Int>? {
-        let visible = rowViewports.filter {
-            $0.maxY > geometry.visibleTop && $0.minY < geometry.visibleTop + geometry.visibleHeight
-        }
-        guard let lower = visible.map(\.index).min(), let upper = visible.map(\.index).max() else {
-            return nil
-        }
-        return lower...upper
-    }
-
     func cancelHistoryRequest() {
         historyRequest = nil
         preparingDirection = 0
@@ -345,24 +338,28 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             return
         }
         let edgeDistance = direction < 0 ? geometry.visibleTop : geometry.distanceToBottom
-        guard edgeDistance < max(480, geometry.visibleHeight) else {
+        let revealDistance = max(480, geometry.visibleHeight)
+        guard edgeDistance < 2 * revealDistance else {
             preparingDirection = 0
             return
         }
         let range = ConversationMessageWindow.visibleRange(mountedRange, totalCount: totalCount)
         if direction < 0, range.lowerBound == 0 {
+            guard edgeDistance < revealDistance else { return }
             if historyRequest != nil { cancelHistoryRequest() }
             onEarlierHistory()
             return
         }
-        // Preparation reports progress itself. Wheel events only need to recheck
-        // when crossing into the area where a smaller ready page can be mounted.
-        let isNearEdge = ConversationMessageWindow.isNearHistoryEdge(edgeDistance, geometry.visibleHeight)
-        if preparingDirection == direction, !isNearEdge || historyRequest?.wasNearEdge == true {
-            historyRequest?.wasNearEdge = isNearEdge
-            return
+        let proximity: HistoryProximity =
+            ConversationMessageWindow.isNearHistoryEdge(edgeDistance, geometry.visibleHeight)
+            ? .urgent : edgeDistance < revealDistance ? .revealing : .preparing
+        // Preparation reports progress itself. Wheel events only recheck when crossing a threshold.
+        if preparingDirection == direction, historyRequest?.proximity == proximity { return }
+        let visible = rowViewports.lazy.filter {
+            $0.maxY > geometry.visibleTop && $0.minY < geometry.visibleTop + geometry.visibleHeight
         }
-        let span = visibleSpan(geometry)
+        guard let row = visible.min(by: { $0.index < $1.index }) else { return }
+        let span = row.index...(visible.map(\.index).max() ?? row.index)
         let proposed: Range<Int>
         if direction < 0 {
             proposed = ConversationMessageWindow.revealEarlier(
@@ -371,17 +368,13 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             proposed = ConversationMessageWindow.revealLater(
                 range, totalCount: totalCount, visibleSpan: span)
         }
-        guard proposed != range,
-            let row = rowViewports.filter({
-                $0.maxY > geometry.visibleTop && $0.minY < geometry.visibleTop + geometry.visibleHeight
-            }).min(by: { $0.index < $1.index })
-        else { return }
+        guard proposed != range else { return }
         if historyRequest == nil {
             let target = direction < 0 ? proposed.lowerBound..<range.lowerBound : range.upperBound..<proposed.upperBound
-            historyRequest = HistoryRequest(target: target, direction: direction)
+            historyRequest = HistoryRequest(target: target, direction: direction, proximity: proximity)
         }
         guard let request = historyRequest, request.direction == direction else { return }
-        historyRequest?.wasNearEdge = isNearEdge
+        historyRequest?.proximity = proximity
         let readiness =
             pageReadiness?(request.target, direction)
             ?? ConversationPageReadiness(count: request.target.count, preparedPage: nil)
@@ -391,24 +384,25 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             direction < 0
             ? range.lowerBound - max(request.target.lowerBound, request.target.upperBound - ready)
             : min(request.target.upperBound, request.target.lowerBound + ready) - range.upperBound
-        guard
+        let isFullyReady = ready == request.target.count
+        guard proximity != .preparing,
             ConversationMessageWindow.mountsPartialPage(
-                available: available, isFullyReady: ready == request.target.count,
+                available: available, isFullyReady: isFullyReady,
                 edgeDistance: edgeDistance,
                 visibleHeight: geometry.visibleHeight)
         else {
             preparingDirection = direction
             return
         }
-        // Keep preparing the whole page while distributing row layout across scroll updates.
-        let count = controller.isUserScrolling ? min(ConversationMessageWindow.pageSize / 2, available) : available
+        let count =
+            controller.isUserScrolling ? min(ConversationMessageWindow.minimumPartialPage, available) : available
         let next =
             direction < 0
             ? ConversationMessageWindow.revealEarlier(
                 range, totalCount: totalCount, visibleSpan: span, count: count)
             : ConversationMessageWindow.revealLater(
                 range, totalCount: totalCount, visibleSpan: span, count: count)
-        if ready == request.target.count, count == available {
+        if isFullyReady, count == available {
             cancelHistoryRequest()
         } else {
             preparingDirection = direction
@@ -422,11 +416,17 @@ final class ConversationTranscriptCoordinator: ObservableObject {
                 messageID: row.target.messageID, offset: row.minY - geometry.visibleTop),
             preparedPage: readiness.preparedPage)
         performance.recordPageTransaction()
+        HermPerformanceRecorder.mark("transcript.rowsMounted", count: count)
     }
 
     func retryPreparedPage() {
         guard preparingDirection != 0, pendingPage == nil, let geometry = controller.geometry else { return }
         let direction = preparingDirection
+        if historyRequest?.proximity == .preparing {
+            let distance = direction < 0 ? geometry.visibleTop : geometry.distanceToBottom
+            // The prefetcher already knows the requested rows. Check readiness when they can mount.
+            guard distance < max(480, geometry.visibleHeight) else { return }
+        }
         preparingDirection = 0
         checkEdge(geometry, direction: direction)
     }

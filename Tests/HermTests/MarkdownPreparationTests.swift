@@ -173,13 +173,16 @@ struct MarkdownPreparationTests {
             messages: messages, range: 8..<20, sessionID: "idle-warm", streamingID: nil, controller: controller,
             isCurrent: { _, _ in true })
         let deadline = Date().addingTimeInterval(5)
-        while prefetch.committedDocuments < 12 && Date() < deadline {
+        while (prefetch.committedDocuments < 12 || prefetch.warmWait == nil) && Date() < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(prefetch.committedDocuments == 12)
         #expect(NativeMarkdownCompletedHeightCache.misses == 0)
         let context = try #require(controller.markdownMeasurementContext)
         let requestedID = messages[7].id
+        let speculativeWait = try #require(prefetch.warmWait)
+        #expect(!prefetch.isReady(messageIDs: [requestedID], context: context))
+        #expect(speculativeWait.isCancelled)
         while !prefetch.isReady(messageIDs: [requestedID], context: context) && Date() < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }

@@ -44,6 +44,7 @@ final class ConversationMarkdownPrefetch {
     private weak var activeController: ConversationScrollController?
     private var currentCheck: (@MainActor (UUID, Int) -> Bool)?
     private var warmTask: Task<Void, Never>?
+    private(set) var warmWait: Task<Void, Never>?
     private var warmQueue: [WarmJob] = []
     private var generation: UInt64 = 0
     private var inputsByMessage: [UUID: [Input]] = [:]
@@ -148,6 +149,8 @@ final class ConversationMarkdownPrefetch {
         task = nil
         warmTask?.cancel()
         warmTask = nil
+        warmWait?.cancel()
+        warmWait = nil
         warmQueue.removeAll()
         inputsByMessage.removeAll()
         pendingMessages.removeAll()
@@ -307,7 +310,10 @@ final class ConversationMarkdownPrefetch {
                     return
                 case .waiting:
                     sliceWork = 0
-                    try? await Task.sleep(for: .milliseconds(80))
+                    let wait = Task<Void, Never> { try? await Task.sleep(for: .milliseconds(80)) }
+                    self?.warmWait = wait
+                    await wait.value
+                    if self?.generation == generation { self?.warmWait = nil }
                 case .worked, .progressed:
                     sliceWork &+= elapsed
                     if case .progressed = result { self?.onProgress?() }
@@ -412,6 +418,8 @@ final class ConversationMarkdownPrefetch {
             requestedOrder = messageIDs
             requestedMessageIDs = Set(messageIDs)
             requestedContext = context
+            // This work becomes eligible immediately, even during a scroll gesture.
+            warmWait?.cancel()
         }
         requestedDocumentKeys = Set(messageIDs.flatMap { (inputsByMessage[$0] ?? []).map(\.key) })
         while readyCount < messageIDs.count {
@@ -532,5 +540,6 @@ final class ConversationMarkdownPrefetch {
     deinit {
         task?.cancel()
         warmTask?.cancel()
+        warmWait?.cancel()
     }
 }
