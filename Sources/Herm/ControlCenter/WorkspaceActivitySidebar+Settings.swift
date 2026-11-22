@@ -67,7 +67,6 @@ extension WorkspaceActivitySidebar {
                         .dockPadding(.vertical, -8)
                 }
                 chatAssistancePreferencesSection
-                chatQuotaPreferencesSection
             }
             if selectedSettingsCategory == .safety {
                 privacyPreferencesSection
@@ -1047,27 +1046,6 @@ extension WorkspaceActivitySidebar {
                     detail: "Prevent idle sleep during a running turn. Only affects this Mac."
                 ) {
                     settingsSwitch(isOn: $keepsAwakeWhileWorking)
-                }
-            }
-            .dockPadding(.vertical, -8)
-        }
-    }
-
-    var chatQuotaPreferencesSection: some View {
-        SettingsSection(title: "Quota in chat", subtitle: "", tint: .dockAccent) {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsPreferenceRow(
-                    title: "Show quota beside the composer",
-                    detail: "Show the provider closest to its limit next to the context ring."
-                ) {
-                    settingsSwitch(isOn: $showsQuotaChip)
-                }
-                Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(
-                    title: "Quota drop banner",
-                    detail: "Show a banner over the chat each time a provider drops another 10%."
-                ) {
-                    settingsSwitch(isOn: $showsQuotaDropBanner)
                 }
             }
             .dockPadding(.vertical, -8)

@@ -2203,8 +2203,9 @@ leads with the connected/attention/available sentence over one freshness line
 slot shows peak-hour sync progress or failure). Trailing actions are Refresh and
 the Quota options menu (icon buttons at their drawn size, 6pt apart, no 44pt hit
 frame), then the secondary Sync peak hours (pending "Syncing…" in place) and the
-primary Add account. The options menu holds only preferences: Show in sidebar, a
-divider, then an Auto-refresh section listing Off/1/5/15 minutes as checkable
+primary Add account. The options menu starts with Show in sidebar. A Quota in chat section groups
+the Show quota beside the composer and Quota drop banner toggles. Dividers
+separate these groups from one another and from the Auto-refresh section listing Off/1/5/15 minutes as checkable
 choices (no submenu; refresh runs only while the page is open). In narrow
 windows the actions wrap below the status.
 

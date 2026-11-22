@@ -149,8 +149,6 @@ struct WorkspaceActivitySidebar: View {
     @AppStorage(ApprovalAuthGate.key) var requiresAuthForBroadApprovals = false
     @AppStorage(HermDelegate.keepAwakeKey) var keepsAwakeWhileWorking = false
     @AppStorage("dock.activity.tab") var activityTab = ActivityTab.work
-    @AppStorage(ChatQuotaSettingsKey.chip) var showsQuotaChip = true
-    @AppStorage(ChatQuotaSettingsKey.dropBanner) var showsQuotaDropBanner = true
     @AppStorage(DoubleTapShortcut.workspaceKey) var workspaceShortcut = DoubleTapShortcut.command
     @AppStorage(DoubleTapShortcut.notchKey) var notchShortcut = DoubleTapShortcut.option
     @AppStorage(DesktopCaptureShortcut.key) var windowCaptureChord = QuickCaptureChord.off

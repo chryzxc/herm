@@ -10,6 +10,8 @@ struct QuotaWorkspaceView: View {
     @ObservedObject var control: ControlCenterModel
     @AppStorage("dock.quota.autoRefreshMinutes") private var autoRefreshMinutes = 0
     @AppStorage(QuotaRailRing.preferenceKey) private var showsQuotaRings = QuotaRailRing.defaultShown
+    @AppStorage(ChatQuotaSettingsKey.chip) private var showsQuotaChip = true
+    @AppStorage(ChatQuotaSettingsKey.dropBanner) private var showsQuotaDropBanner = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var connectTarget: QuotaProviderDescriptor?
     @State private var addingPoolAccount = false
@@ -270,11 +272,14 @@ struct QuotaWorkspaceView: View {
         .help("Add an account to a Hermes credential pool")
     }
 
-    /// Two preferences, each visible at a glance: the sidebar toggle, then every auto-refresh
-    /// interval as a choice, so the current one is checked without opening a submenu.
     private var quotaOptionsMenu: some View {
         DockMenu {
             Toggle("Show in sidebar", isOn: $showsQuotaRings)
+            Divider()
+            DockMenuSection("Quota in chat") {
+                Toggle("Show quota beside the composer", isOn: $showsQuotaChip)
+                Toggle("Quota drop banner", isOn: $showsQuotaDropBanner)
+            }
             Divider()
             DockMenuSection("Auto-refresh") {
                 DockMenuChoices(selection: $autoRefreshMinutes) {
