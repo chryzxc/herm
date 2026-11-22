@@ -1136,8 +1136,8 @@ Tools and Skills offer **Show all** for entries beyond the first ten.
 
 Work shares in-flight month reads, reuses successful reads for one minute, cancels obsolete
 month requests, and clears its cache on runtime changes. Selected-period projections are
-reused, long lists load lazily, and Spend's refresh stays pending until provider accounting
-also finishes.
+reused, long lists load lazily, and the detail pane pauses row hover while scrolling.
+Spend's refresh stays pending until provider accounting also finishes.
 Calendar indexes are prepared away from the main thread, and archive activity reads are
 limited to two concurrent requests.
 

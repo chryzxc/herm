@@ -302,6 +302,8 @@ extension WorkspaceActivitySidebar {
                         control.revealKanbanTask(task)
                     }
                 )
+                .equatable()
+                .id(ObjectIdentifier(control))
                 .task {
                     control.refreshWorkCalendar(month: Date(), repoPaths: calendarRepoPaths)
                     await botMode.refreshNow()

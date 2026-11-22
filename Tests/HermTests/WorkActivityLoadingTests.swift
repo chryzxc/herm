@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 
@@ -5,6 +6,31 @@ import Testing
 
 @MainActor
 struct WorkActivityLoadingTests {
+    @Test func workPresentationIgnoresUnrelatedControlCenterUpdates() async throws {
+        let control = ControlCenterModel()
+        let presentation = WorkActivityPresentation(control: control)
+        var publications = 0
+        let subscription = presentation.$snapshot.dropFirst().sink { _ in publications += 1 }
+        defer { subscription.cancel() }
+
+        control.pendingActionIDs.insert("unrelated")
+        control.beginProjectionRefresh("unrelated")
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(publications == 0)
+
+        control.workCalendar = WorkCalendarIndex.build(
+            month: .now, sessions: [], tasks: [], commits: [], runs: [], usage: [])
+        control.beginProjectionRefresh("work.calendar")
+        try await waitUntil { presentation.snapshot.refreshState?.isRefreshing == true }
+        #expect(presentation.snapshot.index == control.workCalendar)
+        #expect(publications == 1)
+
+        let now = Date(timeIntervalSince1970: 1_000)
+        control.recordProjectionSuccess("work.calendar", count: 0, now: now)
+        try await waitUntil { presentation.snapshot.refreshState?.lastSuccess == now }
+        #expect(presentation.snapshot.refreshState?.isRefreshing == false)
+    }
+
     @Test func interruptedMonthReloadsAndPublishesDelayedUsage() async throws {
         let client = ControlledActivityClient()
         let control = ControlCenterModel(rpc: HermesControlRPC(client: client))

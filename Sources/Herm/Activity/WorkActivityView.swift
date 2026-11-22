@@ -1,14 +1,63 @@
 import AppKit
+import Combine
 import SwiftUI
+
+/// Work Activity follows its own projections so unrelated workspace updates cannot invalidate its scroll content.
+@MainActor
+final class WorkActivityPresentation: ObservableObject {
+    struct Snapshot: Equatable {
+        let index: WorkCalendarIndex?
+        let refreshState: ProjectionRefreshState?
+        let jobNames: [String: String]
+    }
+
+    @Published private(set) var snapshot: Snapshot
+    private var subscriptions: Set<AnyCancellable> = []
+
+    init(control: ControlCenterModel) {
+        snapshot = Snapshot(
+            index: control.workCalendar, refreshState: control.refreshState(for: "work.calendar"),
+            jobNames: Self.names(control.cronJobs))
+        Publishers.CombineLatest3(
+            control.$workCalendar,
+            control.$projectionRefreshStates.map { $0["work.calendar"] }.removeDuplicates(),
+            control.$cronJobs.map(Self.names).removeDuplicates()
+        )
+        .dropFirst()
+        .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main)
+        .sink { [weak self, weak control] index, _, names in
+            guard let self, let control else { return }
+            let next = Snapshot(index: index, refreshState: control.refreshState(for: "work.calendar"), jobNames: names)
+            if next != snapshot { snapshot = next }
+        }
+        .store(in: &subscriptions)
+
+        // These inputs can change together. Rebuild once, after the published values have all landed.
+        Publishers.Merge3(
+            control.$globalKanbanTasks.removeDuplicates().dropFirst().map { _ in () },
+            control.$cronRuns.removeDuplicates().dropFirst().map { _ in () },
+            control.$projects.removeDuplicates().dropFirst().map { _ in () }
+        )
+        .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main)
+        .sink { [weak control] in control?.rebuildWorkCalendar() }
+        .store(in: &subscriptions)
+    }
+
+    private static func names(_ jobs: [CronSummary]) -> [String: String] {
+        Dictionary(jobs.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    }
+}
 
 /// The Activity page's Work tab: per-day features shipped, sessions,
 /// automation runs, and spend, read from Hermes plus local git.
-struct WorkActivityView: View {
-    @ObservedObject var control: ControlCenterModel
+struct WorkActivityView: View, Equatable {
+    let control: ControlCenterModel
     let repoPaths: [String]
-    var botsByID: [String: BotSummary] = [:]
-    var avatarImages: [String: Data] = [:]
-    var onOpenTask: (KanbanTaskSummary) -> Void = { _ in }
+    let botsByID: [String: BotSummary]
+    let avatarImages: [String: Data]
+    let onOpenTask: (KanbanTaskSummary) -> Void
+    private let themeRevision = DockThemeRuntime.revision
+    @StateObject private var presentation: WorkActivityPresentation
     @State private var month = Date()
     @State private var selected = Calendar.current.startOfDay(for: Date())
     /// What the detail area summarizes: the selected day, its week, or the whole month.
@@ -16,6 +65,23 @@ struct WorkActivityView: View {
     @FocusState private var gridFocused: Bool
     @State private var selectedActivity = WorkRange()
     @State private var projectedSelection: Selection?
+
+    init(
+        control: ControlCenterModel, repoPaths: [String], botsByID: [String: BotSummary] = [:],
+        avatarImages: [String: Data] = [:], onOpenTask: @escaping (KanbanTaskSummary) -> Void = { _ in }
+    ) {
+        self.control = control
+        self.repoPaths = repoPaths
+        self.botsByID = botsByID
+        self.avatarImages = avatarImages
+        self.onOpenTask = onOpenTask
+        _presentation = StateObject(wrappedValue: WorkActivityPresentation(control: control))
+    }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.control === rhs.control && lhs.repoPaths == rhs.repoPaths && lhs.botsByID == rhs.botsByID
+            && lhs.avatarImages == rhs.avatarImages && lhs.themeRevision == rhs.themeRevision
+    }
 
     private struct Selection: Equatable {
         let index: WorkCalendarIndex?
@@ -27,9 +93,7 @@ struct WorkActivityView: View {
     private var activity: WorkRange { projectedSelection == selection ? selectedActivity : WorkRange() }
 
     private let calendar = Calendar.current
-    private var jobNames: [String: String] {
-        Dictionary(control.cronJobs.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-    }
+    private var jobNames: [String: String] { presentation.snapshot.jobNames }
     private var scope: CalendarScope { CalendarScope(rawValue: scopeRaw) ?? .day }
     private var scopeBinding: Binding<CalendarScope> { Binding(get: { scope }, set: { scopeRaw = $0.rawValue }) }
     /// The selected day's week, clamped to the loaded month by `WorkCalendarIndex.range`.
@@ -37,10 +101,11 @@ struct WorkActivityView: View {
         let start = calendar.dateInterval(of: .weekOfYear, for: selected)?.start ?? selected
         return (start, calendar.date(byAdding: .day, value: 6, to: start) ?? start)
     }
-    private var refreshState: ProjectionRefreshState? { control.refreshState(for: "work.calendar") }
+    private var refreshState: ProjectionRefreshState? { presentation.snapshot.refreshState }
     /// The published index can briefly belong to the previous month while a new one loads.
     private var loadedIndex: WorkCalendarIndex? {
-        guard let index = control.workCalendar, calendar.isDate(index.month, equalTo: month, toGranularity: .month)
+        guard let index = presentation.snapshot.index,
+            calendar.isDate(index.month, equalTo: month, toGranularity: .month)
         else { return nil }
         return index
     }
@@ -48,12 +113,13 @@ struct WorkActivityView: View {
     /// screen with empty cells instead of swapping the page for a spinner.
     private var index: WorkCalendarIndex? {
         loadedIndex
-            ?? control.workCalendar.map { _ in
+            ?? presentation.snapshot.index.map { _ in
                 WorkCalendarIndex.build(month: month, sessions: [], tasks: [], commits: [], runs: [], usage: [])
             }
     }
 
     var body: some View {
+        let _ = HermPerformanceRecorder.countBody("WorkActivityView")
         VStack(alignment: .leading, spacing: 16) {
             toolbar
             if let index {
@@ -114,10 +180,6 @@ struct WorkActivityView: View {
             case .month: selectedActivity = index.range(from: index.month, to: .distantFuture)
             }
         }
-        .onChange(of: control.globalKanbanTasks) { _, _ in control.rebuildWorkCalendar() }
-        .onChange(of: control.cronRuns) { _, _ in control.rebuildWorkCalendar() }
-        // Projects can land after the first load; the rebuild re-reads git for any new repo.
-        .onChange(of: control.projects) { _, _ in control.rebuildWorkCalendar() }
     }
 
     private func gridCard(_ index: WorkCalendarIndex, wide: Bool) -> some View {
@@ -156,7 +218,7 @@ struct WorkActivityView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ScrollView {
+            HoverPausingScrollView {
                 VStack(spacing: 16) {
                     if includesSummary { summaryCard }
                     switch scope {
@@ -312,14 +374,16 @@ private enum CalendarInk {
 
 /// Hairline-divided rows inside one card, so lists read as one unit of content.
 private struct CalendarDivided<Item: Identifiable, Row: View>: View {
-    let items: [Item]
+    let items: ArraySlice<Item>
     @ViewBuilder let row: (Item) -> Row
 
     var body: some View {
         LazyVStack(spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                if index > 0 { Color.dockBorderLight.frame(height: DockLayout.hairline) }
-                row(item)
+            ForEach(items) { item in
+                VStack(alignment: .leading, spacing: 0) {
+                    if item.id != items.first?.id { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+                    row(item)
+                }
             }
         }
     }
@@ -1057,7 +1121,7 @@ private struct CalendarActivityDetails: View {
         _ key: String, _ items: [Item], @ViewBuilder row: @escaping (Item) -> Row
     ) -> some View {
         let open = expanded.contains(key)
-        CalendarDivided(items: open ? items : Array(items.prefix(rowCap)), row: row)
+        CalendarDivided(items: open ? items[...] : items.prefix(rowCap), row: row)
         if items.count > rowCap {
             Button(open ? "Show less" : "Show \(items.count - rowCap) more") {
                 if open { expanded.remove(key) } else { expanded.insert(key) }

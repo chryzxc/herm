@@ -4295,8 +4295,9 @@ retain one adaptive layout and expose their full reported lists through Show all
 Spend's five token totals use a normally measured grid at narrow widths, avoiding
 height estimates that overlap the following section. The heatmap omits a clipped
 opening month label when it would crowd the next month.
-Work's selected-period projection is reused until its data/date/scope changes. Long
-record sections are lazy. In-flight month reads are shared, obsolete reads are cancelled,
+Work's selected-period projection is reused until its data/date/scope changes. The
+detail pane observes Work Activity data and pauses row hover during scrolling. Long
+record sections mount lazily. In-flight month reads are shared, obsolete reads are cancelled,
 and successful sources have a one-minute freshness window. Runtime rebinding clears
 Work caches. Spend's refresh task awaits provider accounting after its independent yearly
 read, so a slow provider response cannot permit overlapping page refreshes.

@@ -70,7 +70,7 @@ BUDGET = {
     'DockModel @Published': 118,
     'ControlCenterModel @Published': 93,
     'DockModel whole-model observers': 43,
-    'ControlCenterModel whole-model observers': 28,
+    'ControlCenterModel whole-model observers': 27,
 }
 
 
