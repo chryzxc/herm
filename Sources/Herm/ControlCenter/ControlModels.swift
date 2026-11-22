@@ -244,7 +244,7 @@ struct ApprovalPresentation: Equatable {
         guard presentation.detailIsCommand else {
             return "Hermes may limit this to the current session for content findings."
         }
-        return "Always allow persists this command in Hermes' allowlist. Never ask again for: \(presentation.detail)"
+        return "Always allow persists this command in Hermes' allowlist and never asks again."
     }
 
     static func alwaysAllowCaption(title: String, detail: String) -> String {

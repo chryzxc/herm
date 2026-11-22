@@ -9,12 +9,12 @@ import Testing
         #expect(ApprovalChoice.always == "always")
     }
 
-    @Test func alwaysAllowCaptionNamesTheCommand() {
+    @Test func alwaysAllowCaptionOmitsTheCommand() {
         let presentation = ApprovalPresentation(title: "Run command", detail: "swift test", detailIsCommand: true)
 
         #expect(
             ApprovalPresentation.alwaysAllowCaption(for: presentation)
-                == "Always allow persists this command in Hermes' allowlist. Never ask again for: swift test")
+                == "Always allow persists this command in Hermes' allowlist and never asks again.")
     }
 
     @Test func alwaysAllowCaptionFallsBackForContentFindings() {
