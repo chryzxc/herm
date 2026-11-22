@@ -383,6 +383,7 @@ final class DockModel: ObservableObject {
     @Published var composerFocusRequest = 0
     @Published var isComposerEditing = false
     @Published var scrollToLatestMessageRequest = 0
+    var positionsAtUnreadOnResume = true
     @Published var unreadDividerMessageID: UUID?
 
     /// The default bot's name from Hermes' roster, so a rename reaches the

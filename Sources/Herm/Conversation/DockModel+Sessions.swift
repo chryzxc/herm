@@ -713,6 +713,8 @@ extension DockModel {
             prepareLeavingTranscript()
             cacheLeavingTranscript()
         }
+        // The outgoing transcript stays available until the new identity is selected.
+        positionsAtUnreadOnResume = false
         sessionTranscriptLoadState = .loading
         sessionResumeTask = Task {
             _ = await resumeSession(
@@ -890,6 +892,7 @@ extension DockModel {
         let needsUnreadReview =
             reviewUnread
             && (seenAt != nil || seenStore.isBaselined(profileID: owningProfileID))
+        positionsAtUnreadOnResume = needsUnreadReview && (!isRefreshingActiveSession || messages.isEmpty)
         if !isRefreshingActiveSession || needsUnreadReview { unreadDividerMessageID = nil }
         if !isRefreshingActiveSession {
             sessionWorkspace = nil

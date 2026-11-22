@@ -5,13 +5,17 @@ import Testing
 
 @MainActor
 struct ConversationInitialUnreadPositionTests {
-    @Test(arguments: [false, true])
-    func firstReadySnapshotMountsUnreadInsteadOfTail(delayed: Bool) {
+    @Test(arguments: [false, true], [false, true])
+    func firstReadySnapshotMountsUnreadInsteadOfTail(delayed: Bool, cached: Bool) {
         let model = DockModel(initialSessionID: "initial-unread")
         defer { model.delegationMonitoringTask?.cancel() }
         model.messages = (0..<100).map { ChatMessage(role: .hermes, text: "Reply \($0)") }
         let target = model.messages[20].id
-        model.sessionTranscriptLoadState = delayed ? .loading : .ready
+        if delayed && cached {
+            model.sessionTranscriptPreview = .init(
+                messages: Array(model.messages.suffix(12)), rowIDs: [:], references: [:], pendingImages: [])
+        }
+        model.sessionTranscriptLoadState = delayed ? (cached ? .refreshing : .loading) : .ready
         model.unreadDividerMessageID = delayed ? nil : target
         let coordinator = ConversationTranscriptCoordinator()
         let source = ConversationTranscriptSource(
@@ -19,7 +23,10 @@ struct ConversationInitialUnreadPositionTests {
             voice: VoiceOutput(), coordinator: coordinator)
         defer { source.suspend() }
         if delayed {
+            #expect(source.snapshot.rows.isEmpty)
+            #expect(coordinator.mountedRange.isEmpty)
             model.unreadDividerMessageID = target
+            model.sessionTranscriptPreview = nil
             model.sessionTranscriptLoadState = .ready
             source.refresh()
         }
@@ -28,7 +35,11 @@ struct ConversationInitialUnreadPositionTests {
         #expect(source.snapshot.rows.contains { $0.message.id == target })
         #expect(!coordinator.presentation.isAtBottom)
         let generation = coordinator.generation
+        model.unreadDividerMessageID = nil
         source.refresh()
+        model.unreadDividerMessageID = model.messages[40].id
+        source.refresh()
+        #expect(source.snapshot.unreadDividerMessageID == model.messages[40].id)
         #expect(coordinator.generation == generation)
     }
 }

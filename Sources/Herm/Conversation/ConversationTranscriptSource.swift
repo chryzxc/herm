@@ -111,8 +111,6 @@ final class ConversationTranscriptSource: ObservableObject {
     private var heldMeasurementContext: NativeMarkdownDocumentContainerView.MeasurementContext?
     private var isActive = true
     private var showingPreview = false
-    private var positionedUnreadSessionID: String?
-    private var positionedUnreadMessageID: UUID?
     let markdownPrefetch = ConversationMarkdownPrefetch()
 
     init(
@@ -127,15 +125,10 @@ final class ConversationTranscriptSource: ObservableObject {
         self.needsNavigator = needsNavigator
         showingPreview = model.sessionTranscriptPreview != nil
         coordinator.synchronize(model: model)
-        if !showingPreview, model.sessionActionsReady, let id = model.unreadDividerMessageID,
-            let index = model.displayedTranscriptMessages.firstIndex(where: { $0.id == id })
-        {
-            if !coordinator.restoresViewedPosition { coordinator.jump(to: index) }
-            positionedUnreadSessionID = model.transcriptPresentationID
-            positionedUnreadMessageID = id
-        }
+        coordinator.positionAtOpeningUnread(model: model)
         snapshot = Self.makeSnapshot(
-            model: model, bots: bots, actions: actions, voice: voice, range: coordinator.mountedRange,
+            model: model, bots: bots, actions: actions, voice: voice,
+            messages: coordinator.openingMessages(model: model), range: coordinator.mountedRange,
             generation: coordinator.generation, needsNavigator: needsNavigator)
         coordinator.onAcceptedLayout = { [weak self] sessionID in
             guard let self, self.model.transcriptPresentationID == sessionID,
@@ -236,22 +229,11 @@ final class ConversationTranscriptSource: ObservableObject {
         } else {
             coordinator.synchronize(model: model)
         }
-        if !hasPreview, model.sessionActionsReady {
-            let id = model.unreadDividerMessageID
-            if let id, positionedUnreadSessionID != model.transcriptPresentationID || positionedUnreadMessageID != id,
-                let index = model.displayedTranscriptMessages.firstIndex(where: { $0.id == id })
-            {
-                if !coordinator.restoresViewedPosition { coordinator.jump(to: index) }
-                positionedUnreadSessionID = model.transcriptPresentationID
-                positionedUnreadMessageID = id
-            } else if id == nil {
-                positionedUnreadSessionID = nil
-                positionedUnreadMessageID = nil
-            }
-        }
+        coordinator.positionAtOpeningUnread(model: model)
         showingPreview = hasPreview
         let next = Self.makeSnapshot(
-            model: model, bots: bots, actions: actions, voice: voice, range: coordinator.mountedRange,
+            model: model, bots: bots, actions: actions, voice: voice,
+            messages: coordinator.openingMessages(model: model), range: coordinator.mountedRange,
             generation: coordinator.generation, needsNavigator: needsNavigator)
         guard next != snapshot else {
             // A refresh that changes nothing was triggered by an unrelated
@@ -339,9 +321,8 @@ final class ConversationTranscriptSource: ObservableObject {
 
     private static func makeSnapshot(
         model: DockModel, bots: BotModeModel, actions: ConversationMessageActionState,
-        voice: VoiceOutput, range: Range<Int>, generation: UInt64, needsNavigator: Bool
+        voice: VoiceOutput, messages: [ChatMessage], range: Range<Int>, generation: UInt64, needsNavigator: Bool
     ) -> ConversationTranscriptSnapshot {
-        let messages = model.displayedTranscriptMessages
         let preview = model.sessionTranscriptPreview
         let clamped = ConversationMessageWindow.visibleRange(range, totalCount: messages.count)
         let range =

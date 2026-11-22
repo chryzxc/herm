@@ -3270,6 +3270,8 @@ row sits directly above the composer. The inspector toggle remains direct from
 at every width. Controls retain 44pt targets and resizing does not animate.
 The transcript mounts a bounded window of messages and pages earlier or later
 history automatically as the reader scrolls within one viewport of either edge.
+A first visit that needs an unread check keeps the loading state until the opening
+row is known. Refreshing the unread divider preserves the current reading position.
 History pages reveal eight messages in either direction. The initial window stays
 at 12 messages and the normal mounting backstop stays at 36; a larger visible span
 is protected from eviction.

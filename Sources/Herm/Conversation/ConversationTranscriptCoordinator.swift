@@ -65,6 +65,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     /// A session reopened before its transcript arrived restores once it does.
     private var awaitingRestore: SavedPosition?
     private var savedAnchorOrder: [String] = []
+    private var positionedUnread = false
     private var viewedSessionIDs: [String] = []
     /// The reader already saw this session in this run: reopening keeps their
     /// last position (or the live tail) instead of jumping to the unread divider.
@@ -119,8 +120,9 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         sessionID: String?, totalCount: Int, bubbleCount: Int, messages: [ChatMessage] = [], rowIDs: [Int: UUID] = [:]
     ) {
         if self.sessionID != sessionID {
+            positionedUnread = false
             saveAnchor()
-            if let left = self.sessionID {
+            if let left = self.sessionID, self.totalCount > 0 {
                 viewedSessionIDs.removeAll { $0 == left }
                 viewedSessionIDs.append(left)
                 if viewedSessionIDs.count > 64 { viewedSessionIDs.removeFirst() }
@@ -158,10 +160,27 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         guard let sessionID,
             let index = byID ?? byRow ?? (messages.indices.contains(fromEnd) ? fromEnd : nil)
         else { return false }
-        let anchor = ConversationScrollAnchor(messageID: messages[index].id, offset: saved.anchor.offset)
+        landAtAnchor(
+            ConversationScrollAnchor(messageID: messages[index].id, offset: saved.anchor.offset),
+            index: index, count: messages.count, sessionID: sessionID)
+        return true
+    }
+
+    func positionAtOpeningUnread(model: DockModel) {
+        guard !positionedUnread, model.positionsAtUnreadOnResume, !restoresViewedPosition,
+            model.sessionActionsReady, model.sessionTranscriptPreview == nil,
+            let sessionID, let id = model.unreadDividerMessageID,
+            let index = model.messages.firstIndex(where: { $0.id == id })
+        else { return }
+        positionedUnread = true
+        presentation.unseenMessageCount = 0
+        landAtAnchor(.init(messageID: id, offset: 0), index: index, count: model.messages.count, sessionID: sessionID)
+    }
+
+    private func landAtAnchor(_ anchor: ConversationScrollAnchor, index: Int, count: Int, sessionID: String) {
         invalidate()
-        totalCount = messages.count
-        setRange(ConversationMessageWindow.jumpWindow(aroundIndex: index, totalCount: messages.count))
+        totalCount = count
+        setRange(ConversationMessageWindow.jumpWindow(aroundIndex: index, totalCount: count))
         presentation.isAtBottom = false
         pendingPage = PageTransaction(sessionID: sessionID, generation: generation, range: mountedRange, anchor: anchor)
         restoredAnchor = anchor
@@ -172,7 +191,6 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             guard let self, self.generation == landing else { return }
             self.controller.isConcealed = false
         }
-        return true
     }
 
     func invalidate() {
@@ -500,8 +518,28 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         }
     }
 
+    /// The first unread row can be outside the cached tail. Wait for the review
+    /// before mounting a first-visit window that would immediately be replaced.
+    func openingMessages(model: DockModel) -> [ChatMessage] {
+        if model.positionsAtUnreadOnResume,
+            model.sessionTranscriptLoadState == .loading || model.sessionTranscriptLoadState == .refreshing,
+            let id = model.transcriptPresentationID, !viewedSessionIDs.contains(id)
+        {
+            return []
+        }
+        if let preview = model.sessionTranscriptPreview, let id = model.transcriptPresentationID,
+            model.sessionTranscriptLoadState == .refreshing,
+            let saved = sessionID == id ? awaitingRestore : savedAnchors[id],
+            !preview.messages.contains(where: { $0.id == saved.anchor.messageID }),
+            saved.rowID.flatMap({ preview.rowIDs[$0] }) == nil
+        {
+            return []
+        }
+        return model.displayedTranscriptMessages
+    }
+
     func synchronize(model: DockModel) {
-        let messages = model.displayedTranscriptMessages
+        let messages = openingMessages(model: model)
         let presentationID = model.transcriptPresentationID
         let count = messages.count
         guard sessionID != presentationID || totalCount != count || countedMessagesRevision != model.messagesRevision

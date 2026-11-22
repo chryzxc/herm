@@ -95,6 +95,8 @@ struct ConversationTranscriptView: View, Equatable {
                         VStack(spacing: 0) {
                             VStack(spacing: 0) {
                                 if snapshot.messages.isEmpty && snapshot.context.conversationApproval == nil
+                                    && model.sessionTranscriptLoadState != .loading
+                                    && model.sessionTranscriptLoadState != .refreshing
                                     && snapshot.context.status != .working
                                 {
                                     StartupAssistantView(

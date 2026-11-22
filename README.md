@@ -530,8 +530,8 @@ to their own profile and are cleared when the Hermes sign-in changes.
 Startup confirms the selected bot before reopening its last chat. Bot avatars and
 live status load independently of restoration.
 Recently opened chats can show a cached transcript while Hermes refreshes it.
-The conversation lands on the last reading position, unread messages, or the
-latest message using the new chat's layout.
+On a first visit, Herm waits for the unread check and opens directly at the first
+unread reply, or at the latest message when all replies have been read.
 
 Talk, Pull requests and Issues open as inspector tabs from its **Open a new tab** grid; voice runs while the Talk tab shows. Opening the inspector in the floating desktop panel keeps the conversation visible beside it, with the inspector tab row matching the chat header. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
 

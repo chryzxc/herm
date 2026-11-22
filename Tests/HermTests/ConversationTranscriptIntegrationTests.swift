@@ -379,6 +379,7 @@ struct ConversationTranscriptIntegrationTests {
             })
         defer { fixture.window.orderOut(nil) }
         let cached = fixture.model.messages
+        fixture.model.positionsAtUnreadOnResume = false
         fixture.model.sessionStorageID = "stored-session"
         fixture.model.storageIDsByRuntimeID["requested-session"] = "stored-session"
         fixture.model.storageIDsByRuntimeID["resolved-runtime"] = "stored-session"
