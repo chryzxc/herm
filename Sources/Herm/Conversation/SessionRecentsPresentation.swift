@@ -10,6 +10,25 @@ enum SessionRecentsType: Hashable {
     }
 }
 
+struct SessionRecentsPresentation: Equatable {
+    let conversations: [HermesSession]
+    let automations: [HermesSession]
+
+    init(_ sessions: [HermesSession]) {
+        var conversations: [HermesSession] = []
+        var automations: [HermesSession] = []
+        for session in sessions {
+            if session.isAutomationSession {
+                automations.append(session)
+            } else {
+                conversations.append(session)
+            }
+        }
+        self.conversations = conversations
+        self.automations = automations
+    }
+}
+
 extension HermesSession {
     var isAutomationSession: Bool {
         ["cron", "cron_output", "automation"].contains(

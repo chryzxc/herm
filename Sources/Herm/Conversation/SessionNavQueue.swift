@@ -663,8 +663,9 @@ struct SessionNavQueue: View, Equatable {
     /// selection independent from every neighbouring destination.
     private func globalRailBar(style: DockThemePalette) -> some View {
         let projects = sidebarSnapshot.linkedProjectGroups
-        let allConversations = botScopedConversations(
-            showsAllProfiles ? sidebarSnapshot.allBotConversations : sidebarSnapshot.conversations)
+        let recents = showsAllProfiles ? sidebarSnapshot.allBotRecents : sidebarSnapshot.scopedRecents
+        let conversations = botScopedConversations(recents.conversations)
+        let automations = botScopedConversations(recents.automations)
         // Built once per pass; rows previously rebuilt them per row (O(n²)).
         let pinned = pinnedSessionPresentation
         let statuses = sidebarSessionStatuses(pinned: pinned)
@@ -682,14 +683,12 @@ struct SessionNavQueue: View, Equatable {
                         }
                     case .recents:
                         conversationOutline(
-                            SessionRecentsType.conversations.matching(allConversations), type: .conversations,
-                            statuses: statuses, style: style)
+                            conversations, type: .conversations, statuses: statuses, style: style)
                     case .projects:
                         projectsOutline(projects, statuses: statuses, style: style)
                     case .automations:
                         conversationOutline(
-                            SessionRecentsType.automation.matching(allConversations), type: .automation,
-                            statuses: statuses, style: style)
+                            automations, type: .automation, statuses: statuses, style: style)
                     }
                 }
                 SessionRailEndDropZone(state: navigationState)

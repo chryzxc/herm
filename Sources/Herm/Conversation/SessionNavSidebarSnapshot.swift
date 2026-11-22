@@ -101,6 +101,8 @@ struct SessionNavSidebarSnapshot: Equatable {
     /// Every bot's recent chats merged with the selected bot's fresher rows,
     /// newest first. Equals `conversations` until the all-bot scan loads.
     let allBotConversations: [HermesSession]
+    let scopedRecents: SessionRecentsPresentation
+    let allBotRecents: SessionRecentsPresentation
     /// Every profile's pins for the "All profiles" scope (`AllProfilesSessions.pinned`).
     let allProfilePinned: [HermesSession]
     /// Real projects an unlinked conversation can be added to.
@@ -146,6 +148,8 @@ struct SessionNavSidebarSnapshot: Equatable {
             self.linkedSessionIDs = previous.linkedSessionIDs
             self.projectNameBySessionID = previous.projectNameBySessionID
             self.allBotConversations = previous.allBotConversations
+            self.scopedRecents = previous.scopedRecents
+            self.allBotRecents = previous.allBotRecents
             return
         }
         let groups = Self.conversationGroups(inputs: inputs)
@@ -165,6 +169,9 @@ struct SessionNavSidebarSnapshot: Equatable {
         self.projectNameBySessionID = projectNameBySessionID
         self.allBotConversations = SidebarAgentGrouping.merged(
             all: scanned, scoped: self.conversations, scopeProfileID: inputs.profileScopeID)
+        self.scopedRecents = SessionRecentsPresentation(self.conversations)
+        // Both inventories have the same rows and order until the all-profile scan arrives.
+        self.allBotRecents = scanned.isEmpty ? self.scopedRecents : SessionRecentsPresentation(self.allBotConversations)
     }
 
     @MainActor

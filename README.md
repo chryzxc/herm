@@ -513,7 +513,7 @@ or focus the handle and use the arrow keys. The order is saved locally across re
 selected profile or its conversations. Choose **All** at the top of the
 bot picker to merge every bot's pinned and recent conversations into one list; each
 row then shows a pill with its bot's avatar and name, and opening it switches to
-that bot. The sidebar reuses the loaded session list for unread counts while you hover, scroll, or search. Each section header stays at the top of the scrolling
+that bot. The sidebar reuses its Recents and Automations groups and unread inventory while you hover, scroll, or search. Each section header stays at the top of the scrolling
 list until the next section replaces it; rows remain lazily rendered.
 Recent chats and pins appear as soon as the first page arrives. Older chats load
 in the background and join search as they become available. Background polls and

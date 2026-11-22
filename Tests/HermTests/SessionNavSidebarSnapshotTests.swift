@@ -262,6 +262,27 @@ struct SessionNavSidebarSnapshotTests {
         #expect(rebuilt.conversations.map(\.id) == ["s2", "s1"])
     }
 
+    @Test func recentsFollowScopedAndAllProfileInventoryChanges() {
+        let scoped = session("chat", profileID: "profile-main")
+        let remote = session("job", profileID: "other", source: "cron")
+        var input = inputs(sessions: [scoped])
+        let initial = SessionNavSidebarSnapshot(inputs: input)
+        #expect(initial.scopedRecents.conversations == [scoped])
+        #expect(initial.allBotRecents == initial.scopedRecents)
+
+        input.allBotSessionsState = .ready([remote])
+        let merged = SessionNavSidebarSnapshot(inputs: input, reusing: initial)
+        #expect(merged.scopedRecents.automations.isEmpty)
+        #expect(merged.allBotRecents.automations == [remote])
+
+        let reclassified = session("chat", profileID: "profile-main", source: "cron_output")
+        input.sessions = [reclassified]
+        input.sessionProjectionState = .ready([reclassified])
+        let updated = SessionNavSidebarSnapshot(inputs: input, reusing: merged)
+        #expect(updated.scopedRecents.conversations.isEmpty)
+        #expect(updated.allBotRecents.automations == [reclassified, remote])
+    }
+
     @Test func emptyProjectsStayVisibleAndProjectsFollowLatestActivity() {
         let now = Date()
         let snapshot = SessionNavSidebarSnapshot(

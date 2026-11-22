@@ -1904,6 +1904,7 @@ row limit. A count and no-match state describe loaded sessions; projection failu
 remain visible. Clearing search or pressing Escape restores existing disclosures.
 Search is transient presentation state and does not fetch transcript history.
 Pointer and search updates reuse the sidebar’s session inventory for unread badges.
+Recents and Automations reuse sections prepared when the session inventory changes.
 
 The bottom connection indicator opens a quick-action popover in every connection
 state. Show Herm's backend connection separately from the local default-profile
