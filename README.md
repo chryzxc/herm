@@ -496,6 +496,7 @@ beside the traffic lights. Chat uses three full-height panes: the session list,
 conversation, and inspector. Session rows stay visible while scrolling, and live replies
 keep their place above the composer. The session title uses the available header space,
 with actions inside the conversation pane; the inspector's tabs extend to the top of its own pane.
+Visible status and loading animations continue during scrolling.
 The Bots and Sessions switch responds across each tab, not just its label.
 The session sidebar places **New chat** above Pinned. Navigation distinguishes Chats (speech bubbles), Integrations (puzzle piece),
 Artifacts (stacked files), and Bots (a robot). Chats shows a small

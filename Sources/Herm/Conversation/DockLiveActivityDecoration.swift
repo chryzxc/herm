@@ -29,6 +29,7 @@ struct DockLiveActivityDecoration<Content: View>: View {
                     }
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
+                    .environment(\.dockBotIndicatorLive, true)
                 }
         } else {
             content

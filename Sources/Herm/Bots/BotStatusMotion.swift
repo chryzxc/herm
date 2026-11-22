@@ -176,7 +176,7 @@ private struct BotStatusMotionModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         let running = moves && (motion.loops(live: live) || hopAt != nil)
-        TimelineView(.dockMotion(rate: 30, paused: !running, pausesOnScroll: !live)) { context in
+        TimelineView(.dockMotion(rate: 30, paused: !running)) { context in
             let pose =
                 running
                 ? motion.pose(

@@ -3,7 +3,8 @@ import SwiftUI
 /// Whether the user is engaged with Herm: the app is active, or one of its
 /// non-activating panels is key. Decorative Bot motion pauses otherwise, since
 /// every animated frame re-renders and re-lays out the whole hosting window.
-/// Spinners and the notch indicator keep running; they carry real status.
+/// Spinners, the notch indicator and a running turn's activity row
+/// (`dockBotIndicatorLive`) keep running; they carry real status.
 @MainActor
 final class HermFocus: ObservableObject {
     static let shared = HermFocus()
@@ -269,9 +270,10 @@ struct BotWorkingAvatarView: View {
     @State private var reactionStart = BotWorkingPose.rest
     @State private var variation = 0
     @ObservedObject private var focus = HermFocus.shared
+    @Environment(\.dockBotIndicatorLive) private var live
 
     var body: some View {
-        let moves = !reduceMotion && DockThemeStyle.current.animates && focus.engaged
+        let moves = !reduceMotion && DockThemeStyle.current.animates && (live || focus.engaged)
         DockBotFrameClock { frame in
             let age = reactionAt.map { frame.date.timeIntervalSince($0) } ?? BotWorkingPose.reactionDuration
             let reacting = frame.moves && age >= 0 && age < BotWorkingPose.reactionDuration
@@ -396,7 +398,7 @@ private struct BotMotion<Content: View>: View {
             && (live || focus.engaged)
         {
             let phase = Double(BotAvatarPresentation.seed(for: id) % 1000) / 100
-            TimelineView(.dockMotion(rate: 15, pausesOnScroll: !live)) { context in
+            TimelineView(.dockMotion(rate: 15)) { context in
                 content(.at(context.date.timeIntervalSinceReferenceDate + phase, busy: true))
             }
         } else {
@@ -445,6 +447,7 @@ struct BotHuddle: View {
     var leadIcon: Ph = .brain
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var focus = HermFocus.shared
+    @Environment(\.dockBotIndicatorLive) private var live
 
     /// What each Bot is doing, keyed by Bot id, shown in its thought bubble.
     var lines: [String: String] = [:]
@@ -461,7 +464,7 @@ struct BotHuddle: View {
     static let leadInset: CGFloat = (SignalTrace.size - 40) / 2
 
     var body: some View {
-        let moves = !reduceMotion && DockThemeStyle.current.animates && focus.engaged
+        let moves = !reduceMotion && DockThemeStyle.current.animates && (live || focus.engaged)
         let layout = DockBotHuddleLayout(
             partnerCount: partners.count, leadDone: leadDone, leadSize: leadSize, partnerSize: size)
         let members = members(layout: layout)

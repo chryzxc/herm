@@ -4,12 +4,12 @@
 Rejects patterns that have caused frame drops, idle CPU, or battery drain:
 
 * `repeatForever` animations and cyclic `.phaseAnimator` (no `trigger:`):
-  both render at the display's full refresh rate (120 Hz on ProMotion), keep
-  running while the user scrolls, and never stop on their own. Use
-  `TimelineView(.dockMotion(rate:paused:))` with `DockMotionSchedule`.
+  both render at the display's full refresh rate (120 Hz on ProMotion).
+  Use `TimelineView(.dockMotion(rate:paused:))` to share tick instants or
+  use a native layer animation for compositing-only effects.
 * `TimelineView(.animation...)`: same per-frame cost; use `.dockMotion`.
-* `TimelineView(.periodic(... by: <1s))`: a sub-second wall clock is motion;
-  use `.dockMotion` so it holds while scrolling and off screen.
+* `TimelineView(.periodic(... by: <1s))`: use `.dockMotion` to share tick
+  instants and reduce updates off screen.
 * Indeterminate `ProgressView`: use `DockLoadingIndicator` so indeterminate
   states share the theme and visibility rules.
 * Allocate-and-use formatters (`ISO8601DateFormatter().date(...)`): building

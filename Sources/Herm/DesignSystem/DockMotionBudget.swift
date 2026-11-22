@@ -20,9 +20,17 @@ struct DockMotionBudget: Equatable {
 @MainActor
 final class DockMotionBudgetMonitor {
     static let shared = DockMotionBudgetMonitor()
-    private(set) var budget = DockMotionBudget()
+    private var current = DockMotionBudget()
     private var observers: [NSObjectProtocol] = []
     private var screensAsleep = false
+    private var sessionInactive = false
+
+    /// While hidden, each read re-checks AppKit, so a missed occlusion notification
+    /// can't freeze every clock at the hidden recheck rate.
+    var budget: DockMotionBudget {
+        if !current.visible { refresh() }
+        return current
+    }
 
     private init() {
         observers.append(
@@ -31,23 +39,39 @@ final class DockMotionBudgetMonitor {
             ) { _ in
                 MainActor.assumeIsolated { DockMotionBudgetMonitor.shared.refresh() }
             })
-        let workspace: [(Notification.Name, Bool)] = [
-            (NSWorkspace.screensDidSleepNotification, true), (NSWorkspace.sessionDidResignActiveNotification, true),
-            (NSWorkspace.screensDidWakeNotification, false), (NSWorkspace.sessionDidBecomeActiveNotification, false),
+        // Screen sleep and session switches are tracked apart: waking the screens
+        // must not clear an inactive session, or the reverse.
+        let workspace: [(Notification.Name, Signal)] = [
+            (NSWorkspace.screensDidSleepNotification, .screensAsleep(true)),
+            (NSWorkspace.screensDidWakeNotification, .screensAsleep(false)),
+            (NSWorkspace.sessionDidResignActiveNotification, .sessionInactive(true)),
+            (NSWorkspace.sessionDidBecomeActiveNotification, .sessionInactive(false)),
         ]
-        for (name, asleep) in workspace {
+        for (name, signal) in workspace {
             observers.append(
                 NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { _ in
-                    MainActor.assumeIsolated { DockMotionBudgetMonitor.shared.refresh(screensAsleep: asleep) }
+                    MainActor.assumeIsolated { DockMotionBudgetMonitor.shared.apply(signal) }
                 })
         }
         refresh()
     }
 
-    private func refresh(screensAsleep asleep: Bool? = nil) {
-        if let asleep { screensAsleep = asleep }
+    private enum Signal: Sendable {
+        case screensAsleep(Bool)
+        case sessionInactive(Bool)
+    }
+
+    private func apply(_ signal: Signal) {
+        switch signal {
+        case .screensAsleep(let asleep): screensAsleep = asleep
+        case .sessionInactive(let inactive): sessionInactive = inactive
+        }
+        refresh()
+    }
+
+    private func refresh() {
         // NSApp is nil in unit tests that render before any app exists.
         let onScreen = NSApp.map { $0.occlusionState.contains(.visible) } ?? true
-        budget = DockMotionBudget(visible: !screensAsleep && onScreen)
+        current = DockMotionBudget(visible: !screensAsleep && !sessionInactive && onScreen)
     }
 }

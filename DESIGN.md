@@ -410,6 +410,7 @@ Animation, using the active skin's accent or the enclosing status tone. Reduce M
 and motion-free skins show the same bars at rest. Native layer loops
 centrally honor Reduce Motion, motion-free skins, and host visibility, and release
 animations on dismantle. No extra continuous animation clock is introduced.
+Visible animations keep their cadence during direct scrolling and momentum.
 Reduce Motion and motion-free skins suppress shared motion, including press
 scaling and inherited explicit animation transactions at themed roots. Disabled
 controls do not compress. Existing skin-specific feedback curves remain in use.

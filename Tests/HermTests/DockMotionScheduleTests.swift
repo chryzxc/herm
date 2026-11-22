@@ -35,24 +35,21 @@ extension Double {
 }
 
 extension DockMotionScheduleTests {
-    @Test func liveScrollHoldsTheClockUntilItSettlesOnTheSharedGrid() {
-        let rate = 30.0
-        #expect(DockMotionSchedule.tick(3_000, rate: rate, now: 100, heldFor: 0) == 3_000)
-        let held = DockMotionSchedule.tick(3_000, rate: rate, now: 100, heldFor: 0.15)
-        // A held tick re-renders when it fires, so it waits past the settle time.
-        #expect(held == 3_015)
-        #expect(held / rate >= 100 + DockMotionSchedule.heldRecheck)
-        // A long remaining hold is honored in full.
-        #expect(DockMotionSchedule.tick(3_000, rate: rate, now: 100, heldFor: 1) == 3_030)
-        // A clock already past the held time keeps its own tick.
-        #expect(DockMotionSchedule.tick(3_020, rate: rate, now: 100, heldFor: 0.15) == 3_020)
-        // Slower clocks resume on whole ticks of their own rate.
-        #expect(DockMotionSchedule.tick(1_500, rate: 15, now: 100, heldFor: 0.15) == 1_508)
-    }
+    @MainActor
+    @Test func visibleMotionKeepsItsCadenceDuringScroll() {
+        guard DockMotionBudgetMonitor.shared.budget.visible else { return }
+        let start = Date()
+        let scrollTime = ProcessInfo.processInfo.systemUptime
+        DockScrollActivity.recordScroll(at: scrollTime)
+        defer { DockScrollActivity.recordScroll(at: -.infinity) }
+        #expect(DockScrollActivity.isScrolling(at: scrollTime))
 
-    @Test func statusMotionKeepsTickingDuringScrollAndStillHoldsWhenHidden() {
-        let schedule = DockMotionSchedule(rate: 15, pausesOnScroll: false)
-        #expect(schedule.nextTick(1_500, rate: 15, now: 100, scrollHold: 0.15, hiddenHold: 0) == 1_500)
-        #expect(schedule.nextTick(1_500, rate: 15, now: 100, scrollHold: 0.15, hiddenHold: 1) == 1_515)
+        for rate in [15, 30] {
+            let every = 1 / Double(rate)
+            let entries = Array(DockMotionSchedule(rate: rate).entries(from: start, mode: .normal).prefix(3))
+            #expect(entries[0] <= start)
+            #expect(entries[1].timeIntervalSince(entries[0]).isApproximatelyEqual(to: every))
+            #expect(entries[2].timeIntervalSince(entries[1]).isApproximatelyEqual(to: every))
+        }
     }
 }
