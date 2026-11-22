@@ -12,13 +12,14 @@ struct ComposerEffortPresentation {
     var disabled: Bool { pending || loading || (!needsRefresh && (choices ?? []).isEmpty) }
     var status: String {
         if pending { return "Updating…" }
-        if loading { return "Loading…" }
         if stale { return "Status unavailable" }
-        guard let choices else { return "Unavailable" }
-        guard let selection else { return choices.isEmpty ? "Unavailable" : "Unrecognized" }
+        guard let selection else {
+            if loading { return "Loading…" }
+            return choices?.isEmpty == false ? "Unrecognized" : "Unavailable"
+        }
         if selection == HermesReasoningVariant.none { return "Thinking off" }
         let name = selection == .xhigh ? "Extra High" : selection.rawValue.capitalized
-        if !choices.contains(selection) { return "\(name) — unavailable" }
+        if let choices, !choices.contains(selection) { return "\(name) — unavailable" }
         if let wire, !wire.isEmpty, wire.lowercased() != selection.rawValue {
             return "\(name) → \(wire.capitalized)"
         }

@@ -1,7 +1,7 @@
 import Foundation
 
 extension DockModel {
-    func resetEffortTransition() {
+    func resetEffortTransition(keepingSessionReasoning: Bool = false) {
         sessionFastRevision &+= 1
         sessionFastEnabled = nil
         pendingSessionFastEnabled = nil
@@ -11,7 +11,11 @@ extension DockModel {
         sessionModelMutationToken = nil
         isUpdatingSessionModel = false
         sessionReasoningRevision &+= 1
-        sessionReasoningStale = false
+        if !keepingSessionReasoning {
+            sessionReasoningVariant = nil
+            sessionReasoningWire = nil
+            sessionReasoningStale = false
+        }
         draftReasoningVariant = nil
     }
 
@@ -31,13 +35,7 @@ extension DockModel {
             return
         }
         applySessionWorkspace(payload, owner: owner)
-        if let raw = payload["reasoning_effort"] as? String, !raw.isEmpty {
-            sessionReasoningRevision &+= 1
-            sessionReasoningVariant = HermesReasoningVariant(rawValue: raw.lowercased())
-            let wire = (payload["reasoning_effort_wire"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            sessionReasoningWire = wire?.isEmpty == false ? wire : nil
-            sessionReasoningStale = false
-        }
+        applyReportedSessionReasoning(payload)
         if let fast = payload["fast"] as? Bool {
             sessionFastRevision &+= 1
             sessionFastEnabled = fast
@@ -45,6 +43,18 @@ extension DockModel {
         if payload["model"] as? String != nil || payload["provider"] as? String != nil {
             refreshSessionModelOptions(keepingCatalog: true)
         }
+    }
+
+    @discardableResult
+    func applyReportedSessionReasoning(_ payload: [String: Any]) -> Bool {
+        guard let raw = payload["reasoning_effort"] as? String, !raw.isEmpty else { return false }
+        let variant = HermesReasoningVariant(rawValue: raw.lowercased())
+        sessionReasoningRevision &+= 1
+        sessionReasoningVariant = variant
+        let wire = (payload["reasoning_effort_wire"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        sessionReasoningWire = wire?.isEmpty == false ? wire : nil
+        sessionReasoningStale = false
+        return variant != nil
     }
 
     func updateSessionReasoning(_ variant: HermesReasoningVariant) {

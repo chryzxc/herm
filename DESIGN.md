@@ -3126,6 +3126,9 @@ A reaction on a user bubble grows from the corner touching the bubble. A later e
 
 The composer names a conversation's reported model as soon as it is available,
 independently of catalog loading. A reported name alone does not imply a provider route.
+The chip shows the thinking level supplied by the session resume response or its
+scoped settings read while the transcript and model catalog load. Level choices
+wait for the catalog, and changing the level requires transcript confirmation.
 
 Reserve the session rail's actual width in both density settings, including for the
 transcript, composer, welcome and floating controls; density only tightens visual spacing.

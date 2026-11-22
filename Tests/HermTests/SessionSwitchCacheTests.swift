@@ -14,6 +14,10 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
     var nextResponse: [String: Any]?
     var holdModelOptions = false
     var heldModelOptions: CheckedContinuation<Void, Never>?
+    var holdHistory = false
+    var heldHistory: CheckedContinuation<Void, Never>?
+    var resumeInfo: [String: Any] = [:]
+    var reasoningReads: [String] = []
     var onPage: (() -> Void)?
     var pageCount = 0
     var unreadRows: [[String: Any]]?
@@ -26,6 +30,10 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
         if method == "model.options", holdModelOptions {
             await withCheckedContinuation { heldModelOptions = $0 }
             return ["providers": []]
+        }
+        if method == "config.get", params["key"] as? String == "reasoning" {
+            reasoningReads.append(params["session_id"] as? String ?? "")
+            return ["value": "medium"]
         }
         guard method == "session.resume" else { return [:] }
         let id = params["session_id"] as? String ?? ""
@@ -45,6 +53,12 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
             await withCheckedContinuation { held = $0 }
             if let nextFailure { throw nextFailure }
             if let nextResponse { return nextResponse }
+        }
+        if holdHistory {
+            return [
+                "session_id": "runtime-\(id)", "session_key": id, "info": resumeInfo,
+                "messages": [[String: Any]](), "messages_omitted": true,
+            ]
         }
         return [
             "session_id": "runtime-\(id)", "session_key": id,
@@ -66,7 +80,14 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
         heldModelOptions = nil
     }
 
+    func releaseHistory() {
+        holdHistory = false
+        heldHistory?.resume()
+        heldHistory = nil
+    }
+
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        if holdHistory { await withCheckedContinuation { heldHistory = $0 } }
         pageCount += 1
         onPage?()
         if let unreadRows { return ["messages": unreadRows, "pagination": ["returned": unreadRows.count]] }
@@ -359,14 +380,21 @@ struct SessionSwitchCacheTests {
         let rpc = SessionSwitchRPC()
         let model = makeModel(rpc)
         rpc.holdNextA = true
+        rpc.nextResponse = [
+            "session_id": "runtime-a", "session_key": "a", "messages": [[String: Any]](),
+            "info": ["reasoning_effort": "high"],
+        ]
         model.resumeSession(session("a"))
         try await waitUntil { rpc.held != nil }
         model.resumeSession(session("b"))
-        try await waitUntil { model.sessionActionsReady && model.sessionStorageID == "b" }
+        try await waitUntil {
+            model.sessionActionsReady && model.sessionStorageID == "b" && model.sessionReasoningVariant == .medium
+        }
         rpc.release()
         try await Task.sleep(for: .milliseconds(20))
         #expect(model.sessionStorageID == "b")
         #expect(model.messages.last?.text == "answer b")
+        #expect(model.sessionReasoningVariant == .medium)
     }
 
     @Test func concurrentModelCatalogRefreshesShareOneRequest() async throws {
@@ -374,12 +402,43 @@ struct SessionSwitchCacheTests {
         rpc.holdModelOptions = true
         let model = makeModel(rpc)
         model.resumeSession(session("a"))
-        try await waitUntil { rpc.heldModelOptions != nil }
+        try await waitUntil { rpc.heldModelOptions != nil && model.sessionActionsReady }
         model.refreshSessionModelOptions()
         model.refreshSessionModelOptions()
         #expect(rpc.requests.filter { $0 == "model.options" }.count == 1)
         rpc.releaseModelOptions()
         try await waitUntil { !model.isLoadingRuntimeModelOptions }
+    }
+
+    @Test(arguments: [true, false])
+    func thinkingLevelLoadsWhileHistoryAndCatalogArePending(snapshotHasEffort: Bool) async throws {
+        let rpc = SessionSwitchRPC()
+        rpc.holdHistory = true
+        rpc.holdModelOptions = true
+        if snapshotHasEffort { rpc.resumeInfo = ["reasoning_effort": "high"] }
+        let model = makeModel(rpc)
+        defer {
+            rpc.releaseHistory()
+            rpc.releaseModelOptions()
+            model.shutdown()
+        }
+        model.resumeSession(session("a"))
+        try await waitUntil {
+            rpc.heldHistory != nil && rpc.heldModelOptions != nil && model.sessionReasoningVariant != nil
+        }
+
+        #expect(!model.sessionActionsReady)
+        #expect(model.isEffortCatalogPending)
+        #expect(rpc.reasoningReads == (snapshotHasEffort ? [] : ["runtime-a"]))
+        let presentation = ComposerEffortPresentation(
+            selection: model.sessionReasoningVariant, choices: nil, wire: model.sessionReasoningWire,
+            pending: false, loading: model.isEffortCatalogPending, stale: model.sessionReasoningStale)
+        #expect(presentation.status == (snapshotHasEffort ? "High" : "Medium"))
+        #expect(presentation.disabled)
+
+        rpc.releaseHistory()
+        rpc.releaseModelOptions()
+        try await waitUntil { model.sessionActionsReady && !model.isLoadingRuntimeModelOptions }
     }
 
     @Test func selectedSessionAttentionCannotActBeforeConfirmation() async {

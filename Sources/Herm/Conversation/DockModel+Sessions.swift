@@ -921,7 +921,7 @@ extension DockModel {
         sessionResumeGeneration &+= 1
         transcriptTimelineTask?.cancel()
         transcriptTimelineTask = nil
-        resetEffortTransition()
+        resetEffortTransition(keepingSessionReasoning: isRefreshingActiveSession)
         interruptGeneration &+= 1
         let resumeGeneration = sessionResumeGeneration
         sessionPreviewImageTask?.cancel()
@@ -983,11 +983,9 @@ extension DockModel {
         } else if sessionModelValue == nil {
             sessionModelValue = session.modelName
         }
-        sessionReasoningVariant = nil
         sessionStorageID = session.id
         let workspaceKey = WorkspaceIdentity.session(profileID: owningProfileID, sessionID: session.id)
         pendingWorktreeDirectory = pendingWorktreeDirectories[workspaceKey]
-        sessionReasoningWire = nil
         if !isRefreshingActiveSession { restorePendingSendIfPossible(for: composerDraftKey) }
         _ = restoreAgentState(for: session.id)
         isShowingSessions = false
@@ -1027,6 +1025,7 @@ extension DockModel {
             if let owningProfileID, !owningProfileID.isEmpty { resumeParams["profile"] = owningProfileID }
             let resumeStartedAt = DispatchTime.now().uptimeNanoseconds
             let workspaceRevision = sessionWorkspaceRevision
+            let reasoningRevision = sessionReasoningRevision
             let result = try await sessionRPCClient.request(
                 HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
             recordSessionSwitch("resume", startedAt: resumeStartedAt, generation: resumeGeneration, token: switchToken)
@@ -1093,6 +1092,11 @@ extension DockModel {
             guard result["messages"] is [[String: Any]] else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
+            let info = result["info"] as? [String: Any] ?? result
+            if reasoningRevision == sessionReasoningRevision, !applyReportedSessionReasoning(info) {
+                refreshSessionReasoningVariant(afterConfirmedResume: true)
+            }
+            refreshRuntimeModelOptions(sessionID: resolvedSessionID, afterConfirmedResume: true)
             var transcriptRows = result["messages"]
             if TranscriptHistoryPaging.resumeResponseDefersTranscript(result),
                 let storageID = sessionStorageID
@@ -1252,8 +1256,6 @@ extension DockModel {
             sessionTranscriptLoadState = .ready
             recordSessionSwitch(
                 "fresh_publication", startedAt: switchStartedAt, generation: resumeGeneration, token: switchToken)
-            refreshSessionModelOptions()
-            refreshSessionReasoningVariant()
             refreshSessionFast()
             cacheCurrentAgentState()
             refreshDelegationStatus()
@@ -1405,9 +1407,7 @@ extension DockModel {
         currentModelName = nil
         sessionModelOptionID = nil
         sessionModelValue = nil
-        sessionReasoningVariant = nil
         messages = []
-        sessionReasoningWire = nil
         activeToolCalls = []
         reasoningState = nil
         reasoningFlushTask?.cancel()

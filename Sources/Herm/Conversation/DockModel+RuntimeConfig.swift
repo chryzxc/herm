@@ -52,8 +52,7 @@ extension DockModel {
         case malformedResponse
     }
 
-    /// True until a model-options fetch settles after the catalog was cleared (startup, session
-    /// switch, new chat), so the effort label reads "Loading…" instead of "Unavailable".
+    /// Whether the first model-options result for this context is still pending.
     var isEffortCatalogPending: Bool {
         effortCatalog == nil && runtimeModelOptionsError == nil
     }
@@ -68,10 +67,11 @@ extension DockModel {
         runtimeModelOptionsError = nil
     }
 
-    /// `keepingCatalog` leaves the current effort catalog visible while the refresh runs, so the
-    /// effort controls do not blink to "Loading…" after a model switch.
-    func refreshRuntimeModelOptions(sessionID: String? = nil, keepingCatalog: Bool = false) {
-        guard sessionID == nil || sessionActionsReady else { return }
+    /// `keepingCatalog` keeps the effort choices available while refreshing after a model switch.
+    func refreshRuntimeModelOptions(
+        sessionID: String? = nil, keepingCatalog: Bool = false, afterConfirmedResume: Bool = false
+    ) {
+        guard sessionID == nil || sessionActionsReady || afterConfirmedResume else { return }
         let resumeGeneration = sessionResumeGeneration
         let profile = sessionID == nil ? profileScopeID : (sessionProfileID ?? profileScopeID)
         if let request = runtimeModelOptionsRequestKey,
@@ -170,8 +170,8 @@ extension DockModel {
         refreshRuntimeModelOptions(sessionID: sessionID, keepingCatalog: keepingCatalog)
     }
 
-    func refreshSessionReasoningVariant() {
-        guard sessionActionsReady, let sessionID, !sessionID.isEmpty else { return }
+    func refreshSessionReasoningVariant(afterConfirmedResume: Bool = false) {
+        guard sessionActionsReady || afterConfirmedResume, let sessionID, !sessionID.isEmpty else { return }
         let generation = sessionResumeGeneration
         let profile = sessionProfileID ?? profileScopeID
         sessionReasoningRevision &+= 1

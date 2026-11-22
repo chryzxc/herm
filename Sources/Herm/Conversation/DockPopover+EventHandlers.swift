@@ -50,7 +50,7 @@ extension DockPopover {
 
     func loadInitialModelConfiguration() {
         model.refreshRuntimeConfiguration()
-        model.refreshRuntimeModelOptions()
+        if model.sessionID == nil { model.refreshRuntimeModelOptions() }
         model.refreshDefaultReasoningVariant()
     }
 
