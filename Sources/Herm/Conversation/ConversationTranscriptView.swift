@@ -467,9 +467,15 @@ struct ConversationTranscriptView: View, Equatable {
                     guard model.sessionActionsReady, let current = source.message(for: target) else {
                         return AnyView(EmptyView())
                     }
+                    let draft = model.forwardDraft(
+                        for: .init(
+                            sourceSession: WorkspaceIdentity.session(
+                                profileID: model.sessionProfileID, sessionID: model.navigationSessionID),
+                            messageID: current.id, recipientID: bot.id))
                     return AnyView(
                         ForwardToBotPopover(
-                            model: model, botMode: botMode, bot: bot, messageText: current.text, dismiss: dismiss)
+                            model: model, botMode: botMode, bot: bot, messageText: current.text,
+                            draft: draft, dismiss: dismiss)
                     )
                 },
                 loadKanbanDetail: { notice in

@@ -7,21 +7,20 @@ struct ForwardToBotPopover: View {
     @ObservedObject var botMode: BotModeModel
     let bot: BotSummary
     let messageText: String
+    @ObservedObject var draft: ForwardToBotDraft
     let dismiss: () -> Void
     @Environment(\.dismiss) private var environmentDismiss
 
-    @State private var note = ""
     /// A class box, not @State: the editor reads and clears it during a view update.
     @State private var pendingCaret = CaretBox()
     @State private var height = ComposerLayout.minHeight
-    @State private var error: String?
-    @State private var isForwarding = false
 
     @StateObject private var completions = ComposerCompletionController()
     @FocusState private var isFocused: Bool
 
     var body: some View {
         let field = DockThemeShape(cornerRadius: DockLayout.controlRadius)
+        let isForwarding = draft.submission == .sending
         VStack(alignment: .leading, spacing: 10) {
             if let trigger = completions.trigger, completions.isPresented {
                 ComposerCompletionPopover(
@@ -44,7 +43,7 @@ struct ForwardToBotPopover: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(field.dockSurfaceFill(.dockControlSurface, stroke: .dockBorderLight))
             ComposerInputEditor(
-                text: $note,
+                text: $draft.note,
                 isFocused: isFocused,
                 onSubmit: forward,
                 onCompletionKey: completions.handleKey,
@@ -62,7 +61,7 @@ struct ForwardToBotPopover: View {
             .background(
                 field.dockSurfaceFill(
                     .dockControlSurface, stroke: .dockBorderStrong, lineWidth: 1, strokeOnGlass: true))
-            if let error {
+            if case .failed(let error) = draft.submission {
                 Text(error).dockFont(.metadata).foregroundStyle(Color.dockDestructive)
             }
             HStack {
@@ -79,35 +78,24 @@ struct ForwardToBotPopover: View {
             isFocused = true
             completions.configure(
                 model: model, botMode: botMode, profileID: bot.id,
-                text: { note },
+                text: { draft.note },
                 apply: { text, caret in
                     pendingCaret.value = caret
-                    note = text
+                    draft.note = text
                     isFocused = true
                 }
             )
         }
         .onDisappear { completions.close() }
+        .onChange(of: draft.submission) { _, submission in
+            guard case .sent = submission else { return }
+            dismiss()
+            environmentDismiss()
+        }
     }
 
     private func forward() {
-        guard !isForwarding else { return }
-        let typed = ComposerCompletion.pathifyingBareRefs(note.trimmingCharacters(in: .whitespacesAndNewlines))
-        let body = "Forwarded message:\n\(messageText)"
-        isForwarding = true
-        error = nil
-        // A leading slash command runs on the bot's new session with the
-        // forwarded message as the tail of its argument.
-        let text = typed.isEmpty ? body : "\(typed)\n\n\(body)"
-        model.forwardMessage(text, toProfile: bot.id) { failure, _ in
-            isForwarding = false
-            if let failure {
-                error = failure
-            } else {
-                dismiss()
-                environmentDismiss()
-            }
-        }
+        draft.submit(messageText: messageText, to: bot.id, using: model)
     }
 }
 

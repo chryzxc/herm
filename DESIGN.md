@@ -3037,7 +3037,9 @@ completion removes it. Ordinary handoffs keep their existing partner captions.
 Native typing supersedes queued completion caret moves in the shared composer,
 including Forward to Bot. Redraws must not restore a selection from before the edit.
 
-Forward to Bot closes after a successful send, including commands returning output.
+Forward to Bot keeps the unsent note in memory for the source message and recipient bot,
+so dismissing and reopening the popover restores the note. A successful send clears the
+submitted note and closes the popover, including when a command returns output.
 On failure it remains open with the note and an error so the user can retry.
 
 **Herm Faces.** Bots without uploaded art draw a seeded face (`HermFace.swift`)

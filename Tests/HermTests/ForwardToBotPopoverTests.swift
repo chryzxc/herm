@@ -7,7 +7,7 @@ import Vision
 
 @MainActor
 struct ForwardToBotPopoverTests {
-    @Test(arguments: ["plain", "output", "empty", "message", "send", "skill", "retry"])
+    @Test(arguments: ["plain", "output", "empty", "message", "send", "skill", "retry", "reopen"])
     func successfulForwardDismissesPopover(scenario: String) async throws {
         _ = NSApplication.shared
         let suite = "ForwardToBotPopoverTests-" + UUID().uuidString
@@ -26,10 +26,14 @@ struct ForwardToBotPopoverTests {
             chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false,
             isDefault: false)
         var dismissCount = 0
-        let host = NSHostingView(
-            rootView: ForwardToBotPopover(
-                model: model, botMode: botMode, bot: bot, messageText: "Forwarded fixture message",
-                dismiss: { dismissCount += 1 }))
+        let key = ForwardToBotDraft.Key(sourceSession: "source-fixture", messageID: UUID(), recipientID: bot.id)
+        func makeHost() -> NSHostingView<ForwardToBotPopover> {
+            NSHostingView(
+                rootView: ForwardToBotPopover(
+                    model: model, botMode: botMode, bot: bot, messageText: "Forwarded fixture message",
+                    draft: model.forwardDraft(for: key), dismiss: { dismissCount += 1 }))
+        }
+        var host = makeHost()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 340, height: 300),
             styleMask: [.borderless], backing: .buffered, defer: false)
@@ -43,10 +47,36 @@ struct ForwardToBotPopoverTests {
             if let text = view as? ComposerInputTextView { return text }
             return view.subviews.lazy.compactMap(find).first
         }
-        let text = try #require(find(host))
+        var text = try #require(find(host))
         window.makeFirstResponder(text)
-        let note = scenario == "plain" || scenario == "retry" ? "Review this" : "/fixture inspect"
+        let sendsPlainText = ["plain", "retry", "reopen"].contains(scenario)
+        let note = sendsPlainText ? "Review this" : "/fixture inspect"
         text.insertText(note, replacementRange: NSRange(location: NSNotFound, length: 0))
+        if scenario == "reopen" {
+            window.contentView = nil
+            #expect(
+                model.forwardDraft(
+                    for: .init(
+                        sourceSession: key.sourceSession, messageID: key.messageID, recipientID: "other-bot")
+                ).note.isEmpty)
+            #expect(
+                model.forwardDraft(
+                    for: .init(
+                        sourceSession: key.sourceSession, messageID: UUID(), recipientID: key.recipientID)
+                ).note.isEmpty)
+            #expect(
+                model.forwardDraft(
+                    for: .init(
+                        sourceSession: "other-session", messageID: key.messageID, recipientID: key.recipientID)
+                ).note.isEmpty)
+            host = makeHost()
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            text = try #require(find(host))
+            #expect(text.string == note, "Reopening must restore the unsent note")
+            window.makeFirstResponder(text)
+        }
         await Task.yield()
         host.layoutSubtreeIfNeeded()
         let enter = try #require(
@@ -86,9 +116,14 @@ struct ForwardToBotPopoverTests {
             try #require(rpc.finished, "The retry must complete before checking dismissal")
             await Task.yield()
         }
+        for _ in 0..<100 {
+            if dismissCount != 0 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
         #expect(dismissCount == 1, "Successful forwarding must dismiss even when slash.exec returns output")
+        #expect(model.forwardDraft(for: key).note.isEmpty, "A successful forward must clear its submitted draft")
         #expect(rpc.createdProfiles == Array(repeating: bot.id, count: scenario == "retry" ? 2 : 1))
-        if scenario == "plain" || scenario == "retry" {
+        if sendsPlainText {
             let expectedText = GenerativeUIIntegration.preparePrompt(
                 "Review this\n\nForwarded message:\nForwarded fixture message")
             let expected = Array(repeating: expectedText, count: scenario == "retry" ? 2 : 1)

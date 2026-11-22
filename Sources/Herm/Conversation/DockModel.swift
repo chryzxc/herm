@@ -67,6 +67,15 @@ final class DockModel: ObservableObject {
 
     let composer = ComposerText()
     var composerDrafts: [SessionComposerDraft.Key: SessionComposerDraft] = [:]
+    private var forwardDrafts: [ForwardToBotDraft.Key: ForwardToBotDraft] = [:]
+
+    func forwardDraft(for key: ForwardToBotDraft.Key) -> ForwardToBotDraft {
+        if let draft = forwardDrafts[key] { return draft }
+        let draft = ForwardToBotDraft()
+        forwardDrafts[key] = draft
+        return draft
+    }
+
     @Published var pendingSessionSends: [SessionPendingSend] = []
     var deliveryRowClaims: [SessionComposerDraft.Key: [Int: UUID]] = [:]
     @Published var deliveryChecksInFlight: Set<SessionComposerDraft.Key> = []

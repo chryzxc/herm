@@ -116,7 +116,8 @@ private struct PresentationFixture: View {
                 .dockPopover(item: $state.recipient, arrowEdge: .bottom) { bot in
                     ForwardToBotPopover(
                         model: model, botMode: botMode, bot: bot,
-                        messageText: "I fetched and checked origin/CRX-develop.", dismiss: { state.recipient = nil })
+                        messageText: "I fetched and checked origin/CRX-develop.", draft: ForwardToBotDraft(),
+                        dismiss: { state.recipient = nil })
                 }
             Button("Open sheet") { state.showsSheet = true }
                 .buttonStyle(.dockSecondary)

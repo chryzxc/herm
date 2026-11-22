@@ -1457,7 +1457,8 @@ Project management and bot **@mention autocomplete** are already implemented; ru
 
 Window toolbar icons remain clickable without dragging the window; drag the blank title row to move it.
 
-Forward to Bot closes after a successful send; failures keep the note and show an error for retry.
+Forward to Bot restores your unsent note when you reopen it for the same message and bot.
+A successful send clears the submitted note and closes the popover. Failures keep the note and show an error for retry.
 
 ```sh
 swift build   # build

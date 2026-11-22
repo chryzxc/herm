@@ -29,7 +29,8 @@ struct ForwardComposerCaretTests {
             isDefault: false)
         let host = NSHostingView(
             rootView: ForwardToBotPopover(
-                model: model, botMode: botMode, bot: bot, messageText: "Forwarded fixture message", dismiss: {}))
+                model: model, botMode: botMode, bot: bot, messageText: "Forwarded fixture message",
+                draft: ForwardToBotDraft(), dismiss: {}))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 340, height: 300),
             styleMask: [.borderless], backing: .buffered, defer: false)
