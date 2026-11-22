@@ -28,10 +28,13 @@ struct ControlCenterEventFailureTests {
         let client = FailingProjectsRPCClient()
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client), capabilities: [])
         let dock = DockModel(rpcClient: client)
+        defer { withExtendedLifetime(dock) {} }
         model.dockModel = dock
+        model.visibleSidebarTabs[UUID()] = .projects
         model.projectProfileScopeUnavailable = false
         model.projectProfileID = "profile"
         model.projects = ControlCenterModel.parseProjects(["projects": [["id": "p", "name": "Project"]]])
+        model.projectSessionsByProjectID["p"] = []
         model.ingestEvent("message.complete", params: ["session_id": "a"])
         try await Task.sleep(for: .seconds(2))
         #expect(model.eventRefreshTask == nil)

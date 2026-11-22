@@ -549,15 +549,23 @@ struct ControlCenterProjectTests {
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
         model.setProjectProfile("profile-a")
 
-        let loaded = Date().addingTimeInterval(5)
-        while model.projects.count < 2, Date() < loaded { try await Task.sleep(for: .milliseconds(5)) }
+        await model.refreshTask?.value
         try #require(model.projects.count == 2)
 
-        try await Task.sleep(for: .milliseconds(100))
         model.selectProject(forPath: "/work/created")
 
-        try await Task.sleep(for: .milliseconds(100))
+        let deadline = ContinuousClock.now + .seconds(5)
+        while model.pendingProjectNavigationSessions["created"] == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        client.finishOtherProject()
+        try #require(model.pendingProjectNavigationSessions["created"] != nil)
+        let finished = ContinuousClock.now + .seconds(5)
+        while model.isRefreshingProjectNavigation, ContinuousClock.now < finished {
+            try await Task.sleep(for: .milliseconds(5))
+        }
 
+        #expect(!model.isRefreshingProjectNavigation)
         #expect(model.selectedProjectID == "created")
         #expect(model.projectSessions.map(\.id) == ["created-session"])
     }
@@ -1925,6 +1933,14 @@ private final class ProjectSessionIsolationClient: HermesRPCClientProtocol {
 @MainActor
 private final class ProjectNavigationOrderingClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
+    private var otherProjectRead: CheckedContinuation<Void, Never>?
+    private var canFinishOtherProject = false
+
+    func finishOtherProject() {
+        canFinishOtherProject = true
+        otherProjectRead?.resume()
+        otherProjectRead = nil
+    }
 
     func connect() async throws {}
     func close() {}
@@ -1940,8 +1956,8 @@ private final class ProjectNavigationOrderingClient: HermesRPCClientProtocol {
             ]
         case "projects.project_sessions":
             guard let projectID = params["project_id"] as? String else { return [:] }
-            if projectID == "other" {
-                try await Task.sleep(for: .milliseconds(40))
+            if projectID == "other", !canFinishOtherProject {
+                await withCheckedContinuation { otherProjectRead = $0 }
             }
             return ["sessions": [["id": "\(projectID)-session", "title": projectID, "state": "active"]]]
         default:
