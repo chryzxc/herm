@@ -24,7 +24,7 @@ struct RichCodeView: View {
                     max(64, CGFloat(code.code.split(separator: "\n", omittingEmptySubsequences: false).count) * 17 + 44)
                 )
             )
-            .dockWell(.raised)
+            .dockWell(.raised, role: .pane)
         }
     }
 }

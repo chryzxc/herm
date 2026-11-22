@@ -17,7 +17,7 @@ struct RichWorkflowTests {
         if let directory {
             try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         }
-        for theme in [DockThemeID.warmLight, .slate, .glass, .mono] {
+        for theme in [DockThemeID.warmLight, .slate, .glass, .mono, .island] {
             DockThemeRuntime.current = theme
             DockThemeRuntime.revision &+= 1
             for id in [

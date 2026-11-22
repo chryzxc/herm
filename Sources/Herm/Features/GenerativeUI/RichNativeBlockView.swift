@@ -75,7 +75,7 @@ struct RichNativeBlockView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .dockPadding(DockSpacing.group)
-                .dockWell()
+                .dockWell(role: .pane)
             }
         }
     }
@@ -106,7 +106,7 @@ struct RichNativeBlockView: View {
                     }
                     if selected == option.id, let detail = option.detail { Text(detail).textSelection(.enabled) }
                 }.dockPadding(DockSpacing.group)
-                    .dockWell(stroke: selected == option.id ? Color.dockAccent : nil)
+                    .dockWell(role: .pane, stroke: selected == option.id ? Color.dockAccent : nil)
                     .accessibilityAddTraits(selected == option.id ? .isSelected : [])
             }
         }

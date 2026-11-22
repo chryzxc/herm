@@ -84,7 +84,7 @@ private struct RichTableGrid: View {
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .dockWell(.sunken)
+            .dockWell(.sunken, role: .pane)
             HStack(spacing: DockSpacing.control) {
                 Text(
                     query.isEmpty

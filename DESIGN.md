@@ -4718,6 +4718,9 @@ Generated charts reserve space for horizontal scrollbars and separate the plot,
 wrapping legend, inspection control, and selected values with consistent gaps.
 Dense chart labels remain inside the scroll viewport. Tables, code, commands,
 graphs, and image comparisons include trailing/bottom clearance for scrollbars.
+Markdown and dataset tables use a sunken well with the skin’s pane geometry.
+Metric tiles, comparison options, code blocks, and command previews use raised wells
+with the same pane geometry, including when text wraps or an option expands.
 
 Compact stateful icons (session rail visibility, sidebar destination pins, session
 pins, and message pins) use filled icons when active and outline icons when

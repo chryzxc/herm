@@ -278,6 +278,8 @@ Generated replies can show category breakdowns with labelled horizontal bars and
 Generated replies use a macOS-style document surface with a tonal toolbar, visible
 Expand action, grouped provenance, inset sections, and rounded metric figures.
 The treatment follows your current Herm theme, including Glass and Monochrome.
+Tables, metric tiles, comparison options, code blocks, and command previews use the
+theme’s panel corners, including in skins with pill-shaped controls.
 
 A finished assistant reply can also use ordinary Markdown. A pipe table with a header
 and separator gets sortable columns and a filter above ten rows. A quoted GitHub
