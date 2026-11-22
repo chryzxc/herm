@@ -502,10 +502,6 @@ struct SessionNavBotSessionRow: View, Equatable {
     let style: DockThemePalette
     let onOpen: () -> Void
 
-    static func showsUnreadCount(for status: SidebarSessionStatus) -> Bool {
-        status == .unreadComplete || status == .none
-    }
-
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.session == rhs.session && lhs.bot == rhs.bot && lhs.imageData == rhs.imageData
             && lhs.mood == rhs.mood && lhs.isSelected == rhs.isSelected && lhs.sessionStatus == rhs.sessionStatus
@@ -516,7 +512,7 @@ struct SessionNavBotSessionRow: View, Equatable {
         HStack(alignment: .center, spacing: 8) {
             ZStack(alignment: .trailing) {
                 Color.clear
-                if sessionStatus == .failed || Self.showsUnreadCount(for: sessionStatus) {
+                if sessionStatus != .working {
                     SidebarSessionStatusIndicator(session: session, status: sessionStatus)
                 }
             }

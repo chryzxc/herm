@@ -260,6 +260,15 @@ struct SessionUnreadReplyBadge: View {
     let session: HermesSession
     var showUnavailable = true
     var hasKnownFailure = false
+    enum Layout {
+        case inline, leadingSlot
+
+        func showsCount(hasFailure: Bool) -> Bool {
+            self == .inline || !hasFailure
+        }
+    }
+
+    var layout: Layout = .inline
     @Environment(\.sessionUnreadReplies) private var replies
     @ObservedObject var seenStore = SidebarSessionSeenStore.shared
     @State private var result: CountState?
@@ -292,28 +301,13 @@ struct SessionUnreadReplyBadge: View {
             seenAt: seenStore.seenAt(profileID: profileID, sessionID: session.id),
             baselined: seenStore.isBaselined(profileID: profileID),
             refresh: Int(now.timeIntervalSince1970 / 15))
+        let showsFailure = !session.isWorking && (hasKnownFailure || loadedFailure)
         return HStack(spacing: 4) {
-            if !session.isWorking && (hasKnownFailure || loadedFailure) {
+            if showsFailure {
                 SessionFailureWarning()
             }
-            switch result {
-            case .loaded(let projection) where projection.count > 0:
-                UnreadCountPill(
-                    label: projection.count > 99 ? "99+" : "\(projection.count)",
-                    markSize: DockSidebarListMetrics.statusMark
-                )
-                .accessibilityLabel(
-                    "\(projection.count) unread AI \(projection.count == 1 ? "response" : "responses")")
-            case .unavailable where showUnavailable:
-                Text("?")
-                    .dockFont(.compactStatus, weight: .semibold)
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .dockPill(tint: .dockSecondaryText, compact: true)
-                    .fixedSize()
-                    .accessibilityLabel("Unread response count unavailable")
-                    .help("Could not read the unread AI response count")
-            default:
-                EmptyView()
+            if layout.showsCount(hasFailure: showsFailure) {
+                countBadge
             }
         }
         .fixedSize()
@@ -339,6 +333,29 @@ struct SessionUnreadReplyBadge: View {
         }
     }
 
+    @ViewBuilder
+    private var countBadge: some View {
+        switch result {
+        case .loaded(let projection) where projection.count > 0:
+            UnreadCountPill(
+                label: projection.count > 99 ? "99+" : "\(projection.count)",
+                markSize: DockSidebarListMetrics.statusMark
+            )
+            .accessibilityLabel(
+                "\(projection.count) unread AI \(projection.count == 1 ? "response" : "responses")")
+        case .unavailable where showUnavailable:
+            Text("?")
+                .dockFont(.compactStatus, weight: .semibold)
+                .foregroundStyle(Color.dockPrimaryText)
+                .dockPill(tint: .dockSecondaryText, compact: true)
+                .fixedSize()
+                .accessibilityLabel("Unread response count unavailable")
+                .help("Could not read the unread AI response count")
+        default:
+            EmptyView()
+        }
+    }
+
     private var loadedFailure: Bool {
         if case .loaded(let projection) = result { return projection.hasUnseenFailedTurn }
         return false
@@ -352,9 +369,9 @@ struct SidebarSessionStatusIndicator: View {
     let status: SidebarSessionStatus
 
     var body: some View {
-        if status == .unreadComplete || status == .none || status == .failed {
+        if status.allowsUnreadCount {
             SessionUnreadReplyBadge(
-                session: session, showUnavailable: status == .unreadComplete, hasKnownFailure: status == .failed)
+                session: session, showUnavailable: status == .unreadComplete, layout: .leadingSlot)
         } else if let state = status.activityState {
             DockActivityIndicator(state: state, role: .status, unreadDot: true)
         }

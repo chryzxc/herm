@@ -258,7 +258,7 @@ struct SessionUnreadRepliesTests {
             session: session, summary: nil, activeSessionID: nil, activeStatus: nil, attention: nil,
             seenAt: seenAt, isProfileBaselined: true)
         #expect(status == .none)
-        #expect(SessionNavBotSessionRow.showsUnreadCount(for: status))
+        #expect(status.allowsUnreadCount)
         let projection = try await SessionUnreadReplies(client: client).project(
             session: session, profileID: "bot", after: seenAt)
         #expect(projection.count == 1)

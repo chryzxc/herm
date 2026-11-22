@@ -1891,8 +1891,9 @@ Frame-sized panes service content constraint updates before their own layout. Sc
 
 Working and unread activity follows each session through selection, pinned rows,
 and project summaries; the notch uses the same session activity state.
-Unseen failed turns show a warning triangle beside the independent unread count,
-including in All profiles. Leading status marks (running, approval, warning, unread
+Each leading status slot shows one mark. Approval, clarification, running, and failure
+icons take precedence over the unread count. An unseen failed turn from history
+shows a warning triangle in that slot, including in All profiles. Leading status marks (running, approval, warning, unread
 count, done) share `DockSidebarListMetrics.statusMark` (16pt) inside a 28pt
 `statusSlotWidth`, via `DockActivityIndicator`'s `.status` role; never size one locally. Opening the session acknowledges the history warning
 while retaining error details in the transcript.
@@ -4818,8 +4819,8 @@ partial inventories show a lower bound or an unavailable marker. Running Bot
 activity remains independently visible.
 
 Completed session rows show a compact red numeric unread AI-response pill in the leading status
-slot, replacing the completion dot. An unseen failure has a separate warning triangle;
-working, approval, and clarification indicators retain their existing priority. The fixed leading slot stays stable while
+slot when no other status is present. An unseen failure shows a warning triangle in the same slot.
+The fixed leading slot stays stable while
 the count loads. Counts above 99 display as `99+`; accessibility exposes the full count.
 A failed or incomplete history read shows `?` with an unavailable description, never
 a guessed number. Read sessions show no completion marker.

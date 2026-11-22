@@ -12,6 +12,8 @@ enum SidebarSessionStatus: Equatable, Codable {
     case unreadComplete
     case none
 
+    var allowsUnreadCount: Bool { self == .unreadComplete || self == .none }
+
     var label: String {
         switch self {
         case .working: "Working"

@@ -15,6 +15,16 @@ struct SessionFailureWarningTests {
         return row
     }
 
+    @Test func leadingSlotUsesUnreadCountOnlyWithoutAnotherStatus() {
+        for status in [SidebarSessionStatus.needsApproval, .needsClarification, .failed, .working] {
+            #expect(!status.allowsUnreadCount)
+        }
+        #expect(SidebarSessionStatus.none.allowsUnreadCount)
+        #expect(SidebarSessionStatus.unreadComplete.allowsUnreadCount)
+        #expect(!SessionUnreadReplyBadge.Layout.leadingSlot.showsCount(hasFailure: true))
+        #expect(SessionUnreadReplyBadge.Layout.leadingSlot.showsCount(hasFailure: false))
+    }
+
     @Test func failureSeenBoundaryAndCutoff() {
         let cutoff = Date(timeIntervalSince1970: 102)
         let cases: [(Double, Bool)] = [(100, false), (101, true), (102, true), (103, false)]
