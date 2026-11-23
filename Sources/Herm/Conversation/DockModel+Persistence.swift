@@ -39,7 +39,19 @@ extension DockModel {
                 synthesizedSubagentIDs: synthesizedSubagentIDs
             )
         ]) { _, new in new }
-        Task { await agentStateWriter.enqueue(snapshot) }
+        scheduleAgentStateCommit(snapshot, immediate: false)
+    }
+
+    func scheduleAgentStateCommit(_ snapshot: [String: SessionAgentState], immediate: Bool) {
+        let previous = agentStateCommit
+        agentStateCommit = Task(priority: .utility) { [agentStateWriter] in
+            await previous?.value
+            if immediate {
+                await agentStateWriter.commitNow(snapshot)
+            } else {
+                await agentStateWriter.enqueue(snapshot)
+            }
+        }
     }
 
     func persistActiveSessionID(_ sessionID: String?) {

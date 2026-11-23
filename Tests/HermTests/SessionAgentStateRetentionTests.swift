@@ -57,6 +57,27 @@ struct SessionAgentStateRetentionTests {
         #expect(loaded["s\(limit)"] != nil)
     }
 
+    @Test func incrementalWritesKeepTheExistingArchiveReadable() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = SessionAgentStateStore(fileURL: directory.appendingPathComponent("agents.json"))
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let unusualID = "old/\"profile\"\n☀️"
+        let unchanged = state(eventAt: 7)
+        let original = [unusualID: unchanged, "new": state(eventAt: 3)]
+        store.save(original)
+        #expect(store.load() == original)
+
+        let writer = SessionAgentStateWriter(store: store)
+        await writer.commitNow(original)
+        let new = state(eventAt: 20)
+        let updated = [unusualID: unchanged, "new": new]
+        await writer.commitNow(updated)
+        #expect(store.load() == updated)
+
+        await writer.commitNow(["new": new])
+        #expect(store.load() == updated.filter { $0.key == "new" })
+    }
+
     @Test func staleTemporaryFilesAreRemovedAndFreshOnesKept() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("agent-state-temp-\(UUID().uuidString)")

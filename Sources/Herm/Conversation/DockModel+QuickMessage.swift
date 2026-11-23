@@ -37,7 +37,16 @@ extension DockModel {
         gateway?.close()
         detachInFlightBotActivities(as: .canceled)
         botActivityWriter.flush()
-        Task { await agentStateWriter.flush() }
+        if let trailing = agentStateCacheTrailingTask {
+            trailing.cancel()
+            agentStateCacheTrailingTask = nil
+            writeAgentStateSnapshot()
+        }
+        let previousCommit = agentStateCommit
+        Task(priority: .utility) { [agentStateWriter] in
+            await previousCommit?.value
+            await agentStateWriter.flush()
+        }
         DebugLog.write("model: shutdown complete")
     }
 

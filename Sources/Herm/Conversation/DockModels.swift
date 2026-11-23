@@ -309,9 +309,7 @@ struct SessionAgentState: Equatable, Codable {
     let synthesizedSubagentIDs: Set<String>
 }
 
-/// The archive is re-encoded whole on every write, so it keeps only the
-/// sessions with the most recent agent activity. Unbounded, it grew past
-/// 1,600 sessions and 12 MB, and every encode stalled the thread running it.
+/// Keep the archive bounded by most recent agent activity.
 enum SessionAgentStateRetention {
     static let maximumSessionCount = 300
 
@@ -389,26 +387,33 @@ struct SessionAgentStateStore {
         guard let data = try? JSONEncoder.sessionAgentState.encode(SessionAgentStateArchive(states: states)) else {
             return
         }
-        saveEncoded(data)
+        _ = saveEncoded(data)
     }
 
-    func saveEncoded(_ data: Data) {
+    func saveEncoded(_ data: Data) -> Bool {
         do {
             try FileManager.default.createDirectory(
                 at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: fileURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+            return true
         } catch {
             print("[Herm] session agent state persistence failed")
+            return false
         }
     }
 }
 
 actor SessionAgentStateWriter {
+    private struct Row {
+        let state: SessionAgentState
+        let json: Data
+    }
+
     private let store: SessionAgentStateStore
     private var pending: [String: SessionAgentState]?
     private var isCommitScheduled = false
-    private var lastEncoded: Data?
+    private var encodedRows: [String: Row] = [:]
     private var lastCommittedStates: [String: SessionAgentState]?
     private var hasSweptTemporaryFiles = false
 
@@ -421,16 +426,13 @@ actor SessionAgentStateWriter {
         commit()
     }
 
-    /// Throttled, not debounced: every write re-encodes all retained sessions,
-    /// and a trailing 250 ms debounce still fired twice a second through agent
-    /// runs, dirtying 2 GB of disk in minutes. `flush()` covers session
-    /// switches and quit.
+    /// Coalesce activity while keeping an upper bound on the time between saves.
     func enqueue(_ states: [String: SessionAgentState]) {
         if states == pending || (pending == nil && states == lastCommittedStates) { return }
         pending = states
         guard !isCommitScheduled else { return }
         isCommitScheduled = true
-        Task { [weak self] in
+        Task(priority: .utility) { [weak self] in
             try? await Task.sleep(for: .seconds(2))
             await self?.commitScheduled()
         }
@@ -451,25 +453,48 @@ actor SessionAgentStateWriter {
             self.pending = nil
             return
         }
-        guard
-            let data = try? JSONEncoder.sessionAgentState.encode(
-                SessionAgentStateArchive(states: SessionAgentStateRetention.pruned(pending)))
-        else {
-            return
+        let retained = SessionAgentStateRetention.pruned(pending)
+        guard let rows = encodeChangedRows(retained) else { return }
+        let needsWrite =
+            lastCommittedStates == nil || rows.count != encodedRows.count
+            || rows.contains { encodedRows[$0.key]?.json != $0.value.json }
+        if needsWrite {
+            var archive = Data(#"{"schemaVersion":1,"states":{"#.utf8)
+            archive.reserveCapacity(archive.count + rows.values.reduce(2) { $0 + $1.json.count + 1 })
+            for (index, row) in rows.sorted(by: { $0.key < $1.key }).enumerated() {
+                if index != 0 { archive.append(0x2C) }
+                archive.append(row.value.json)
+            }
+            archive.append(contentsOf: "}}".utf8)
+            guard store.saveEncoded(archive) else { return }
         }
+        encodedRows = rows
         lastCommittedStates = pending
         self.pending = nil
-        guard data != lastEncoded else { return }
-        lastEncoded = data
-        // The actor already runs off the main thread; writing here keeps writes
-        // in commit order, which detached write tasks did not guarantee.
-        store.saveEncoded(data)
         // Swept after the first real save, not at launch, so a model that never
         // persists (such as a test's) never touches the folder.
         if !hasSweptTemporaryFiles {
             hasSweptTemporaryFiles = true
             store.removeStaleTemporaryFiles()
         }
+    }
+
+    /// Keep the v1 archive readable by existing builds and reuse unchanged JSON members.
+    private func encodeChangedRows(_ states: [String: SessionAgentState]) -> [String: Row]? {
+        let encoder = JSONEncoder.sessionAgentState
+        var rows: [String: Row] = [:]
+        rows.reserveCapacity(states.count)
+        for (id, state) in states {
+            if let previous = encodedRows[id], previous.state == state {
+                rows[id] = previous
+            } else {
+                guard var member = try? encoder.encode(id), let value = try? encoder.encode(state) else { return nil }
+                member.append(0x3A)
+                member.append(value)
+                rows[id] = Row(state: state, json: member)
+            }
+        }
+        return rows
     }
 }
 

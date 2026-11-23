@@ -1500,14 +1500,7 @@ extension DockModel {
             agentActivities: agentActivities,
             synthesizedSubagentIDs: synthesizedSubagentIDs
         )
-        // Encoding the whole archive on the main actor stalled session switches
-        // and turn ends; the writer encodes and writes off the main thread.
-        let snapshot = agentStateBySessionID
-        let previous = agentStateCommit
-        agentStateCommit = Task { [agentStateWriter] in
-            await previous?.value
-            await agentStateWriter.commitNow(snapshot)
-        }
+        scheduleAgentStateCommit(agentStateBySessionID, immediate: true)
     }
 
     /// Makes one session snapshot the sole owner of the visible agent board.

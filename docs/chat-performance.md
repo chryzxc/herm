@@ -1001,7 +1001,8 @@ Use `HERM_SCROLL_PROFILE=1` with the `profileWorkingAvatarAcrossWindows` filter.
 This fixture isolates the indicator. Live Release frame pacing remains unmeasured.
 
 Chats reuses pin and status projections across pointer and search updates and
-pauses unread-count reads when collapsed or covered.
+pauses unread-count reads when collapsed or covered. Agent-state commits reuse
+unchanged encoded session entries and keep the existing atomic v1 archive format.
 
 ### Performance contract
 
