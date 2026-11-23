@@ -154,6 +154,7 @@ struct SessionNavRail: View {
     @State private var showsSkinMenu = false
     @State private var showsDensityMenu = false
     @State private var showsNotchMenu = false
+    @State private var showsStatusBarMenu = false
     @AppStorage(DockWorkspaceScale.preferenceKey) private var textSize = DockWorkspaceScale.defaultTextSize
     @ObservedObject private var desktopPlugins = DesktopPluginStore.shared
     @State private var dragOrder: [DockRailItem]?
@@ -355,7 +356,7 @@ struct SessionNavRail: View {
 
     private var hasUpdateBadge: Bool { agentUpdateService.phase == .updateAvailable || appUpdater.hasUpdate }
 
-    /// Settings, quick skin switch and window mode.
+    /// Settings, appearance, status bar preferences and window mode.
     private var viewMenu: some View {
         VStack(alignment: .leading, spacing: 2) {
             viewMenuRow(
@@ -371,6 +372,10 @@ struct SessionNavRail: View {
                 .dockPopover(isPresented: $showsDensityMenu, arrowEdge: .trailing) { densityMenu }
             viewMenuRow("Notch", selected: false, hasSubmenu: true) { showsNotchMenu.toggle() }
                 .dockPopover(isPresented: $showsNotchMenu, arrowEdge: .trailing) { NotchQuickMenu() }
+            viewMenuRow("Status bar", selected: false, hasSubmenu: true) { showsStatusBarMenu.toggle() }
+                .dockPopover(isPresented: $showsStatusBarMenu, arrowEdge: .trailing) {
+                    WorkspaceStatusBarSettings.QuickMenu()
+                }
             if let onOpenWindow {
                 Color.dockBorderLight.frame(height: 0.5).dockPadding(.vertical, 4)
                 viewMenuRow(isDockedWindow ? "Switch to floating" : "Switch to window", selected: false) {

@@ -14,7 +14,7 @@ enum SettingsCategoryGroup: String, CaseIterable, Identifiable {
 
     var categories: [SettingsCategory] {
         switch self {
-        case .app: [.general, .gateway, .appearance, .notifications]
+        case .app: [.general, .gateway, .appearance, .statusBar, .notifications]
         case .agent: [.runtime, .subagents, .providers, .chat, .memory, .voice, .advanced]
         case .tools: [.workspace, .browser, .passwords, .safety, .integrations]
         case .activity: [.session, .diagnostics, .updates]
@@ -26,6 +26,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
     case gateway
     case appearance
+    case statusBar
     case notifications
     case runtime
     case subagents
@@ -50,6 +51,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .general: "General"
         case .gateway: "Gateway"
         case .appearance: "Appearance"
+        case .statusBar: "Status bar"
         case .notifications: "Notifications"
         case .updates: "Updates"
         case .runtime: "Models & tools"
@@ -74,6 +76,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .general: "Startup, keyboard shortcuts, power, and restart"
         case .gateway: "Connections and the local messaging gateway"
         case .appearance: "Themes, sidebar, notch, and companion"
+        case .statusBar: "Live work, decisions, and context along the window's bottom edge"
         case .notifications: "Completion alerts and repository changes"
         case .updates: "Manage Herm and Hermes Agent, check compatibility, and browse release notes."
         case .runtime: "Models, dispatch, and tools"
@@ -98,6 +101,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .general: .slidersHorizontal
         case .gateway: .globe
         case .appearance: .palette
+        case .statusBar: .alignBottom
         case .notifications: .bell
         case .updates: .arrowsClockwise
         case .runtime: .gearSix

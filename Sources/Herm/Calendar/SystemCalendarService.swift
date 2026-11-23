@@ -7,6 +7,9 @@ import SwiftUI
 /// the visible range is re-read whenever EventKit reports a change.
 @MainActor
 final class SystemCalendarService: ObservableObject {
+    static let enabledKey = "dock.calendar.system"
+    static let hiddenSourcesKey = "dock.calendar.hidden"
+
     enum Access: Equatable { case notDetermined, granted, denied }
 
     struct Source: Identifiable, Equatable {
@@ -33,11 +36,13 @@ final class SystemCalendarService: ObservableObject {
     /// The user's "Show Mac Calendar" choice. Off means EventKit is not read at all.
     private var isEnabled = true
     private var observer: AnyCancellable?
+    private let includesReminders: Bool
 
     var allGranted: Bool { eventAccess == .granted && reminderAccess == .granted }
     var anyDenied: Bool { eventAccess == .denied || reminderAccess == .denied }
 
-    init() {
+    init(includesReminders: Bool = true) {
+        self.includesReminders = includesReminders
         readAccess()
         observer = NotificationCenter.default.publisher(for: .EKEventStoreChanged)
             .receive(on: DispatchQueue.main)
@@ -169,7 +174,7 @@ final class SystemCalendarService: ObservableObject {
 
     private func loadReminders(in range: DateInterval, sources: [Source], events: [CalendarItem], revision: UInt64) {
         var sources = sources
-        guard reminderAccess == .granted else {
+        guard includesReminders, reminderAccess == .granted else {
             self.sources = sources
             items = events
             return

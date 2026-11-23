@@ -132,6 +132,7 @@ struct DockPopover: View {
     var developerWorkflow: DeveloperWorkflowModel { .shared }
     @State var workflowPresentationRevision = 0
     @StateObject var pullRequestCenter = PullRequestCenterModel(details: .shared)
+    @StateObject var statusModel = WorkspaceStatusModel()
     @StateObject var issueCenter = IssueCenterModel()
     @StateObject var githubRepositories = GitHubRepositoriesModel()
     @StateObject var gitHubInspector = GitHubInspectorStore()
@@ -345,6 +346,7 @@ struct DockPopover: View {
                         },
                         toggleSidebar: { isChatListCollapsed.toggle() },
                         toggleInspector: toggleInspectorPanel,
+                        toggleActivity: toggleStatusActivity,
                         showShortcutList: { isShowingShortcutList = true }
                     ))
             )

@@ -18,10 +18,10 @@ struct CalendarWorkspaceView: View {
     @State private var showingDatePicker = false
     @AppStorage("dock.calendar.view") private var scopeRaw = CalendarViewScope.week.rawValue
     /// Calendar and list IDs the user hid, newline-separated. A local preference only.
-    @AppStorage("dock.calendar.hidden") private var hiddenRaw = ""
+    @AppStorage(SystemCalendarService.hiddenSourcesKey) private var hiddenRaw = ""
     /// Whether to read the Mac's Calendar and Reminders. Access is still asked
     /// only from an explicit tap, so on by default never prompts at launch.
-    @AppStorage("dock.calendar.system") private var useSystem = true
+    @AppStorage(SystemCalendarService.enabledKey) private var useSystem = true
     @Environment(\.chatContextRouter) private var router
 
     private let calendar = Calendar.current

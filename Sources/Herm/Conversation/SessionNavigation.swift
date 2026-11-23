@@ -26,7 +26,8 @@ final class DockPanelPresentation: ObservableObject {
     /// Owned by the panel controller; the view mirrors it so the layout always
     /// matches the window, including when the panel reopens in fullscreen.
     @Published var isFullscreen = false
-    /// The notch's state, which the top drop-down shows in its menu-bar band.
+    /// The notch's state, which the top drop-down shows in its menu-bar band
+    /// and the workspace status bar counts in both the panel and the window.
     var islandStatus: EdgeNotchState?
     var openIslandTask: (EdgeNotchTask) -> Void = { _ in }
 }

@@ -409,17 +409,20 @@ extension DockPopover {
         DockWorkspaceShell(
             toolbarHeight: titlebarInset, rail: { sessionNavRail },
             content: {
-                FullscreenPanelSplitView(
-                    leading: desktopLeadingPanel,
-                    trailing: desktopTrailingWorkspace,
-                    leadingFraction: DesktopWorkspaceFractions.queue,
-                    minimumLeadingWidth: 300,
-                    minimumTrailingWidth: desktopTrailingMinimumWidth,
-                    isLeadingCollapsed: isNarrowLayout || !showsChatsPanel || hidesChatList,
-                    leadingMatches: { $0 == $1 },
-                    trailingIdentity: desktopPageIdentity,
-                    performanceRoles: ("chatsList", "desktopWorkspace")
-                )
+                VStack(spacing: 0) {
+                    FullscreenPanelSplitView(
+                        leading: desktopLeadingPanel,
+                        trailing: desktopTrailingWorkspace,
+                        leadingFraction: DesktopWorkspaceFractions.queue,
+                        minimumLeadingWidth: 300,
+                        minimumTrailingWidth: desktopTrailingMinimumWidth,
+                        isLeadingCollapsed: isNarrowLayout || !showsChatsPanel || hidesChatList,
+                        leadingMatches: { $0 == $1 },
+                        trailingIdentity: desktopPageIdentity,
+                        performanceRoles: ("chatsList", "desktopWorkspace")
+                    )
+                    workspaceStatusFooter
+                }
             })
     }
 
@@ -484,13 +487,7 @@ extension DockPopover {
                     if isNarrowLayout { isNarrowControlVisible = false }
                 }
             },
-            onOpenGlobal: { tab in
-                leaveIntegrations {
-                    sessionNavNavigation.selectGlobal(tab)
-                    fullscreenGlobalTab = tab
-                    fullscreenSurface = .global
-                }
-            },
+            onOpenGlobal: openWorkspaceGlobal,
             onOpenArtifacts: {
                 leaveIntegrations {
                     sessionNavNavigation.selectArtifacts()

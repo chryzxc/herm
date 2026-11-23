@@ -11,7 +11,7 @@ struct HermCommandRouterTests {
         return HermCommandHandlers(
             openSettings: record, openCommandPalette: record, goBack: record, goForward: record,
             newChat: record, stopGeneration: record, closeSession: record, toggleSidebar: record,
-            toggleInspector: record, showShortcutList: record)
+            toggleInspector: record, toggleActivity: record, showShortcutList: record)
     }
 
     private final class Log { var entries: [String] = [] }

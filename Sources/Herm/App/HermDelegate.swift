@@ -264,6 +264,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
             onHide: { [weak edge] in edge?.restoreNotch() })
         dockPanel?.showIslandStatus(edge.state, openTask: { [weak edge] in edge?.openTask($0) })
         let window = DockWindowController(model: model, controlCenter: controlCenter)
+        window.attachStatus(edge.state)
         dockWindow = window
         dockPanel?.openWindow = { [weak window] in window?.open() }
         dockPanel?.isWindowOpen = { [weak window] in window?.isOpen == true }

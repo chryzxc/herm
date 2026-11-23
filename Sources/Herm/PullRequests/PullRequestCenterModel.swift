@@ -15,6 +15,7 @@ final class PullRequestCenterModel: ObservableObject {
         get { storedRecords }
         set { storedRecords = newValue.map { $0.retainingMergedState(from: details.records[$0.id]) } }
     }
+    var recordUpdates: AnyPublisher<[PullRequestRecord], Never> { $storedRecords.eraseToAnyPublisher() }
     @Published private var storedRecords: [PullRequestRecord] = [] {
         didSet {
             guard hasLoaded else { return }
