@@ -388,7 +388,10 @@ struct EdgeTaskPreview: View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(tasks, id: \.presentationID) { card($0, bots: bots, now: .now) }
             if let quotaChange {
-                EdgeQuotaChangeCard(change: quotaChange, compact: true).dockPadding(.horizontal, 10)
+                // Top inset matches the visible gap under the meters.
+                EdgeQuotaChangeCard(change: quotaChange, compact: true)
+                    .dockPadding(.horizontal, 10)
+                    .dockPadding(.top, 6)
             }
         }
         .foregroundStyle(Color.dockPrimaryText)
