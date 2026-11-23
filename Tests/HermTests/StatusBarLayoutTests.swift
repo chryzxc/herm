@@ -18,6 +18,10 @@ struct StatusBarLayoutTests {
         let defaults = try #require(UserDefaults(suiteName: domain))
         defer { defaults.removePersistentDomain(forName: domain) }
         let preferences = StatusBarPreferences(defaults: defaults)
+        #expect(!preferences.isVisible(inFloatingPanel: false))
+        #expect(!preferences.isVisible(inFloatingPanel: true))
+
+        preferences.isEnabled = true
         #expect(preferences.isVisible(inFloatingPanel: false))
         #expect(preferences.isVisible(inFloatingPanel: true))
 

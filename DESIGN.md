@@ -888,15 +888,16 @@ title row, `Color.dockSidebar`) around one rounded content card painted with
 
 `WorkspaceStatusBar` (`StatusBar/`) is a 32pt chrome strip (`.dockShellChrome()`,
 `dockBorder` top divider) along the bottom of the card, below the list and page, in the window and
-the floating panel. The bar is on by default. `WorkspaceStatusModel` gathers its input from specific
+the floating panel. The bar is off by default. Enable it with **Show status bar** in Settings or
+the rail gear menu’s Status bar submenu. `WorkspaceStatusModel` gathers its input from specific
 publishers (Edge tasks, routines, repository, plan, queue, pull requests,
 Calendar), so it adds no whole-model observers. Optional local previews and test failures
 use the active session's existing terminal workspaces.
 `StatusBarLayout.make` is the pure rule for what shows, in which order and tone (`StatusBarLayoutTests`).
 
-- The default bar shows the attention count (a `.dockWarning` pill) and the trailing Activity
-  button. Both open the Activity preview. The badge and preview share the same inventory of
-  approvals, questions, blocked cards, failures, and failing checks on the user's pull requests.
+- With default item settings, the visible bar shows the attention count (a `.dockWarning` pill)
+  and the trailing Activity button. Both open the Activity preview. The badge and preview share
+  the same inventory of approvals, questions, blocked cards, failures, and failing checks on the user's pull requests.
   Queued Bot work does not count as running.
 - The default context beside Activity is the nearest meeting or enabled routine in
   the next 30 minutes. It opens that item directly. Mac meetings honor Calendar access and

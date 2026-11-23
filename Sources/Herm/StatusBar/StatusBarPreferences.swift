@@ -29,7 +29,7 @@ final class StatusBarPreferences: ObservableObject {
         self.defaults = defaults
         shown = Set(defaults.stringArray(forKey: Self.shownKey) ?? [])
         hidden = Set(defaults.stringArray(forKey: Self.hiddenKey) ?? [])
-        isEnabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
+        isEnabled = defaults.bool(forKey: Self.enabledKey)
         showsInFloating = defaults.object(forKey: Self.floatingKey) as? Bool ?? true
         returnSummaryMinutes = defaults.object(forKey: Self.returnSummaryKey) as? Int ?? 15
         stalledMinutes = defaults.object(forKey: Self.stalledMinutesKey) as? Int ?? 5

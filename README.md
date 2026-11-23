@@ -1289,8 +1289,9 @@ conversation, and inspector, the list temporarily collapses. Restoring it hides 
 inspector if necessary; resizing wider restores the list unless it was manually hidden.
 Window title-row drag regions occupy empty space only, outside action and menu targets.
 
-The workspace status bar is on by default. It shows a count when there’s work that needs attention and the
-next meeting or routine if it starts within 30 minutes. Click the countdown to open the
+The workspace status bar is off by default. Turn on **Show status bar** in Settings › Status bar
+or in the rail’s gear menu under **Status bar**. The bar shows a count when work needs attention
+and the next meeting or routine if it starts within 30 minutes. Click the countdown to open the
 scheduled item. Calendar events appear when Herm already has Calendar access.
 Hover over a status item for details. Running work and items ready for review show Bot avatars
 when Herm can resolve the Bot’s identity.
