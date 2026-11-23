@@ -627,6 +627,7 @@ edge. Message content and the composer reserve the rail's width; the cards stay 
 Visibility is presentation state and starts hidden. Other session modes retain
 their existing layout. The rail contains only PR overview links found in the active
 session's loaded messages and tool results, deduplicated by repository and number.
+Link discovery runs in the background and reuses results for unchanged messages and tool calls.
 It never substitutes the repository PR list. Each entry shows fetched title, PR number,
 repository, and readiness. Refresh uses the shared GitHub transport/detail store. Loading, empty, and unavailable
 states remain inside the rail; failed refreshes label retained details as last

@@ -124,6 +124,10 @@ New history rows skip section-view reconciliation until they own section views,
 and their section caches allocate width history when layout requests a second width.
 Anchor correction reuses the generation check from the accepted complete layout.
 
+Each visible session rail scans messages and tool activity for PR links in
+cancellable background tasks. Its in-memory index reuses results for unchanged
+inputs, including inputs without links. Live activity updates can publish while
+the history scan is still running.
 
 A synthetic fixture does not measure physical trackpad momentum or prove a frame
 rate. A live trackpad check requires a separately authorized app relaunch; these

@@ -6,45 +6,121 @@ import SwiftUI
 enum SessionPullRequestReferences {
     static func extract(texts: [String]) -> [GitHubItemReference] {
         let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-        var seen = Set<String>()
-        return texts.flatMap { text in
+        return unique(extract(texts: texts, detector: detector))
+    }
+
+    private static func extract(texts: [String], detector: NSDataDetector?) -> [GitHubItemReference] {
+        texts.flatMap { text in
             let normalized = text.replacingOccurrences(of: "\\/", with: "/")
             return (detector?.matches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)) ?? [])
                 .compactMap { match -> GitHubItemReference? in
                     guard let url = match.url,
                         let reference = GitHubMarkdownLink.reference(for: url),
-                        reference.kind == .pullRequest,
-                        seen.insert(reference.id.lowercased()).inserted
+                        reference.kind == .pullRequest
                     else { return nil }
                     return reference
                 }
         }
     }
 
-    static func texts(messages: [ChatMessage], activity: [ActiveToolCall]) -> [String] {
-        messages.map(\.text)
-            + (messages.flatMap(\.activity) + activity).flatMap { call -> [String] in
-                let inputs = [call.input] + Array((call.args ?? [:]).values)
-                let directOperation = inputs.contains {
-                    $0.range(
-                        of:
-                            #"\bgh\s+pr\s+(?:view|create|diff|checks|checkout|edit|review|merge|close|reopen|ready|comment)\b"#,
-                        options: .regularExpression) != nil
-                }
-                // A list, search, session-history read, or repository scan does not link its results to this chat.
-                // Inputs of other tools (curl, web fetch, file reads) can mention any PR; only `gh pr` targets count.
-                guard directOperation else { return [] }
-                guard let result = call.result else { return inputs }
-                let references = extract(texts: [result])
-                let targets = extract(texts: inputs)
-                guard references.count == 1,
-                    targets.isEmpty || targets.contains(references[0])
-                        || inputs.contains(where: {
-                            $0.range(of: #"\bgh\s+pr\s+create\b"#, options: .regularExpression) != nil
-                        })
-                else { return inputs }
-                return inputs + [result]
+    static func unique(_ references: [GitHubItemReference]) -> [GitHubItemReference] {
+        var seen = Set<String>()
+        return references.filter { seen.insert($0.id.lowercased()).inserted }
+    }
+
+    private struct ToolInput: Equatable, Sendable {
+        let input: String
+        let arguments: [String: String]?
+        let result: String?
+
+        init(_ call: ActiveToolCall) {
+            input = call.input
+            arguments = call.args
+            result = call.result
+        }
+    }
+
+    private static func toolReferences(_ call: ToolInput, detector: NSDataDetector?) -> [GitHubItemReference] {
+        let inputs = [call.input] + Array((call.arguments ?? [:]).values)
+        // Broad listings and links in unrelated tool inputs do not establish ownership.
+        guard
+            inputs.contains(where: {
+                $0.range(
+                    of:
+                        #"\bgh\s+pr\s+(?:view|create|diff|checks|checkout|edit|review|merge|close|reopen|ready|comment)\b"#,
+                    options: .regularExpression) != nil
+            })
+        else { return [] }
+        let targets = unique(extract(texts: inputs, detector: detector))
+        guard let result = call.result else { return targets }
+        let references = unique(extract(texts: [result], detector: detector))
+        guard references.count == 1,
+            targets.isEmpty || targets.contains(references[0])
+                || inputs.contains(where: {
+                    $0.range(of: #"\bgh\s+pr\s+create\b"#, options: .regularExpression) != nil
+                })
+        else { return targets }
+        return targets + references
+    }
+
+    struct Message: Sendable {
+        let id: UUID
+        let text: String
+        let activity: [ActiveToolCall]
+
+        init(_ message: ChatMessage) {
+            id = message.id
+            text = message.text
+            activity = message.activity
+        }
+    }
+
+    struct Index: Sendable {
+        private var messages: [UUID: (String, [GitHubItemReference])] = [:]
+        private var tools: [String: (ToolInput, [GitHubItemReference])] = [:]
+        private(set) var references: [GitHubItemReference] = []
+
+        func scan(messages: [Message] = [], activity: [ActiveToolCall] = []) async -> Self? {
+            guard !messages.isEmpty || !activity.isEmpty else { return Self() }
+            let worker = Task.detached(priority: .utility) {
+                self.scanning(messages: messages, activity: activity)
             }
+            return await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+        }
+
+        private func scanning(messages: [Message], activity: [ActiveToolCall]) -> Self? {
+            var updated = Self()
+            updated.messages.reserveCapacity(messages.count)
+            var references: [GitHubItemReference] = []
+            let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+            for message in messages {
+                guard !Task.isCancelled else { return nil }
+                let found =
+                    if let prior = self.messages[message.id], prior.0 == message.text { prior.1 } else {
+                        extract(texts: [message.text], detector: detector)
+                    }
+                updated.messages[message.id] = (message.text, found)
+                references += found
+            }
+            for calls in messages.map(\.activity) + [activity] {
+                for call in calls {
+                    guard !Task.isCancelled else { return nil }
+                    let input = ToolInput(call)
+                    let found =
+                        if let prior = updated.tools[call.id] ?? tools[call.id], prior.0 == input { prior.1 } else {
+                            toolReferences(input, detector: detector)
+                        }
+                    updated.tools[call.id] = (input, found)
+                    references += found
+                }
+            }
+            updated.references = unique(references)
+            return updated
+        }
     }
 
     @MainActor
@@ -65,24 +141,50 @@ final class SessionPullRequestRailModel: ObservableObject {
     let details: PullRequestDetailStore
     private let api: PullRequestCenterAPI
     private var refreshGeneration = UUID()
+    private var historyIndex = SessionPullRequestReferences.Index()
+    private var activityIndex = SessionPullRequestReferences.Index()
+    private var activityReferences: [GitHubItemReference] = []
+    private var discoveryRevision: UInt64?
+    private var activityGeneration: UInt64 = 0
 
     init(api: PullRequestCenterAPI = .init(), details: PullRequestDetailStore = .shared) {
         self.api = api
         self.details = details
     }
 
-    func discover(messages: [ChatMessage], activity: [ActiveToolCall]) {
-        let found = SessionPullRequestReferences.extract(
-            texts: SessionPullRequestReferences.texts(messages: messages, activity: activity))
-        if references != found { references = found }
+    func discover(messages: [ChatMessage], revision: UInt64) async {
+        guard !Task.isCancelled else { return }
+        startDiscovery(revision: revision)
+        let messages = messages.map(SessionPullRequestReferences.Message.init)
+        guard let index = await historyIndex.scan(messages: messages), !Task.isCancelled,
+            discoveryRevision == revision
+        else { return }
+        historyIndex = index
+        publishReferences()
     }
 
-    func discoverActivity(_ activity: [ActiveToolCall]) {
-        let found = SessionPullRequestReferences.extract(
-            texts: SessionPullRequestReferences.texts(messages: [], activity: activity))
-        let existing = Set(references.map { $0.id.lowercased() })
-        let added = found.filter { !existing.contains($0.id.lowercased()) }
-        if !added.isEmpty { references += added }
+    func discoverActivity(_ activity: [ActiveToolCall], revision: UInt64) async {
+        guard !Task.isCancelled else { return }
+        startDiscovery(revision: revision)
+        activityGeneration &+= 1
+        let generation = activityGeneration
+        guard let index = await activityIndex.scan(activity: activity), !Task.isCancelled,
+            discoveryRevision == revision, activityGeneration == generation
+        else { return }
+        activityIndex = index
+        activityReferences = SessionPullRequestReferences.unique(activityReferences + index.references)
+        publishReferences()
+    }
+
+    private func startDiscovery(revision: UInt64) {
+        guard discoveryRevision != revision else { return }
+        discoveryRevision = revision
+        activityReferences = []
+    }
+
+    private func publishReferences() {
+        let found = SessionPullRequestReferences.unique(historyIndex.references + activityReferences)
+        if references != found { references = found }
     }
 
     func refresh() async {
@@ -126,6 +228,11 @@ struct SessionRailChangeSummary: Equatable {
 }
 
 struct SessionPullRequestRail: View {
+    private struct ActivityTaskID: Equatable {
+        let messages: UInt64
+        let activity: Int
+    }
+
     @ObservedObject var model: DockModel
     @ObservedObject var workflow: DeveloperWorkflowModel
     /// Its `processes` follow the current session; the composer's process strip keeps them polled.
@@ -166,7 +273,6 @@ struct SessionPullRequestRail: View {
     }
 
     var body: some View {
-        let _ = activityRevision
         ScrollView {
             SessionRailCard(
                 repositoryName: repositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent },
@@ -204,11 +310,12 @@ struct SessionPullRequestRail: View {
         .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
             activityRevision &+= 1
         }
-        .onChange(of: model.messagesRevision, initial: true) { _, _ in
-            rail.discover(messages: model.messages, activity: SessionPullRequestReferences.liveActivity(model: model))
+        .task(id: model.messagesRevision) {
+            await rail.discover(messages: model.messages, revision: model.messagesRevision)
         }
-        .onChange(of: model.activityPresentationRevision) { _, _ in
-            rail.discoverActivity(SessionPullRequestReferences.liveActivity(model: model))
+        .task(id: ActivityTaskID(messages: model.messagesRevision, activity: activityRevision)) {
+            await rail.discoverActivity(
+                SessionPullRequestReferences.liveActivity(model: model), revision: model.messagesRevision)
         }
         .task(id: rail.references.map(\.id) + [refreshID.uuidString]) { await rail.refresh() }
         .task(id: [repositoryPath ?? "", refreshID.uuidString]) { await onRefreshChanges() }

@@ -594,7 +594,7 @@ Use **Add to project** or **Move to project** in a conversation's menu to re-hom
 The icon has no background and highlights when the rail is open. Its floating
 cards sit over the same continuous conversation background, with the conversation's
 scrollbar at the far-right edge beyond the rail. The rail discovers PR
-links in loaded conversation messages and targeted PR tool activity, fetches their GitHub details,
+links in loaded conversation messages and targeted PR tool activity in the background, fetches their GitHub details,
 and shows PR details inline. Refresh updates details; missing access shows
 an unavailable state. The rail uses a quiet repository card with compact PR rows
 and a **Changes** row when that session's repository has local edits. The wider card
