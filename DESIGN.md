@@ -884,6 +884,51 @@ title row, `Color.dockSidebar`) around one rounded content card painted with
 - Use `.dockShellPane()` for panes inside the card and `.dockShellChrome()` for rail and title rows.
   `make shell-contract` (part of `make guard`) rejects raw `dockSidebar` and `sidebarBackground` in pages.
 
+#### Workspace status bar
+
+`WorkspaceStatusBar` (`StatusBar/`) is a 32pt chrome strip (`.dockShellChrome()`,
+`dockBorder` top divider) along the bottom of the card, below the list and page, in the window and
+the floating panel. The bar is off by default. Enable it with **Show status bar** in Settings or
+the rail gear menu’s Status bar submenu. `WorkspaceStatusModel` gathers its input from specific
+publishers (Edge tasks, routines, repository, plan, queue, pull requests,
+Calendar), so it adds no whole-model observers. Optional local previews and test failures
+use the active session's existing terminal workspaces.
+`StatusBarLayout.make` is the pure rule for what shows, in which order and tone (`StatusBarLayoutTests`).
+
+- With default item settings, the visible bar shows the attention count (a `.dockWarning` pill)
+  and the trailing Activity button. Both open the Activity preview. The badge and preview share
+  the same inventory of approvals, questions, blocked cards, failures, and failing checks on the user's pull requests.
+  Queued Bot work does not count as running.
+- The default context beside Activity is the nearest meeting or enabled routine in
+  the next 30 minutes. It opens that item directly. Mac meetings honor Calendar access and
+  hidden sources, and the bar does not request permission.
+- Settings can add eligible items alongside the schedule. Failed tests for the active repository fingerprint open
+  their Terminal tab. Unpushed commits open Source Control. A reachable listener owned by a
+  terminal in the active session and directory opens its local URL. These take priority over
+  the other opt-in indicators, including queued prompts.
+- Compact layouts shorten the schedule label to “Meeting” or “Routine” and keep the time.
+  Context stays empty when nothing qualifies. As width shrinks, lower-priority context drops first.
+- `BackendReach` decides per resource whether an item can work on the active gateway: Hermes data
+  everywhere, Calendar on this Mac, and repository status, pull requests, local previews,
+  verification, and simulators with the Local gateway. Unavailable items hide in the bar and
+  say why in Settings.
+- Modes replace the row in place: Quiet ("Quiet until 14:30", attention still shown, "N held",
+  End quiet), Stale (dimmed, inert, with a reconnecting message when Hermes Agent is offline), and a return summary
+  chip ("While you were away: 3 finished · 1 needs you") after idle past the chosen minutes.
+- The pulse icon and ⌘J open the 344pt Activity popover with one status headline and at most two rows.
+  Attention takes priority, then one running item or one recent result. A row opens its source
+  when Herm can resolve it. Empty and offline states use the same status slot. Open Activity
+  leads to the full workspace page through the existing rail destination.
+- Hovering over a status item opens an anchored popover after a short delay. Running work and
+  review previews show their own items with a Bot avatar for a resolved identity. The preview
+  stays open while the pointer crosses to it. Clicking Activity or pressing ⌘J opens it until dismissed.
+  When the bar is hidden, ⌘J opens the Activity workspace directly.
+- Right-click toggles items, opens Settings › Status bar, or hides the bar. Settings › Status bar
+  groups items (Live work, Attention and review, Context) with the stalled threshold, floating panel,
+  and return summary choices. The rail gear menu’s Status bar submenu embeds the same settings
+  in a bounded scroll view. `StatusBarPreferences` owns the on/off switch (`herm.statusBar.enabled`)
+  and the visibility rule shared by the footer, Settings, and the keyboard shortcut.
+
 ### Text-action sizing
 
 Priority is independent of size: primary, secondary, compact compatibility alias,

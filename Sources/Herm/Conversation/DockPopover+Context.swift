@@ -68,13 +68,7 @@ extension DockPopover {
                     }
                 }
             },
-            onOpenGlobal: { tab in
-                leaveIntegrations {
-                    sessionNavNavigation.selectGlobal(tab)
-                    fullscreenGlobalTab = tab
-                    fullscreenSurface = .global
-                }
-            },
+            onOpenGlobal: openWorkspaceGlobal,
             onOpenArtifacts: {
                 leaveIntegrations {
                     sessionNavNavigation.selectArtifacts()
@@ -435,6 +429,14 @@ extension DockPopover {
             }
             inspectorScope = .session
             ensureInspectorPanelVisible()
+        }
+    }
+
+    func openWorkspaceGlobal(_ tab: ControlTab) {
+        leaveIntegrations {
+            sessionNavNavigation.selectGlobal(tab)
+            fullscreenGlobalTab = tab
+            fullscreenSurface = .global
         }
     }
 

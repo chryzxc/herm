@@ -30,6 +30,9 @@ extension WorkspaceActivitySidebar {
             if selectedSettingsCategory == .notifications {
                 notificationPreferencesSection
             }
+            if selectedSettingsCategory == .statusBar {
+                WorkspaceStatusBarSettings()
+            }
             if selectedSettingsCategory == .appearance {
                 SettingsSection(title: "Theme", subtitle: "Colors and skins", tint: .dockAccent) {
                     appearanceSection

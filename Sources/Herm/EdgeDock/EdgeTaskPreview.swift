@@ -73,6 +73,7 @@ struct EdgeNotchTask: Identifiable, Equatable {
     var attentionRequest: AttentionRequest? = nil
     var answerState: AttentionAnswerState? = nil
     var isFailure = false
+    var isQueued = false
     var routine: RoutineReference? = nil
     /// The working Bot's profile for rows without a `session`: the open
     /// session's row and Bot DMs whose own session is not known yet.
@@ -264,7 +265,8 @@ extension EdgeNotchTask {
                 id: "bot:\(record.id)", title: record.summary, phase: phase, statusLabel: label,
                 detail: [record.botName, detail].compactMap { $0 }.joined(separator: " · "),
                 updatedAt: record.updatedAt, isCurrent: false, isStatusCurrent: isOnline,
-                session: session, isFailure: record.state == .failed, profileID: record.botID)
+                session: session, isFailure: record.state == .failed, isQueued: record.state == .queued,
+                profileID: record.botID)
         }
     }
 }

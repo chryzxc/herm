@@ -12,6 +12,7 @@ struct HermCommand: Identifiable {
         case closeSession
         case toggleSidebar
         case toggleInspector
+        case toggleActivity
         case showShortcutList
     }
 
@@ -58,6 +59,8 @@ struct HermCommand: Identifiable {
             id: .toggleInspector, title: "Toggle inspector", key: "i", modifiers: [.option, .command],
             scope: .workspace, menu: .view),
         HermCommand(
+            id: .toggleActivity, title: "Activity", key: "j", modifiers: .command, scope: .workspace, menu: .view),
+        HermCommand(
             id: .showShortcutList, title: "Keyboard shortcuts", key: "/", modifiers: .command,
             scope: .workspace, menu: .help),
     ]
@@ -94,6 +97,7 @@ struct HermCommandHandlers {
     let closeSession: () -> Void
     let toggleSidebar: () -> Void
     let toggleInspector: () -> Void
+    let toggleActivity: () -> Void
     let showShortcutList: () -> Void
 
     func perform(_ command: HermCommand.ID) {
@@ -107,6 +111,7 @@ struct HermCommandHandlers {
         case .closeSession: closeSession()
         case .toggleSidebar: toggleSidebar()
         case .toggleInspector: toggleInspector()
+        case .toggleActivity: toggleActivity()
         case .showShortcutList: showShortcutList()
         }
     }

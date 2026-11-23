@@ -33,6 +33,7 @@ struct HermCommandRegistryTests {
             closeSession: { performed.append(.closeSession) },
             toggleSidebar: { performed.append(.toggleSidebar) },
             toggleInspector: { performed.append(.toggleInspector) },
+            toggleActivity: { performed.append(.toggleActivity) },
             showShortcutList: { performed.append(.showShortcutList) }
         )
 
@@ -55,6 +56,7 @@ struct HermCommandRegistryTests {
             closeSession: {},
             toggleSidebar: {},
             toggleInspector: {},
+            toggleActivity: {},
             showShortcutList: {}
         )
 
@@ -94,7 +96,7 @@ struct HermCommandRegistryTests {
     @Test func paletteLabelsUseTheRegisteredKeyEquivalents() {
         #expect(
             HermCommandRegistry.paletteCommands.map(\.keycap) == [
-                "⌘,", "⌘K", "⌘[", "⌘]", "⌘N", "⌘.", "⌘W", "⌃⌘S", "⌥⌘I", "⌘/",
+                "⌘,", "⌘K", "⌘[", "⌘]", "⌘N", "⌘.", "⌘W", "⌃⌘S", "⌥⌘I", "⌘J", "⌘/",
             ])
     }
 }

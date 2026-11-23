@@ -1320,7 +1320,7 @@ enum RepositoryService {
         timeout: TimeInterval = 120, maxOutputBytes: Int = 2 * 1_024 * 1_024
     ) async -> (output: String, exitCode: Int32) {
         guard !Task.isCancelled else { return ("", 1) }
-        let cancellation = HermesGitProcessCancellation()
+        let cancellation = HermesLocalProcessCancellation()
         return await withTaskCancellationHandler {
             await Task.detached(priority: .utility) {
                 let root = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -1331,8 +1331,8 @@ enum RepositoryService {
                     defer { try? FileManager.default.removeItem(at: root) }
                     var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
                     environment["GIT_TERMINAL_PROMPT"] = "0"
-                    let result = try HermesGitProcess.run(
-                        ["-C", path] + arguments, environment: environment, root: root,
+                    let result = try HermesLocalProcess.run(
+                        "/usr/bin/git", arguments: ["-C", path] + arguments, environment: environment, root: root,
                         deadline: .now.addingTimeInterval(timeout), maxBytes: maxOutputBytes * 2,
                         cancellation: cancellation, maxOutputBytes: maxOutputBytes)
                     let raw = String(decoding: result.data, as: UTF8.self)

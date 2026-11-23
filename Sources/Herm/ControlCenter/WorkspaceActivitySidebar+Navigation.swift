@@ -253,7 +253,7 @@ extension WorkspaceActivitySidebar {
         case .session:
             let count = control.attention.filter { $0.state == .open }.count
             return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
-        case .general, .gateway, .appearance, .notifications, .runtime, .subagents, .providers, .chat,
+        case .general, .gateway, .appearance, .statusBar, .notifications, .runtime, .subagents, .providers, .chat,
             .workspace, .safety,
             .browser, .passwords, .memory, .voice, .advanced, .diagnostics:
             return nil

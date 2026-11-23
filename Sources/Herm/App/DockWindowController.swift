@@ -40,6 +40,11 @@ final class DockWindowController: NSObject, NSWindowDelegate {
         UserDefaults.standard.set(true, forKey: Self.wasOpenKey)
     }
 
+    /// The notch's task state, which the window's status bar counts too.
+    func attachStatus(_ state: EdgeNotchState) {
+        presentation.islandStatus = state
+    }
+
     func showSettings() {
         open()
         presentation.settingsRequest &+= 1

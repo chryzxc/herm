@@ -70,6 +70,23 @@ struct GitHubActionStateTests {
             ], repository: GitHubReferenceParser.repository("owner/repo")!, localPath: "")!
     }
 
+    @Test func recordUpdatesIncludesChangesAfterTheFirstLoad() async throws {
+        let center = PullRequestCenterModel(api: PullRequestCenterAPI(transport: LifecycleTransport()))
+        let reference = record().reference
+        var titles: [String] = []
+        let observation = center.recordUpdates.sink { titles = $0.map(\.title) }
+        defer { observation.cancel() }
+
+        #expect(await center.open(reference))
+        let original = try #require(center.records.first)
+        #expect(titles == [original.title])
+        var updated = original
+        updated.title = "Updated title"
+        updated.refreshedAt = .distantFuture
+        center.details.records[updated.id] = updated
+        #expect(titles == [updated.title])
+    }
+
     @Test(arguments: [false, true])
     func confirmedLifecycleSurvivesStaleOrUnavailableFollowUpRead(failRead: Bool) async throws {
         let api = PullRequestCenterAPI(transport: LifecycleTransport(failRead: failRead))

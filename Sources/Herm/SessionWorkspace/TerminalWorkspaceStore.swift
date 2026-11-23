@@ -17,6 +17,20 @@ final class TerminalWorkspaceStore {
             $0 > 0
         }
     }
+
+    func tabs(identity: String, directory: String) -> [(extraID: UUID?, tabs: TerminalTabStore)] {
+        let base = "\(identity):\(directory)"
+        let prefix = "\(identity):extra:"
+        return workspaces.compactMap { key, tabs in
+            if key == base { return (nil, tabs) }
+            guard key.hasPrefix(prefix) else { return nil }
+            let parts = key.dropFirst(prefix.count).split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, parts[1] == directory, let id = UUID(uuidString: String(parts[0])) else {
+                return nil
+            }
+            return (id, tabs)
+        }
+    }
     func closeWorkspace(key: String) { workspaces.removeValue(forKey: key)?.closeAll() }
 
     /// Move legacy nested shells into independently owned inspector workspaces without stopping them.
