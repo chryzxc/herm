@@ -570,6 +570,8 @@ struct GroupChatView: View {
     /// The newest member reply seen in each thread; newer ones mark the chip unread.
     @State private var threadSeen: [String: Int] = [:]
     @State private var scrollTarget: String?
+    @State private var scrollController = ConversationScrollController()
+    @State private var scrollPresentation = ConversationScrollPresentationState()
     /// Rows already on screen, so only a single landing reply animates in.
     @State private var settledEventCount = 0
     @State private var highlightedEventID: String?
@@ -663,6 +665,7 @@ struct GroupChatView: View {
         let target = event.threadID ?? GroupChatStore.mainThreadID
         closedThreads.remove(target)
         thread = target
+        scrollPresentation.isAtBottom = false
         scrollTarget = eventID
     }
 
@@ -686,11 +689,17 @@ struct GroupChatView: View {
             threadSeen = latestReplySeq
             return
         }
-        guard newest > mark.seq,
-            let landed = allEvents.last(where: {
-                guard $0.seq > mark.seq, case .member = $0.kind else { return false }
-                return true
-            }),
+        guard newest > mark.seq else { return }
+        let arrivals = allEvents.reversed().prefix { $0.seq > mark.seq }
+        if !scrollPresentation.isAtBottom {
+            scrollPresentation.unseenMessageCount += arrivals.count {
+                guard case .member = $0.kind else { return false }
+                return ($0.threadID ?? GroupChatStore.mainThreadID) == thread
+                    && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+        }
+        guard
+            let landed = arrivals.first(where: { if case .member = $0.kind { true } else { false } }),
             case .member(let memberID) = landed.kind
         else { return }
         landedEventID = landed.id
@@ -962,6 +971,25 @@ struct GroupChatView: View {
                 .dockPadding(.vertical, 12)
                 .frame(maxWidth: metrics.readingWidth)
                 .frame(maxWidth: .infinity)
+                .background {
+                    ConversationScrollEventObserver(
+                        controller: scrollController,
+                        onScroll: { geometry, delta in
+                            if delta > 0, geometry.distanceToBottom <= ConversationScrollMetrics.pastEndTolerance {
+                                scrollPresentation.updatePosition(geometry, isLiveTail: true)
+                            }
+                        },
+                        onScrollSettled: { scrollPresentation.updatePosition($0, isLiveTail: true) },
+                        onScrollAwayFromBottom: { scrollPresentation.isAtBottom = false },
+                        onContentResize: {
+                            DispatchQueue.main.async {
+                                if scrollPresentation.isAtBottom, scrollTarget == nil {
+                                    scrollController.scrollToBottom()
+                                }
+                            }
+                        }
+                    )
+                }
             }
             .animation(
                 DockMotion.animation(reduceMotion: reduceMotion, duration: 0.25),
@@ -972,14 +1000,22 @@ struct GroupChatView: View {
             .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.4), value: highlightedEventID)
             .onChange(of: events.count, initial: true) {
                 settledEventCount = events.count
-                if scrollTarget == nil { proxy.scrollTo("bottom", anchor: .bottom) }
+                if scrollPresentation.isAtBottom, scrollTarget == nil { proxy.scrollTo("bottom", anchor: .bottom) }
             }
-            .onChange(of: thinkingMembers.isEmpty) { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: [roomID, thread]) {
+                scrollPresentation.reset()
+                if scrollTarget == nil {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                } else {
+                    scrollPresentation.isAtBottom = false
+                }
+            }
             .onChange(of: scrollTarget) {
                 guard let target = scrollTarget else { return }
                 Task { @MainActor in
                     // Let a thread switch lay out its rows first.
                     try? await Task.sleep(for: .milliseconds(80))
+                    guard scrollTarget == target else { return }
                     withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.3)) {
                         proxy.scrollTo(target, anchor: .center)
                     }
@@ -989,7 +1025,17 @@ struct GroupChatView: View {
                     if highlightedEventID == target { highlightedEventID = nil }
                 }
             }
-            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            .overlay(alignment: .bottom) {
+                ConversationLatestMessageControl(
+                    presentation: scrollPresentation, isWorking: !thinkingMembers.isEmpty
+                ) {
+                    scrollTarget = nil
+                    scrollPresentation.reset()
+                    withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.22)) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
+            }
         }
     }
 
@@ -1360,7 +1406,8 @@ struct GroupChatView: View {
                             onTextChanged: { _, _ in mentionIndex = 0 },
                             onContentHeightChanged: { editorHeight = ComposerLayout.height(for: $0) }
                         )
-                        .frame(height: editorHeight)
+                        .frame(height: draft.isEmpty ? ComposerLayout.minHeight : editorHeight)
+                        .frame(maxWidth: .infinity)
                         if draft.isEmpty {
                             Text("Message the group — @ to mention a member")
                                 .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
@@ -1370,7 +1417,7 @@ struct GroupChatView: View {
                         }
                     }
                     .dockPadding(.top, 4)
-                    .frame(height: draft.isEmpty ? ComposerLayout.minHeight : editorHeight + 4)
+                    .frame(maxWidth: .infinity)
                     .clipped()
                     if !attachments.isEmpty || uploadingCount > 0 {
                         attachmentChips.transition(DockMotion.composerTray(reduceMotion: reduceMotion))

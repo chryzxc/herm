@@ -6,6 +6,49 @@ import Testing
 
 @MainActor
 struct DockPresentationRenderTests {
+    @Test func renderGroupMemberPopover() throws {
+        guard let path = ProcessInfo.processInfo.environment["HERM_SURFACE_UI_DIR"] else { return }
+        let directory = URL(fileURLWithPath: path)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let savedTheme = DockThemeRuntime.current
+        let savedAppearance = NSApplication.shared.appearance
+        defer {
+            DockThemeRuntime.current = savedTheme
+            DockThemeRuntime.revision &+= 1
+            NSApplication.shared.appearance = savedAppearance
+        }
+        let member = GroupRoom.Member(
+            memberID: "nexus", profile: "default", handle: "hermes", displayName: "Nexus")
+        let bot = BotSummary(
+            id: "default", name: "Nexus", title: "Coordinator",
+            description: "Primary assistant and coordinator. Handles routine requests and routes work to specialists.",
+            model: "gpt-6.1-terra", isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+            isHidden: false, hasAvatar: false, isDefault: true)
+        let reply = GroupRoomEvent(
+            id: "reply", seq: 1, kind: .member(memberID: member.memberID),
+            text: "@scout, the published pages give us a **clear starting point** for the first prototype.",
+            createdAt: .now.addingTimeInterval(-24))
+        for (theme, dark, full) in [
+            (DockThemeID.clean, false, true), (.dusk, true, true), (.glass, true, true), (.mono, true, true),
+            (.clean, false, false),
+        ] {
+            DockThemeRuntime.current = theme
+            DockThemeRuntime.revision &+= 1
+            NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            let host = NSHostingView(
+                rootView: GroupMemberPopover(
+                    member: member, bot: full ? bot : nil, imageData: nil, mood: .idle,
+                    state: full ? "Thinking" : nil, lastReply: full ? reply : nil,
+                    onDismiss: {}, onMention: {}, onMessage: full ? {} : nil, onJump: { _ in }
+                )
+                .dockPresentationSurface()
+                .environment(\.colorScheme, dark ? .dark : .light))
+            host.frame = CGRect(origin: .zero, size: host.fittingSize)
+            let state = full ? "reply" : "empty"
+            try capture(host, to: directory.appendingPathComponent("group-member-\(theme)-\(state).png"))
+        }
+    }
+
     @Test func renderSurfacesAndNativeForwardPopover() async throws {
         guard let path = ProcessInfo.processInfo.environment["HERM_SURFACE_UI_DIR"] else { return }
         let directory = URL(fileURLWithPath: path)

@@ -268,85 +268,112 @@ struct GroupHeaderFace: View {
     @State private var cardHovered = false
 
     private var card: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        GroupMemberPopover(
+            member: member, bot: bot, imageData: imageData, mood: mood, state: state, lastReply: lastReply,
+            onDismiss: { showingCard = false }, onMention: onMention, onMessage: onMessage, onJump: onJump
+        )
+        .onHover { inside in
+            cardHovered = inside
+            hoverTask?.cancel()
+            if !inside {
+                hoverTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(250))
+                    if !Task.isCancelled { showingCard = false }
+                }
+            }
+        }
+    }
+}
+
+struct GroupMemberPopover: View {
+    let member: GroupRoom.Member
+    let bot: BotSummary?
+    let imageData: Data?
+    let mood: BotMood?
+    let state: String?
+    let lastReply: GroupRoomEvent?
+    let onDismiss: () -> Void
+    let onMention: () -> Void
+    let onMessage: (() -> Void)?
+    let onJump: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DockSpacing.control) {
             HStack(spacing: 10) {
                 GroupMemberFace(member: member, bot: bot, imageData: imageData, size: 40, mood: mood)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(member.displayName)
-                        .dockFont(.body, weight: .semibold)
+                        .dockFont(.navigation, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(2)
                     Text(([("@" + member.handle)] + [bot?.title].compactMap { $0 }).joined(separator: " · "))
                         .dockFont(.metadata)
                         .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
             }
             if let description = bot?.description?.trimmingCharacters(in: .whitespacesAndNewlines),
                 !description.isEmpty
             {
                 Text(description)
-                    .dockFont(.metadata)
+                    .dockFont(.body)
                     .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(3)
+                    .lineLimit(4)
+                    .help(description)
             }
             let facts = [state, bot?.model, member.isRemote ? "On another Mac" : nil].compactMap { $0 }
             if !facts.isEmpty {
                 Text(facts.joined(separator: " · "))
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
             if let lastReply {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(GroupReplyNotifier.firstLine(GenerativeUIIntegration.plainText(lastReply.text)))
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(2)
-                    Text(lastReply.createdAt.formatted(.relative(presentation: .named)))
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
+                VStack(alignment: .leading, spacing: DockSpacing.tight) {
+                    HStack(spacing: DockSpacing.tight) {
+                        Button("Jump to reply", icon: .arrowBendDownRight) {
+                            onDismiss()
+                            onJump(lastReply.id)
+                        }
+                        .buttonStyle(.dockLink)
+                        .fixedSize(horizontal: true, vertical: false)
+                        Spacer(minLength: 0)
+                        Text(lastReply.createdAt.formatted(.relative(presentation: .named)))
+                            .dockFont(.metadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                            .lineLimit(1)
+                    }
+                    let line = GroupReplyNotifier.firstLine(GenerativeUIIntegration.plainText(lastReply.text))
+                    if !line.isEmpty {
+                        Text(String(MarkdownInlineParser.parse(line).characters))
+                            .dockFont(.body)
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .dockPadding(8)
+                .dockPadding(DockSpacing.control)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .dockWell(radius: 8)
             }
-            HStack(spacing: 6) {
+            HStack(spacing: DockSpacing.tight) {
                 Button("Mention") {
-                    showingCard = false
+                    onDismiss()
                     onMention()
                 }
-                .buttonStyle(.dockSecondary)
+                .buttonStyle(.dockPrimary)
                 if let onMessage {
                     Button("Message") {
-                        showingCard = false
+                        onDismiss()
                         onMessage()
                     }
                     .buttonStyle(.dockSecondary)
                 }
-                if let lastReply {
-                    Button("Jump to reply") {
-                        showingCard = false
-                        onJump(lastReply.id)
-                    }
-                    .buttonStyle(.dockPrimary)
-                }
             }
             .dockButtonSize(.compact)
         }
-        .dockPadding(12)
-        .frame(width: 260, alignment: .leading)
-        .onHover { inside in
-            cardHovered = inside
-            if !inside {
-                hoverTask?.cancel()
-                hoverTask = Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(250))
-                    if !Task.isCancelled { showingCard = false }
-                }
-            } else {
-                hoverTask?.cancel()
-            }
-        }
+        .dockPadding(DockSpacing.section)
+        .frame(width: 284, alignment: .leading)
     }
 }
 

@@ -2990,6 +2990,12 @@ list with bots and keep the group row (member avatars, unread, approval and
 working marks, the more-actions menu); the whole list sorts by last activity,
 newest first. The group composer keeps Stop accessible while a send is awaiting
 admission or the room is working; Hermes remains authoritative about the outcome.
+The group editor and its placeholder share the same top inset. The editor
+reserves its minimum height for an empty draft and grows for multiline text.
+Group transcripts follow new replies while the reader is at the bottom.
+Scrolling up keeps the reader's position and shows the shared floating
+Scroll to bottom control above the composer. Its count reflects new member
+replies in the selected thread and clears when the reader returns to the latest.
 
 Folders are Hermes Agent Desktop's bot sections and hold bots and group rooms.
 A bot's folder is written to its profile (`ui_meta['hermes-bots']` `sectionId`
@@ -3150,8 +3156,10 @@ sleepy (stalled), tool or thinking, queued, offline (RoomLink `peer_routes` not 
 when that member's reply lands, turn attentive (listening) when the draft would reach them (`@handle`,
 `@all`, or no mention: everyone, or the lead in lead routing), and doze after 15 minutes of quiet.
 Clicking a face jumps to its last reply (thread switch, scroll, brief accent highlight); hovering
-450ms opens a card (name, handle, role, description, model, live state, last reply) with Mention,
-Message (opens the bot's chat) and Jump to reply; dragging a face into the composer inserts
+450ms opens a member popover with identity, description, model and live state.
+The latest reply preview groups its timestamp and readable excerpt with a
+single-line Jump to reply link. Mention is the primary footer action, with
+Message beside it when the bot has a chat. Dragging a face into the composer inserts
 `@handle`. A landing reply's row face shows done for 1.6s. Failed rows show the member's failed face.
 Under a finished message, `GroupRoundFooter` sits between hairlines: who passed (dimmed 14pt faces),
 "3 replied · 1 passed · 14s", a round-cap pill, and Continue (`groups.continue`) while Hermes'

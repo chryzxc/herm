@@ -175,6 +175,8 @@ struct WorkspaceFoundationRenderTests {
         }
         let text = try #require(find(host))
         let scroll = try #require(text.enclosingScrollView)
+        let idleHeight = scroll.contentView.bounds.height
+        try capture("group-notebook-420-compact-idle")
         window.makeFirstResponder(text)
         text.insertText(
             "/cpipe safely port the changes here of this PR to IC. This is a PR from CRX: climate/feat/ "
@@ -208,12 +210,20 @@ struct WorkspaceFoundationRenderTests {
         #expect(caretLine.height > 0)
         #expect(caretLine.minY >= scroll.documentVisibleRect.minY)
         #expect(caretLine.maxY <= scroll.documentVisibleRect.maxY)
-        if let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] {
+        try capture("group-notebook-420-compact")
+        text.insertText("", replacementRange: NSRange(location: 0, length: text.string.utf16.count))
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+        #expect(text.string.isEmpty)
+        #expect(scroll.contentView.bounds.height == idleHeight)
+
+        func capture(_ name: String) throws {
+            guard let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] else { return }
             try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
             let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
             let png = try #require(bitmap.representation(using: .png, properties: [:]))
-            try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("group-notebook-420-compact.png"))
+            try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name).png"))
         }
     }
 
