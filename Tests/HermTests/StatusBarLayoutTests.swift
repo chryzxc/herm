@@ -121,7 +121,7 @@ struct StatusBarLayoutTests {
         input.enabled.insert(.agentActivity)
         let optedIn = StatusBarLayout.make(input)
         #expect(optedIn.trailing.first?.text == "1 running")
-        #expect(optedIn.trailing.first?.action == .tray)
+        #expect(optedIn.trailing.first?.action == .preview)
     }
 
     @Test func needsYouShowsEvenWhenEverythingIsOff() {
@@ -185,8 +185,56 @@ struct StatusBarLayoutTests {
         let review = try #require(layout.trailing.first { $0.item == .readyToReview })
 
         #expect(layout.preview(for: active).rows.map(\.title) == ["working"])
+        #expect(active.action == .preview)
         #expect(layout.preview(for: active).rows.first?.task?.profileID == "build-bot")
         #expect(layout.preview(for: review).rows.map(\.title) == ["result"])
+        #expect(review.action == .task(input.tasks[2]))
+
+        input.tasks.append(task("second result", .finished))
+        let multiple = StatusBarLayout.make(input)
+        let results = try #require(multiple.trailing.first { $0.item == .readyToReview })
+        #expect(results.action == .preview)
+        #expect(Set(multiple.preview(for: results).rows.map(\.title)) == ["result", "second result"])
+    }
+
+    @Test func runningPreviewKeepsTheNotchsWorkingBotsAcrossProfileSwitches() throws {
+        let domain = "StatusBarWorkingBotsTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let preferences = StatusBarPreferences(defaults: defaults)
+        preferences.set(.nextMeeting, on: false)
+        preferences.set(.agentActivity, on: true)
+        let status = WorkspaceStatusModel(preferences: preferences)
+        let edge = EdgeNotchState()
+        let model = DockModel()
+        let control = ControlCenterModel(capabilities: [])
+        let pullRequests = PullRequestCenterModel()
+        let bots = ["builder", "reviewer", "idle"].map { BotActivityBoardTests.bot($0) }
+        var selectedWork = task("build", .working)
+        selectedWork.profileID = "builder"
+        edge.bots = bots
+        edge.tasks = [selectedWork]
+        status.attach(edge: edge, model: model, control: control, pullRequests: pullRequests)
+        #expect(status.layout.preview.headline == "1 running")
+
+        edge.botActivity = .resolve(
+            roster: bots, live: [:],
+            signals: BotActivitySignals(
+                sessions: bots.dropLast().map {
+                    BotSessionSignal(id: "session-\($0.id)", profileID: $0.id, isWorking: true)
+                }))
+        let runningEntry = try #require(status.layout.trailing.first { $0.item == .agentActivity })
+        #expect(runningEntry.text == "2 running")
+        #expect(status.layout.preview(for: runningEntry).rows.map(\.title) == ["build", "reviewer"])
+
+        // The new profile has no running task rows, but the notch still sees both Bots.
+        edge.tasks = [task("old", .working, current: false)]
+        #expect(!status.layout.isStale)
+        #expect(status.layout.preview.headline == "2 running")
+        #expect(status.layout.preview(for: runningEntry).rows.compactMap(\.botID) == edge.railActivity.workingBotIDs)
+
+        model.status = .offline
+        #expect(status.layout.preview.rows.isEmpty)
     }
 
     @Test func previewUsesOneFallbackItemAndExplainsOfflineState() {

@@ -1474,7 +1474,7 @@ struct EdgeNotchActivity: Equatable {
     mutating func applyBots(from tasks: [EdgeNotchTask], board: BotActivityBoard = BotActivityBoard()) {
         let live = tasks.filter(\.isStatusCurrent)
         func profile(_ task: EdgeNotchTask) -> String {
-            task.session?.profileID ?? task.profileID ?? task.attentionRequest?.profileID ?? ""
+            task.botProfileID ?? ""
         }
         func bot(_ phase: EdgeNotchTask.Phase) -> String? {
             live.first { $0.phase == phase }.map(profile)

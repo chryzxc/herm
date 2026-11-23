@@ -919,9 +919,12 @@ use the active session's existing terminal workspaces.
   Attention takes priority, then one running item or one recent result. A row opens its source
   when Herm can resolve it. Empty and offline states use the same status slot. Open Activity
   leads to the full workspace page through the existing rail destination.
+- Running work combines task rows with the notch’s shared Bot activity board, so switching
+  profiles keeps other running Bots visible without counting the same work twice.
 - Hovering over a status item opens an anchored popover after a short delay. Running work and
   review previews show their own items with a Bot avatar for a resolved identity. The preview
-  stays open while the pointer crosses to it. Clicking Activity or pressing ⌘J opens it until dismissed.
+  stays open while the pointer crosses to it. Clicking the running count pins its preview.
+  Clicking Activity or pressing ⌘J opens the Activity popover until dismissed.
   When the bar is hidden, ⌘J opens the Activity workspace directly.
 - Right-click toggles items, opens Settings › Status bar, or hides the bar. Settings › Status bar
   groups items (Live work, Attention and review, Context) with the stalled threshold, floating panel,

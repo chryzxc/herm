@@ -61,6 +61,11 @@ final class WorkspaceStatusModel: ObservableObject {
             .sink { [weak self] in self?.update(\.isOffline, $0) }.store(in: &subscriptions)
         edge.$tasks.sink { [weak self] in self?.observe($0) }
             .store(in: &subscriptions)
+        edge.$botActivity.combineLatest(edge.$bots)
+            .map { board, roster in board.working.compactMap { id in roster.first { $0.id == id } } }
+            .removeDuplicates()
+            .sink { [weak self] in self?.update(\.workingBots, $0) }
+            .store(in: &subscriptions)
         control.$cronJobs.combineLatest(
             control.$routineProfileID,
             control.$projectionRefreshStates.map { $0["cron.jobs"]?.isStale == true }.removeDuplicates()

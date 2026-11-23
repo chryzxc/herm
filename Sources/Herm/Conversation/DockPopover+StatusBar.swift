@@ -47,7 +47,7 @@ extension DockPopover {
             inspectorScope = .session
             sessionInspectorTabRequest = .init(session: identity, section: .terminal, terminalTabID: tabID)
             ensureInspectorPanelVisible()
-        case .tray, .none: break
+        case .tray, .preview, .none: break
         }
     }
 

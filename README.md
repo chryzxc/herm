@@ -1294,7 +1294,8 @@ or in the rail’s gear menu under **Status bar**. The bar shows a count when wo
 and the next meeting or routine if it starts within 30 minutes. Click the countdown to open the
 scheduled item. Calendar events appear when Herm already has Calendar access.
 Hover over a status item for details. Running work and items ready for review show Bot avatars
-when Herm can resolve the Bot’s identity.
+when Herm can resolve the Bot’s identity. Running work includes active Bots from other profiles.
+Click the running count to keep its preview open.
 Click the count or press ⌘J to open the Activity popover. It shows up to two items that need attention,
 or one running or recently finished item. Click a linked item to open it, or choose
 **Open Activity** for the workspace page. When the bar is hidden, ⌘J opens that page directly.

@@ -4,6 +4,7 @@ import Foundation
 /// rules for what appears, in which order and tone, are tested without a view.
 struct StatusBarInput {
     var tasks: [EdgeNotchTask] = []
+    var workingBots: [BotSummary] = []
     var enabled: Set<StatusBarItem> = Set(StatusBarItem.allCases.filter(\.isOnByDefault))
     var mode: GatewayConnectionSettings.Mode = .local
     var isOffline = false
@@ -33,6 +34,7 @@ struct StatusBarEntry: Identifiable, Equatable {
         case task(EdgeNotchTask)
         case tab(ControlTab)
         case tray
+        case preview
         case pullRequests
         case url(URL)
         case calendar(CalendarItem)
@@ -56,12 +58,14 @@ struct StatusBarEntry: Identifiable, Equatable {
 struct WorkspaceStatusSummary: Equatable {
     var attention: [EdgeNotchTask] = []
     var running: [EdgeNotchTask] = []
+    var otherWorkingBots: [BotSummary] = []
     var finished: [EdgeNotchTask] = []
     var isStale = false
+    var runningCount: Int { running.count + otherWorkingBots.count }
 
-    init(tasks: [EdgeNotchTask] = []) {
+    init(tasks: [EdgeNotchTask] = [], workingBots: [BotSummary] = []) {
         let current = tasks.filter(\.isStatusCurrent)
-        isStale = current.isEmpty && !tasks.isEmpty
+        isStale = current.isEmpty && !tasks.isEmpty && workingBots.isEmpty
         var seen = Set<String>()
         var requests = Set<AttentionRequest>()
         for task in isStale ? tasks : current where seen.insert(task.presentationID).inserted {
@@ -81,6 +85,8 @@ struct WorkspaceStatusSummary: Equatable {
                 break
             }
         }
+        let represented = Set(running.compactMap(\.botProfileID))
+        otherWorkingBots = workingBots.filter { !represented.contains($0.id) }
         finished.sort { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
     }
 }
@@ -106,6 +112,7 @@ struct StatusBarLayout: Equatable {
             let icon: Ph
             let action: StatusBarEntry.Action
             var task: EdgeNotchTask?
+            var botID: String?
 
             init(id: String, title: String, status: String, icon: Ph, action: StatusBarEntry.Action) {
                 self.id = id
@@ -123,6 +130,12 @@ struct StatusBarLayout: Equatable {
                     icon: icon, action: canOpen ? .task(task) : .none)
                 self.task = task
             }
+
+            init(bot: BotSummary) {
+                self.init(
+                    id: "working-bot/\(bot.id)", title: bot.name, status: "Working", icon: .chatText, action: .none)
+                botID = bot.id
+            }
         }
 
         let headline: String
@@ -138,7 +151,9 @@ struct StatusBarLayout: Equatable {
         let tasks: [EdgeNotchTask]
         switch entry.item {
         case .needsYou: return preview
-        case .agentActivity: tasks = summary.running
+        case .agentActivity:
+            return Preview(
+                headline: entry.text, rows: runningRows(limit: 2), title: entry.item.title, icon: entry.icon ?? .pulse)
         case .readyToReview: tasks = summary.finished
         case .stalled:
             if case .task(let task) = entry.action { tasks = [task] } else { tasks = [] }
@@ -169,8 +184,8 @@ struct StatusBarLayout: Equatable {
             }
             return Preview(headline: attentionLabel, rows: tasks + pulls)
         }
-        if let task = summary.running.first {
-            return Preview(headline: "\(summary.running.count) running", rows: [Preview.Row(task: task)])
+        if summary.runningCount > 0 {
+            return Preview(headline: "\(summary.runningCount) running", rows: runningRows(limit: 1))
         }
         if let task = summary.finished.first {
             return Preview(headline: "Recently finished", rows: [Preview.Row(task: task)])
@@ -178,12 +193,21 @@ struct StatusBarLayout: Equatable {
         return Preview(headline: "No current activity")
     }
 
+    private func runningRows(limit: Int) -> [Preview.Row] {
+        let tasks = summary.running.prefix(limit).map(Preview.Row.init(task:))
+        let bots = summary.otherWorkingBots.prefix(limit).map(Preview.Row.init(bot:))
+        // Give a Bot outside the selected profile a preview slot beside the first detailed task.
+        return Array((tasks.prefix(1) + bots + tasks.dropFirst()).prefix(limit))
+    }
+
     private var attentionLabel: String {
         "\(attentionCount) need\(attentionCount == 1 ? "s" : "") attention"
     }
 
     static func make(_ input: StatusBarInput) -> StatusBarLayout {
-        var layout = StatusBarLayout(summary: WorkspaceStatusSummary(tasks: input.tasks), isOffline: input.isOffline)
+        var layout = StatusBarLayout(
+            summary: WorkspaceStatusSummary(tasks: input.tasks, workingBots: input.isOffline ? [] : input.workingBots),
+            isOffline: input.isOffline)
         func on(_ item: StatusBarItem) -> Bool {
             (item.isLocked || input.enabled.contains(item))
                 && BackendReach.access(item.resource, mode: input.mode).isAvailable
@@ -221,11 +245,11 @@ struct StatusBarLayout: Equatable {
                     tone: .context, action: .url(server.url), help: "Open \(server.url.absoluteString)"))
         }
         let working = layout.summary.running
-        if on(.agentActivity), !working.isEmpty {
+        if on(.agentActivity), layout.summary.runningCount > 0 {
             context.append(
                 StatusBarEntry(
-                    item: .agentActivity, icon: .pulse, text: "\(working.count) running", tone: .context,
-                    action: .tray, help: "Preview current activity"))
+                    item: .agentActivity, icon: .pulse, text: "\(layout.summary.runningCount) running", tone: .context,
+                    action: .preview, help: "Preview running work"))
         }
         if on(.stalled) {
             let stalled = working.filter { task in
@@ -248,7 +272,7 @@ struct StatusBarLayout: Equatable {
             context.append(
                 StatusBarEntry(
                     item: .readyToReview, icon: .checkCircle, text: "\(review.count) ready to review",
-                    tone: .outcome, action: review.count == 1 ? .task(first) : .tray,
+                    tone: .outcome, action: review.count == 1 ? .task(first) : .preview,
                     help: "Finished work waiting for you"))
         }
         if on(.reviewRequested) {

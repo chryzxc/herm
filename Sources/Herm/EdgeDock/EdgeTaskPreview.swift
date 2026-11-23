@@ -81,6 +81,8 @@ struct EdgeNotchTask: Identifiable, Equatable {
 
     var attentionState: DockActivityState? = nil
 
+    var botProfileID: String? { session?.profileID ?? profileID ?? attentionRequest?.profileID }
+
     /// The Bot running this session row: its profile's Bot, else the default Bot.
     /// Nil for rows with no session (Kanban, routines) or when no Bots are loaded.
     func bot(in bots: [BotSummary]) -> BotSummary? {

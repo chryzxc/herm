@@ -42,7 +42,10 @@ struct StatusBarHoverPreview<Preview: View>: ViewModifier {
             .onChange(of: allowsHover) { _, allowed in
                 if !allowed { clearHover() }
             }
-            .onDisappear { clearHover() }
+            .onDisappear {
+                if isPinned { isPinned = false }
+                clearHover()
+            }
     }
 
     private var presentation: Binding<Bool> {

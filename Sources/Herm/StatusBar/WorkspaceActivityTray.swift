@@ -83,7 +83,7 @@ struct WorkspaceActivityTray: View {
     }
 
     @ViewBuilder private func previewIcon(_ row: StatusBarLayout.Preview.Row) -> some View {
-        if let task = row.task, let bot = bot(for: task) {
+        if let bot = bot(for: row) {
             BotAvatarView(bot: bot, imageData: state.avatarImages[bot.id], size: 20, orbits: false, live: false)
                 .accessibilityLabel(bot.name)
         } else {
@@ -93,10 +93,10 @@ struct WorkspaceActivityTray: View {
         }
     }
 
-    private func bot(for task: EdgeNotchTask) -> BotSummary? {
-        if let id = task.session?.profileID ?? task.profileID {
+    private func bot(for row: StatusBarLayout.Preview.Row) -> BotSummary? {
+        if let id = row.botID ?? row.task?.botProfileID {
             return state.bots.first { $0.id == id }
         }
-        return task.bot(in: state.bots)
+        return row.task?.bot(in: state.bots)
     }
 }

@@ -10,6 +10,7 @@ struct WorkspaceStatusBar: View {
     @ObservedObject var interruptions: HermInterruptionCoordinator
     @ObservedObject private var preferences = StatusBarPreferences.shared
     @State private var hoveredPreview: UUID?
+    @State private var pinnedItem: StatusBarItem?
     var isFloating = false
     var isCompact = false
     var terminalScope: WorkspaceStatusModel.TerminalScope?
@@ -43,7 +44,10 @@ struct WorkspaceStatusBar: View {
                     .contentShape(Rectangle())
                     .contextMenu { menu }
                     .onChange(of: status.isTrayPresented) { _, presented in
-                        if presented { hoveredPreview = nil }
+                        if presented {
+                            hoveredPreview = nil
+                            pinnedItem = nil
+                        }
                     }
                     .task(id: monitor) {
                         await status.monitorTerminals(in: monitor.scope, servers: monitor.servers, tests: monitor.tests)
@@ -53,6 +57,7 @@ struct WorkspaceStatusBar: View {
         .onChange(of: isVisible) { _, visible in
             guard !visible else { return }
             hoveredPreview = nil
+            pinnedItem = nil
             status.isTrayPresented = false
         }
     }
@@ -194,10 +199,7 @@ struct WorkspaceStatusBar: View {
             .fixedSize()
             .contentShape(Rectangle())
         }
-        .modifier(
-            StatusBarHoverPreview(selection: $hoveredPreview, allowsHover: !status.isTrayPresented) {
-                preview(status.layout.preview(for: entry))
-            })
+        .modifier(hoverPreview(for: entry))
     }
 
     private func plainChip(_ text: String, help: String, action: @escaping () -> Void) -> some View {
@@ -211,7 +213,7 @@ struct WorkspaceStatusBar: View {
         .help(help)
     }
 
-    /// Right-zone context: quiet text, clickable only when it opens something.
+    /// Right-zone context with an affordance for navigation or a pinned preview.
     @ViewBuilder private func segment(_ entry: StatusBarEntry) -> some View {
         let label = HStack(spacing: 5) {
             if let icon = entry.icon {
@@ -221,7 +223,7 @@ struct WorkspaceStatusBar: View {
             Text(isCompact ? entry.compactText ?? entry.text : entry.text)
                 .dockFont(.metadata).lineLimit(1).truncationMode(.middle).frame(maxWidth: 170)
             if entry.action != .none {
-                DockIcon(.arrowUpRight, size: 9).accessibilityHidden(true)
+                DockIcon(entry.action == .preview ? .caretUp : .arrowUpRight, size: 9).accessibilityHidden(true)
             }
         }
         .foregroundStyle(Color.dockSecondaryText)
@@ -233,21 +235,25 @@ struct WorkspaceStatusBar: View {
                 label.contentShape(Rectangle())
             } else {
                 Button {
-                    perform(entry.action)
+                    if entry.action == .preview {
+                        status.isTrayPresented = false
+                        hoveredPreview = nil
+                        pinnedItem = pinnedItem == entry.item ? nil : entry.item
+                    } else {
+                        perform(entry.action)
+                    }
                 } label: {
                     label.contentShape(Rectangle())
                 }
             }
         }
-        .modifier(
-            StatusBarHoverPreview(selection: $hoveredPreview, allowsHover: !status.isTrayPresented) {
-                preview(status.layout.preview(for: entry))
-            })
+        .modifier(hoverPreview(for: entry))
     }
 
     private var trayButton: some View {
         Button {
             hoveredPreview = nil
+            pinnedItem = nil
             status.toggleActivity()
         } label: {
             HStack(spacing: 6) {
@@ -262,13 +268,20 @@ struct WorkspaceStatusBar: View {
         }
         .accessibilityLabel(status.isTrayPresented ? "Close Activity popover" : "Show Activity popover")
         .modifier(
-            StatusBarHoverPreview(selection: $hoveredPreview, isPinned: $status.isTrayPresented) {
+            StatusBarHoverPreview(
+                selection: $hoveredPreview, isPinned: $status.isTrayPresented, allowsHover: pinnedItem == nil
+            ) {
                 preview(status.layout.preview)
             })
     }
 
     private func hoverPreview(for entry: StatusBarEntry) -> some ViewModifier {
-        StatusBarHoverPreview(selection: $hoveredPreview, allowsHover: !status.isTrayPresented) {
+        let pin = Binding(
+            get: { pinnedItem == entry.item },
+            set: { if !$0, pinnedItem == entry.item { pinnedItem = nil } })
+        return StatusBarHoverPreview(
+            selection: $hoveredPreview, isPinned: pin, allowsHover: !status.isTrayPresented && pinnedItem == nil
+        ) {
             preview(status.layout.preview(for: entry))
         }
     }
@@ -285,6 +298,7 @@ struct WorkspaceStatusBar: View {
 
     private func perform(_ action: StatusBarEntry.Action) {
         hoveredPreview = nil
+        pinnedItem = nil
         if action == .tray { status.openActivity() } else { performAction(action) }
     }
 
