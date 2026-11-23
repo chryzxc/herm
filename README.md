@@ -477,6 +477,7 @@ Shared interface motion includes smoothly updating progress meters and section c
 ### Conversations
 
 Saved conversation images are restored from Hermes history when reopening a session, including images stored within message content.
+Emoji reactions on your messages sit on the corner of the message bubble or its image attachments.
 Reopened messages omit Hermes' appended memory recall context and reconcile confirmed sends with saved history.
 Sending means submission is in flight. Accepted means Hermes accepted the input, not that storage is confirmed;
 Queued reflects an explicit queued acknowledgment. A proven row receipt or conservative history match clears

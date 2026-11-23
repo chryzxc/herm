@@ -220,15 +220,18 @@ struct ConversationMessageRow: View, Equatable {
                 VStack(alignment: .trailing, spacing: 4) {
                     // Attachments sit above the text surface instead of inside
                     // the bubble, keeping media visually distinct from copy.
-                    UserMessageImages(
-                        images: message.images,
-                        cacheKey: { index in
-                            ConversationThumbnailCache.key(
-                                messageID: message.id, index: index, imageCount: message.images.count,
-                                contentRevision: message.contentRevision)
-                        },
-                        onPreview: onImagePreview
-                    )
+                    if !message.images.isEmpty {
+                        UserMessageImages(
+                            images: message.images,
+                            cacheKey: { index in
+                                ConversationThumbnailCache.key(
+                                    messageID: message.id, index: index, imageCount: message.images.count,
+                                    contentRevision: message.contentRevision)
+                            },
+                            onPreview: onImagePreview
+                        )
+                        .overlay(alignment: .topLeading) { userMessageReaction }
+                    }
                     if !userText.isEmpty || !attachments.names.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             DockChipFlow(spacing: 6, hugsContent: true) {
@@ -251,7 +254,11 @@ struct ConversationMessageRow: View, Equatable {
                             }
                         }
                         .userMessageBubble(
-                            isSteering: message.isSteering, isSpotlit: isSpotlit, reduceMotion: reduceMotion)
+                            isSteering: message.isSteering, isSpotlit: isSpotlit, reduceMotion: reduceMotion
+                        )
+                        .overlay(alignment: .topLeading) {
+                            if message.images.isEmpty { userMessageReaction }
+                        }
                     }
 
                     ConversationMessageFooter(anchor: .trailing) {
@@ -269,10 +276,6 @@ struct ConversationMessageRow: View, Equatable {
                     .frame(minHeight: 30)
                     .dockPadding(.horizontal, 4)
                     .dockPadding(.top, 2)
-                }
-                .overlay(alignment: .topLeading) {
-                    // Hangs 11pt above the bubble, inside the row's 12pt top padding.
-                    MessageReactionBadge(reactions: message.reactions, anchor: .bottomTrailing).offset(x: -8, y: -11)
                 }
                 .onHover { hoverPresentation.isHovering = $0 }
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
@@ -510,6 +513,12 @@ struct ConversationMessageRow: View, Equatable {
     private func messageMarkdownView(_ markdown: String) -> some View {
         GenerativeUIIntegration.renderMarkdown(markdown.trimmingCharacters(in: .newlines))
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var userMessageReaction: some View {
+        MessageReactionBadge(reactions: message.reactions, anchor: .bottomTrailing)
+            .fixedSize(horizontal: true, vertical: false)
+            .offset(x: -8, y: -11)
     }
 
     private var messageActions: some View {

@@ -8,6 +8,54 @@ import Testing
 /// `CHAT_SNAPSHOT_DIR` to a writable directory.
 @MainActor
 struct ConversationRenderSnapshotTests {
+    @Test func reactionStaysAtShortBubbleCorner() async throws {
+        let app = NSApplication.shared
+        let old = app.value(forKey: "accessibilityEnhancedUserInterface")
+        app.setValue(true, forKey: "accessibilityEnhancedUserInterface")
+        defer { app.setValue(old, forKey: "accessibilityEnhancedUserInterface") }
+
+        func elements(_ element: AnyObject) -> [AnyObject] {
+            [element] + (element.accessibilityChildren?() ?? []).flatMap { elements($0 as AnyObject) }
+        }
+
+        var message = ChatMessage(role: .user, text: "done")
+        message.reactions = [.init(emoji: "👍", author: "agent", at: nil)]
+        for width: CGFloat in [420, 520] {
+            let view = ConversationMessageRow(
+                message: message, isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+                botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in },
+                delivery: .unconfirmed, deliveryCheckAvailable: true
+            )
+            .frame(width: width, height: 160)
+            .background(Color.dockCanvas)
+            .dockThemedRoot()
+            let host = NSHostingView(rootView: view)
+            host.frame = NSRect(x: 0, y: 0, width: width, height: 160)
+            let window = NSWindow(
+                contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer { window.orderOut(nil) }
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(150))
+
+            let descendants = elements(host)
+            let body = try #require(descendants.first { $0.accessibilityLabel?() == "done" })
+            let reaction = try #require(descendants.first { $0.accessibilityLabel?() == "Hermes reacted 👍" })
+            let bodyFrame = try #require(body.accessibilityFrame?())
+            let reactionFrame = try #require(reaction.accessibilityFrame?())
+            #expect(abs(bodyFrame.minX - reactionFrame.minX) < 32)
+            #expect(reactionFrame.midY > bodyFrame.midY)
+            if let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] {
+                try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let png = try #require(bitmap.representation(using: .png, properties: [:]))
+                try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("reaction-\(Int(width)).png"))
+            }
+        }
+    }
+
     @Test func renderAttachmentFlow() async throws {
         guard let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] else { return }
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
