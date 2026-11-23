@@ -466,11 +466,6 @@ private struct KanbanTaskCard: View, Equatable {
         .dockPadding(.horizontal, 10)
         .dockPadding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .leading) {
-            if lane == .blocked || lane == .running {
-                lane.color.frame(width: 2).dockPadding(.vertical, 8)
-            }
-        }
         .dockCard(padding: 0, isActive: isHovered)
         .overlay {
             if isSelected {
