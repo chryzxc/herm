@@ -545,7 +545,11 @@ and keeps each mounted pane's state.
 Chats groups and sorts background session activity off the main thread.
 Focusing an already-loaded split column keeps both conversations live while
 the inspector follows the selected column.
-Talk, Pull requests and Issues open as inspector tabs from its **Open a new tab** grid; voice runs while the Talk tab shows. Opening the inspector in the floating desktop panel keeps the conversation visible beside it, with the inspector tab row matching the chat header. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
+
+Talk, Pull requests and Issues open as inspector tabs from its **Open a new tab** grid.
+Voice runs while the Talk tab shows. Choose **Conversation** from the inspector’s
+**+** menu or empty grid to open another session, Bot chat, or group chat in split view.
+Opening the inspector in the floating desktop panel keeps the conversation visible beside it, with the inspector tab row matching the chat header. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
 
 Each Terminal inspector tab owns one shell; open another Terminal tab for a separate shell. Terminal options use a vertical-dots menu beside Previews.
 

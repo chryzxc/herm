@@ -120,96 +120,6 @@ struct SessionInspector: View {
             } ?? [])
     }
 
-    enum Section: String, CaseIterable, Identifiable {
-        case timeline = "Timeline"
-        case artifacts = "Artifacts"
-        case files = "Files"
-        case changes = "Source Control"
-        case diff = "Diff"
-        case terminal = "Terminal"
-        case browser = "Browser"
-        case github = "GitHub"
-        case iosSimulator = "iOS Simulator"
-        case androidEmulator = "Android Emulator"
-        case talk = "Talk"
-        case pullRequests = "Pull Requests"
-        case issues = "Issues"
-
-        /// Opened only from the new-tab grid, never by default.
-        var isOnDemand: Bool { self == .iosSimulator || self == .androidEmulator || isWorkspace }
-        /// Session surfaces the host renders (Talk, PRs, Issues).
-        var isWorkspace: Bool { self == .talk || self == .pullRequests || self == .issues }
-
-        static func open(
-            visible: [Self], closed: String, browserOpen: Bool, simulators: [String]
-        ) -> [Self] {
-            let closed = Set(closed.split(separator: "|").map(String.init))
-            return visible.filter {
-                if $0.isOnDemand { return simulators.contains($0.rawValue) }
-                return $0 == .browser ? browserOpen : !closed.contains($0.rawValue)
-            }
-        }
-
-        /// A tab Hermes asked to show: the `herm_inspector` receipt's tab, or a `pane.reveal` pane.
-        init?(agentTab: String) {
-            switch agentTab {
-            case "timeline": self = .timeline
-            case "artifacts": self = .artifacts
-            case "files": self = .files
-            case "changes", "review": self = .changes
-            case "diff": self = .diff
-            case "terminal": self = .terminal
-            case "browser": self = .browser
-            case "github": self = .github
-            default: return nil
-            }
-        }
-
-        static func receipt(_ result: String) -> Self? {
-            struct Receipt: Decodable {
-                let schema: String
-                let tab: String
-            }
-            guard result.utf8.count < 4_096,
-                let value = try? JSONDecoder().decode(Receipt.self, from: Data(result.utf8)),
-                value.schema == "herm.inspector.v1"
-            else { return nil }
-            return Self(agentTab: value.tab)
-        }
-
-        var id: Self { self }
-        var navigationTitle: String {
-            switch self {
-            case .files: "Explorer"
-            case .terminal: "Terminal"
-            case .timeline: "Timeline"
-            case .artifacts: "Artifacts"
-            case .changes: "Source Control"
-            case .diff: "Diff"
-            case .browser: "Browser"
-            case .github: "GitHub"
-            case .iosSimulator, .androidEmulator, .talk, .issues: rawValue
-            case .pullRequests: "Pull requests"
-            }
-        }
-        var icon: Ph {
-            switch self {
-            case .timeline: .chartBarHorizontal
-            case .artifacts: .files
-            case .files: .folder
-            case .changes: .gitBranch
-            case .diff: .gitDiff
-            case .terminal: .terminal
-            case .browser: .globe
-            case .github: .gitPullRequest
-            case .iosSimulator, .androidEmulator: .deviceMobile
-            case .talk: .waveform
-            case .pullRequests: .gitPullRequest
-            case .issues: .circleDashed
-            }
-        }
-    }
-
     var body: some View {
         let _ = HermPerformanceRecorder.countBody("SessionInspector")
         let _ = modelRevision
@@ -246,18 +156,10 @@ struct SessionInspector: View {
                     if openSections.contains(selectedSection) {
                         baseContent
                     } else {
-                        RecentSessionBots(model: model, roster: botMode.bots) { sessionBots, sessionsByBot in
-                            SessionInspectorEmptyView(
-                                sections: visibleSections.filter { !openSections.contains($0) }, onOpen: reopen,
-                                bots: botMode.bots.filter {
-                                    !$0.isHidden && $0.chat != nil && $0.chat?.sessionID != model.sessionID
-                                },
-                                botAvatars: botMode.avatarImages,
-                                sessions: model.sessions
-                                    .filter { !$0.isHidden && $0.id != model.navigationSessionID },
-                                sessionBots: sessionBots, sessionsByBot: sessionsByBot,
-                                onDismiss: { onToggle?() })
-                        }
+                        SessionInspectorEmptyView(
+                            entries: SessionInspectorNewTab.grid(visible: visibleSections, open: openSections),
+                            onOpen: reopen
+                        ) { entry in conversationMenu { SessionInspectorTabCard(entry: entry) } }
                     }
                 }
                 .opacity(selectedExtraID == nil && selectedPreview == nil ? 1 : 0)
@@ -594,7 +496,7 @@ struct SessionInspector: View {
 
     // Keep Source Control reachable while its repository snapshot loads or refreshes.
     private var visibleSections: [Section] {
-        [.timeline, .terminal, .files, .artifacts, .changes, .browser, .iosSimulator, .androidEmulator]
+        Section.allCases.filter { !$0.isWorkspace && $0 != .diff && $0 != .github }
             + workspaceSections
             + (filePreview.attachmentDiff == nil ? [] : [.diff])
             + (gitHub.item(for: WorkspaceIdentity.session(model))?.reference == nil ? [] : [.github])
@@ -723,7 +625,8 @@ struct SessionInspector: View {
     @StateObject private var iosSetupProbe = SessionSimulatorCapture()
     @StateObject private var androidSetupProbe = SessionSimulatorCapture()
 
-    private func newTabTitle(_ section: Section) -> String {
+    private func newTabTitle(_ entry: SessionInspectorNewTab, section: Section) -> String {
+        if entry.opensAdditionalInstance { return "New \(entry.title)" }
         let requiresSetup =
             section == .iosSimulator
             ? iosSetupProbe.setupRequired
@@ -732,8 +635,8 @@ struct SessionInspector: View {
     }
 
     private var newTabMenu: some View {
-        let open = openSections
-        let closedSections = visibleSections.filter { !open.contains($0) }
+        let entries = SessionInspectorNewTab.menu(
+            visible: visibleSections, open: openSections, canReopen: !recentClosed.isEmpty)
         return Button {
             isShowingNewTab.toggle()
         } label: {
@@ -748,13 +651,17 @@ struct SessionInspector: View {
         .accessibilityLabel("New tab")
         .dockPopover(isPresented: $isShowingNewTab, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
-                if !recentClosed.isEmpty {
-                    newTabRow("Reopen closed tab", icon: .arrowCounterClockwise) { reopenLastClosed() }
-                }
-                newTabRow("New Terminal", icon: .terminal) { openNew(.terminal) }
-                newTabRow("New Browser", icon: .globe) { openNew(.browser) }
-                ForEach(closedSections.filter { $0 != .terminal && $0 != .browser }) { section in
-                    newTabRow(newTabTitle(section), icon: section.icon) { reopen(section) }
+                ForEach(entries) { entry in
+                    switch entry {
+                    case .reopenClosed:
+                        newTabRow(entry.title, icon: entry.icon) { reopenLastClosed() }
+                    case .conversation:
+                        conversationMenu { newTabLabel(entry.title, icon: entry.icon, hasSubmenu: true) }
+                    case .section(let section):
+                        newTabRow(newTabTitle(entry, section: section), icon: entry.icon) {
+                            if entry.opensAdditionalInstance { openNew(section) } else { reopen(section) }
+                        }
+                    }
                 }
             }
             .dockPadding(6)
@@ -772,21 +679,43 @@ struct SessionInspector: View {
         }
     }
 
+    private func conversationMenu<Label: View>(@ViewBuilder label: @escaping () -> Label) -> some View {
+        RecentSessionBots(model: model, roster: botMode.bots) { sessionBots, sessionsByBot in
+            SessionInspectorConversationMenu(
+                bots: botMode.bots.filter { !$0.isHidden && $0.chat != nil && $0.chat?.sessionID != model.sessionID },
+                botAvatars: botMode.avatarImages,
+                sessions: model.sessions.filter { !$0.isHidden && $0.id != model.navigationSessionID },
+                sessionBots: sessionBots, sessionsByBot: sessionsByBot,
+                onOpen: {
+                    isShowingNewTab = false
+                    onToggle?()
+                },
+                label: label)
+        }
+    }
+
     private func newTabRow(_ title: String, icon: Ph, action: @escaping () -> Void) -> some View {
         Button {
             isShowingNewTab = false
             action()
         } label: {
-            HStack(spacing: 8) {
-                DockIcon(icon, size: 14, color: Color.dockSecondaryText)
-                Text(title).dockFont(.body, weight: .medium)
-                Spacer(minLength: 0)
-            }
-            .dockPadding(.horizontal, 8)
-            .frame(height: 28)
-            .contentShape(Rectangle())
+            newTabLabel(title, icon: icon)
         }
         .buttonStyle(.dockHover)
+    }
+
+    private func newTabLabel(_ title: String, icon: Ph, hasSubmenu: Bool = false) -> some View {
+        HStack(spacing: 8) {
+            DockIcon(icon, size: 14, color: Color.dockSecondaryText)
+            Text(title).dockFont(.body, weight: .medium)
+            Spacer(minLength: 0)
+            if hasSubmenu {
+                DockIcon(.caretRight, size: 10, color: .dockSecondaryText).accessibilityHidden(true)
+            }
+        }
+        .dockPadding(.horizontal, 8)
+        .frame(height: 28)
+        .contentShape(Rectangle())
     }
 
     private var sessionModePicker: some View {
@@ -1163,9 +1092,9 @@ struct SessionInspector: View {
     }
 }
 
-/// Every bot's recent sessions for the empty inspector's Recent session grid: the all-profile
+/// Every Bot's recent sessions for the inspector's Conversation picker: the all-profile
 /// scan merged with this profile's fresher rows, minus hidden ones and the open conversation.
-/// Observes the scan here so its refreshes redraw only the empty state, not every tab.
+/// Observes the scan here so its refreshes redraw only the picker.
 private struct RecentSessionBots<Content: View>: View {
     let model: DockModel
     let roster: [BotSummary]

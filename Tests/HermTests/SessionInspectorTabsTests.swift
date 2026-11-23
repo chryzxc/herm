@@ -41,6 +41,22 @@ struct SessionInspectorTabsTests {
                 simulators: ["iOS Simulator"]) == [.timeline])
     }
 
+    @Test func newTabChoicesReuseTheCatalogAndHonorOpenTabs() {
+        typealias Entry = SessionInspectorNewTab
+        let all = SessionInspector.Section.allCases
+        let grid = Entry.grid(visible: all, open: [])
+        #expect(Set(grid) == Set(all.map(Entry.section) + [.conversation]))
+        #expect(grid.count == all.count + 1)
+        #expect(grid.allSatisfy { $0.cardDetail != nil })
+
+        let visible: [SessionInspector.Section] = [.timeline, .terminal, .browser, .talk]
+        let open: [SessionInspector.Section] = [.timeline, .terminal]
+        #expect(Entry.grid(visible: visible, open: open) == [.section(.talk), .conversation, .section(.browser)])
+        #expect(
+            Entry.menu(visible: visible, open: open, canReopen: true)
+                == [.reopenClosed, .conversation, .section(.terminal), .section(.browser), .section(.talk)])
+    }
+
     @Test func renderEmptyPanel() async throws {
         guard let directory = ProcessInfo.processInfo.environment["HERM_INSPECTOR_UI_DIR"] else { return }
         let root = URL(fileURLWithPath: directory)
@@ -60,8 +76,12 @@ struct SessionInspectorTabsTests {
                 named: [.clean, .eInk].contains(theme) ? .aqua : .darkAqua)
             for width in [300.0, 760.0] {
                 let host = NSHostingView(
-                    rootView: SessionInspectorEmptyView(sections: [.browser, .terminal], onOpen: { _ in })
-                        .frame(width: width, height: 660).dockThemedRoot())
+                    rootView: SessionInspectorEmptyView(
+                        entries: [.section(.browser), .section(.terminal)], onOpen: { _ in }
+                    ) { _ in
+                        EmptyView()
+                    }
+                    .frame(width: width, height: 660).dockThemedRoot())
                 host.frame = NSRect(x: 0, y: 0, width: width, height: 660)
                 host.layoutSubtreeIfNeeded()
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))

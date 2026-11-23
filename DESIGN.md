@@ -4142,8 +4142,11 @@ Conversation, Terminal, Browser, Explorer, Source Control, Pull requests, Issues
 Diff, GitHub, Artifacts, Timeline, then the simulators. Every card reserves two
 detail lines so the grid's rows share one height. Cards use existing section icons, theme
 surfaces, and 12pt title/detail text; they adapt to one column in narrow panes.
-The tab strip, + menu, and panel toggle keep their positions. Cards reuse the
-existing section-opening actions; terminal foreground-job confirmation and
+The tab strip, + menu, and panel toggle keep their positions. The Conversation
+card and the + menu’s Conversation row share the split-view picker for sessions,
+Bot chats, and group chats. `SessionInspectorNewTab` defines the choices for
+both surfaces. The other cards reuse the existing section-opening actions.
+Terminal foreground-job confirmation and
 Command-Shift-T reopening continue to apply. Empty state persists on restoration.
 
 ### Native review and local workflows
