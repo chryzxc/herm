@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import Herm
@@ -66,12 +68,68 @@ struct DockBotIndicatorFrameTests {
     }
 
     // Clock ownership and compositing are structural contracts, not timing benchmarks.
-    @Test func workingAvatarDelegatesClockOwnership() throws {
+    @Test func workingAvatarDelegatesMotionToTheRenderLayer() throws {
         let source = try sourceFile("Sources/Herm/Bots/BotAvatar.swift")
         let working = try #require(source.components(separatedBy: "struct BotWorkingAvatarView: View {").last)
             .components(separatedBy: "/// Idle motion")[0]
         #expect(!working.contains("TimelineView("))
-        #expect(working.contains("DockBotFrameClock"))
+        #expect(!working.contains("DockBotFrameClock"))
+        #expect(working.contains("BotWorkingAvatarLayer"))
+    }
+
+    @MainActor @Test func nativeWorkingPoseLoopsAndReactsOnlyToNewActivity() throws {
+        let host = BotNotchFaceMotion.Host(size: 40)
+        let layer = try #require(host.face.layer)
+        host.applyWorking(enabled: true, signature: ["one"])
+        #expect(layer.animation(forKey: "bot.statusMotion")?.repeatCount == .infinity)
+        host.applyWorking(enabled: true, signature: ["one"])
+        #expect(layer.animation(forKey: "bot.activityReaction") == nil)
+        host.applyWorking(enabled: true, signature: ["two"])
+        #expect(layer.animation(forKey: "bot.activityReaction")?.repeatCount == 0)
+        #expect(layer.animation(forKey: "bot.statusMotion")?.repeatCount == .infinity)
+        host.applyWorking(enabled: false, signature: ["two"])
+        #expect(layer.animation(forKey: "bot.statusMotion") == nil)
+        #expect(layer.animation(forKey: "bot.activityReaction") == nil)
+    }
+
+    @MainActor @Test func huddleKeepsItsNativeLeadWhenPartnersJoinAndLeave() async throws {
+        _ = NSApplication.shared
+        func bot(_ id: String) -> BotSummary {
+            BotSummary(
+                id: id, name: id, title: nil, description: nil, model: nil,
+                isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+                isHidden: false, hasAvatar: false, isDefault: false)
+        }
+        let lead = bot("lead")
+        func huddle(_ partners: [BotSummary]) -> some View {
+            BotHuddle(lead: lead, partners: partners, leadSignature: ["running"])
+                .environment(\.dockBotIndicatorLive, true)
+        }
+        func leadView(in view: NSView) -> BotNotchFaceMotion.Host? {
+            (view as? BotNotchFaceMotion.Host) ?? view.subviews.lazy.compactMap(leadView(in:)).first
+        }
+        let host = DockWindowHostingView(rootView: huddle([]))
+        host.sizingOptions = []
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 180),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+
+        func settle() async throws {
+            for _ in 0..<5 {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(20))
+            }
+        }
+        try await settle()
+        let initial = try #require(leadView(in: host))
+        for partners in [[bot("partner")], []] {
+            host.rootView = huddle(partners)
+            try await settle()
+            #expect(leadView(in: host) === initial)
+        }
     }
 
     @Test func liveTextDoesNotCreateMaskedAnimationLayers() throws {

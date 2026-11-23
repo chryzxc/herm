@@ -634,7 +634,7 @@ unavailable items, and links to anchors or subpages retain the browser fallback.
 - **Streaming chat** with Markdown (including tables with optional outer pipes and table text sized to match reply prose), images, tool output, and inline clarification requests. History prepares image thumbnails in the background. Response text reflows at the current pane width, keeping its action rail beneath the content when resizing.
 - **Image previews** preserve their original proportions without square padding, so wide and tall screenshots fill their intended thumbnail size. Click an image to open the full preview.
 - **Website links** show an inline favicon beside their underlined label. GitHub links use a bundled, theme-aware mark; bare PR and issue URLs display as `PR #123` or `Issue #123`. Other public sites load `/favicon.ico` over HTTPS with a globe fallback.
-- **Working bot**: three diamond tiles light in sequence beneath the avatar as it leans into a hop. The borderless 40pt avatar reacts to activity with reaches, tilts, and hops, including a soft landing and the current activity icon. Rapid updates blend smoothly, and new activity rows appear immediately. Reduce Motion and motion-free themes keep it still.
+- **Working bot**: three diamond tiles light in sequence beneath the avatar as it leans into a hop. Core Animation moves the avatar inside a fixed footprint. Activity changes trigger reaches, tilts, and hops from the current pose and show the current activity icon. New activity rows appear immediately. Reduce Motion and motion-free themes keep it still.
 - **Running activity** keeps duration text free of shimmer while elapsed time continues updating. The separate native highlight keeps moving while scrolling and is hidden under Reduce Motion or motion-free themes. Running and completed tool durations align at the right end of each chat activity row.
 - **Completed activity** starts expanded when the response has no text or images; the activity disclosure can still be toggled.
 - **Edit activity** can expand to a selectable, wrapped diff preview that scrolls vertically.
@@ -1100,6 +1100,8 @@ These screenshots show a real bot handoff; a project name has been redacted.
 Once sent, a mentioned bot keeps answering when you switch conversations. Return to see its replying bubble or completed reply with the same bot attribution; replies received while you are elsewhere are restored from saved activity. Mentions reuse the recipient’s persistent **Bot Chat**, which Hermes hides from the regular session list. Click the recipient on the **Bots** page to view that conversation; each mention does not create a separate session.
 
 If you send a plain message while a mentioned bot is still working, the chat shows both animated avatars side by side until one finishes. A mentioned bot’s reply appears directly under its request, including after quitting Herm and reopening the session. Replies with identical text keep their individual bot attribution. The replying area shows the mentioned bot’s latest reported activity, including thinking, tool work, responding, and waiting for approval or an answer. Activity follows the confirmed recipient and remains available when you switch away and return.
+
+Solo working avatars animate on native layers in Chats and pop-out conversations. The huddle clock pauses until a partner joins.
 
 The forward-message composer keeps the insertion point with newly typed text when a delayed completion update arrives.
 

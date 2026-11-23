@@ -11,6 +11,7 @@ struct DockLayerMotion: NSViewRepresentable {
         case thinkingRelay
         /// Three transcript lines fold together as context is compacted.
         case compactLines
+        case botStride
         /// Four mosaic tiles lift and brighten in clockwise order while work is pending.
         case loading
         case startupLogo
@@ -149,6 +150,46 @@ final class DockLayerMotionView: NSView {
                     loop(
                         line, "position.y", from: start, to: bounds.midY, duration: 0.7,
                         autoreverses: true, timing: .easeInEaseOut)
+                }
+            }
+
+        case .botStride:
+            guard !spec.paused else { return }
+            let width = bounds.width
+            let radius = width * 0.055
+            let up: CGFloat = isFlipped ? -1 : 1
+            for index in 0..<3 {
+                let tile = CAShapeLayer()
+                tile.bounds = CGRect(x: 0, y: 0, width: radius * 2, height: radius * 2)
+                let path = CGMutablePath()
+                path.move(to: CGPoint(x: 0, y: radius))
+                path.addLine(to: CGPoint(x: radius, y: radius * 1.48))
+                path.addLine(to: CGPoint(x: radius * 2, y: radius))
+                path.addLine(to: CGPoint(x: radius, y: radius * 0.52))
+                path.closeSubpath()
+                tile.path = path
+                tile.fillColor = color
+                let rest = (isFlipped ? bounds.maxY : bounds.minY) + up * width * 0.06
+                tile.position = CGPoint(x: width * (0.25 + CGFloat(index) * 0.25), y: rest)
+                tile.opacity = 0
+                host.addSublayer(tile)
+
+                let stride = BotWorkingPose.strideDuration / BotWorkingPose.stridePeriod
+                let start = Double(index) * 0.22 * stride
+                let end = start + 0.56 * stride
+                let times = [0, start, (start + end) / 2, end, 1].map { NSNumber(value: $0) }
+                for (key, values) in [
+                    ("opacity", [0, 0, 0.85, 0, 0]),
+                    ("position.y", [rest, rest, rest + up * width * 0.045, rest, rest]),
+                    ("transform.scale", [1, 1, 1 + 0.045 / 0.055, 1, 1]),
+                ] {
+                    let motion = CAKeyframeAnimation(keyPath: key)
+                    motion.values = values
+                    motion.keyTimes = times
+                    motion.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 4)
+                    motion.duration = BotWorkingPose.stridePeriod
+                    motion.repeatCount = .infinity
+                    tile.add(motion, forKey: key)
                 }
             }
 

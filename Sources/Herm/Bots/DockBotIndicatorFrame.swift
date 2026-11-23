@@ -41,6 +41,7 @@ struct DockBotFrameClock<Content: View>: View {
     @Environment(\.dockHostResizing) private var hostResizing
     @Environment(\.dockBotIndicatorLive) private var live
     @ObservedObject private var focus = HermFocus.shared
+    var isActive = true
     @ViewBuilder let content: (DockBotIndicatorFrame) -> Content
 
     var body: some View {
@@ -48,7 +49,7 @@ struct DockBotFrameClock<Content: View>: View {
             content(externalFrame)
         } else {
             let moves =
-                hostVisible && !hostResizing && DockMotion.isEnabled(reduceMotion: reduceMotion)
+                isActive && hostVisible && !hostResizing && DockMotion.isEnabled(reduceMotion: reduceMotion)
                 // A running turn is real status, like a spinner: it keeps moving while Herm is in the background.
                 && (live || focus.engaged)
             TimelineView(.dockMotion(rate: 15, paused: !moves)) { context in

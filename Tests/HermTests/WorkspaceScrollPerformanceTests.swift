@@ -125,4 +125,63 @@ struct WorkspaceScrollPerformanceTests {
             }
         }
     }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["HERM_SCROLL_PROFILE"] == "1"))
+    func profileWorkingAvatarAcrossWindows() async throws {
+        _ = NSApplication.shared
+        _ = DockThemeStore.shared
+        let previousTheme = DockThemeRuntime.current
+        DockThemeRuntime.current = .clean
+        defer { DockThemeRuntime.current = previousTheme }
+        let bot = BotSummary(
+            id: "motion-fixture", name: "Motion fixture", title: nil, description: nil, model: nil,
+            isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: false,
+            hasAvatar: false, isDefault: false)
+
+        for count in [1, 3] {
+            for native in [false, true] {
+                var windows: [NSWindow] = []
+                defer {
+                    for window in windows { window.orderOut(nil) }
+                }
+                for index in 0..<count {
+                    let frame = CGRect(x: 60 + index * 280, y: 210, width: 260, height: 190)
+                    let window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
+                    let host = DockWindowHostingView(rootView: avatarFixture(bot, native: native))
+                    host.sizingOptions = []
+                    host.performanceRole = "workingAvatarFixture"
+                    window.contentView = host
+                    window.orderFrontRegardless()
+                    windows.append(window)
+                }
+                try await Task.sleep(for: .milliseconds(400))
+
+                var layoutPasses = 0
+                DockHostLayoutTiming.layoutObserver = { if $0 == "workingAvatarFixture" { layoutPasses += 1 } }
+                defer { DockHostLayoutTiming.layoutObserver = nil }
+                let started = mainThreadCPUMilliseconds()
+                try await Task.sleep(for: .seconds(2))
+                print(
+                    "working_avatar windows=\(count) native=\(native) host_layouts=\(layoutPasses) main_cpu_ms=\(mainThreadCPUMilliseconds() - started)"
+                )
+            }
+        }
+    }
+
+    private func avatarFixture(_ bot: BotSummary, native: Bool) -> some View {
+        Group {
+            if native {
+                BotWorkingAvatarView(bot: bot, imageData: nil)
+            } else {
+                DockBotFrameClock { frame in
+                    BotWorkingPose.at(frame.date.timeIntervalSinceReferenceDate).applied(
+                        to: BotAvatarView(bot: bot, imageData: nil, size: 40, orbits: true, statusMotion: false),
+                        size: 40)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.dockBotIndicatorLive, true)
+        .dockThemedRoot()
+    }
 }

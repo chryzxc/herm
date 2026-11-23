@@ -989,6 +989,13 @@ immediate refreshes and `sidebarPublish` records the cost of publishing a finish
 snapshot to its consumers. Opt in with `HERM_SIDEBAR_PROFILE=1` and filter to
 `SidebarSnapshotProfileTests`.
 
+Working avatars and their stepping tiles animate on native layers within their
+existing footprint. In the Debug AppKit avatar fixture, the SwiftUI clock
+control took two host layout passes in one window and six in three windows
+over two-second observation intervals. The native avatar took zero in both.
+Use `HERM_SCROLL_PROFILE=1` with the `profileWorkingAvatarAcrossWindows` filter.
+This fixture isolates the indicator. Live Release frame pacing remains unmeasured.
+
 Chats reuses pin and status projections across pointer and search updates and
 pauses unread-count reads when collapsed or covered.
 

@@ -257,7 +257,7 @@ struct BotWorkingPose {
     }
 }
 
-/// Animate the whole avatar so uploaded art and generated faces move alike.
+/// The avatar has a fixed layout footprint while its render layer moves.
 struct BotWorkingAvatarView: View {
     let bot: BotSummary
     let imageData: Data?
@@ -265,91 +265,62 @@ struct BotWorkingAvatarView: View {
     var activitySignature: [String] = []
     var activityIcon: Ph = .brain
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var startedAt = Date()
-    @State private var reactionAt: Date?
-    @State private var reactionStart = BotWorkingPose.rest
-    @State private var variation = 0
-    @ObservedObject private var focus = HermFocus.shared
+    @Environment(\.dockHostVisible) private var hostVisible
+    @Environment(\.dockHostResizing) private var hostResizing
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
     @Environment(\.dockBotIndicatorLive) private var live
+    @ObservedObject private var focus = HermFocus.shared
+    @State private var reaction: UUID?
+    @State private var showsActivity = false
+
+    private var moves: Bool {
+        hostVisible && !hostResizing && (live || focus.engaged) && DockMotion.isEnabled(reduceMotion: reduceMotion)
+    }
 
     var body: some View {
-        let moves = !reduceMotion && DockThemeStyle.current.animates && (live || focus.engaged)
-        DockBotFrameClock { frame in
-            let age = reactionAt.map { frame.date.timeIntervalSince($0) } ?? BotWorkingPose.reactionDuration
-            let reacting = frame.moves && age >= 0 && age < BotWorkingPose.reactionDuration
-            let pose = frame.moves ? currentPose(at: frame.date) : .rest
-            ZStack {
-                pose.applied(
-                    to: BotAvatarView(
-                        bot: bot, imageData: imageData, size: size, animated: frame.moves,
-                        orbits: true, statusMotion: false),
-                    size: size
-                )
-                .background {
-                    if frame.moves && !reacting {
-                        steppingStones(phase: BotWorkingPose.stridePhase(at: frame.date.timeIntervalSince(startedAt)))
-                    }
+        let points = DockWorkspaceScale.points(size, scale: workspaceScale)
+        BotWorkingAvatarLayer(
+            avatar: BotAvatarView(
+                bot: bot, imageData: imageData, size: size, animated: false,
+                orbits: true, statusMotion: false),
+            size: points, signature: activitySignature, engaged: moves
+        )
+        .id(points)
+        .frame(width: points, height: points)
+        .background {
+            DockLayerMotion(kind: .botStride, color: .dockAccent, paused: !moves || showsActivity)
+                .padding(.bottom, -points * 0.15)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .overlay {
+            DockIcon(activityIcon, size: 12, color: .dockAccent)
+                .dockPadding(3)
+                .background(Circle().fill(Color.dockSurface).shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5))
+                .overlay(Circle().stroke(Color.dockBorderStrong, lineWidth: 0.75))
+                .offset(x: size * 0.3, y: -size * 0.3)
+                .opacity(moves && showsActivity ? 1 : 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .environment(\.dockBotIndicatorFrame, nil)
+        .onChange(of: activitySignature) { _, next in
+            guard moves, !next.isEmpty else { return }
+            showsActivity = true
+            reaction = UUID()
+        }
+        .onChange(of: moves) { _, enabled in
+            if !enabled { showsActivity = false }
+        }
+        .task(id: reaction) {
+            guard reaction != nil else { return }
+            try? await Task.sleep(for: .seconds(BotWorkingPose.reactionDuration))
+            if !Task.isCancelled {
+                withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16)) {
+                    showsActivity = false
                 }
-                // Echo the real activity glyph as the Bot reaches toward the rows above.
-                DockIcon(activityIcon, size: 12, color: .dockAccent)
-                    .dockPadding(3)
-                    .background(
-                        Circle().fill(Color.dockSurface).shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5)
-                    )
-                    .overlay(Circle().stroke(Color.dockBorderStrong, lineWidth: 0.75))
-                    .scaleEffect(reacting ? 0.7 + pose.lift * 0.3 : 0.7)
-                    .offset(x: size * 0.3 - pose.reach * size, y: -size * 0.3 - pose.lift * size * 0.24)
-                    .opacity(reacting && !activitySignature.isEmpty ? Double(pose.lift) : 0)
-            }
-            .transaction { $0.animation = nil }
-        }
-        .onChange(of: activitySignature) { _, _ in
-            guard moves else { return }
-            let now = Date()
-            reactionStart = currentPose(at: now)
-            variation = (variation + 1) % 3
-            reactionAt = now
-            startedAt = now.addingTimeInterval(BotWorkingPose.reactionDuration)
-        }
-        .onChange(of: moves) { _, engaged in
-            // Do not replay a one-shot when decoration resumes.
-            if !engaged {
-                reactionAt = nil
-                reactionStart = .rest
             }
         }
-    }
-
-    private func steppingStones(phase: Double) -> some View {
-        Canvas { context, bounds in
-            for index in 0..<3 {
-                // Each tile crests just after its neighbor, then settles flush.
-                let local = min(max((phase - Double(index) * 0.22) / 0.56, 0), 1)
-                guard local > 0 && local < 1 else { continue }
-                let glow = pow(sin(local * .pi), 2)
-                let unit = bounds.width
-                let x = unit * (0.25 + Double(index) * 0.25)
-                let y = bounds.height - unit * (0.06 + 0.045 * glow)
-                let radius = unit * (0.055 + 0.045 * glow)
-                var tile = Path()
-                tile.move(to: CGPoint(x: x - radius, y: y))
-                tile.addLine(to: CGPoint(x: x, y: y - radius * 0.48))
-                tile.addLine(to: CGPoint(x: x + radius, y: y))
-                tile.addLine(to: CGPoint(x: x, y: y + radius * 0.48))
-                tile.closeSubpath()
-                context.fill(tile, with: .color(Color.dockAccent.opacity(glow * 0.85)))
-            }
-        }
-        .padding(.bottom, -size * 0.15)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
-    private func currentPose(at date: Date) -> BotWorkingPose {
-        if let reactionAt, date.timeIntervalSince(reactionAt) < BotWorkingPose.reactionDuration {
-            return .reaction(at: date.timeIntervalSince(reactionAt), variation: variation, from: reactionStart)
-        }
-        return .at(date.timeIntervalSince(startedAt))
     }
 }
 
@@ -468,7 +439,9 @@ struct BotHuddle: View {
         let layout = DockBotHuddleLayout(
             partnerCount: partners.count, leadDone: leadDone, leadSize: leadSize, partnerSize: size)
         let members = members(layout: layout)
-        DockBotFrameClock { frame in
+        // Pause the schedule in place so the lead keeps its native view when partners join.
+        let needsClock = !partners.isEmpty || (!leadDone && leadSignature == nil)
+        DockBotFrameClock(isActive: needsClock) { frame in
             let turn = layout.turn(at: frame)
             members
                 .environment(\.dockBotIndicatorFrame, frame)

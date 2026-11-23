@@ -443,10 +443,10 @@ controls do not compress. Existing skin-specific feedback curves remain in use.
   Bubbles float at one height above the lead's head, so the row never shifts.
   While a crew is working, the row's names, timer and steps sit under the
   huddle, lined up with the lead, so the bubbles never cover them.
-- Decorative Bot motion (working poses, busy faces, tool rings, huddle turns)
-  pauses while Herm is neither the active app nor holding a key panel; every
-  animated frame re-renders the whole window. Spinners and the notch work
-  marker keep running because they carry status.
+- Decorative Bot motion pauses with the host and honors Reduce Motion.
+  Working avatars and their tiles animate on native layers. A solo working Bot
+  pauses its surrounding huddle clock until a partner joins. Live activity and
+  the notch carry status while visible in the background.
 - Bot status motion is one choreography, `BotStatusMotion` in
   `Bots/BotStatusMotion.swift`, used by every avatar that shows a status
   (chat working Bot, notch, quick preview, sidebar rows, activity panel).
@@ -3588,7 +3588,7 @@ The welcome orb retains the same footprint and pointer reactions as voice,
 including Reduce Motion support.
 The running indicator uses the responding Bot's stored avatar or generated
 face, falling back to the session profile and selected Bot for ordinary chats.
-Between activity changes the avatar leans into a short hop as three diamond tiles light from left to right beneath it. The tiles fade before the next hop and yield to the activity glyph during a reaction. Reduce Motion and motion-free themes keep the avatar still and hide the tiles.
+Between activity changes the avatar leans into a short hop as three diamond tiles light from left to right beneath it. Core Animation drives the transform and tiles inside the indicator's fixed footprint. An activity change shows the corresponding glyph while the avatar reacts. Reduce Motion and motion-free themes keep the avatar still and hide the tiles.
 Activity rows appear immediately; their insertion and the Bot's movement share
 one short spring transition. Disclosure and completion transitions use the same
 motion preference, with no delayed or queued row reveals.
