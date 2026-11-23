@@ -119,6 +119,11 @@ cancellable background task. A miss renders synchronously. Shared measurements
 contain numeric heights only and use exact source, section kind, width, scaled body
 font/weight, theme identity/revision, and mention revision. Streaming measurements
 stay local. Eviction affects performance only; Hermes remains the source of truth.
+Each native document captures its measurement context once per layout solve.
+New history rows skip section-view reconciliation until they own section views,
+and their section caches allocate width history when layout requests a second width.
+Anchor correction reuses the generation check from the accepted complete layout.
+
 
 A synthetic fixture does not measure physical trackpad momentum or prove a frame
 rate. A live trackpad check requires a separately authorized app relaunch; these
