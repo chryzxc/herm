@@ -1,9 +1,9 @@
 import Darwin
 import Foundation
 
-enum HermesGitProcessError: Error { case limit, unavailable, unsupported }
+enum HermesLocalProcessError: Error { case limit, unavailable, unsupported }
 
-final class HermesGitProcessCancellation: @unchecked Sendable {
+final class HermesLocalProcessCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
     private var waiter: DispatchSemaphore?
@@ -23,19 +23,40 @@ final class HermesGitProcessCancellation: @unchecked Sendable {
         }
     }
 }
-struct HermesGitOutput {
+struct HermesLocalProcessOutput {
     let data: Data
     let code: Int32
 }
 
-enum HermesGitProcess {
-    /// A process group lets cancellation terminate Git's network/pack children as well as its parent.
+enum HermesLocalProcess {
+    static func capture(
+        _ executable: String, arguments: [String], timeout: TimeInterval
+    ) async throws -> HermesLocalProcessOutput {
+        let cancellation = HermesLocalProcessCancellation()
+        let deadline = Date.now.addingTimeInterval(timeout)
+        return try await withTaskCancellationHandler {
+            try await Task.detached(priority: .utility) {
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+                    "herm-process-" + UUID().uuidString, isDirectory: true)
+                try FileManager.default.createDirectory(
+                    at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+                defer { try? FileManager.default.removeItem(at: root) }
+                return try run(
+                    executable, arguments: arguments, environment: ProcessInfo.processInfo.environment,
+                    root: root, deadline: deadline, maxBytes: 4 * 1_024 * 1_024, cancellation: cancellation)
+            }.value
+        } onCancel: {
+            cancellation.cancel()
+        }
+    }
+
+    /// A process group lets cancellation terminate the command and its children.
     static func run(
-        _ arguments: [String], environment: [String: String], root: URL, deadline: Date, maxBytes: Int,
-        cancellation: HermesGitProcessCancellation, maxOutputBytes: Int = 2 * 1_024 * 1_024
-    ) throws -> HermesGitOutput {
+        _ executable: String, arguments: [String], environment: [String: String], root: URL, deadline: Date,
+        maxBytes: Int, cancellation: HermesLocalProcessCancellation, maxOutputBytes: Int = 2 * 1_024 * 1_024
+    ) throws -> HermesLocalProcessOutput {
         if cancellation.isCancelled { throw CancellationError() }
-        guard Date.now < deadline else { throw HermesGitProcessError.limit }
+        guard Date.now < deadline else { throw HermesLocalProcessError.limit }
         let output = root.appendingPathComponent("process-output")
         var actions: posix_spawn_file_actions_t?
         var attributes: posix_spawnattr_t?
@@ -52,7 +73,7 @@ enum HermesGitProcess {
         // stderr is separate so progress or diagnostics cannot be mistaken for machine-readable output.
         let stderr = root.appendingPathComponent("process-error")
         posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, stderr.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
-        let argv = (["/usr/bin/git"] + arguments).map { strdup($0) } + [nil]
+        let argv = ([executable] + arguments).map { strdup($0) } + [nil]
         let env = environment.sorted { $0.key < $1.key }.map { strdup($0.key + "=" + $0.value) } + [nil]
         defer {
             for pointer in argv { if let pointer { free(pointer) } }
@@ -61,10 +82,10 @@ enum HermesGitProcess {
         var pid: pid_t = 0
         let spawned = argv.withUnsafeBufferPointer { args in
             env.withUnsafeBufferPointer { vars in
-                posix_spawn(&pid, "/usr/bin/git", &actions, &attributes, args.baseAddress!, vars.baseAddress!)
+                posix_spawn(&pid, executable, &actions, &attributes, args.baseAddress!, vars.baseAddress!)
             }
         }
-        guard spawned == 0 else { throw HermesGitProcessError.unsupported }
+        guard spawned == 0 else { throw HermesLocalProcessError.unsupported }
         let wake = DispatchSemaphore(value: 0)
         let exit = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global(qos: .utility))
         exit.setEventHandler { wake.signal() }
@@ -82,19 +103,19 @@ enum HermesGitProcess {
             if waited == pid { break }
             if waited < 0 {
                 if errno == EINTR { continue }
-                failure = HermesGitProcessError.unavailable
+                failure = HermesLocalProcessError.unavailable
                 break
             }
             if cancellation.isCancelled {
                 failure = CancellationError()
             } else if Date.now >= deadline {
-                failure = HermesGitProcessError.limit
+                failure = HermesLocalProcessError.limit
             } else if Date.now >= nextSizeCheck {
                 nextSizeCheck = .now.addingTimeInterval(0.1)
                 if allocatedBytes(root) > maxBytes || fileBytes(output) > maxOutputBytes
                     || fileBytes(stderr) > maxOutputBytes
                 {
-                    failure = HermesGitProcessError.limit
+                    failure = HermesLocalProcessError.limit
                 }
             }
             if failure != nil {
@@ -110,14 +131,14 @@ enum HermesGitProcess {
         }
         if let failure { throw failure }
         if cancellation.isCancelled { throw CancellationError() }
-        guard status & 0x7f == 0 else { throw HermesGitProcessError.unavailable }
+        guard status & 0x7f == 0 else { throw HermesLocalProcessError.unavailable }
         let code = (status >> 8) & 0xff
         guard Date.now < deadline, allocatedBytes(root) <= maxBytes, fileBytes(output) <= maxOutputBytes,
             fileBytes(stderr) <= maxOutputBytes
         else {
-            throw HermesGitProcessError.limit
+            throw HermesLocalProcessError.limit
         }
-        return HermesGitOutput(data: try Data(contentsOf: output), code: code)
+        return HermesLocalProcessOutput(data: try Data(contentsOf: output), code: code)
     }
     private static func fileBytes(_ url: URL) -> Int {
         (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0

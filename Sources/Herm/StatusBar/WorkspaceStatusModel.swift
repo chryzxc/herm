@@ -29,8 +29,9 @@ final class WorkspaceStatusModel: ObservableObject {
     /// The Activity tray, shared so the ⌘J registry command and the bar button agree.
     @Published var isTrayPresented = false
     private(set) var terminalScope: TerminalScope?
-    private let startedAt = Date()
-    private var events: [StatusBarEvent] = []
+    private let startedAt: Date
+    private let now: () -> Date
+    private(set) var events: [StatusBarEvent] = []
     private var input = StatusBarInput()
     private var signatures: [String: String] = [:]
     private var phases: [String: EdgeNotchTask.Phase] = [:]
@@ -43,8 +44,10 @@ final class WorkspaceStatusModel: ObservableObject {
     private weak var edge: EdgeNotchState?
     private weak var model: DockModel?
 
-    init(preferences: StatusBarPreferences = .shared) {
+    init(preferences: StatusBarPreferences = .shared, now: @escaping () -> Date = Date.init) {
         self.preferences = preferences
+        self.now = now
+        startedAt = now()
     }
 
     func attach(
@@ -165,11 +168,9 @@ final class WorkspaceStatusModel: ObservableObject {
     }
 
     private func observe(_ tasks: [EdgeNotchTask]) {
-        let now = Date()
-        var seen = Set<String>()
+        let now = now()
         for task in tasks where task.isStatusCurrent {
             let id = task.presentationID
-            seen.insert(id)
             let previous = phases[id]
             let phase = task.isQueued ? EdgeNotchTask.Phase.pending : task.phase
             phases[id] = phase
@@ -190,10 +191,14 @@ final class WorkspaceStatusModel: ObservableObject {
                 }
             }
         }
-        for id in Set(phases.keys).subtracting(seen) {
-            phases[id] = nil
-            signatures[id] = nil
-            input.lastChange[id] = nil
+        // Stale rows still carry identities. An offline inventory can also be temporarily empty.
+        if !input.isOffline {
+            let seen = Set(tasks.map(\.presentationID))
+            for id in Set(phases.keys).subtracting(seen) {
+                phases[id] = nil
+                signatures[id] = nil
+                input.lastChange[id] = nil
+            }
         }
         input.tasks = tasks
         rebuild()
@@ -214,10 +219,10 @@ final class WorkspaceStatusModel: ObservableObject {
 
     private func rebuild() {
         input.mode = GatewayConnectionStore.shared.selected.mode
-        input.now = Date()
+        input.now = now()
         input.nextMeeting = nextMeeting(after: input.now)
         let next = StatusBarLayout.make(input)
-        if next.isStale, staleSince == nil { staleSince = Date() } else if !next.isStale { staleSince = nil }
+        if next.isStale, staleSince == nil { staleSince = input.now } else if !next.isStale { staleSince = nil }
         if next != layout { layout = next }
     }
 
@@ -233,7 +238,7 @@ final class WorkspaceStatusModel: ObservableObject {
         guard minutes > 0 else { return }
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
         if idle >= TimeInterval(minutes * 60) {
-            if awaySince == nil { awaySince = Date().addingTimeInterval(-idle) }
+            if awaySince == nil { awaySince = now().addingTimeInterval(-idle) }
         } else if idle < 60, let since = awaySince {
             awaySince = nil
             returnSummary = Self.summary(events.filter { $0.time >= since }).map { (since, $0) }
@@ -301,7 +306,7 @@ final class WorkspaceStatusModel: ObservableObject {
         guard simulatorTask == nil else { return }
         simulatorTask = Task { [weak self] in
             while !Task.isCancelled {
-                let name = await Self.bootedSimulator()
+                let name = await HermesLocalSimulator.bootedName()
                 guard !Task.isCancelled, self != nil else { return }
                 self?.update(\.bootedSimulator, name)
                 try? await Task.sleep(for: .seconds(120))
@@ -310,27 +315,4 @@ final class WorkspaceStatusModel: ObservableObject {
     }
 
     deinit { simulatorTask?.cancel() }
-
-    /// The first booted simulator's name, from `simctl`. nil without Xcode.
-    nonisolated static func bootedSimulator() async -> String? {
-        await Task.detached {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-            process.arguments = ["simctl", "list", "devices", "booted", "-j"]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = FileHandle.nullDevice
-            guard (try? process.run()) != nil else { return nil }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            return parseBootedSimulator(data)
-        }.value
-    }
-
-    nonisolated static func parseBootedSimulator(_ data: Data) -> String? {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let runtimes = root["devices"] as? [String: [[String: Any]]]
-        else { return nil }
-        return runtimes.values.flatMap(\.self).first { $0["state"] as? String == "Booted" }?["name"] as? String
-    }
 }

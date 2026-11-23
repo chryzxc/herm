@@ -5,10 +5,12 @@ import Testing
 
 @MainActor
 struct StatusBarLayoutTests {
-    private func task(_ id: String, _ phase: EdgeNotchTask.Phase, failure: Bool = false) -> EdgeNotchTask {
+    private func task(
+        _ id: String, _ phase: EdgeNotchTask.Phase, failure: Bool = false, current: Bool = true
+    ) -> EdgeNotchTask {
         EdgeNotchTask(
             id: id, title: id, phase: phase, statusLabel: "", detail: nil, updatedAt: nil,
-            isCurrent: false, isStatusCurrent: true, session: nil, isFailure: failure)
+            isCurrent: false, isStatusCurrent: current, session: nil, isFailure: failure)
     }
 
     @Test func visibilityUsesPersistedPreferencesAcrossHostModes() throws {
@@ -52,6 +54,35 @@ struct StatusBarLayoutTests {
         edge.tasks = [task("run", .finished)]
         edge.tasks = [working]
         #expect(!status.layout.trailing.contains { $0.item == .stalled })
+    }
+
+    @Test func reconnectOnlyCountsActualActivityTransitions() throws {
+        let domain = "StatusBarReconnectTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let preferences = StatusBarPreferences(defaults: defaults)
+        preferences.set(.nextMeeting, on: false)
+        var now = Date.now
+        let status = WorkspaceStatusModel(preferences: preferences, now: { now })
+        let edge = EdgeNotchState()
+        let model = DockModel()
+        let control = ControlCenterModel(capabilities: [])
+        let pullRequests = PullRequestCenterModel()
+        let current = [task("result", .finished), task("request", .attention), task("run", .working)]
+        edge.tasks = current
+        status.attach(edge: edge, model: model, control: control, pullRequests: pullRequests)
+
+        now = now.addingTimeInterval(30)
+        edge.tasks = [task("result", .finished, current: false)] + Array(current.dropFirst())
+        edge.tasks = current
+        #expect(status.events.isEmpty)
+
+        model.status = .offline
+        edge.tasks = []
+        model.status = .idle
+        edge.tasks = [current[0], current[1], task("run", .finished)]
+
+        #expect(status.events.map(\.kind) == [.finished])
     }
 
     @Test func reachKeepsLocalOnlyResourcesOffRemoteGateways() {
@@ -299,11 +330,5 @@ struct StatusBarLayoutTests {
         #expect(
             WorkspaceStatusModel.summary([event(.finished), event(.finished), event(.asked)])
                 == "2 finished · 1 needs you")
-    }
-
-    @Test func bootedSimulatorIsParsedFromSimctl() {
-        let json = #"{"devices":{"iOS-18":[{"name":"iPhone 16","state":"Booted"}],"iOS-17":[]}}"#
-        #expect(WorkspaceStatusModel.parseBootedSimulator(Data(json.utf8)) == "iPhone 16")
-        #expect(WorkspaceStatusModel.parseBootedSimulator(Data(#"{"devices":{}}"#.utf8)) == nil)
     }
 }

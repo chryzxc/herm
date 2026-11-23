@@ -34,7 +34,7 @@ struct GitHubConflictService: Sendable {
             Self.validRevision(head), Self.validRevision(base), record.number > 0
         else { throw GitHubConflictError.unavailable }
         let token = sourceURL == nil ? await GitHubCodeHostService.localGitHubToken() : nil
-        let cancellation = HermesGitProcessCancellation()
+        let cancellation = HermesLocalProcessCancellation()
         return try await withTaskCancellationHandler {
             try await Task.detached(priority: .utility) {
                 let root = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -60,17 +60,17 @@ struct GitHubConflictService: Sendable {
                     environment["GIT_CONFIG_VALUE_2"] =
                         "Authorization: Basic " + Data(("x-access-token:" + token).utf8).base64EncodedString()
                 }
-                func run(_ arguments: [String], allowConflicts: Bool = false) throws -> HermesGitOutput {
-                    let result: HermesGitOutput
+                func run(_ arguments: [String], allowConflicts: Bool = false) throws -> HermesLocalProcessOutput {
+                    let result: HermesLocalProcessOutput
                     do {
-                        result = try HermesGitProcess.run(
-                            arguments, environment: environment, root: root, deadline: deadline, maxBytes: maxBytes,
-                            cancellation: cancellation)
-                    } catch HermesGitProcessError.limit {
+                        result = try HermesLocalProcess.run(
+                            "/usr/bin/git", arguments: arguments, environment: environment, root: root,
+                            deadline: deadline, maxBytes: maxBytes, cancellation: cancellation)
+                    } catch HermesLocalProcessError.limit {
                         throw GitHubConflictError.limit
-                    } catch HermesGitProcessError.unsupported {
+                    } catch HermesLocalProcessError.unsupported {
                         throw GitHubConflictError.unsupported
-                    } catch is HermesGitProcessError {
+                    } catch is HermesLocalProcessError {
                         throw GitHubConflictError.unavailable
                     }
                     guard result.code == 0 || (allowConflicts && result.code == 1) else {
