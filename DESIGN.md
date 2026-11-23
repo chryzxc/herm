@@ -3571,6 +3571,7 @@ errors occupy the existing status slot with Retry microphone. Muting releases
 capture in every phase and rejects late speech callbacks. Speech that interrupts
 local playback retains the same recognition request so opening words are kept;
 a completed agent turn is not interrupted again just to stop its local audio.
+Recognition partials update the Talk stage. Audio levels update the orb.
 Normal phrases settle after 0.8 seconds (1.2 without confirmed quiet); unfinished
 phrases retain their longer hold. Quiet follow-ups wait 30 seconds before sleep.
 Spoken captions use the exact plain-text segment sent to synthesis and change

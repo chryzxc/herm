@@ -63,8 +63,9 @@ extension DockPopover {
         }
         let sessionID = model.sessionID
         let generation = model.voiceConversationGeneration
-        micLevelMeter.onUtteranceEnd = { [model, micLevelMeter] transcript in
-            guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return }
+        micLevelMeter.onUtteranceEnd = { [model, weak micLevelMeter] transcript in
+            guard let micLevelMeter, model.sessionID == sessionID, model.voiceConversationGeneration == generation
+            else { return }
             model.finishVoiceUtterance(transcript: transcript, overPlayback: micLevelMeter.heardPlayback)
         }
         micLevelMeter.onQuiet = { [model] in

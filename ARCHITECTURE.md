@@ -46,6 +46,7 @@ grid/ruler drawing keep time ticks independent of history length.
 board, and split tabs. Coalesced activity projects immutable inputs on a utility
 task. Session and profile navigation can replace a pending projection immediately.
 The snapshot includes the Chats list's resolved status marks and pin presentations.
+The Talk stage owns microphone observations and its orb observes audio levels.
 
 - `HermesRuntime/` — the Hermes boundary: `HermesControlRPC` (WebSocket JSON-RPC), `HermesCLIAdapter` (quoted-word Hermes CLI commands via `shell.exec`), `HermesCapabilityService` (fail-closed capability probes), `HermesFeatureContract` (feature IDs). All transport/process-launch concerns live here.
 - `Conversation/` — `DockModel` (central presentation state machine; stored state + init in `DockModel.swift`, behaviour in `DockModel+<Feature>.swift` extensions), `DockPopover` (+ extensions, same pattern), session navigation rail/queue/session rows, transcript views, composer, session lifecycle guards.

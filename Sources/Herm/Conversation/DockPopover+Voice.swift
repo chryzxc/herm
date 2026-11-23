@@ -19,16 +19,18 @@ extension DockPopover {
 
     func voiceStage(immersive: Bool) -> some View {
         GeometryReader { geometry in
-            voiceStage(immersive: immersive, size: geometry.size)
+            VoiceMicrophoneContent(meter: micLevelMeter) { meter in
+                voiceStage(immersive: immersive, size: geometry.size, meter: meter)
+            }
         }
         .onAppear {
             beginVoiceConversation()
         }
     }
 
-    private func voiceStage(immersive: Bool, size: CGSize) -> some View {
+    private func voiceStage(immersive: Bool, size: CGSize, meter: MicLevelMeter) -> some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
-        let captions = voiceCaptions
+        let captions = voiceCaptions(meter: meter)
         let generativeReply = voiceGenerativeReply
         let layout = VoiceStageLayout(
             size: size, immersive: immersive, hasPanel: generativeReply != nil,
@@ -41,7 +43,7 @@ extension DockPopover {
             Spacer(minLength: 12)
             Button(action: handleVoiceOrbTap) {
                 VoiceMeteredOrb(
-                    mode: voiceOrbMode, speech: speechInput.reading, mic: micLevelMeter.reading,
+                    mode: voiceOrbMode, speech: speechInput.reading, mic: meter.reading,
                     showsRing: voiceOrbMode == .listening && !speechInput.isRecording,
                     hermFaceID: conversationHermFaceID
                 )
@@ -54,7 +56,7 @@ extension DockPopover {
             .accessibilityLabel(voiceOrbHelp)
 
             VStack(spacing: 6) {
-                if let error = micLevelMeter.errorMessage {
+                if let error = meter.errorMessage {
                     Text(error)
                         .dockFont(.body)
                         .foregroundStyle(Color.dockWarning)
@@ -70,7 +72,7 @@ extension DockPopover {
                         .foregroundStyle(Color.dockWarning)
                         .multilineTextAlignment(.center)
                         .lineLimit(3)
-                } else if micLevelMeter.isStarting {
+                } else if meter.isStarting {
                     Text("Starting microphone…")
                         .dockFont(.body)
                         .foregroundStyle(Color.dockSecondaryText)
@@ -290,15 +292,15 @@ extension DockPopover {
 
     /// What you said and what the agent is saying, so the conversation reads
     /// like live captions rather than a hidden transcript.
-    var voiceCaptions: (user: String?, reply: (id: UUID, text: String)?) {
+    private func voiceCaptions(meter: MicLevelMeter) -> (user: String?, reply: (id: UUID, text: String)?) {
         if model.voiceState == .preparing { return (nil, nil) }
         if speechInput.isRecording || (model.voiceState.isNativeConversationActive && voiceOrbMode == .listening) {
-            let live = speechInput.isRecording ? speechInput.transcript : micLevelMeter.transcript
+            let live = speechInput.isRecording ? speechInput.transcript : meter.transcript
             let partial = live.trimmingCharacters(in: .whitespacesAndNewlines)
             return (partial.isEmpty ? nil : partial, nil)
         }
         // Talking over a running turn steers it; show what is being heard.
-        let steering = micLevelMeter.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let steering = meter.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         if model.voiceState == .thinking, !steering.isEmpty { return ("→ " + steering, nil) }
         // While Hermes transcribes, the last user line is the previous turn.
         guard voiceOrbMode != .listening, voiceOrbMode != .idle, voiceOrbMode != .transcribing,
@@ -517,8 +519,15 @@ extension DockPopover {
     }
 }
 
-/// Observes only the meter readings, so per-buffer level changes redraw the
-/// orb and not the whole popover.
+/// Keeps recognition and microphone startup updates inside the Talk stage.
+struct VoiceMicrophoneContent<Content: View>: View {
+    @ObservedObject var meter: MicLevelMeter
+    @ViewBuilder let content: (MicLevelMeter) -> Content
+
+    var body: some View { content(meter) }
+}
+
+/// Observes only the audio-buffer-rate readings.
 private struct VoiceMeteredOrb: View {
     let mode: VoiceOrbMode
     @ObservedObject var speech: VoiceMeterReading

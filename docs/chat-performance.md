@@ -989,6 +989,9 @@ immediate refreshes and `sidebarPublish` records the cost of publishing a finish
 snapshot to its consumers. Opt in with `HERM_SIDEBAR_PROFILE=1` and filter to
 `SidebarSnapshotProfileTests`.
 
+Microphone recognition partials update the Talk stage and audio-buffer readings
+update the orb.
+
 Working avatars and their stepping tiles animate on native layers within their
 existing footprint. In the Debug AppKit avatar fixture, the SwiftUI clock
 control took two host layout passes in one window and six in three windows

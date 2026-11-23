@@ -1,11 +1,55 @@
 import AVFoundation
+import AppKit
 import Foundation
 import Speech
+import SwiftUI
 import Testing
 
 @testable import Herm
 
 struct VoiceHandsFreeTests {
+    private struct MicrophoneScopeFixture: View {
+        @State var meter: MicLevelMeter
+        let workspaceDidRender: () -> Void
+        let readCaption: (String) -> Void
+
+        var body: some View {
+            let _ = workspaceDidRender()
+            VoiceMicrophoneContent(meter: meter) { meter in
+                let _ = readCaption(meter.transcript)
+                Text(meter.transcript)
+            }
+        }
+    }
+
+    @Test @MainActor func microphonePartialsUpdateTalkWithoutRefreshingTheWorkspace() async throws {
+        _ = NSApplication.shared
+        let meter = MicLevelMeter()
+        meter.listen(endpointing: true, watchingForBarge: false)
+        defer { meter.stop() }
+        var workspaceRenders = 0
+        var captions: [String] = []
+        let view = MicrophoneScopeFixture(
+            meter: meter, workspaceDidRender: { workspaceRenders += 1 }, readCaption: { captions.append($0) })
+        let bounds = NSRect(x: 0, y: 0, width: 240, height: 110)
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(contentRect: bounds, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(30))
+        let initialRenders = workspaceRenders
+        #expect(initialRenders > 0)
+
+        meter.receiveRecognizedText("First words")
+        for _ in 0..<100 where captions.last != "First words" {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(captions.last == "First words")
+        #expect(workspaceRenders == initialRenders)
+    }
+
     @MainActor private func endAudioConfirmedTurn(_ meter: MicLevelMeter, playback: Bool = false) {
         meter.ingestAudioLevel(0.1, at: 0, outputPlaying: playback)
         meter.ingestAudioLevel(0.8, at: 1, outputPlaying: playback)
