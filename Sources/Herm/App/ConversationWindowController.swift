@@ -147,7 +147,10 @@ final class ConversationWindowController: NSObject, NSWindowDelegate, Conversati
         window.isOpaque = false
         window.backgroundColor = .clear
         window.delegate = self
-        let host = DockWindowHostingView(rootView: DockWindowWorkspace { content(control: controlCenter, bots: bots) })
+        let host = DockWindowHostingView(
+            rootView: DockWindowWorkspace {
+                content(control: controlCenter, bots: bots).modifier(ConversationWindowPresentation())
+            })
         host.performanceRole = "conversationWindow"
         host.sizingOptions = []
         host.safeAreaRegions = []
@@ -169,5 +172,16 @@ final class ConversationWindowController: NSObject, NSWindowDelegate, Conversati
         window.setFrame(frame, display: false)
         window.setFrameAutosaveName(autosaveName)
         return window
+    }
+}
+
+private struct ConversationWindowPresentation: ViewModifier {
+    @StateObject private var presentation = DockHostPresentation()
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.dockHostVisible, presentation.isVisible)
+            .environment(\.dockHostResizing, presentation.isResizing)
+            .background { DockHostPresentationObserver(presentation: presentation).frame(width: 0, height: 0) }
     }
 }

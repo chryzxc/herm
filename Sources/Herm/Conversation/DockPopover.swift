@@ -134,7 +134,8 @@ struct DockPopover: View {
     var developerWorkflow: DeveloperWorkflowModel { .shared }
     @State var workflowPresentationRevision = 0
     @StateObject var pullRequestCenter = PullRequestCenterModel(details: .shared)
-    @StateObject var statusModel = WorkspaceStatusModel()
+    /// The footer observes its own updates. The workspace only routes commands to it.
+    @State var statusModel = WorkspaceStatusModel()
     @StateObject var issueCenter = IssueCenterModel()
     @StateObject var githubRepositories = GitHubRepositoriesModel()
     @StateObject var gitHubInspector = GitHubInspectorStore()

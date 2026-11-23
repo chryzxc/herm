@@ -442,6 +442,7 @@ extension DockPopover {
         recorder.watch("developerWorkflow→root", owner: developerWorkflow, developerWorkflow.rootPresentationChanges)
         recorder.watch("pullRequestCenter", pullRequestCenter)
         recorder.watch("issueCenter", issueCenter)
+        recorder.watch("workspaceStatus", statusModel)
         recorder.watch("gitHubInspector", gitHubInspector)
         recorder.watch("pullRequestChatLinks", pullRequestChatLinks)
         recorder.watch("repositoryPreferences", repositoryPreferences)

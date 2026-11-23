@@ -1139,7 +1139,7 @@ The empty chat centers the orb, introductory text, and composer as one group, wi
 
 ### Expand/collapse state retention
 
-Narrow, desktop, and fullscreen workspaces share the same split hosts. Collapsing
+Narrow, desktop, and fullscreen workspaces share the same pane identities. Collapsing
 the chat list or inspector changes pane geometry without replacing the conversation
 or inspector. Shared adaptive list/detail layouts follow the same rule when their
 sidebar is hidden or their width crosses the compact breakpoint. Collapsed panes
@@ -1945,8 +1945,10 @@ hides the roster when both panels would crowd the scene.
 
 ### Navigation sidebar
 
-The desktop split commits its final widths once when visibility changes. A short layer crossfade bridges those layouts. Swapping between opposite single panes slides in the incoming side. Initial layout, live resize and Reduce Motion use the final geometry immediately.
-Frame-sized panes service content constraint updates before their own layout. Scrolling and content refreshes can update a pane without scheduling another window-wide layout pass.
+The desktop shell lays out the Chats list, current page, and session inspector in
+the window's SwiftUI host. It commits final widths immediately when visibility
+changes. The narrow divider has a wider grab area and can be adjusted with VoiceOver.
+Feature-local AppKit splits keep their own frame-sized pane hosts and transitions.
 
 Working and unread activity follows each session through selection, pinned rows,
 and project summaries; the notch uses the same session activity state.
@@ -3659,6 +3661,9 @@ session without interrupting its turn; an unsent draft and any queued follow-up
 prompts are discarded. Deleting the session in Herm closes its window. Every
 opener of the main conversation (history, Spotlight, notch, task rows) focuses a
 detached window instead of resuming the session in the main model.
+Each window uses its own AppKit visibility and resize state. A covered
+conversation suspends transcript snapshots and Markdown prefetch. Bringing it
+back refreshes the transcript from its current session state.
 
 On the Bots page, a Bot row and the Bot chat's header menu pop out its main chat
 (the row item is disabled until Hermes has created it) as a session window. A

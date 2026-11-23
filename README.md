@@ -539,6 +539,9 @@ memory. The opening preview includes bot replies received while you were away.
 On a first visit, Herm waits for the unread check and opens directly at the first
 unread reply, or at the latest message when all replies have been read.
 
+Chats, Activity, and other desktop pages share the window's layout host. Showing
+or hiding the Chats list or inspector applies the new pane widths immediately
+and keeps each mounted pane's state.
 Focusing an already-loaded split column keeps both conversations live while
 the inspector follows the selected column.
 Talk, Pull requests and Issues open as inspector tabs from its **Open a new tab** grid; voice runs while the Talk tab shows. Opening the inspector in the floating desktop panel keeps the conversation visible beside it, with the inspector tab row matching the chat header. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
@@ -647,6 +650,7 @@ unavailable items, and links to anchors or subpages retain the browser fallback.
 - **Dangerous-command approvals**: *Deny*, *Allow once*, or *Always allow*. *Always allow* is saved to the Hermes allowlist.
 - **Split session panes**: drag a session from the sidebar into the chat area, or use **Open in Split View**, to work in up to three columns side by side. Each column is a tab group with its own transcript and composer. Click any tab to make it the active session; the header and session menu move to its column, and the inspector opens beside it. Drop onto a column to add a tab, or at the trailing edge to open a new column. New tabs and columns open beside the session you came from. Bot main chats split the same way from the Bots page, and group chats can be dragged in or picked from the **Group chat** menu as tabs. Tabs show the same status as the sidebar (working spinner, unread count), and Bot tabs show the Bot's avatar and name. Columns last for the current app run.
 - **Pop-out conversations**: choose **Pop Out Conversation** from a session's, Bot's or group chat's context menu (or **Pop out conversation** in the Conversation actions menu) to move that conversation into its own small floating window, which you can drag to any screen. It shows the transcript and composer with the same chat tools as the main window (folder and worktree bar, ⌘F search, quota) and stays above other apps. Opening a message, file, tool call, or bot preview expands a panel beside the transcript. Clicking the session in the sidebar brings its window forward. Closing the window keeps any running work going in Hermes Agent, but discards an unsent draft and any queued follow-up prompts. Group chat rows also offer **Open in Split View**, like Bot rows.
+  Covered conversation windows suspend transcript snapshot updates and Markdown prefetch until they are visible again. Hermes Agent continues the turn while the window is covered.
 
 ### Chat views
 

@@ -380,7 +380,7 @@ extension DockPopover {
         }
     }
 
-    /// Keep the same hosts across narrow, desktop, and fullscreen layouts.
+    /// Keep the same pane identities across narrow, desktop, and fullscreen layouts.
     var layoutContent: some View {
         desktopWorkspaceShell
     }
@@ -400,10 +400,8 @@ extension DockPopover {
         }
     }
 
-    /// Keep the navigation rail in one AppKit host for every desktop
-    /// destination. Replacing a two-pane global host with a three-pane chat
-    /// host remounted the rail after a session selection, producing the
-    /// visible whole-app restart. Only the trailing workspace changes here.
+    /// Keep the navigation list mounted across desktop destinations. Only the
+    /// trailing workspace changes, so switching pages retains the list state.
     /// Applies to both the fullscreen and the windowed/minimized popover
     /// presentations, since both route through this shell.
     var desktopWorkspaceShell: some View {
@@ -411,16 +409,13 @@ extension DockPopover {
             toolbarHeight: titlebarInset, rail: { sessionNavRail },
             content: {
                 VStack(spacing: 0) {
-                    FullscreenPanelSplitView(
-                        leading: desktopLeadingPanel,
+                    DockWorkspaceSplit(
+                        leading: desktopLeadingPanel.equatable(),
                         trailing: desktopTrailingWorkspace,
                         leadingFraction: DesktopWorkspaceFractions.queue,
                         minimumLeadingWidth: 300,
                         minimumTrailingWidth: desktopTrailingMinimumWidth,
-                        isLeadingCollapsed: isNarrowLayout || !showsChatsPanel || hidesChatList,
-                        leadingMatches: { $0 == $1 },
-                        trailingIdentity: desktopPageIdentity,
-                        performanceRoles: ("chatsList", "desktopWorkspace")
+                        isLeadingCollapsed: isNarrowLayout || !showsChatsPanel || hidesChatList
                     )
                     workspaceStatusFooter
                 }
@@ -564,16 +559,14 @@ extension DockPopover {
             return AnyView(
                 SessionPaneSplitReader(store: sessionPanes) { isSplit in
                     let besideColumn = isSplit && canSplit
-                    FullscreenPanelSplitView(
+                    DockWorkspaceSplit(
                         leading: conversationColumn(inspector: besideColumn && isVisible ? inspector : nil),
                         trailing: besideColumn ? AnyView(EmptyView()) : inspector,
                         // Fraction of the *remaining* space after the outer
                         // queue split, chosen so the three visible columns land
                         // at the DesktopWorkspaceFractions targets (queue /
                         // conversation / inspector) rather than an even split.
-                        leadingFraction: sessionWorkspaceMode == .explorer
-                            ? nil : DesktopWorkspaceFractions.conversationOfRemainder,
-                        initialLeadingWidth: sessionWorkspaceMode == .explorer ? explorerNavigatorWidth : nil,
+                        leadingFraction: DesktopWorkspaceFractions.conversationOfRemainder,
                         minimumLeadingWidth: sessionWorkspaceMode == .explorer
                             ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : desktopConversationMinimumWidth,
                         maximumLeadingWidth: sessionWorkspaceMode == .explorer
@@ -581,21 +574,11 @@ extension DockPopover {
                         minimumTrailingWidth: sessionWorkspaceMode == .explorer
                             ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
                         leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil,
-                        isTrailingCollapsed: !isVisible || besideColumn,
                         isLeadingCollapsed: isNarrowLayout && isVisible,
-                        performanceRoles: ("conversationPane", "sessionInspector")
+                        isTrailingCollapsed: !isVisible || besideColumn
                     )
                 }
             )
-        }
-    }
-
-    /// Which page the desktop workspace shows; its split host delivers a change immediately.
-    var desktopPageIdentity: String {
-        switch fullscreenSurface {
-        case .global: "global:\(fullscreenGlobalTab)"
-        case .pullRequests, .issues: "github:\(sessionNavNavigation.selectedGitHubSection)"
-        default: String(describing: fullscreenSurface)
         }
     }
 

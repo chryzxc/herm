@@ -63,15 +63,9 @@ struct PaneLayoutBudgetTests {
 
     @Test(arguments: [false, true])
     func scrollingLeadingPaneStaysWithinLayoutBudget(wheel: Bool) async throws {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: [.titled, .resizable],
-            backing: .buffered, defer: false)
         var seenRows = Set<Int>()
-        let root = DockWindowHostingView(rootView: AnyView(Shell { seenRows.insert($0) }))
-        root.sizingOptions = []
-        root.safeAreaRegions = []
-        window.contentView = root
-        window.orderFrontRegardless()
+        let root = DockWindowHostingView(rootView: Shell { seenRows.insert($0) })
+        let window = makeWindow(containing: root)
         defer { window.orderOut(nil) }
         for _ in 0..<3 { try await settle(window) }
 
@@ -105,6 +99,70 @@ struct PaneLayoutBudgetTests {
     @MainActor
     private final class Toggle: ObservableObject { @Published var expanded = true }
 
+    @MainActor
+    private final class DesktopPanes: ObservableObject {
+        @Published var showsChats = true
+        @Published var showsInspector = true
+    }
+
+    private struct DesktopShell: View {
+        @ObservedObject var panes: DesktopPanes
+
+        var body: some View {
+            DockWorkspaceSplit(
+                leading: ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(0..<80, id: \.self) { Text("Chat \($0)").frame(height: 32) }
+                    }
+                },
+                trailing: DockWorkspaceSplit(
+                    leading: Text("Conversation"),
+                    trailing: Text("Inspector"),
+                    leadingFraction: 0.55,
+                    minimumLeadingWidth: 360,
+                    minimumTrailingWidth: 250,
+                    isTrailingCollapsed: !panes.showsInspector
+                ),
+                leadingFraction: 0.25,
+                minimumLeadingWidth: 300,
+                minimumTrailingWidth: 610,
+                isLeadingCollapsed: !panes.showsChats
+            )
+        }
+    }
+
+    @Test func desktopPanesShareTheWindowHostAndRetainTheChatsScrollView() async throws {
+        let panes = DesktopPanes()
+        let root = DockWindowHostingView(rootView: DesktopShell(panes: panes))
+        let window = makeWindow(containing: root)
+        defer { window.orderOut(nil) }
+        for _ in 0..<3 { try await settle(window) }
+
+        let scroll = try #require(Self.scrollViews(in: root).first)
+        let chatsWidth = scroll.frame.width
+        #expect(chatsWidth >= 299)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 640))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        try await settle(window)
+        let readingPosition = scroll.contentView.bounds.minY
+        #expect(readingPosition > 0)
+
+        var roles: Set<String> = []
+        DockHostLayoutTiming.layoutObserver = { roles.insert($0) }
+        defer { DockHostLayoutTiming.layoutObserver = nil }
+        panes.showsChats = false
+        panes.showsInspector = false
+        for _ in 0..<3 { try await settle(window) }
+        #expect(scroll.window === window)
+        panes.showsChats = true
+        panes.showsInspector = true
+        for _ in 0..<3 { try await settle(window) }
+        #expect(Self.scrollViews(in: root).first === scroll)
+        #expect(abs(scroll.frame.width - chatsWidth) < 1)
+        #expect(abs(scroll.contentView.bounds.minY - readingPosition) < 1)
+        #expect(roles == ["root"])
+    }
+
     private struct CollapsingPane: View {
         @ObservedObject var toggle: Toggle
         var body: some View {
@@ -129,17 +187,10 @@ struct PaneLayoutBudgetTests {
 
     /// A section collapse resizes the scroll content; the pane must lay it out at the new size.
     @Test func collapsingASectionResizesThePanesScrollContent() async throws {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800), styleMask: [.titled, .resizable],
-            backing: .buffered, defer: false)
         let toggle = Toggle()
         let root = DockWindowHostingView(
-            rootView: AnyView(
-                FullscreenPanelSplitView(leading: CollapsingPane(toggle: toggle), trailing: Text("Inspector"))))
-        root.sizingOptions = []
-        root.safeAreaRegions = []
-        window.contentView = root
-        window.orderFrontRegardless()
+            rootView: FullscreenPanelSplitView(leading: CollapsingPane(toggle: toggle), trailing: Text("Inspector")))
+        let window = makeWindow(containing: root)
         defer { window.orderOut(nil) }
         for _ in 0..<3 { try await settle(window) }
         let scrollView = try #require(Self.scrollViews(in: root).first)
@@ -158,8 +209,23 @@ struct PaneLayoutBudgetTests {
         #expect(roles.isEmpty, "pane kept re-laying out after the collapse: \(roles.count) passes")
     }
 
+    private func makeWindow<Content: View>(containing root: DockWindowHostingView<Content>) -> NSWindow {
+        let frame = NSRect(x: 0, y: 0, width: 1200, height: 800)
+        root.sizingOptions = []
+        root.safeAreaRegions = []
+        root.frame = frame
+        let window = NSWindow(
+            contentRect: frame, styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = root
+        window.setContentSize(frame.size)
+        window.orderFrontRegardless()
+        return window
+    }
+
     private func settle(_ window: NSWindow) async throws {
         window.layoutIfNeeded()
+        window.contentView?.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
         try await Task.sleep(for: .milliseconds(17))
     }

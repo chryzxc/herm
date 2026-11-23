@@ -956,6 +956,28 @@ and showed the same 30 new rows in both runs. Neither the Chats list nor the
 inspector laid out. Pane visibility changes use the layout scheduled by their
 frame changes. New captures name each of these hosts separately.
 
+### Shared workspace host
+
+Activity and Chats both reached AppKit window layout in the live Debug samples.
+The desktop shell now gives the Chats list, current page, and inspector widths
+inside the window's SwiftUI host. In an isolated optimized AppKit fixture, 60
+scroll steps produced 120 hosting-view layout passes through one split and 180
+through two nested splits. Both shared-host layouts took 60 passes. The Chats
+list kept its 640-point scroll offset through collapse and reopening. The
+fixture counts layout work and timing from programmatic scrolling.
+
+The workspace status footer observes its own activity and tray state. Online
+refreshes skip writing an already empty stale timestamp, and the recorder
+reports footer publications under `workspaceStatus`. A live Release trackpad
+comparison remains pending.
+
+### Workspace refresh work
+
+The shared-host AppKit fixture ran two 120-step passes per layout and surface.
+Mean main-thread CPU per pass changed from 336 to 297 ms for Chats, 273 to 265 ms
+for Usage, and 184 to 167 ms for Settings. This Debug fixture uses programmatic
+scrolling. Its slowest steps vary with layout and system scheduling.
+
 ### Performance contract
 
 `make perf-contract` (part of `make guard`) rejects, in `Sources/Herm`:

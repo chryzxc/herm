@@ -227,7 +227,11 @@ final class WorkspaceStatusModel: ObservableObject {
         input.now = now()
         input.nextMeeting = nextMeeting(after: input.now)
         let next = StatusBarLayout.make(input)
-        if next.isStale, staleSince == nil { staleSince = input.now } else if !next.isStale { staleSince = nil }
+        if next.isStale, staleSince == nil {
+            staleSince = input.now
+        } else if !next.isStale, staleSince != nil {
+            staleSince = nil
+        }
         if next != layout { layout = next }
     }
 

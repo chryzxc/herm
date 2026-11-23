@@ -748,7 +748,7 @@ struct SessionPaneChat: View {
 /// The divider's resize cursor. A push/pop pair loses to the transcripts' text cursors and the
 /// app's cursor arbiter, which reset it the moment it shows; the native pointer style rides
 /// SwiftUI's own cursor updates, and the macOS 14 fallback re-asserts it on every move.
-private struct ColumnResizeCursor: ViewModifier {
+struct ColumnResizeCursor: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 15.0, *) {
             content.pointerStyle(.columnResize)

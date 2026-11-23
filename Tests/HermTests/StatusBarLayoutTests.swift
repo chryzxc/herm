@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 
@@ -87,6 +88,35 @@ struct StatusBarLayoutTests {
         edge.tasks = [current[0], current[1], task("run", .finished)]
 
         #expect(status.events.map(\.kind) == [.finished])
+    }
+
+    @Test func unchangedActivityDoesNotRepublishTheStaleTimestamp() throws {
+        let domain = "StatusBarPublications.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let preferences = StatusBarPreferences(defaults: defaults)
+        preferences.set(.nextMeeting, on: false)
+        let now = Date(timeIntervalSinceReferenceDate: 100)
+        let status = WorkspaceStatusModel(preferences: preferences, now: { now })
+        let edge = EdgeNotchState()
+        let model = DockModel()
+        let control = ControlCenterModel(capabilities: [])
+        let pullRequests = PullRequestCenterModel()
+        model.status = .idle
+        status.attach(edge: edge, model: model, control: control, pullRequests: pullRequests)
+
+        var timestamps: [Date?] = []
+        let subscription = status.$staleSince.dropFirst().sink { timestamps.append($0) }
+        edge.tasks = [task("run", .working)]
+        edge.tasks = [task("run", .working)]
+        #expect(timestamps.isEmpty)
+
+        model.status = .offline
+        edge.tasks = []
+        model.status = .idle
+        edge.tasks = []
+        #expect(timestamps == [now, nil])
+        withExtendedLifetime(subscription) {}
     }
 
     @Test func reachKeepsLocalOnlyResourcesOffRemoteGateways() {

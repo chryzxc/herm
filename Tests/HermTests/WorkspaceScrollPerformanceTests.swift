@@ -12,6 +12,7 @@ struct WorkspaceScrollPerformanceTests {
 
     private struct Content: View {
         let surface: Surface
+        let sharesWindowHost: Bool
         let sessions = ScrollPerformanceFixture.standard.sessions
 
         private var report: TokenUsageReport {
@@ -30,35 +31,47 @@ struct WorkspaceScrollPerformanceTests {
             DockWorkspaceShell(
                 toolbarHeight: 0, rail: { Color.dockSidebar.frame(width: 52) },
                 content: {
-                    ScrollView {
-                        switch surface {
-                        case .sessions:
-                            LazyVStack(alignment: .leading, spacing: 0) {
-                                ForEach(sessions) { session in
-                                    SessionNavSidebarSessionRow(
-                                        session: session, selectedSessionID: nil, sessionStatus: .none,
-                                        style: DockThemePalette(theme: DockThemeRuntime.current), repositoryName: nil,
-                                        isPinned: false, isActive: false, isDeleting: false,
-                                        isUpdatingVisibility: false, isRenaming: false, onSelect: { _ in },
-                                        onTogglePin: { _ in }, onRename: { _, _ in false },
-                                        onToggleHidden: { _, _ in false }, onRequestDelete: { _ in })
-                                }
-                            }
-                        case .usage:
-                            UsageReportContent(report: report, isWide: false)
-                        case .settings:
-                            SettingsSection(title: "Preferences", subtitle: "", tint: .dockAccent) {
-                                ForEach(0..<100, id: \.self) { index in
-                                    SettingsPreferenceRow(title: "Preference \(index)", detail: "A fixture setting") {
-                                        Text("Enabled")
-                                    }
-                                }
-                            }
-                        }
+                    if sharesWindowHost {
+                        DockWorkspaceSplit(
+                            leading: EmptyView(), trailing: surfaceScroll,
+                            leadingFraction: 0.25, minimumLeadingWidth: 300, minimumTrailingWidth: 360,
+                            isLeadingCollapsed: true)
+                    } else {
+                        FullscreenPanelSplitView(
+                            leading: EmptyView(), trailing: surfaceScroll, isLeadingCollapsed: true)
                     }
                 }
             )
             .dockThemedRoot()
+        }
+
+        private var surfaceScroll: some View {
+            ScrollView {
+                switch surface {
+                case .sessions:
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(sessions) { session in
+                            SessionNavSidebarSessionRow(
+                                session: session, selectedSessionID: nil, sessionStatus: .none,
+                                style: DockThemePalette(theme: DockThemeRuntime.current), repositoryName: nil,
+                                isPinned: false, isActive: false, isDeleting: false,
+                                isUpdatingVisibility: false, isRenaming: false, onSelect: { _ in },
+                                onTogglePin: { _ in }, onRename: { _, _ in false },
+                                onToggleHidden: { _, _ in false }, onRequestDelete: { _ in })
+                        }
+                    }
+                case .usage:
+                    UsageReportContent(report: report, isWide: false)
+                case .settings:
+                    SettingsSection(title: "Preferences", subtitle: "", tint: .dockAccent) {
+                        ForEach(0..<100, id: \.self) { index in
+                            SettingsPreferenceRow(title: "Preference \(index)", detail: "A fixture setting") {
+                                Text("Enabled")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -66,8 +79,8 @@ struct WorkspaceScrollPerformanceTests {
     func profileWorkspaceSurfaces() async throws {
         _ = NSApplication.shared
         for surface in Surface.allCases {
-            for pass in ["first", "repeat"] {
-                let host = NSHostingView(rootView: Content(surface: surface))
+            for (pass, shared) in [("first", false), ("first", true), ("repeat", true), ("repeat", false)] {
+                let host = DockWindowHostingView(rootView: Content(surface: surface, sharesWindowHost: shared))
                 host.sizingOptions = []
                 host.frame = NSRect(x: 0, y: 0, width: 640, height: 500)
                 let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -106,7 +119,7 @@ struct WorkspaceScrollPerformanceTests {
                 let cpu = mainThreadCPUMilliseconds() - startedCPU
                 let sorted = steps.sorted()
                 print(
-                    "workspace_scroll surface=\(surface.rawValue) pass=\(pass) p50_ms=\(sorted[sorted.count / 2]) p95_ms=\(sorted[Int(Double(sorted.count - 1) * 0.95)]) max_ms=\(sorted.last ?? 0) main_cpu_ms=\(cpu)"
+                    "workspace_scroll surface=\(surface.rawValue) shared_host=\(shared) pass=\(pass) p50_ms=\(sorted[sorted.count / 2]) p95_ms=\(sorted[Int(Double(sorted.count - 1) * 0.95)]) max_ms=\(sorted.last ?? 0) main_cpu_ms=\(cpu)"
                 )
                 window.orderOut(nil)
             }
