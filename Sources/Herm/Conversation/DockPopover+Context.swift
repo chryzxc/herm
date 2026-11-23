@@ -18,7 +18,7 @@ extension DockPopover {
     /// through a conversation or task.
     var sessionNavQueue: SessionNavQueue {
         SessionNavQueue(
-            model: model,
+            model: workspaceModel,
             botMode: botMode,
             workspaceStore: workspaceStore,
             controlCenter: controlCenter,
@@ -48,18 +48,18 @@ extension DockPopover {
                     sessionNavNavigation.selectSession(session.id)
                     fullscreenSurface = .conversation
                     inspectorScope = .session
-                    model.resumeSession(session)
+                    openSessionInWorkspace(session)
                 }
             },
             onSelectTask: { task in
                 leaveIntegrations {
                     sessionNavNavigation.selectTask(task.id)
                     if let sessionID = task.sessionID,
-                        let session = model.sessions.first(where: { $0.id == sessionID })
+                        let session = workspaceModel.sessions.first(where: { $0.id == sessionID })
                     {
                         fullscreenSurface = .conversation
                         inspectorScope = .session
-                        model.resumeSession(session)
+                        openSessionInWorkspace(session)
                     } else {
                         // Workspace tasks without a conversation still have a
                         // useful destination: the global Kanban surface.
@@ -124,6 +124,17 @@ extension DockPopover {
         )
     }
 
+    @discardableResult
+    func openSessionInWorkspace(_ session: HermesSession, profileID: String? = nil) -> DockModel {
+        let profile = profileID ?? session.profileID ?? workspaceModel.profileScopeID
+        if sessionPanes.focusOpenSession(session.id, profileID: profile) {
+            return sessionPanes.focusedProjection ?? workspaceModel
+        }
+        sessionPanes.focusWorkspaceConversation()
+        workspaceModel.resumeSession(session, profileID: profileID)
+        return workspaceModel
+    }
+
     var currentNavigationDestination: NavigationDestination {
         NavigationDestination(
             surface: fullscreenSurface,
@@ -158,10 +169,10 @@ extension DockPopover {
             case .conversation:
                 // History still holds a detached session; bring its window forward instead.
                 if let id = destination.sessionID, ConversationWindowStore.shared.focus(sessionID: id) { return }
-                if let id = destination.sessionID, let session = model.sessions.first(where: { $0.id == id }) {
+                if let id = destination.sessionID, let session = workspaceModel.sessions.first(where: { $0.id == id }) {
                     sessionNavNavigation.selectSession(id)
                     inspectorScope = .session
-                    model.resumeSession(session)
+                    openSessionInWorkspace(session)
                 }
                 fullscreenSurface = .conversation
             case .global:
@@ -202,8 +213,9 @@ extension DockPopover {
             sessionNavNavigation.beginNewConversation()
             fullscreenSurface = .conversation
             inspectorScope = .session
-            model.newChat()
-            model.requestComposerFocus()
+            sessionPanes.focusWorkspaceConversation()
+            workspaceModel.newChat()
+            workspaceModel.requestComposerFocus()
         }
     }
 
@@ -215,8 +227,7 @@ extension DockPopover {
             model.captureDesktopWindow()
             model.requestComposerFocus()
         case .newChat:
-            model.newChat()
-            model.requestComposerFocus()
+            startNewConversation()
         case .focusComposer:
             model.requestComposerFocus()
         case .stop:
@@ -253,31 +264,30 @@ extension DockPopover {
                 surface: .global, tab: tab, sessionID: nil, gitHubSection: nil, gitHubItemID: nil))
     }
 
-    func handleProfileScopeChange(_ profileID: String?) {
+    func handleProfileScopeChange(_ profileID: String?, reopenConversation: Bool = true) {
         let normalized = profileID?.trimmingCharacters(in: .whitespacesAndNewlines)
         let selected = normalized?.isEmpty == false ? normalized : nil
-        if model.profileScopeID == selected, !model.profileScopeUnavailable {
+        if workspaceModel.profileScopeID == selected, !workspaceModel.profileScopeUnavailable {
             controlCenter.setProjectProfile(selected)
             return
         }
-        let returningSession = model.setProfileScope(selected)
+        sessionPanes.focusWorkspaceConversation()
+        let returningSession = workspaceModel.setProfileScope(selected)
         controlCenter.setProjectProfile(selected)
         sessionNavNavigation.clearSelection()
         clearSessionSurfaceSelections()
         cachedProjectName = nil
         cachedSessionRepositoryPath = nil
-        // Returning to a profile reopens the chat it was left on; the
-        // transcript cache and saved reading anchor make that immediate. A
-        // caller that opens a specific chat right after replaces this resume.
-        if let returningSession {
+        // The profile picker reopens its last chat; a tile already names its destination.
+        if reopenConversation, let returningSession {
             if fullscreenSurface == .conversation { sessionNavNavigation.selectSession(returningSession.id) }
-            model.resumeSession(returningSession)
+            openSessionInWorkspace(returningSession)
         }
     }
 
     var fullscreenGlobalControlSurface: some View {
         WorkspaceActivitySidebar(
-            model: model,
+            model: workspaceModel,
             commandPalettePresentation: commandPalettePresentation,
             botMode: botMode,
             store: workspaceStore,
@@ -288,7 +298,7 @@ extension DockPopover {
             onRestartDock: {
                 // Do not restore the old session's model pin after relaunch.
                 // The restart is explicitly a provider/account sync boundary.
-                model.newChat()
+                workspaceModel.newChat()
                 agentUpdateService.restartDock()
             },
             onOpenArtifacts: {},
@@ -312,8 +322,8 @@ extension DockPopover {
 
     /// What a Desktop plugin page reaches: Herm's own Hermes connection and its session navigation.
     var desktopPluginHost: DesktopPluginBridge.Host {
-        DesktopPluginBridge.Host(client: model.controlRPCClient, events: model.eventRouter) { id in
-            guard model.sessions.contains(where: { $0.id == id }) else { return false }
+        DesktopPluginBridge.Host(client: workspaceModel.controlRPCClient, events: workspaceModel.eventRouter) { id in
+            guard workspaceModel.sessions.contains(where: { $0.id == id }) else { return false }
             navigate(to: NavigationDestination(surface: .conversation, tab: nil, sessionID: id))
             return true
         }
@@ -323,12 +333,13 @@ extension DockPopover {
         Group {
             if fullscreenSurface == .chatGrid {
                 SessionDashboard(
-                    model: model, bots: botMode, control: controlCenter, store: workspaceStore,
+                    model: workspaceModel, bots: botMode, control: controlCenter, store: workspaceStore,
                     onNewConversation: {
                         sessionNavNavigation.beginNewConversation()
                         inspectorScope = .session
-                        model.newChat()
-                        model.requestComposerFocus()
+                        sessionPanes.focusWorkspaceConversation()
+                        workspaceModel.newChat()
+                        workspaceModel.requestComposerFocus()
                     },
                     onOpenWorkspace: {
                         sessionNavNavigation.synchronizeActiveSession(model.navigationSessionID)
@@ -339,10 +350,12 @@ extension DockPopover {
                         sessionNavNavigation.synchronizeActiveSession(model.navigationSessionID)
                         fullscreenSurface = .conversation
                     },
-                    onSelectProfile: { profile in
-                        botMode.selectProfile(profile)
-                        // Apply the scope now so the chat resumes in its own bot.
-                        handleProfileScopeChange(botMode.selectedProfileID)
+                    onSelectSession: { session in
+                        sessionPanes.focusWorkspaceConversation()
+                        if let profile = session.profileID, profile != workspaceModel.profileScopeID {
+                            botMode.selectProfile(profile)
+                            handleProfileScopeChange(botMode.selectedProfileID, reopenConversation: false)
+                        }
                     }
                 ) {
                     chatConversationContent(railWidth: 0)
@@ -389,11 +402,11 @@ extension DockPopover {
                         return .handled
                     })
             } else if fullscreenSurface == .artifacts {
-                ArtifactsInspectorView(model: model, presentation: .page) { session in
+                ArtifactsInspectorView(model: workspaceModel, presentation: .page) { session in
                     sessionNavNavigation.openSession(session.id)
                     fullscreenSurface = .conversation
                     inspectorScope = .session
-                    model.resumeSession(session)
+                    openSessionInWorkspace(session)
                 }
                 .id("fullscreen-artifacts")
             } else if case .plugin(let id) = fullscreenSurface {
@@ -405,31 +418,47 @@ extension DockPopover {
         }
     }
 
-    func openMarkdownURL(_ url: URL) {
+    func openMarkdownURL(_ url: URL, in conversation: DockModel) -> OpenURLAction.Result {
+        guard !isGlobalSurfaceActive else {
+            ExternalOpen.open(url)
+            return .handled
+        }
         if url.scheme == "herm-bot-preview" {
             if let id = BotMentions.previewBotID(url), let bot = botMode.botsByID[id] {
-                SessionMessageTabs.shared.open(.bot(bot), in: WorkspaceIdentity.session(model))
+                SessionMessageTabs.shared.open(.bot(bot), in: WorkspaceIdentity.session(conversation))
             }
-            return
+            return .handled
         }
         guard let reference = GitHubMarkdownLink.reference(for: url) else {
-            InAppBrowser.open(url)
-            return
+            openChatWebsite(url, in: conversation)
+            return .handled
         }
-        let session = WorkspaceIdentity.session(model)
-        guard gitHubInspector.opening[session] == nil else { return }
+        let session = WorkspaceIdentity.session(conversation)
+        guard gitHubInspector.opening[session] == nil else { return .handled }
         Task {
             guard gitHubInspector.opening[session] == nil else { return }
             let opened = await gitHubInspector.open(reference, session: session)
-            guard opened, GitHubMarkdownLink.reference(for: url) != nil,
-                session == WorkspaceIdentity.session(model)
-            else {
-                InAppBrowser.open(url)
+            guard !isGlobalSurfaceActive, session == WorkspaceIdentity.session(model) else {
+                if !opened { ExternalOpen.open(url) }
+                return
+            }
+            guard opened else {
+                openChatWebsite(url, in: conversation)
                 return
             }
             inspectorScope = .session
             ensureInspectorPanelVisible()
         }
+        return .handled
+    }
+
+    private func openChatWebsite(_ url: URL, in conversation: DockModel) {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), conversation.browserSessionKey != nil else {
+            ExternalOpen.open(url)
+            return
+        }
+        let tabID = SessionBrowserStore.shared.present(url, model: conversation)
+        showSessionRailInspector(.browser, browserTabID: tabID, conversation: conversation)
     }
 
     func openWorkspaceGlobal(_ tab: ControlTab) {
@@ -485,7 +514,10 @@ extension DockPopover {
             isCollapsed: chatListCollapsed,
             onShowSessions: startNewConversation,
             // Stays on Bots: the rail keeps Bots selected while the chat changes.
-            onOpen: { bot in model.resumeBotChat(bot) }
+            onOpen: { bot in
+                sessionPanes.focusWorkspaceConversation()
+                workspaceModel.resumeBotChat(bot)
+            }
         )
     }
 
@@ -518,7 +550,8 @@ extension DockPopover {
             UserDefaults.standard.set(bot.id, forKey: BotChatsOrdering.lastBotKey)
             openGroupRoomID = ""
             isCreatingBot = false
-            model.resumeBotChat(bot)
+            sessionPanes.focusWorkspaceConversation()
+            workspaceModel.resumeBotChat(bot)
         }
     }
 
@@ -527,14 +560,15 @@ extension DockPopover {
         sessionNavNavigation.openBotChat(sessionID: chat.sessionID)
         fullscreenSurface = .conversation
         inspectorScope = .session
-        model.resumeBotChat(bot)
+        sessionPanes.focusWorkspaceConversation()
+        workspaceModel.resumeBotChat(bot)
     }
 
     func openRecentBotSession(_ bot: BotSummary, recent: BotChatReference) {
         sessionNavNavigation.openSession(recent.sessionID)
         fullscreenSurface = .conversation
         inspectorScope = .session
-        model.resumeSession(
+        openSessionInWorkspace(
             HermesSession(
                 id: recent.sessionID,
                 profileID: bot.id,
@@ -557,52 +591,58 @@ extension DockPopover {
             Review risks, test coverage, and findings. Do not modify files unless I ask.
             """
         Task {
+            let target: DockModel
             if let linkedID = pullRequestChatLinks.sessionID(for: pullRequest.id),
-                let linkedSession = model.sessions.first(where: { $0.id == linkedID })
+                let linkedSession = workspaceModel.sessions.first(where: { $0.id == linkedID })
             {
                 sessionNavNavigation.openPullRequestChat(sessionID: linkedSession.id)
-                model.resumeSession(linkedSession)
+                target = openSessionInWorkspace(linkedSession)
             } else {
+                sessionPanes.focusWorkspaceConversation()
+                target = workspaceModel
                 pullRequestChatLinks.remove(pullRequestID: pullRequest.id)
                 if pullRequest.localPath.isEmpty {
-                    model.newChat()
+                    target.newChat()
                 } else {
-                    await model.startNewChat(in: pullRequest.localPath)
+                    await target.startNewChat(in: pullRequest.localPath)
                 }
-                if let createdID = model.sessionID {
+                if let createdID = target.sessionID {
                     pullRequestChatLinks.save(sessionID: createdID, for: pullRequest.id)
                 }
-                sessionNavNavigation.openPullRequestChat(sessionID: model.sessionID)
+                sessionNavNavigation.openPullRequestChat(sessionID: target.sessionID)
             }
-            model.draft = prompt
+            target.draft = prompt
             fullscreenSurface = .conversation
             inspectorScope = .session
-            model.requestComposerFocus()
+            target.requestComposerFocus()
         }
     }
 
     func openIssueChat(_ issue: GitHubIssueRecord) {
         let context = IssueContext(issue: issue)
         Task {
+            let target: DockModel
             var sessionID: String?
             if let linkedID = pullRequestChatLinks.sessionID(for: context.id),
-                let linkedSession = model.sessions.first(where: { $0.id == linkedID })
+                let linkedSession = workspaceModel.sessions.first(where: { $0.id == linkedID })
             {
                 sessionID = linkedSession.id
-                model.resumeSession(linkedSession)
+                target = openSessionInWorkspace(linkedSession)
             } else {
+                sessionPanes.focusWorkspaceConversation()
+                target = workspaceModel
                 pullRequestChatLinks.remove(pullRequestID: context.id)
-                if issue.localPath.isEmpty { model.newChat() } else { await model.startNewChat(in: issue.localPath) }
-                sessionID = model.sessionID
+                if issue.localPath.isEmpty { target.newChat() } else { await target.startNewChat(in: issue.localPath) }
+                sessionID = target.sessionID
                 if let sessionID { pullRequestChatLinks.save(sessionID: sessionID, for: context.id) }
             }
             sessionNavNavigation.openIssueChat(sessionID: sessionID)
             issueChatInsetSessionID = sessionID
             pendingIssueChatInsets = sessionID == nil
-            model.draft = context.prompt
+            target.draft = context.prompt
             fullscreenSurface = .conversation
             inspectorScope = .session
-            model.requestComposerFocus()
+            target.requestComposerFocus()
         }
     }
 
@@ -642,7 +682,7 @@ extension DockPopover {
                     switch inspectorScope {
                     case .global:
                         WorkspaceActivitySidebar(
-                            model: model,
+                            model: workspaceModel,
                             commandPalettePresentation: commandPalettePresentation,
                             botMode: botMode,
                             store: workspaceStore,
@@ -651,7 +691,7 @@ extension DockPopover {
                             dockThemeStore: dockThemeStore,
                             onClose: onClose,
                             onRestartDock: {
-                                model.newChat()
+                                workspaceModel.newChat()
                                 agentUpdateService.restartDock()
                             },
                             onOpenArtifacts: { inspectorScope = .artifacts },
@@ -870,7 +910,7 @@ extension DockPopover {
         workspaceStore.attachProject(at: path, toSessionID: storageID)
         model.touchSession(sessionID: storageID, at: Date())
         controlCenter.selectProject(forPath: path)
-        model.loadSessions()
+        workspaceModel.loadSessions()
     }
 
     /// Opens the worktree in a new chat carrying the draft; this chat keeps its folder.

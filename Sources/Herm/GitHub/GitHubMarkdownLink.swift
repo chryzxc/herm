@@ -41,7 +41,7 @@ func openMarkdownLink(_ url: URL, from view: NSView) {
         }
         ancestor = current.superview
     }
-    InAppBrowser.open(url)
+    ExternalOpen.open(url)
 }
 
 private struct MarkdownOpenURLKey: EnvironmentKey {
@@ -53,7 +53,7 @@ extension EnvironmentValues {
         get {
             self[MarkdownOpenURLKey.self]
                 ?? OpenURLAction {
-                    InAppBrowser.open($0)
+                    ExternalOpen.open($0)
                     return .handled
                 }
         }

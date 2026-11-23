@@ -54,7 +54,7 @@ extension ControlCenterModel {
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         projectFactsGeneration = factsGeneration
         self.verificationGeneration = verificationGeneration
-        let sessionID = requestedSessionID ?? dockModel?.sessionID
+        let sessionID = requestedSessionID ?? conversationModel?.sessionID
         Task { @MainActor in
             do {
                 let factsResult = try await rpc.projectFacts(cwd: repository.path)
@@ -87,7 +87,8 @@ extension ControlCenterModel {
     }
 
     func startBackgroundTask(_ prompt: String, kind: HermesBackgroundTaskKind = .general) async -> Bool {
-        guard capabilityAvailable("gateway"), let rpc, let dockModel, let sessionID = dockModel.sessionID,
+        guard capabilityAvailable("gateway"), let rpc, let dockModel = conversationModel,
+            let sessionID = dockModel.sessionID,
             !sessionID.isEmpty
         else {
             reportActionError(
@@ -118,7 +119,7 @@ extension ControlCenterModel {
     }
 
     func renameActiveSession(_ title: String) async -> Bool {
-        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return false }
+        guard let rpc, let sessionID = conversationModel?.sessionID, !sessionID.isEmpty else { return false }
         let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return false }
         do {
@@ -134,7 +135,7 @@ extension ControlCenterModel {
     }
 
     func redirectActiveSession(_ text: String) async -> SessionTextActionResult? {
-        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return nil }
+        guard let rpc, let sessionID = conversationModel?.sessionID, !sessionID.isEmpty else { return nil }
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return nil }
         do {
@@ -163,7 +164,9 @@ extension ControlCenterModel {
     }
 
     func undoActiveSession() async -> Bool {
-        guard let rpc, let dockModel, let sessionID = dockModel.sessionID, !sessionID.isEmpty else { return false }
+        guard let rpc, let dockModel = conversationModel, let sessionID = dockModel.sessionID, !sessionID.isEmpty else {
+            return false
+        }
         do {
             _ = try await rpc.undo(sessionID: sessionID)
             dockModel.resumeSession(
@@ -181,7 +184,8 @@ extension ControlCenterModel {
     }
 
     func compressActiveSession(focusTopic: String? = nil) async -> Bool {
-        guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty
+        guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID = conversationModel?.sessionID,
+            !sessionID.isEmpty
         else {
             reportActionError(
                 "Could not compress session", message: "Session compression is unavailable in this Hermes installation."
@@ -201,7 +205,8 @@ extension ControlCenterModel {
     }
 
     func branchActiveSession(name: String? = nil) async -> Bool {
-        guard capabilityAvailable("rpc-sessions"), let rpc, let dockModel, let sessionID = dockModel.sessionID,
+        guard capabilityAvailable("rpc-sessions"), let rpc, let dockModel = conversationModel,
+            let sessionID = dockModel.sessionID,
             !sessionID.isEmpty
         else {
             reportActionError(
@@ -260,7 +265,7 @@ extension ControlCenterModel {
     /// Cheap `process.list`-only refresh for the composer strip while a turn runs.
     func pollProcesses() async {
         guard let rpc, capabilityAvailable("rpc-sessions") || processControlAvailable,
-            let sessionID = dockModel?.sessionID, !sessionID.isEmpty
+            let sessionID = conversationModel?.sessionID, !sessionID.isEmpty
         else { return }
         let generation = sessionProcessesGeneration
         let binding = clientBindingGeneration

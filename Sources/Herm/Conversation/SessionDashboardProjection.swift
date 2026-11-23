@@ -193,7 +193,12 @@ struct SessionDashboardSelection: Equatable {
     }
 
     func canRespond(activeSessionID: String?, activeProfileID: String?, profileID: String?) -> Bool {
-        guard let session, isLoaded, !isLoading else { return false }
+        isLoaded && !isLoading
+            && matches(activeSessionID: activeSessionID, activeProfileID: activeProfileID, profileID: profileID)
+    }
+
+    func matches(activeSessionID: String?, activeProfileID: String?, profileID: String?) -> Bool {
+        guard let session else { return false }
         return session.id == activeSessionID
             && (session.profileID ?? profileID ?? "default") == (activeProfileID ?? "default")
     }

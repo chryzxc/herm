@@ -123,7 +123,7 @@ struct FloatingChatThinkingReproductionTests {
             repository: GitHubReferenceParser.repository("owner/" + UUID().uuidString)!, localPath: "", number: 193,
             title: "Thinking", body: "", state: "open", author: "author", assignee: nil, updatedAt: nil, webURL: nil)
         let popover = DockPopover(
-            model: runtime, panelPresentation: DockPanelPresentation(), controlCenter: ControlCenterModel(),
+            workspaceModel: runtime, panelPresentation: DockPanelPresentation(), controlCenter: ControlCenterModel(),
             botMode: runtime.botMode)
         popover.openIssueChat(issue)
         for _ in 0..<200 where runtime.draft.isEmpty { await Task.yield() }

@@ -91,10 +91,8 @@ enum SessionPaneResolution: Equatable {
     case select(panel: Int, tab: Int)
 }
 
-/// Split chat columns. Every column is a tab group of sessions; exactly one column is
-/// active and shows its selected tab through the main `DockModel` (with the full header).
-/// The other columns load their selected tab into a disposable projection
-/// (`EdgeQuickConversationModel`). Hermes owns the history; columns are not persisted.
+/// The workspace column uses the shared model. Other columns keep a live
+/// projection of their selected tab. Focus selects the header and inspector.
 @MainActor
 final class SessionPaneStore: ObservableObject {
     static let shared = SessionPaneStore()
@@ -111,11 +109,13 @@ final class SessionPaneStore: ObservableObject {
         var selectedID: String?
         let chat = EdgeQuickConversationModel()
         var selected: QuickDestination? { tabs.first { $0.sessionID == selectedID } }
+        var usesWorkspaceConversation: Bool { id == SessionPaneStore.baseColumnID }
     }
 
     /// Empty while unsplit; otherwise 2...3 columns, or 1 column holding several tabs.
     @Published private(set) var panels: [Panel] = []
     @Published private(set) var activeIndex = 0
+    @Published private(set) var focusedProjection: DockModel?
     weak var runtime: DockModel?
     /// Sidebar status of every open tab; bound by the window shell.
     let tabStatus = SessionPaneTabStatusModel()
@@ -123,6 +123,54 @@ final class SessionPaneStore: ObservableObject {
     private var parkedLayouts: [Bool: (panels: [Panel], activeIndex: Int)] = [:]
 
     var activePanel: Panel? { panels.indices.contains(activeIndex) ? panels[activeIndex] : nil }
+
+    private var workspacePanelIndex: Int? { panels.firstIndex(where: \.usesWorkspaceConversation) }
+
+    func focusWorkspaceConversation() {
+        if let index = workspacePanelIndex {
+            if activeIndex != index { activeIndex = index }
+        } else if panels.indices.contains(activeIndex) {
+            let base = Panel(id: Self.baseColumnID, tabs: [], selectedID: nil)
+            if panels.count < Self.maxColumns {
+                activeIndex += 1
+                panels.insert(base, at: activeIndex)
+            } else {
+                panels[activeIndex].chat.shutdown()
+                panels[activeIndex] = base
+            }
+        }
+        updateFocusedProjection()
+    }
+
+    @discardableResult
+    func focusOpenSession(_ sessionID: String, profileID: String?, includeWorkspace: Bool = true) -> Bool {
+        guard let index = panelIndex(for: sessionID, profileID: profileID, includeWorkspace: includeWorkspace) else {
+            return false
+        }
+        activate(sessionID, at: index)
+        return true
+    }
+
+    func hasOpenSession(_ sessionID: String, profileID: String?) -> Bool {
+        panelIndex(for: sessionID, profileID: profileID, includeWorkspace: true) != nil
+    }
+
+    private func panelIndex(for sessionID: String, profileID: String?, includeWorkspace: Bool) -> Int? {
+        let identity = ProfileScopedID(profileID: profileID, resourceID: sessionID)
+        return panels.firstIndex { panel in
+            (includeWorkspace || !panel.usesWorkspaceConversation)
+                && panel.tabs.contains {
+                    $0.sessionID == sessionID
+                        && ProfileScopedID(profileID: $0.profileID, resourceID: sessionID)
+                            == identity
+                }
+        }
+    }
+
+    private func updateFocusedProjection() {
+        let next = activePanel?.chat.conversation
+        if focusedProjection !== next { focusedProjection = next }
+    }
 
     /// Conversations detached into their own windows, mirrored from `ConversationWindowStore`
     /// so the sidebar views that observe this store redraw when one opens or closes.
@@ -270,28 +318,19 @@ final class SessionPaneStore: ObservableObject {
         }
     }
 
-    /// Moves the main conversation (and its header, inspector and modes) to this column.
+    /// Moves the header, inspector and modes to this column.
     private func activate(_ sessionID: String, at index: Int) {
-        guard let runtime, let tab = panels[index].tabs.first(where: { $0.sessionID == sessionID }) else { return }
-        if index != activeIndex {
-            let previous = activeIndex
-            refreshActiveTitle()
-            panels[index].chat.shutdown()
-            activeIndex = index
-            // The old active column now projects its session; an unsaved new chat has none.
-            if panels[previous].selected == nil { panels[previous].selectedID = panels[previous].tabs.first?.sessionID }
-            if panels[previous].selected == nil {
-                panels.remove(at: previous)
-                if previous < activeIndex { activeIndex -= 1 }
-            } else {
-                load(previous)
-            }
+        guard let tab = panels[index].tabs.first(where: { $0.sessionID == sessionID }) else { return }
+        refreshWorkspaceTitle()
+        let changedTab = panels[index].selectedID != sessionID
+        if activeIndex != index { activeIndex = index }
+        if changedTab { panels[index].selectedID = sessionID }
+        if panels[index].usesWorkspaceConversation || changedTab
+            || (panels[index].chat.conversation == nil && tab.groupRoomID == nil)
+        {
+            load(index)
         }
-        panels[activeIndex].selectedID = sessionID
-        // A room renders from the group chat store; the main conversation stays where it was.
-        if tab.groupRoomID == nil, let session = tab.session, runtime.navigationSessionID != sessionID {
-            runtime.resumeSession(session, profileID: session.profileID)
-        }
+        updateFocusedProjection()
         collapseIfUnsplit()
     }
 
@@ -319,36 +358,26 @@ final class SessionPaneStore: ObservableObject {
                     load(index)
                 }
             }
-        } else if index != activeIndex {
-            panels.remove(at: index).chat.shutdown()
-            if index < activeIndex { activeIndex -= 1 }
         } else {
-            // The active column emptied: the nearest column becomes active.
-            panels.remove(at: index)
-            activeIndex = max(0, min(index, panels.count - 1))
-            if panels.indices.contains(activeIndex), panels[activeIndex].selected?.groupRoomID == nil,
-                let session = panels[activeIndex].selected?.session
-            {
-                panels[activeIndex].chat.shutdown()
-                runtime?.resumeSession(session, profileID: session.profileID)
-            }
+            let removed = panels.remove(at: index)
+            removed.chat.shutdown()
+            if index < activeIndex { activeIndex -= 1 }
+            activeIndex = min(activeIndex, max(0, panels.count - 1))
+            if removed.usesWorkspaceConversation { runtime?.newChat() }
         }
+        updateFocusedProjection()
         collapseIfUnsplit()
     }
 
-    /// Keeps the active column in step with sidebar navigation: a session already in a
-    /// column activates it; any other session replaces the active tab (like navigating
-    /// in a browser tab).
+    /// Workspace navigation changes the workspace column's tab.
     func syncPrimary(_ sessionID: String?) {
-        guard let sessionID, let runtime, panels.indices.contains(activeIndex) else { return }
-        // A session already in another column activates that column instead of moving.
-        if let column = panels.firstIndex(where: { $0.tabs.contains { $0.sessionID == sessionID } }),
-            column != activeIndex
-        {
-            activate(sessionID, at: column)
+        guard let runtime, !panels.isEmpty else { return }
+        if workspacePanelIndex == nil, sessionID != nil { focusWorkspaceConversation() }
+        guard let index = workspacePanelIndex else { return }
+        guard let sessionID else {
+            if let selected = panels[index].selected, selected.groupRoomID == nil { panels[index].selectedID = nil }
             return
         }
-        let index = activeIndex
         if !panels[index].tabs.contains(where: { $0.sessionID == sessionID }) {
             let destination = QuickDestination(
                 profileID: runtime.sessionProfileID, sessionID: sessionID,
@@ -359,22 +388,24 @@ final class SessionPaneStore: ObservableObject {
                 panels[index].tabs.append(destination)
             }
         }
-        panels[index].selectedID = sessionID
+        if panels[index].selectedID != sessionID {
+            panels[index].selectedID = sessionID
+            activeIndex = index
+            updateFocusedProjection()
+        }
     }
 
     /// Sessions and Bots each keep their own columns. Leaving a page parks its columns
     /// (projections shut down); returning restores them and resumes their active session.
     func showLayout(bots: Bool) {
         guard bots != showsBotsLayout else { return }
-        refreshActiveTitle()
+        refreshWorkspaceTitle()
         for panel in panels { panel.chat.shutdown() }
         parkedLayouts[showsBotsLayout] = (panels, activeIndex)
         showsBotsLayout = bots
         (panels, activeIndex) = parkedLayouts.removeValue(forKey: bots) ?? ([], 0)
         for index in panels.indices { load(index) }
-        if let runtime, let session = activePanel?.selected?.session, runtime.navigationSessionID != session.id {
-            runtime.resumeSession(session, profileID: session.profileID)
-        }
+        updateFocusedProjection()
     }
 
     func retry(_ panelID: String) {
@@ -387,29 +418,64 @@ final class SessionPaneStore: ObservableObject {
             title: runtime?.currentSessionTitle ?? "Session")
     }
 
-    private func refreshActiveTitle() {
-        guard let title = runtime?.currentSessionTitle, panels.indices.contains(activeIndex),
-            runtime?.navigationSessionID == panels[activeIndex].selectedID,
-            let tab = panels[activeIndex].tabs.firstIndex(where: { $0.sessionID == panels[activeIndex].selectedID })
+    private func refreshWorkspaceTitle() {
+        guard let title = runtime?.currentSessionTitle, let index = workspacePanelIndex,
+            runtime?.navigationSessionID == panels[index].selectedID,
+            let tab = panels[index].tabs.firstIndex(where: { $0.sessionID == panels[index].selectedID }),
+            panels[index].tabs[tab].title != title
         else { return }
-        panels[activeIndex].tabs[tab].title = title
+        panels[index].tabs[tab].title = title
     }
 
     private func collapseIfUnsplit() {
         // A lone room tab stays: unsplit, the workspace shows only the main conversation.
-        guard panels.count <= 1, (panels.first?.tabs.count ?? 0) <= 1, panels.first?.selected?.groupRoomID == nil
+        guard panels.count <= 1, (panels.first?.tabs.count ?? 0) <= 1, panels.first?.selected?.groupRoomID == nil,
+            panels.first?.usesWorkspaceConversation != false
         else { return }
         panels.first?.chat.shutdown()
         panels = []
         activeIndex = 0
+        updateFocusedProjection()
     }
 
     private func load(_ index: Int) {
-        guard let runtime, index != activeIndex, let destination = panels[index].selected else { return }
-        // A room renders from the group chat store; the column's session projection is idle.
-        if destination.groupRoomID != nil { return panels[index].chat.shutdown() }
+        guard let runtime, let destination = panels[index].selected else { return }
+        if panels[index].usesWorkspaceConversation {
+            if destination.groupRoomID == nil, let session = destination.session,
+                runtime.navigationSessionID != session.id
+            {
+                runtime.resumeSession(session, profileID: session.profileID)
+            }
+            return
+        }
         let chat = panels[index].chat
-        Task { await chat.load(destination, runtime: runtime) }
+        if destination.groupRoomID != nil {
+            chat.shutdown()
+            updateFocusedProjection()
+            return
+        }
+        chat.onSessionIdentityChange = { [weak self, weak chat] model in
+            guard let self, let chat, let index = panels.firstIndex(where: { $0.chat === chat }) else { return }
+            synchronizeProjection(model, at: index)
+        }
+        chat.startLoad(destination, runtime: runtime)
+        updateFocusedProjection()
+    }
+
+    private func synchronizeProjection(_ model: DockModel, at index: Int) {
+        let selected = panels[index].selectedID
+        guard selected != model.navigationSessionID else { return }
+        if let id = model.navigationSessionID {
+            let destination = QuickDestination(
+                profileID: model.sessionProfileID, sessionID: id, title: model.currentSessionTitle ?? "Session")
+            if let tab = panels[index].tabs.firstIndex(where: { $0.sessionID == selected }) {
+                panels[index].tabs[tab] = destination
+            } else if !panels[index].tabs.contains(where: { $0.sessionID == id }) {
+                panels[index].tabs.append(destination)
+            }
+            panels[index].chat.retarget(destination)
+        }
+        panels[index].selectedID = model.navigationSessionID
     }
 }
 

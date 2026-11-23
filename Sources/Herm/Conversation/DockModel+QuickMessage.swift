@@ -17,7 +17,6 @@ extension DockModel {
         sessionIndexRefreshTask = nil
         streamingMessageFlushTask?.cancel()
         sessionResumeTask?.cancel()
-        sessionResumeWorkTask?.cancel()
         transcriptTimelineTask?.cancel()
         runtimeModelOptionsTask?.cancel()
         sessionPreviewImageTask?.cancel()
@@ -25,7 +24,7 @@ extension DockModel {
         allBotSessionsTask?.cancel()
         sessionTranscriptPreloadTask?.cancel()
         gatewayAuthenticationObserver = nil
-        sessionTranscriptCache.removeAll()
+        if ownsSessionTranscriptCache { sessionTranscriptCache.removeAll() }
         sessionLoadTask?.cancel()
         delegationRefreshTask?.cancel()
         delegationMonitoringTask?.cancel()
@@ -35,7 +34,7 @@ extension DockModel {
         for pending in pendingSessionSends { cleanupImageAttachments(pending.snapshot.images) }
         pendingSessionSends.removeAll()
         sessionStopAttempts.removeAll()
-        gateway.close()
+        gateway?.close()
         detachInFlightBotActivities(as: .canceled)
         botActivityWriter.flush()
         Task { await agentStateWriter.flush() }

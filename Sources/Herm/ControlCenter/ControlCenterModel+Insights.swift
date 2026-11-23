@@ -336,7 +336,7 @@ extension ControlCenterModel {
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         sessionCockpitGeneration = generation
-        let sessionID = requestedSessionID ?? dockModel?.sessionID
+        let sessionID = requestedSessionID ?? conversationModel?.sessionID
         guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID, !sessionID.isEmpty else {
             sessionCockpitSessionID = nil
             if sessionUsage != nil { sessionUsage = nil }
@@ -358,7 +358,7 @@ extension ControlCenterModel {
             guard generation == sessionCockpitGeneration,
                 sessionCockpitSessionID == sessionID,
                 isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
-                requestedSessionID != nil || dockModel?.sessionID == sessionID
+                requestedSessionID != nil || conversationModel?.sessionID == sessionID
             else { return }
             if let usage {
                 let parsed = Self.parseSessionUsage(usage)
@@ -386,7 +386,8 @@ extension ControlCenterModel {
         selectionID requestedSelectionID: String? = nil,
         quiet: Bool = false
     ) {
-        guard let rpc, let resolvedSessionID = sessionID ?? dockModel?.sessionID, !resolvedSessionID.isEmpty else {
+        guard let rpc, let resolvedSessionID = sessionID ?? conversationModel?.sessionID, !resolvedSessionID.isEmpty
+        else {
             checkpoints = []
             restoreCheckpoints = []
             restoreCheckpointState = .idle
@@ -406,7 +407,7 @@ extension ControlCenterModel {
             guard let result = try? await rpc.listRestoreCheckpoints(sessionID: resolvedSessionID),
                 generation == checkpointsGeneration,
                 isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
-                sessionID != nil || dockModel?.sessionID == resolvedSessionID
+                sessionID != nil || conversationModel?.sessionID == resolvedSessionID
             else { return }
             let parsed = Self.parseCheckpoints(result)
             if checkpoints != parsed { checkpoints = parsed }
@@ -433,7 +434,7 @@ extension ControlCenterModel {
     }
 
     func loadCheckpointDiff(_ checkpoint: HermesCheckpointSummary) {
-        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return }
+        guard let rpc, let sessionID = conversationModel?.sessionID, !sessionID.isEmpty else { return }
         let generation = checkpointsGeneration
         Task {
             guard let result = try? await rpc.rollbackDiff(sessionID: sessionID, hash: checkpoint.hash),
@@ -445,7 +446,9 @@ extension ControlCenterModel {
     }
 
     func loadCheckpointDiff(_ checkpoint: RestoreCheckpoint) {
-        guard let rpc, let sessionID = dockModel?.sessionID ?? Optional(checkpoint.sessionID), !sessionID.isEmpty else {
+        guard let rpc, let sessionID = conversationModel?.sessionID ?? Optional(checkpoint.sessionID),
+            !sessionID.isEmpty
+        else {
             return
         }
         let generation = checkpointsGeneration
@@ -463,8 +466,9 @@ extension ControlCenterModel {
         projectID requestedProjectID: String? = nil,
         selectionID requestedSelectionID: String? = nil
     ) async -> Bool {
-        guard let rpc, let sessionID = dockModel?.sessionID ?? Optional(checkpoint.sessionID), !sessionID.isEmpty,
-            dockModel?.status != .working,
+        guard let rpc, let sessionID = conversationModel?.sessionID ?? Optional(checkpoint.sessionID),
+            !sessionID.isEmpty,
+            conversationModel?.status != .working,
             RestoreCheckpointEligibility.isEligible(
                 checkpoint,
                 sessionID: sessionID,
@@ -507,7 +511,7 @@ extension ControlCenterModel {
     }
 
     func steerActiveSession(_ text: String) async -> SessionTextActionResult? {
-        guard let dockModel,
+        guard let dockModel = conversationModel,
             dockModel.status == .working,
             capabilityAvailable("rpc-sessions"),
             let rpc,

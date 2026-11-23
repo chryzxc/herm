@@ -49,16 +49,19 @@ struct PerformanceAuditRegressionTests {
         let model = DockModel(initialSessionID: "connection-one")
         // Detach from the live gateway: without a running Hermes (CI) its own
         // failed connect would report offline mid-test.
-        let announce = model.gateway.onConnectionChange
-        model.gateway.onConnectionChange = nil
+        let gateway = try #require(model.gateway)
+        let announce = gateway.onConnectionChange
+        gateway.onConnectionChange = nil
         announce?(true)
         try await Task.sleep(for: .milliseconds(20))
+        let originalReplay = model.gatewayReplayTask
         var updates = 0
         let subscription = model.workspacePresentationChanges.sink { updates += 1 }
         announce?(true)
         announce?(true)
         try await Task.sleep(for: .milliseconds(20))
         #expect(updates == 0)
+        #expect(model.gatewayReplayTask == originalReplay)
         #expect(model.isHermesConnected)
         withExtendedLifetime(subscription) {}
     }

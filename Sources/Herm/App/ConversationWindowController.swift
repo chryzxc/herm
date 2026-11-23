@@ -75,8 +75,9 @@ final class ConversationWindowController: NSObject, NSWindowDelegate, Conversati
         // Rooms read the shared group-chat store; there is no session to project.
         guard let runtime, destination.groupRoomID == nil else { return }
         loadTask?.cancel()
-        loadTask = Task { [weak self, chat, destination] in
-            await chat.load(destination, runtime: runtime)
+        guard let resume = chat.startLoad(destination, runtime: runtime) else { return }
+        loadTask = Task { [weak self, chat] in
+            _ = await resume.value
             guard let self, !Task.isCancelled, let model = chat.conversation, let control = self.controlCenter
             else { return }
             self.worktree.track(model, control: control)

@@ -12,7 +12,7 @@ extension DockPopover {
             )
             .onAppear {
                 statusModel.attach(
-                    edge: status, model: model, control: controlCenter, pullRequests: pullRequestCenter)
+                    edge: status, model: workspaceModel, control: controlCenter, pullRequests: pullRequestCenter)
             }
         }
     }
@@ -90,7 +90,7 @@ extension DockPopover {
                 sessionNavNavigation.selectSession(session.id)
                 fullscreenSurface = .conversation
                 inspectorScope = .session
-                model.resumeSession(session)
+                openSessionInWorkspace(session)
             } else {
                 // The open session's own row.
                 fullscreenSurface = .conversation

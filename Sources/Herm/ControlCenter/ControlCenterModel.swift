@@ -177,6 +177,9 @@ final class ControlCenterModel: ObservableObject {
     @Published var projectionStates: [String: HermesProjectionState<Int>] = [:]
 
     weak var dockModel: DockModel?
+    /// The visible conversation can differ from the workspace that owns the gateway and indexes.
+    weak var focusedConversation: DockModel?
+    var conversationModel: DockModel? { focusedConversation ?? dockModel }
     var kanbanChatSyncAnchor: UUID?
     var kanbanChatSyncSessionID: String?
     var kanbanChatSyncedEventAt: [String: Date?] = [:]

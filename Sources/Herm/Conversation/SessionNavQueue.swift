@@ -239,7 +239,8 @@ struct SessionNavQueue: View, Equatable {
     /// Opens a chat from any bot. Another bot's chat switches the profile
     /// first, synchronously, so the scope change cannot replace the resume.
     private func openSession(_ session: HermesSession) {
-        if let profileID = session.profileID, profileID != model.profileScopeID,
+        if !sessionPanes.hasOpenSession(session.id, profileID: session.profileID),
+            let profileID = session.profileID, profileID != model.profileScopeID,
             visibleBots.contains(where: { $0.id == profileID })
         {
             onSelectProfile(profileID)

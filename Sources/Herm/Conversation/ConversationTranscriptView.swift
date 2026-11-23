@@ -79,6 +79,7 @@ struct ConversationTranscriptView: View, Equatable {
 
     var body: some View {
         let snapshot = source.snapshot
+        let hasEmptyPreview = snapshot.isPreview && model.sessionTranscriptPreview?.messages.isEmpty == true
         let _ = coordinator.performance.recordTranscriptEvaluation()
         let _ = HermPerformanceRecorder.countBody("ConversationTranscriptView")
         GeometryReader { viewport in
@@ -95,9 +96,10 @@ struct ConversationTranscriptView: View, Equatable {
                         VStack(spacing: 0) {
                             VStack(spacing: 0) {
                                 if snapshot.messages.isEmpty && snapshot.context.conversationApproval == nil
-                                    && model.sessionTranscriptLoadState != .loading
-                                    && model.sessionTranscriptLoadState != .refreshing
-                                    && snapshot.context.status != .working
+                                    && (hasEmptyPreview
+                                        || (model.sessionTranscriptLoadState != .loading
+                                            && model.sessionTranscriptLoadState != .refreshing
+                                            && snapshot.context.status != .working))
                                 {
                                     StartupAssistantView(
                                         hermFaceID: conversationHermFaceID, isActive: hostVisible && animatesEmptyState

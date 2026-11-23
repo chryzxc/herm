@@ -241,7 +241,7 @@ struct SessionStartupTests {
 
             if let chosen = model.sessions.first(where: { $0.id == "saved-50" }) {
                 model.resumeSession(chosen)
-                await model.sessionResumeTask?.value
+                _ = await model.sessionResumeTask?.value
                 #expect(!model.isRestoringSession)
             } else {
                 Issue.record("Recent row was unavailable before the second page finished")

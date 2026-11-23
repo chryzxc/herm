@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 import WebKit
 
@@ -462,7 +463,7 @@ struct SessionBrowserTests {
         #expect(agent.pendingURL == destination)
     }
 
-    @Test func markdownClicksRouteTheLinkDestinationWithoutReparsingIt() throws {
+    @Test func markdownClicksRouteTheExactDestinationToTheirHost() throws {
         let destination = try #require(
             URL(string: "https://example.com/a_(b)?next=%2Fx%3Fy%3D1&token=a%2Bb#part-2"))
         let rendered = NativeMarkdownMessageView.Coordinator.attributedString(
@@ -471,22 +472,20 @@ struct SessionBrowserTests {
         let link = try #require(rendered.attribute(.link, at: range.location, effectiveRange: nil))
         let expected = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
         #expect(expected == destination)
-        var received: URL?
-        let observer = NotificationCenter.default.addObserver(
-            forName: .hermOpenInBrowser, object: nil, queue: .main
-        ) { notification in
-            let url = notification.object as? URL
-            MainActor.assumeIsolated {
-                received = url
-                InAppBrowser.handled = true
-            }
+        var received: [URL] = []
+        let action = OpenURLAction {
+            received.append($0)
+            return .handled
         }
-        defer { NotificationCenter.default.removeObserver(observer) }
-        NativeMarkdownTextView().clicked(onLink: link, at: range.location)
-        #expect(received == destination)
-        received = nil
-        NativeMarkdownTextSectionView().clicked(onLink: link, at: range.location)
-        #expect(received == destination)
+        let inline = NativeMarkdownTextView()
+        inline.markdownOpenURL = action
+        inline.clicked(onLink: link, at: range.location)
+        let document = NativeMarkdownDocumentContainerView()
+        document.markdownOpenURL = action
+        let section = NativeMarkdownTextSectionView()
+        document.addSubview(section)
+        section.clicked(onLink: link, at: range.location)
+        #expect(received == [destination, destination])
     }
 }
 

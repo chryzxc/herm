@@ -48,7 +48,7 @@ extension DockModel {
         isRefreshingDelegationStatus = true
         Task {
             do {
-                let result = try await gateway.request(
+                let result = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.delegationStatus.rawValue,
                     params: ["session_id": expectedSessionID]
                 )

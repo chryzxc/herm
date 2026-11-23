@@ -101,7 +101,8 @@ struct PullRequestDetailRenderTests {
             title: "Thinking default", body: "", state: "open", author: "author", assignee: nil, updatedAt: nil,
             webURL: nil)
         let popover = DockPopover(
-            model: issueRuntime, panelPresentation: DockPanelPresentation(), controlCenter: ControlCenterModel(),
+            workspaceModel: issueRuntime, panelPresentation: DockPanelPresentation(),
+            controlCenter: ControlCenterModel(),
             botMode: issueRuntime.botMode)
         popover.openIssueChat(issue)
         for _ in 0..<200 where issueRuntime.draft.isEmpty || issueRuntime.effortCatalog == nil { await Task.yield() }

@@ -133,7 +133,7 @@ extension ControlCenterModel {
                 // never synthesize cards from titles or assignees.
                 if !scope.isAggregate {
                     let knownIDs = Set(refreshedTasks.map(\.id))
-                    let observedIDs = dockModel?.observedKanbanTaskIDs ?? []
+                    let observedIDs = conversationModel?.observedKanbanTaskIDs ?? []
                     for taskID in observedIDs where !knownIDs.contains(taskID) {
                         let missKey = "\(requestedBoardSlug ?? "")|\(taskID)"
                         guard !unrecoverableKanbanTaskIDs.contains(missKey),
@@ -272,10 +272,10 @@ extension ControlCenterModel {
     /// session's cards changed, since every publish re-renders the whole
     /// chat view and stutters a transcript being scrolled.
     func refreshSessionKanban(for sessionID: String? = nil, quiet: Bool = false) {
-        let candidateSessionID = sessionID ?? dockModel?.sessionID
+        let candidateSessionID = sessionID ?? conversationModel?.sessionID
         let requestedSessionID =
-            candidateSessionID == dockModel?.sessionID
-            ? dockModel?.kanbanSessionID
+            candidateSessionID == conversationModel?.sessionID
+            ? conversationModel?.kanbanSessionID
             : candidateSessionID
         // Session activity spans boards, independently of the global selector.
         let requestedBoardSlug: String? = nil
@@ -322,10 +322,10 @@ extension ControlCenterModel {
 
         // Capture attribution before suspension; another session may become active
         // while list/show requests are in flight.
-        let activeAliases = Set((dockModel?.botActivitySessionIDs ?? []).compactMap { $0 })
+        let activeAliases = Set((conversationModel?.botActivitySessionIDs ?? []).compactMap { $0 })
         let isActiveSession = activeAliases.contains(requestedSessionID)
         let aliases = (isActiveSession ? activeAliases : []).union([requestedSessionID])
-        let observedIDs = isActiveSession ? (dockModel?.observedKanbanTaskIDs ?? []) : []
+        let observedIDs = isActiveSession ? (conversationModel?.observedKanbanTaskIDs ?? []) : []
         sessionKanbanTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
@@ -425,7 +425,7 @@ extension ControlCenterModel {
                 if changed { self.sessionKanbanTasks = sessionTasks }
                 // Quiet polls still bump lastSuccess on real changes so card details refresh.
                 if !quiet || changed { self.recordProjectionSuccess("kanban.session") }
-                if requestedSessionID == self.dockModel?.kanbanSessionID {
+                if requestedSessionID == self.conversationModel?.kanbanSessionID {
                     await self.syncKanbanEventsIntoChat(sessionTasks, cli: cli)
                 }
             } catch {
@@ -526,7 +526,7 @@ extension ControlCenterModel {
                     refreshVisibleKanban(trigger: .background)
                 }
                 if inventoryRefreshPlan.refreshSession {
-                    refreshSessionKanban(for: dockModel?.kanbanSessionID)
+                    refreshSessionKanban(for: conversationModel?.kanbanSessionID)
                 }
             } catch {
                 guard generation == kanbanBoardsGeneration else { return }
@@ -609,7 +609,7 @@ extension ControlCenterModel {
         kanbanAttachments = []
         loadingKanbanDetailTaskID = nil
         refreshVisibleKanban()
-        refreshSessionKanban(for: dockModel?.kanbanSessionID)
+        refreshSessionKanban(for: conversationModel?.kanbanSessionID)
         refreshKanbanDiagnostics()
     }
 
@@ -771,7 +771,7 @@ extension ControlCenterModel {
     /// re-read only when its latest event moved; reloading the transcript
     /// (new first message) starts over.
     func syncKanbanEventsIntoChat(_ tasks: [KanbanTaskSummary], cli: HermesCLIAdapter) async {
-        guard let dockModel, let floor = dockModel.messages.first else { return }
+        guard let dockModel = conversationModel, let floor = dockModel.messages.first else { return }
         if kanbanChatSyncAnchor != floor.id {
             kanbanChatSyncAnchor = floor.id
             kanbanChatSyncedEventAt = [:]
@@ -812,7 +812,7 @@ extension ControlCenterModel {
     /// turns that names this chat's card; any session with a prompt is a
     /// conversation or worker run, not a feed.
     func discoverFeedSessions(mentioning taskID: String, anchor: UUID) async {
-        guard let rpc, let dockModel,
+        guard let rpc, let dockModel = conversationModel,
             let hits = try? await rpc.searchSessions(query: taskID)
         else { return }
         let own = Set(dockModel.botActivitySessionIDs.compactMap { $0 })
@@ -837,7 +837,7 @@ extension ControlCenterModel {
         for (feedID, source) in kanbanChatFeeds.sorted(by: { $0.key < $1.key }) {
             guard let rows = try? await rpc.sessionMessages(sessionID: feedID, latest: true)["data"] as? [[String: Any]]
             else { continue }
-            guard kanbanChatSyncAnchor == anchor, let dockModel else { return }
+            guard kanbanChatSyncAnchor == anchor, let dockModel = conversationModel else { return }
             let feed = DockModel.parseMessages(
                 TranscriptHistoryPaging.displayRows(fromStoredRows: rows),
                 defaultBotProfileID: source,
@@ -1046,7 +1046,7 @@ extension ControlCenterModel {
                         ? "Hermes Kanban could not create the task." : Self.safeUserDiagnostic(result.stderr))
                 return false
             }
-            if let sessionID = dockModel?.kanbanSessionID, !sessionID.isEmpty,
+            if let sessionID = conversationModel?.kanbanSessionID, !sessionID.isEmpty,
                 (selectedKanbanBoardSlug ?? "").isEmpty,
                 // The attribution script lives in this Mac's Hermes home; a remote backend has none.
                 GatewayConnectionStore.isLocalBackend,

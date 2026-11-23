@@ -213,6 +213,42 @@ struct SessionSwitchCacheTests {
         #expect(model.sessionTranscriptPreview == nil)
     }
 
+    @Test func switchingBackToAnotherBotShowsItsTranscriptInTheSelectionTurn() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer {
+            rpc.release()
+            model.shutdown()
+        }
+        let profile = UUID().uuidString
+        let a = session("a", profile: profile)
+        let b = session("b", profile: UUID().uuidString)
+        let seen = SidebarSessionSeenStore.shared
+        defer { seen.reconcile(profileID: profile, availableSessionIDs: []) }
+
+        model.setProfileScope(profile)
+        #expect(await model.resumeSession(a, reportFailure: true))
+        seen.markSeen(profileID: profile, sessionID: a.id, at: .now)
+        model.setProfileScope(b.profileID)
+        #expect(await model.resumeSession(b, reportFailure: true))
+
+        model.setProfileScope(profile)
+        rpc.holdNextA = true
+        model.resumeSession(a)
+        #expect(model.sessionProfileID == profile)
+        #expect(model.navigationSessionID == a.id)
+        #expect(model.sessionTranscriptLoadState == .refreshing)
+        let source = ConversationTranscriptSource(
+            model: model, bots: BotModeModel(), actions: ConversationMessageActionState(),
+            voice: VoiceOutput(), coordinator: ConversationTranscriptCoordinator())
+        #expect(source.snapshot.messages.map(\.text) == ["question a", "answer a"])
+        #expect(!source.snapshot.context.actionsReady)
+        try await waitUntil { rpc.held != nil }
+        rpc.release()
+        _ = await model.sessionResumeTask?.value
+        #expect(model.sessionActionsReady)
+    }
+
     @Test func activityWhileAwayStillShowsLastLoadedTranscriptBeforeResume() async throws {
         let rpc = SessionSwitchRPC()
         let model = makeModel(rpc)

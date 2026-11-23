@@ -49,9 +49,18 @@ grid/ruler drawing keep time ticks independent of history length.
 - `Kanban/`, `Calendar/`, `Office/` — kanban board, work calendar, and the 3D office scene.
 - `EdgeDock/` — edge dock, notch/island previews, quick message, result peek.
   `EdgeQuickConversationModel` mounts a disposable `DockModel` for Quick Message's
-  captured session, sharing gateway events and the standard session resume/history
-  path. `ConversationTranscriptView` renders it; the existing `QuickDraftStore`
-  retains only unsent material, and the workspace session stays separate.
+  captured session and for detached chats and inactive split columns. It shares
+  the gateway and standard session resume/history path. Each projection accepts
+  events for its session, aliases, and tracked workers, plus unscoped gateway
+  events. The workspace model owns automatic session-index refreshes.
+  The workspace owns the gateway and handles reconnect replay. Conversation
+  projections borrow the client and close only their own subscriptions.
+  Loaded split columns retain their conversation models across focus changes.
+  The inspector follows the focused model while global feeds stay bound to the
+  workspace.
+  `ConversationTranscriptView` renders the projection, and `QuickDraftStore`
+  retains only unsent material.
+  Detached worktree pickers read project paths from the shared `WorkspaceStore`.
 - `DesignSystem/` — theme, component styles, icons (`PhosphorIcons`), modal/menu/hover primitives.
 - `Bots/` — Bot roster page, avatar presentation (stable FNV-1a fallback identity), bot editor, bot chat routing.
 - `Repository/` — GitHub remote discovery, pull-request center, source control, code editor.

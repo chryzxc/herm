@@ -214,7 +214,7 @@ extension ControlCenterModel {
     }
 
     func reloadMCP() {
-        guard let rpc, let sessionID = dockModel?.sessionID else {
+        guard let rpc, let sessionID = conversationModel?.sessionID else {
             reportActionError(
                 "Could not reload MCP tools", message: "Open a Hermes session before reloading MCP tools.")
             return

@@ -699,9 +699,8 @@ struct SessionInspector: View {
     }
 
     private func consumeTabRequest() {
-        guard let request = tabRequest else { return }
+        guard let request = tabRequest, request.session == WorkspaceIdentity.session(model) else { return }
         tabRequest = nil
-        guard request.session == WorkspaceIdentity.session(model) else { return }
         reopen(request.section)
         if request.section == .terminal, let id = request.terminalTabID {
             if !terminalExtras.contains(where: { $0.id == id }) {

@@ -6,8 +6,9 @@ import UniformTypeIdentifiers
 
 extension DockPopover {
     func chatScroll(trailingContentInset: CGFloat) -> some View {
-        ConversationTranscriptView(
-            model: model, controlCenter: controlCenter, botMode: botMode,
+        let conversation = model
+        return ConversationTranscriptView(
+            model: conversation, controlCenter: controlCenter, botMode: botMode,
             messageActionState: messageActionState, voiceOutput: voiceOutput,
             conversationMetrics: conversationMetrics, conversationHermFaceID: conversationHermFaceID,
             isShowingMessageSearch: $isShowingMessageSearch, pinnedMessageJumpID: $pinnedMessageJumpID,
@@ -16,7 +17,10 @@ extension DockPopover {
             // The welcome layer in ConversationComposerLayout animates the empty-chat orb.
             animatesEmptyState: false
         ).equatable()
-            .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(model))
+            .environment(\.sessionPreviewWorkspace, WorkspaceIdentity.session(conversation))
+            .environment(
+                \.markdownOpenURL,
+                OpenURLAction { openMarkdownURL($0, in: conversation) })
     }
     func reasoningBlock(_ reasoning: ReasoningState) -> some View {
         DisclosureGroup(

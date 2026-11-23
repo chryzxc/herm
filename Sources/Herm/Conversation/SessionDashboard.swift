@@ -14,13 +14,13 @@ struct SessionDashboard<Conversation: View>: View {
     let onNewConversation: () -> Void
     let onOpenWorkspace: () -> Void
     let onShowList: () -> Void
-    let onSelectProfile: (String) -> Void
+    let onSelectSession: (HermesSession) -> Void
     @ViewBuilder let conversation: () -> Conversation
 
     init(
         model: DockModel, bots: BotModeModel, control: ControlCenterModel, store: WorkspaceStore,
         onNewConversation: @escaping () -> Void, onOpenWorkspace: @escaping () -> Void,
-        onShowList: @escaping () -> Void, onSelectProfile: @escaping (String) -> Void,
+        onShowList: @escaping () -> Void, onSelectSession: @escaping (HermesSession) -> Void,
         @ViewBuilder conversation: @escaping () -> Conversation
     ) {
         self.model = model
@@ -29,7 +29,7 @@ struct SessionDashboard<Conversation: View>: View {
         self.onNewConversation = onNewConversation
         self.onOpenWorkspace = onOpenWorkspace
         self.onShowList = onShowList
-        self.onSelectProfile = onSelectProfile
+        self.onSelectSession = onSelectSession
         self.conversation = conversation
         _sidebar = StateObject(
             wrappedValue: SessionNavSidebarModel.shared(model: model, control: control, store: store))
@@ -130,11 +130,11 @@ struct SessionDashboard<Conversation: View>: View {
     private var conversationPane: some View {
         VStack(spacing: 0) {
             if isNewConversation || selection.session != nil {
-                if selection.isLoading {
+                if canRespond || showsCachedSelection {
+                    conversation()
+                } else if selection.isLoading {
                     ConversationLoadingState()
                         .frame(maxHeight: .infinity)
-                } else if canRespond {
-                    conversation()
                 } else {
                     emptyState("Conversation unavailable", detail: "Reload this session before responding.")
                     if let session = selection.session {
@@ -161,6 +161,13 @@ struct SessionDashboard<Conversation: View>: View {
                 profileID: model.profileScopeID)
     }
 
+    private var showsCachedSelection: Bool {
+        selection.isLoading && model.sessionTranscriptPreview != nil
+            && selection.matches(
+                activeSessionID: model.navigationSessionID, activeProfileID: model.sessionProfileID,
+                profileID: model.profileScopeID)
+    }
+
     private func emptyState(_ title: String, detail: String) -> some View {
         DockEmptyState(title: title, detail: detail)
             .dockPadding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -175,13 +182,12 @@ struct SessionDashboard<Conversation: View>: View {
 
     private func select(_ session: HermesSession) {
         isNewConversation = false
-        // A chat from another bot opens in that bot's scope, as in the sidebar.
-        if let owner = session.profileID, owner != model.profileScopeID { onSelectProfile(owner) }
+        onSelectSession(session)
         let generation = selection.begin(session)
         showsConversation = true
+        let resume = model.startSessionResume(session, reportFailure: true)
         Task {
-            let loaded = await model.resumeSession(session, reportFailure: true)
-            selection.finish(generation, loaded: loaded)
+            selection.finish(generation, loaded: await resume.value)
         }
     }
 

@@ -69,7 +69,9 @@ struct DockPopover: View {
     @StateObject var commandPalettePresentation = DockActionPalettePresentation()
     @State private var isShowingShortcutList = false
     @State private var presentationHostID = UUID()
-    let model: DockModel
+    let workspaceModel: DockModel
+    @State private var focusedPaneModel: DockModel? = nil
+    var model: DockModel { focusedPaneModel ?? workspaceModel }
     @State var modelPresentationRevision = 0
     @ObservedObject var panelPresentation: DockPanelPresentation
     let controlCenter: ControlCenterModel
@@ -314,7 +316,18 @@ struct DockPopover: View {
         let _ = workspaceLayoutRevision
         // Bound the root's generic layout before observer modifiers copy its sheet state.
         return observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(AnyView(rootPopoverContent)))))
-            .onReceive(model.workspacePresentationChanges) { _ in modelPresentationRevision &+= 1 }
+            .onReceive(workspaceModel.workspacePresentationChanges) { _ in modelPresentationRevision &+= 1 }
+            .onReceive(focusedPaneModel?.workspacePresentationChanges ?? Empty().eraseToAnyPublisher()) { _ in
+                modelPresentationRevision &+= 1
+            }
+            .onReceive(sessionPanes.$focusedProjection) { projection in
+                guard focusedPaneModel !== projection else { return }
+                if model.voiceSessionID != nil { releaseVoiceCapture() }
+                focusedPaneModel?.presentationDemand.update(presentationHostID, visible: false)
+                focusedPaneModel = projection
+                chatContextRouter.model = projection ?? workspaceModel
+                projection?.presentationDemand.update(presentationHostID, visible: hostPresentation.isVisible)
+            }
             .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
                 if sessionWorkspaceMode == .voice { modelPresentationRevision &+= 1 }
             }
@@ -375,14 +388,16 @@ struct DockPopover: View {
             .environment(\.dockHostResizing, hostPresentation.isResizing)
             .background { DockHostPresentationObserver(presentation: hostPresentation).frame(width: 0, height: 0) }
             .onChange(of: hostPresentation.isVisible, initial: true) { _, visible in
-                model.presentationDemand.update(presentationHostID, visible: visible)
+                workspaceModel.presentationDemand.update(presentationHostID, visible: visible)
+                focusedPaneModel?.presentationDemand.update(presentationHostID, visible: visible)
                 if visible, model.sessionID != nil {
                     model.refreshDelegationStatus()
                     model.startDelegationMonitoring()
                 }
             }
             .onDisappear {
-                model.presentationDemand.update(presentationHostID, visible: false)
+                workspaceModel.presentationDemand.update(presentationHostID, visible: false)
+                focusedPaneModel?.presentationDemand.update(presentationHostID, visible: false)
                 ConversationWindowStore.shared.removeLeaveMainHandler(conversationWindowHandlerID)
             }
             .onAppear {
@@ -394,16 +409,17 @@ struct DockPopover: View {
                     sessionNavNavigation.beginNewConversation()
                 }
                 registerPerformanceSources()
-                sessionPanes.runtime = model
-                model.onPickedProjectSessionCreated = { groupPickedProjectSession(storageID: $0, path: $1) }
+                sessionPanes.runtime = workspaceModel
+                workspaceModel.onPickedProjectSessionCreated = { groupPickedProjectSession(storageID: $0, path: $1) }
                 sessionPanes.tabStatus.bind(
-                    model: model, control: controlCenter, store: workspaceStore, panes: sessionPanes)
+                    model: workspaceModel, control: controlCenter, store: workspaceStore, panes: sessionPanes)
             }
             .environment(\.chatContextRouter, chatContextRouter)
             .environment(\.richHostActionRouter, richHostRouter)
             .environment(
                 \.sessionUnreadReplies,
-                SessionUnreadReplyContext(replies: model.sessionUnreadReplies, profileID: model.profileScopeID)
+                SessionUnreadReplyContext(
+                    replies: workspaceModel.sessionUnreadReplies, profileID: model.sessionProfileID)
             )
             .generativeUISession(model: model)
             .overlay(alignment: .bottomTrailing) {
@@ -432,12 +448,6 @@ struct DockPopover: View {
                     return .handled
                 }
             )
-            .environment(
-                \.markdownOpenURL,
-                OpenURLAction { url in
-                    openMarkdownURL(url)
-                    return .handled
-                })
     }
 
     /// The window's content runs under its transparent titlebar. Columns

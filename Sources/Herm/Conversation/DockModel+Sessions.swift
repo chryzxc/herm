@@ -703,24 +703,10 @@ extension DockModel {
 
     func resumeSession(_ session: HermesSession, profileID: String? = nil) {
         if focusDetachedSession?(session.id) == true { return }
+        if focusProjectedSession?(session, profileID ?? session.profileID ?? profileScopeID) == true { return }
         restoreGeneration &+= 1
         if isRestoringSession { isRestoringSession = false }
-        let selectedAt = DispatchTime.now().uptimeNanoseconds
-        sessionResumeTask?.cancel()
-        sessionResumeWorkTask?.cancel()
-        let prepared = sessionTranscriptLoadState == .ready
-        if prepared {
-            prepareLeavingTranscript()
-            cacheLeavingTranscript()
-        }
-        // The outgoing transcript stays available until the new identity is selected.
-        positionsAtUnreadOnResume = false
-        sessionTranscriptLoadState = .loading
-        sessionResumeTask = Task {
-            _ = await resumeSession(
-                session, reportFailure: true, profileID: profileID, selectedAt: selectedAt,
-                leavingTranscriptPrepared: prepared)
-        }
+        startSessionResume(session, reportFailure: true, profileID: profileID)
     }
 
     /// Reloads the selected transcript from Hermes rather than patching the
@@ -848,37 +834,26 @@ extension DockModel {
 
     @discardableResult
     func resumeSession(
-        _ session: HermesSession, reportFailure: Bool, profileID: String? = nil, selectedAt: UInt64? = nil,
-        reviewUnread: Bool = true, leavingTranscriptPrepared: Bool = false
+        _ session: HermesSession, reportFailure: Bool, profileID: String? = nil, reviewUnread: Bool = true
     ) async -> Bool {
-        sessionResumeWorkTask?.cancel()
-        let token = UUID()
-        sessionResumeWorkToken = token
-        let selectedAt = selectedAt ?? DispatchTime.now().uptimeNanoseconds
-        let task = Task { @MainActor [weak self] in
-            guard let self else { return false }
-            return await performResumeSession(
-                session, reportFailure: reportFailure, profileID: profileID, selectedAt: selectedAt,
-                reviewUnread: reviewUnread, leavingTranscriptPrepared: leavingTranscriptPrepared)
-        }
-        sessionResumeWorkTask = task
-        let result = await withTaskCancellationHandler {
+        guard !Task.isCancelled else { return false }
+        let task = startSessionResume(
+            session, reportFailure: reportFailure, profileID: profileID, reviewUnread: reviewUnread)
+        return await withTaskCancellationHandler {
             await task.value
         } onCancel: {
             task.cancel()
         }
-        if sessionResumeWorkToken == token {
-            sessionResumeWorkTask = nil
-            sessionResumeWorkToken = nil
-        }
-        return result
     }
 
-    private func performResumeSession(
-        _ session: HermesSession, reportFailure: Bool, profileID: String?, selectedAt: UInt64, reviewUnread: Bool,
-        leavingTranscriptPrepared: Bool
-    ) async -> Bool {
-        guard !Task.isCancelled else { return false }
+    /// Select the identity and its cached transcript together before scheduling Hermes I/O.
+    @discardableResult
+    func startSessionResume(
+        _ session: HermesSession, reportFailure: Bool, profileID: String? = nil, reviewUnread: Bool = true,
+        onComplete: ((Bool) -> Void)? = nil
+    ) -> Task<Bool, Never> {
+        let selectedAt = DispatchTime.now().uptimeNanoseconds
+        sessionResumeTask?.cancel()
         let owningProfileID = Self.normalizedProfileID(profileID ?? session.profileID ?? profileScopeID)
         // The session queue uses Hermes' durable storage identity, whereas a
         // resume can expose a different runtime identity. Both identify the
@@ -892,14 +867,13 @@ extension DockModel {
         let needsUnreadReview =
             reviewUnread
             && (seenAt != nil || seenStore.isBaselined(profileID: owningProfileID))
-        positionsAtUnreadOnResume = needsUnreadReview && (!isRefreshingActiveSession || messages.isEmpty)
         if !isRefreshingActiveSession || needsUnreadReview { unreadDividerMessageID = nil }
         if !isRefreshingActiveSession {
             sessionWorkspace = nil
             pendingWorktreeDirectory = nil
         }
-        if !leavingTranscriptPrepared { prepareLeavingTranscript() }
-        if !isRefreshingActiveSession { cacheLeavingTranscript() }
+        prepareLeavingTranscript()
+        cacheLeavingTranscript()
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
         }
@@ -927,9 +901,7 @@ extension DockModel {
         sessionPreviewImageTask?.cancel()
         sessionTranscriptImageTask?.cancel()
         sessionSwitchStartedAt = selectedAt
-        let switchStartedAt = sessionSwitchStartedAt
         sessionSwitchToken = UUID().uuidString
-        let switchToken = sessionSwitchToken
         sessionSwitchCachedLayoutRecorded = false
         sessionSwitchFreshLayoutRecorded = false
         let requestedStorageID = isRefreshingActiveSession ? (sessionStorageID ?? session.id) : session.id
@@ -941,9 +913,12 @@ extension DockModel {
             sessionTranscriptPreview =
                 isUnprovenAlias ? nil : openingPreview(for: previewKey, storageID: requestedStorageID)
         }
+        positionsAtUnreadOnResume =
+            needsUnreadReview && (!isRefreshingActiveSession || messages.isEmpty)
+            && sessionTranscriptPreview?.isPreloaded != false
         sessionTranscriptLoadState = sessionTranscriptPreview == nil ? .loading : .refreshing
         recordSessionSwitch(
-            "selection", startedAt: switchStartedAt,
+            "selection", startedAt: selectedAt,
             extra: "cache_hit=\(sessionTranscriptPreview == nil ? 0 : 1)")
         loadPreviewImages()
         let openingRowIDs =
@@ -986,7 +961,7 @@ extension DockModel {
         } else if sessionModelValue == nil {
             sessionModelValue = session.modelName
         }
-        sessionStorageID = session.id
+        sessionStorageID = requestedStorageID
         let workspaceKey = WorkspaceIdentity.session(profileID: owningProfileID, sessionID: session.id)
         pendingWorktreeDirectory = pendingWorktreeDirectories[workspaceKey]
         if !isRefreshingActiveSession { restorePendingSendIfPossible(for: composerDraftKey) }
@@ -1008,7 +983,48 @@ extension DockModel {
         let resumedTitle = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
         currentSessionTitle = resumedTitle.isEmpty ? nil : resumedTitle
         restorePendingApproval(for: [session.id])
+        let context = SessionResumeContext(
+            generation: resumeGeneration, startedAt: selectedAt, token: sessionSwitchToken,
+            owningProfileID: owningProfileID, storageID: requestedStorageID, previewKey: previewKey,
+            openingRowIDs: openingRowIDs, isRefresh: isRefreshingActiveSession, rowCount: refreshedTranscriptRowCount,
+            reviewCutoff: needsUnreadReview ? reviewCutoff : nil, seenAt: seenAt)
+        let task = Task { [weak self] in
+            guard let self, context.generation == sessionResumeGeneration else { return false }
+            let loaded = await finishSessionResume(
+                session, reportFailure: reportFailure, profileID: profileID, context: context)
+            if context.generation == sessionResumeGeneration {
+                sessionResumeTask = nil
+                if !Task.isCancelled { onComplete?(loaded) }
+            }
+            return loaded
+        }
+        sessionResumeTask = task
+        return task
+    }
+
+    private struct SessionResumeContext {
+        let generation: Int
+        let startedAt: UInt64
+        let token: String
+        let owningProfileID: String?
+        let storageID: String
+        let previewKey: String
+        let openingRowIDs: [Int: UUID]
+        let isRefresh: Bool
+        let rowCount: Int
+        let reviewCutoff: Date?
+        let seenAt: Date?
+    }
+
+    private func finishSessionResume(
+        _ session: HermesSession, reportFailure: Bool, profileID: String?, context: SessionResumeContext
+    ) async -> Bool {
+        let resumeGeneration = context.generation
+        let switchToken = context.token
+        let owningProfileID = context.owningProfileID
+        let isRefreshingActiveSession = context.isRefresh
         do {
+            try Task.checkCancellation()
             let connectionStartedAt = DispatchTime.now().uptimeNanoseconds
             try await sessionRPCClient.connect()
             recordSessionSwitch(
@@ -1071,7 +1087,7 @@ extension DockModel {
                 requestedSessionID: session.id,
                 resolvedSessionID: resolvedSessionID
             )
-            sessionStorageID = Self.stableSessionID(from: result) ?? session.id
+            sessionStorageID = Self.stableSessionID(from: result) ?? context.storageID
             storageIDsByRuntimeID[resolvedSessionID] = sessionStorageID
             if workspaceRevision == sessionWorkspaceRevision {
                 applySessionWorkspace(result, owner: resolvedSessionID)
@@ -1107,7 +1123,7 @@ extension DockModel {
                 let tail = try await loadTranscriptTail(
                     storageSessionID: storageID,
                     profileID: owningProfileID,
-                    minimumRowCount: refreshedTranscriptRowCount,
+                    minimumRowCount: context.rowCount,
                     fallbackResumeParams: resumeParams
                 )
                 guard resumeGeneration == sessionResumeGeneration else { return false }
@@ -1124,7 +1140,7 @@ extension DockModel {
             try Task.checkCancellation()
             guard resumeGeneration == sessionResumeGeneration else { return false }
             let stable = Self.keepingMessageIDs(
-                parsed, previous: openingRowIDs,
+                parsed, previous: context.openingRowIDs,
                 previousMessages: sessionTranscriptPreview?.messages ?? (isRefreshingActiveSession ? messages : []))
             let renamed = Dictionary(
                 parsed.rowIDs.compactMap { row, id in stable.rowIDs[row].map { (id, $0) } },
@@ -1200,7 +1216,9 @@ extension DockModel {
             if transcriptHistoryCursor?.hasMore == true {
                 loadTranscriptTimeline(generation: resumeGeneration)
             }
-            if needsUnreadReview {
+            if let reviewCutoff = context.reviewCutoff {
+                let seenStore = SidebarSessionSeenStore.shared
+                let seenAt = context.seenAt
                 do {
                     let unread = try await sessionUnreadReplies.project(
                         session: session, profileID: owningProfileID,
@@ -1258,7 +1276,7 @@ extension DockModel {
             sessionPreviewImageTask?.cancel()
             sessionTranscriptLoadState = .ready
             recordSessionSwitch(
-                "fresh_publication", startedAt: switchStartedAt, generation: resumeGeneration, token: switchToken)
+                "fresh_publication", startedAt: context.startedAt, generation: resumeGeneration, token: switchToken)
             refreshSessionFast()
             cacheCurrentAgentState()
             refreshDelegationStatus()
@@ -1274,7 +1292,7 @@ extension DockModel {
             return true
         } catch is CancellationError {
             recordSessionSwitch(
-                "cancelled", startedAt: switchStartedAt, generation: resumeGeneration, token: switchToken)
+                "cancelled", startedAt: context.startedAt, generation: resumeGeneration, token: switchToken)
             if resumeGeneration == sessionResumeGeneration {
                 sessionTranscriptLoadState = .failed("Conversation loading was canceled. Try again.")
                 status = .offline
@@ -1290,7 +1308,7 @@ extension DockModel {
                     return false
                 } == true
             if notFound {
-                sessionTranscriptCache.remove(previewKey)
+                sessionTranscriptCache.remove(context.previewKey)
                 sessionTranscriptPreview = nil
             }
             sessionTranscriptLoadState = .failed("Hermes session data is unavailable. Try refreshing.")
@@ -1354,9 +1372,6 @@ extension DockModel {
         pendingWorktreeDirectory = nil
         sessionResumeTask?.cancel()
         sessionResumeTask = nil
-        sessionResumeWorkTask?.cancel()
-        sessionResumeWorkTask = nil
-        sessionResumeWorkToken = nil
         transcriptTimelineTask?.cancel()
         transcriptTimelineTask = nil
         sessionPreviewImageTask?.cancel()

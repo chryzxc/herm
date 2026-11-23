@@ -91,7 +91,9 @@ struct ChatContext: Identifiable, Equatable, Codable, Sendable {
 @MainActor
 final class ChatContextRouter {
     weak var model: DockModel?
+    weak var workspaceModel: DockModel?
     weak var bots: BotModeModel?
+    var selectConversation: ((HermesSession?) -> DockModel?)?
     /// Called once the target session is active, so the host can navigate to it.
     var onOpened: (String?) -> Void = { _ in }
 
@@ -103,7 +105,7 @@ final class ChatContextRouter {
     }
 
     var recentSessions: [HermesSession] {
-        (model?.sessions ?? [])
+        ((workspaceModel ?? model)?.sessions ?? [])
             .filter { !$0.isHidden }
             .sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
             .prefix(10)
@@ -112,7 +114,7 @@ final class ChatContextRouter {
 
     /// `nil` session starts a new chat.
     func attach(_ context: ChatContext, to session: HermesSession?) {
-        guard let model else { return }
+        guard let model = selectConversation?(session) ?? model else { return }
         Task {
             await model.attachContext(context, to: session)
             onOpened(model.sessionID)

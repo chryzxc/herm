@@ -99,7 +99,7 @@ extension ControlCenterModel {
     var processControlAvailable: Bool {
         guard rpc != nil else { return false }
         return capabilityAvailable("rpc-activity")
-            || (processSessionID != nil && processSessionID == dockModel?.sessionID && !processes.isEmpty)
+            || (processSessionID != nil && processSessionID == conversationModel?.sessionID && !processes.isEmpty)
     }
 
     func installCapabilities(_ states: [CapabilityState]) {
@@ -127,7 +127,7 @@ extension ControlCenterModel {
         sessionProcessesGeneration == generation
             && clientBindingGeneration == binding
             && processSessionID == sessionID
-            && (dockModel == nil || dockModel?.sessionID == sessionID)
+            && (dockModel == nil || conversationModel?.sessionID == sessionID)
     }
 
     @discardableResult
@@ -176,7 +176,7 @@ extension ControlCenterModel {
 
     func canStopCurrentProcess(_ confirmation: ProcessStopConfirmation) -> Bool {
         !confirmation.sessionID.isEmpty
-            && dockModel?.sessionID == confirmation.sessionID
+            && conversationModel?.sessionID == confirmation.sessionID
             && acceptsProcessResponse(
                 for: confirmation.sessionID, generation: confirmation.generation, binding: confirmation.binding)
             && processes.contains {

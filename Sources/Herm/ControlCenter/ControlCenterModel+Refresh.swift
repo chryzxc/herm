@@ -386,7 +386,7 @@ extension ControlCenterModel {
                 }
             }
             if let rpc {
-                let sessionID = dockModel?.sessionID ?? ""
+                let sessionID = conversationModel?.sessionID ?? ""
                 let processGeneration = sessionProcessesGeneration
                 let processBinding = clientBindingGeneration
                 jobs.append { [self] in

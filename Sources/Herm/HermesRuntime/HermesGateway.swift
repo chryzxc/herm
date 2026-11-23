@@ -105,7 +105,6 @@ final class HermesGateway: NSObject {
     func connect() async throws {
         if socket != nil {
             DebugLog.write("connect: socket already exists")
-            if liveSocket === socket { onConnectionChange?(true) }
             return
         }
         do {
@@ -248,6 +247,7 @@ final class HermesGateway: NSObject {
         urlSession?.invalidateAndCancel()
         urlSession = nil
         socket = nil
+        liveSocket = nil
         backend?.terminate()
         backend = nil
         port = nil
@@ -422,6 +422,7 @@ final class HermesGateway: NSObject {
     ) async {
         let object = HermesGatewayResponse.decode(message, jsonSerialization: jsonSerialization)
         await MainActor.run {
+            if let current, self.socket !== current { return }
             if let object {
                 self.handle(object)
             } else {
@@ -468,6 +469,7 @@ final class HermesGateway: NSObject {
         lastFailure = GatewayError.disconnected.localizedDescription
         onConnectionChange?(false)
         socket = nil
+        liveSocket = nil
         urlSession?.invalidateAndCancel()
         urlSession = nil
         for continuation in pending.values { continuation.resume(throwing: GatewayError.disconnected) }
@@ -627,6 +629,7 @@ final class HermesGateway: NSObject {
                     DebugLog.write("backend: process terminated unexpectedly")
                     self.socket?.cancel(with: .goingAway, reason: nil)
                     self.socket = nil
+                    self.liveSocket = nil
                     self.urlSession?.invalidateAndCancel()
                     self.urlSession = nil
                     for continuation in self.pending.values { continuation.resume(throwing: GatewayError.disconnected) }

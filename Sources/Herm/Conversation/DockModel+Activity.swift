@@ -239,7 +239,7 @@ extension DockModel {
     /// interval instead of back-to-back index reads; the first event after a
     /// quiet period still reads immediately.
     func refreshSessionIndexAfterActivity() {
-        guard !hasShutDown else { return }
+        guard refreshesSessionIndexFromEvents, !hasShutDown else { return }
         guard sessionLoadTask == nil else {
             pendingSessionIndexRefresh = true
             return
@@ -361,7 +361,7 @@ extension DockModel {
     }
 
     func requestControl(_ method: HermesFeatureIDs.ID, params: [String: Any]) async throws -> [String: Any] {
-        try await gateway.request(method.rawValue, params: params)
+        try await sessionRPCClient.request(method.rawValue, params: params)
     }
 
     func registerBackgroundTask(
@@ -385,12 +385,12 @@ extension DockModel {
                 domain: "Herm", code: 409,
                 userInfo: [NSLocalizedDescriptionKey: "The previous conversation is still loading."])
         }
-        try await gateway.connect()
+        try await sessionRPCClient.connect()
         if sessionID == nil {
             _ = try await createAuthorizedSession(source: HermesFeatureIDs.sessionSource)
         }
         guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
-        _ = try await gateway.request(
+        _ = try await sessionRPCClient.request(
             HermesFeatureIDs.ID.promptSubmit.rawValue, params: ["session_id": sessionID, "text": text])
     }
 

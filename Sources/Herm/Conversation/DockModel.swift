@@ -229,6 +229,7 @@ final class DockModel: ObservableObject {
     var lastSessionIndexReadAt: Date?
     /// One deferred read that absorbs a burst of completion/database events.
     var sessionIndexRefreshTask: Task<Void, Never>?
+    let refreshesSessionIndexFromEvents: Bool
     /// ponytail: fixed 3s spacing between activity-driven index reads; tune if
     /// sidebar titles feel late after back-to-back bot turns.
     var sessionIndexActivitySpacing: TimeInterval = 3
@@ -393,7 +394,8 @@ final class DockModel: ObservableObject {
     /// menu bar and the voice wake phrase without editing SOUL.md.
     @Published var defaultBotName: String?
 
-    let gateway = HermesGateway()
+    let gateway: HermesGateway?
+    var focusProjectedSession: ((HermesSession, String?) -> Bool)?
     var richGenerationContextProvider: ((QuickDestination) -> RichGenerationContext)?
     let sessionRPCClient: HermesRPCClientProtocol
     lazy var sessionUnreadReplies = SessionUnreadReplies(client: sessionRPCClient)
@@ -527,7 +529,8 @@ final class DockModel: ObservableObject {
     /// The latest ordered agent-state commit; tests await it before relaunching.
     var agentStateCommit: Task<Void, Never>?
     var sessionResumeGeneration = 0
-    let sessionTranscriptCache = SessionTranscriptCache()
+    let sessionTranscriptCache: SessionTranscriptCache
+    let ownsSessionTranscriptCache: Bool
     @Published var sessionTranscriptPreview: SessionTranscriptPreview?
     @Published var sessionTranscriptLoadState: SessionTranscriptLoadState = .ready
     var sessionActionsReady: Bool { sessionTranscriptLoadState.allowsActions }
@@ -548,9 +551,7 @@ final class DockModel: ObservableObject {
         cachedTranscriptPresentationID = (sessionProfileID, owner, value)
         return value
     }
-    var sessionResumeTask: Task<Void, Never>?
-    var sessionResumeWorkTask: Task<Bool, Never>?
-    var sessionResumeWorkToken: UUID?
+    var sessionResumeTask: Task<Bool, Never>?
     var transcriptTimelineTask: Task<Void, Never>?
     var runtimeModelOptionsTask: Task<Void, Never>?
     var runtimeModelOptionsRequestKey: (sessionID: String?, profileID: String?, generation: Int)?
@@ -638,7 +639,9 @@ final class DockModel: ObservableObject {
         botActivityFileURL: URL? = nil,
         loadArchives: Bool = true,
         rpcClient: HermesRPCClientProtocol? = nil,
-        voicePlayback: HermesVoicePlaybackProtocol? = nil
+        voicePlayback: HermesVoicePlaybackProtocol? = nil,
+        refreshesSessionIndexFromEvents: Bool = true,
+        sessionTranscriptCache: SessionTranscriptCache? = nil
     ) {
         let agentStateStore = SessionAgentStateStore(fileURL: sessionAgentStateFileURL)
         self.messagePinStore = MessagePinStore(
@@ -652,6 +655,9 @@ final class DockModel: ObservableObject {
         self.botActivityWriter = BotActivityWriter(store: botActivityStore)
         self.botActivityBySessionID = loadArchives ? botActivityStore.load() : [:]
         self.defaults = defaults
+        self.refreshesSessionIndexFromEvents = refreshesSessionIndexFromEvents
+        self.sessionTranscriptCache = sessionTranscriptCache ?? SessionTranscriptCache()
+        self.ownsSessionTranscriptCache = sessionTranscriptCache == nil
         self.playApprovalSound = approvalSoundPlayer
         self.sessionID = initialSessionID
         let initialProfileID = Self.normalizedProfileID(defaults.string(forKey: profileScopeKey))
@@ -660,10 +666,18 @@ final class DockModel: ObservableObject {
         self.sessionProfileID = initialProfileID
         self.sessionStorageID = initialSessionID
         self.kanbanAttributionSessionID = initialSessionID
-        self.interruptRPC = HermesControlRPC(client: rpcClient ?? gateway)
-        self.sessionRPCClient = rpcClient ?? gateway
+        let client: HermesRPCClientProtocol
+        if let rpcClient {
+            self.gateway = nil
+            client = rpcClient
+        } else {
+            let gateway = HermesGateway()
+            self.gateway = gateway
+            client = gateway
+        }
+        self.interruptRPC = HermesControlRPC(client: client)
+        self.sessionRPCClient = client
         if !GatewayConnectionStore.isLocalBackend {
-            let client = sessionRPCClient
             runtimeConfigurationRefresh = HermesRuntimeConfigurationRefresh(reader: { _ in
                 await HermesRuntimeInspector.inspectRemote(fetch: client.fetchHTTP)
             })
@@ -671,24 +685,32 @@ final class DockModel: ObservableObject {
         self.voicePlayback = voicePlayback ?? HermesVoicePlayback()
         completionNotificationsEnabled = defaults.bool(forKey: completionNotificationsKey)
         DebugLog.write("model: initialized")
+        if let gateway { observeOwnedGateway(gateway) }
+        observeGatewayAuthentication()
+    }
+
+    private func observeOwnedGateway(_ gateway: HermesGateway) {
         gateway.onEvent = { [weak self] type, params in
             self?.receiveGatewayEvent(type, params: params)
         }
-        gateway.onConnectionChange = { [weak self] connected in
-            guard let self else { return }
-            // `connect()` re-announces a live socket on every RPC; equal writes
-            // would still publish and redraw the whole workspace each time.
+        gateway.onConnectionChange = { [weak self, weak gateway] connected in
+            guard let self, let gateway else { return }
+            let wasConnected = isHermesConnected
             let issue = connected ? nil : gateway.lastFailure
             if isHermesConnected != connected { isHermesConnected = connected }
             if hermesConnectionIssue != issue { hermesConnectionIssue = issue }
             DebugLog.write("model: Hermes connection \(connected ? "online" : "offline")")
-            if connected {
+            if connected, !wasConnected {
                 replayTrackedGatewayEvents()
                 if gateway.isLocal { HermesBundledPlugins.ensure(client: gateway) }
-            } else {
+            } else if !connected, wasConnected {
+                gatewayReplayTask?.cancel()
                 DeveloperWorkflowModel.shared.turnBaselines.removeAll()
             }
         }
+    }
+
+    private func observeGatewayAuthentication() {
         gatewayAuthenticationObserver = NotificationCenter.default.publisher(for: .hermGatewayAuthenticationChanged)
             .sink { [weak self] notification in
                 let changedURL = notification.object as? URL
@@ -704,7 +726,9 @@ final class DockModel: ObservableObject {
                     self.retainedProfileSessions.removeAll()
                     self.sessionTranscriptPreview = nil
                     self.sessionResumeTask?.cancel()
-                    self.sessionResumeWorkTask?.cancel()
+                    self.sessionResumeTask = nil
+                    self.allBotSessionsTask?.cancel()
+                    self.sessionTranscriptPreloadTask?.cancel()
                     self.transcriptTimelineTask?.cancel()
                     self.sessionPreviewImageTask?.cancel()
                     self.sessionTranscriptImageTask?.cancel()
@@ -715,9 +739,11 @@ final class DockModel: ObservableObject {
                             "Connection changed. Retry loading this conversation.")
                         self.status = .offline
                     }
-                    // Reopen the socket with the new sign-in instead of requiring a restart.
-                    self.gateway.close()
-                    Task { try? await self.gateway.connect() }
+                    // The connection owner reopens the socket for all its projections.
+                    if let gateway = self.gateway {
+                        gateway.close()
+                        Task { try? await gateway.connect() }
+                    }
                 }
             }
     }

@@ -10,7 +10,7 @@ final class ConversationWorktreeState: ObservableObject {
     /// Nil while loading, outside a Git repository, or when Git cannot list worktrees.
     @Published private(set) var worktrees: [RepositoryWorktreeSummary]?
 
-    private let store = WorkspaceStore()
+    private let store = WorkspaceStore.shared
     private weak var model: DockModel?
     private weak var control: ControlCenterModel?
     private var link: AnyCancellable?

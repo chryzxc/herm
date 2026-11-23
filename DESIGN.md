@@ -1181,7 +1181,11 @@ Generated HTML previews inherit the selected text size and update without resett
 
 Pull request details keep navigation tabs in a separate row above a labeled actions row. Actions wrap in narrow panes; review-guide access stays in the actions menu.
 
-Markdown website links reuse an open tab with the exact destination URL. Otherwise,
+Markdown website links in the chat transcript open Browser in that conversation's
+inspector, revealing it when collapsed. In split chat, the inspector follows the
+column containing the clicked link. Markdown on surfaces without a chat inspector
+opens website links in the default browser. Chat links reuse an open tab with the
+exact destination URL. Otherwise,
 an empty primary Browser opens the link; an occupied primary Browser keeps its page
 and the link opens in a selected additional browser tab. Pending agent navigation
 is preserved. GitHub overview links retain their native inspector routing.
@@ -3229,8 +3233,10 @@ only the current dictation and preserves the prior draft; Stop keeps the transcr
 for editing; Send submits through the normal composer. The waveform reflects actual
 input levels and the controls retain accessible labels and the active skin.
 
-On a return to a recently viewed conversation, show its cached transcript while
-Hermes refreshes it. Include saved bot replies in the cached tail before positioning
+On a return to a recently viewed conversation, select it with its cached transcript
+in the same update, including across bots, split tabs, and detached windows. These
+surfaces share the workspace's bounded in-memory cache keyed by backend, profile,
+and saved session ID. Include saved bot replies in the cached tail before positioning
 the viewport. On a cold open, assemble the transcript before revealing the initial
 reading position. The session title uses its existing slot for “Refreshing…”
 or “Not current”; retry belongs in the conversation actions menu. Cached text
@@ -3254,7 +3260,8 @@ only that column; clicking a column's inspector toggle (or a sidebar session
 already in it) makes it the active column, so the header moves there. While
 split, the inspector (one at a time, 360pt) sits directly beside the active
 column instead of at the window's trailing edge, and follows the active column
-when it changes. When the columns would drop below 280pt with the inspector
+when it changes. Focusing an already-loaded column keeps both conversations'
+live turns and drafts in their columns. When the columns would drop below 280pt with the inspector
 beside them, it floats over the columns next to the active one instead, so
 columns keep their widths. The leftmost column carries the sidebar toggle and
 history controls when the chat list is hidden. Tab titles truncate with an

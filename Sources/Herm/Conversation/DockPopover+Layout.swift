@@ -29,6 +29,7 @@ extension DockPopover {
                 configureWorkspaceOnAppear()
                 model.richGenerationContextProvider = richHostRouter.contextProvider()
                 chatContextRouter.model = model
+                chatContextRouter.workspaceModel = workspaceModel
                 chatContextRouter.bots = botMode
                 chatContextRouter.onOpened = { sessionID in
                     sessionNavNavigation.openPullRequestChat(sessionID: sessionID)
@@ -40,7 +41,7 @@ extension DockPopover {
                 handleWorkspaceVisibilityChange(visible)
             }
             // Keep each session's tabs and connect Hermes to its profile's browser.
-            .onChange(of: model.isHermesConnected, initial: true) { _, connected in
+            .onChange(of: workspaceModel.isHermesConnected, initial: true) { _, connected in
                 guard connected else { return }
                 SessionBrowserStore.shared.activate(model: model, reconnect: true)
                 Task { await botMode.refreshNow(force: true) }
@@ -156,8 +157,7 @@ extension DockPopover {
             .onChange(of: fullscreenSurface) { _, surface in
                 if surface == .bots || surface == .conversation { sessionPanes.showLayout(bots: surface == .bots) }
             }
-            // A session opened as primary leaves its side pane so it never streams twice.
-            .onChange(of: model.navigationSessionID) { _, id in sessionPanes.syncPrimary(id) }
+            .onChange(of: workspaceModel.navigationSessionID) { _, id in sessionPanes.syncPrimary(id) }
             .onChange(of: model.sessionID) { _, _ in
                 isShowingMessagePins = false
                 pinnedMessageJumpID = nil
@@ -193,12 +193,12 @@ extension DockPopover {
                 handleMessageCountChange(oldCount: oldCount, newCount: newCount)
             }
             .onChange(of: botMode.bots.first(where: \.isDefault)?.name, initial: true) { _, name in
-                model.defaultBotName = name
+                workspaceModel.defaultBotName = name
             }
     }
 
     private var showsStartupScreen: Bool {
-        presentsStartup && model.workspaceStartup.phase != .finished
+        presentsStartup && workspaceModel.workspaceStartup.phase != .finished
             && (fullscreenSurface == .conversation || fullscreenSurface == .chatGrid)
     }
 
@@ -363,9 +363,10 @@ extension DockPopover {
             Button("Delete \(session.displayTitle)", role: .destructive) {
                 sessionPendingDeletion = nil
                 Task { @MainActor in
-                    if await model.deleteSession(session) {
+                    if await workspaceModel.deleteSession(session) {
                         // Its detached window would otherwise keep projecting a deleted session.
                         ConversationWindowStore.shared.close(sessionID: session.id)
+                        sessionPanes.closeSession(session.id)
                         controlCenter.refreshProjectNavigation()
                     }
                 }
@@ -469,7 +470,7 @@ extension DockPopover {
 
     var sessionNavRail: some View {
         SessionNavRail(
-            model: model,
+            model: workspaceModel,
             controlCenter: controlCenter,
             workspaceStore: workspaceStore,
             agentUpdateService: agentUpdateService,
@@ -502,10 +503,10 @@ extension DockPopover {
                 }
             },
             isFullscreen: isFullscreen,
-            isHermesConnected: model.isHermesConnected,
-            hermesConnectionIssue: model.hermesConnectionIssue,
+            isHermesConnected: workspaceModel.isHermesConnected,
+            hermesConnectionIssue: workspaceModel.hermesConnectionIssue,
             // A failure lands in `hermesConnectionIssue` through the gateway.
-            onReconnect: { try? await model.gateway.connect() },
+            onReconnect: { try? await workspaceModel.controlRPCClient.connect() },
             isDockedWindow: usesWindowChrome,
             onFullscreenToggle: toggleFullscreen,
             onOpenWindow: onOpenWindow
@@ -518,8 +519,10 @@ extension DockPopover {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled else { return }
                 // Activity events already re-read the index; skip a redundant read.
-                guard model.isHermesConnected, !model.sessionIndexReadRecently(within: 10) else { continue }
-                await model.loadSessions(quiet: true)?.value
+                guard workspaceModel.isHermesConnected, !workspaceModel.sessionIndexReadRecently(within: 10) else {
+                    continue
+                }
+                await workspaceModel.loadSessions(quiet: true)?.value
             }
         }
         // The title strip above the rail is part of the sidebar, not the window canvas.
@@ -706,6 +709,7 @@ extension DockPopover {
                                     .environment(\.dockNavigationHistory, navigationHistoryControls)) : nil,
                         inspector: inspector,
                         onOpenInspector: { if !inspectorPanelIsVisible { toggleInspectorPanel() } },
+                        onOpenMarkdown: openMarkdownURL,
                         columnControls: splitColumnControls,
                         metrics: conversationMetrics
                     ) { isLeading in
@@ -723,6 +727,7 @@ extension DockPopover {
                                         availableWidth: geometry.size.width)
                                     : 0
                                 chatConversationContent(railWidth: railWidth)
+                                    .id(ObjectIdentifier(model))
                                     .overlay(alignment: .trailing) {
                                         ZStack(alignment: .trailing) {
                                             if railWidth > 0 {
@@ -800,7 +805,8 @@ extension DockPopover {
 
     func chatConversationContent(railWidth: CGFloat) -> some View {
         ConversationComposerLayout(
-            showsWelcome: model.messages.isEmpty && model.status != .working && !speechInput.isRecording,
+            showsWelcome: model.displayedTranscriptMessages.isEmpty
+                && (model.sessionTranscriptPreview != nil || model.status != .working) && !speechInput.isRecording,
             hermFaceID: conversationHermFaceID,
             trailingContentInset: railWidth
         ) {

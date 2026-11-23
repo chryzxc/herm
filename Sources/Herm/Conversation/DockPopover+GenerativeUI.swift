@@ -139,30 +139,33 @@ extension DockPopover {
 
     private func openRichSource(_ reference: RichArtifactReference) async throws {
         let current = RichReplyContext.destination(for: model)
+        let target: DockModel
         if current.sessionID != reference.sessionID || current.profileID != reference.profileID {
             guard
-                let session = model.sessions.first(where: {
+                let session = workspaceModel.sessions.first(where: {
                     $0.id == reference.sessionID && $0.profileID == reference.profileID
                 })
             else {
                 throw QuickDraftError.message(
                     "The source session is unavailable. Refresh the session inventory and retry.")
             }
-            model.resumeSession(session)
+            target = openSessionInWorkspace(session)
+        } else {
+            target = model
         }
-        let generation = model.sessionResumeGeneration
-        for _ in 0..<120 where model.isRestoringSession {
+        let generation = target.sessionResumeGeneration
+        for _ in 0..<120 where target.isRestoringSession {
             try await Task.sleep(for: .milliseconds(50))
-            guard generation == model.sessionResumeGeneration else { throw CancellationError() }
+            guard generation == target.sessionResumeGeneration else { throw CancellationError() }
         }
-        guard generation == model.sessionResumeGeneration,
-            model.navigationSessionID == reference.sessionID,
-            (model.sessionProfileID ?? model.profileScopeID) == reference.profileID,
+        guard target === model, generation == target.sessionResumeGeneration,
+            target.navigationSessionID == reference.sessionID,
+            (target.sessionProfileID ?? target.profileScopeID) == reference.profileID,
             let rowID = reference.rowID, rowID > 0
         else { throw QuickDraftError.message("The source reply is unavailable in this session.") }
-        _ = await model.loadTranscriptHistory(through: rowID)
-        guard generation == model.sessionResumeGeneration,
-            let id = model.storedMessageReferences.first(where: {
+        _ = await target.loadTranscriptHistory(through: rowID)
+        guard target === model, generation == target.sessionResumeGeneration,
+            let id = target.storedMessageReferences.first(where: {
                 reference.messageUID == nil ? $0.value.rowID == rowID : $0.value.uid == reference.messageUID
             })?.key
         else { throw QuickDraftError.message("The source reply could not be loaded.") }

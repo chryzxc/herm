@@ -221,7 +221,7 @@ struct SessionNavRail: View {
             VStack(spacing: 4) {
                 HermesConnectionButton(
                     isConnected: isHermesConnected, issue: hermesConnectionIssue,
-                    endpoint: model.gateway.endpointDescription,
+                    endpoint: (model.controlRPCClient as? HermesGateway)?.endpointDescription ?? "Hermes Agent",
                     // The installed CLI only describes a local backend.
                     version: GatewayConnectionStore.isLocalBackend
                         ? agentUpdateService.installed.map { "Hermes \($0.displayVersion)" } : nil,

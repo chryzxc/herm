@@ -212,7 +212,7 @@ extension DockModel {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await gateway.request(
+                let result = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.configGet.rawValue, params: globalConfigParams(["key": "reasoning"]))
                 guard let value = result["value"] as? String else { return }
                 defaultReasoningVariant = HermesReasoningVariant(rawValue: value.lowercased())

@@ -1,10 +1,8 @@
 import SwiftUI
 
-/// The conversation workspace as equal columns, each a tab group of sessions. The
-/// active column renders the main conversation with the full header (`primary`); the
-/// others show a title-row tab strip over a projection. Selecting any tab makes it the
-/// active session, so the header moves to that column. Dragging a sidebar session over
-/// the row opens a new column or adds a tab to the column under the cursor.
+/// The conversation workspace as columns, each a tab group of sessions. The active
+/// column shows the full header. Dragging a sidebar session over the row opens a new
+/// column or adds a tab to the column under the cursor.
 struct SessionPaneRow<Primary: View>: View {
     @ObservedObject var store: SessionPaneStore
     let control: ControlCenterModel
@@ -18,9 +16,9 @@ struct SessionPaneRow<Primary: View>: View {
     var inspector: AnyView?
     /// Opens the inspector; inactive columns call it after taking over as the active column.
     var onOpenInspector: () -> Void = {}
-    /// Mode tabs and the actions menu for an inactive column's session; every action
-    /// first makes that column active.
-    var columnControls: ((_ sessionID: String, _ activate: @escaping () -> Void) -> AnyView)?
+    var onOpenMarkdown: ((URL, DockModel) -> OpenURLAction.Result)?
+    /// The actions menu for an inactive column's session. Session modes can activate the column.
+    var columnControls: ((_ destination: QuickDestination, _ activate: @escaping () -> Void) -> AnyView)?
     /// The main conversation's metrics, so every column's composer sits at the same height.
     var metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: false)
     /// The active conversation; the flag says whether it is the leftmost column.
@@ -203,7 +201,11 @@ struct SessionPaneRow<Primary: View>: View {
                 primary(isLeading)
             }
         case .panel(let panel):
-            SessionPanelView(panel: panel, store: store, control: control, bots: bots, metrics: metrics) {
+            SessionPanelView(
+                panel: panel, store: store, control: control, bots: bots, metrics: metrics,
+                workspaceConversation: panel.usesWorkspaceConversation ? store.runtime : nil,
+                onOpenMarkdown: onOpenMarkdown
+            ) {
                 header($0, panel: panel, isLeading: isLeading, width: width)
             }
         }
@@ -231,13 +233,20 @@ struct SessionPaneRow<Primary: View>: View {
             if showsLeading, let leadingControls { leadingControls }
             content
             // A room column has no session to activate; its actions sit in the room's own bar.
-            if let selectedID = panel.selectedID, panel.selected?.groupRoomID == nil {
+            if let destination = panel.selected, let selectedID = destination.sessionID, destination.groupRoomID == nil
+            {
                 let activate = { store.activate(selectedID, in: panel.id) }
                 Spacer(minLength: 8)
-                columnControls?(selectedID, activate)
+                columnControls?(destination, activate)
                 // The inspector follows the active column: opening it here makes this column active.
                 DockSidebarToggle(isCollapsed: true, edge: .trailing) {
                     activate()
+                    onOpenInspector()
+                }
+            } else if panel.usesWorkspaceConversation, panel.selected == nil {
+                Spacer(minLength: 8)
+                DockSidebarToggle(isCollapsed: true, edge: .trailing) {
+                    store.focusWorkspaceConversation()
                     onOpenInspector()
                 }
             }
@@ -271,7 +280,7 @@ struct SessionPaneActiveTabs<Fallback: View>: View {
 
     var body: some View {
         // While split, the active column keeps its tab strip too, so its close button is always reachable.
-        if let panel = store.activePanel, panel.tabs.count > 1 || store.panels.count > 1, panel.selected != nil {
+        if let panel = store.activePanel, !panel.tabs.isEmpty, panel.tabs.count > 1 || store.panels.count > 1 {
             SessionPaneTabStrip(
                 tabs: SessionPaneTabStrip.items(panel: panel, store: store, liveTitle: runtime.currentSessionTitle))
         } else {
@@ -529,12 +538,15 @@ private struct SessionPanelView<Header: View>: View {
     let control: ControlCenterModel
     let bots: BotModeModel
     let metrics: ConversationWorkspaceMetrics
+    let workspaceConversation: DockModel?
+    let onOpenMarkdown: ((URL, DockModel) -> OpenURLAction.Result)?
     let header: (AnyView) -> Header
     @ObservedObject private var chat: EdgeQuickConversationModel
 
     init(
         panel: SessionPaneStore.Panel, store: SessionPaneStore, control: ControlCenterModel, bots: BotModeModel,
-        metrics: ConversationWorkspaceMetrics,
+        metrics: ConversationWorkspaceMetrics, workspaceConversation: DockModel? = nil,
+        onOpenMarkdown: ((URL, DockModel) -> OpenURLAction.Result)? = nil,
         header: @escaping (AnyView) -> Header
     ) {
         self.panel = panel
@@ -542,6 +554,8 @@ private struct SessionPanelView<Header: View>: View {
         self.control = control
         self.bots = bots
         self.metrics = metrics
+        self.workspaceConversation = workspaceConversation
+        self.onOpenMarkdown = onOpenMarkdown
         self.header = header
         chat = panel.chat
     }
@@ -549,7 +563,8 @@ private struct SessionPanelView<Header: View>: View {
     private var tabStrip: some View {
         SessionPaneTabStrip(
             tabs: SessionPaneTabStrip.items(
-                panel: panel, store: store, liveTitle: chat.conversation?.currentSessionTitle))
+                panel: panel, store: store,
+                liveTitle: workspaceConversation?.currentSessionTitle ?? chat.conversation?.currentSessionTitle))
     }
 
     var body: some View {
@@ -589,6 +604,19 @@ private struct SessionPanelView<Header: View>: View {
                         DockLoadingState(title: "Loading group chat…")
                     } else {
                         sessionContent
+                            .environment(
+                                \.markdownOpenURL,
+                                OpenURLAction { url in
+                                    guard let onOpenMarkdown,
+                                        let conversation = workspaceConversation ?? chat.conversation
+                                    else { return .systemAction }
+                                    if panel.usesWorkspaceConversation {
+                                        store.focusWorkspaceConversation()
+                                    } else if let id = panel.selectedID {
+                                        store.activate(id, in: panel.id)
+                                    }
+                                    return onOpenMarkdown(url, conversation)
+                                })
                     }
                 }
                 .frame(maxHeight: .infinity)
@@ -598,11 +626,15 @@ private struct SessionPanelView<Header: View>: View {
 
     @Environment(\.chatContextRouter) private var router
 
-    private var sessionContent: some View {
-        SessionPaneChatContent(
-            chat: chat, control: control, bots: bots, metrics: metrics, contentID: panel.selectedID
-        ) {
-            store.retry(panel.id)
+    @ViewBuilder private var sessionContent: some View {
+        if let workspaceConversation {
+            SessionPaneChat(model: workspaceConversation, control: control, bots: bots, metrics: metrics)
+        } else {
+            SessionPaneChatContent(
+                chat: chat, control: control, bots: bots, metrics: metrics, contentID: panel.selectedID
+            ) {
+                store.retry(panel.id)
+            }
         }
     }
 }
@@ -623,7 +655,7 @@ struct SessionPaneChatContent: View {
         // One loading state at a time: the transcript has its own, so the pane never
         // overlays a second one on top of it.
         if let conversation = chat.conversation, !chat.loadFailed,
-            !(chat.isLoading && conversation.messages.isEmpty)
+            !(chat.isLoading && conversation.sessionTranscriptPreview == nil && conversation.messages.isEmpty)
         {
             SessionPaneChat(
                 model: conversation, control: control, bots: bots, metrics: metrics, accessories: accessories

@@ -68,7 +68,7 @@ struct SessionPreloadingRegressionTests {
         #expect(await model.resumeSession(session("a"), reportFailure: true))
         model.messages.append(ChatMessage(role: .hermes, text: "completed while viewing"))
         model.resumeSession(session("b"))
-        await model.sessionResumeTask?.value
+        _ = await model.sessionResumeTask?.value
         let key = WorkspaceIdentity.session(profileID: "one", sessionID: "a")
         #expect(model.sessionTranscriptCache.value(for: key)?.messages.last?.text == "completed while viewing")
     }
@@ -176,7 +176,7 @@ struct SessionPreloadingRegressionTests {
         #expect(!model.sessionActionsReady)
         let key = WorkspaceIdentity.session(profileID: "one", sessionID: "a")
         #expect(model.sessionTranscriptCache.value(for: key)?.messages.last?.text == "buffered response")
-        await model.sessionResumeTask?.value
+        _ = await model.sessionResumeTask?.value
         #expect(model.sessionTranscriptCache.value(for: key)?.messages.last?.text == "buffered response")
     }
 

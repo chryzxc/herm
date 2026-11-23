@@ -9,7 +9,7 @@ extension DockPopover {
         guard let id = controlCenter.requestedAutomationJobID else { return }
         let owner = controlCenter.requestedAutomationOwner
         let profile = owner?.profileID ?? "default"
-        if owner != nil, (model.profileScopeID ?? "default") != profile {
+        if owner != nil, (workspaceModel.profileScopeID ?? "default") != profile {
             await botMode.refreshNow(force: true)
             guard controlCenter.requestedAutomationJobID == id, controlCenter.requestedAutomationOwner == owner else {
                 return
@@ -259,7 +259,18 @@ extension DockPopover {
         synchronizePanelLayout()
         synchronizeWorkspace()
         sessionNavNavigation.synchronizeActiveSession(model.navigationSessionID)
-        controlCenter.bind(to: model)
+        chatContextRouter.selectConversation = { [weak sessionPanes, weak workspaceModel] session in
+            guard let sessionPanes, let workspaceModel else { return nil }
+            if let session,
+                sessionPanes.focusOpenSession(
+                    session.id, profileID: session.profileID ?? workspaceModel.profileScopeID)
+            {
+                return sessionPanes.focusedProjection ?? workspaceModel
+            }
+            sessionPanes.focusWorkspaceConversation()
+            return workspaceModel
+        }
+        controlCenter.bind(to: workspaceModel)
         // The session Activity child can mount before this root lifecycle hook.
         // Reissue its durable, read-only projection after binding so an early
         // unbound attempt cannot leave the visible session permanently empty.
@@ -269,8 +280,8 @@ extension DockPopover {
         Task { @MainActor in
             await botMode.refreshNow(force: true) { profileID in
                 handleProfileScopeChange(profileID)
-                model.restoreLatestSessionIfNeeded()
-                if presentsStartup { model.loadInitialWorkspaceSessions() }
+                workspaceModel.restoreLatestSessionIfNeeded()
+                if presentsStartup { workspaceModel.loadInitialWorkspaceSessions() }
                 controlCenter.refresh()
             }
         }

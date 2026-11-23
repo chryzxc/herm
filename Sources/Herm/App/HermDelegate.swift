@@ -138,6 +138,11 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     private func configureConversationWindows() {
         let store = ConversationWindowStore.shared
         let panes = SessionPaneStore.shared
+        model.focusProjectedSession = { [weak panes] session, profileID in
+            panes?.focusOpenSession(session.id, profileID: profileID, includeWorkspace: false) == true
+        }
+        panes.$focusedProjection.sink { [weak controlCenter] in controlCenter?.focusedConversation = $0 }
+            .store(in: &keepAwakeObservers)
         store.makeWindow = { [model, controlCenter, weak store] destination in
             ConversationWindowController(
                 destination: destination, runtime: model, controlCenter: controlCenter,
@@ -149,8 +154,9 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         store.showQuota = { [weak self] in
             if let window = self?.dockWindow, window.isOpen { window.showQuota() } else { self?.dockPanel?.showQuota() }
         }
-        store.openMainChat = { [weak self, weak model] path, draft in
+        store.openMainChat = { [weak self, weak model, weak panes] path, draft in
             guard let self, let model else { return }
+            panes?.focusWorkspaceConversation()
             model.newChat(projectPath: path)
             model.pendingWorktreeDirectory = path
             if !draft.isEmpty { model.composer.text = draft }
@@ -720,7 +726,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         }
         let hostingView = EdgeDockHostingView(
             rootView: DockPopover(
-                model: model, panelPresentation: panelPresentation, controlCenter: controlCenter,
+                workspaceModel: model, panelPresentation: panelPresentation, controlCenter: controlCenter,
                 botMode: model.botMode,
                 availableWorkspaceWidth: { [weak self] in
                     self?.availableWorkspaceWidth() ?? .greatestFiniteMagnitude

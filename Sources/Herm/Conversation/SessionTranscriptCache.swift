@@ -7,6 +7,8 @@ struct SessionTranscriptPreview {
     let rowIDs: [Int: UUID]
     let references: [UUID: StoredMessageReference]
     let pendingImages: [RestoredTranscript.PendingImages]
+    // A background read does not establish that this chat has been opened before.
+    var isPreloaded = false
     let navigator = MessageNavigatorSnapshot(items: [])
 }
 
@@ -73,13 +75,16 @@ final class SessionTranscriptCache {
     }
 
     func preload(_ restored: RestoredTranscript, references: [UUID: StoredMessageReference], for key: String) {
-        guard entries[key] == nil, entries.count < maximumEntries,
-            let entry = makeEntry(restored, references: references), totalCost + entry.cost <= maximumCost
+        guard !restored.messages.isEmpty, entries[key] == nil, entries.count < maximumEntries,
+            let entry = makeEntry(restored, references: references, isPreloaded: true),
+            totalCost + entry.cost <= maximumCost
         else { return }
         insert(entry, for: key)
     }
 
-    private func makeEntry(_ restored: RestoredTranscript, references: [UUID: StoredMessageReference]) -> Entry? {
+    private func makeEntry(
+        _ restored: RestoredTranscript, references: [UUID: StoredMessageReference], isPreloaded: Bool = false
+    ) -> Entry? {
         let messages = Array(restored.messages.suffix(Self.messageLimit))
         let ids = Set(messages.map(\.id))
         let cost = messages.reduce(0) { total, message in
@@ -90,7 +95,7 @@ final class SessionTranscriptCache {
                         + (call.args?.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count } ?? 0)
                 }
         }
-        guard !messages.isEmpty, messages.allSatisfy({ $0.images.isEmpty && !$0.isError }),
+        guard messages.allSatisfy({ $0.images.isEmpty && !$0.isError }),
             restored.pendingImages.allSatisfy({ $0.fileURLs.allSatisfy(\.isFileURL) }), cost <= maximumCost
         else {
             return nil
@@ -99,7 +104,7 @@ final class SessionTranscriptCache {
             messages: messages,
             rowIDs: restored.rowIDs.filter { ids.contains($0.value) },
             references: references.filter { ids.contains($0.key) },
-            pendingImages: restored.pendingImages.filter { ids.contains($0.messageID) })
+            pendingImages: restored.pendingImages.filter { ids.contains($0.messageID) }, isPreloaded: isPreloaded)
         return Entry(preview: preview, cost: cost)
     }
 
@@ -136,7 +141,8 @@ extension DockModel {
         return SessionTranscriptPreview(
             messages: tail, rowIDs: preview.rowIDs.filter { ids.contains($0.value) },
             references: preview.references.filter { ids.contains($0.key) },
-            pendingImages: preview.pendingImages.filter { ids.contains($0.messageID) })
+            pendingImages: preview.pendingImages.filter { ids.contains($0.messageID) }, isPreloaded: preview.isPreloaded
+        )
     }
 
     func recordSessionSwitch(
@@ -195,7 +201,7 @@ extension DockModel {
             }
             sessionTranscriptPreview = SessionTranscriptPreview(
                 messages: messages, rowIDs: current.rowIDs,
-                references: current.references, pendingImages: current.pendingImages)
+                references: current.references, pendingImages: current.pendingImages, isPreloaded: current.isPreloaded)
         }
     }
 }

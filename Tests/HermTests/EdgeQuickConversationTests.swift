@@ -59,6 +59,107 @@ struct EdgeQuickConversationTests {
             botActivityFileURL: root.appendingPathComponent("bots.json"), rpcClient: client)
     }
 
+    @Test func closingAProjectionPreservesAnotherSessionsRepositoryTracking() async throws {
+        let runtime = runtime(QuickConversationRPC())
+        let chat = EdgeQuickConversationModel()
+        let workflow = DeveloperWorkflowModel.shared
+        let origin = QuickDestination(profileID: "default", sessionID: UUID().uuidString)
+        let baseline = TurnRepositoryBaseline(origin: origin, path: "/tmp", head: nil, clean: true, capturedAt: .now)
+        workflow.turnBaselines[origin.sessionKey] = baseline
+        defer {
+            workflow.turnBaselines.removeValue(forKey: origin.sessionKey)
+            chat.shutdown()
+            runtime.shutdown()
+        }
+
+        await chat.load(QuickDestination(profileID: "default", sessionID: "popout"), runtime: runtime)
+        #expect(chat.conversation != nil)
+        #expect(chat.conversation?.gateway == nil)
+        chat.shutdown()
+        #expect(workflow.turnBaselines[origin.sessionKey] == baseline)
+    }
+
+    @Test func focusingLoadedSplitColumnsKeepsTheirModelsAndDoesNotResume() async throws {
+        let rpc = QuickConversationRPC()
+        let runtime = runtime(rpc)
+        let panes = SessionPaneStore()
+        panes.runtime = runtime
+        defer {
+            for panel in panes.panels { panel.chat.shutdown() }
+            runtime.shutdown()
+        }
+        runtime.draft = "Workspace draft"
+        let side = QuickDestination(profileID: "default", sessionID: "side")
+        panes.open(side, target: .newPanel(1))
+        let panel = try #require(panes.panels.last)
+        for _ in 0..<100 where panel.chat.isLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let conversation = try #require(panel.chat.conversation)
+        #expect(conversation.sessionStorageID == "side")
+        #expect(panes.focusedProjection == nil)
+        conversation.draft = "Side draft"
+        let resumed = rpc.calls.filter { $0.0 == "session.resume" }.count
+        #expect(resumed == 1)
+
+        for _ in 0..<3 {
+            #expect(panes.focusOpenSession("side", profileID: "default"))
+            #expect(panes.focusedProjection === conversation)
+            #expect(panes.focusOpenSession("workspace", profileID: runtime.sessionProfileID))
+            #expect(panes.focusedProjection == nil)
+        }
+        for _ in 0..<20 { await Task.yield() }
+        #expect(rpc.calls.filter { $0.0 == "session.resume" }.count == resumed)
+        #expect(panel.chat.conversation === conversation)
+        #expect(runtime.draft == "Workspace draft")
+        #expect(conversation.draft == "Side draft")
+        #expect(runtime.navigationSessionID == "workspace")
+
+        runtime.receiveGatewayEvent("message.start", params: ["session_id": "runtime-side"])
+        runtime.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "runtime-side", "payload": ["delta": "Still streaming"]])
+        #expect(conversation.streamingMessageBuffer == "Still streaming")
+
+        panes.closeTab("workspace", in: SessionPaneStore.baseColumnID)
+        #expect(panes.focusedProjection === conversation)
+        #expect(panes.panels.count == 1)
+        #expect(conversation.draft == "Side draft")
+        #expect(rpc.calls.filter { $0.0 == "session.resume" }.count == resumed)
+    }
+
+    @Test func reopenedProjectionSharesTheWorkspaceCacheWhileHermesResponds() async throws {
+        let rpc = QuickConversationRPC()
+        rpc.rows = [["role": "assistant", "text": "Previous reply", "row_id": 1]]
+        let runtime = runtime(rpc)
+        let chat = EdgeQuickConversationModel()
+        defer {
+            chat.shutdown()
+            runtime.shutdown()
+        }
+        let destination = QuickDestination(profileID: "builder", sessionID: "chat")
+        await chat.load(destination, runtime: runtime)
+        chat.shutdown()
+
+        rpc.holdResume = true
+        let resume = chat.startLoad(destination, runtime: runtime)
+        let projection = try #require(chat.conversation)
+        #expect(projection.sessionTranscriptLoadState == .refreshing)
+        #expect(projection.displayedTranscriptMessages.map(\.text) == ["Previous reply"])
+        #expect(!projection.sessionActionsReady)
+        for _ in 0..<100 where rpc.pendingResume == nil { await Task.yield() }
+        let pendingResume = try #require(rpc.pendingResume)
+        pendingResume.resume(returning: [
+            "session_id": "runtime-chat", "stored_session_id": "chat", "messages": rpc.rows,
+        ])
+        #expect(await resume?.value == true)
+        #expect(projection.sessionActionsReady)
+
+        let other = QuickDestination(profileID: "research", sessionID: "chat")
+        chat.startLoad(other, runtime: runtime)
+        #expect(chat.conversation?.sessionTranscriptLoadState == .loading)
+        #expect(chat.conversation?.displayedTranscriptMessages.isEmpty == true)
+    }
+
     @Test func acknowledgedSendShowsPromptAndLiveReplyWithoutChangingWorkspace() async throws {
         let rpc = QuickConversationRPC()
         let runtime = runtime(rpc)
@@ -131,6 +232,78 @@ struct EdgeQuickConversationTests {
         defer { chat.shutdown() }
         #expect(chat.conversation !== previous)
         #expect(chat.conversation?.messages.map(\.text) == ["test", "Everything is working."])
+    }
+
+    @Test func multiplePopoutsProjectOnlyTheirOwnTrafficAndShareTheSessionIndex() async throws {
+        let rpc = QuickConversationRPC()
+        let runtime = runtime(rpc)
+        let chats = (0..<6).map { _ in EdgeQuickConversationModel() }
+        defer {
+            for chat in chats { chat.shutdown() }
+            runtime.shutdown()
+        }
+        for (index, chat) in chats.enumerated() {
+            await chat.load(QuickDestination(profileID: "default", sessionID: "chat-\(index)"), runtime: runtime)
+        }
+        let delegationMethod = HermesFeatureIDs.ID.delegationStatus.rawValue
+        for _ in 0..<200 where rpc.calls.filter({ $0.0 == delegationMethod }).count < chats.count {
+            await Task.yield()
+        }
+        let polledSessions = rpc.calls.compactMap { method, params in
+            method == delegationMethod ? params["session_id"] as? String : nil
+        }
+        #expect(Set(polledSessions) == Set(chats.indices.map { "runtime-chat-\($0)" }))
+        let models = try chats.map { try #require($0.conversation) }
+        runtime.receiveGatewayEvent("gateway.ready", params: ["payload": ["replay_epoch": "test-epoch"]])
+        let first = models[0]
+        first.sessionAgents = [HermesSubagent(id: "worker", childSessionID: "child", goal: "Check", status: "running")]
+        first.inFlightBotActivities["mention"] = DockModel.InFlightBotActivity(
+            activityID: "mention", originSessionID: "chat-0", botID: "reviewer", botChatSessionID: "recipient",
+            submissionStarted: true)
+
+        for index in 0..<200 {
+            runtime.receiveGatewayEvent(
+                "message.delta",
+                params: ["session_id": "background-\(index % 5)", "seq": 1 + index / 5, "payload": ["delta": "Other"]])
+        }
+        for index in models.indices {
+            let sessionID = "runtime-chat-\(index)"
+            runtime.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "seq": 1])
+            runtime.receiveGatewayEvent(
+                "message.delta",
+                params: ["session_id": sessionID, "seq": 2, "payload": ["delta": "Reply \(index)"]])
+            #expect(models[index].streamingMessageBuffer == "Reply \(index)")
+            #expect(models[index].highestGatewaySequenceBySessionID == [sessionID: 2])
+            #expect(models[index].gatewayReplayEpoch == "test-epoch")
+        }
+        runtime.receiveGatewayEvent(
+            "subagent.progress",
+            params: ["session_id": "child", "seq": 1, "payload": ["parent_session_id": "runtime-chat-0"]])
+        runtime.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "recipient", "seq": 1, "payload": ["delta": "Mention reply"]])
+        runtime.receiveGatewayEvent("session.info", params: ["session_id": "chat-0", "seq": 1])
+        #expect(
+            first.highestGatewaySequenceBySessionID == [
+                "runtime-chat-0": 2, "child": 1, "recipient": 1, "chat-0": 1,
+            ])
+        #expect(first.inFlightBotActivities["mention"]?.replyText == "Mention reply")
+        #expect(models[1].highestGatewaySequenceBySessionID == ["runtime-chat-1": 2])
+
+        for model in [runtime] + models {
+            model.lastSessionIndexReadAt = Date()
+            model.sessionIndexActivitySpacing = 60
+        }
+        runtime.receiveGatewayEvent("sessions.changed", params: [:])
+        #expect(runtime.sessionIndexRefreshTask != nil)
+        #expect(models.allSatisfy { $0.sessionIndexRefreshTask == nil })
+
+        chats[0].shutdown()
+        runtime.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "runtime-chat-0", "seq": 3, "payload": ["delta": "After close"]])
+        runtime.receiveGatewayEvent(
+            "message.delta", params: ["session_id": "runtime-chat-1", "seq": 3, "payload": ["delta": " continues"]])
+        #expect(first.highestGatewaySequenceBySessionID["runtime-chat-0"] == 2)
+        #expect(models[1].streamingMessageBuffer == "Reply 1 continues")
     }
 
     @Test func changingDestinationRejectsAnOlderLoadingResult() async throws {

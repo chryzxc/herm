@@ -170,7 +170,7 @@ struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
 
 final class NativeMarkdownTextView: NSTextView {
     var markdownOpenURL = OpenURLAction {
-        InAppBrowser.open($0)
+        ExternalOpen.open($0)
         return .handled
     }
     init() {

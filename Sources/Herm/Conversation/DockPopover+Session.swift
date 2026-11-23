@@ -87,12 +87,11 @@ extension DockPopover {
         }
     }
 
-    /// An inactive split column's header actions, matching the active header. Each
-    /// action activates the column first, so the result lands on that column's session.
-    func splitColumnControls(sessionID: String, activate: @escaping () -> Void) -> AnyView {
+    /// An inactive split column's header actions target its saved session.
+    func splitColumnControls(destination: QuickDestination, activate: @escaping () -> Void) -> AnyView {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         // Bots shows each Bot's main chat, which can't be pinned, renamed or hidden.
-        let session = fullscreenSurface == .bots ? nil : model.sessions.first { $0.id == sessionID }
+        let session = fullscreenSurface == .bots ? nil : destination.session.map { indexedSession($0) ?? $0 }
         return AnyView(
             HStack(spacing: 4) {
                 DockMenu {
@@ -100,30 +99,30 @@ extension DockPopover {
                         Button("Pop out conversation", icon: .arrowSquareOut) {
                             ConversationWindowStore.shared.open(SessionPaneDrag(session: session).destination)
                         }
-                        let pinned = model.isSessionPinned(session.id)
+                        let pinned = isWorkspaceSessionPinned(session)
                         Button(
                             pinned ? "Unpin conversation" : "Pin conversation", icon: pinned ? .pushPinSlash : .pushPin
                         ) {
-                            Task { await model.toggleSessionPinned(session) }
+                            Task { await workspaceModel.toggleSessionPinned(session, isPinned: pinned) }
                         }
-                        .disabled(!model.sessionActionsReady)
+                        .disabled(!workspaceModel.isHermesConnected)
                         Button("Rename…", icon: .pencilSimple) {
                             activate()
                             renameDraft = session.displayTitle
                             isRenamingSession = true
                         }
-                        .disabled(!model.sessionActionsReady)
+                        .disabled(!workspaceModel.isHermesConnected)
                         Button(
                             session.isHidden ? "Show in list" : "Hide from list",
                             icon: session.isHidden ? .eye : .eyeSlash
                         ) {
                             Task { @MainActor in
-                                if await model.setSessionHidden(session, hidden: !session.isHidden) {
+                                if await workspaceModel.setSessionHidden(session, hidden: !session.isHidden) {
                                     controlCenter.refreshProjectNavigation()
                                 }
                             }
                         }
-                        .disabled(!model.sessionActionsReady)
+                        .disabled(!workspaceModel.isHermesConnected)
                         moveToProjectMenu(session, activate: activate)
                         Divider()
                     }
@@ -176,7 +175,11 @@ extension DockPopover {
         DockMenu {
             if case .failed = model.sessionTranscriptLoadState {
                 Button("Retry loading conversation", icon: .arrowClockwise) {
-                    Task { await model.refreshCurrentSession() }
+                    if let panel = sessionPanes.activePanel, !panel.usesWorkspaceConversation {
+                        sessionPanes.retry(panel.id)
+                    } else {
+                        Task { await model.refreshCurrentSession() }
+                    }
                 }
             }
             // A bot's main chat edits the bot instead: its profile editor opens as a workspace tab.
@@ -199,9 +202,9 @@ extension DockPopover {
                 Button("Pop out conversation", icon: .arrowSquareOut) {
                     ConversationWindowStore.shared.open(SessionPaneDrag(session: session).destination)
                 }
-                let pinned = model.isSessionPinned(session.id)
+                let pinned = isWorkspaceSessionPinned(session)
                 Button(pinned ? "Unpin conversation" : "Pin conversation", icon: pinned ? .pushPinSlash : .pushPin) {
-                    Task { await model.toggleSessionPinned(session) }
+                    Task { await workspaceModel.toggleSessionPinned(session, isPinned: pinned) }
                 }
                 .disabled(!model.sessionActionsReady)
                 Button("Rename…", icon: .pencilSimple) {
@@ -212,7 +215,7 @@ extension DockPopover {
                 Button(session.isHidden ? "Show in list" : "Hide from list", icon: session.isHidden ? .eye : .eyeSlash)
                 {
                     Task { @MainActor in
-                        if await model.setSessionHidden(session, hidden: !session.isHidden) {
+                        if await workspaceModel.setSessionHidden(session, hidden: !session.isHidden) {
                             controlCenter.refreshProjectNavigation()
                         }
                     }
@@ -258,7 +261,13 @@ extension DockPopover {
                 let title = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !title.isEmpty, let session = currentSession, title != session.title else { return }
                 Task { @MainActor in
-                    if await model.renameSession(session, title: title) { controlCenter.refreshProjectNavigation() }
+                    guard await model.renameSession(session, title: title) else { return }
+                    sessionPanes.retitle(session.id, to: title)
+                    if model !== workspaceModel {
+                        workspaceModel.invalidateRetainedHistory(profileID: session.profileID)
+                        workspaceModel.loadSessions(quiet: true, reconcileHistory: true)
+                    }
+                    controlCenter.refreshProjectNavigation()
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -267,17 +276,36 @@ extension DockPopover {
 
     private var sessionActionPending: Bool {
         guard let id = model.navigationSessionID else { return false }
-        return model.pinningSessionID == id || model.renamingSessionID == id
-            || model.updatingSessionVisibilityID == id || model.deletingSessionID == id
+        return workspaceModel.pinningSessionID == id || model.renamingSessionID == id
+            || workspaceModel.updatingSessionVisibilityID == id || workspaceModel.deletingSessionID == id
     }
 
     /// The open conversation as a session row, so list actions can target it.
     var currentSession: HermesSession? {
         guard let id = model.navigationSessionID else { return nil }
-        return model.sessions.first { $0.id == id }
-            ?? HermesSession(
-                id: id, profileID: model.sessionProfileID, title: model.currentSessionTitle ?? "",
-                preview: "", startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource)
+        let session = HermesSession(
+            id: id, profileID: model.sessionProfileID, title: model.currentSessionTitle ?? "",
+            preview: "", startedAt: nil, messageCount: 0, source: HermesFeatureIDs.sessionSource)
+        return indexedSession(session) ?? session
+    }
+
+    private func indexedSession(_ session: HermesSession) -> HermesSession? {
+        let scope = workspaceModel.profileScopeID
+        let key = ProfileScopedID(profileID: session.profileID ?? scope, resourceID: session.id)
+        if let row = workspaceModel.sessions.first(where: {
+            $0.id == session.id && ProfileScopedID(profileID: $0.profileID ?? scope, resourceID: $0.id) == key
+        }) {
+            return row
+        }
+        switch workspaceModel.allBotSessionsState {
+        case .ready(let rows), .stale(let rows, _): return rows.first { $0.scopedID == key }
+        case .loading, .empty, .unavailable, .failed: return nil
+        }
+    }
+
+    private func isWorkspaceSessionPinned(_ session: HermesSession) -> Bool {
+        AllProfilesSessions.isPinned(
+            session, scopePinned: workspaceModel.pinnedSessions, scopeProfileID: workspaceModel.profileScopeID)
     }
 
     func selectSessionMode(_ mode: SessionWorkspaceMode) {
@@ -316,10 +344,12 @@ extension DockPopover {
         }
     }
 
-    func showSessionRailInspector(_ section: SessionInspector.Section, browserTabID: UUID? = nil) {
+    func showSessionRailInspector(
+        _ section: SessionInspector.Section, browserTabID: UUID? = nil, conversation: DockModel? = nil
+    ) {
         inspectorScope = .session
         sessionInspectorTabRequest = .init(
-            session: WorkspaceIdentity.session(model), section: section, browserTabID: browserTabID)
+            session: WorkspaceIdentity.session(conversation ?? model), section: section, browserTabID: browserTabID)
         ensureInspectorPanelVisible()
     }
 
@@ -571,38 +601,39 @@ extension DockPopover {
         let statuses = SidebarSessionStatusResolver.statuses(
             for: sessions,
             snapshot: SessionNavSidebarSnapshot(
-                inputs: SessionNavSidebarSnapshot.inputs(model: model, control: controlCenter)),
+                inputs: SessionNavSidebarSnapshot.inputs(model: workspaceModel, control: controlCenter)),
             seenStore: sidebarSessionSeenStore,
-            fallbackProfileID: model.profileScopeID
+            fallbackProfileID: workspaceModel.profileScopeID
         )
         return VStack(alignment: .leading, spacing: 4) {
             DockSectionHeader(
                 title: "Recents",
-                count: model.sessions.isEmpty ? nil : model.sessions.count,
+                count: workspaceModel.sessions.isEmpty ? nil : workspaceModel.sessions.count,
                 style: style
             ) {
                 DockIconButton(
                     icon: .arrowsClockwise,
                     label: "Refresh conversations",
-                    isBusy: model.isLoadingSessions,
+                    isBusy: workspaceModel.isLoadingSessions,
                     size: 24,
                     style: style
-                ) { model.loadSessions(reconcileHistory: true) }
+                ) { workspaceModel.loadSessions(reconcileHistory: true) }
             }
             .dockPadding(.horizontal, 6)
             .dockPadding(.top, 8)
 
-            if !model.sessions.isEmpty {
+            if !workspaceModel.sessions.isEmpty {
                 sessionSearchField(style: style)
                     .dockPadding(.horizontal, 12)
                     .dockPadding(.bottom, 4)
             }
 
-            if model.sessions.isEmpty && model.isLoadingSessions {
+            if workspaceModel.sessions.isEmpty && workspaceModel.isLoadingSessions {
                 DockLoadingState(title: "Loading conversations…", minHeight: 80)
             } else if sessions.isEmpty {
                 Text(
-                    model.sessions.isEmpty ? "No saved conversations" : "No conversations match “\(sessionPickerQuery)”"
+                    workspaceModel.sessions.isEmpty
+                        ? "No saved conversations" : "No conversations match “\(sessionPickerQuery)”"
                 )
                 .dockFont(.body)
                 .foregroundStyle(style.secondaryText)
@@ -619,32 +650,38 @@ extension DockPopover {
                             sessionStatus: statuses[session.id] ?? .none,
                             style: style,
                             repositoryName: conversationProjectName(for: session),
-                            isPinned: model.isSessionPinned(session.id),
+                            isPinned: isWorkspaceSessionPinned(session),
                             isActive: session.id == model.sessionID,
-                            isDeleting: model.deletingSessionID == session.id,
-                            isUpdatingVisibility: model.updatingSessionVisibilityID == session.id,
-                            isRenaming: model.renamingSessionID == session.id,
+                            isDeleting: workspaceModel.deletingSessionID == session.id,
+                            isUpdatingVisibility: workspaceModel.updatingSessionVisibilityID == session.id,
+                            isRenaming: workspaceModel.renamingSessionID == session.id,
                             onSelect: { selected in
-                                model.resumeSession(selected)
+                                openSessionInWorkspace(selected)
                             },
                             onTogglePin: { selected in
-                                Task { await model.toggleSessionPinned(selected) }
+                                Task {
+                                    await workspaceModel.toggleSessionPinned(
+                                        selected, isPinned: isWorkspaceSessionPinned(selected))
+                                }
                             },
                             onRename: { selected, title in
-                                let succeeded = await model.renameSession(selected, title: title)
-                                if succeeded { controlCenter.refreshProjectNavigation() }
+                                let succeeded = await workspaceModel.renameSession(selected, title: title)
+                                if succeeded {
+                                    sessionPanes.retitle(selected.id, to: title)
+                                    controlCenter.refreshProjectNavigation()
+                                }
                                 return succeeded
                             },
                             onToggleHidden: { selected, hidden in
-                                let succeeded = await model.setSessionHidden(selected, hidden: hidden)
+                                let succeeded = await workspaceModel.setSessionHidden(selected, hidden: hidden)
                                 if succeeded { controlCenter.refreshProjectNavigation() }
                                 return succeeded
                             },
                             onRequestDelete: { selected in
-                                guard model.deletingSessionID == nil else { return }
+                                guard workspaceModel.deletingSessionID == nil else { return }
                                 sessionPendingDeletion = selected
                             },
-                            isPinning: model.pinningSessionID == session.id,
+                            isPinning: workspaceModel.pinningSessionID == session.id,
                             projectTargets: SessionProjectMove.targets(
                                 projects: controlCenter.projects, excluding: session.id, control: controlCenter,
                                 store: workspaceStore),
@@ -678,8 +715,8 @@ extension DockPopover {
 
     var filteredPickerSessions: [HermesSession] {
         let query = sessionPickerQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return model.sessions }
-        return model.sessions.filter { session in
+        guard !query.isEmpty else { return workspaceModel.sessions }
+        return workspaceModel.sessions.filter { session in
             [session.displayTitle, session.displayPreview, conversationProjectName(for: session)]
                 .contains { $0?.localizedCaseInsensitiveContains(query) == true }
         }

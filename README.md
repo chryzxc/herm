@@ -533,10 +533,14 @@ reading position when that transcript is still cached. Retained lists stay keyed
 to their own profile and are cleared when the Hermes sign-in changes.
 Startup confirms the selected bot before reopening its last chat. Bot avatars and
 live status load independently of restoration.
-Recently opened chats can show a cached transcript while Hermes refreshes it. The opening preview includes bot replies received while you were away.
+Recently opened chats show their cached transcript immediately across bots, split tabs,
+and detached windows while Hermes refreshes it. The cache is bounded and held in
+memory. The opening preview includes bot replies received while you were away.
 On a first visit, Herm waits for the unread check and opens directly at the first
 unread reply, or at the latest message when all replies have been read.
 
+Focusing an already-loaded split column keeps both conversations live while
+the inspector follows the selected column.
 Talk, Pull requests and Issues open as inspector tabs from its **Open a new tab** grid; voice runs while the Talk tab shows. Opening the inspector in the floating desktop panel keeps the conversation visible beside it, with the inspector tab row matching the chat header. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.
 
 Each Terminal inspector tab owns one shell; open another Terminal tab for a separate shell. Terminal options use a vertical-dots menu beside Previews.
@@ -1030,7 +1034,7 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 - **Sign-ins stay within a profile.** Sessions of one Hermes profile share its browser and remembered sign-ins. Other profiles, including bots, keep separate sign-ins. Chromium and regular WebKit tabs retain their existing profile stores; opening an extra tab copies only that profile's sign-in for the destination site, and changes carry back to that profile's agent browser. Herm no longer exports shared cookies or requests a browser encryption key from Keychain, including in ad-hoc builds. Existing browser profiles keep their sign-ins after upgrading; the old encrypted shared-cookie file is ignored. More → **Sign Out of All Sites** clears running browser stores and saves a nonsecret reset identifier so closed Chromium profiles clear their cookies before their next handoff to Hermes. A failed reset reports an error and can be retried. Explicit sign-out also removes the obsolete shared-cookie file without unlocking its Keychain key.
 - **Typing and forms.** Dropdowns open as a native menu, the pointer changes over links and text, ⌘C, ⌘X, ⌘V, ⌘A, ⌘Z and ⌘⇧Z work in fields, and accents and input methods (⌥E E → é, Japanese, Chinese) compose in place.
 - **Downloads and permissions.** Files the agent browser downloads go to `~/Downloads/Herm`. Pages are refused location, notifications, camera, microphone, clipboard reading and similar permissions without a prompt.
-- **Links in chat** open their exact destination in that session's Browser, including while the browser is starting. A different URL opens an additional tab without replacing the current page; clicking an already-open exact URL selects its tab. Loaded browser tabs show the webpage name; untitled pages keep the Browser label rather than displaying the URL.
+- **Website links in chat** open their exact destination in that conversation's Browser tab and reveal its inspector, including while the browser is starting. In split chat, the inspector follows the column containing the link. A different URL opens an additional tab without replacing the current page. Clicking an already-open exact URL selects its tab. Loaded tabs show the webpage name, and untitled pages keep the Browser label. Markdown on pages without a chat inspector opens website links in your default browser.
 - **Sharp page rendering.** The shared browser streams high-quality frames sized for the visible pane. Large previews limit the pixel count to keep clicks and typing responsive. On resize, Herm keeps the last usable frame until the new layout is ready. Auto keeps one CSS pixel per point. Fixed device previews scale down when the pane is narrower.
 - **Browser activity icon.** The Browser tab uses a pointer icon in place of the horse marker in the agent page title.
 - **Navigation feedback.** A spinner and slim loading track appear while pages load; Reload becomes Stop. Failed navigation offers Retry without shifting the page. Back and Forward reflect the active page’s history.

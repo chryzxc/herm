@@ -284,7 +284,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     weak var scrollController: ConversationScrollController?
     var retainsStreamingMeasurements = false
     var markdownOpenURL = OpenURLAction {
-        InAppBrowser.open($0)
+        ExternalOpen.open($0)
         return .handled
     }
     /// Matches the block spacing of the SwiftUI `MarkdownMessageView`, so a
