@@ -1954,7 +1954,7 @@ Working and unread activity follows each session through selection, pinned rows,
 and project summaries; the notch uses the same session activity state.
 Each leading status slot shows one mark. Approval, clarification, running, and failure
 icons take precedence over the unread count. An unseen failed turn from history
-shows a warning triangle in that slot, including in All profiles. Leading status marks (running, approval, warning, unread
+shows a red triangle using `dockDestructive` in that slot, including in All profiles. Leading status marks (running, approval, warning, unread
 count, done) share `DockSidebarListMetrics.statusMark` (16pt) inside a 28pt
 `statusSlotWidth`, via `DockActivityIndicator`'s `.status` role; never size one locally. Opening the session acknowledges the history warning
 while retaining error details in the transcript.
@@ -1968,6 +1968,10 @@ remain visible. Clearing search or pressing Escape restores existing disclosures
 Search is transient presentation state and does not fetch transcript history.
 Pointer and search updates reuse the sidebar’s session inventory for unread badges.
 Recents and Automations reuse sections prepared when the session inventory changes.
+Pinned rows and status marks also come from that projection. Unread-count reads
+pause while the Chats list is collapsed or covered.
+Background activity groups and sorts rows off the main thread. Initial rows and
+selection changes appear immediately.
 
 The bottom connection indicator opens a quick-action popover in every connection
 state. Show Herm's backend connection separately from the local default-profile

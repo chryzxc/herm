@@ -25,7 +25,7 @@ Performance captures record callback timing and workspace updates locally. Enabl
 
 Unread session badges and the floating “new messages” control count AI responses only. User messages, tools, activity, system notices, errors, and empty streaming placeholders do not increase the count. Opening an unread session takes you to its first unread reply and marks the captured updates reviewed; a blue-tinted unread divider remains visible for that visit. A session you already viewed since Herm launched reopens where you left it instead; the divider still marks the first unread reply. The Bot picker counts unread sessions per Bot in a red badge, with a plus sign when the available session inventory is incomplete. Scrolling to the latest reply clears the floating count.
 
-The session list shows the unread count only when the leading slot has no approval, question, running, or error indicator. An unseen failed turn shows a warning triangle there, including in All profiles. Opening the conversation acknowledges the history warning and retains the error details in the transcript.
+The session list shows the unread count only when the leading slot has no approval, question, running, or error indicator. An unseen failed turn shows a red triangle there, including in All profiles. Opening the conversation acknowledges the history warning and retains the error details in the transcript.
 
 [![Herm driving a shared browser with a live agent cursor](docs/media/browser-demo-poster.webp)](docs/media/browser-demo.mp4)
 
@@ -542,6 +542,7 @@ unread reply, or at the latest message when all replies have been read.
 Chats, Activity, and other desktop pages share the window's layout host. Showing
 or hiding the Chats list or inspector applies the new pane widths immediately
 and keeps each mounted pane's state.
+Chats groups and sorts background session activity off the main thread.
 Focusing an already-loaded split column keeps both conversations live while
 the inspector follows the selected column.
 Talk, Pull requests and Issues open as inspector tabs from its **Open a new tab** grid; voice runs while the Talk tab shows. Opening the inspector in the floating desktop panel keeps the conversation visible beside it, with the inspector tab row matching the chat header. The three panes default to roughly 25% list, 40% conversation, and 35% inspector, with adjustable dividers and minimum readable widths.

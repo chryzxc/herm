@@ -48,7 +48,7 @@ struct SessionNavQueue: View, Equatable {
     @State private var isProfileHovering = false
     @State private var creatingProjectPath: String?
     @State private var isShowingProjectSheet = false
-    @ObservedObject private var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
+    private let sidebarSessionSeenStore = SidebarSessionSeenStore.shared
     @State private var botUnreadCounts: [String: Int] = [:]
     @State private var botUnreadIncomplete = true
 
@@ -69,24 +69,22 @@ struct SessionNavQueue: View, Equatable {
         }
         return BotUnreadRequest(
             sessions: sidebar.unreadSessions.rows,
-            scopeProfileID: model.profileScopeID,
-            baselinedProfiles: sidebarSessionSeenStore.baselinedProfiles,
-            seen: sidebarSessionSeenStore.seenAtByKey,
+            scopeProfileID: sidebarSnapshot.inputs.profileScopeID,
+            baselinedProfiles: sidebarSnapshot.inputs.baselinedProfiles,
+            seen: sidebarSnapshot.inputs.seenAtByKey,
             incomplete: incomplete)
     }
 
     private func refreshBotUnreadCounts(_ request: BotUnreadRequest) async {
-        botUnreadCounts = [:]
-        botUnreadIncomplete = true
         let sessions = sidebar.unreadSessions.sessions
-        guard
-            let result = try? await model.sessionUnreadReplies.botCounts(
-                sessions: sessions, scopeProfileID: model.profileScopeID,
-                seenStore: sidebarSessionSeenStore, incomplete: request.incomplete)
-        else { return }
+        let result = try? await model.sessionUnreadReplies.botCounts(
+            sessions: sessions, scopeProfileID: request.scopeProfileID,
+            seenStore: sidebarSessionSeenStore, incomplete: request.incomplete)
         guard !Task.isCancelled, request == botUnreadRequest else { return }
-        botUnreadCounts = result.counts
-        botUnreadIncomplete = result.incomplete
+        let counts = result?.counts ?? [:]
+        let incomplete = result?.incomplete ?? true
+        if botUnreadCounts != counts { botUnreadCounts = counts }
+        if botUnreadIncomplete != incomplete { botUnreadIncomplete = incomplete }
     }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dockWorkspaceScale) private var workspaceScale
@@ -195,14 +193,10 @@ struct SessionNavQueue: View, Equatable {
         navigationState.showsAllProfiles && visibleBots.count > 1
     }
 
-    /// Build once per rail pass and pass it down; each build indexes every loaded row.
     private var pinnedSessionPresentation: PinnedSessionPresentation {
-        PinnedSessionPresentation(
-            pinned: showsAllProfiles ? sidebarSnapshot.allProfilePinned : sidebarSnapshot.inputs.pinnedSessions,
-            live: showsAllProfiles ? sidebarSnapshot.allBotConversations : sidebarSnapshot.conversations,
-            projection: sidebarSnapshot.inputs.sessionProjectionState,
-            hasRequestedSessionIndex: navigationState.hasRequestedSessionIndex
-        )
+        let presentation =
+            showsAllProfiles ? sidebarSnapshot.allProfilePinPresentation : sidebarSnapshot.scopedPinPresentation
+        return navigationState.hasRequestedSessionIndex ? presentation : presentation.withInitialRequestPending()
     }
 
     private func isPinned(_ session: HermesSession) -> Bool {
@@ -224,16 +218,6 @@ struct SessionNavQueue: View, Equatable {
         guard showsAllProfiles else { return nil }
         return AllProfilesSessions.ownerBot(
             session, bots: visibleBots, scopeProfileID: sidebarSnapshot.inputs.profileScopeID)
-    }
-
-    private func sidebarSessionStatuses(pinned: PinnedSessionPresentation) -> [String: SidebarSessionStatus] {
-        // Pins can sit past the recents page, so they need their own status.
-        SidebarSessionStatusResolver.statuses(
-            for: sidebarSnapshot.allBotConversations + pinned.sessions,
-            snapshot: sidebarSnapshot,
-            seenStore: sidebarSessionSeenStore,
-            fallbackProfileID: model.profileScopeID
-        )
     }
 
     /// Opens a chat from any bot. Another bot's chat switches the profile
@@ -276,10 +260,11 @@ struct SessionNavQueue: View, Equatable {
     var body: some View {
         let _ = HermPerformanceRecorder.countBody("SessionNavQueue")
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
-        let unreadRequest = botUnreadRequest
+        let unreadRequest = hostVisible && !isSidebarCollapsed ? botUnreadRequest : nil
         listPanel(style: style)
             .dockShellPane()
             .task(id: unreadRequest) {
+                guard let unreadRequest else { return }
                 await refreshBotUnreadCounts(unreadRequest)
             }
             // This queue can move between AppKit split-view hosts as the center
@@ -667,9 +652,8 @@ struct SessionNavQueue: View, Equatable {
         let recents = showsAllProfiles ? sidebarSnapshot.allBotRecents : sidebarSnapshot.scopedRecents
         let conversations = botScopedConversations(recents.conversations)
         let automations = botScopedConversations(recents.automations)
-        // Built once per pass; rows previously rebuilt them per row (O(n²)).
         let pinned = pinnedSessionPresentation
-        let statuses = sidebarSessionStatuses(pinned: pinned)
+        let statuses = sidebarSnapshot.sessionStatuses
 
         // Native sections keep headers visible without geometry tracking or eager row containers.
         return LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {

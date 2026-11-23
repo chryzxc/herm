@@ -21,11 +21,15 @@ struct PinnedSessionPresentation: Equatable {
         projection: HermesProjectionState<[HermesSession]>,
         hasRequestedSessionIndex: Bool = true
     ) {
-        let liveByID = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         switch projection {
         case .ready, .empty, .stale, .loading:
-            sessions = pinned.map { liveByID[$0.id] ?? $0 }
-                .sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
+            if pinned.isEmpty {
+                sessions = []
+            } else {
+                let liveByID = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                sessions = pinned.map { liveByID[$0.id] ?? $0 }
+                    .sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
+            }
         case .unavailable, .failed:
             sessions = []
         }
@@ -40,6 +44,15 @@ struct PinnedSessionPresentation: Equatable {
     }
 
     var count: Int { sessions.count }
+
+    func withInitialRequestPending() -> Self {
+        status == .empty ? Self(sessions: sessions, status: .loading) : self
+    }
+
+    private init(sessions: [HermesSession], status: PinnedSessionPresentationStatus) {
+        self.sessions = sessions
+        self.status = status
+    }
 }
 
 struct PinnedSessionRowControls {

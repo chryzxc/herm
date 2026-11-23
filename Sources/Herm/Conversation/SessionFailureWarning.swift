@@ -17,7 +17,7 @@ struct SessionFailureWarning: View {
     private let description = "Failed turn. Open conversation for details."
 
     var body: some View {
-        DockIcon(.warning, size: DockSidebarListMetrics.statusMark - 2, color: .dockWarning)
+        DockIcon(.warning, size: DockSidebarListMetrics.statusMark - 2, color: .dockDestructive)
             .frame(width: DockSidebarListMetrics.statusMark, height: DockSidebarListMetrics.statusMark)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(description)

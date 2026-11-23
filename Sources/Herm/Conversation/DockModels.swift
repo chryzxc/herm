@@ -4,7 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import UserNotifications
 
-enum HermesStatus: Equatable {
+enum HermesStatus: Equatable, Sendable {
     case idle, working, needsApproval, needsClarification, offline
 
     var title: String {

@@ -284,7 +284,7 @@ enum ControlSource: String, Codable, Hashable {
     case hermesProject
 }
 
-struct ControlReference: Identifiable, Codable, Hashable, Equatable {
+struct ControlReference: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let source: ControlSource
     let sourceID: String
@@ -331,7 +331,7 @@ enum AttentionAction: String, Codable, CaseIterable {
     case complete
 }
 
-struct AttentionItem: Identifiable, Codable, Equatable {
+struct AttentionItem: Identifiable, Codable, Equatable, Sendable {
     let id: String
     var reference: ControlReference
     let kind: AttentionKind
@@ -354,7 +354,7 @@ struct ReminderSummary: Identifiable, Codable, Equatable {
     let isOverdue: Bool
 }
 
-struct SessionSummary: Identifiable, Codable, Equatable {
+struct SessionSummary: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let storedSessionID: String?
     let profileID: String?
@@ -506,7 +506,7 @@ struct SessionActivityStep: Equatable {
     let timestamp: Date
 }
 
-struct LatestActivityItem: Identifiable, Equatable {
+struct LatestActivityItem: Identifiable, Equatable, Sendable {
     let id: String
     let sessionID: String
     let sessionTitle: String
@@ -573,7 +573,7 @@ struct ProcessSummary: Identifiable, Codable, Equatable {
     var latestOutput: String? = nil
 }
 
-struct ProjectSummary: Identifiable, Codable, Equatable {
+struct ProjectSummary: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let name: String
     let repoCount: Int

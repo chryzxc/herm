@@ -978,6 +978,20 @@ Mean main-thread CPU per pass changed from 336 to 297 ms for Chats, 273 to 265 m
 for Usage, and 184 to 167 ms for Settings. This Debug fixture uses programmatic
 scrolling. Its slowest steps vary with layout and system scheduling.
 
+A separate 400-session, 25-project Debug fixture averaged 10.4 ms per sidebar
+rebuild before the activity projection moved off the main thread. The sidebar
+coalesces bursts into one utility task and applies its result on the main actor.
+Navigation can supersede a pending rebuild, and activity during a rebuild queues
+a follow-up. In a paired Debug fixture, 12 updates to that inventory used 117.3 ms
+of main-thread CPU through the synchronous path and 20.5 ms through the coalesced
+path. Each update published the expected newest row. `sidebarRefresh` records
+immediate refreshes and `sidebarPublish` records the cost of publishing a finished
+snapshot to its consumers. Opt in with `HERM_SIDEBAR_PROFILE=1` and filter to
+`SidebarSnapshotProfileTests`.
+
+Chats reuses pin and status projections across pointer and search updates and
+pauses unread-count reads when collapsed or covered.
+
 ### Performance contract
 
 `make perf-contract` (part of `make guard`) rejects, in `Sources/Herm`:

@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// Fullscreen navigation stays visible as a quiet operational queue. It is
 /// intentionally list-led rather than another dashboard: selecting an item
 /// always changes the central work surface.
-enum SessionAttentionDot: Equatable {
+enum SessionAttentionDot: Equatable, Sendable {
     case warning, clarification, failure, success, activity
 
     var color: Color {

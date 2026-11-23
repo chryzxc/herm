@@ -88,10 +88,21 @@ enum SidebarSessionStatusResolver {
         seenStore: SidebarSessionSeenStore,
         fallbackProfileID: String?
     ) -> [String: SidebarSessionStatus] {
+        statuses(
+            for: sessions, inputs: snapshot.inputs, attention: snapshot.attentionDots,
+            seenAtByKey: seenStore.seenAtByKey, baselinedProfiles: seenStore.baselinedProfiles,
+            fallbackProfileID: fallbackProfileID)
+    }
+
+    static func statuses(
+        for sessions: [HermesSession], inputs: SessionNavSidebarSnapshot.Inputs,
+        attention: [String: SessionAttentionDot], seenAtByKey: [String: Date], baselinedProfiles: Set<String>,
+        fallbackProfileID: String? = nil
+    ) -> [String: SidebarSessionStatus] {
         let summaries = Dictionary(
-            snapshot.inputs.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let profileID = snapshot.inputs.profileScopeID ?? fallbackProfileID
-        let activeID = snapshot.inputs.activeSessionID
+            inputs.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let profileID = inputs.profileScopeID ?? fallbackProfileID
+        let activeID = inputs.activeSessionID
         return Dictionary(
             sessions.map { session in
                 let sessionProfileID = session.profileID ?? profileID
@@ -99,10 +110,11 @@ enum SidebarSessionStatusResolver {
                     session: session,
                     summary: summaries[session.id],
                     activeSessionID: activeID,
-                    activeStatus: session.id == activeID ? snapshot.inputs.activeStatus : nil,
-                    attention: snapshot.attentionDots[session.id],
-                    seenAt: seenStore.seenAt(profileID: sessionProfileID, sessionID: session.id),
-                    isProfileBaselined: seenStore.isBaselined(profileID: sessionProfileID)
+                    activeStatus: session.id == activeID ? inputs.activeStatus : nil,
+                    attention: attention[session.id],
+                    seenAt: seenAtByKey[
+                        SidebarSessionSeenStore.key(profileID: sessionProfileID, sessionID: session.id)],
+                    isProfileBaselined: baselinedProfiles.contains(sessionProfileID ?? "")
                 )
                 return (session.id, status)
             }, uniquingKeysWith: { first, _ in first })
@@ -140,12 +152,12 @@ final class SidebarSessionSeenStore: ObservableObject {
         }
     }
 
-    func key(profileID: String?, sessionID: String) -> String {
+    nonisolated static func key(profileID: String?, sessionID: String) -> String {
         "\(profileID ?? "")|\(sessionID)"
     }
 
     func seenAt(profileID: String?, sessionID: String) -> Date? {
-        seenAtByKey[key(profileID: profileID, sessionID: sessionID)]
+        seenAtByKey[Self.key(profileID: profileID, sessionID: sessionID)]
     }
 
     func isBaselined(profileID: String?) -> Bool {
@@ -158,7 +170,7 @@ final class SidebarSessionSeenStore: ObservableObject {
         let now = Date()
         var next = seenAtByKey
         for session in sessions {
-            let storageKey = key(profileID: profileID, sessionID: session.id)
+            let storageKey = Self.key(profileID: profileID, sessionID: session.id)
             next[storageKey] = session.lastUpdatedAt ?? now
         }
         baselinedProfiles.insert(profileKey)
@@ -171,7 +183,7 @@ final class SidebarSessionSeenStore: ObservableObject {
         var next = seenAtByKey
         let now = Date()
         for session in sessions {
-            next[key(profileID: session.profileID ?? fallbackProfileID, sessionID: session.id)] =
+            next[Self.key(profileID: session.profileID ?? fallbackProfileID, sessionID: session.id)] =
                 date ?? session.lastUpdatedAt ?? now
         }
         guard next != seenAtByKey else { return }
@@ -180,7 +192,7 @@ final class SidebarSessionSeenStore: ObservableObject {
     }
 
     func markSeen(profileID: String?, sessionID: String, at date: Date? = nil) {
-        let storageKey = key(profileID: profileID, sessionID: sessionID)
+        let storageKey = Self.key(profileID: profileID, sessionID: sessionID)
         let value = date ?? Date()
         guard seenAtByKey[storageKey] != value else { return }
         seenAtByKey[storageKey] = value

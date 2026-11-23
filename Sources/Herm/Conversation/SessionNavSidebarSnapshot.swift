@@ -12,7 +12,7 @@ struct SidebarUnreadSession: Hashable {
 
 /// One group of conversations in the left navigation rail: a project-backed
 /// bucket or the shared unlinked bucket.
-struct SessionNavConversationGroup: Identifiable, Equatable {
+struct SessionNavConversationGroup: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
     let sessions: [HermesSession]
@@ -47,8 +47,8 @@ struct SidebarSessionRowDescriptor: Identifiable, Equatable, Sendable {
 /// snapshot splits the work: cheap-to-compare `Inputs` are diffed against the
 /// live models first, and the derived collections are rebuilt only when an
 /// input the rail renders actually changed.
-struct SessionNavSidebarSnapshot: Equatable {
-    struct Inputs: Equatable {
+struct SessionNavSidebarSnapshot: Equatable, Sendable {
+    struct Inputs: Equatable, Sendable {
         var activeSessionID: String?
         var activeStatus: HermesStatus?
         var profileScopeID: String?
@@ -79,6 +79,8 @@ struct SessionNavSidebarSnapshot: Equatable {
         /// Every bot's recent sessions, for the multi-bot groupings.
         var allBotSessionsState: HermesProjectionState<[HermesSession]> = .loading
         var failedProjectSessionIDs: Set<String> = []
+        var seenAtByKey: [String: Date] = [:]
+        var baselinedProfiles: Set<String> = []
 
         /// Every input `conversationGroups` and `SidebarAgentGrouping.merged` read.
         func hasSameConversations(as other: Inputs) -> Bool {
@@ -105,6 +107,9 @@ struct SessionNavSidebarSnapshot: Equatable {
     let allBotRecents: SessionRecentsPresentation
     /// Every profile's pins for the "All profiles" scope (`AllProfilesSessions.pinned`).
     let allProfilePinned: [HermesSession]
+    let scopedPinPresentation: PinnedSessionPresentation
+    let allProfilePinPresentation: PinnedSessionPresentation
+    let sessionStatuses: [String: SidebarSessionStatus]
     /// Real projects an unlinked conversation can be added to.
     var projectTargets: [SidebarProjectTarget] {
         linkedProjectGroups.compactMap { group in
@@ -142,7 +147,8 @@ struct SessionNavSidebarSnapshot: Equatable {
             self.allProfilePinned = AllProfilesSessions.pinned(
                 scopePinned: inputs.pinnedSessions, scanned: scanned, scopeProfileID: inputs.profileScopeID)
         }
-        if let previous, previous.inputs.hasSameConversations(as: inputs) {
+        let reusesConversations = previous?.inputs.hasSameConversations(as: inputs) == true
+        if let previous, reusesConversations {
             self.linkedProjectGroups = previous.linkedProjectGroups
             self.conversations = previous.conversations
             self.linkedSessionIDs = previous.linkedSessionIDs
@@ -150,34 +156,60 @@ struct SessionNavSidebarSnapshot: Equatable {
             self.allBotConversations = previous.allBotConversations
             self.scopedRecents = previous.scopedRecents
             self.allBotRecents = previous.allBotRecents
-            return
-        }
-        let groups = Self.conversationGroups(inputs: inputs)
-        self.linkedProjectGroups = groups.filter(\.isLinked)
-        self.conversations = Self.deduplicatedConversations(groups: groups)
-        var linkedSessionIDs = Set<String>()
-        var projectNameBySessionID: [String: String] = [:]
-        for group in self.linkedProjectGroups {
-            for session in group.sessions {
-                linkedSessionIDs.insert(session.id)
-                if projectNameBySessionID[session.id] == nil {
-                    projectNameBySessionID[session.id] = group.title
+        } else {
+            let groups = Self.conversationGroups(inputs: inputs)
+            self.linkedProjectGroups = groups.filter(\.isLinked)
+            self.conversations = Self.deduplicatedConversations(groups: groups)
+            var linkedSessionIDs = Set<String>()
+            var projectNameBySessionID: [String: String] = [:]
+            for group in self.linkedProjectGroups {
+                for session in group.sessions {
+                    linkedSessionIDs.insert(session.id)
+                    if projectNameBySessionID[session.id] == nil {
+                        projectNameBySessionID[session.id] = group.title
+                    }
                 }
             }
+            self.linkedSessionIDs = linkedSessionIDs
+            self.projectNameBySessionID = projectNameBySessionID
+            self.allBotConversations = SidebarAgentGrouping.merged(
+                all: scanned, scoped: self.conversations, scopeProfileID: inputs.profileScopeID)
+            self.scopedRecents = SessionRecentsPresentation(self.conversations)
+            // Both inventories have the same rows and order until the all-profile scan arrives.
+            self.allBotRecents =
+                scanned.isEmpty ? self.scopedRecents : SessionRecentsPresentation(self.allBotConversations)
         }
-        self.linkedSessionIDs = linkedSessionIDs
-        self.projectNameBySessionID = projectNameBySessionID
-        self.allBotConversations = SidebarAgentGrouping.merged(
-            all: scanned, scoped: self.conversations, scopeProfileID: inputs.profileScopeID)
-        self.scopedRecents = SessionRecentsPresentation(self.conversations)
-        // Both inventories have the same rows and order until the all-profile scan arrives.
-        self.allBotRecents = scanned.isEmpty ? self.scopedRecents : SessionRecentsPresentation(self.allBotConversations)
+        let reusesPins = reusesConversations && previous?.inputs.pinnedSessions == inputs.pinnedSessions
+        if let previous, reusesPins, previous.inputs.sessionProjectionState == inputs.sessionProjectionState {
+            self.scopedPinPresentation = previous.scopedPinPresentation
+            self.allProfilePinPresentation = previous.allProfilePinPresentation
+        } else {
+            self.scopedPinPresentation = PinnedSessionPresentation(
+                pinned: inputs.pinnedSessions, live: conversations, projection: inputs.sessionProjectionState)
+            self.allProfilePinPresentation = PinnedSessionPresentation(
+                pinned: allProfilePinned, live: allBotConversations, projection: inputs.sessionProjectionState)
+        }
+        if let previous, reusesPins,
+            previous.inputs.activeSessions == inputs.activeSessions,
+            previous.inputs.activeSessionID == inputs.activeSessionID,
+            previous.inputs.activeStatus == inputs.activeStatus,
+            previous.inputs.seenAtByKey == inputs.seenAtByKey,
+            previous.inputs.baselinedProfiles == inputs.baselinedProfiles,
+            previous.attentionDots == attentionDots
+        {
+            self.sessionStatuses = previous.sessionStatuses
+        } else {
+            self.sessionStatuses = SidebarSessionStatusResolver.statuses(
+                for: allBotConversations + inputs.pinnedSessions + allProfilePinned, inputs: inputs,
+                attention: attentionDots, seenAtByKey: inputs.seenAtByKey, baselinedProfiles: inputs.baselinedProfiles)
+        }
     }
 
     @MainActor
-    static func inputs(model: DockModel, control: ControlCenterModel, localProjectPaths: [String: String] = [:])
-        -> Inputs
-    {
+    static func inputs(
+        model: DockModel, control: ControlCenterModel, localProjectPaths: [String: String] = [:],
+        seenStore: SidebarSessionSeenStore = .shared
+    ) -> Inputs {
         Inputs(
             activeSessionID: model.navigationSessionID,
             activeStatus: model.isSending && model.status == .idle ? .working : model.status,
@@ -212,7 +244,8 @@ struct SessionNavSidebarSnapshot: Equatable {
                 control.projects.compactMap { project in
                     control.refreshState(for: control.projectSessionsProjectionKey(for: project.id))?.error == nil
                         ? nil : project.id
-                })
+                }),
+            seenAtByKey: seenStore.seenAtByKey, baselinedProfiles: seenStore.baselinedProfiles
         )
     }
 
@@ -433,19 +466,26 @@ final class SessionNavSidebarModel: ObservableObject {
     private let model: DockModel
     private let control: ControlCenterModel
     private let store: WorkspaceStore
+    private let seenStore: SidebarSessionSeenStore
     private var cancellables: Set<AnyCancellable> = []
     private var coalescedRefreshTask: Task<Void, Never>?
+    private var refreshRequested = false
 
-    init(model: DockModel, control: ControlCenterModel, store: WorkspaceStore) {
+    init(
+        model: DockModel, control: ControlCenterModel, store: WorkspaceStore,
+        seenStore: SidebarSessionSeenStore = .shared
+    ) {
         self.model = model
         self.control = control
         self.store = store
+        self.seenStore = seenStore
         self.snapshot = SessionNavSidebarSnapshot(
             inputs: SessionNavSidebarSnapshot.inputs(
-                model: model, control: control, localProjectPaths: store.projectPathsBySessionID))
+                model: model, control: control, localProjectPaths: store.projectPathsBySessionID, seenStore: seenStore))
 
-        Publishers.Merge3(
-            model.sidebarPresentationChanges, control.sidebarPresentationChanges, store.objectWillChange.map { _ in }
+        Publishers.Merge4(
+            model.sidebarPresentationChanges, control.sidebarPresentationChanges, store.objectWillChange.map { _ in },
+            seenStore.objectWillChange.map { _ in }
         )
         // objectWillChange fires before the mutation lands; one main-queue
         // hop reads the settled values and coalesces same-tick bursts.
@@ -455,38 +495,72 @@ final class SessionNavSidebarModel: ObservableObject {
         .store(in: &cancellables)
     }
 
-    /// A rail rebuild costs 12–29 ms, and every running session publishes
-    /// activity ticks, so several live agents would rebuild the rail many times
-    /// a second and stall scrolling on any power source. Activity ticks
-    /// coalesce to 4 Hz. Navigation and inventory changes refresh at once.
-    private func scheduleRefresh() {
-        let inputs = snapshot.inputs
+    private func requiresImmediateRefresh(from inputs: SessionNavSidebarSnapshot.Inputs) -> Bool {
         if model.navigationSessionID != inputs.activeSessionID || model.profileScopeID != inputs.profileScopeID
-            || model.sessionProjectionState != inputs.sessionProjectionState
             || (inputs.pinnedSessions.isEmpty && !model.pinnedSessions.isEmpty)
             || (inputs.sessions.isEmpty && !model.sessions.isEmpty)
         {
-            coalescedRefreshTask?.cancel()
-            coalescedRefreshTask = nil
-            return refresh()
+            return true
         }
-        guard coalescedRefreshTask == nil else { return }
+        // A refresh can replace the ready inventory without changing its availability.
+        if case .ready = model.sessionProjectionState, case .ready = inputs.sessionProjectionState { return false }
+        return model.sessionProjectionState != inputs.sessionProjectionState
+    }
+
+    /// Coalesce activity before projecting the inventory away from the UI thread.
+    private func scheduleRefresh() {
+        if requiresImmediateRefresh(from: snapshot.inputs) { return refresh() }
+        guard coalescedRefreshTask == nil else {
+            refreshRequested = true
+            return
+        }
         coalescedRefreshTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(250))
             guard let self, !Task.isCancelled else { return }
-            self.coalescedRefreshTask = nil
-            self.refresh()
+            await self.refreshInBackground()
         }
     }
 
+    private var currentInputs: SessionNavSidebarSnapshot.Inputs {
+        SessionNavSidebarSnapshot.inputs(
+            model: model, control: control, localProjectPaths: store.projectPathsBySessionID, seenStore: seenStore)
+    }
+
+    private func refreshInBackground() async {
+        refreshRequested = false
+        let inputs = currentInputs
+        let previous = snapshot
+        let projection = Task.detached(priority: .utility) { () -> SessionNavSidebarSnapshot? in
+            guard !Task.isCancelled, inputs != previous.inputs else { return nil }
+            return SessionNavSidebarSnapshot(inputs: inputs, reusing: previous)
+        }
+        let next = await withTaskCancellationHandler {
+            await projection.value
+        } onCancel: {
+            projection.cancel()
+        }
+        guard !Task.isCancelled else { return }
+        if requiresImmediateRefresh(from: inputs) { return refresh() }
+        coalescedRefreshTask = nil
+        if let next { publish(next) }
+        if refreshRequested { scheduleRefresh() }
+    }
+
     func refresh() {
+        coalescedRefreshTask?.cancel()
+        coalescedRefreshTask = nil
+        refreshRequested = false
         let performanceStart = ProcessInfo.processInfo.systemUptime
         defer { HermPerformanceRecorder.recordWork("sidebarRefresh", since: performanceStart) }
-        let startedAt = Date()
-        let inputs = SessionNavSidebarSnapshot.inputs(
-            model: model, control: control, localProjectPaths: store.projectPathsBySessionID)
+        let inputs = currentInputs
         guard inputs != snapshot.inputs else { return }
-        let next = SessionNavSidebarSnapshot(inputs: inputs, reusing: snapshot)
+        publish(SessionNavSidebarSnapshot(inputs: inputs, reusing: snapshot))
+    }
+
+    private func publish(_ next: SessionNavSidebarSnapshot) {
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        defer { HermPerformanceRecorder.recordWork("sidebarPublish", since: startedAt) }
+        let inputs = next.inputs
         let previous = snapshot
         snapshot = next
         if previous.conversations.isEmpty && previous.inputs.pinnedSessions.isEmpty,
@@ -503,7 +577,7 @@ final class SessionNavSidebarModel: ObservableObject {
             cachedUnreadSessions = nil
         }
         DebugLog.writePerformance(
-            "sidebar instance=\(instanceID) snapshot_refresh_ms=\(Int(Date().timeIntervalSince(startedAt) * 1000))"
+            "sidebar instance=\(instanceID) snapshot_publish_ms=\(Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1000))"
         )
     }
 }

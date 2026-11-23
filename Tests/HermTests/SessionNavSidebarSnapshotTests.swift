@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 
@@ -5,6 +6,72 @@ import Testing
 
 @MainActor
 struct SessionNavSidebarSnapshotTests {
+    @Test func statusSnapshotUpdatesWhenTheLastReplyIsSeen() async throws {
+        let suite = "herm.test.sidebar-seen.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let model = DockModel(
+            sessionAgentStateFileURL: directory.appendingPathComponent("agents.json"), defaults: defaults,
+            loadArchives: false)
+        defer {
+            model.shutdown()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let seen = SidebarSessionSeenStore(defaults: defaults)
+        let lastReply = Date(timeIntervalSince1970: 200)
+        let pinned = session("remote-pin", updatedAt: lastReply, profileID: "other-profile")
+        seen.baseline(profileID: "other-profile", sessions: [])
+        model.pinnedSessions = [pinned]
+        model.sessionProjectionState = .ready([])
+        let sidebar = SessionNavSidebarModel(
+            model: model, control: ControlCenterModel(),
+            store: WorkspaceStore(fileURL: directory.appendingPathComponent("workspace.json")), seenStore: seen)
+
+        #expect(sidebar.snapshot.sessionStatuses[pinned.id] == .unreadComplete)
+        seen.markSeen(profileID: "other-profile", sessionID: pinned.id, at: lastReply)
+        for _ in 0..<100 where sidebar.snapshot.sessionStatuses[pinned.id] != SidebarSessionStatus.none {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(sidebar.snapshot.sessionStatuses[pinned.id] == SidebarSessionStatus.none)
+        #expect(sidebar.snapshot.scopedPinPresentation.sessions.map(\.id) == [pinned.id])
+    }
+
+    @Test func coalescedActivityPublishesTheNewestRowsAndKeepsANewSelection() async throws {
+        let model = DockModel(initialSessionID: "first", loadArchives: false)
+        defer { model.shutdown() }
+        model.sessions = [session("first")]
+        model.sessionProjectionState = .ready(model.sessions)
+        let sidebar = SessionNavSidebarModel(
+            model: model, control: ControlCenterModel(),
+            store: WorkspaceStore(
+                fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        var snapshots: [SessionNavSidebarSnapshot] = []
+        let subscription = sidebar.$snapshot.dropFirst().sink { snapshots.append($0) }
+        defer { subscription.cancel() }
+
+        for index in 0..<20 {
+            model.sessions = [session("first", title: "Turn \(index)")]
+            model.sessionProjectionState = .ready(model.sessions)
+        }
+        for _ in 0..<100 where snapshots.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(snapshots.count == 1)
+        #expect(snapshots.last?.conversations.first?.title == "Turn 19")
+
+        model.sessions = [session("first", title: "Late activity")]
+        try await Task.sleep(for: .milliseconds(30))
+        model.sessionID = "second"
+        model.sessionStorageID = "second"
+        model.sessions = [session("second")]
+        model.sessionProjectionState = .ready(model.sessions)
+        for _ in 0..<100 where sidebar.snapshot.inputs.activeSessionID != "second" {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(snapshots.map(\.inputs.activeSessionID) == ["first", "second"])
+        #expect(sidebar.snapshot.conversations.map(\.id) == ["second"])
+    }
+
     private func session(
         _ id: String,
         title: String = "Session",

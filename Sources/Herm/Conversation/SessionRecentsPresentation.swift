@@ -10,7 +10,7 @@ enum SessionRecentsType: Hashable {
     }
 }
 
-struct SessionRecentsPresentation: Equatable {
+struct SessionRecentsPresentation: Equatable, Sendable {
     let conversations: [HermesSession]
     let automations: [HermesSession]
 
