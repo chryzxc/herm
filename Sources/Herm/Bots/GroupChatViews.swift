@@ -524,6 +524,7 @@ struct GroupChatView: View {
     /// Wraps the room's name and actions in the app's conversation toolbar.
     /// The same reading and composer widths as the normal conversation.
     var metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: true)
+    var quotaControl: ControlCenterModel?
     let toolbar: (AnyView, AnyView) -> AnyView
     let onDisbanded: () -> Void
     /// Opens another room, e.g. the new group an edit with changed members creates.
@@ -1499,6 +1500,9 @@ struct GroupChatView: View {
         HStack(alignment: .center, spacing: 8) {
             HStack(alignment: .center, spacing: 6) { insertControls }
             Spacer()
+            if let quotaControl {
+                ChatQuotaChip(control: quotaControl, openQuota: ConversationWindowStore.shared.showQuota)
+            }
             sendButton
         }
     }

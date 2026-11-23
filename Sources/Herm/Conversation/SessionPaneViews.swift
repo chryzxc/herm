@@ -573,6 +573,7 @@ private struct SessionPanelView<Header: View>: View {
             // edge, where a bot chat keeps its menu.
             GroupChatView(
                 store: bots.groupChats, botMode: bots, roomID: roomID, metrics: metrics,
+                quotaControl: control,
                 toolbar: { _, actions in
                     AnyView(
                         header(
@@ -678,7 +679,7 @@ struct SessionPaneChatContent: View {
 
 /// What a chat outside the main window adds beyond a split column's transcript and composer.
 struct SessionPaneChatAccessories {
-    var openQuota: () -> Void = {}
+    var openQuota: (() -> Void)?
     var worktreeBar: (DockModel) -> WorktreePicker? = { _ in nil }
     /// A window of its own takes ⌘F, the quota banner and session-scoped previews; split
     /// columns leave those to the main conversation beside them.
@@ -727,7 +728,8 @@ struct SessionPaneChat: View {
             ChatComposerView(
                 model: model, composer: model.composer, speechInput: speech, botMode: bots,
                 onStop: { model.stop() }, metrics: metrics, controlCenter: control,
-                openQuota: accessories.openQuota, worktreeBar: accessories.worktreeBar(model))
+                openQuota: accessories.openQuota ?? ConversationWindowStore.shared.showQuota,
+                worktreeBar: accessories.worktreeBar(model))
         }
         .overlay(alignment: .top) {
             if accessories.isStandalone { ChatQuotaBanner(control: control, metrics: metrics) }

@@ -1,12 +1,68 @@
 import AppKit
 import SwiftUI
 import Testing
+import Vision
 
 @testable import Herm
 
 @MainActor
 @Suite(.serialized)
 struct WorkspaceFoundationRenderTests {
+    @Test func composerQuotaUsesKnownRouteWhileCatalogLoads() async throws {
+        _ = NSApplication.shared
+        let name = "ComposerQuota.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(true, forKey: ChatQuotaSettingsKey.chip)
+        let model = DockModel(defaults: defaults, initialSessionID: "quota-fixture", rpcClient: FoundationFixtureRPC())
+        defer { model.shutdown() }
+        model.sessionModelOptionID = HermesModelOption(provider: "openai-codex", model: "fixture-model").id
+        model.isLoadingRuntimeModelOptions = true
+        let control = ControlCenterModel()
+        control.providerQuotas = [
+            ProviderQuotaSnapshot(
+                provider: "codex", displayName: "Codex", model: nil, updatedAt: .now,
+                windows: [
+                    ProviderQuotaWindow(
+                        id: "weekly", label: "Weekly", remainingPercent: 36, remainingDisplay: nil,
+                        limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)
+                ], safeDetail: nil)
+        ]
+        let host = NSHostingView(
+            rootView: ChatComposerView(
+                model: model, composer: model.composer, speechInput: SpeechInput(), botMode: BotModeModel(),
+                onStop: {}, controlCenter: control
+            )
+            .frame(width: 550, height: 180)
+            .defaultAppStorage(defaults)
+            .dockThemedRoot())
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 550, height: 180),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        #expect(try await showsPercentage())
+        model.sessionModelOptionID = HermesModelOption(provider: "custom", model: "fixture-model").id
+        #expect(try await !showsPercentage())
+        model.sessionModelOptionID = HermesModelOption(provider: "openai-codex", model: "fixture-model").id
+        #expect(try await showsPercentage())
+        defaults.set(false, forKey: ChatQuotaSettingsKey.chip)
+        #expect(try await !showsPercentage())
+
+        func showsPercentage() async throws -> Bool {
+            try await Task.sleep(for: .milliseconds(200))
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let image = try #require(bitmap.cgImage)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            try VNImageRequestHandler(cgImage: image).perform([request])
+            return request.results?.contains { $0.topCandidates(1).first?.string.contains("36%") == true } == true
+        }
+    }
+
     @Test func shortDraftDoesNotExpandComposer() async throws {
         _ = NSApplication.shared
         let name = "ComposerSizing.\(UUID())"

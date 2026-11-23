@@ -3211,8 +3211,11 @@ output and confirmed Stop actions distinct; narrow rows move the action below th
 text. The bounded list retains the existing session-scoped process projection.
 
 The composer quota indicator uses the selected provider's limiting window and,
-for Hermes-pooled accounts, the account marked Active on the Quota page. An
-unavailable active-account reading is not replaced with another account's quota.
+for Hermes-pooled accounts, the account marked Active on the Quota page. When
+enabled, the control stays in the toolbar while routing or a reading is
+unavailable. It opens the provider quota list with a dash in place of a
+percentage. Group composers use the same control to open the provider list,
+since a room can use several providers.
 
 Unresolved user sends show status in their own metadata, not assistant content. Sending is in flight;
 Accepted is not proof of storage; Queued is an explicit acknowledgment. A proven row receipt or conservative

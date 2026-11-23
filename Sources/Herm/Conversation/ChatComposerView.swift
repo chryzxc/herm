@@ -524,14 +524,11 @@ struct ChatComposerView: View {
 
                             // Right Toolbar Group: Thinking depth selector menu & circular submit button
                             HStack(alignment: .center, spacing: 8) {
+                                if let controlCenter {
+                                    ChatQuotaChip(
+                                        control: controlCenter, openQuota: openQuota, selectedProvider: quotaProvider)
+                                }
                                 if !model.isRestoringSession && model.sessionActionsReady {
-                                    if let controlCenter, let selectedModelOptionID,
-                                        !model.isUpdatingSessionModel, !model.isLoadingRuntimeModelOptions
-                                    {
-                                        ChatQuotaChip(
-                                            control: controlCenter, openQuota: openQuota,
-                                            selectedProvider: selectedModelOptionID.components(separatedBy: "|").first)
-                                    }
                                     SessionContextRing(model: model)
                                 }
 
@@ -855,6 +852,13 @@ struct ChatComposerView: View {
             let modelName = model.runtimeConfiguration?.model
         else { return nil }
         return HermesModelOption(provider: provider, model: modelName).id
+    }
+
+    private var quotaProvider: String? {
+        guard !model.isRestoringSession, model.sessionActionsReady, !model.isUpdatingSessionModel,
+            let id = selectedModelOptionID, let separator = id.firstIndex(of: "|"), separator != id.startIndex
+        else { return nil }
+        return String(id[..<separator])
     }
 
     var selectedReasoningVariant: HermesReasoningVariant? {

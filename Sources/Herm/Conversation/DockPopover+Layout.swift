@@ -659,6 +659,7 @@ extension DockPopover {
             } else if fullscreenSurface == .bots, let room = openGroupRoom {
                 GroupChatView(
                     store: botMode.groupChats, botMode: botMode, roomID: room.id, metrics: conversationMetrics,
+                    quotaControl: controlCenter,
                     toolbar: { identity, actions in
                         AnyView(conversationToolbar(identity: identity, groupActions: actions))
                     }

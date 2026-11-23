@@ -547,8 +547,8 @@ enum ChatQuotaSettingsKey {
     static let dropBanner = "hermes.chat.shows-quota-drop-banner"
 }
 
-/// The selected provider's limiting window, beside the composer's context ring.
-/// Clicking lists every provider.
+/// Opens provider quota from the composer. Shows the selected provider's limiting
+/// window when available.
 struct ChatQuotaChip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var control: ControlCenterModel
@@ -559,32 +559,49 @@ struct ChatQuotaChip: View {
     @State private var showingDetail = false
 
     private var lowest: (snapshot: ProviderQuotaSnapshot, window: ProviderQuotaWindow, remaining: Double)? {
-        control.quotaReading(for: selectedProvider)
+        guard let selectedProvider, QuotaWorkspacePresentation.quotaProviderID(for: selectedProvider) != nil else {
+            return nil
+        }
+        return control.quotaReading(for: selectedProvider)
     }
 
     var body: some View {
-        if enabled, let lowest {
+        if enabled {
+            let lowest = lowest
             Button {
                 showingDetail.toggle()
             } label: {
                 HStack(spacing: 4) {
-                    ProviderMarkBadge(
-                        mark: ProviderMark(
-                            providerID: lowest.snapshot.provider,
-                            displayName: lowest.snapshot.displayName), size: 14)
-                    Text("\(Int(lowest.remaining.rounded()))%")
-                        .dockFont(.metadata, weight: .medium, design: .monospaced)
-                        .foregroundStyle(QuotaWorkspaceView.color(for: lowest.window.threshold))
-                        .contentTransition(.numericText(value: lowest.remaining.rounded()))
-                        .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: Int(lowest.remaining.rounded()))
+                    if let lowest {
+                        ProviderMarkBadge(
+                            mark: ProviderMark(
+                                providerID: lowest.snapshot.provider,
+                                displayName: lowest.snapshot.displayName), size: 14)
+                        Text("\(Int(lowest.remaining.rounded()))%")
+                            .dockFont(.metadata, weight: .medium, design: .monospaced)
+                            .foregroundStyle(QuotaWorkspaceView.color(for: lowest.window.threshold))
+                            .contentTransition(.numericText(value: lowest.remaining.rounded()))
+                            .animation(
+                                reduceMotion ? nil : .snappy(duration: 0.3), value: Int(lowest.remaining.rounded()))
+                    } else {
+                        DockIcon(.gauge, size: 14, color: .dockSecondaryText)
+                        Text("—")
+                            .dockFont(.metadata, weight: .medium, design: .monospaced)
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
                 }
                 .fixedSize()
+                .frame(minWidth: 48, minHeight: 28)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
-            .help("\(lowest.snapshot.displayName) has \(Int(lowest.remaining.rounded()))% left")
+            .help(
+                lowest.map { "\($0.snapshot.displayName) has \(Int($0.remaining.rounded()))% left" }
+                    ?? (selectedProvider == nil ? "Provider quota" : "Quota unavailable for the selected provider")
+            )
             .accessibilityLabel(
-                "Quota: \(lowest.snapshot.displayName) \(Int(lowest.remaining.rounded())) percent remaining"
+                lowest.map { "Quota: \($0.snapshot.displayName) \(Int($0.remaining.rounded())) percent remaining" }
+                    ?? "Provider quota"
             )
             .dockPopover(isPresented: $showingDetail, arrowEdge: .top) {
                 EdgeQuotaPreview(control: control) {

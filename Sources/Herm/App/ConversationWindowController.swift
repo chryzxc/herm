@@ -96,7 +96,9 @@ final class ConversationWindowController: NSObject, NSWindowDelegate, Conversati
     @ViewBuilder
     private func content(control: ControlCenterModel, bots: BotModeModel) -> some View {
         if let roomID = destination.groupRoomID {
-            ConversationPopoutRoomView(header: header, bots: bots, roomID: roomID) { [weak self] in self?.close() }
+            ConversationPopoutRoomView(header: header, bots: bots, roomID: roomID, control: control) { [weak self] in
+                self?.close()
+            }
         } else {
             ConversationPopoutView(
                 header: header, worktree: worktree, chat: chat, control: control, bots: bots,

@@ -154,6 +154,7 @@ struct ConversationPopoutRoomView: View {
     @ObservedObject var header: ConversationPopoutHeader
     let bots: BotModeModel
     let roomID: String
+    let control: ControlCenterModel
     /// The room was disbanded, here or elsewhere; its window closes.
     let onDisbanded: () -> Void
 
@@ -161,6 +162,7 @@ struct ConversationPopoutRoomView: View {
         GroupChatView(
             store: bots.groupChats, botMode: bots, roomID: roomID,
             metrics: ConversationWorkspaceMetrics.resolve(isFullscreen: false),
+            quotaControl: control,
             toolbar: { [header] identity, actions in
                 AnyView(
                     HStack(spacing: 4) {
