@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 
@@ -42,6 +43,37 @@ struct HermesSessionControlTests {
         #expect(model.sessionControlEventGeneration == 1)
     }
 
+    @MainActor @Test func identicalAutomationReadsAndEventsDoNotInvalidateTheConversation() async {
+        let client = SessionControlReadClient()
+        let model = DockModel(loadArchives: false, rpcClient: client)
+        defer { model.shutdown() }
+        model.sessionID = "one"
+        let profile = model.sessionProfileID ?? model.profileScopeID
+        await model.refreshSessionControl(sessionID: "one", profileID: profile)
+        let verified = model.sessionControl
+        #expect(verified != nil)
+        var updates = 0
+        let subscription = model.objectWillChange.sink { updates += 1 }
+        defer { subscription.cancel() }
+
+        for _ in 0..<20 { await model.refreshSessionControl(sessionID: "one", profileID: profile) }
+        model.applySessionControlEvent(client.reply, sessionID: "one")
+        #expect(updates == 0)
+        #expect(model.sessionControlEventGeneration == 1)
+
+        client.reply = [:]
+        await model.refreshSessionControl(sessionID: "one", profileID: profile)
+        #expect(model.sessionControlStale)
+        #expect(model.sessionControl == verified)
+        #expect(updates == 1)
+        await model.refreshSessionControl(sessionID: "one", profileID: profile)
+        #expect(updates == 1)
+        client.reply = SessionControlReadClient.emptyControl
+        await model.refreshSessionControl(sessionID: "one", profileID: profile)
+        #expect(!model.sessionControlStale)
+        #expect(updates == 2)
+    }
+
     @Test func trayActionsFollowHermesStatus() {
         typealias Action = HermesSessionControl.Action
         #expect(Action.available(goalStatus: "active") == [.goalPause, .goalClear])
@@ -53,4 +85,18 @@ struct HermesSessionControlTests {
         #expect(Action.goalPause.rawValue == "goal.pause")
         #expect(Action.loopStop.rawValue == "loop.stop")
     }
+}
+
+@MainActor
+private final class SessionControlReadClient: HermesRPCClientProtocol {
+    static let emptyControl: [String: Any] = [
+        "control": ["revision": "", "goal": NSNull(), "loop": NSNull(), "heartbeat": NSNull()]
+    ]
+    var reply = emptyControl
+    var onEvent: ((String, [String: Any]) -> Void)?
+
+    func connect() async throws {}
+    func close() {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { reply }
+    func fetchHTTP(_ path: String) async throws -> [String: Any] { [:] }
 }

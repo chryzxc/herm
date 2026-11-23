@@ -990,7 +990,8 @@ snapshot to its consumers. Opt in with `HERM_SIDEBAR_PROFILE=1` and filter to
 `SidebarSnapshotProfileTests`.
 
 Microphone recognition partials update the Talk stage and audio-buffer readings
-update the orb.
+update the orb. Equal session automation reads and events skip presentation
+publications. Loading and stale recovery still publish their visible changes.
 
 Working avatars and their stepping tiles animate on native layers within their
 existing footprint. In the Debug AppKit avatar fixture, the SwiftUI clock

@@ -8,9 +8,7 @@ extension DockModel {
     func applySessionControlEvent(_ payload: [String: Any], sessionID: String) {
         guard self.sessionID == sessionID, let snapshot = HermesSessionControl.parse(payload) else { return }
         sessionControlEventGeneration &+= 1
-        sessionControl = snapshot
-        sessionControlOwner = sessionControlKey(sessionID: sessionID, profileID: sessionProfileID ?? profileScopeID)
-        sessionControlStale = false
+        publishSessionControl(snapshot, sessionID: sessionID, profileID: sessionProfileID ?? profileScopeID)
     }
 
     func refreshSessionControl(sessionID: String, profileID: String?) async {
@@ -23,22 +21,22 @@ extension DockModel {
                 sessionResumeGeneration == generation,
                 sessionControlEventGeneration == eventGeneration
             else { return }
-            guard let snapshot = HermesSessionControl.parse(result) else {
-                sessionControlStale = true
-                sessionControlOwner = sessionControlKey(sessionID: sessionID, profileID: profileID)
-                return
-            }
-            sessionControl = snapshot
-            sessionControlOwner = sessionControlKey(sessionID: sessionID, profileID: profileID)
-            sessionControlStale = false
+            publishSessionControl(HermesSessionControl.parse(result), sessionID: sessionID, profileID: profileID)
         } catch {
             guard !Task.isCancelled, self.sessionID == sessionID, (sessionProfileID ?? profileScopeID) == profileID,
                 sessionResumeGeneration == generation,
                 sessionControlEventGeneration == eventGeneration
             else { return }
-            sessionControlStale = true
-            sessionControlOwner = sessionControlKey(sessionID: sessionID, profileID: profileID)
+            publishSessionControl(nil, sessionID: sessionID, profileID: profileID)
         }
+    }
+
+    private func publishSessionControl(_ snapshot: HermesSessionControl?, sessionID: String, profileID: String?) {
+        let owner = sessionControlKey(sessionID: sessionID, profileID: profileID)
+        let isStale = snapshot == nil
+        if let snapshot, sessionControl != snapshot { sessionControl = snapshot }
+        if sessionControlOwner != owner { sessionControlOwner = owner }
+        if sessionControlStale != isStale { sessionControlStale = isStale }
     }
 
     /// Runs a tray action through `session.control`, applies the snapshot Hermes returns, and submits
@@ -53,9 +51,7 @@ extension DockModel {
             guard self.sessionID == sessionID, sessionResumeGeneration == generation else { return }
             if let snapshot = HermesSessionControl.parse(result) {
                 sessionControlEventGeneration &+= 1
-                sessionControl = snapshot
-                sessionControlOwner = sessionControlKey(sessionID: sessionID, profileID: profileID)
-                sessionControlStale = false
+                publishSessionControl(snapshot, sessionID: sessionID, profileID: profileID)
             }
             guard let dispatch = result["dispatch"] as? [String: Any], dispatch["type"] as? String == "send",
                 let message = (dispatch["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
