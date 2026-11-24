@@ -225,7 +225,10 @@ struct ProfileSessionRetentionTests {
             await scan?.value
             await settle(model)
 
-            let pins = snapshot(model).allProfilePinPresentation
+            let settled = snapshot(model)
+            #expect(settled.allBotConversations.first { $0.scopedID == key }?.title == "Old")
+            #expect(settled.allProfilePinned.first { $0.scopedID == key }?.title == "New")
+            let pins = settled.allProfilePinPresentation
             #expect(pins.sessions.map(\.id) == ["shared"])
             #expect(pins.selectedRow(key)?.title == "New")
         }

@@ -35,11 +35,18 @@ struct PinnedSessionPresentation: Equatable {
                 }
                 let liveByKey = Dictionary(live.map { (key($0), $0) }, uniquingKeysWith: { first, _ in first })
                 sessions = pinned.map { pin in
-                    let row = liveByKey[key(pin)] ?? pin
-                    if matchesProfile, row.profileID == nil, let owner = key(pin).profileID {
-                        return row.withPinned(row.isPinned, profileID: owner)
-                    }
-                    return row
+                    let pinKey = key(pin)
+                    let row = liveByKey[pinKey] ?? pin
+                    guard matchesProfile else { return row }
+                    let owner = row.profileID ?? pinKey.profileID
+                    // The live overlay can be the raw scan used by Recents. Keep its
+                    // activity metadata without undoing a reconciled pin title.
+                    guard row.title != pin.title || row.profileID != owner else { return row }
+                    return HermesSession(
+                        id: row.id, profileID: owner, title: pin.title, preview: row.preview, startedAt: row.startedAt,
+                        updatedAt: row.updatedAt, messageCount: row.messageCount, source: row.source,
+                        isHidden: row.isHidden, isWorking: row.isWorking, hasUnreadUpdate: row.hasUnreadUpdate,
+                        isPinned: row.isPinned, modelName: row.modelName)
                 }.sorted {
                     ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast)
                 }
