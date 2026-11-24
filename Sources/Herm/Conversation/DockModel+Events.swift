@@ -31,11 +31,13 @@ extension DockModel {
         let noticePayload = params["payload"] as? [String: Any] ?? [:]
         let eventSessionID = (params["session_id"] as? String) ?? (noticePayload["session_id"] as? String)
         let storedTip = transcriptHistoryCursor?.readOnlyResolvedSessionID
-        let isStoredSelection =
-            storedTip != nil && eventSessionID.map { currentSessionIDs.contains($0) || $0 == storedTip } == true
+        let matchesSelection = eventSessionID.map { owner in
+            currentSessionIDs.contains(owner) || owner == storedTip || rowSessionID(owner) == sessionStorageID
+        }
+        let isStoredSelection = storedTranscriptAttach != nil && matchesSelection == true
         let settlesTurn = type == "message.complete" || type == "error"
         let queueCompletionOwner =
-            settlesTurn && !isStoredSelection
+            settlesTurn && (!isStoredSelection || storedTranscriptAttach == .publishing)
             ? eventSessionID.flatMap { owner -> String? in
                 guard
                     Self.eventBelongsToSession(
@@ -132,7 +134,7 @@ extension DockModel {
                 started: type == "message.start", completed: type == "message.complete", failed: failed,
                 completionRowID: completionRow)
         }
-        captureObservedKanbanTaskIDs(type: type, params: params)
+        if storedTranscriptAttach == nil { captureObservedKanbanTaskIDs(type: type, params: params) }
         eventRouter.route(type: type, params: params)
         reconcileDirectBotLifecycle(type: type, params: params)
         capturePendingApproval(type: type, params: params)
@@ -175,11 +177,7 @@ extension DockModel {
                 let isCurrentLiveSession = eventSessionID == sessionID && !isStoredSelection
                 updateSessionActivity(sessionID: eventSessionID, isWorking: false, unread: !isCurrentLiveSession)
                 // A reply that lands in the chat being watched is read as it arrives.
-                if isCurrentLiveSession, isPopoverVisible {
-                    let rowID = rowSessionID(eventSessionID)
-                    let profileID = sessions.first { $0.id == rowID }?.profileID ?? sessionProfileID ?? profileScopeID
-                    SidebarSessionSeenStore.shared.markSeen(profileID: profileID, sessionID: rowID)
-                }
+                if isCurrentLiveSession { markVisibleSessionSeen(eventSessionID) }
             }
         }
         if let eventSessionID = queueCompletionOwner {
@@ -192,19 +190,22 @@ extension DockModel {
             {
                 queuedSubmissions[owner] = nil
             }
-            drainBackgroundQueuedPrompt(runtimeID: eventSessionID)
+            if !isStoredSelection { drainBackgroundQueuedPrompt(runtimeID: eventSessionID) }
         }
         handleEvent(type, params: params)
-        if type == "message.start" || type == "message.complete" || type == "error",
-            let eventSessionID
+        if !isStoredSelection, let eventSessionID {
+            settleStoppedTurnTail(type, eventSessionID: eventSessionID)
+        }
+    }
+
+    private func settleStoppedTurnTail(_ type: String, eventSessionID: String) {
+        guard type == "message.start" || type == "message.complete" || type == "error" else { return }
+        let ownerID = rowSessionID(eventSessionID)
+        let matchingOwners = sessionStopAttempts.keys.filter { $0.sessionID == ownerID }
+        if matchingOwners.count == 1, let owner = matchingOwners.first,
+            sessionStopAttempts[owner]?.outcome == .accepted
         {
-            let ownerID = rowSessionID(eventSessionID)
-            let matchingOwners = sessionStopAttempts.keys.filter { $0.sessionID == ownerID }
-            if matchingOwners.count == 1, let owner = matchingOwners.first,
-                sessionStopAttempts[owner]?.outcome == .accepted
-            {
-                sessionStopAttempts[owner]?.tailPending = false
-            }
+            sessionStopAttempts[owner]?.tailPending = false
         }
     }
 
@@ -346,6 +347,7 @@ extension DockModel {
             epoch != gatewayReplayEpoch
         {
             gatewayReplayEpoch = epoch
+            pendingAttachedEvents.removeAll()
             processedGatewaySequencesBySessionID.removeAll()
             highestGatewaySequenceBySessionID.removeAll()
             sessionInfoSequencesBySessionID.removeAll()
@@ -407,6 +409,7 @@ extension DockModel {
                 )
                 if let epoch = result["epoch"] as? String, !epoch.isEmpty, epoch != self.gatewayReplayEpoch {
                     self.gatewayReplayEpoch = epoch
+                    self.pendingAttachedEvents.removeAll()
                     self.processedGatewaySequencesBySessionID.removeAll()
                     self.highestGatewaySequenceBySessionID.removeAll()
                     self.sessionInfoSequencesBySessionID.removeAll()
@@ -641,12 +644,60 @@ extension DockModel {
         }
     }
 
-    func handleEvent(_ type: String, params: [String: Any]) {
-        guard !isShowingReadOnlyStoredTranscript else { return }
+    private func markVisibleSessionSeen(_ sessionID: String) {
+        guard isPopoverVisible else { return }
+        let rowID = rowSessionID(sessionID)
+        let profileID = sessions.first { $0.id == rowID }?.profileID ?? sessionProfileID ?? profileScopeID
+        SidebarSessionSeenStore.shared.markSeen(profileID: profileID, sessionID: rowID)
+    }
+
+    func publishPendingAttachedEvents() {
+        guard storedTranscriptAttach == .publishing else { return }
+        // These frames already passed gateway deduplication and shared routing.
+        let events = pendingAttachedEvents
+        pendingAttachedEvents.removeAll()
+        storedTranscriptAttach = nil
+        for (type, params) in events {
+            let payload = params["payload"] as? [String: Any] ?? [:]
+            let owner = (params["session_id"] as? String) ?? (payload["session_id"] as? String)
+            if let owner, owner == sessionID, Self.isUnreadUpdateEvent(type) {
+                updateSessionActivity(sessionID: owner, unread: false)
+                markVisibleSessionSeen(owner)
+            }
+            if type == "message.complete", let owner, Self.messageCompletionError(from: payload) == nil {
+                nameSessionIfUntitled(owner)
+            }
+            captureObservedKanbanTaskIDs(type: type, params: params)
+            let receipt = (params["persisted_turn"] ?? payload["persisted_turn"]) as? [String: Any]
+            let storedReplyID = receipt.flatMap { receipt -> UUID? in
+                guard receipt["complete"] as? Bool == true,
+                    let rowID = TranscriptHistoryPaging.rowID(receipt, key: "final_assistant_row_id")
+                else { return nil }
+                return transcriptMessageIDsByRowID[rowID]
+            }
+            handleEvent(type, params: params, storedReplyID: storedReplyID)
+            if let owner { settleStoppedTurnTail(type, eventSessionID: owner) }
+        }
+    }
+
+    func handleEvent(_ type: String, params: [String: Any], storedReplyID: UUID? = nil) {
+        guard storedTranscriptAttach != .awaitingOwnership else { return }
         let rawPayload = params["payload"] as? [String: Any] ?? [:]
         let envelopeSessionID = params["session_id"] as? String
         let payloadSessionID = rawPayload["session_id"] as? String
         let eventSessionID = envelopeSessionID ?? payloadSessionID
+        if storedTranscriptAttach == .publishing {
+            let reportedProfile = (params["profile"] as? String) ?? (rawPayload["profile"] as? String)
+            if let sessionID,
+                reportedProfile.map({ Self.normalizedProfileID($0) == sessionProfileID }) ?? true,
+                Self.eventBelongsToSession(
+                    type: type, envelopeSessionID: envelopeSessionID, eventSessionID: eventSessionID,
+                    payload: rawPayload, currentSessionID: sessionID, agents: sessionAgents + activeSubagents)
+            {
+                pendingAttachedEvents.append((type, params))
+            }
+            return
+        }
         if type == "message.reaction" {
             applyMessageReaction(payload: rawPayload, owner: eventSessionID)
             return
@@ -914,8 +965,10 @@ extension DockModel {
             streamVoiceReply(delta)
         case "message.complete":
             isAwaitingClarificationResume = false
-            let completedMessageIDForPin = streamingMessageID
-            if let completedText = Self.completedMessageText(from: payload),
+            let completedMessageIDForPin = storedReplyID ?? streamingMessageID
+            if storedReplyID != nil {
+                discardStreamingMessage()
+            } else if let completedText = Self.completedMessageText(from: payload),
                 !completedText.isEmpty
             {
                 if streamingMessageID == nil {
@@ -959,7 +1012,7 @@ extension DockModel {
                     title: "Hermes could not complete the request", body: text,
                     identifier: "failure:\(sessionID ?? "hermes")")
             } else {
-                let completedReplyID = streamingMessageID
+                let completedReplyID = storedReplyID ?? streamingMessageID
                 commitStreamingMessage(tokenCount: turnTokens)
                 applyMessagePinReceipt(
                     payload["persisted_turn"] as? [String: Any],

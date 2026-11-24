@@ -414,6 +414,70 @@ struct SessionSwitchCacheTests {
         #expect(!model.sessionActionsReady)
     }
 
+    @Test func timeoutRecoveryDoesNotProjectCompletionWhileStoredHistoryIsPending() async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        let profile = UUID().uuidString
+        let seen = SidebarSessionSeenStore.shared
+        let previousSeen = Date().addingTimeInterval(-60)
+        seen.markSeen(profileID: profile, sessionID: "a", at: previousSeen)
+        defer {
+            seen.reconcile(profileID: profile, availableSessionIDs: [])
+            model.shutdown()
+        }
+        model.isPopoverVisible = true
+        rpc.timeoutNextA = true
+        rpc.storedHistory = storedPage([["id": 1, "role": "user", "content": "stored prompt"]], profile: profile)
+        var checkedPendingHistory = false
+        rpc.beforeStoredHistoryReturns = {
+            checkedPendingHistory = true
+            model.receiveGatewayEvent(
+                "message.complete", params: ["session_id": "a", "seq": 1, "payload": ["text": "live reply"]])
+            #expect(model.displayedTranscriptMessages.isEmpty)
+            #expect(seen.seenAt(profileID: profile, sessionID: "a") == previousSeen)
+            #expect(!model.sessionActionsReady)
+        }
+
+        #expect(await !model.resumeSession(session("a", profile: profile), reportFailure: true, reviewUnread: false))
+        #expect(checkedPendingHistory)
+        #expect(model.displayedTranscriptMessages.map(\.text) == ["stored prompt"])
+        #expect(seen.seenAt(profileID: profile, sessionID: "a") == previousSeen)
+    }
+
+    @Test(arguments: [false, true])
+    func confirmedRetryPublishesSequencedCompletionOnce(historyIncludesReply: Bool) async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        let selected = session("a", profile: "owner")
+        defer { model.shutdown() }
+        let prompt: [String: Any] = ["id": 1, "role": "user", "content": "stored prompt"]
+        let reply: [String: Any] = ["id": 2, "role": "assistant", "content": "live reply"]
+        let completion: [String: Any] = [
+            "session_id": "runtime-a", "seq": 1, "payload": ["text": "live reply"],
+            "persisted_turn": ["complete": true, "final_assistant_row_id": 2],
+        ]
+        rpc.timeoutNextA = true
+        rpc.storedHistory = storedPage([prompt])
+        #expect(await !model.resumeSession(selected, reportFailure: true, reviewUnread: false))
+        rpc.holdHistory = true  // Omit messages from resume so the retry reads the REST tail.
+        rpc.storedHistory = storedPage(historyIncludesReply ? [prompt, reply] : [prompt])
+        var deliveredDuringHistoryRead = false
+        rpc.beforeStoredHistoryReturns = {
+            deliveredDuringHistoryRead = true
+            #expect(model.sessionID == "runtime-a")
+            model.receiveGatewayEvent("message.complete", params: completion)
+            model.receiveGatewayEvent("message.complete", params: completion)
+            #expect(model.displayedTranscriptMessages.map(\.text) == ["stored prompt"])
+            #expect(!model.sessionActionsReady)
+        }
+
+        #expect(await model.resumeSession(selected, reportFailure: true, reviewUnread: false))
+        #expect(deliveredDuringHistoryRead)
+        model.receiveGatewayEvent("message.complete", params: completion)
+        #expect(model.sessionActionsReady)
+        #expect(model.displayedTranscriptMessages.map(\.text) == ["stored prompt", "live reply"])
+    }
+
     @Test func authenticationChangeClearsOpenRecoveredPaneAndRejectsLateRecovery() async throws {
         let rpc = SessionSwitchRPC()
         let runtime = makeModel(rpc)

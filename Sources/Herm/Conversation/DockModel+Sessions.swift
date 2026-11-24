@@ -912,6 +912,8 @@ extension DockModel {
         // paged in, so refreshing never collapses the transcript they scrolled.
         let refreshedTranscriptRowCount = isRefreshingActiveSession ? (transcriptHistoryCursor?.nextOffset ?? 0) : 0
         sessionResumeGeneration &+= 1
+        storedTranscriptAttach = isRefreshingActiveSession && storedTranscriptAttach != nil ? .awaitingOwnership : nil
+        pendingAttachedEvents.removeAll()
         transcriptTimelineTask?.cancel()
         transcriptTimelineTask = nil
         resetEffortTransition(keepingSessionReasoning: isRefreshingActiveSession)
@@ -1049,6 +1051,12 @@ extension DockModel {
         let switchToken = context.token
         let owningProfileID = context.owningProfileID
         let isRefreshingActiveSession = context.isRefresh
+        defer {
+            if resumeGeneration == sessionResumeGeneration, storedTranscriptAttach == .publishing {
+                storedTranscriptAttach = .awaitingOwnership
+                pendingAttachedEvents.removeAll()
+            }
+        }
         do {
             try Task.checkCancellation()
             let connectionStartedAt = DispatchTime.now().uptimeNanoseconds
@@ -1076,6 +1084,9 @@ extension DockModel {
                 result = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
             } catch let timeout as NSError where timeout.domain == "Hermes" && timeout.code == 408 {
+                try Task.checkCancellation()
+                guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
+                storedTranscriptAttach = .awaitingOwnership
                 if context.canReadStoredHistory {
                     do {
                         try await recoverStoredTranscript(for: session, context: context)
@@ -1124,6 +1135,7 @@ extension DockModel {
                 DebugLog.write("model: session resume mismatch: requested \(session.id), resolved \(resolvedSessionID)")
                 return false
             }
+            if storedTranscriptAttach != nil { storedTranscriptAttach = .publishing }
             sessionID = resolvedSessionID
             kanbanAttributionSessionID = Self.kanbanAttributionAfterResume(
                 requestedSessionID: session.id,
@@ -1298,6 +1310,7 @@ extension DockModel {
                         "model: unread history unavailable: \(Self.safeUserDiagnostic(error.localizedDescription))")
                 }
             }
+            guard resumeGeneration == sessionResumeGeneration, !Task.isCancelled else { return false }
             // Questions still waiting on this session (Herm was detached when Hermes asked).
             for request in result["open_requests"] as? [[String: Any]] ?? [] {
                 if let event = HermesGateway.event(forServerRequest: request) {
@@ -1324,6 +1337,7 @@ extension DockModel {
             }
             sessionTranscriptPreview = nil
             sessionPreviewImageTask?.cancel()
+            publishPendingAttachedEvents()
             sessionTranscriptLoadState = .ready
             recordSessionSwitch(
                 "fresh_publication", startedAt: context.startedAt, generation: resumeGeneration, token: switchToken)
@@ -1481,6 +1495,8 @@ extension DockModel {
         stopVoiceConversation()
         saveComposerDraft()
         sessionResumeGeneration &+= 1
+        storedTranscriptAttach = nil
+        pendingAttachedEvents.removeAll()
         // A new chat has no session catalog; reload the global one or effort stays unavailable.
         refreshRuntimeModelOptions()
         resetEffortTransition()

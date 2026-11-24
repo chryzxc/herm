@@ -565,6 +565,13 @@ final class DockModel: ObservableObject {
     /// The latest ordered agent-state commit; tests await it before relaunching.
     var agentStateCommit: Task<Void, Never>?
     var sessionResumeGeneration = 0
+    // Gateway ownership is independent of the cursor displayed by the reader.
+    enum StoredTranscriptAttach {
+        case awaitingOwnership
+        case publishing
+    }
+    var storedTranscriptAttach: StoredTranscriptAttach?
+    var pendingAttachedEvents: [(type: String, params: [String: Any])] = []
     let sessionTranscriptCache: SessionTranscriptCache
     let ownsSessionTranscriptCache: Bool
     @Published var sessionTranscriptPreview: SessionTranscriptPreview?
@@ -770,6 +777,8 @@ final class DockModel: ObservableObject {
 
     func invalidateGatewayAuthenticationProjection() {
         sessionResumeGeneration &+= 1
+        storedTranscriptAttach = nil
+        pendingAttachedEvents.removeAll()
         restoreGeneration &+= 1
         isRestoringSession = false
         sessionTranscriptCache.removeAll()
