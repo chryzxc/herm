@@ -284,41 +284,42 @@ struct TranscriptHistoryPagingTests {
         #expect(restored.trailingActivity.first?.result == "ok")
     }
 
-    @Test func resumeLoadsOnlyTheTailAndPagesEarlierHistoryOnDemand() async throws {
+    @Test func resumeAndRefillsBufferTwoHundredFortyStoredRows() async throws {
         let rpc = PagedTranscriptRPCClient()
-        rpc.storedRows = storedTranscript(turns: 200)
+        rpc.storedRows = storedTranscript(turns: 240)
         let model = DockModel(rpcClient: rpc)
         model.resumeSession(
-            HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 600, source: "test"))
+            HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 720, source: "test"))
         try await waitUntil { !model.isRestoringSession && !model.messages.isEmpty }
 
         let resume = try #require(rpc.requests.first { $0.method == "session.resume" })
         #expect(resume.params["defer_history"] as? Bool == true)
         #expect(resume.params["omit_messages"] as? Bool == true)
-        // 120 stored rows = 40 turns = 80 visible messages, newest last.
-        #expect(model.messages.count == 80)
-        #expect(model.messages.last?.text == "answer 199")
+        // 240 stored rows are 80 turns and 160 displayed messages.
+        #expect(model.messages.count == 160)
+        #expect(model.messages.last?.text == "answer 239")
         #expect(model.canLoadEarlierTranscript)
 
         let newestIDs = model.messages.map(\.id)
         model.loadEarlierTranscriptIfAvailable()
-        try await waitUntil { model.messages.count == 160 }
-        #expect(model.messages.first?.text == "question 120")
-        #expect(Array(model.messages.suffix(80).map(\.id)) == newestIDs)
-        #expect(model.lastTranscriptPrepend?.count == 80)
-        #expect(model.lastTranscriptPrepend?.resultingCount == 160)
+        model.loadEarlierTranscriptIfAvailable()
+        try await waitUntil { model.messages.count == 320 }
+        #expect(model.messages.first?.text == "question 80")
+        #expect(Array(model.messages.suffix(newestIDs.count).map(\.id)) == newestIDs)
+        #expect(model.lastTranscriptPrepend?.count == 160)
+        #expect(model.lastTranscriptPrepend?.resultingCount == 320)
 
-        for _ in 0..<10 where model.messages.count < 400 {
-            try await waitUntil { model.canLoadEarlierTranscript }
-            model.loadEarlierTranscriptIfAvailable()
-            let before = model.messages.count
-            try await waitUntil { model.messages.count > before }
-        }
-        // A full final page cannot know it was the last; one empty read settles it.
         try await waitUntil { model.canLoadEarlierTranscript }
         model.loadEarlierTranscriptIfAvailable()
-        try await waitUntil { rpc.fetchedPaths.last?.contains("offset=600") == true && !model.canLoadEarlierTranscript }
-        #expect(model.messages.count == 400)
+        try await waitUntil { model.messages.count == 480 && model.canLoadEarlierTranscript }
+        // A full final page cannot know it was the last; one empty read settles it.
+        model.loadEarlierTranscriptIfAvailable()
+        try await waitUntil { !model.canLoadEarlierTranscript && !model.hasUnloadedTranscript }
+        let pages = rpc.fetchedPaths.filter { $0.contains("/messages") }
+        #expect(pages.count == 4)
+        #expect(pages.allSatisfy { $0.contains("limit=240&") })
+        #expect(zip(pages, [0, 240, 480, 720]).allSatisfy { $0.contains("offset=\($1)&") })
+        #expect(model.messages.count == 480)
         #expect(model.messages.first?.text == "question 0")
         #expect(!model.canLoadEarlierTranscript)
     }
@@ -347,17 +348,17 @@ struct TranscriptHistoryPagingTests {
         let model = DockModel(rpcClient: rpc)
         model.resumeSession(
             HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 600, source: "test"))
-        try await waitUntil { !model.isRestoringSession && model.unloadedTranscriptPrompts.count == 160 }
+        try await waitUntil { !model.isRestoringSession && model.unloadedTranscriptPrompts.count == 120 }
 
         #expect(rpc.fetchedPaths.filter { $0.contains("/timeline") }.count == 4)
         let items = model.messageNavigatorItems
-        // 160 unloaded prompts, then the 80 loaded messages.
-        try #require(items.count == 240)
+        // 120 unloaded prompts, then the 160 loaded messages.
+        try #require(items.count == 280)
         #expect(items.first?.preview == "question 0")
         #expect(items.first?.storedRowID == 1)
-        #expect(items[160].storedRowID == nil)
-        #expect(items[160].messageID == model.messages.first?.id)
-        #expect(items.map(\.ordinal) == Array(1...240))
+        #expect(items[120].storedRowID == nil)
+        #expect(items[120].messageID == model.messages.first?.id)
+        #expect(items.map(\.ordinal) == Array(1...280))
         // Loaded messages are matched on their full text, not the preview.
         #expect(
             MessageNavigator.search(items: items, query: "question 17").map(\.preview) == [
@@ -374,13 +375,14 @@ struct TranscriptHistoryPagingTests {
             HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 1200, source: "test"))
         try await waitUntil { !model.isRestoringSession && !model.unloadedTranscriptPrompts.isEmpty }
 
-        let target = try #require(model.messageNavigatorItems.first { $0.preview == "question 150" })
+        let before = model.messages.count
+        let target = try #require(model.messageNavigatorItems.first { $0.preview == "question 170" })
         let rowID = try #require(target.storedRowID)
         let messageID = try #require(await model.loadTranscriptHistory(through: rowID))
         let index = try #require(model.messages.firstIndex { $0.id == messageID })
-        #expect(model.messages[index].text == "question 150")
+        #expect(model.messages[index].text == "question 170")
         // One prepend, and only as deep as the prompt required.
-        #expect(model.lastTranscriptPrepend?.count == model.messages.count - 80)
+        #expect(model.lastTranscriptPrepend?.count == model.messages.count - before)
         #expect(model.messages.first?.text != "question 0")
         #expect(model.canLoadEarlierTranscript)
         #expect(model.unloadedTranscriptPrompts.allSatisfy { $0.rowID < rowID })

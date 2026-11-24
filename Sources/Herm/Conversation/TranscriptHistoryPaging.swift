@@ -46,11 +46,15 @@ struct TranscriptHistoryPrepend: Equatable {
 enum TranscriptHistoryPaging {
     /// Rows per REST page. Matches the Hermes desktop client's tail size.
     static let pageRowLimit = 120
+    /// A larger stored-history buffer for interactive conversation scrolling.
+    static let conversationBufferRowLimit = 240
     /// Hermes caps a single page at 500 rows.
     static let maximumPageRowLimit = 500
     /// Tool-heavy stretches can yield pages with no visible message; keep
     /// reading older pages, but never unboundedly in one load.
     static let maximumPagesPerLoad = 8
+    /// Keep the same bounded number of stored rows per load with larger pages.
+    static let maximumConversationBufferPages = 4
     /// Hermes caps a timeline page at 500 prompts.
     static let timelinePageLimit = 500
     /// Bounds one timeline read at 10,000 prompts.

@@ -10,9 +10,10 @@ retains the preview with a retry action.
 
 Opt-in `HERMES_DOCK_DEBUG_LOGS=1` or `--perf-trace` metrics record selection,
 connection, resume, history fetch and projection, parsing, publication, and native
-layout. They contain timings and counts only. A paired Release baseline and live
-switch latency have not yet been measured; the initial history page therefore
-remains at 120 stored rows pending the planned comparison.
+layout. They contain timings and counts only. Conversation history now uses a
+240-row buffer and refills when the reader approaches the oldest loaded rows
+with no more than two local pages left. A paired Release baseline and live
+switch latency for the larger buffer remain to be measured.
 
 The opt-in production transcript fixture runs five cold/cached pairs each for
 prose, code, tool-heavy history, and a session switch with streaming state. It

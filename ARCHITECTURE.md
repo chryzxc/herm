@@ -19,6 +19,8 @@ activity for unmounted streaming rows; canonical activity remains in `DockModel`
 transaction, navigation generation, and deferred native scroll work. Geometry does
 not publish transcript updates. Each mounted message has one geometry/identity
 container around activity and reply content, including zero-height hidden rows.
+`DockModel` buffers stored transcript history in 240-row pages by default.
+The coordinator requests a refill before its mounted window reaches the oldest loaded rows.
 `ConversationMessageWindow` sets eight-message history pages, a 12-message initial
 window, and the existing 36-row backstop with visible-row protection. Markdown
 prefetch uses that same page size in both directions.

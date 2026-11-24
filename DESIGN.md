@@ -3362,6 +3362,10 @@ row sits directly above the composer. The inspector toggle remains direct from
 at every width. Controls retain 44pt targets and resizing does not animate.
 The transcript mounts a bounded window of messages and pages earlier or later
 history automatically as the reader scrolls within one viewport of either edge.
+Herm uses 240-row pages for ordinary conversation history. When scrolling up toward the
+oldest loaded history with two local pages or fewer left, it starts the next
+request within two reveal distances of the top. A refill preserves the mounted
+messages and any anchor correction already in progress.
 A first visit that needs an unread check keeps the loading state until the opening
 row is known. Refreshing the unread divider preserves the current reading position.
 History pages prepare up to eight messages in either direction, starting at twice

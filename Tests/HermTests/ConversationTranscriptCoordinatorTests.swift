@@ -203,6 +203,56 @@ struct ConversationTranscriptCoordinatorTests {
         #expect(coordinator.pendingPage == nil)
     }
 
+    @Test func storedHistoryRefillsAheadAndKeepsAnInFlightPageAnchor() throws {
+        let controller = ConversationScrollController()
+        let coordinator = ConversationTranscriptCoordinator(controller: controller)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
+        let document = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 3_600))
+        scroll.documentView = document
+        controller.clipView = scroll.contentView
+        let bufferedCount = ConversationMessageWindow.initialLimit + 2 * ConversationMessageWindow.pageSize
+        coordinator.reset(sessionID: "one", totalCount: bufferedCount, bubbleCount: bufferedCount)
+        let opening = layout(coordinator)
+        coordinator.receiveLayout(opening)
+        var refills = 0
+        coordinator.onEarlierHistory = { refills += 1 }
+
+        controller.shiftVisibleTop(by: 1_200)
+        coordinator.userMoved(try #require(controller.geometry), delta: -10)
+        #expect(refills == 0)
+        controller.shiftVisibleTop(by: -300)
+        coordinator.userMoved(try #require(controller.geometry), delta: -300)
+        #expect(refills == 1)
+        #expect(coordinator.mountedRange == opening.range)
+        #expect(coordinator.pendingPage == nil)
+
+        controller.shiftVisibleTop(by: -860)
+        coordinator.userMoved(try #require(controller.geometry), delta: -860)
+        let pending = try #require(coordinator.pendingPage)
+        let localLayout = layout(coordinator)
+        let inserted = 40
+        coordinator.messagesChanged(
+            oldCount: bufferedCount, newCount: bufferedCount + inserted, bubbleCount: bufferedCount + inserted,
+            prepend: .init(generation: 1, count: inserted, resultingCount: bufferedCount + inserted))
+        #expect(coordinator.pendingPage?.anchor.messageID == pending.anchor.messageID)
+        #expect(coordinator.pendingPage?.range == coordinator.mountedRange)
+        coordinator.receiveLayout(localLayout)
+        #expect(coordinator.pendingPage != nil)
+
+        document.setFrameSize(NSSize(width: 640, height: CGFloat(localLayout.rows.count) * 300))
+        let rebased = ConversationTranscriptLayout(
+            sessionID: "one", generation: coordinator.generation, range: coordinator.mountedRange,
+            rows: localLayout.rows.map {
+                .init(target: $0.target, index: $0.index + inserted, minY: $0.minY, maxY: $0.maxY)
+            })
+        coordinator.receiveLayout(rebased)
+        let row = try #require(rebased.rows.first { $0.target.messageID == pending.anchor.messageID })
+        let geometry = try #require(controller.geometry)
+        #expect(abs(row.minY - geometry.visibleTop - pending.anchor.offset) <= 0.5)
+        #expect(coordinator.pendingPage == nil)
+        #expect(coordinator.performance.pageTransactions == 1)
+    }
+
     @Test func laterHistoryRevealsOnlyTheReadyContiguousRows() throws {
         let controller = ConversationScrollController()
         let coordinator = ConversationTranscriptCoordinator(controller: controller)

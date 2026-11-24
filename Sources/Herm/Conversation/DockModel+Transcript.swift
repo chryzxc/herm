@@ -32,13 +32,16 @@ extension DockModel {
         let cursor = TranscriptHistoryCursor(storageSessionID: storageSessionID, profileID: profileID)
         let limit = min(
             TranscriptHistoryPaging.maximumPageRowLimit,
-            max(TranscriptHistoryPaging.pageRowLimit, minimumRowCount)
+            max(TranscriptHistoryPaging.conversationBufferRowLimit, minimumRowCount)
         )
         do {
             let loaded = try await fetchEarlierTranscriptRows(
                 from: cursor,
                 limit: limit,
-                minimumDisplayRows: ConversationMessageWindow.initialLimit
+                minimumDisplayRows: ConversationMessageWindow.initialLimit,
+                maximumPages: limit == TranscriptHistoryPaging.conversationBufferRowLimit
+                    ? TranscriptHistoryPaging.maximumConversationBufferPages
+                    : TranscriptHistoryPaging.maximumPagesPerLoad
             )
             return (loaded.rows, loaded.cursor)
         } catch is CancellationError {
@@ -257,8 +260,7 @@ extension DockModel {
         return cursor.storageSessionID == sessionStorageID
     }
 
-    /// Prepends the next page of stored history once the reader reaches the
-    /// oldest loaded message.
+    /// Refills the stored history buffer before the reader reaches its oldest message.
     func loadEarlierTranscriptIfAvailable() {
         guard canLoadEarlierTranscript, let cursor = transcriptHistoryCursor else { return }
         if let retryAfter = earlierTranscriptRetryAfter, retryAfter > Date() { return }
@@ -271,8 +273,9 @@ extension DockModel {
             do {
                 let loaded = try await fetchEarlierTranscriptRows(
                     from: cursor,
-                    limit: TranscriptHistoryPaging.pageRowLimit,
-                    minimumDisplayRows: 1
+                    limit: TranscriptHistoryPaging.conversationBufferRowLimit,
+                    minimumDisplayRows: 1,
+                    maximumPages: TranscriptHistoryPaging.maximumConversationBufferPages
                 )
                 try await prepareEarlierTranscript(loaded, previousCursor: cursor, generation: generation)
             } catch is CancellationError {

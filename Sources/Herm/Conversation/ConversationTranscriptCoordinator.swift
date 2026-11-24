@@ -35,8 +35,8 @@ struct ConversationPageReadiness {
 final class ConversationTranscriptCoordinator: ObservableObject {
     struct PageTransaction {
         let sessionID: String?
-        let generation: UInt64
-        let range: Range<Int>
+        var generation: UInt64
+        var range: Range<Int>
         var anchor: ConversationScrollAnchor
         var isCorrecting = false
         var preparedPage: ConversationPreparedPage? = nil
@@ -344,10 +344,11 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             return
         }
         let range = ConversationMessageWindow.visibleRange(mountedRange, totalCount: totalCount)
-        if direction < 0, range.lowerBound == 0 {
-            guard edgeDistance < revealDistance else { return }
-            if historyRequest != nil { cancelHistoryRequest() }
+        if direction < 0, range.lowerBound <= 2 * ConversationMessageWindow.pageSize {
             onEarlierHistory()
+        }
+        if direction < 0, range.lowerBound == 0 {
+            if historyRequest != nil { cancelHistoryRequest() }
             return
         }
         let proximity: HistoryProximity =
@@ -509,13 +510,24 @@ final class ConversationTranscriptCoordinator: ObservableObject {
             guard prepend.generation != consumedPrependGeneration else { return }
             consumedPrependGeneration = prepend.generation
             let range = ConversationMessageWindow.visibleRange(mountedRange, totalCount: oldCount)
-            cancelMounting()
+            // A refill can arrive while a local page is still landing. Its identity and
+            // geometry stay the same after the stored rows shift its indices.
+            if pendingPage == nil {
+                cancelMounting()
+            } else {
+                controller.cancelPendingAdjustments()
+                cancelHistoryRequest()
+            }
             lastResponseCount = bubbleCount
             if !range.isEmpty {
                 setRange((range.lowerBound + prepend.count)..<(range.upperBound + prepend.count))
+                pendingPage?.generation = generation
+                pendingPage?.range = mountedRange
             }
-            // Fresh row geometry is required before revealing the prepended rows.
-            queuedDirection = -1
+            // Only a reader at the end of the local buffer needs an immediate reveal.
+            if range.lowerBound == 0, !presentation.isAtBottom, queuedDirection == 0 {
+                queuedDirection = -1
+            }
             return
         }
         let clamped = ConversationMessageWindow.visibleRange(
