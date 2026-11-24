@@ -2098,7 +2098,8 @@ message icon. Local and unspecified sources do not show a pill.
 The sidebar shows the bot header and the stacked Pinned, Recents, Projects, and
 Automations sections for the selected bot. Automations contains automation sessions
 separately from Recents and is last by default; its disclosure and row limit are
-independent. Saved section ordering remains customizable. Recents read every bot's
+independent. Recents, Projects, and Automations use a 6pt gap between their header
+action buttons. Saved section ordering remains customizable. Recents read every bot's
 chats from one all-profile sidebar read merged with the selected bot's fresher
 list. Other bots' history is baselined once from that read so first use shows no
 unread flood. Drag a section header onto another to change their order; the order

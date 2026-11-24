@@ -1294,21 +1294,23 @@ struct SessionNavQueue: View, Equatable {
                 isExpanded: expanded,
                 style: style
             ) {
-                if hasUnread(conversations, statuses, type: type) {
-                    DockIconButton(icon: .checks, label: "Mark all as read", size: 24, style: style) {
-                        markAllSessionsRead(conversations, type: type)
+                HStack(spacing: DockSpacing.tight) {
+                    if hasUnread(conversations, statuses, type: type) {
+                        DockIconButton(icon: .checks, label: "Mark all as read", size: 24, style: style) {
+                            markAllSessionsRead(conversations, type: type)
+                        }
                     }
-                }
-                DockIconButton(
-                    icon: .arrowsClockwise,
-                    label: sidebarSnapshot.inputs.isLoadingSessions
-                        ? "Refreshing \(type.rowName)…" : "Refresh \(type.rowName)",
-                    isBusy: sidebarSnapshot.inputs.isLoadingSessions,
-                    size: 24,
-                    style: style
-                ) {
-                    model.loadSessions(reconcileHistory: true)
-                    controlCenter.refreshProjectNavigation()
+                    DockIconButton(
+                        icon: .arrowsClockwise,
+                        label: sidebarSnapshot.inputs.isLoadingSessions
+                            ? "Refreshing \(type.rowName)…" : "Refresh \(type.rowName)",
+                        isBusy: sidebarSnapshot.inputs.isLoadingSessions,
+                        size: 24,
+                        style: style
+                    ) {
+                        model.loadSessions(reconcileHistory: true)
+                        controlCenter.refreshProjectNavigation()
+                    }
                 }
             }
             .sessionRailReorder(type == .automation ? .automations : .recents, state: navigationState)

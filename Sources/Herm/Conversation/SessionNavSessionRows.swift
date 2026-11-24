@@ -207,16 +207,18 @@ struct SessionNavProjectList: View {
             .sessionSidebarFadesUnderStickyHeader()
         } header: {
             DockSectionHeader(title: "Projects", count: groups.count, isExpanded: $isExpanded, style: style) {
-                DockIconButton(
-                    icon: .plus, label: "New project or add folder", size: 24, style: style, action: onAddProject)
-                DockIconButton(
-                    icon: .arrowsClockwise,
-                    label: isRefreshing ? "Refreshing projects…" : "Refresh projects",
-                    isBusy: isRefreshing,
-                    size: 24,
-                    style: style,
-                    action: onRefresh
-                )
+                HStack(spacing: DockSpacing.tight) {
+                    DockIconButton(
+                        icon: .plus, label: "New project or add folder", size: 24, style: style, action: onAddProject)
+                    DockIconButton(
+                        icon: .arrowsClockwise,
+                        label: isRefreshing ? "Refreshing projects…" : "Refresh projects",
+                        isBusy: isRefreshing,
+                        size: 24,
+                        style: style,
+                        action: onRefresh
+                    )
+                }
             }
             .sessionRailReorder(.projects, state: navigationState)
             .frame(maxWidth: .infinity)
