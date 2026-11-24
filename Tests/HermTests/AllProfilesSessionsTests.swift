@@ -106,4 +106,56 @@ final class AllProfilesSessionsTests: XCTestCase {
         XCTAssertEqual(sessions.map(\.isPinned), [true, false])
         XCTAssertEqual(sessions.map(\.profileID), ["coder", "writer"])
     }
+
+    func testRetainedRemotePinStaysUntilAScanRowSettlesIt() {
+        let retained = [session("a", profile: "default", at: 50, pinned: true)]
+        let omitted = [session("b", profile: "writer", at: 30, pinned: true)]
+        // The bounded scan can omit an older pin; omission is not evidence of an unpin.
+        XCTAssertEqual(
+            AllProfilesSessions.pinned(
+                scopePinned: [], scanned: omitted, scopeProfileID: "coder", retainedPins: retained
+            ).map(\.id),
+            ["a", "b"])
+        // A scan row for the same chat with pinned=false settles it.
+        let contradicted = [session("a", profile: "default", at: 50)]
+        XCTAssertTrue(
+            AllProfilesSessions.pinned(
+                scopePinned: [], scanned: contradicted, scopeProfileID: "coder", retainedPins: retained
+            ).isEmpty)
+    }
+
+    func testSelectedProfilesScanPinShowsOnlyWhileItsReadIsPending() {
+        let scanned = [session("c", profile: "coder", at: 40, pinned: true)]
+        XCTAssertEqual(
+            AllProfilesSessions.pinned(
+                scopePinned: [], scanned: scanned, scopeProfileID: "coder", awaitingScopedPins: true
+            ).map(\.id),
+            ["c"])
+        // Once the scoped read lands, even an empty pin list is authoritative.
+        XCTAssertTrue(
+            AllProfilesSessions.pinned(scopePinned: [], scanned: scanned, scopeProfileID: "coder").isEmpty)
+    }
+
+    func testRetainedPinDoesNotStandInForAnotherOwnersSameID() {
+        let retained = [session("x", profile: "default", at: 50, pinned: true)]
+        let scanned = [session("x", profile: "coder", at: 60, pinned: true)]
+        let pinned = AllProfilesSessions.pinned(
+            scopePinned: scanned, scanned: [], scopeProfileID: "coder", retainedPins: retained)
+
+        XCTAssertEqual(pinned.map(\.profileID), ["coder", "default"])
+    }
+
+    @MainActor
+    func testAllProfileLiveOverlayKeepsEachOwnersSameID() {
+        let pinned = [
+            session("x", profile: "default", at: 10, pinned: true),
+            session("x", profile: "coder", at: 20, pinned: true),
+        ]
+        let live = [session("x", profile: "coder", at: 40)]
+        let presentation = PinnedSessionPresentation(
+            pinned: pinned, live: live, projection: .ready(live), matchesProfile: true, scopeProfileID: "coder")
+
+        XCTAssertEqual(presentation.sessions.map(\.profileID), ["coder", "default"])
+        XCTAssertEqual(presentation.sessions.map(\.updatedAt), [live[0].updatedAt, pinned[0].updatedAt])
+    }
 }

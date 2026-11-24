@@ -2092,7 +2092,11 @@ When more than one Bot is visible, the Bot switcher starts with a fixed
 one row, the selected Bot first, with no overlap or backing. The choice is a local preference. It merges every
 Bot's pins into one Pinned section and every Bot's chats into Recents and
 search. The selected Bot's pins come from its own pinned list; other Bots' pins
-come from the all-profile read's `pinned` flag. Pin keys are profile-scoped. In
+come from the all-profile read's `pinned` flag. While a Bot switch is still
+waiting for that Bot's own pin list, Pinned keeps the rows it already showed and
+takes the selected Bot's scan rows as a preview, so moving between pinned chats
+never empties the section. A scan row for the same chat settles its pin either
+way; a chat the bounded scan omits keeps the pin Herm last showed. Pin keys are profile-scoped. In
 this scope each row's second line starts with a compact profile pill (14pt
 avatar and Bot name in `.dockPill(compact:)`) before the source and repository
 identity. Opening a row switches to its owning profile and keeps the merged

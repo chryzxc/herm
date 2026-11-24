@@ -19,16 +19,30 @@ struct PinnedSessionPresentation: Equatable {
         pinned: [HermesSession],
         live: [HermesSession],
         projection: HermesProjectionState<[HermesSession]>,
-        hasRequestedSessionIndex: Bool = true
+        hasRequestedSessionIndex: Bool = true,
+        matchesProfile: Bool = false,
+        scopeProfileID: String? = nil
     ) {
         switch projection {
         case .ready, .empty, .stale, .loading:
             if pinned.isEmpty {
                 sessions = []
             } else {
-                let liveByID = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-                sessions = pinned.map { liveByID[$0.id] ?? $0 }
-                    .sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
+                func key(_ session: HermesSession) -> ProfileScopedID {
+                    matchesProfile
+                        ? AllProfilesSessions.pinKey(session, scopeProfileID: scopeProfileID)
+                        : ProfileScopedID(profileID: nil, resourceID: session.id)
+                }
+                let liveByKey = Dictionary(live.map { (key($0), $0) }, uniquingKeysWith: { first, _ in first })
+                sessions = pinned.map { pin in
+                    let row = liveByKey[key(pin)] ?? pin
+                    if matchesProfile, row.profileID == nil, let owner = key(pin).profileID {
+                        return row.withPinned(row.isPinned, profileID: owner)
+                    }
+                    return row
+                }.sorted {
+                    ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast)
+                }
             }
         case .unavailable, .failed:
             sessions = []
@@ -44,6 +58,10 @@ struct PinnedSessionPresentation: Equatable {
     }
 
     var count: Int { sessions.count }
+
+    func selectedRow(_ selected: ProfileScopedID) -> HermesSession? {
+        sessions.first { $0.scopedID == selected }
+    }
 
     func withInitialRequestPending() -> Self {
         status == .empty ? Self(sessions: sessions, status: .loading) : self

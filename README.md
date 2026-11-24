@@ -524,6 +524,9 @@ bot picker to merge every bot's pinned and recent conversations into one list; e
 row then shows a pill with its bot's avatar and name, and opening it switches to
 that bot. The sidebar reuses its Recents and Automations groups and unread inventory while you hover, scroll, or search. Each section header stays at the top of the scrolling
 list until the next section replaces it; rows remain lazily rendered.
+Pinned keeps the pins it already showed while the switched bot's own pin list is
+still loading; a chat drops out only when that list, a recent-session scan row, or
+an acknowledged pin change settles it.
 Recent chats and pins appear as soon as the first page arrives. Older chats load
 in the background and join search as they become available. Background polls and
 runtime notifications refresh the latest history page, reusing older loaded sessions

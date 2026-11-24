@@ -203,9 +203,11 @@ struct SessionNavQueue: View, Equatable {
         guard showsAllProfiles else {
             return sidebarSnapshot.inputs.pinnedSessions.contains { $0.id == session.id }
         }
-        return AllProfilesSessions.isPinned(
-            session, scopePinned: sidebarSnapshot.inputs.pinnedSessions,
-            scopeProfileID: sidebarSnapshot.inputs.profileScopeID)
+        let scope = sidebarSnapshot.inputs.profileScopeID
+        let key = AllProfilesSessions.pinKey(session, scopeProfileID: scope)
+        return sidebarSnapshot.allProfilePinned.contains {
+            AllProfilesSessions.pinKey($0, scopeProfileID: scope) == key
+        }
     }
 
     private func togglePin(_ session: HermesSession) {
@@ -1038,7 +1040,7 @@ struct SessionNavQueue: View, Equatable {
                 .dockPadding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            ForEach(pinned.sessions, id: \.[sidebarSection: "pinned"]) { session in
+            ForEach(pinned.sessions, id: \.scopedID) { session in
                 pinnedSessionRow(session, statuses: statuses, style: style)
             }
         }
@@ -1056,9 +1058,10 @@ struct SessionNavQueue: View, Equatable {
         _ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
         let owner = ownerBot(session)
+        let shown = isPinnedSessionShown(session)
         return SessionNavSidebarSessionRow(
             session: session,
-            selectedSessionID: isSessionSelected(session) ? session.id : nil,
+            selectedSessionID: isPinnedSessionSelected(session, shown: shown) ? session.id : nil,
             sessionStatus: statuses[session.id] ?? .none,
             style: style,
             repositoryName: sidebarSnapshot.projectNameBySessionID[session.id],
@@ -1086,9 +1089,29 @@ struct SessionNavQueue: View, Equatable {
             onAddToProject: moveToProject,
             ownerBot: owner,
             ownerAvatar: owner.flatMap { botMode.avatarImages[$0.id] },
-            isShownInPane: sessionPanes.shownSessionIDs.contains(session.id)
+            isShownInPane: shown
         )
         .equatable()
+    }
+
+    private func isPinnedSessionShown(_ session: HermesSession) -> Bool {
+        guard showsAllProfiles else { return sessionPanes.shownSessionIDs.contains(session.id) }
+        return sessionPanes.panels.contains { panel in
+            guard let tab = panel.selected, let id = tab.sessionID else { return false }
+            return ProfileScopedID(profileID: tab.profileID, resourceID: id) == session.scopedID
+        }
+            || (sessionPanes.detachedSessionIDs.contains(session.id)
+                && sidebarSnapshot.allProfilePinned.lazy.filter { $0.id == session.id }.prefix(2).count == 1)
+    }
+
+    private func isPinnedSessionSelected(_ session: HermesSession, shown: Bool) -> Bool {
+        guard showsAllProfiles else { return isSessionSelected(session) }
+        guard activeGlobalTab == nil, !isArtifactsActive else { return false }
+        if shown { return true }
+        guard navigationState.selection.isSessionSelected(session.id) else { return false }
+        let owner = model.sessionProfileID ?? model.profileScopeID
+        let key = ProfileScopedID(profileID: owner, resourceID: session.id)
+        return sidebarSnapshot.allProfilePinPresentation.selectedRow(key)?.scopedID == session.scopedID
     }
 
     private func moveToProject(_ session: HermesSession, _ target: SidebarProjectTarget) {
