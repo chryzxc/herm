@@ -1,20 +1,68 @@
 import Foundation
+import Observation
 import Testing
 
 @testable import Herm
 
 @MainActor
 struct SessionMessageTabsTests {
+    @MainActor private final class Changes {
+        var own = 0
+        var other = 0
+    }
+
+    @Test func previewChangesNotifyOnlyTheirWorkspace() {
+        let tabs = SessionMessageTabs()
+        let message = ChatMessage(role: .user, text: "One")
+        let changes = Changes()
+        let own = tabs.workspace("own")
+        let other = tabs.workspace("other")
+        withObservationTracking {
+            _ = (own.tabs, own.selection)
+        } onChange: {
+            MainActor.assumeIsolated { changes.own += 1 }
+        }
+        withObservationTracking {
+            _ = (other.tabs, other.selection)
+        } onChange: {
+            MainActor.assumeIsolated { changes.other += 1 }
+        }
+        tabs.open(message, in: "own")
+        #expect(changes.own == 1)
+        #expect(changes.other == 0)
+
+        withObservationTracking {
+            _ = own.selection
+        } onChange: {
+            MainActor.assumeIsolated { changes.own += 1 }
+        }
+        tabs.select(message.id, in: "own")
+        #expect(changes.own == 1)
+        tabs.close(message.id, in: "own")
+        #expect(changes.own == 2)
+        #expect(changes.other == 0)
+    }
+
     @Test func openingSelectsAndDeduplicatesMessages() {
         let tabs = SessionMessageTabs()
         let first = ChatMessage(role: .hermes, text: "First message")
         let second = ChatMessage(role: .user, text: "Second message")
+        let workspace = tabs.workspace("workspace")
+        var opens = 0
+        var unrelatedOpens = 0
+        let own = workspace.openRequests.sink { opens += 1 }
+        let other = tabs.workspace("other").openRequests.sink { unrelatedOpens += 1 }
+        defer {
+            own.cancel()
+            other.cancel()
+        }
         tabs.open(first, in: "workspace")
         tabs.open(second, in: "workspace")
         tabs.open(first, in: "workspace")
-        #expect(tabs.tabs["workspace"]?.map(\.id) == [first.id, second.id])
-        #expect(tabs.selection["workspace"] == first.id)
-        #expect(tabs.openRequest == "workspace")
+        #expect(tabs.workspace("workspace").tabs.map(\.id) == [first.id, second.id])
+        #expect(tabs.workspace("workspace").selection == first.id)
+        #expect(opens == 3)
+        #expect(unrelatedOpens == 0)
     }
 
     @Test func messageTabTitlesKeepTheWholeFirstLine() {
@@ -31,10 +79,10 @@ struct SessionMessageTabsTests {
             tabs.open(message, in: workspace)
         }
         tabs.close(message.id, in: "backend-a:profile-a:session")
-        #expect(tabs.tabs["backend-a:profile-a:session"] == nil)
-        #expect(tabs.selection["backend-a:profile-a:session"] == nil)
-        #expect(tabs.tabs["backend-a:profile-b:session"]?.count == 1)
-        #expect(tabs.selection["backend-b:profile-a:session"] == message.id)
+        #expect(tabs.workspace("backend-a:profile-a:session").tabs.isEmpty)
+        #expect(tabs.workspace("backend-a:profile-a:session").selection == nil)
+        #expect(tabs.workspace("backend-a:profile-b:session").tabs.count == 1)
+        #expect(tabs.workspace("backend-b:profile-a:session").selection == message.id)
     }
 
     @Test func closingSelectedTabFallsBackAndClosingBackgroundTabKeepsSelection() {
@@ -44,15 +92,15 @@ struct SessionMessageTabsTests {
         tabs.open(first, in: "workspace")
         tabs.open(second, in: "workspace")
         tabs.close(first.id, in: "workspace")
-        #expect(tabs.selection["workspace"] == second.id)
+        #expect(tabs.workspace("workspace").selection == second.id)
         tabs.open(first, in: "workspace")
         tabs.close(first.id, in: "workspace")
-        #expect(tabs.selection["workspace"] == second.id)
+        #expect(tabs.workspace("workspace").selection == second.id)
         tabs.select(nil, in: "workspace")
-        #expect(tabs.selection["workspace"] == nil)
-        #expect(tabs.tabs["workspace"]?.count == 1)
+        #expect(tabs.workspace("workspace").selection == nil)
+        #expect(tabs.workspace("workspace").tabs.count == 1)
         tabs.close(second.id, in: "workspace")
-        #expect(tabs.tabs["workspace"] == nil)
+        #expect(tabs.workspace("workspace").tabs.isEmpty)
     }
     @Test func typedPreviewsDeduplicateRefreshAndKeepKindsSeparate() throws {
         let tabs = SessionMessageTabs()
@@ -60,24 +108,24 @@ struct SessionMessageTabsTests {
             id: "same-id", name: "terminal", input: "pwd", context: "Project", startedAt: .now, isComplete: false)
         let message = ChatMessage(role: .hermes, text: "Response")
         tabs.open(.tool(call), in: "workspace")
-        let toolID = try #require(tabs.selection["workspace"])
+        let toolID = try #require(tabs.workspace("workspace").selection)
         call.isComplete = true
         call.result = "/project"
         tabs.open(.tool(call), in: "workspace")
-        #expect(tabs.selection["workspace"] == toolID)
-        #expect(tabs.tabs["workspace"]?.count == 1)
-        if case .tool(let refreshed) = tabs.tabs["workspace"]?.first?.content {
+        #expect(tabs.workspace("workspace").selection == toolID)
+        #expect(tabs.workspace("workspace").tabs.count == 1)
+        if case .tool(let refreshed) = tabs.workspace("workspace").tabs.first?.content {
             #expect(refreshed.result == "/project")
         } else {
             Issue.record("Expected refreshed tool preview")
         }
         tabs.open(.activity(message, [call]), in: "workspace")
         tabs.open(message, in: "workspace")
-        #expect(tabs.tabs["workspace"]?.count == 3)
+        #expect(tabs.workspace("workspace").tabs.count == 3)
         tabs.close(message.id, in: "workspace")
-        #expect(tabs.tabs["workspace"]?.count == 2)
+        #expect(tabs.workspace("workspace").tabs.count == 2)
         tabs.close(toolID, in: "workspace")
-        #expect(tabs.tabs["workspace"]?.count == 1)
+        #expect(tabs.workspace("workspace").tabs.count == 1)
     }
 
     @Test func pullRequestsDeduplicateWithinIndependentWorkspaces() throws {
@@ -89,17 +137,17 @@ struct SessionMessageTabsTests {
         let first = GitHubItemReference(repository: firstRepository, number: 42, kind: .pullRequest)
         let second = GitHubItemReference(repository: secondRepository, number: 42, kind: .pullRequest)
         tabs.open(.pullRequest(first), in: "workspace-a")
-        let firstID = try #require(tabs.selection["workspace-a"])
+        let firstID = try #require(tabs.workspace("workspace-a").selection)
         tabs.open(.pullRequest(second), in: "workspace-a")
-        let secondID = try #require(tabs.selection["workspace-a"])
+        let secondID = try #require(tabs.workspace("workspace-a").selection)
         #expect(firstID != secondID)
         tabs.open(.pullRequest(first), in: "workspace-a")
-        #expect(tabs.tabs["workspace-a"]?.count == 2)
-        #expect(tabs.selection["workspace-a"] == firstID)
+        #expect(tabs.workspace("workspace-a").tabs.count == 2)
+        #expect(tabs.workspace("workspace-a").selection == firstID)
         tabs.open(.pullRequest(first), in: "workspace-b")
         tabs.close(firstID, in: "workspace-a")
-        #expect(tabs.selection["workspace-a"] == secondID)
-        #expect(tabs.tabs["workspace-b"]?.count == 1)
+        #expect(tabs.workspace("workspace-a").selection == secondID)
+        #expect(tabs.workspace("workspace-b").tabs.count == 1)
     }
 
 }

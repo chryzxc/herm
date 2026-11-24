@@ -58,7 +58,7 @@ struct SessionInspector: View {
     /// Extra Terminal/Browser instances opened from +. They stay mounted while
     /// another tab is selected so their shells and pages keep running.
     @State private var terminalExtras: [ExtraTab] = []
-    @ObservedObject private var messageTabs = SessionMessageTabs.shared
+    private let messageTabs = SessionMessageTabs.shared
     @ObservedObject private var browsers = SessionBrowserStore.shared
     @ObservedObject private var filePreview = FilePreviewCenter.shared
     @State private var attachmentDiffID = UUID()
@@ -230,7 +230,7 @@ struct SessionInspector: View {
         .onReceive(control.$projectFacts.dropFirst()) { _ in modelRevision &+= 1 }
         .task(id: WorkspaceIdentity.session(model)) {
             restoringPresentation = true
-            let messageSelection = messageTabs.selection[WorkspaceIdentity.session(model)]
+            let messageSelection = messageTabs.workspace(WorkspaceIdentity.session(model)).selection
             if let legacy = UserDefaults.standard.string(forKey: "sessionInspector.selectedSection"),
                 legacy == "Activity"
             {
@@ -585,7 +585,7 @@ struct SessionInspector: View {
             selectedExtraID = extra.id
         } else if selectedPreview == nil {
             let workspace = WorkspaceIdentity.session(model)
-            messageTabs.select(messageTabs.tabs[workspace]?.first?.id, in: workspace)
+            messageTabs.select(messageTabs.workspace(workspace).tabs.first?.id, in: workspace)
         }
     }
 
@@ -745,7 +745,7 @@ struct SessionInspector: View {
         let workspace = WorkspaceIdentity.session(model)
         let tabs =
             openSections.map(sectionTab) + extras.filter(isVisible).map(extraTab)
-            + (messageTabs.tabs[workspace] ?? []).map(messageTab)
+            + messageTabs.workspace(workspace).tabs.map(messageTab)
         return tabOrder.ordered(tabs.map(\.id), in: workspace).compactMap { id in
             tabs.first { $0.id == id }
         }
@@ -790,14 +790,14 @@ struct SessionInspector: View {
 
     private var selectedPreview: SessionPreviewTab? {
         let workspace = WorkspaceIdentity.session(model)
-        return messageTabs.tabs[workspace]?.first { $0.id == messageTabs.selection[workspace] }
+        return messageTabs.workspace(workspace).tabs.first { $0.id == messageTabs.workspace(workspace).selection }
     }
 
     private func messageTab(_ message: SessionPreviewTab) -> SessionInspectorTabItem {
         let workspace = WorkspaceIdentity.session(model)
         return SessionInspectorTabItem(
             id: "preview:" + message.id.uuidString, title: message.content.title, icon: message.content.icon,
-            isSelected: messageTabs.selection[workspace] == message.id,
+            isSelected: messageTabs.workspace(workspace).selection == message.id,
             select: { messageTabs.select(message.id, in: workspace) },
             close: { messageTabs.close(message.id, in: workspace) },
             fileName: message.content.fileName)

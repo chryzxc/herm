@@ -131,7 +131,7 @@ struct SessionRailCardVisualTests {
         let other = RepositoryFileChange(path: "other.swift", status: .untracked, isStaged: false, renameSource: nil)
         let tabs = SessionMessageTabs.shared
         let workspace = "rail-file-test-\(UUID().uuidString)"
-        defer { for tab in tabs.tabs[workspace] ?? [] { tabs.close(tab.id, in: workspace) } }
+        defer { for tab in tabs.workspace(workspace).tabs { tabs.close(tab.id, in: workspace) } }
         var changesOpened = 0
         var pullRequestsOpened = 0
         let root = SessionRailCard(
@@ -200,24 +200,24 @@ struct SessionRailCardVisualTests {
         try press("file.swift")
         try await settle()
         #expect(
-            tabs.tabs[workspace]?.last?.content.key
+            tabs.workspace(workspace).tabs.last?.content.key
                 == "file:/tmp/rail-ui-test/file.swift")
-        let firstID = try #require(tabs.selection[workspace])
+        let firstID = try #require(tabs.workspace(workspace).selection)
         try press("other.swift")
         try await settle()
-        #expect(tabs.tabs[workspace]?.count == 2)
-        #expect(tabs.tabs[workspace]?.last?.content.key == "file:/tmp/rail-ui-test/other.swift")
-        #expect(tabs.selection[workspace] != firstID)
+        #expect(tabs.workspace(workspace).tabs.count == 2)
+        #expect(tabs.workspace(workspace).tabs.last?.content.key == "file:/tmp/rail-ui-test/other.swift")
+        #expect(tabs.workspace(workspace).selection != firstID)
         try press("file.swift")
         try await settle()
-        #expect(tabs.tabs[workspace]?.count == 2)
-        #expect(tabs.selection[workspace] == firstID)
+        #expect(tabs.workspace(workspace).tabs.count == 2)
+        #expect(tabs.workspace(workspace).selection == firstID)
         #expect(changesOpened == 0 && pullRequestsOpened == 0)
         try press("Pull request #42")
         try await settle()
         #expect(changesOpened == 0 && pullRequestsOpened == 1)
-        #expect(tabs.tabs[workspace]?.last?.content.key == "pullRequest:" + references[0].id)
-        #expect(tabs.selection[workspace] == tabs.tabs[workspace]?.last?.id)
+        #expect(tabs.workspace(workspace).tabs.last?.content.key == "pullRequest:" + references[0].id)
+        #expect(tabs.workspace(workspace).selection == tabs.workspace(workspace).tabs.last?.id)
         try press("View all changes")
         try await settle()
         #expect(changesOpened == 1 && pullRequestsOpened == 1)

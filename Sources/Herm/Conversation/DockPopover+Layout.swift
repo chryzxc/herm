@@ -89,8 +89,7 @@ extension DockPopover {
                 }
                 showSessionRailInspector(section)
             }
-            .onReceive(SessionMessageTabs.shared.$openRequest) { workspace in
-                guard workspace == WorkspaceIdentity.session(model) else { return }
+            .onReceive(SessionMessageTabs.shared.workspace(WorkspaceIdentity.session(model)).openRequests) { _ in
                 inspectorScope = .session
                 ensureInspectorPanelVisible()
             }

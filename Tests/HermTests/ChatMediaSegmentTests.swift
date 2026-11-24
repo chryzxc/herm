@@ -50,9 +50,8 @@ struct ChatMediaSegmentTests {
         tabs.open(.file(report), in: "a")
         tabs.open(.file(report), in: "a")
         tabs.open(.file(URL(fileURLWithPath: "/tmp/notes.md")), in: "a")
-        #expect(tabs.tabs["a"]?.map(\.content.title) == ["report.md", "notes.md"])
-        #expect(tabs.tabs["b"] == nil)
-        #expect(tabs.openRequest == "a")
+        #expect(tabs.workspace("a").tabs.map(\.content.title) == ["report.md", "notes.md"])
+        #expect(tabs.workspace("b").tabs.isEmpty)
     }
 
     @Test func attachmentDiffUsesExactGitFileAndBothChangeScopes() async throws {

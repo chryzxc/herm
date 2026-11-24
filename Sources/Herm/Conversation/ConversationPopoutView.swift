@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// What a detached window's title row names; the window controller keeps it current.
@@ -34,11 +35,12 @@ struct ConversationPopoutView: View {
     let onRetry: () -> Void
     /// Resizes the window for the preview panel opening (`true`) or closing.
     var onPreviewPanel: (Bool) -> Void = { _ in }
-    @ObservedObject private var previews = SessionMessageTabs.shared
+    private let previews = SessionMessageTabs.shared
     @State private var showsPreviews = false
 
     private var workspace: String? { chat.conversation.map { WorkspaceIdentity.session($0) } }
-    private var previewTabs: [SessionPreviewTab] { workspace.flatMap { previews.tabs[$0] } ?? [] }
+    private var previewState: SessionMessageTabs.Workspace? { workspace.map(previews.workspace) }
+    private var previewTabs: [SessionPreviewTab] { previewState?.tabs ?? [] }
     private var isPreviewPanelVisible: Bool { showsPreviews && !previewTabs.isEmpty }
 
     var body: some View {
@@ -48,7 +50,7 @@ struct ConversationPopoutView: View {
                 Color.dockBorderLight.frame(width: DockLayout.hairline)
                 ConversationPopoutPreviewPanel(
                     model: model, bots: bots, workspace: workspace, tabs: previewTabs,
-                    selection: previews.selection[workspace]
+                    selection: previews.workspace(workspace).selection
                 )
                 .frame(width: Self.previewWidth)
             }
@@ -57,8 +59,8 @@ struct ConversationPopoutView: View {
         .underTitlebar(header.titleRowHeight)
         .overlay(alignment: .top) { titleRow }
         .popoutCanvas()
-        .onReceive(previews.$openRequest) { request in
-            guard let request, request == workspace else { return }
+        .onReceive(previewState?.openRequests.eraseToAnyPublisher() ?? Empty<Void, Never>().eraseToAnyPublisher()) {
+            _ in
             showsPreviews = true
         }
         .onChange(of: isPreviewPanelVisible) { _, visible in

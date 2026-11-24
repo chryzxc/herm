@@ -2450,6 +2450,8 @@ the trailing inset. Tool payload formatting reuses Timeline's safe code/diff
 formatting. No inferred capabilities or fabricated outcomes appear. Current loaded
 projections refresh previews; unavailable projections retain explicitly labelled
 captured data. Tabs remain temporary and scoped by backend, profile and session.
+Windows showing the same workspace share preview selection. Preview changes leave
+other workspaces' tab states alone.
 
 
 Message bubbles offer **Open message in new tab** for completed messages. It reveals

@@ -1,37 +1,65 @@
+import Combine
 import SwiftUI
 
 /// Disposable reading copies only; transcript history remains in Hermes.
 @MainActor
-final class SessionMessageTabs: ObservableObject {
+final class SessionMessageTabs {
+    struct Snapshot {
+        var tabs: [SessionPreviewTab] = []
+        var selection: UUID?
+    }
+
+    @Observable
+    final class Workspace {
+        @ObservationIgnored let openRequests = PassthroughSubject<Void, Never>()
+        fileprivate var snapshot = Snapshot()
+
+        var tabs: [SessionPreviewTab] { snapshot.tabs }
+        var selection: UUID? { snapshot.selection }
+    }
+
     static let shared = SessionMessageTabs()
-    @Published private(set) var tabs: [String: [SessionPreviewTab]] = [:]
-    @Published private(set) var selection: [String: UUID] = [:]
-    @Published private(set) var openRequest: String?
+    private var workspaces: [String: Workspace] = [:]
+
+    func workspace(_ key: String) -> Workspace {
+        if let workspace = workspaces[key] { return workspace }
+        let workspace = Workspace()
+        workspaces[key] = workspace
+        return workspace
+    }
 
     func open(_ message: ChatMessage, in workspace: String) {
         open(.message(message), in: workspace)
     }
 
     func open(_ content: SessionPreviewContent, in workspace: String) {
-        if let index = tabs[workspace]?.firstIndex(where: { $0.content.key == content.key }) {
-            tabs[workspace]?[index].content = content
-            selection[workspace] = tabs[workspace]?[index].id
+        let state = self.workspace(workspace)
+        var snapshot = state.snapshot
+        if let index = snapshot.tabs.firstIndex(where: { $0.content.key == content.key }) {
+            snapshot.tabs[index].content = content
+            snapshot.selection = snapshot.tabs[index].id
         } else {
             let tab = SessionPreviewTab(content: content)
-            tabs[workspace, default: []].append(tab)
-            selection[workspace] = tab.id
+            snapshot.tabs.append(tab)
+            snapshot.selection = tab.id
         }
-        openRequest = workspace
+        state.snapshot = snapshot
+        state.openRequests.send()
     }
 
     func select(_ id: UUID?, in workspace: String) {
-        selection[workspace] = id
+        let state = self.workspace(workspace)
+        guard state.selection != id else { return }
+        state.snapshot.selection = id
     }
 
     func close(_ id: UUID, in workspace: String) {
-        tabs[workspace]?.removeAll { $0.id == id }
-        if selection[workspace] == id { selection[workspace] = tabs[workspace]?.last?.id }
-        if tabs[workspace]?.isEmpty == true { tabs[workspace] = nil }
+        let state = self.workspace(workspace)
+        guard let index = state.tabs.firstIndex(where: { $0.id == id }) else { return }
+        var snapshot = state.snapshot
+        snapshot.tabs.remove(at: index)
+        if snapshot.selection == id { snapshot.selection = snapshot.tabs.last?.id }
+        state.snapshot = snapshot
     }
 }
 
