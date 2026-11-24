@@ -2096,6 +2096,14 @@ avatar and Bot name in `.dockPill(compact:)`) before the source and repository
 identity. Opening a row switches to its owning profile and keeps the merged
 scope. Picking a single Bot leaves the merged scope.
 
+Holding a dragged row in the picker's top or bottom edge band scrolls the
+picker through rows it has not shown yet, and the row's slot follows that
+scroll, so the last Bot reaches the first slot in one continuous drag. The
+scroll stops when the pointer leaves the band, the list reaches its first or
+last row, or the drag ends; a new drag starts from wherever the list then is.
+The dragged row stays under the pointer, and the pointer's own travel still
+counts, so an ordinary short drag behaves as before.
+
 Session activity uses `session.active_list`, not the REST index’s recent-write
 flag. The visible sidebar refreshes activity every ten seconds for the selected
 profile, including unopened Bot sessions and pins. Successful live snapshots
