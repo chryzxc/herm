@@ -9,21 +9,49 @@ struct DockProfilePickerOrderTests {
     /// A held pointer at the top of an overflow list walks the last profile to slot zero
     /// inside one drag, using the real clip's travel rather than repeated pointer events.
     @Test func heldTopEdgeScrollsLastProfileToFirst() throws {
+        let suite = "profile-edge-drag-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let ids = (0..<19).map { "profile-\($0)" } + ["last"]
+        let bots = profiles(ids)
+        let order = DockProfilePickerOrder(defaults: defaults)
+        let target = DockScrollTarget()
+        let token = UUID()
+        var drag = DockProfilePickerDrag(token: token, id: "last", start: 19)
+        #expect(target.scrollView == nil)
+        #expect(!drag.isCurrent(token: token, attachment: target.attachment))
+        drag.translation = -44
+        drag.updateOrder(order, in: bots, pitch: 40)
+        #expect(order.ordered(bots)[18].id == "last", "Pointer-only reorder works before the probe attaches")
+
         let scroll = try overflowClip(documentHeight: 852)
         let clip = scroll.contentView
-        var drag = makeDrag(in: clip, translation: -330)
+        let probe = NSView()
+        target.attach(scroll, from: probe)
+        let liftBeforeAttach = drag.liftOffset(at: 18, pitch: 40)
+        drag.bindClip(origin: clip.bounds.minY, attachment: target.attachment)
+        drag.trackClip(origin: clip.bounds.minY, isFlipped: clip.isFlipped)
+        #expect(drag.isCurrent(token: token, attachment: target.attachment))
+        #expect(drag.target(pitch: 40, count: bots.count) == 18)
+        #expect(drag.liftOffset(at: 18, pitch: 40) == liftBeforeAttach)
+
+        drag.translation = -330
         let direction = try #require(DockEdgeAutoscroll.direction(pointer: topPointer, viewport: viewport))
         #expect(direction == .towardStart)
-        #expect(drag.target(pitch: 40, count: 20) > 0, "The first slot must initially be unreachable")
+        drag.updateOrder(order, in: bots, pitch: 40)
+        #expect(drag.slot > 0, "The first slot must initially be unreachable")
         var steps = 0
         while steps < 200, DockEdgeAutoscroll.scrollStep(in: scroll, toward: direction) != 0 {
             drag.trackClip(origin: clip.bounds.minY, isFlipped: clip.isFlipped)
+            drag.updateOrder(order, in: bots, pitch: 40)
             steps += 1
         }
         #expect(steps > 40 && steps < 200)
         #expect(clip.bounds.minY == clip.constrainBoundsRect(clip.bounds.offsetBy(dx: 0, dy: -852)).minY)
         #expect(DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardStart) == 0)
-        #expect(drag.target(pitch: 40, count: 20) == 0, "The dragged profile must land first after All")
+        #expect(drag.slot == 0, "The dragged profile must land first after All")
+        let restored = DockProfilePickerOrder(defaults: defaults)
+        #expect(restored.ordered(bots).map(\.id) == ["last"] + Array(ids.dropLast()))
     }
 
     /// Reversing to the bottom edge scrolls the same drag back to the last slot, then stops.
@@ -150,9 +178,10 @@ struct DockProfilePickerOrderTests {
     private func makeDrag(
         in clip: NSClipView, translation: CGFloat = 0, attachment: UUID = UUID()
     ) -> DockProfilePickerDrag {
-        DockProfilePickerDrag(
-            token: UUID(), attachment: attachment, id: "last", start: 19, slot: 19,
-            startOrigin: clip.bounds.minY, translation: translation)
+        var drag = DockProfilePickerDrag(token: UUID(), id: "last", start: 19)
+        drag.translation = translation
+        drag.bindClip(origin: clip.bounds.minY, attachment: attachment)
+        return drag
     }
 
     /// Runs the top-edge steps a held pointer would run until the clip reaches its first row.
@@ -206,12 +235,7 @@ struct DockProfilePickerOrderTests {
         let suite = "profile-drag-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let bots = ["a", "b", "c"].map { id in
-            BotSummary(
-                id: id, name: id, title: nil, description: nil, model: nil,
-                isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
-                isHidden: false, hasAvatar: false, isDefault: false)
-        }
+        let bots = profiles(["a", "b", "c"])
         let order = DockProfilePickerOrder(defaults: defaults)
         order.move("a", relativeTo: "c", after: true, in: bots)
         #expect(order.ordered(bots).map(\.id) == ["b", "c", "a"])
@@ -220,6 +244,15 @@ struct DockProfilePickerOrderTests {
         order.move("a", relativeTo: "missing", after: false, in: bots)
         order.move("a", relativeTo: "a", after: true, in: bots)
         #expect(order.ordered(bots).map(\.id) == ["a", "b", "c"])
+    }
+
+    private func profiles(_ ids: [String]) -> [BotSummary] {
+        ids.map { id in
+            BotSummary(
+                id: id, name: id, title: nil, description: nil, model: nil,
+                isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+                isHidden: false, hasAvatar: false, isDefault: false)
+        }
     }
 
     @Test func movesAndPersistsWithoutChangingProfiles() {

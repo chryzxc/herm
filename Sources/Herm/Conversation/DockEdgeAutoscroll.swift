@@ -78,19 +78,28 @@ final class DockScrollTarget {
 @MainActor
 struct DockScrollViewProbe: NSViewRepresentable {
     let target: DockScrollTarget
+    let onAttach: @MainActor () -> Void
     let onDetach: @MainActor () -> Void
 
-    func makeNSView(context: Context) -> Probe { Probe(target: target, onDetach: onDetach) }
-    func updateNSView(_ nsView: Probe, context: Context) { nsView.onDetach = onDetach }
+    func makeNSView(context: Context) -> Probe { Probe(target: target, onAttach: onAttach, onDetach: onDetach) }
+    func updateNSView(_ nsView: Probe, context: Context) {
+        nsView.onAttach = onAttach
+        nsView.onDetach = onDetach
+    }
     static func dismantleNSView(_ nsView: Probe, coordinator: ()) { nsView.dismantle() }
 
     final class Probe: NSView {
         let target: DockScrollTarget
+        var onAttach: @MainActor () -> Void
         var onDetach: @MainActor () -> Void
         private var isDismantled = false
 
-        init(target: DockScrollTarget, onDetach: @escaping @MainActor () -> Void) {
+        init(
+            target: DockScrollTarget, onAttach: @escaping @MainActor () -> Void,
+            onDetach: @escaping @MainActor () -> Void
+        ) {
             self.target = target
+            self.onAttach = onAttach
             self.onDetach = onDetach
             super.init(frame: .zero)
         }
@@ -110,7 +119,12 @@ struct DockScrollViewProbe: NSViewRepresentable {
         private func bind() {
             guard !isDismantled else { return }
             if window != nil, let scrollView = enclosingScrollView {
-                if target.attach(scrollView, from: self) { onDetach() }
+                let wasUnbound = target.scrollView == nil
+                if target.attach(scrollView, from: self) {
+                    onDetach()
+                } else if wasUnbound {
+                    onAttach()
+                }
             } else if target.detach(from: self) {
                 onDetach()
             }
@@ -119,6 +133,7 @@ struct DockScrollViewProbe: NSViewRepresentable {
         func dismantle() {
             isDismantled = true
             if target.detach(from: self) { onDetach() }
+            onAttach = {}
             onDetach = {}
         }
     }

@@ -57,7 +57,8 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
                 }
             }
             .dockPadding(6)
-            .background(DockScrollViewProbe(target: scrollTarget, onDetach: clipDidDetach))
+            .background(
+                DockScrollViewProbe(target: scrollTarget, onAttach: clipDidAttach, onDetach: clipDidDetach))
         }
         .frame(width: 300, height: min(CGFloat(bots.count + (showsHeader ? 1 : 0)) * 40 + 12, 360))
         .onGeometryChange(for: CGRect.self) {
@@ -105,35 +106,33 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     }
 
     private func updateDrag(_ sample: DragSample, isNew: Bool) {
-        guard let clip = scrollTarget.scrollView?.contentView else { return }
         if isNew {
             NSCursor.closedHand.set()
             withAnimation(liftAnimation) {
-                drag = DockProfilePickerDrag(
-                    token: sample.token, attachment: scrollTarget.attachment, id: sample.id,
-                    start: sample.start, slot: sample.start, startOrigin: clip.bounds.minY)
+                drag = DockProfilePickerDrag(token: sample.token, id: sample.id, start: sample.start)
             }
         }
-        guard drag?.isCurrent(token: sample.token, attachment: scrollTarget.attachment) == true else { return }
+        guard drag?.token == sample.token else { return }
+        if let attachment = drag?.attachment, attachment != scrollTarget.attachment { return }
         drag?.translation = sample.translation
-        drag?.trackClip(origin: clip.bounds.minY, isFlipped: clip.isFlipped)
+        trackCurrentClip()
         pointer = sample.location
         updateOrder()
         updateEdgeScroll()
     }
 
-    /// Lands the dragged row on the slot the pointer and the list's own travel point at.
+    private func trackCurrentClip() {
+        guard let clip = scrollTarget.scrollView?.contentView else { return }
+        let origin = clip.bounds.minY
+        if drag?.attachment == nil { drag?.bindClip(origin: origin, attachment: scrollTarget.attachment) }
+        drag?.trackClip(origin: origin, isFlipped: clip.isFlipped)
+    }
+
     private func updateOrder() {
-        guard let state = drag else { return }
-        let target = state.target(pitch: Self.rowPitch, count: bots.count)
-        guard target != state.slot else { return }
-        let ordered = order.ordered(bots)
-        guard ordered.indices.contains(target), let current = ordered.firstIndex(where: { $0.id == state.id })
-        else { return }
-        drag?.slot = target
-        guard target != current else { return }
+        guard var state = drag else { return }
         withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16)) {
-            order.move(state.id, relativeTo: ordered[target].id, after: target > current, in: bots)
+            state.updateOrder(order, in: bots, pitch: Self.rowPitch)
+            if state.slot != drag?.slot { drag?.slot = state.slot }
         }
     }
 
@@ -141,6 +140,7 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     /// slot update always sees the rows the scroll revealed.
     private func updateEdgeScroll() {
         guard let token = drag?.token,
+            drag?.isCurrent(token: token, attachment: scrollTarget.attachment) == true,
             DockEdgeAutoscroll.direction(pointer: pointer, viewport: viewport) != nil
         else { return stopEdgeScroll() }
         guard edgeScroll == nil else { return }
@@ -167,6 +167,19 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
         // Publish actual travel even on ticks that don't cross a row boundary.
         drag?.trackClip(origin: clip.bounds.minY, isFlipped: clip.isFlipped)
         updateOrder()
+    }
+
+    private func clipDidAttach() {
+        guard let token = drag?.token, drag?.attachment == nil else { return }
+        let attachment = scrollTarget.attachment
+        // The probe can attach during a SwiftUI update, even with the pointer stationary.
+        Task { @MainActor in
+            guard drag?.token == token, drag?.attachment == nil,
+                scrollTarget.attachment == attachment
+            else { return }
+            trackCurrentClip()
+            updateEdgeScroll()
+        }
     }
 
     private func clipDidDetach() {
@@ -206,20 +219,48 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
 /// View state shared by lift and slot selection. Clip travel changes independently of the slot.
 struct DockProfilePickerDrag {
     let token: UUID
-    let attachment: UUID
     let id: String
     let start: Int
     var slot: Int
-    let startOrigin: CGFloat
     var translation: CGFloat = 0
-    var scrollTravel: CGFloat = 0
+    private(set) var attachment: UUID?
+    private var startOrigin: CGFloat?
+    private var scrollTravel: CGFloat = 0
+
+    init(token: UUID, id: String, start: Int) {
+        self.token = token
+        self.id = id
+        self.start = start
+        slot = start
+    }
 
     func isCurrent(token: UUID, attachment: UUID) -> Bool {
         self.token == token && self.attachment == attachment
     }
 
+    /// The first clip sample sets a baseline; its existing offset isn't drag travel.
+    mutating func bindClip(origin: CGFloat, attachment: UUID) {
+        guard self.attachment == nil else { return }
+        self.attachment = attachment
+        startOrigin = origin
+    }
+
     mutating func trackClip(origin: CGFloat, isFlipped: Bool) {
+        guard let startOrigin else { return }
         scrollTravel = DockEdgeAutoscroll.travel(from: startOrigin, to: origin, isFlipped: isFlipped)
+    }
+
+    /// Lands the dragged row on the slot the pointer and the list's own travel point at.
+    @MainActor
+    mutating func updateOrder(_ order: DockProfilePickerOrder, in bots: [BotSummary], pitch: CGFloat) {
+        let target = self.target(pitch: pitch, count: bots.count)
+        guard target != slot else { return }
+        let ordered = order.ordered(bots)
+        guard ordered.indices.contains(target), let current = ordered.firstIndex(where: { $0.id == id })
+        else { return }
+        slot = target
+        guard target != current else { return }
+        order.move(id, relativeTo: ordered[target].id, after: target > current, in: bots)
     }
 
     func target(pitch: CGFloat, count: Int) -> Int {
