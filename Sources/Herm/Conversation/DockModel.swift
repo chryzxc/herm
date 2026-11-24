@@ -232,6 +232,7 @@ final class DockModel: ObservableObject {
     // Pin evidence is independent of whether the older history pages finished.
     var knownProfilePins: [ProfileScopedID: HermesSession] = [:]
     var supersededPinScanByProfile: [String: Task<Void, Never>] = [:]
+    var supersededPinScanBySession: [ProfileScopedID: Task<Void, Never>] = [:]
     /// Set by a profile switch and cleared by the scoped read that carries the
     /// target profile's authoritative pins, so the merged Pinned section keeps
     /// the rows it already knew while that read is in flight.
@@ -293,6 +294,7 @@ final class DockModel: ObservableObject {
                     reconcileScannedPins(rows, from: task)
                 }
                 supersededPinScanByProfile = supersededPinScanByProfile.filter { $0.value != task }
+                supersededPinScanBySession = supersededPinScanBySession.filter { $0.value != task }
             } else if allBotSessionsTask != nil {
                 pinScanStartedWithLoadedAt = allBotSessionsLoadedAt
             }
@@ -760,6 +762,7 @@ final class DockModel: ObservableObject {
                     self.retainedProfileSessions.removeAll()
                     self.knownProfilePins.removeAll()
                     self.supersededPinScanByProfile.removeAll()
+                    self.supersededPinScanBySession.removeAll()
                     self.awaitingScopedPinsAfterSwitch = false
                     self.sessionTranscriptPreview = nil
                     self.sessionResumeTask?.cancel()

@@ -93,7 +93,10 @@ extension DockModel {
         var updated = knownProfilePins
         for row in rows {
             let key = row.scopedID
-            if let owner = key.profileID, let task, supersededPinScanByProfile[owner] == task {
+            if let task,
+                supersededPinScanBySession[key] == task
+                    || key.profileID.flatMap({ supersededPinScanByProfile[$0] }) == task
+            {
                 continue
             }
 
@@ -134,7 +137,7 @@ extension DockModel {
     }
 
     private func setKnownPin(_ pin: HermesSession?, key: ProfileScopedID) {
-        if let owner = key.profileID { supersededPinScanByProfile[owner] = allBotSessionsTask }
+        supersededPinScanBySession[key] = allBotSessionsTask
         guard knownProfilePins[key] != pin else { return }
         knownProfilePins[key] = pin
         sidebarPinChanges.send()

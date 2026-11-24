@@ -14,6 +14,8 @@ private final class ProfileSessionsRPCClient: HermesRPCClientProtocol {
     var scanRows: [[String: Any]]?
     var olderPageGate: (started: AsyncStream<Void>.Continuation, release: AsyncStream<Void>)?
     var scanGate: (started: AsyncStream<Void>.Continuation, release: AsyncStream<Void>)?
+    var scopedReadGate: (started: AsyncStream<Void>.Continuation, release: AsyncStream<Void>)?
+    var pinACKGate: (started: AsyncStream<Void>.Continuation, release: AsyncStream<Void>)?
     private(set) var renameCommand: String?
     private(set) var listedProfiles: [String] = []
 
@@ -59,6 +61,11 @@ private final class ProfileSessionsRPCClient: HermesRPCClientProtocol {
         let query = URLComponents(string: path)?.queryItems
         let profile = query?.first { $0.name == "profile" }?.value ?? ""
         let rows = rowsByProfile[profile] ?? []
+        if profile == "bot-a", let gate = scopedReadGate {
+            scopedReadGate = nil
+            gate.started.finish()
+            for await _ in gate.release {}
+        }
         if profile == "bot-a", let gate = olderPageGate {
             if query?.contains(where: { $0.name == "offset" }) == true {
                 olderPageGate = nil
@@ -75,6 +82,11 @@ private final class ProfileSessionsRPCClient: HermesRPCClientProtocol {
         guard method == "PATCH", path == "/api/sessions/shared", body["pinned"] as? Bool == false,
             let profile = body["profile"] as? String, profile == "bot-a"
         else { throw HermesGateway.GatewayError.malformedResponse }
+        if let gate = pinACKGate {
+            pinACKGate = nil
+            gate.started.finish()
+            for await _ in gate.release {}
+        }
         rowsByProfile[profile] = rowsByProfile[profile]?.map { row in
             row["id"] as? String == "shared" ? row.merging(["pinned": false]) { _, new in new } : row
         }
@@ -184,6 +196,79 @@ struct ProfileSessionRetentionTests {
             model.setProfileScope("bot-b")
             await settle(model)
             #expect(snapshot(model).allProfilePinPresentation.sessions.isEmpty)
+        }
+    }
+
+    @Test func renameFencesOnlyItsOwnRowInAHeldScan() async throws {
+        try await withModel { model, client in
+            let renamed: [String: Any] = ["id": "shared", "profile": "bot-a", "title": "Old", "pinned": true]
+            let sibling: [String: Any] = ["id": "sibling", "profile": "bot-a", "title": "Sibling", "pinned": true]
+            client.rowsByProfile["bot-a"] = [renamed, sibling]
+            model.setProfileScope("bot-a")
+            await settle(model)
+            model.setProfileScope("bot-b")
+            await settle(model)
+            let key = ProfileScopedID(profileID: "bot-a", resourceID: "shared")
+            let pin = try #require(snapshot(model).allProfilePinPresentation.selectedRow(key))
+            #expect(Set(snapshot(model).allProfilePinPresentation.sessions.map(\.id)) == ["shared", "sibling"])
+
+            let (started, didStart) = AsyncStream<Void>.makeStream()
+            let (hold, release) = AsyncStream<Void>.makeStream()
+            defer { release.finish() }
+            client.scanRows = [renamed, sibling.merging(["pinned": false]) { _, new in new }]
+            client.scanGate = (didStart, hold)
+            model.loadAllBotSessions(force: true)
+            let scan = model.allBotSessionsTask
+            for await _ in started {}
+            #expect(await model.renameSession(pin, title: "New"))
+            release.finish()
+            await scan?.value
+            await settle(model)
+
+            let pins = snapshot(model).allProfilePinPresentation
+            #expect(pins.sessions.map(\.id) == ["shared"])
+            #expect(pins.selectedRow(key)?.title == "New")
+        }
+    }
+
+    @Test func remoteUnpinACKUpdatesTheOwnerSelectedWhileTheWriteWasPending() async throws {
+        try await withModel { model, client in
+            let pinned: [String: Any] = ["id": "shared", "profile": "bot-a", "title": "A pin", "pinned": true]
+            client.rowsByProfile["bot-a"] = [pinned]
+            client.scanRows = [pinned]
+            model.setProfileScope("bot-b")
+            await settle(model)
+            model.loadAllBotSessions(force: true)
+            await settle(model)
+            let key = ProfileScopedID(profileID: "bot-a", resourceID: "shared")
+            let pin = try #require(snapshot(model).allProfilePinPresentation.selectedRow(key))
+
+            let (patchStarted, didStartPatch) = AsyncStream<Void>.makeStream()
+            let (holdPatch, releasePatch) = AsyncStream<Void>.makeStream()
+            let (readStarted, didStartRead) = AsyncStream<Void>.makeStream()
+            let (holdRead, releaseRead) = AsyncStream<Void>.makeStream()
+            defer {
+                releasePatch.finish()
+                releaseRead.finish()
+            }
+            client.pinACKGate = (didStartPatch, holdPatch)
+            let unpin = Task { await model.toggleSessionPinned(pin, isPinned: true) }
+            for await _ in patchStarted {}
+            model.setProfileScope("bot-a")
+            await settle(model)
+            #expect(model.pinnedSessions.map(\.id) == ["shared"])
+
+            client.scopedReadGate = (didStartRead, holdRead)
+            let staleRead = model.loadSessions(quiet: true)
+            for await _ in readStarted {}
+            client.scanRows = []
+            releasePatch.finish()
+            #expect(await unpin.value)
+            #expect(model.pinnedSessions.isEmpty)
+            releaseRead.finish()
+            await staleRead?.value
+            await settle(model)
+            #expect(snapshot(model).allProfilePinPresentation.selectedRow(key) == nil)
         }
     }
 

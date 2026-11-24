@@ -357,9 +357,7 @@ extension DockModel {
     func toggleSessionPinned(_ session: HermesSession, isPinned currentlyPinned: Bool? = nil) async -> Bool {
         guard pinningSessionID == nil else { return false }
         let pinned = !(currentlyPinned ?? isSessionPinned(session.id))
-        let scope = profileScopeID
-        let profileID = session.profileID ?? scope
-        let ownedByScope = Self.normalizedProfileID(profileID) == Self.normalizedProfileID(scope)
+        let profileID = session.profileID ?? profileScopeID
         pinningSessionID = session.id
         defer { pinningSessionID = nil }
         do {
@@ -367,7 +365,8 @@ extension DockModel {
                 pinned, sessionID: session.id, profileID: profileID, client: sessionRPCClient)
             applyRetainedPin(pinned, to: session, profileID: profileID)
             applyAllProfilePin(pinned, to: session, profileID: profileID)
-            guard ownedByScope, profileScopeID == scope else { return true }
+            // The owner may have become the selected profile while the write was in flight.
+            guard Self.normalizedProfileID(profileID) == Self.normalizedProfileID(profileScopeID) else { return true }
             // Reject list snapshots that predate the acknowledged mutation.
             sessionLoadGeneration &+= 1
             sessionLoadTask?.cancel()
