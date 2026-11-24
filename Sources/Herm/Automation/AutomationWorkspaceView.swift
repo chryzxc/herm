@@ -173,7 +173,8 @@ struct AutomationWorkspaceView: View {
     }
 
     private var overdueCount: Int {
-        control.cronJobs.filter { AutomationWorkspaceRowPresentation.isOverdue($0) }.count
+        let now = Date()
+        return control.cronJobs.count { AutomationWorkspaceRowPresentation.isOverdue($0, now: now) }
     }
 
     private var isRefreshing: Bool {
@@ -409,7 +410,8 @@ struct AutomationWorkspaceView: View {
     // MARK: Header
 
     private var workspaceHeader: some View {
-        DockPageHeader(
+        let overdueCount = overdueCount
+        return DockPageHeader(
             title: "Automation",
             subtitle: control.refreshState(for: "cron.jobs")?.error.map {
                 "Schedules are not current · " + $0
@@ -438,10 +440,20 @@ struct AutomationWorkspaceView: View {
     // MARK: Job list
 
     /// Groups put what needs a decision first; paused work stays out of the way.
-    private var jobGroups: [(title: String, tint: Color, jobs: [CronSummary])] {
-        let overdue = filteredJobs.filter { $0.enabled && AutomationWorkspaceRowPresentation.isOverdue($0) }
-        let active = filteredJobs.filter { $0.enabled && !AutomationWorkspaceRowPresentation.isOverdue($0) }
-        let paused = filteredJobs.filter { !$0.enabled }
+    private func jobGroups(_ jobs: [CronSummary]) -> [(title: String, tint: Color, jobs: [CronSummary])] {
+        let now = Date()
+        var overdue: [CronSummary] = []
+        var active: [CronSummary] = []
+        var paused: [CronSummary] = []
+        for job in jobs {
+            if !job.enabled {
+                paused.append(job)
+            } else if AutomationWorkspaceRowPresentation.isOverdue(job, now: now) {
+                overdue.append(job)
+            } else {
+                active.append(job)
+            }
+        }
         return [
             ("Overdue", Color.dockWarning, overdue),
             ("Active", Color.dockSuccess, active),
@@ -450,7 +462,8 @@ struct AutomationWorkspaceView: View {
     }
 
     private func jobList(showsSelection: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let jobs = filteredJobs
+        return VStack(alignment: .leading, spacing: 0) {
             DockSearchField(placeholder: "Filter by name or job ID", text: $searchText)
                 .dockPadding(.horizontal, DockSpacing.inspectorInset)
                 .dockPadding(.vertical, DockSpacing.group)
@@ -459,7 +472,7 @@ struct AutomationWorkspaceView: View {
                     .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
-                Text("\(filteredJobs.count)")
+                Text("\(jobs.count)")
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
                     .monospacedDigit()
@@ -468,10 +481,10 @@ struct AutomationWorkspaceView: View {
             .dockPadding(.bottom, 10)
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    if filteredJobs.isEmpty {
+                    if jobs.isEmpty {
                         placeholder("No matching automations", detail: "Try a different name or job ID.")
                     }
-                    ForEach(jobGroups, id: \.title) { group in
+                    ForEach(jobGroups(jobs), id: \.title) { group in
                         groupHeader(group.title, tint: group.tint, count: group.jobs.count)
                         ForEach(group.jobs) { job in
                             jobRow(job, selected: showsSelection && job.id == selectedJobID)

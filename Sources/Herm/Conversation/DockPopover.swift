@@ -333,6 +333,9 @@ struct DockPopover: View {
                 if sessionWorkspaceMode == .voice { modelPresentationRevision &+= 1 }
             }
             .onReceive(controlCenter.workspacePresentationChanges) { _ in controlPresentationRevision &+= 1 }
+            .onReceive(controlCenter.$cronJobs.dropFirst().receive(on: RunLoop.main)) { _ in
+                if sessionWorkspaceMode == .voice { controlPresentationRevision &+= 1 }
+            }
             .onReceive(ConversationWindowStore.shared.$detachedSessionIDs) { detached in
                 // A room lives in one place: popping out the shown room leaves the Bots page on its list.
                 if !openGroupRoomID.isEmpty, detached.contains(QuickDestination.groupRoomTabID(openGroupRoomID)) {

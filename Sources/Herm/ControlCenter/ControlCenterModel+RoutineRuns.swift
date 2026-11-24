@@ -72,8 +72,8 @@ extension ControlCenterModel {
                 cronRunsByJob = [:]
                 cronRuns = []
             }
-            routineProfileID = profileID
-            cronJobs = jobs
+            if routineProfileID != profileID { routineProfileID = profileID }
+            if cronJobs != jobs { cronJobs = jobs }
             triggeredRoutineIDs = triggeredRoutineIDs.filter { id in
                 guard let job = jobs.first(where: { "routine/\(profileID ?? "")/\($0.id)" == id }) else {
                     return true

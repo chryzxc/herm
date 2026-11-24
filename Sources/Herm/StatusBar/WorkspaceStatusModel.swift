@@ -74,11 +74,11 @@ final class WorkspaceStatusModel: ObservableObject {
         .sink { [weak self, weak control] _, _, _ in
             guard let control else { return }
             let routines = control.refreshState(for: "cron.jobs")?.isStale == true ? [] : control.cronJobs
-            self?.update(
-                \.routines,
-                routines.map { job in
-                    RoutineReference(profileID: control.profileForRoutine(job), job: job, run: nil)
-                })
+            let references = routines.map { job in
+                RoutineReference(profileID: control.profileForRoutine(job), job: job, run: nil)
+            }
+            guard let self, input.routines != references else { return }
+            update(\.routines, references)
         }.store(in: &subscriptions)
         control.$developmentContext.sink { [weak self] in self?.update(\.repository, $0) }.store(in: &subscriptions)
         model.$todoPlan.combineLatest(model.$sessionID).sink { [weak self] plan, session in

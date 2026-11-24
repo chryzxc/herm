@@ -71,11 +71,7 @@ extension ControlCenterModel {
             $requestedAutomationOwner.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $requestedAutomationDidNavigate.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $requestedRepositoryReview.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $automationNavigationError.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $cronJobs.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $globalKanbanTasks.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $kanbanTasks.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $tokenUsage.dropFirst().map { _ in () }.eraseToAnyPublisher()
+            $automationNavigationError.dropFirst().map { _ in () }.eraseToAnyPublisher()
         ).debounce(for: .milliseconds(1), scheduler: DispatchQueue.main).eraseToAnyPublisher()
     }
 

@@ -2,11 +2,10 @@ import Foundation
 
 @MainActor
 enum HumanDateFormatting {
-    private static let iso8601 = ISO8601DateFormatter()
-    private static let iso8601WithFractionalSeconds: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
+    private static let parsedDates: NSCache<NSString, NSDate> = {
+        let cache = NSCache<NSString, NSDate>()
+        cache.countLimit = 4_096
+        return cache
     }()
 
     static let dateAndTime: DateFormatter = {
@@ -39,7 +38,11 @@ enum HumanDateFormatting {
     }
 
     static func date(_ rawValue: String) -> Date? {
-        iso8601WithFractionalSeconds.date(from: rawValue) ?? iso8601.date(from: rawValue)
+        let key = rawValue as NSString
+        if let date = parsedDates.object(forKey: key) { return date as Date }
+        let parsed = ISO8601Parsing.fractionalDate(rawValue) ?? ISO8601Parsing.date(rawValue)
+        if let parsed { parsedDates.setObject(parsed as NSDate, forKey: key) }
+        return parsed
     }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {

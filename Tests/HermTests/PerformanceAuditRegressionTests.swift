@@ -52,6 +52,9 @@ struct PerformanceAuditRegressionTests {
         let controlSubscription = control.workspacePresentationChanges.sink { controlUpdates += 1 }
         model.activityPresentationRevision += 1
         control.pendingActionIDs.insert("unrelated")
+        control.cronJobs = [
+            CronSummary(id: "routine", name: "Routine", schedule: "0 9 * * *", enabled: true, nextRun: nil)
+        ]
         try await Task.sleep(for: .milliseconds(20))
         #expect(modelUpdates == 0)
         #expect(controlUpdates == 0)

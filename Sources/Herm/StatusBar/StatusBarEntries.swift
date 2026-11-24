@@ -2,6 +2,7 @@ import Foundation
 
 /// Everything the bar can show, as plain values the model gathers. Pure, so the
 /// rules for what appears, in which order and tone, are tested without a view.
+@MainActor
 struct StatusBarInput {
     var tasks: [EdgeNotchTask] = []
     var workingBots: [BotSummary] = []
@@ -13,7 +14,16 @@ struct StatusBarInput {
     /// When Herm saw each working task's status line last change, by presentation ID.
     var lastChange: [String: Date] = [:]
     var localServer: LocalPreviewServer?
-    var routines: [RoutineReference] = []
+    var routines: [RoutineReference] = [] {
+        didSet {
+            scheduledRoutines = routines.compactMap { reference in
+                guard reference.job.enabled, let start = reference.job.nextRun.flatMap(HumanDateFormatting.date)
+                else { return nil }
+                return (reference, start)
+            }.sorted { $0.start < $1.start }
+        }
+    }
+    private(set) var scheduledRoutines: [(reference: RoutineReference, start: Date)] = []
     var repository: RepositorySnapshot?
     var failedTest: StatusBarEntry.Action?
     var plan: TodoPlan?
@@ -328,22 +338,20 @@ struct StatusBarLayout: Equatable {
 
     private static func upcoming(_ input: StatusBarInput) -> StatusBarEntry? {
         let cutoff = input.now.addingTimeInterval(30 * 60)
-        let routines = input.enabled.contains(.nextSchedule) ? input.routines : []
-        let routine = routines.compactMap { reference -> (RoutineReference, Date)? in
-            guard reference.job.enabled, let start = reference.job.nextRun.flatMap(HumanDateFormatting.date),
-                start > input.now, start <= cutoff
-            else { return nil }
-            return (reference, start)
-        }.min { $0.1 < $1.1 }
+        let routine =
+            input.enabled.contains(.nextSchedule)
+            ? input.scheduledRoutines.first { $0.start > input.now }
+            : nil
+        let upcomingRoutine = routine.flatMap { $0.start <= cutoff ? $0 : nil }
         if input.enabled.contains(.nextMeeting), let meeting = input.nextMeeting,
             meeting.isEvent, !meeting.isAllDay, meeting.start > input.now, meeting.start <= cutoff,
-            routine.map({ meeting.start <= $0.1 }) ?? true
+            upcomingRoutine.map({ meeting.start <= $0.start }) ?? true
         {
             return scheduleEntry(
                 title: meeting.title, start: meeting.start, now: input.now,
                 item: .nextMeeting, icon: .calendarBlank, action: .calendar(meeting))
         }
-        if let (reference, start) = routine {
+        if let (reference, start) = upcomingRoutine {
             return scheduleEntry(
                 title: reference.job.name, start: start, now: input.now,
                 item: .nextSchedule, icon: .clock, action: .routine(reference))
