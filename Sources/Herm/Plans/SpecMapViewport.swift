@@ -68,6 +68,36 @@ struct SpecMapViewport: Equatable {
     }
 }
 
+/// Pan and zoom have separate observers so moving the canvas does not update its controls or graph.
+@MainActor
+@Observable
+final class SpecMapViewportState {
+    private(set) var pan: CGSize
+    private(set) var zoom: CGFloat
+    @ObservationIgnored var dragStart: CGSize?
+
+    init(_ viewport: SpecMapViewport) {
+        pan = viewport.pan
+        zoom = viewport.zoom
+    }
+
+    var value: SpecMapViewport {
+        get { SpecMapViewport(zoom: zoom, pan: pan) }
+        set {
+            if newValue.pan != pan { pan = newValue.pan }
+            if newValue.zoom != zoom { zoom = newValue.zoom }
+        }
+    }
+}
+
+struct SpecMapCanvasTransform: ViewModifier {
+    let viewport: SpecMapViewportState
+
+    func body(content: Content) -> some View {
+        content.scaleEffect(viewport.zoom, anchor: .topLeading).offset(viewport.pan)
+    }
+}
+
 /// Routes scroll-wheel and pinch events over the map to zoom, at the pointer.
 /// A local monitor because SwiftUI on macOS 14 has no scroll-wheel input for plain views.
 struct SpecMapZoomInput: NSViewRepresentable {
@@ -136,7 +166,7 @@ struct SpecMapZoomInput: NSViewRepresentable {
 /// tightens with zoom, showing the map moved. Dots keep one screen size; at low zoom every other
 /// row drops out so the grid never turns to noise.
 struct SpecMapGrid: View {
-    let viewport: SpecMapViewport
+    let viewport: SpecMapViewportState
 
     static let spacing: CGFloat = 24
     static let minScreenSpacing: CGFloat = 14
@@ -149,25 +179,49 @@ struct SpecMapGrid: View {
         return step
     }
 
+    /// Wraps the offset within one grid cell, including drags past the origin.
+    static func offset(for pan: CGFloat, spacing: CGFloat) -> CGFloat {
+        let remainder = pan.truncatingRemainder(dividingBy: spacing)
+        return remainder < 0 ? remainder : remainder - spacing
+    }
+
     var body: some View {
-        Canvas(rendersAsynchronously: false) { context, size in
-            let step = Self.screenSpacing(zoom: viewport.zoom)
-            let startX = viewport.pan.width.truncatingRemainder(dividingBy: step) - step
-            let startY = viewport.pan.height.truncatingRemainder(dividingBy: step) - step
-            var dots = Path()
-            var y = startY
-            while y <= size.height + step {
-                var x = startX
-                while x <= size.width + step {
-                    dots.addEllipse(
-                        in: CGRect(x: x - Self.dot / 2, y: y - Self.dot / 2, width: Self.dot, height: Self.dot))
-                    x += step
-                }
-                y += step
-            }
-            context.fill(dots, with: .color(Color.dockBorder))
+        let step = Self.screenSpacing(zoom: viewport.zoom)
+        let pan = viewport.pan
+        GeometryReader { geometry in
+            Dots(step: step, color: .dockBorder)
+                .equatable()
+                .frame(width: geometry.size.width + 2 * step, height: geometry.size.height + 2 * step)
+                .offset(x: Self.offset(for: pan.width, spacing: step), y: Self.offset(for: pan.height, spacing: step))
+                .transaction { $0.animation = nil }
         }
+        .clipped()
         .background(Color.dockCanvas)
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    private struct Dots: View, Equatable {
+        let step: CGFloat
+        let color: Color
+
+        var body: some View {
+            Canvas { context, size in
+                var dots = Path()
+                var y: CGFloat = 0
+                while y <= size.height {
+                    var x: CGFloat = 0
+                    while x <= size.width {
+                        dots.addEllipse(
+                            in: CGRect(
+                                x: x - SpecMapGrid.dot / 2, y: y - SpecMapGrid.dot / 2,
+                                width: SpecMapGrid.dot, height: SpecMapGrid.dot))
+                        x += step
+                    }
+                    y += step
+                }
+                context.fill(dots, with: .color(color))
+            }
+        }
     }
 }

@@ -100,8 +100,8 @@ struct SpecMapView: View, Equatable {
     @State private var query = ""
     @State private var scrollTarget: String?
     /// Pan and zoom of the canvas; it starts below the pane's floating top controls.
-    @State private var viewport = SpecMapViewport(pan: CGSize(width: 0, height: ToolsTopFade.reserved))
-    @State private var dragStart: CGSize?
+    @State private var viewport = SpecMapViewportState(
+        SpecMapViewport(pan: CGSize(width: 0, height: ToolsTopFade.reserved)))
     @State private var canvasSize: CGSize = .zero
     @State private var paneSize: CGSize = .zero
     @FocusState private var isSearchFocused: Bool
@@ -163,8 +163,7 @@ struct SpecMapView: View, Equatable {
             canvas
                 .fixedSize()
                 .onGeometryChange(for: CGSize.self, of: \.size) { canvasSize = $0 }
-                .scaleEffect(viewport.zoom, anchor: .topLeading)
-                .offset(viewport.pan)
+                .modifier(SpecMapCanvasTransform(viewport: viewport))
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 .background { panSurface }
                 .overlay { SpecMapZoomInput { zoom(by: $0, at: $1) }.allowsHitTesting(false) }
@@ -400,6 +399,7 @@ struct SpecMapView: View, Equatable {
 
     @ViewBuilder
     private var moreMenu: some View {
+        let zoomLimits = SpecMapViewport(zoom: viewport.zoom)
         Button {
             fold([])
         } label: {
@@ -422,13 +422,13 @@ struct SpecMapView: View, Equatable {
         } label: {
             Label("Zoom in", icon: .magnifyingGlassPlus)
         }
-        .disabled(!viewport.canZoomIn)
+        .disabled(!zoomLimits.canZoomIn)
         Button {
             zoom(to: viewport.zoom / 1.25)
         } label: {
             Label("Zoom out", icon: .magnifyingGlassMinus)
         }
-        .disabled(!viewport.canZoomOut)
+        .disabled(!zoomLimits.canZoomOut)
         Button {
             zoom(to: 1)
         } label: {
@@ -596,12 +596,12 @@ struct SpecMapView: View, Equatable {
     private func revealNow(_ id: String) {
         guard let rect = frames["card:\(id)"] ?? frames["phase:\(id)"] else { return }
         withAnimation(.dockEase(duration: 0.2)) {
-            viewport = viewport.revealing(rect, in: paneSize, insets: revealInsets)
+            viewport.value = viewport.value.revealing(rect, in: paneSize, insets: revealInsets)
         }
     }
 
     private func zoom(by factor: CGFloat, at anchor: CGPoint) {
-        viewport = viewport.zoomed(by: factor, at: anchor).clamped(content: canvasSize, in: paneSize)
+        viewport.value = viewport.value.zoomed(by: factor, at: anchor).clamped(content: canvasSize, in: paneSize)
     }
 
     private func zoom(to level: CGFloat) {
@@ -610,8 +610,7 @@ struct SpecMapView: View, Equatable {
     }
 
     private func clampViewport() {
-        let clamped = viewport.clamped(content: canvasSize, in: paneSize)
-        if clamped != viewport { viewport = clamped }
+        viewport.value = viewport.value.clamped(content: canvasSize, in: paneSize)
     }
 
     /// The empty canvas behind the cards: grab it to pan. Cards and controls keep their clicks.
@@ -621,23 +620,27 @@ struct SpecMapView: View, Equatable {
             .gesture(
                 DragGesture(minimumDistance: 3)
                     .onChanged { value in
-                        if dragStart == nil {
-                            dragStart = viewport.pan
+                        if viewport.dragStart == nil {
+                            viewport.dragStart = viewport.pan
                             NSCursor.closedHand.push()
                         }
-                        guard let start = dragStart else { return }
-                        var next = viewport
+                        guard let start = viewport.dragStart else { return }
+                        var next = viewport.value
                         next.pan = CGSize(
                             width: start.width + value.translation.width,
                             height: start.height + value.translation.height)
-                        viewport = next.clamped(content: canvasSize, in: paneSize)
+                        viewport.value = next.clamped(content: canvasSize, in: paneSize)
                     }
-                    .onEnded { _ in
-                        if dragStart != nil { NSCursor.pop() }
-                        dragStart = nil
-                    }
+                    .onEnded { _ in endPan() }
             )
+            .onDisappear(perform: endPan)
             .accessibilityHidden(true)
+    }
+
+    private func endPan() {
+        guard viewport.dragStart != nil else { return }
+        viewport.dragStart = nil
+        NSCursor.pop()
     }
 
     // MARK: Keyboard

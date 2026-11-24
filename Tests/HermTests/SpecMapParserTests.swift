@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SwiftUI
 import Testing
 
@@ -406,6 +407,18 @@ struct SpecMapParserTests {
 }
 
 struct SpecMapViewportTests {
+    @MainActor @Test func panningDoesNotInvalidateZoomControls() {
+        let state = SpecMapViewportState(.init())
+        withObservationTracking {
+            _ = state.zoom
+        } onChange: {
+            Issue.record("Panning must leave the zoom observation intact")
+        }
+        let moved = SpecMapViewport(pan: CGSize(width: 20, height: -50))
+        state.value = moved
+        #expect(state.value == moved)
+    }
+
     @Test func zoomStopsAtTheLimitsAndKeepsThePointUnderThePointer() {
         let start = SpecMapViewport(zoom: 1, pan: CGSize(width: 10, height: 20))
         let anchor = CGPoint(x: 110, y: 220)
@@ -449,6 +462,13 @@ struct SpecMapViewportTests {
 }
 
 struct SpecMapGridTests {
+    @Test func gridOffsetWrapsPastTheOriginAndWholeCells() {
+        #expect(SpecMapGrid.offset(for: 0, spacing: 24) == -24)
+        #expect(SpecMapGrid.offset(for: -49, spacing: 24) == -1)
+        #expect(SpecMapGrid.offset(for: -1, spacing: 24) == SpecMapGrid.offset(for: 23, spacing: 24))
+        #expect(SpecMapGrid.offset(for: 25, spacing: 24) == -23)
+    }
+
     @Test func gridThinsOutInsteadOfTurningToNoise() {
         #expect(SpecMapGrid.screenSpacing(zoom: 1) == 24)
         #expect(SpecMapGrid.screenSpacing(zoom: 2) == 48)

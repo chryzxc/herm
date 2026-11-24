@@ -2627,7 +2627,9 @@ always leaves 80pt of the plan in view, and selecting a node pans just far enoug
 show it clear of the top fade and bottom view controls. The canvas is a drafting
 surface: `SpecMapGrid` draws 1.6pt `dockBorder` dots every 24pt on `dockCanvas`, fixed
 to the plan so they travel with a pan and tighten with zoom; below 14pt on screen the
-spacing doubles so the grid never turns to noise. Toolbar icons are
+spacing doubles so the grid never turns to noise. Dragging updates the viewport
+transform and moves the existing dot pattern. The cards and wires keep their canvas
+coordinates. Toolbar icons are
 `DockIconAction`s, so they share one square size and outline. Folds are remembered per file. On reload, selection, picks and folds
 follow their step by title when edits move it to another line. The map takes keyboard focus: ↑/↓ move through visible nodes, → unfolds or
 steps in, ← folds or goes to the parent, Return shows the node in the document, Esc
