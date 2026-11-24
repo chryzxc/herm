@@ -685,6 +685,14 @@ Drag a conversation within **Pinned** to set its saved order. Recents and
 Projects list conversations by last update. Hover over a project pill to see
 its repository path.
 
+The vertical ellipsis beside **Chat tiles** lets you choose **Bot menu** or **Bot rail**.
+Bot rail replaces the picker above the session list with a column of bot avatars.
+Click an avatar to switch bots, or choose the **All** tile at the top to see
+sessions across profiles. Scroll to see more avatars and drag them to reorder the rail.
+Hover over a bot in the rail to see a profile preview with its avatar, name,
+role, and description.
+Herm remembers the layout and shares the saved bot order with the picker.
+
 Chats has two layouts: **List** (one conversation beside your sessions) and **Tiles**
 (every session at once). Click **Chat tiles** in the Sessions header to open Tiles,
 or **Show chat list** in the Tiles header to return to List. **Settings → Chat → Layout → Default chat

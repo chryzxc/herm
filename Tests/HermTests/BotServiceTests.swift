@@ -827,6 +827,9 @@ struct BotServiceTests {
         )
 
         #expect(BotRosterPresentation.role(for: bot) == "Security Reviewer")
+        #expect(
+            BotRosterPresentation.railTooltip(for: bot)
+                == "Cypher\nSecurity Reviewer\n\nSecurity review specialist")
         #expect(BotRosterPresentation.activity(for: bot) == "Reviewed authentication boundary")
         #expect(
             BotRosterPresentation.activity(

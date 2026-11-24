@@ -8,7 +8,8 @@ import Testing
 struct DockProfilePickerOrderTests {
     /// A held pointer at the top of an overflow list walks the last profile to slot zero
     /// inside one drag, using the real clip's travel rather than repeated pointer events.
-    @Test func heldTopEdgeScrollsLastProfileToFirst() throws {
+    @Test(arguments: [CGFloat(40), CGFloat(50)])
+    func heldTopEdgeScrollsLastProfileToFirst(pitch: CGFloat) throws {
         let suite = "profile-edge-drag-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -20,34 +21,35 @@ struct DockProfilePickerOrderTests {
         var drag = DockProfilePickerDrag(token: token, id: "last", start: 19)
         #expect(target.scrollView == nil)
         #expect(!drag.isCurrent(token: token, attachment: target.attachment))
-        drag.translation = -44
-        drag.updateOrder(order, in: bots, pitch: 40)
+        drag.translation = -pitch - 4
+        drag.updateOrder(order, in: bots, pitch: pitch)
         #expect(order.ordered(bots)[18].id == "last", "Pointer-only reorder works before the probe attaches")
 
-        let scroll = try overflowClip(documentHeight: 852)
+        let documentHeight = 20 * pitch + 52
+        let scroll = try overflowClip(documentHeight: documentHeight)
         let clip = scroll.contentView
         let probe = NSView()
         target.attach(scroll, from: probe)
-        let liftBeforeAttach = drag.liftOffset(at: 18, pitch: 40)
+        let liftBeforeAttach = drag.liftOffset(at: 18, pitch: pitch)
         drag.bindClip(origin: clip.bounds.minY, attachment: target.attachment)
         drag.trackClip(origin: clip.bounds.minY, isFlipped: clip.isFlipped)
         #expect(drag.isCurrent(token: token, attachment: target.attachment))
-        #expect(drag.target(pitch: 40, count: bots.count) == 18)
-        #expect(drag.liftOffset(at: 18, pitch: 40) == liftBeforeAttach)
+        #expect(drag.target(pitch: pitch, count: bots.count) == 18)
+        #expect(drag.liftOffset(at: 18, pitch: pitch) == liftBeforeAttach)
 
         drag.translation = -330
         let direction = try #require(DockEdgeAutoscroll.direction(pointer: topPointer, viewport: viewport))
         #expect(direction == .towardStart)
-        drag.updateOrder(order, in: bots, pitch: 40)
+        drag.updateOrder(order, in: bots, pitch: pitch)
         #expect(drag.slot > 0, "The first slot must initially be unreachable")
         var steps = 0
         while steps < 200, DockEdgeAutoscroll.scrollStep(in: scroll, toward: direction) != 0 {
             drag.trackClip(origin: clip.bounds.minY, isFlipped: clip.isFlipped)
-            drag.updateOrder(order, in: bots, pitch: 40)
+            drag.updateOrder(order, in: bots, pitch: pitch)
             steps += 1
         }
         #expect(steps > 40 && steps < 200)
-        #expect(clip.bounds.minY == clip.constrainBoundsRect(clip.bounds.offsetBy(dx: 0, dy: -852)).minY)
+        #expect(clip.bounds.minY == clip.constrainBoundsRect(clip.bounds.offsetBy(dx: 0, dy: -documentHeight)).minY)
         #expect(DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardStart) == 0)
         #expect(drag.slot == 0, "The dragged profile must land first after All")
         let restored = DockProfilePickerOrder(defaults: defaults)
@@ -221,14 +223,54 @@ struct DockProfilePickerOrderTests {
         override func scroll(to newOrigin: NSPoint) {}
     }
 
-    @Test func dragTranslationPicksTheNearestSlotWithinBounds() {
-        #expect(DockProfilePickerReorder.target(start: 2, translation: 0, pitch: 40, count: 5) == 2)
-        #expect(DockProfilePickerReorder.target(start: 2, translation: 19, pitch: 40, count: 5) == 2)
-        #expect(DockProfilePickerReorder.target(start: 2, translation: 21, pitch: 40, count: 5) == 3)
-        #expect(DockProfilePickerReorder.target(start: 2, translation: -61, pitch: 40, count: 5) == 0)
-        #expect(DockProfilePickerReorder.target(start: 2, translation: -500, pitch: 40, count: 5) == 0)
-        #expect(DockProfilePickerReorder.target(start: 2, translation: 500, pitch: 40, count: 5) == 4)
-        #expect(DockProfilePickerReorder.target(start: 0, translation: 80, pitch: 40, count: 0) == 0)
+    @Test(arguments: [CGFloat(180), CGFloat(340)])
+    func railFitsNarrowViewportAndScrollsWithoutIndicators(height: CGFloat) throws {
+        let bots = (0..<20).map { index in
+            BotSummary(
+                id: "bot-\(index)", name: "Bot \(index)", title: nil, description: nil, model: nil,
+                isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+                isHidden: false, hasAvatar: false, isDefault: false)
+        }
+        let rail = DockProfilePickerList(
+            bots: bots, order: DockProfilePickerOrder(), style: DockThemePalette(theme: .clean), isRail: true
+        ) { bot in
+            Button(bot.name) {}
+                .frame(width: DockControlMetrics.hitTarget, height: DockControlMetrics.hitTarget)
+        }
+        .frame(width: 60, height: height)
+        let host = NSHostingView(rootView: rail)
+        host.frame = NSRect(x: 0, y: 0, width: 60, height: height)
+        let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        window.display()
+        window.layoutIfNeeded()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        host.layoutSubtreeIfNeeded()
+
+        let scroll = try #require(scrollView(in: host))
+        let document = try #require(scroll.documentView)
+        #expect(!scroll.hasVerticalScroller)
+        #expect(scroll.contentView.bounds.width == host.bounds.width)
+        #expect(document.frame.width <= scroll.contentView.bounds.width)
+        #expect(document.frame.height > scroll.contentView.bounds.height)
+    }
+
+    private func scrollView(in view: NSView) -> NSScrollView? {
+        if let scroll = view as? NSScrollView { return scroll }
+        return view.subviews.lazy.compactMap { scrollView(in: $0) }.first
+    }
+
+    @Test(arguments: [CGFloat(40), CGFloat(49), CGFloat(50)])
+    func dragTranslationPicksTheNearestSlotWithinBounds(pitch: CGFloat) {
+        #expect(DockProfilePickerReorder.target(start: 2, translation: 0, pitch: pitch, count: 5) == 2)
+        #expect(DockProfilePickerReorder.target(start: 2, translation: pitch / 2 - 1, pitch: pitch, count: 5) == 2)
+        #expect(DockProfilePickerReorder.target(start: 2, translation: pitch / 2 + 1, pitch: pitch, count: 5) == 3)
+        #expect(DockProfilePickerReorder.target(start: 2, translation: -pitch * 2, pitch: pitch, count: 5) == 0)
+        #expect(DockProfilePickerReorder.target(start: 2, translation: -500, pitch: pitch, count: 5) == 0)
+        #expect(DockProfilePickerReorder.target(start: 2, translation: 500, pitch: pitch, count: 5) == 4)
+        #expect(DockProfilePickerReorder.target(start: 0, translation: 80, pitch: pitch, count: 0) == 0)
     }
 
     @Test func draggingMovesBeforeOrAfterAndPersists() {

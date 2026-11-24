@@ -6,6 +6,7 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     let bots: [BotSummary]
     @ObservedObject var order: DockProfilePickerOrder
     let style: DockThemePalette
+    var isRail = false
     /// A fixed row above the reorderable bots, such as "All profiles".
     var showsHeader = false
     @ViewBuilder var header: () -> Header
@@ -18,72 +19,92 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     @State private var pointer: CGPoint = .zero
     @State private var edgeScroll: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
 
     var body: some View {
-        let ordered = order.ordered(bots)
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 2) {
-                if showsHeader { header() }
-                ForEach(Array(ordered.enumerated()), id: \.element.id) { index, bot in
-                    HStack(spacing: 0) {
-                        row(bot)
-                        DockIcon(.dotsSixVertical)
-                            .dockFont(.metadata, weight: .semibold)
-                            .foregroundStyle(style.secondaryText)
-                            .frame(width: 28, height: 38)
-                            .contentShape(Rectangle())
-                            .modifier(DockDragCursor(isEnabled: true, isDragging: drag?.id == bot.id))
-                            // A gesture, not `.onDrag`: an item-provider drag never starts from
-                            // inside the popover's scroll view, and a focusable handle only drew a
-                            // focus ring on click.
-                            .gesture(reorderGesture(for: bot.id, at: index))
-                            .accessibilityElement()
-                            .accessibilityLabel("Reorder \(bot.name)")
-                            .accessibilityValue("\(index + 1) of \(ordered.count)")
-                            .accessibilityAdjustableAction { direction in
-                                switch direction {
-                                case .increment: move(bot.id, by: 1)
-                                case .decrement: move(bot.id, by: -1)
-                                @unknown default: break
-                                }
-                            }
-                            .help("Drag to reorder")
-                    }
-                    .modifier(
-                        LiftedRow(
-                            isLifted: drag?.id == bot.id,
-                            scales: DockMotion.isEnabled(reduceMotion: reduceMotion),
-                            offset: liftOffset(for: bot.id, at: index), style: style))
-                }
+        picker
+            .onGeometryChange(for: CGRect.self) {
+                $0.frame(in: .global)
+            } action: {
+                viewport = $0
             }
-            .dockPadding(6)
-            .background(
-                DockScrollViewProbe(target: scrollTarget, onAttach: clipDidAttach, onDetach: clipDidDetach))
-        }
-        .frame(width: 300, height: min(CGFloat(bots.count + (showsHeader ? 1 : 0)) * 40 + 12, 360))
-        .onGeometryChange(for: CGRect.self) {
-            $0.frame(in: .global)
-        } action: {
-            viewport = $0
-        }
-        .background(style.background)
-        .onChange(of: gestureSample) { previous, sample in
-            // SwiftUI resets gesture state on both release and cancellation.
-            if let previous, previous.token != sample?.token { endDrag(previous.token) }
-            if let sample { updateDrag(sample, isNew: sample.token != previous?.token) }
-        }
-        .onDisappear {
-            if let token = drag?.token { endDrag(token) }
+            .onChange(of: gestureSample) { previous, sample in
+                // SwiftUI resets gesture state on both release and cancellation.
+                if let previous, previous.token != sample?.token { endDrag(previous.token) }
+                if let sample { updateDrag(sample, isNew: sample.token != previous?.token) }
+            }
+            .onDisappear {
+                if let token = drag?.token { endDrag(token) }
+            }
+    }
+
+    @ViewBuilder
+    private var picker: some View {
+        if isRail {
+            pickerScroll
+        } else {
+            pickerScroll
+                .frame(width: 300, height: min(CGFloat(bots.count + (showsHeader ? 1 : 0)) * rowPitch + 12, 360))
+                .background(style.background)
         }
     }
 
-    /// Row height (38) plus stack spacing (2).
-    private static var rowPitch: CGFloat { 40 }
+    private var pickerScroll: some View {
+        let ordered = order.ordered(bots)
+        return ScrollView(.vertical, showsIndicators: !isRail) {
+            LazyVStack(alignment: isRail ? .center : .leading, spacing: rowSpacing) {
+                if showsHeader { header() }
+                ForEach(Array(ordered.enumerated()), id: \.element.id) { index, bot in
+                    reorderableRow(bot, index: index, count: ordered.count)
+                        .modifier(
+                            LiftedRow(
+                                isLifted: drag?.id == bot.id,
+                                scales: DockMotion.isEnabled(reduceMotion: reduceMotion),
+                                offset: liftOffset(for: bot.id, at: index), style: style))
+                }
+            }
+            .dockPadding(6)
+            .frame(maxWidth: isRail ? .infinity : nil)
+            .background(
+                DockScrollViewProbe(target: scrollTarget, onAttach: clipDidAttach, onDetach: clipDidDetach))
+        }
+    }
+
+    @ViewBuilder
+    private func reorderableRow(_ bot: BotSummary, index: Int, count: Int) -> some View {
+        if isRail {
+            row(bot)
+                .frame(height: DockControlMetrics.hitTarget)
+                .modifier(DockDragCursor(isEnabled: count > 1, isDragging: drag?.id == bot.id))
+                // As on the main rail, an avatar click selects and a drag starts after the pointer moves.
+                .simultaneousGesture(reorderGesture(for: bot.id, at: index))
+                .accessibilityAdjustableAction { adjust(bot.id, direction: $0) }
+        } else {
+            HStack(spacing: 0) {
+                row(bot)
+                DockIcon(.dotsSixVertical)
+                    .dockFont(.metadata, weight: .semibold)
+                    .foregroundStyle(style.secondaryText)
+                    .frame(width: 28, height: 38)
+                    .contentShape(Rectangle())
+                    .modifier(DockDragCursor(isEnabled: true, isDragging: drag?.id == bot.id))
+                    .gesture(reorderGesture(for: bot.id, at: index))
+                    .accessibilityElement()
+                    .accessibilityLabel("Reorder \(bot.name)")
+                    .accessibilityValue("\(index + 1) of \(count)")
+                    .accessibilityAdjustableAction { adjust(bot.id, direction: $0) }
+                    .help("Drag to reorder")
+            }
+        }
+    }
+
+    private var rowSpacing: CGFloat { isRail ? DockWorkspaceScale.spacing(6, scale: workspaceScale) : 2 }
+    private var rowPitch: CGFloat { (isRail ? DockControlMetrics.hitTarget : 38) + rowSpacing }
 
     /// Keeps the lifted row under the pointer while the list reflows around it.
     private func liftOffset(for id: String, at index: Int) -> CGFloat {
         guard let drag, drag.id == id else { return 0 }
-        return drag.liftOffset(at: index, pitch: Self.rowPitch)
+        return drag.liftOffset(at: index, pitch: rowPitch)
     }
 
     private struct DragSample: Equatable {
@@ -97,8 +118,9 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     private func reorderGesture(for id: String, at index: Int) -> some Gesture {
         // Distance 0 lifts the row as soon as the handle is held. Global space: the
         // handle moves with its row, so local translation would oscillate.
-        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+        DragGesture(minimumDistance: isRail ? 6 : 0, coordinateSpace: .global)
             .updating($gestureSample) { value, sample, _ in
+                guard !isRail || bots.count > 1 else { return }
                 sample = DragSample(
                     token: sample?.token ?? UUID(), id: id, start: sample?.start ?? index,
                     location: value.location, translation: value.translation.height)
@@ -131,7 +153,7 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     private func updateOrder() {
         guard var state = drag else { return }
         withAnimation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16)) {
-            state.updateOrder(order, in: bots, pitch: Self.rowPitch)
+            state.updateOrder(order, in: bots, pitch: rowPitch)
             if state.slot != drag?.slot { drag?.slot = state.slot }
         }
     }
@@ -205,6 +227,14 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
 
     private var liftAnimation: Animation? {
         DockMotion.isEnabled(reduceMotion: reduceMotion) ? .smooth(duration: 0.18) : nil
+    }
+
+    private func adjust(_ id: String, direction: AccessibilityAdjustmentDirection) {
+        switch direction {
+        case .increment: move(id, by: 1)
+        case .decrement: move(id, by: -1)
+        @unknown default: break
+        }
     }
 
     private func move(_ id: String, by offset: Int) {
@@ -304,9 +334,9 @@ enum DockProfilePickerReorder {
 
 extension DockProfilePickerList where Header == EmptyView {
     init(
-        bots: [BotSummary], order: DockProfilePickerOrder, style: DockThemePalette,
+        bots: [BotSummary], order: DockProfilePickerOrder, style: DockThemePalette, isRail: Bool = false,
         @ViewBuilder row: @escaping (BotSummary) -> Row
     ) {
-        self.init(bots: bots, order: order, style: style, header: { EmptyView() }, row: row)
+        self.init(bots: bots, order: order, style: style, isRail: isRail, header: { EmptyView() }, row: row)
     }
 }

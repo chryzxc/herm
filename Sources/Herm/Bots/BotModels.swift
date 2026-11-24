@@ -166,6 +166,11 @@ enum BotRosterPresentation {
         bot.title?.nonEmpty ?? bot.description?.nonEmpty ?? "Hermes profile"
     }
 
+    static func railTooltip(for bot: BotSummary) -> String {
+        let heading = [bot.name, bot.title?.nonEmpty].compactMap { $0 }.joined(separator: "\n")
+        return [heading, bot.description?.nonEmpty].compactMap { $0 }.joined(separator: "\n\n")
+    }
+
     static func activity(for bot: BotSummary) -> String {
         if let preview = bot.preview?.nonEmpty { return preview }
         if bot.isWorkingNow { return "Working in \(bot.worker?.source ?? "Hermes") work." }

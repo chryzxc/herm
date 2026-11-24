@@ -35,6 +35,42 @@ struct DockHoverTipTests {
         }
     }
 
+    @Test(arguments: [DockThemeID.clean, DockThemeID.storm])
+    func botProfilePreviewStaysBesideTheRail(theme: DockThemeID) throws {
+        let oldTheme = DockThemeRuntime.current
+        DockThemeRuntime.current = theme
+        DockThemeRuntime.revision &+= 1
+        let window = makeWindow()
+        let presenter = DockHoverTipPresenter()
+        defer {
+            presenter.dismiss()
+            window.orderOut(nil)
+            DockThemeRuntime.current = oldTheme
+            DockThemeRuntime.revision &+= 1
+        }
+        let bot = BotSummary(
+            id: "cypher", name: "Cypher", title: "Security",
+            description: "Reviews security risks and remediation evidence. Reports findings and suggested fixes.",
+            model: nil, isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+            isHidden: false, hasAvatar: false, isDefault: false)
+        let anchor = DockHoverTipAnchorView(frame: CGRect(x: 10, y: 8, width: 44, height: 44))
+        window.contentView?.addSubview(anchor)
+        anchor.text = BotRosterPresentation.railTooltip(for: bot)
+        anchor.edge = .trailing
+        anchor.gap = 8
+        anchor.preview = DockHoverTipPreview(
+            contentID: bot.id, content: AnyView(BotRailProfileTip(bot: bot, imageData: nil)))
+        presenter.show(anchor)
+
+        let panel = try #require(presenter.panel)
+        let anchorFrame = window.convertToScreen(anchor.convert(anchor.visibleAnchorRect, to: nil))
+        #expect(panel.frame.minX >= anchorFrame.maxX + anchor.gap)
+        #expect(panel.frame.width == 288)
+        #expect(panel.frame.height > 90)
+        #expect(panel.hasShadow && panel.ignoresMouseEvents && !panel.canBecomeKey)
+        try writeSnapshot(of: panel, named: "bot-tooltip-\(theme.rawValue).png")
+    }
+
     @Test func nestedHelpUsesOnePanelAndNeverTakesFocus() async throws {
         let window = makeWindow()
         defer { window.orderOut(nil) }

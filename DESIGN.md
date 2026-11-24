@@ -3204,6 +3204,19 @@ member's face attached; clicking it opens the room at that message. All motion f
 `DockMotion.isEnabled`; under Reduce Motion faces hold still and rows appear without movement.
 Group chat action errors use toast notifications without an inline error row above the composer. The group composer reuses the main chat composer chrome (`composerCard`, `composerTray`, `composerColumn`, `ComposerFolderBarSlot`, `ComposerControlLabel`, `ComposerSubmitLabel`), so its input sits at the same position and size as a session composer. When `groups.capabilities` lists `groups.attachment.upload`, the **+** popover adds Files and Images, and files dropped or pasted onto the editor upload through the same `ComposerInputEditor(onDropFiles:)` path as sessions; uploaded files show as removable chips above the controls (Send waits for uploads), and sent messages use the main chat's user-message chrome (`UserMessageImages`, `UserMessageAttachmentRow`, `.userMessageBubble()`): images read back with `groups.attachment.download` sit above the bubble and open the image preview, other files (and images Hermes refuses) are named rows inside it, and a timestamp and copy action sit underneath. Group actions (thread, Edit Group…, Disband…) sit at the trailing edge of the toolbar, including in a tab column where the tab row carries them. Edit Group renames the room in place and edits members with the New Group Chat checklist (`GroupMemberPicker`); Hermes fixes a room's members at creation, so a changed roster says so and creates a new group (the old one and its history stay). Groups with bots from another Mac keep their members read-only. A group chat opened from Bots accepts a dropped session like any chat: the room becomes the first column's tab and the session opens as a tab or new column beside it. Bot, group and session rows in the sidebar take their insets and gaps from `DockSidebarListMetrics`, so the Bots list spaces rows exactly like Recents, including the shared `titleToPreview` gap between a row title and its last message. The Bots | Sessions switch is a full-width tab track (`DockChatsScopeSwitch`) at the top of each list: above the bot picker in Sessions, above the search field in Bots, not in the title strip. In Sessions, New chat is an icon button (tooltip "New chat") to the right of the search field, mirroring the Bots + menu.
 
+In the Sessions title strip, a vertical ellipsis beside the Chat tiles button
+opens the themed Bot picker layout menu. Mark the active choice in the
+popover. **Bot menu** shows the inline picker. **Bot rail** replaces it with a
+scrollable avatar column between the main navigation rail and the session list.
+Keep **All** above the scroll area when several bots are visible. Center the
+label on a neutral avatar tile the same size as the bot avatars. The avatar
+list scrolls within the available height with the scrollbar hidden. Hovering
+over a bot shows a profile preview beside the rail. The bot's avatar, name,
+and role form its header. A hairline separates the description when one is
+set. Activity and unread badges use separate corners within each avatar
+slot. Drag an avatar to reorder it using the same saved order as the picker.
+New Bot appears when creation is available. The layout choice persists locally.
+
 ### Conversation workspace
 
 `ProviderLabel` pairs the name with its shared provider mark immediately on the

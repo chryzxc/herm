@@ -99,6 +99,13 @@ extension DockPopover {
                     fullscreenSurface = .chatGrid
                 }
             },
+            onCreateBot: {
+                leaveIntegrations {
+                    openBotsPage()
+                    openGroupRoomID = ""
+                    isCreatingBot = true
+                }
+            },
             onShowBots: {
                 // Land on a bot's main chat rather than carrying the open session across.
                 let visible = botMode.bots.filter { !$0.isHidden }

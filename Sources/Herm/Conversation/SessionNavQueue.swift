@@ -35,6 +35,7 @@ struct SessionNavQueue: View, Equatable {
     let onOpenPullRequests: () -> Void
     let onOpenIssues: () -> Void
     let onOpenTiles: (() -> Void)?
+    let onCreateBot: (() -> Void)?
     let onShowBots: (() -> Void)?
     let showsFullscreenToggle: Bool
     let isFullscreen: Bool
@@ -44,6 +45,7 @@ struct SessionNavQueue: View, Equatable {
     let isDockedWindow: Bool
     let showsWindowTitleRow: Bool
     @Binding var isSidebarCollapsed: Bool
+    @AppStorage("herm.chats.usesBotRail") private var usesBotRail = false
     @State private var sessionSearchQuery = ""
     @State private var sessionSearchResults: SessionSidebarSearch.Results?
     @State private var isProfileSelectorPresented = false
@@ -117,6 +119,7 @@ struct SessionNavQueue: View, Equatable {
         onOpenPullRequests: @escaping () -> Void,
         onOpenIssues: @escaping () -> Void,
         onOpenTiles: (() -> Void)? = nil,
+        onCreateBot: (() -> Void)? = nil,
         onShowBots: (() -> Void)? = nil,
         showsFullscreenToggle: Bool,
         isFullscreen: Bool,
@@ -154,6 +157,7 @@ struct SessionNavQueue: View, Equatable {
         self.onOpenPullRequests = onOpenPullRequests
         self.onOpenIssues = onOpenIssues
         self.onOpenTiles = onOpenTiles
+        self.onCreateBot = onCreateBot
         self.onShowBots = onShowBots
         self.showsFullscreenToggle = showsFullscreenToggle
         self.isFullscreen = isFullscreen
@@ -182,6 +186,7 @@ struct SessionNavQueue: View, Equatable {
                 && lhs.showsWindowTitleRow == rhs.showsWindowTitleRow
                 && lhs.isSidebarCollapsed == rhs.isSidebarCollapsed
                 && (lhs.onOpenTiles == nil) == (rhs.onOpenTiles == nil)
+                && (lhs.onCreateBot == nil) == (rhs.onCreateBot == nil)
                 && (lhs.onShowBots == nil) == (rhs.onShowBots == nil)
                 && (lhs.onOpenWindow == nil) == (rhs.onOpenWindow == nil)
         }
@@ -341,7 +346,7 @@ struct SessionNavQueue: View, Equatable {
     }
 
     @ViewBuilder
-    private func tilesButton(style: DockThemePalette) -> some View {
+    private func titleActions(style: DockThemePalette) -> some View {
         if let onOpenTiles {
             Button(action: onOpenTiles) {
                 DockIcon(.squaresFour, size: DockLayout.toolbarIconSize, color: style.secondaryText)
@@ -351,6 +356,18 @@ struct SessionNavQueue: View, Equatable {
             .buttonStyle(.dockHover)
             .help("Show all chats as tiles")
             .accessibilityLabel("Chat tiles")
+
+            DockMenu {
+                DockMenuChoices(selection: $usesBotRail) {
+                    DockMenuOption("Bot rail", value: true, leading: AnyView(DockIcon(.sidebarSimple, size: 14)))
+                    DockMenuOption("Bot menu", value: false, leading: AnyView(DockIcon(.caretUpDown, size: 14)))
+                }
+            } label: {
+                DockIcon(.dotsThreeVertical, size: DockLayout.toolbarIconSize, color: style.secondaryText)
+                    .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+            }
+            .help("Bot picker layout")
+            .accessibilityLabel("Bot picker layout")
         }
     }
 
@@ -364,38 +381,41 @@ struct SessionNavQueue: View, Equatable {
                     Spacer(minLength: 0)
                         .frame(maxHeight: .infinity)
                         .background { TitlebarDoubleClickArea() }
-                    tilesButton(style: style)
+                    titleActions(style: style)
                 }
                 .dockPadding(.leading, DockWindowChrome.sidebarToggleLeading)
                 .dockPadding(.trailing, 8)
                 .frame(height: DockWindowChrome.titleRowHeight)
                 .dockShellChrome()
             }
+            HStack(alignment: .top, spacing: 0) {
+                if usesBotRail && (!visibleBots.isEmpty || canCreateBot) {
+                    botRail(style: style)
+                }
+                sessionList(style: style)
+            }
+        }
+        .dockShellPane()
+        .frame(maxWidth: .infinity)
+    }
+
+    private func sessionList(style: DockThemePalette) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             botsSwitchButton(style: style)
                 .dockPadding(.horizontal, 12)
                 .dockPadding(.top, 8)
                 .dockPadding(.bottom, 12)
-            // Header: identity. Window chrome lives in the footer.
-            HStack(spacing: 2) {
-                if !isDockedWindow {
-                    DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
-                    tilesButton(style: style)
+            if !isDockedWindow || !usesBotRail {
+                HStack(spacing: 2) {
+                    if !isDockedWindow {
+                        DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
+                        titleActions(style: style)
+                    }
+                    if !usesBotRail { profileHeader(style: style) }
                 }
-                profileHeader(style: style)
+                .dockPadding(.leading, isDockedWindow ? 12 : 6)
+                .dockPadding(.trailing, 12)
             }
-            // Picker edges line up with the tabs and search; sidebar buttons keep their 6pt inset.
-            .dockPadding(.leading, isDockedWindow ? 12 : 6)
-            .dockPadding(.trailing, 12)
-            .overlay(alignment: .bottomLeading) {
-                if !botMode.activityBanner.isEmpty {
-                    BotActivityBanner(events: botMode.activityBanner)
-                        .dockPadding(.horizontal, 8)
-                        .offset(y: 38)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
-            .animation(.easeInOut(duration: 0.25), value: botMode.activityBanner)
-            .zIndex(1)
 
             HStack(spacing: 6) {
                 sessionSearchField
@@ -404,6 +424,15 @@ struct SessionNavQueue: View, Equatable {
             .dockPadding(.horizontal, 12)
             .dockPadding(.top, 12)
             .dockPadding(.bottom, 2)
+            .overlay(alignment: .bottomLeading) {
+                if !botMode.activityBanner.isEmpty {
+                    BotActivityBanner(events: botMode.activityBanner)
+                        .dockPadding(.horizontal, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.25), value: botMode.activityBanner)
+            .zIndex(1)
 
             HoverPausingScrollView {
                 globalRailBar(style: style)
@@ -413,8 +442,83 @@ struct SessionNavQueue: View, Equatable {
             }
             .coordinateSpace(name: SessionSidebarStickyBackground.coordinateSpace)
         }
-        .dockShellPane()
         .frame(maxWidth: .infinity)
+    }
+
+    private var canCreateBot: Bool { botMode.canCreateBots && onCreateBot != nil }
+
+    private func botRail(style: DockThemePalette) -> some View {
+        let avatarSize: CGFloat = 32
+        return VStack(spacing: 0) {
+            if visibleBots.count > 1 {
+                botRailButton("All", isSelected: showsAllProfiles, style: style, action: selectAllProfiles) {
+                    let size = DockWorkspaceScale.points(avatarSize, scale: workspaceScale)
+                    Text("All")
+                        .dockFont(.body, weight: .semibold)
+                        .foregroundStyle(style.primaryText)
+                        .frame(width: size, height: size)
+                        .background(DockThemeShape(cornerRadius: DockControlMetrics.cornerRadius).fill(style.surface4))
+                }
+                .dockHoverTip("All", edge: .trailing)
+                .accessibilityLabel("Show conversations from all profiles")
+                .dockPadding(.top, 6)
+            }
+            DockProfilePickerList(
+                bots: visibleBots, order: workspaceStore.profilePickerOrder, style: style, isRail: true
+            ) { bot in
+                let selected = !showsAllProfiles && bot.id == selectedBot?.id
+                let imageData = botMode.avatarImages[bot.id]
+                botRailButton(
+                    bot.name,
+                    isSelected: selected, style: style, action: { selectProfile(bot.id) }
+                ) {
+                    if botMode.isAvatarPending(bot) {
+                        DockLoadingIndicator().controlSize(.small)
+                    } else {
+                        BotAvatarView(bot: bot, imageData: imageData, size: avatarSize, animated: false)
+                    }
+                }
+                .overlay(alignment: .trailing) {
+                    botActivityBadge(for: [bot], style: style, inRail: true)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .dockHoverTip(
+                    BotRosterPresentation.railTooltip(for: bot), edge: .trailing, gap: 8,
+                    preview: DockHoverTipPreview(
+                        contentID: AnyHashable(imageData),
+                        content: AnyView(BotRailProfileTip(bot: bot, imageData: imageData)))
+                )
+                .accessibilityLabel(botPickerAccessibilityLabel(bot, selected: selected))
+            }
+            if canCreateBot, let onCreateBot {
+                DockIconButton(icon: .plus, label: "New Bot", style: style, action: onCreateBot)
+                    .dockPadding(.bottom, 6)
+            }
+        }
+        .frame(width: 60)
+        .dockShellChrome()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Bot rail")
+    }
+
+    private func botRailButton<Avatar: View>(
+        _ title: String, isSelected: Bool, style: DockThemePalette,
+        action: @escaping () -> Void,
+        @ViewBuilder avatar: () -> Avatar
+    ) -> some View {
+        Button(action: action) {
+            avatar()
+                .frame(width: DockControlMetrics.hitTarget, height: DockControlMetrics.hitTarget)
+                .dockSelectionBackground(
+                    DockThemeShape(cornerRadius: DockControlMetrics.cornerRadius), active: isSelected,
+                    fill: style.selectedFill, allowsInvert: false, theme: style.theme
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockHover)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func projectDisplayName(_ rawName: String) -> String {
@@ -516,7 +620,7 @@ struct SessionNavQueue: View, Equatable {
 
     /// Running activity and unread sessions are independent signals.
     @ViewBuilder
-    private func botActivityBadge(for bots: [BotSummary], style: DockThemePalette) -> some View {
+    private func botActivityBadge(for bots: [BotSummary], style: DockThemePalette, inRail: Bool = false) -> some View {
         // One board decides status for the picker and the notch alike; it
         // re-resolves on every session event and roster poll.
         let board = botMode.activity
@@ -532,21 +636,24 @@ struct SessionNavQueue: View, Equatable {
         let summary =
             (blockedBots.map { "\($0.name) is waiting on you" }
             + workingBots.map { "\($0.name) is running" } + [unreadDescription]).joined(separator: "\n")
-        HStack(spacing: 6) {
+        let layout =
+            inRail ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 0)) : AnyLayout(HStackLayout(spacing: 6))
+        layout {
             if !blockedBots.isEmpty {
                 HStack(spacing: 4) {
-                    DockActivityIndicator(state: .approval)
+                    DockActivityIndicator(state: .approval, role: inRail ? .compact : .inline)
                     if bots.count > 1 { Text("\(blockedBots.count)").dockFont(.compactStatus, weight: .bold) }
                 }
                 .foregroundStyle(DockActivityState.approval.color)
             }
             if working > 0 {
                 HStack(spacing: 4) {
-                    DockActivityIndicator(state: .running)
+                    DockActivityIndicator(state: .running, role: inRail ? .compact : .inline)
                     if bots.count > 1 { Text("\(working)").dockFont(.compactStatus, weight: .bold) }
                 }
                 .foregroundStyle(DockActivityState.running.color)
             }
+            if inRail { Spacer(minLength: 0) }
             if unread > 0 {
                 Text(unreadLabel)
                     .dockFont(.compactStatus, weight: .semibold)
@@ -557,7 +664,7 @@ struct SessionNavQueue: View, Equatable {
                     .fixedSize()
             }
         }
-        .help(summary)
+        .help(inRail ? "" : summary)
         .accessibilityLabel(summary.replacingOccurrences(of: "\n", with: ", "))
     }
 
@@ -578,6 +685,12 @@ struct SessionNavQueue: View, Equatable {
     private func selectProfile(_ profileID: String) {
         navigationState.showsAllProfiles = false
         onSelectProfile(profileID)
+    }
+
+    private func selectAllProfiles() {
+        navigationState.showsAllProfiles = true
+        model.loadAllBotSessions(force: true)
+        isProfileSelectorPresented = false
     }
 
     private func profileSelectorPopover(selectedBot: BotSummary?, style: DockThemePalette) -> some View {
@@ -634,11 +747,7 @@ struct SessionNavQueue: View, Equatable {
     }
 
     private func allProfilesPickerRow(isSelected: Bool, style: DockThemePalette) -> some View {
-        Button {
-            navigationState.showsAllProfiles = true
-            model.loadAllBotSessions(force: true)
-            isProfileSelectorPresented = false
-        } label: {
+        Button(action: selectAllProfiles) {
             HStack(spacing: 9) {
                 allProfilesMark(size: 22, style: style)
                 Text("All")
@@ -1352,5 +1461,40 @@ struct SessionNavQueue: View, Equatable {
 
     private func compactCount(_ count: Int) -> String {
         count > 99 ? "99+" : "\(count)"
+    }
+}
+
+struct BotRailProfileTip: View {
+    let bot: BotSummary
+    let imageData: Data?
+
+    var body: some View {
+        let role = bot.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let description = bot.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                BotAvatarView(bot: bot, imageData: imageData, size: 36, animated: false, mood: .idle)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(bot.name)
+                        .dockFont(.navigation, weight: .semibold)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(2)
+                    if !role.isEmpty {
+                        Text(role)
+                            .dockFont(.metadata)
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .lineLimit(2)
+                    }
+                }
+            }
+            if !description.isEmpty {
+                Color.dockBorderLight.frame(height: DockLayout.hairline)
+                Text(description)
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineSpacing(2)
+                    .lineLimit(12)
+            }
+        }
     }
 }
