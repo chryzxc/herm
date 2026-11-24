@@ -252,11 +252,12 @@ final class EdgeDockController: NSObject {
                 if let notice { self?.announce(notice: notice) }
             }
             .store(in: &subscriptions)
-        model.sessionActivityLabelChanges
+        model.sessionActivityLabelUpdates
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
-            .sink { [weak self] labels in
-                self?.latestActivityLabels = labels
-                self?.rebuildTasks()
+            .sink { [weak self] in
+                guard let self else { return }
+                latestActivityLabels = self.model.sessionActivityLabels
+                rebuildTasks()
             }
             .store(in: &subscriptions)
         model.$botActivityRevision.map { _ in () }

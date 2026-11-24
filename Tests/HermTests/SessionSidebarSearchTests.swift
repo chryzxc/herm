@@ -32,4 +32,31 @@ struct SessionSidebarSearchTests {
         #expect(matches.last?.id == "0")
         #expect(SessionSidebarSearch.sessions(matching: " \n", in: sessions, projects: [:]).count == 15)
     }
+
+    @Test func searchRequestExcludesBotMainChatsAndKeepsPinnedMatches() {
+        let main = session("bot-main", title: "Build Herm", time: 3)
+        let recent = session("recent", title: "Build Herm", time: 2)
+        let pinned = session("pinned", title: "Release", time: 1)
+        let request = SessionSidebarSearch.Request(
+            query: "build", conversations: [main, recent], pinned: [recent, pinned],
+            projects: [pinned.id: "build-tools"],
+            scope: .init(mainChatIDs: [main.id], showsAllProfiles: true, selectedBotID: nil, visibleBots: []))
+        #expect(request.matches().map(\.id) == [recent.id, pinned.id])
+    }
+
+    @Test func previousResultsAreUnavailableAfterChangingQueryOrProfile() {
+        let row = session("recent", title: "Build Herm")
+        func request(_ query: String, profile: String) -> SessionSidebarSearch.Request {
+            .init(
+                query: query, conversations: [row], pinned: [], projects: [:],
+                scope: .init(
+                    mainChatIDs: [], showsAllProfiles: false, selectedBotID: nil, visibleBots: [],
+                    profileScopeID: profile))
+        }
+        let original = request("build", profile: "first")
+        let result = original.resolve()
+        #expect(result.sessions(for: original) == [row])
+        #expect(result.sessions(for: request("release", profile: "first")) == nil)
+        #expect(result.sessions(for: request("build", profile: "second")) == nil)
+    }
 }

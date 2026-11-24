@@ -112,7 +112,7 @@ struct MultiSessionPerformanceTests {
         model.updateSessionActivityLabel(sessionID: "runtime-background", type: "tool.call", payload: payload)
 
         var snapshots: [[String: String]] = []
-        let subscription = model.sessionActivityLabelChanges.sink { snapshots.append($0) }
+        let subscription = model.sessionActivityLabelUpdates.sink { snapshots.append(model.sessionActivityLabels) }
         #expect(snapshots.count == 1)
         #expect(snapshots.first?["stored-background"]?.isEmpty == false)
         #expect(snapshots.first?["runtime-background"] == nil)
@@ -126,5 +126,41 @@ struct MultiSessionPerformanceTests {
         model.updateSessionActivityLabel(sessionID: "runtime-background", type: "message.start", payload: [:])
         #expect(snapshots.count == 2)
         withExtendedLifetime(subscription) {}
+    }
+
+    @Test func keyedActivityObservesCurrentValuesAndAliasFallback() {
+        let model = DockModel(initialSessionID: "open-session")
+        defer { model.shutdown() }
+        model.setSessionActivityLabel("Initial", sessionID: "runtime")
+        var labels: [String?] = []
+        let subscription = model.observeSessionActivityLabel(ids: ["saved", "runtime"]) { labels.append($0) }
+        for index in 0..<100 { model.setSessionActivityLabel("Tool", sessionID: "background-\(index)") }
+        #expect(labels == ["Initial"])
+        model.setSessionActivityLabel("Preferred", sessionID: "saved")
+        model.setSessionActivityLabel("Fallback", sessionID: "runtime")
+        model.setSessionActivityLabel(nil, sessionID: "saved")
+        #expect(labels == ["Initial", "Preferred", "Fallback"])
+        subscription.cancel()
+        model.setSessionActivityLabel(nil, sessionID: "runtime")
+        #expect(labels.count == 3)
+    }
+
+    @Test func conversationActivityReadsOnlyItsOwnCardsAndAliases() async {
+        let model = DockModel(initialSessionID: "open")
+        defer { model.shutdown() }
+        model.sessionStorageID = "saved"
+        model.botActivityBySessionID = Dictionary(
+            uniqueKeysWithValues: ["open", "saved", "unrelated"].map { id in
+                let record = BotActivityRecord(
+                    id: "record-\(id)", originSessionID: id, botID: "bot", botName: "Bot",
+                    summary: "Working", state: .working, linkedCardID: "card-\(id)")
+                return (id, [record])
+            })
+        var reads: [String] = []
+        await model.reconcileKanbanAssignments { id in
+            reads.append(id)
+            return nil
+        }
+        #expect(Set(reads) == ["card-open", "card-saved"])
     }
 }

@@ -1970,6 +1970,7 @@ search replaces the normal sections with deduplicated results in newest-first or
 including pins and project sessions, independent of section disclosure and the recent
 row limit. A count and no-match state describe loaded sessions; projection failures
 remain visible. Clearing search or pressing Escape restores existing disclosures.
+While the first search runs, use its results heading for the loading status.
 Search is transient presentation state and does not fetch transcript history.
 Pointer and search updates reuse the sidebar’s session inventory for unread badges.
 Recents and Automations reuse sections prepared when the session inventory changes.
@@ -2073,7 +2074,8 @@ bot’s Recents, including rows under Show more. Preserve working, approval,
 clarification, and failure states.
 Each session is a 50pt two-line row. The
 second line may combine relative time, an inline repository identity, and a
-single-line preview; missing values do not leave separators behind. Repository
+single-line preview; missing values do not leave separators behind. Project
+pills show the saved repository path on hover. Repository
 identity is inline metadata rather than a capsule so the list remains calm at
 narrow sidebar widths. The Pinned section remains a separate presentation.
 Messaging origins reported by Hermes use the shared compact source pill beside
@@ -4665,26 +4667,24 @@ owning context closes. Existing profile-scoped bot/routine repair dialogs are re
 
 ### Chats tiles view
 
-Chats offers List and Tiles layouts. Settings → Chat → Layout stores the default layout locally; the header's Tiles layout menu and the sidebar's Chat tiles row switch for the moment without changing that default; returning
-to Chats or reopening Herm restores it. There is one Chats rail destination, selected
-for either layout. Explicit session links and sidebar New chat open the conversation workspace
+Chats offers List and Tiles layouts. Settings → Chat → Layout stores the default
+layout locally. Chat tiles in the Sessions header and Show chat list in the Tiles
+header switch the current view. Opening Chats from the rail or reopening Herm
+restores the default. One Chats rail destination is selected for either layout.
+Explicit session links and sidebar New chat open the conversation workspace
 without overwriting the preferred layout. The grid's page title is Chats, with New chat
 control and no modal Close action. There is no bot picker: tiles show every bot's chats at once. Use `DockExpandedPage`
 for the title row and a full-width adaptive grid (320pt minimum card width, no maximum so
 columns always fill the row; 16pt gaps) under collapsible `DockSectionHeader` groups with counts;
 Recent starts collapsed. The toolbar aligns search and project selection on the left and status filters on the right.
-At narrower widths, the status filters move below search. Status filters scroll horizontally when the full set cannot fit. Header
-controls use a single outlined layout menu with a grid icon and Tiles label,
-with List and Tiles choices and a checkmark for the current layout. There is no
-tab strip or selection bar. New chat with a plus icon follows. When several bots exist, each tile
+At narrower widths, the status filters move below search. Status filters scroll horizontally when the full set cannot fit.
+Keep the toolbar in place while the first tile set prepares. Show loading inside the grid area and keep
+the existing tiles visible while an updated inventory or search result is prepared.
+The Tiles header uses a Show chat list icon to return to List. New chat uses a plus icon. When several bots exist, each tile
 shows its bot avatar (16pt) and name beside its project in the reserved metadata line. The Ready to review section header carries a trailing 24pt
 checks `DockIconButton` (Mark all as read), matching the sidebar Recents header.
-Refresh, layout, bot, and New chat share the compact 28pt toolbar size and 8pt gaps;
-the selected avatar is 18pt so it fits within that height. Narrow panels split
-controls into navigation and conversation-action rows when needed.
-The outlined bot menu shows the selected avatar beside its name and
-avatars with a selection check in the choices. It reuses sidebar avatar images
-and deterministic fallback faces, with skin-owned shapes and semantic colors.
+Refresh and New chat share the compact 28pt toolbar size and an 8pt gap. Narrow
+panels stack these actions when needed.
 A manual refresh keeps loaded tiles current; only a failed refresh marks them not current.
 
 Cards lead with a two-line semibold conversation title and a trailing relative age.

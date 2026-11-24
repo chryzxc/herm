@@ -177,6 +177,7 @@ struct SessionNavSidebarSnapshotTests {
         let groups = snapshot.linkedProjectGroups.filter { $0.sessions.contains { $0.id == "s1" } }
         #expect(groups.map(\.title) == ["Beta"])
         #expect(snapshot.projectNameBySessionID["s1"] == "Beta")
+        #expect(snapshot.projectPathBySessionID["s1"] == "/repos/Beta")
     }
 
     @Test func withoutUpdatingProjectsAMovedSessionListsInBothGroups() {
@@ -248,6 +249,7 @@ struct SessionNavSidebarSnapshotTests {
         #expect(snapshot.linkedProjectGroups.first?.sessions.map(\.id) == ["s1"])
         #expect(snapshot.linkedSessionIDs == ["s1"])
         #expect(snapshot.projectNameBySessionID["s1"] == "Alpha")
+        #expect(snapshot.projectPathBySessionID["s1"] == "/repos/Alpha")
     }
 
     @Test func conversationsDeduplicateByIDAndSortNewestFirstWithStableTiebreak() {

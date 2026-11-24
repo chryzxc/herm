@@ -44,6 +44,7 @@ struct SessionNavQueue: View, Equatable {
     let showsWindowTitleRow: Bool
     @Binding var isSidebarCollapsed: Bool
     @State private var sessionSearchQuery = ""
+    @State private var sessionSearchResults: SessionSidebarSearch.Results?
     @State private var isProfileSelectorPresented = false
     @State private var isProfileHovering = false
     @State private var creatingProjectPath: String?
@@ -263,8 +264,23 @@ struct SessionNavQueue: View, Equatable {
         let _ = HermPerformanceRecorder.countBody("SessionNavQueue")
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         let unreadRequest = hostVisible && !isSidebarCollapsed ? botUnreadRequest : nil
+        let searchRequest = hostVisible && !isSidebarCollapsed ? sessionSearchRequest : nil
         listPanel(style: style)
             .dockShellPane()
+            .task(id: searchRequest) {
+                guard let searchRequest else {
+                    sessionSearchResults = nil
+                    return
+                }
+                let worker = Task.detached(priority: .userInitiated) { searchRequest.resolve() }
+                let matches = await withTaskCancellationHandler {
+                    await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
+                guard !Task.isCancelled else { return }
+                sessionSearchResults = matches
+            }
             .task(id: unreadRequest) {
                 guard let unreadRequest else { return }
                 await refreshBotUnreadCounts(unreadRequest)
@@ -299,10 +315,12 @@ struct SessionNavQueue: View, Equatable {
                 navigationState.hasRequestedSessionIndex = true
                 model.loadSessions()
             }
-            .onChange(of: sidebar.snapshot.inputs.sessionProjectionState) { _, _ in
+            .onReceive(sidebar.$snapshot.receive(on: RunLoop.main)) { _ in
                 baselineSidebarSessionsIfAuthoritative()
             }
-            .onChange(of: sidebar.snapshot.inputs.allBotSessionsState) { _, _ in
+            .onReceive(
+                sidebar.$snapshot.map(\.inputs.allBotSessionsState).removeDuplicates().receive(on: RunLoop.main)
+            ) { _ in
                 baselineOtherBotSessions()
             }
             .accessibilityElement(children: .contain)
@@ -651,17 +669,18 @@ struct SessionNavQueue: View, Equatable {
     /// selection independent from every neighbouring destination.
     private func globalRailBar(style: DockThemePalette) -> some View {
         let projects = sidebarSnapshot.linkedProjectGroups
-        let recents = showsAllProfiles ? sidebarSnapshot.allBotRecents : sidebarSnapshot.scopedRecents
-        let conversations = botScopedConversations(recents.conversations)
-        let automations = botScopedConversations(recents.automations)
         let pinned = pinnedSessionPresentation
         let statuses = sidebarSnapshot.sessionStatuses
 
         // Native sections keep headers visible without geometry tracking or eager row containers.
         return LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
             if isSearchingSessions {
-                sessionSearchResults(pinned: pinned, statuses: statuses, style: style)
+                searchResultRows(pinned: pinned, statuses: statuses, style: style)
             } else {
+                let recents = showsAllProfiles ? sidebarSnapshot.allBotRecents : sidebarSnapshot.scopedRecents
+                let scope = sessionSearchScope
+                let conversations = recents.conversations.filter(scope.includes)
+                let automations = recents.automations.filter(scope.includes)
                 ForEach(navigationState.sectionOrder, id: \.self) { section in
                     switch section {
                     case .pinned:
@@ -690,7 +709,11 @@ struct SessionNavQueue: View, Equatable {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled else { return }
                 await botMode.refreshNow()
-                if visibleBots.count > 1 { model.loadAllBotSessions() }
+                if visibleBots.count > 1, !model.isLoadingSessions, !model.isPollingSessions,
+                    !model.sessionIndexReadRecently(within: 10)
+                {
+                    model.loadAllBotSessions()
+                }
             }
         }
         .dockSheet(isPresented: $isShowingProjectSheet) {
@@ -780,6 +803,22 @@ struct SessionNavQueue: View, Equatable {
         !sessionSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var sessionSearchScope: SessionSidebarSearch.Scope {
+        SessionSidebarSearch.Scope(
+            mainChatIDs: BotMentions.mainChatSessionIDs, showsAllProfiles: showsAllProfiles,
+            selectedBotID: selectedBot?.id, visibleBots: visibleBots,
+            profileScopeID: sidebarSnapshot.inputs.profileScopeID)
+    }
+
+    private var sessionSearchRequest: SessionSidebarSearch.Request? {
+        guard isSearchingSessions else { return nil }
+        return SessionSidebarSearch.Request(
+            query: sessionSearchQuery,
+            conversations: showsAllProfiles ? sidebarSnapshot.allBotConversations : sidebarSnapshot.conversations,
+            pinned: pinnedSessionPresentation.sessions, projects: sidebarSnapshot.projectNameBySessionID,
+            scope: sessionSearchScope)
+    }
+
     private var sessionSearchField: some View {
         DockSearchField(
             placeholder: "Search sessions", text: $sessionSearchQuery,
@@ -787,17 +826,13 @@ struct SessionNavQueue: View, Equatable {
     }
 
     @ViewBuilder
-    private func sessionSearchResults(
+    private func searchResultRows(
         pinned: PinnedSessionPresentation, statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        let matches = SessionSidebarSearch.sessions(
-            matching: sessionSearchQuery,
-            in: botScopedConversations(
-                (showsAllProfiles ? sidebarSnapshot.allBotConversations : sidebarSnapshot.conversations)
-                    + pinned.sessions),
-            projects: sidebarSnapshot.projectNameBySessionID)
+        let result = sessionSearchResults?.sessions(for: sessionSearchRequest)
+        let matches = result ?? []
         HStack(spacing: 6) {
-            Text("Loaded sessions · \(matches.count)")
+            Text(result == nil ? "Searching loaded sessions…" : "Loaded sessions · \(matches.count)")
                 .dockFont(.body, weight: .semibold)
                 .foregroundStyle(style.secondaryText)
             // Fixed-size slot so a routine refresh never shifts the list below
@@ -810,7 +845,7 @@ struct SessionNavQueue: View, Equatable {
                 .accessibilityHidden(!sidebarSnapshot.inputs.isLoadingSessions)
         }
         .dockPadding(8)
-        if matches.isEmpty {
+        if result != nil, matches.isEmpty {
             queueEmpty("No matching loaded sessions", style: style)
         }
         if case .stale(let message) = pinned.status {
@@ -916,17 +951,6 @@ struct SessionNavQueue: View, Equatable {
             || (type == .conversations && botUnreadCounts.values.contains { $0 > 0 })
     }
 
-    private func botScopedConversations(_ base: [HermesSession]) -> [HermesSession] {
-        let mainChats = BotMentions.mainChatSessionIDs
-        let base = base.filter { !mainChats.contains($0.id) }
-        guard !showsAllProfiles, base.contains(where: { $0.source == "hermes-bot" }) else { return base }
-        let selectedID = selectedBot?.id
-        return base.filter { session in
-            guard session.source == "hermes-bot" else { return true }
-            return botForSession(session)?.id == selectedID
-        }
-    }
-
     private func botForSession(_ session: HermesSession) -> BotSummary? {
         guard session.source == "hermes-bot" else { return nil }
         return visibleBots.first { $0.id == session.profileID } ?? visibleBots.first { $0.name == session.title }
@@ -964,6 +988,7 @@ struct SessionNavQueue: View, Equatable {
             sessionStatus: statuses[session.id] ?? .none,
             style: style,
             repositoryName: sidebarSnapshot.projectNameBySessionID[session.id],
+            repositoryPath: sidebarSnapshot.projectPathBySessionID[session.id],
             isPinned: isPinned(session),
             isActive: session.id == activeSessionID,
             isDeleting: sidebarSnapshot.inputs.deletingSessionID == session.id,
@@ -1065,6 +1090,7 @@ struct SessionNavQueue: View, Equatable {
             sessionStatus: statuses[session.id] ?? .none,
             style: style,
             repositoryName: sidebarSnapshot.projectNameBySessionID[session.id],
+            repositoryPath: sidebarSnapshot.projectPathBySessionID[session.id],
             isPinned: true,
             isActive: session.id == activeSessionID,
             isDeleting: sidebarSnapshot.inputs.deletingSessionID == session.id,

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Dashboard rows share the sidebar's canonical session and attention projection.
-enum SessionDashboardSection: String, CaseIterable, Identifiable {
+enum SessionDashboardSection: String, CaseIterable, Identifiable, Sendable {
     case attention = "Needs you"
     case review = "Ready to review"
     case working = "In progress"
@@ -19,7 +19,7 @@ enum SessionDashboardSection: String, CaseIterable, Identifiable {
     }
 }
 
-struct SessionDashboardRow: Identifiable, Equatable {
+struct SessionDashboardRow: Identifiable, Equatable, Sendable {
     let session: HermesSession
     let status: SidebarSessionStatus
     let project: String?
@@ -32,20 +32,26 @@ struct SessionDashboardRow: Identifiable, Equatable {
 }
 
 enum SessionDashboardProjection {
-    static func aliases(in snapshot: SessionNavSidebarSnapshot) -> [String: String] {
+    static func aliases(in inputs: SessionNavSidebarSnapshot.Inputs) -> [String: String] {
         Dictionary(
-            snapshot.inputs.activeSessions.filter {
-                $0.profileID == nil || ($0.profileID ?? "default") == (snapshot.inputs.profileScopeID ?? "default")
+            inputs.activeSessions.filter {
+                $0.profileID == nil || ($0.profileID ?? "default") == (inputs.profileScopeID ?? "default")
             }.compactMap { summary in
                 summary.storedSessionID.map { (summary.id, $0) }
             }, uniquingKeysWith: { first, _ in first })
     }
 
     static func sessions(in snapshot: SessionNavSidebarSnapshot) -> [HermesSession] {
-        let aliases = aliases(in: snapshot)
+        snapshot.unreadInventory.sessions
+    }
+
+    static func sessions(
+        in inputs: SessionNavSidebarSnapshot.Inputs, allBotConversations: [HermesSession]
+    ) -> [HermesSession] {
+        let aliases = aliases(in: inputs)
         // Saved records own identity and visibility; a live runtime alias is not another chat.
         // Every bot's chats share one board; the all-bot scan covers the unselected bots.
-        let saved = snapshot.inputs.sessions + snapshot.inputs.pinnedSessions + snapshot.allBotConversations
+        let saved = inputs.sessions + inputs.pinnedSessions + allBotConversations
         let savedIDs = Set(saved.map(\.id))
         let known = saved.filter { session in
             guard let storedID = aliases[session.id], storedID != session.id else { return true }
@@ -60,10 +66,10 @@ enum SessionDashboardProjection {
         }
 
         let knownIDs = Set(known.map(\.id))
-        let active = snapshot.inputs.activeSessions.filter { !knownIDs.contains(aliases[$0.id] ?? $0.id) }.map {
+        let active = inputs.activeSessions.filter { !knownIDs.contains(aliases[$0.id] ?? $0.id) }.map {
             summary in
             HermesSession(
-                id: aliases[summary.id] ?? summary.id, profileID: summary.profileID ?? snapshot.inputs.profileScopeID,
+                id: aliases[summary.id] ?? summary.id, profileID: summary.profileID ?? inputs.profileScopeID,
                 title: summary.title, preview: summary.preview ?? "", startedAt: nil,
                 updatedAt: summary.updatedAt, messageCount: 0, source: HermesFeatureIDs.sessionSource,
                 isWorking: SessionLifecyclePresentation.status(for: summary) == .active)
@@ -89,14 +95,19 @@ enum SessionDashboardProjection {
     }
 
     /// Search and project filters only narrow already-projected rows, so typing never re-resolves statuses.
-    static func filter(_ rows: [SessionDashboardRow], query: String, project: String?) -> [SessionDashboardRow] {
+    static func filter(
+        _ rows: [SessionDashboardRow], query: String, project: String?, previews: [String: String] = [:]
+    ) -> [SessionDashboardRow] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty || project != nil else { return rows }
         return rows.filter { row in
-            guard project == nil || row.project == project else { return false }
+            guard !Task.isCancelled, project == nil || row.project == project else { return false }
             return query.isEmpty
-                || [row.session.displayTitle, row.session.displayPreview ?? "", row.project ?? ""]
-                    .contains(where: { $0.localizedCaseInsensitiveContains(query) })
+                || row.session.displayTitle.localizedCaseInsensitiveContains(query)
+                || (previews[row.session.preview] ?? row.session.displayPreview)?.localizedCaseInsensitiveContains(
+                    query)
+                    == true
+                || row.project?.localizedCaseInsensitiveContains(query) == true
         }
     }
 }
@@ -104,8 +115,7 @@ enum SessionDashboardProjection {
 /// The board's projection of one sidebar snapshot. It is rebuilt only when the
 /// snapshot or seen state changes, never per render: resolving every session's
 /// status on each body pass stalled scrolling with a thousand-plus chats.
-@MainActor
-struct SessionDashboardBoard {
+struct SessionDashboardBoard: Equatable, Sendable {
     /// Every visible session, sorted, before search and project filters.
     private(set) var rows: [SessionDashboardRow] = []
     private(set) var attention: [String: AttentionItem] = [:]
@@ -114,12 +124,13 @@ struct SessionDashboardBoard {
     private(set) var live: Set<String> = []
     private(set) var projectNames: [String] = []
     private(set) var profileScopeID: String?
+    private var searchPreviews: [String: String] = [:]
 
     init() {}
 
-    init(snapshot: SessionNavSidebarSnapshot, seen: SidebarSessionSeenStore) {
+    init(snapshot: SessionNavSidebarSnapshot, reusing previous: Self? = nil) {
         let inputs = snapshot.inputs
-        let aliases = SessionDashboardProjection.aliases(in: snapshot)
+        let aliases = SessionDashboardProjection.aliases(in: inputs)
         func canonical(_ id: String) -> String { aliases[id] ?? id }
         let sessions = SessionDashboardProjection.sessions(in: snapshot)
         let activeByID = Dictionary(
@@ -134,12 +145,18 @@ struct SessionDashboardBoard {
                 session: session, summary: summary, activeSessionID: activeID,
                 activeStatus: inputs.activeStatus,
                 attention: snapshot.attentionDots[session.id] ?? summary.flatMap { snapshot.attentionDots[$0.id] },
-                seenAt: seen.seenAt(profileID: owner, sessionID: session.id),
-                isProfileBaselined: seen.isBaselined(profileID: owner))
+                seenAt: inputs.seenAtByKey[SidebarSessionSeenStore.key(profileID: owner, sessionID: session.id)],
+                isProfileBaselined: inputs.baselinedProfiles.contains(owner ?? ""))
         }
         var projects = snapshot.projectNameBySessionID
         for (alias, id) in aliases where projects[id] == nil { projects[id] = projects[alias] }
         rows = SessionDashboardProjection.rows(sessions: sessions, statuses: statuses, projects: projects)
+        for row in rows where searchPreviews[row.session.preview] == nil {
+            if Task.isCancelled { return }
+            searchPreviews[row.session.preview] =
+                previous?.searchPreviews[row.session.preview]
+                ?? row.session.displayPreview ?? ""
+        }
 
         for request in inputs.attention where request.state == .open {
             guard let id = request.reference.sessionID.map(canonical), attention[id] == nil else { continue }
@@ -155,9 +172,14 @@ struct SessionDashboardBoard {
         projectNames = Set(snapshot.projectNameBySessionID.values).sorted()
         profileScopeID = inputs.profileScopeID
     }
+
+    func visibleRows(query: String, project: String?) -> SessionDashboardVisibleRows {
+        SessionDashboardVisibleRows(
+            SessionDashboardProjection.filter(rows, query: query, project: project, previews: searchPreviews))
+    }
 }
 
-struct SessionDashboardVisibleRows {
+struct SessionDashboardVisibleRows: Equatable, Sendable {
     private(set) var bySection: [SessionDashboardSection: [SessionDashboardRow]] = [:]
     var isEmpty: Bool { bySection.isEmpty }
 

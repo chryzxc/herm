@@ -25,6 +25,7 @@ struct SessionDashboardCard: View, Equatable {
     @State private var actionError: String?
     @State private var hovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dockHostVisible) private var hostVisible
     @FocusState private var replyFocused: Bool
 
     /// Closures and the unobserved model are left out: a tile re-renders only when its own data changes.
@@ -80,14 +81,19 @@ struct SessionDashboardCard: View, Equatable {
         .onHover { hovered = $0 }
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: hovered)
         .animation(nil, value: row.status)
-        .task(id: "\(row.session.lastUpdatedAt?.timeIntervalSince1970 ?? 0)-\(isCurrent)") {
-            guard let client, isCurrent else { return }
+        .task(id: "\(row.session.lastUpdatedAt?.timeIntervalSince1970 ?? 0)-\(isCurrent && hostVisible)") {
+            guard let client, isCurrent, hostVisible else { return }
             await content.load(session: row.session, profileID: profileID, client: client)
         }
         // Subscribed while on screen only; a lazy grid keeps offscreen tiles around.
-        .onAppear { live.observe(model, ids: ids) }
+        .onAppear { if hostVisible { live.observe(model, ids: ids) } }
         .onDisappear { live.stop() }
-        .onChange(of: runtimeIDs) { _, _ in live.observe(model, ids: ids) }
+        .onChange(of: hostVisible) { _, visible in
+            if visible { live.observe(model, ids: ids) } else { live.stop() }
+        }
+        .onChange(of: runtimeIDs) { _, _ in
+            if hostVisible { live.observe(model, ids: ids) }
+        }
     }
 
     private func open() {

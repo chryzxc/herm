@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import SwiftUI
 
-struct SidebarUnreadSession: Hashable {
+struct SidebarUnreadSession: Hashable, Sendable {
     let profileID: String?
     let id: String
     let updatedAt: Date?
@@ -102,6 +102,7 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
     let attentionDots: [String: SessionAttentionDot]
     let linkedSessionIDs: Set<String>
     let projectNameBySessionID: [String: String]
+    let projectPathBySessionID: [String: String]
     /// Every bot's recent chats merged with the selected bot's fresher rows,
     /// newest first. Equals `conversations` until the all-bot scan loads.
     let allBotConversations: [HermesSession]
@@ -112,6 +113,21 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
     let scopedPinPresentation: PinnedSessionPresentation
     let allProfilePinPresentation: PinnedSessionPresentation
     let sessionStatuses: [String: SidebarSessionStatus]
+    struct UnreadInventory: Equatable, Sendable {
+        let sessions: [HermesSession]
+        let rows: Set<SidebarUnreadSession>
+
+        init(sessions: [HermesSession]) {
+            self.sessions = sessions
+            self.rows = Set(
+                sessions.map {
+                    SidebarUnreadSession(
+                        profileID: $0.profileID, id: $0.id, updatedAt: $0.updatedAt,
+                        isHidden: $0.isHidden, isAutomation: $0.isAutomationSession)
+                })
+        }
+    }
+    let unreadInventory: UnreadInventory
     /// Real projects an unlinked conversation can be added to.
     var projectTargets: [SidebarProjectTarget] {
         linkedProjectGroups.compactMap { group in
@@ -158,6 +174,7 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
             self.conversations = previous.conversations
             self.linkedSessionIDs = previous.linkedSessionIDs
             self.projectNameBySessionID = previous.projectNameBySessionID
+            self.projectPathBySessionID = previous.projectPathBySessionID
             self.allBotConversations = previous.allBotConversations
             self.scopedRecents = previous.scopedRecents
             self.allBotRecents = previous.allBotRecents
@@ -167,16 +184,19 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
             self.conversations = Self.deduplicatedConversations(groups: groups)
             var linkedSessionIDs = Set<String>()
             var projectNameBySessionID: [String: String] = [:]
+            var projectPathBySessionID: [String: String] = [:]
             for group in self.linkedProjectGroups {
                 for session in group.sessions {
                     linkedSessionIDs.insert(session.id)
                     if projectNameBySessionID[session.id] == nil {
                         projectNameBySessionID[session.id] = group.title
+                        projectPathBySessionID[session.id] = group.projectPath
                     }
                 }
             }
             self.linkedSessionIDs = linkedSessionIDs
             self.projectNameBySessionID = projectNameBySessionID
+            self.projectPathBySessionID = projectPathBySessionID
             self.allBotConversations = SidebarAgentGrouping.merged(
                 all: scanned, scoped: self.conversations, scopeProfileID: inputs.profileScopeID)
             self.scopedRecents = SessionRecentsPresentation(self.conversations)
@@ -213,6 +233,12 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
             self.sessionStatuses = SidebarSessionStatusResolver.statuses(
                 for: allBotConversations + inputs.pinnedSessions + allProfilePinned, inputs: inputs,
                 attention: attentionDots, seenAtByKey: inputs.seenAtByKey, baselinedProfiles: inputs.baselinedProfiles)
+        }
+        if let previous, reusesPins, previous.inputs.activeSessions == inputs.activeSessions {
+            unreadInventory = previous.unreadInventory
+        } else {
+            unreadInventory = UnreadInventory(
+                sessions: SessionDashboardProjection.sessions(in: inputs, allBotConversations: allBotConversations))
         }
     }
 
@@ -456,22 +482,7 @@ final class SessionNavSidebarModel: ObservableObject {
     }
 
     @Published private(set) var snapshot: SessionNavSidebarSnapshot
-    // Hover, search, and selection reevaluate the rail body. Build its unread task inputs
-    // once for each session inventory and share them with the count refresh.
-    private typealias UnreadInventory = (sessions: [HermesSession], rows: Set<SidebarUnreadSession>)
-    private var cachedUnreadSessions: UnreadInventory?
-    var unreadSessions: (sessions: [HermesSession], rows: Set<SidebarUnreadSession>) {
-        if let cachedUnreadSessions { return cachedUnreadSessions }
-        let sessions = SessionDashboardProjection.sessions(in: snapshot)
-        let rows = Set(
-            sessions.map {
-                SidebarUnreadSession(
-                    profileID: $0.profileID, id: $0.id, updatedAt: $0.updatedAt,
-                    isHidden: $0.isHidden, isAutomation: $0.isAutomationSession)
-            })
-        cachedUnreadSessions = (sessions, rows)
-        return (sessions, rows)
-    }
+    var unreadSessions: SessionNavSidebarSnapshot.UnreadInventory { snapshot.unreadInventory }
     let instanceID = UUID().uuidString.prefix(8).description
     private let mountedAt = ProcessInfo.processInfo.systemUptime
 
@@ -572,7 +583,6 @@ final class SessionNavSidebarModel: ObservableObject {
     private func publish(_ next: SessionNavSidebarSnapshot) {
         let startedAt = ProcessInfo.processInfo.systemUptime
         defer { HermPerformanceRecorder.recordWork("sidebarPublish", since: startedAt) }
-        let inputs = next.inputs
         let previous = snapshot
         snapshot = next
         if previous.conversations.isEmpty && previous.inputs.pinnedSessions.isEmpty,
@@ -580,13 +590,6 @@ final class SessionNavSidebarModel: ObservableObject {
         {
             let elapsed = Int((ProcessInfo.processInfo.systemUptime - mountedAt) * 1000)
             DebugLog.writePerformance("session_index stage=sidebar_rows rows=\(next.conversations.count) ms=\(elapsed)")
-        }
-        if inputs.sessions != previous.inputs.sessions || inputs.pinnedSessions != previous.inputs.pinnedSessions
-            || inputs.activeSessions != previous.inputs.activeSessions
-            || inputs.profileScopeID != previous.inputs.profileScopeID
-            || next.allBotConversations != previous.allBotConversations
-        {
-            cachedUnreadSessions = nil
         }
         DebugLog.writePerformance(
             "sidebar instance=\(instanceID) snapshot_publish_ms=\(Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1000))"

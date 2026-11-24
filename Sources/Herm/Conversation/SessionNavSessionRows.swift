@@ -569,6 +569,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     let sessionStatus: SidebarSessionStatus
     let style: DockThemePalette
     let repositoryName: String?
+    var repositoryPath: String? = nil
     let isPinned: Bool
     let isActive: Bool
     let isDeleting: Bool
@@ -632,6 +633,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             && lhs.sessionStatus == rhs.sessionStatus
             && lhs.style.theme == rhs.style.theme
             && lhs.repositoryName == rhs.repositoryName
+            && lhs.repositoryPath == rhs.repositoryPath
             && lhs.isPinned == rhs.isPinned
             && lhs.isActive == rhs.isActive
             && lhs.isDeleting == rhs.isDeleting
@@ -797,7 +799,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         .dockPill(tint: tint)
         .fixedSize()
         .accessibilityLabel("Project: \(name)")
-        .help("Wired to \(name)")
+        .help(repositoryPath ?? name)
     }
 
     private var tooltip: String {

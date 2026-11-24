@@ -30,9 +30,10 @@ final class SessionDashboardPreviewCache<Value> {
 final class SessionDashboardCardContent: ObservableObject {
     @Published private(set) var text: String?
     @Published private(set) var error: String?
-    @Published private(set) var loading = false
+    private(set) var loading = false
     private var generation = UUID()
     private static let cache = SessionDashboardPreviewCache<String>(limit: 300)
+    private static var activeReads = 0
 
     func load(session: HermesSession, profileID: String?, client: HermesRPCClientProtocol) async {
         let stamp = session.lastUpdatedAt?.timeIntervalSince1970 ?? 0
@@ -42,31 +43,51 @@ final class SessionDashboardCardContent: ObservableObject {
             source: session.source)
         let request = UUID()
         generation = request
+        if loading { loading = false }
         let key = "\(session.scopedID)|\(stamp)"
         // A tile scrolled out and back reuses its last read instead of calling Hermes again.
         if let cached = Self.cache[key] {
-            text = cached
+            apply(cached)
             return
         }
         // Fast scrolling cancels tiles before they cost a request.
         try? await Task.sleep(for: .milliseconds(250))
         guard generation == request, !Task.isCancelled else { return }
-        loading = true
-        defer { if generation == request { loading = false } }
         do {
+            while Self.activeReads >= 3 {
+                try await Task.sleep(for: .milliseconds(50))
+                guard generation == request else { return }
+            }
+            if let cached = Self.cache[key] {
+                apply(cached)
+                return
+            }
+            Self.activeReads += 1
+            loading = true
+            defer {
+                Self.activeReads -= 1
+                if generation == request { loading = false }
+            }
             let result = try await HermesControlRPC(client: client).sessionMessages(
                 sessionID: session.id, profileID: session.profileID, latest: true, limit: 8)
-            let page = try HermesConversationExcerptService.parse(result, session: session)
             guard generation == request, !Task.isCancelled else { return }
-            text = Self.latestUpdate(page.messages)
-            if let text {
-                Self.cache[key] = text
-            }
-            error = nil
+            let response = UncheckedTranscriptValue(value: result)
+            let latest = try await Task.detached(priority: .utility) {
+                let page = try HermesConversationExcerptService.parse(response.value, session: session)
+                return Self.latestUpdate(page.messages)
+            }.value
+            guard generation == request, !Task.isCancelled else { return }
+            if let latest { Self.cache[key] = latest }
+            apply(latest)
         } catch {
             guard generation == request, !Task.isCancelled else { return }
             self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
         }
+    }
+
+    private func apply(_ latest: String?) {
+        if text != latest { text = latest }
+        if error != nil { error = nil }
     }
 
     private static let previews = SessionDashboardPreviewCache<String?>(limit: 500)
@@ -87,7 +108,7 @@ final class SessionDashboardCardContent: ObservableObject {
         return SessionPreviewPresentation.summary(value)
     }
 
-    static func latestUpdate(_ messages: [String]) -> String? {
+    nonisolated static func latestUpdate(_ messages: [String]) -> String? {
         let message =
             messages.last { $0.hasPrefix("assistant: ") || $0.hasPrefix("hermes: ") }
             ?? messages.last
@@ -121,14 +142,10 @@ final class SessionDashboardCardLiveState: ObservableObject {
                 self?.apply(attention, answer: attention?.responseTarget.flatMap { answers[$0] })
             }
             .store(in: &cancellables)
-        model.sessionActivityLabelChanges
-            .map { labels in ids.lazy.compactMap { labels[$0] }.first }
-            .removeDuplicates()
-            .sink { [weak self] label in
-                guard let self, self.activity != label else { return }
-                self.activity = label
-            }
-            .store(in: &cancellables)
+        model.observeSessionActivityLabel(ids: ids) { [weak self] label in
+            guard let self, self.activity != label else { return }
+            self.activity = label
+        }.store(in: &cancellables)
     }
 
     private func apply(_ attention: DockModel.SessionAttention?, answer: AttentionAnswerState?) {

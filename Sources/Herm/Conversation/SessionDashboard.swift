@@ -1,11 +1,12 @@
 import SwiftUI
 
 struct SessionDashboard<Conversation: View>: View {
-    @ObservedObject var model: DockModel
+    let model: DockModel
     @ObservedObject var bots: BotModeModel
     let control: ControlCenterModel
     @StateObject private var sidebar: SessionNavSidebarModel
-    @ObservedObject private var seen = SidebarSessionSeenStore.shared
+    private let seen = SidebarSessionSeenStore.shared
+    @State private var modelRevision = 0
     @State private var selection = SessionDashboardSelection()
     @State private var showsConversation = false
     @State private var isNewConversation = false
@@ -60,6 +61,7 @@ struct SessionDashboard<Conversation: View>: View {
     }
 
     var body: some View {
+        let _ = modelRevision
         DockExpandedPage(
             title: "Chats", subtitle: subtitle,
             onShowList: onShowList,
@@ -100,15 +102,8 @@ struct SessionDashboard<Conversation: View>: View {
             if visible { control.refreshLatestActivityProjection() }
         }
         .onDisappear { control.dashboardActivityDemand.update(activityHostID, visible: false) }
-        // Not `onChange(of: sessionProjectionState)`: that compared every session on each
-        // DockModel publish, streaming included. Snapshots publish only when inputs change.
-        .onReceive(
-            sidebar.$snapshot.dropFirst().removeDuplicates {
-                $0.inputs.sessionProjectionState == $1.inputs.sessionProjectionState
-            }
-        ) {
-            baseline($0)
-        }
+        .onReceive(model.dashboardPresentationChanges) { _ in modelRevision &+= 1 }
+        .onReceive(sidebar.$snapshot.dropFirst()) { baseline($0) }
     }
 
     private var sessionList: some View {
@@ -196,7 +191,7 @@ struct SessionDashboard<Conversation: View>: View {
     }
 
     private func baseline(_ snapshot: SessionNavSidebarSnapshot) {
-        guard isCurrent(snapshot) else { return }
+        guard isCurrent(snapshot), !seen.isBaselined(profileID: model.profileScopeID) else { return }
         seen.baseline(profileID: model.profileScopeID, sessions: SessionDashboardProjection.sessions(in: snapshot))
     }
 

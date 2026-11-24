@@ -201,16 +201,37 @@ final class DockModel: ObservableObject {
     /// global gateway stream so sessions that are not open can show it too.
     // Only the edge dock consumes these; background tools must not invalidate
     // every workspace view observing DockModel.
-    private let sessionActivityLabelSubject = CurrentValueSubject<[String: String], Never>([:])
-    var sessionActivityLabels: [String: String] {
-        get { sessionActivityLabelSubject.value }
-        set {
-            guard newValue != sessionActivityLabelSubject.value else { return }
-            sessionActivityLabelSubject.send(newValue)
-        }
+    private let sessionActivityLabelSubject = PassthroughSubject<Void, Never>()
+    private let sessionActivityLabelChannels =
+        NSMapTable<NSString, PassthroughSubject<Void, Never>>.strongToWeakObjects()
+    private(set) var sessionActivityLabels: [String: String] = [:]
+
+    func setSessionActivityLabel(_ label: String?, sessionID: String) {
+        guard sessionActivityLabels[sessionID] != label else { return }
+        sessionActivityLabels[sessionID] = label
+        sessionActivityLabelChannels.object(forKey: sessionID as NSString)?.send()
+        sessionActivityLabelSubject.send()
     }
-    var sessionActivityLabelChanges: AnyPublisher<[String: String], Never> {
-        sessionActivityLabelSubject.eraseToAnyPublisher()
+
+    var sessionActivityLabelUpdates: AnyPublisher<Void, Never> {
+        sessionActivityLabelSubject.prepend(()).eraseToAnyPublisher()
+    }
+
+    func observeSessionActivityLabel(
+        ids: [String], receive: @escaping (String?) -> Void
+    ) -> AnyCancellable {
+        let channels = Set(ids).map { id -> PassthroughSubject<Void, Never> in
+            let key = id as NSString
+            if let channel = sessionActivityLabelChannels.object(forKey: key) { return channel }
+            let channel = PassthroughSubject<Void, Never>()
+            sessionActivityLabelChannels.setObject(channel, forKey: key)
+            return channel
+        }
+        let subscription = Publishers.MergeMany(channels).prepend(())
+            .map { [weak self] in ids.lazy.compactMap { self?.sessionActivityLabels[$0] }.first }
+            .removeDuplicates()
+            .sink(receiveValue: receive)
+        return AnyCancellable { withExtendedLifetime(channels) { subscription.cancel() } }
     }
     @Published var todoPlan: TodoPlan?
     /// Bumped each time the wake phrase wakes voice mode.

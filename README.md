@@ -679,11 +679,13 @@ unavailable items, and links to anchors or subpages retain the browser fallback.
 The chat sidebar has a **Search sessions** field for loaded session titles, previews,
 and project names in the selected bot scope. Results include pinned and project
 conversations beyond the ten recent rows. Clear the field or press Escape to restore
-the normal sections. Search does not scan unloaded transcript history.
+the normal sections. Search runs in the background against the loaded session index.
+Projects list conversations by last update. Hover over a project pill to see
+its repository path.
 
 Chats has two layouts: **List** (one conversation beside your sessions) and **Tiles**
-(every session at once). Switch with the **Tiles** layout menu in the header or
-**Chat tiles** under **New chat** in the sidebar. **Settings → Chat → Layout → Default chat
+(every session at once). Click **Chat tiles** in the Sessions header to open Tiles,
+or **Show chat list** in the Tiles header to return to List. **Settings → Chat → Layout → Default chat
 view** chooses which layout the Chats rail button opens. Tiles cover every bot's
 loaded recent, pinned, project, and active sessions in one board, with no bot picker;
 with several bots each tile shows its bot avatar and name. It is not a complete historical archive.
@@ -693,7 +695,8 @@ The **Ready to review** header has a **Mark all as read** button at its trailing
 Tiles are grouped into **Needs you** (approval, question, failure), **In progress**,
 **Ready to review**, and **Recent** (collapsed by default), using the same runtime and
 unread states as Chats. The status filter shows each group's count; you can also filter
-by project or search titles and previews.
+by project or search titles and previews. Large boards prepare updates and search results
+in the background, keeping the previous tiles available while results load.
 
 Tiles lead with the chat title and age, followed by a compact line for status, bot and project,
 and a readable preview of the most recent saved reply (read from the latest eight

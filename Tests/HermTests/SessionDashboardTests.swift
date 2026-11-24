@@ -153,8 +153,9 @@ struct SessionDashboardTests {
         model.sessions = [session("one", date: 2), session("two", date: 1)]
         let sidebar = SessionNavSidebarModel(
             model: model, control: ControlCenterModel(),
-            store: WorkspaceStore(fileURL: URL(fileURLWithPath: "/tmp/dashboard-board-\(UUID()).json")))
-        let board = SessionDashboardBoardModel(sidebar: sidebar, seen: SidebarSessionSeenStore(defaults: defaults))
+            store: WorkspaceStore(fileURL: URL(fileURLWithPath: "/tmp/dashboard-board-\(UUID()).json")),
+            seenStore: SidebarSessionSeenStore(defaults: defaults))
+        let board = SessionDashboardBoardModel(sidebar: sidebar)
         #expect(board.visible.members(.recent).map(\.id) == ["one", "two"])
 
         model.sessions.append(session("three", date: 3))
@@ -164,6 +165,43 @@ struct SessionDashboardTests {
         board.filter(query: "Work two", project: nil)
         #expect(board.visible.members(.recent).map(\.id) == ["two"])
         #expect(board.board.rows.count == 3)
+    }
+
+    @Test @MainActor func largeBoardAppliesLatestSearchToLatestSnapshot() async throws {
+        let suite = "DashboardLargeBoard.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = DockModel(defaults: defaults)
+        defer { model.shutdown() }
+        model.sessions = (0..<500).map { session("stored-\($0)") }
+        let sidebar = SessionNavSidebarModel(
+            model: model, control: ControlCenterModel(),
+            store: WorkspaceStore(fileURL: URL(fileURLWithPath: "/tmp/dashboard-board-\(UUID()).json")),
+            seenStore: SidebarSessionSeenStore(defaults: defaults))
+        let board = SessionDashboardBoardModel(sidebar: sidebar)
+        board.filter(query: "Work stored-10", project: nil)
+        model.sessions = (0..<500).map { session("new-\($0)") }
+        sidebar.refresh()
+        board.filter(query: "Work new-499", project: nil)
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while board.visible.members(.recent).first?.id != "new-499", clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(board.board.rows.count == 500)
+        #expect(board.visible.members(.recent).map(\.id) == ["new-499"])
+        #expect(board.resultsMatch(query: "Work new-499", project: nil))
+
+        board.filter(query: "Work new-498", project: nil)
+        #expect(board.visible.members(.recent).map(\.id) == ["new-499"])
+        #expect(!board.resultsMatch(query: "Work new-498", project: nil))
+        #expect(!board.resultsMatch(query: "Work new-499", project: nil))
+        let nextDeadline = clock.now.advanced(by: .seconds(2))
+        while !board.resultsMatch(query: "Work new-498", project: nil), clock.now < nextDeadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(board.resultsMatch(query: "Work new-498", project: nil))
+        #expect(board.visible.members(.recent).map(\.id) == ["new-498"])
     }
 
     @Test @MainActor func unreadInventoryRefreshesWhenAnotherBotsHistoryChanges() {

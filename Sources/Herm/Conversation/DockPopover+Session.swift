@@ -649,6 +649,7 @@ extension DockPopover {
                             sessionStatus: statuses[session.id] ?? .none,
                             style: style,
                             repositoryName: conversationProjectName(for: session),
+                            repositoryPath: conversationProjectPath(for: session),
                             isPinned: isWorkspaceSessionPinned(session),
                             isActive: session.id == model.sessionID,
                             isDeleting: workspaceModel.deletingSessionID == session.id,
@@ -748,6 +749,12 @@ extension DockPopover {
     }
 
     func conversationProjectName(for session: HermesSession) -> String? {
+        guard let path = conversationProjectPath(for: session) else { return nil }
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return name.isEmpty ? path : name
+    }
+
+    private func conversationProjectPath(for session: HermesSession) -> String? {
         guard let project = controlCenter.project(forSessionID: session.id),
             !project.name.isEmpty,
             project.name != "__no_project__"
@@ -755,8 +762,7 @@ extension DockPopover {
             return nil
         }
 
-        let name = URL(fileURLWithPath: project.name).lastPathComponent
-        return name.isEmpty ? project.name : name
+        return project.name
     }
 
     @ViewBuilder

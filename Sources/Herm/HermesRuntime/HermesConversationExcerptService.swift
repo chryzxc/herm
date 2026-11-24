@@ -13,7 +13,7 @@ struct HermesConversationExcerptService {
             await HermesControlRPC(client: client).sessionMessages(sessionID: session.id, profileID: session.profileID),
             session: session)
     }
-    static func parse(_ result: [String: Any], session: HermesSession) throws -> ConversationExcerptPage {
+    nonisolated static func parse(_ result: [String: Any], session: HermesSession) throws -> ConversationExcerptPage {
         if let owner = result["session_id"] as? String, owner != session.id {
             throw HermesGateway.GatewayError.malformedResponse
         }

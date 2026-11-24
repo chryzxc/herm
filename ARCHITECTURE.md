@@ -57,6 +57,11 @@ task. Session and profile navigation can replace a pending projection immediatel
 The snapshot includes the Chats list's resolved status marks and pin presentations.
 The Talk stage owns microphone observations and its orb observes audio levels.
 
+Chats Tiles prepares large board snapshots and search results on a worker and
+publishes them together. Visible cards subscribe to tool activity by session ID
+and share a bounded preview-read budget.
+Sidebar search uses the same navigation snapshot and matches it off the main actor.
+
 - `HermesRuntime/` — the Hermes boundary: `HermesControlRPC` (WebSocket JSON-RPC), `HermesCLIAdapter` (quoted-word Hermes CLI commands via `shell.exec`), `HermesCapabilityService` (fail-closed capability probes), `HermesFeatureContract` (feature IDs). All transport/process-launch concerns live here.
 - `Conversation/` — `DockModel` (central presentation state machine; stored state + init in `DockModel.swift`, behaviour in `DockModel+<Feature>.swift` extensions), `DockPopover` (+ extensions, same pattern), session navigation rail/queue/session rows, transcript views, composer, session lifecycle guards.
 - `ControlCenter/` — `ControlCenterModel` (same extension split), `WorkspaceActivitySidebar` (+ extensions per panel), command-center models, control-tower presentation.

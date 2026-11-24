@@ -6,6 +6,16 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 extension DockModel {
+    var dashboardPresentationChanges: AnyPublisher<Void, Never> {
+        Publishers.MergeMany(
+            Self.change($isHermesConnected), Self.change($isLoadingSessions), Self.change($currentSessionTitle),
+            Self.change($sessionID), Self.change($sessionStorageID), Self.change($profileScopeID),
+            Self.change($sessionProfileID),
+            $sessionTranscriptPreview.map { $0 != nil }.removeDuplicates().dropFirst().map { _ in () }
+                .eraseToAnyPublisher()
+        ).debounce(for: .milliseconds(1), scheduler: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
     /// Inputs read by the workspace shell; chat activity is observed by its own leaves.
     func makeWorkspacePresentationChanges() -> AnyPublisher<Void, Never> {
         Publishers.MergeMany(workspacePresentationSources().map(\.publisher))

@@ -4,7 +4,7 @@ import Foundation
 /// The small, semantic state marker shared by every session row in the
 /// fullscreen navigation rail. It intentionally contains no view concerns so
 /// the same state can drive accessibility, help, and rendering.
-enum SidebarSessionStatus: Equatable, Codable {
+enum SidebarSessionStatus: Equatable, Codable, Sendable {
     case working
     case needsApproval
     case needsClarification

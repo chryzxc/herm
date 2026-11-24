@@ -69,7 +69,7 @@ TIMER_WINDOW = 8
 BUDGET = {
     'DockModel @Published': 118,
     'ControlCenterModel @Published': 93,
-    'DockModel whole-model observers': 35,
+    'DockModel whole-model observers': 34,
     'ControlCenterModel whole-model observers': 26,
 }
 

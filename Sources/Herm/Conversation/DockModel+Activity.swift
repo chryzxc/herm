@@ -158,12 +158,13 @@ extension DockModel {
                 ?? "tool"
             let step = ToolStep.describe(name: name, rawArgs: payload["args"])
             let preview = (payload["tool_preview"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            sessionActivityLabels[sessionID] = [step.title, step.detail ?? (preview.isEmpty ? nil : preview)].compactMap
-            { $0 }.joined(separator: ": ")
+            let label = [step.title, step.detail ?? (preview.isEmpty ? nil : preview)].compactMap { $0 }.joined(
+                separator: ": ")
+            setSessionActivityLabel(label, sessionID: sessionID)
         case "message.start":
-            sessionActivityLabels[sessionID] = nil
+            setSessionActivityLabel(nil, sessionID: sessionID)
         default:
-            if Self.isUnreadUpdateEvent(type) { sessionActivityLabels[sessionID] = nil }
+            if Self.isUnreadUpdateEvent(type) { setSessionActivityLabel(nil, sessionID: sessionID) }
         }
     }
 

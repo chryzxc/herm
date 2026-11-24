@@ -12,25 +12,39 @@ struct SessionDashboardBot: Equatable {
 /// change, and filtered once per search edit, instead of on every render.
 @MainActor
 final class SessionDashboardBoardModel: ObservableObject {
-    @Published private(set) var board = SessionDashboardBoard()
-    @Published private(set) var visible = SessionDashboardVisibleRows()
+    private struct Presentation: Equatable, Sendable {
+        let board: SessionDashboardBoard
+        let visible: SessionDashboardVisibleRows
+        let query: String
+        let project: String?
+    }
+
+    @Published private var presentation: Presentation?
+    var hasLoaded: Bool { presentation != nil }
+    var board: SessionDashboardBoard { presentation?.board ?? SessionDashboardBoard() }
+    var visible: SessionDashboardVisibleRows { presentation?.visible ?? SessionDashboardVisibleRows() }
+    func resultsMatch(query: String, project: String?) -> Bool {
+        guard let presentation else { return false }
+        return presentation.query == query && presentation.project == project
+            && self.query == query && self.project == project
+    }
+
+    private var latestBoard: SessionDashboardBoard?
     private var query = ""
     private var project: String?
-    private var cancellables: Set<AnyCancellable> = []
+    private var subscription: AnyCancellable?
+    private var boardTask: Task<Void, Never>?
+    private var filterTask: Task<Void, Never>?
+    private static let synchronousRowLimit = 64
 
-    init(sidebar: SessionNavSidebarModel, seen: SidebarSessionSeenStore = .shared) {
-        rebuild(sidebar.snapshot, seen: seen)
-        // `@Published` emits before it stores, so take the new snapshot from the stream.
-        sidebar.$snapshot.dropFirst()
-            .sink { [weak self] in self?.rebuild($0, seen: seen) }
-            .store(in: &cancellables)
-        // The seen store has no value to hand over; read it once the change lands.
-        seen.$seenAtByKey.dropFirst().receive(on: DispatchQueue.main)
-            .sink { [weak self, weak sidebar] _ in
-                guard let sidebar else { return }
-                self?.rebuild(sidebar.snapshot, seen: seen)
-            }
-            .store(in: &cancellables)
+    init(sidebar: SessionNavSidebarModel) {
+        rebuild(sidebar.snapshot)
+        subscription = sidebar.$snapshot.dropFirst().sink { [weak self] in self?.rebuild($0) }
+    }
+
+    deinit {
+        boardTask?.cancel()
+        filterTask?.cancel()
     }
 
     func filter(query: String, project: String?) {
@@ -40,14 +54,60 @@ final class SessionDashboardBoardModel: ObservableObject {
         refilter()
     }
 
-    private func rebuild(_ snapshot: SessionNavSidebarSnapshot, seen: SidebarSessionSeenStore) {
-        board = SessionDashboardBoard(snapshot: snapshot, seen: seen)
-        refilter()
+    private func rebuild(_ snapshot: SessionNavSidebarSnapshot) {
+        boardTask?.cancel()
+        let count =
+            snapshot.inputs.sessions.count + snapshot.inputs.pinnedSessions.count
+            + snapshot.allBotConversations.count + snapshot.inputs.activeSessions.count
+        if count <= Self.synchronousRowLimit {
+            latestBoard = SessionDashboardBoard(snapshot: snapshot, reusing: latestBoard)
+            refilter()
+            return
+        }
+        let previous = latestBoard
+        boardTask = Task { [weak self] in
+            let worker = Task.detached(priority: .userInitiated) {
+                SessionDashboardBoard(snapshot: snapshot, reusing: previous)
+            }
+            let board = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard let self, !Task.isCancelled else { return }
+            latestBoard = board
+            refilter()
+        }
     }
 
     private func refilter() {
-        visible = SessionDashboardVisibleRows(
-            SessionDashboardProjection.filter(board.rows, query: query, project: project))
+        filterTask?.cancel()
+        guard let board = latestBoard else { return }
+        let query = query
+        let project = project
+        if board.rows.count <= Self.synchronousRowLimit {
+            let next = Presentation(
+                board: board, visible: board.visibleRows(query: query, project: project), query: query, project: project
+            )
+            if next != presentation { presentation = next }
+            return
+        }
+        let previous = presentation
+        filterTask = Task { [weak self] in
+            let worker = Task.detached(priority: .userInitiated) { () -> Presentation? in
+                let next = Presentation(
+                    board: board, visible: board.visibleRows(query: query, project: project),
+                    query: query, project: project)
+                return next == previous ? nil : next
+            }
+            let next = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard let self, !Task.isCancelled else { return }
+            if let next { presentation = next }
+        }
     }
 }
 
@@ -115,7 +175,9 @@ struct SessionDashboardList: View, Equatable {
             .dockPadding(.horizontal, 20)
             .dockPadding(.vertical, 16)
             ScrollView {
-                if isEmpty {
+                if !projection.hasLoaded {
+                    DockLoadingState(title: "Loading sessions…")
+                } else if isEmpty {
                     emptyState(
                         query.isEmpty && project == nil ? "No sessions to show" : "No matching sessions",
                         detail: isCurrent
@@ -163,8 +225,10 @@ struct SessionDashboardList: View, Equatable {
             Spacer(minLength: 0)
             if group == .review, let model {
                 DockIconButton(icon: .checks, label: "Mark all as read", size: 24, style: style) {
+                    guard projection.resultsMatch(query: query, project: project) else { return }
                     model.markSessionsRead(members.map(\.session), at: .now)
                 }
+                .disabled(!projection.resultsMatch(query: query, project: project))
                 .help("Mark all as read")
             }
         }
