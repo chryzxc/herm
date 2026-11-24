@@ -53,6 +53,7 @@ struct CalendarWorkspaceView: View {
         private var inputs: AgendaInputs?
         private var items: [CalendarItem] = []
         private var search: (query: String, filter: CalendarAgenda.Filter)?
+        private var conflicts: (day: Date, ids: Set<String>)?
         private(set) var full: [Date: [CalendarItem]] = [:]
         private(set) var filtered: [Date: [CalendarItem]] = [:]
 
@@ -66,6 +67,7 @@ struct CalendarWorkspaceView: View {
                 full = CalendarAgenda.build(items, in: next.range, calendar: next.calendar)
                 inputs = next
                 search = nil
+                conflicts = nil
             }
             let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
             guard search?.query != query || search?.filter != filter else { return }
@@ -76,6 +78,13 @@ struct CalendarWorkspaceView: View {
                     CalendarAgenda.filtered(items, query: query, kind: filter), in: next.range,
                     calendar: next.calendar)
             search = (query, filter)
+        }
+
+        func conflicts(on day: Date) -> Set<String> {
+            if let conflicts, conflicts.day == day { return conflicts.ids }
+            let ids = CalendarAgenda.overlappingEventIDs(full[day] ?? [])
+            conflicts = (day, ids)
+            return ids
         }
     }
     @State private var cache = AgendaCache()
@@ -533,7 +542,7 @@ struct CalendarWorkspaceView: View {
         -> some View
     {
         let dayItems = agenda[selected] ?? []
-        let overlaps = CalendarAgenda.overlappingEventIDs(fullDayItems)
+        let overlaps = cache.conflicts(on: selected)
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {

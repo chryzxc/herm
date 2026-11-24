@@ -4356,6 +4356,7 @@ Search and type changes reuse the full date index for the same range and sources
 The inspector separates all-day items from the schedule and labels overlapping timed
 events using all enabled sources before search/type filtering. Touching event boundaries
 do not conflict. Plan in chat includes the complete selected day from enabled sources.
+Conflict markers reuse the selected day's results when only the search or type changes.
 
 Calendar uses the shared semantic palette for item identity: `DockCategoryTone.event` blue for events,
 `.reminder` amber for reminders, `.automation` violet for scheduled agent runs,

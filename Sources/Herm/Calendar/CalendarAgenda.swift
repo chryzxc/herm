@@ -95,13 +95,15 @@ enum CalendarAgenda {
         let events = items.filter { $0.isEvent && !$0.isAllDay && ($0.end ?? $0.start) > $0.start }
             .sorted { $0.start < $1.start }
         var result: Set<String> = []
-        for (index, event) in events.enumerated() {
+        var furthest: (id: String, end: Date)?
+        for event in events {
             guard let end = event.end else { continue }
-            for other in events.dropFirst(index + 1) {
-                if other.start >= end { break }
+            if let furthest, event.start < furthest.end {
                 result.insert(event.id)
-                result.insert(other.id)
+                result.insert(furthest.id)
             }
+            // Any shorter event still open now already overlapped the furthest one.
+            if furthest.map({ end > $0.end }) ?? true { furthest = (event.id, end) }
         }
         return result
     }

@@ -125,4 +125,16 @@ struct CalendarAgendaTests {
         #expect(CalendarAgenda.overlappingEventIDs(items) == Set(items.map(\.id)))
     }
 
+    @Test func overlapsFollowLongestEndAcrossDenseGroups() {
+        let first = event("first", start: date(20, 8), end: date(20, 9))
+        let long = event("long", start: date(20, 8), end: date(20, 11))
+        let nested = event("nested", start: date(20, 10), end: date(20, 10, 30))
+        let isolated = event("isolated", start: date(20, 11), end: date(20, 12))
+        let next = event("next", start: date(20, 14), end: date(20, 15))
+        let overlap = event("overlap", start: date(20, 14, 30), end: date(20, 16))
+        #expect(
+            CalendarAgenda.overlappingEventIDs([overlap, nested, first, isolated, next, long])
+                == Set([first, long, nested, next, overlap].map(\.id)))
+    }
+
 }
