@@ -518,7 +518,8 @@ cached independently of transcript updates; status polling pauses while the
 workspace is hidden or Hermes is disconnected.
 The sidebar stacks Pinned, Recents, Projects, and Automations for the selected
 bot under its bot header. In the bot picker, drag a profile's handle to reorder it,
-or focus the handle and use the arrow keys. The order is saved locally across restarts without changing the
+or focus the handle and use the arrow keys. Drag it to the top or bottom edge and hold
+there to scroll through a long list's hidden profiles in the same drag. The order is saved locally across restarts without changing the
 selected profile or its conversations. Choose **All** at the top of the
 bot picker to merge every bot's pinned and recent conversations into one list; each
 row then shows a pill with its bot's avatar and name, and opening it switches to
