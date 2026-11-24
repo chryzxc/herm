@@ -44,6 +44,16 @@
         </dict>
         <dict>
             <key>UTTypeIdentifier</key>
+            <string>io.github.chryzxc.Herm.pinned-session</string>
+            <key>UTTypeDescription</key>
+            <string>Herm pinned session</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
             <string>io.github.chryzxc.Herm.bot-folder</string>
             <key>UTTypeDescription</key>
             <string>Herm bot folder</string>

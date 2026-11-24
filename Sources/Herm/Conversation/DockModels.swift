@@ -1040,7 +1040,7 @@ struct HermesSession: Identifiable, Equatable, Sendable {
 
 /// Stable identity for a profile-owned Hermes resource. Display names are
 /// presentation only and must never be used as routing keys.
-struct ProfileScopedID: Hashable, Equatable, Sendable {
+struct ProfileScopedID: Hashable, Equatable, Codable, Sendable {
     let profileID: String?
     let resourceID: String
 

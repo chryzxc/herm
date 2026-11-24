@@ -2445,6 +2445,7 @@ struct DockHoverTip: ViewModifier {
     let text: String
     let edge: Edge
     var gap: CGFloat = 6
+    var preview: DockHoverTipPreview? = nil
     @State private var hovering = false
 
     /// The anchor is an NSView; mounting it only while hovered keeps lazy lists
@@ -2452,13 +2453,19 @@ struct DockHoverTip: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onHover { hovering = $0 }
-            .background { if hovering { DockHoverTipAnchor(text: text, edge: edge, gap: gap, hovering: true) } }
+            .background {
+                if hovering {
+                    DockHoverTipAnchor(text: text, edge: edge, gap: gap, hovering: true, preview: preview)
+                }
+            }
     }
 }
 
 extension View {
-    func dockHoverTip(_ text: String, edge: Edge = .bottom, gap: CGFloat = 6) -> some View {
-        modifier(DockHoverTip(text: text, edge: edge, gap: gap))
+    func dockHoverTip(
+        _ text: String, edge: Edge = .bottom, gap: CGFloat = 6, preview: DockHoverTipPreview? = nil
+    ) -> some View {
+        modifier(DockHoverTip(text: text, edge: edge, gap: gap, preview: preview))
     }
 
     /// Shadows SwiftUI's `.help`: native tooltips only show in the key window, so

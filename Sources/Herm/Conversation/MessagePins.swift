@@ -47,6 +47,46 @@ struct PinnedMessage: Equatable, Identifiable {
     }
 }
 
+struct MessagePinLabel: View {
+    let pin: PinnedMessage
+    var opening = false
+    var showsJump = true
+
+    var body: some View {
+        let isUser = pin.role == "user"
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                DockIcon(isUser ? .user : .chatCircleText, size: 12)
+                Text(isUser ? "You" : "Herm")
+                if showsJump {
+                    Spacer(minLength: 0)
+                    DockIcon(.arrowUpRight, size: 12)
+                }
+            }
+            .dockFont(.metadata, weight: .semibold)
+            .foregroundStyle(Color.dockSecondaryText)
+            Text(opening ? "Opening…" : pin.preview.isEmpty ? "Open to view this message" : pin.preview)
+                .dockFont(.body)
+                .foregroundStyle(Color.dockPrimaryText)
+                .multilineTextAlignment(.leading)
+                .lineLimit(showsJump ? 3 : 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+extension View {
+    func messagePinHoverPreview(_ pin: PinnedMessage) -> some View {
+        dockHoverTip(
+            "Jump to pinned message", edge: .leading,
+            preview: DockHoverTipPreview(
+                contentID: AnyHashable([pin.id, pin.role, pin.preview]),
+                content: AnyView(MessagePinLabel(pin: pin, showsJump: false)))
+        )
+        .accessibilityHint("Jumps to this message in chat")
+    }
+}
+
 struct MessagePinsView: View {
     @ObservedObject var model: DockModel
     @ObservedObject private var theme = DockThemeStore.shared
@@ -70,21 +110,10 @@ struct MessagePinsView: View {
                             Button {
                                 onSelect(pin)
                             } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(pin.role == "user" ? "You" : "Herm")
-                                        .dockFont(.body, weight: .semibold)
-                                    Text(pin.preview.isEmpty ? "Open to view this message" : pin.preview)
-                                        .dockFont(.body).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .dockPadding(.trailing, 18)
-                                .overlay(alignment: .trailing) {
-                                    DockIcon(.caretRight, size: 12, color: .dockSecondaryText)
-                                }
-                                .contentShape(Rectangle())
+                                MessagePinLabel(pin: pin).contentShape(Rectangle())
                             }
                             .buttonStyle(.dockHover)
-                            .help("Jump to pinned message")
+                            .messagePinHoverPreview(pin)
                             DockIconButton(
                                 icon: .pushPinSlash, label: "Unpin message",
                                 size: 28,
@@ -110,6 +139,6 @@ struct MessagePinsView: View {
         }
         .foregroundStyle(Color.dockPrimaryText)
         .frame(width: 320, height: 340)
-        .background(Color.dockCanvas)
+        .background(Color.dockOpaqueCanvas)
     }
 }

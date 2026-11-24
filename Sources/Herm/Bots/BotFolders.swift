@@ -281,28 +281,48 @@ enum BotFolderMotion {
     static let springLoadDelay = Duration.milliseconds(650)
 }
 
-/// One drop target for both payloads the Bots list drags: a row (the split-view
-/// `SessionPaneDrag`) and, when `onFolder` is set, a folder header.
-struct BotListDropDelegate: DropDelegate {
+struct SidebarReorderDragPreview: View {
+    let title: String
+    let icon: Ph
+
+    var body: some View {
+        HStack(spacing: 6) {
+            DockIcon(icon, size: 12)
+            Text(title).dockFont(.body).lineLimit(1)
+        }
+        .foregroundStyle(Color.dockPrimaryText)
+        .frame(maxWidth: 260)
+        .fixedSize()
+        .dockPill(tint: .dockOpaqueCanvas, solid: true, outline: .dockBorderStrong)
+        .dockPadding(6)
+    }
+}
+
+/// A row drop target with optional folder-header support for the Bots list.
+struct SidebarListDropDelegate<Item: Transferable>: DropDelegate {
     @Binding var isTargeted: Bool
-    let onItem: @MainActor (SessionPaneDrag) -> Void
+    let onItem: @MainActor (Item, CGPoint) -> Void
+    var itemType = SessionPaneDrag.pasteboardType.rawValue
     var onFolder: (@MainActor (BotFolderDrag) -> Void)?
     /// Called when a dragged folder (not a row) enters or leaves, so the target can open a gap.
     var onFolderHover: (@MainActor (Bool) -> Void)?
+    var onItemHover: (@MainActor (CGPoint) -> Void)?
+    var animation: Animation? = BotFolderMotion.spring
 
     private var types: [String] {
-        [SessionPaneDrag.pasteboardType.rawValue] + (onFolder == nil ? [] : [BotFolderDrag.pasteboardType.rawValue])
+        [itemType] + (onFolder == nil ? [] : [BotFolderDrag.pasteboardType.rawValue])
     }
 
     func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: types) }
     func dropEntered(info: DropInfo) {
-        withAnimation(BotFolderMotion.spring) {
+        withAnimation(animation) {
+            if info.hasItemsConforming(to: [itemType]) { onItemHover?(info.location) }
             isTargeted = true
             if info.hasItemsConforming(to: [BotFolderDrag.pasteboardType.rawValue]) { onFolderHover?(true) }
         }
     }
     func dropExited(info: DropInfo) {
-        withAnimation(BotFolderMotion.spring) {
+        withAnimation(animation) {
             isTargeted = false
             onFolderHover?(false)
         }
@@ -310,6 +330,7 @@ struct BotListDropDelegate: DropDelegate {
     /// `.copy`: a SwiftUI `.draggable` source offers only copy, so a move proposal is refused.
     func dropUpdated(info: DropInfo) -> DropProposal? {
         NSCursor.closedHand.set()
+        if info.hasItemsConforming(to: [itemType]) { onItemHover?(info.location) }
         return DropProposal(operation: .copy)
     }
 
@@ -318,12 +339,13 @@ struct BotListDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         isTargeted = false
         onFolderHover?(false)
-        let rowType = SessionPaneDrag.pasteboardType.rawValue
-        if info.hasItemsConforming(to: [rowType]), let provider = info.itemProviders(for: [rowType]).first {
+        let animation = animation
+        if info.hasItemsConforming(to: [itemType]), let provider = info.itemProviders(for: [itemType]).first {
             let onItem = onItem
-            _ = provider.loadTransferable(type: SessionPaneDrag.self) { result in
+            let location = info.location
+            _ = provider.loadTransferable(type: Item.self) { result in
                 guard case .success(let payload) = result else { return }
-                Task { @MainActor in withAnimation(BotFolderMotion.spring) { onItem(payload) } }
+                Task { @MainActor in withAnimation(animation) { onItem(payload, location) } }
             }
             return true
         }
@@ -331,7 +353,7 @@ struct BotListDropDelegate: DropDelegate {
         else { return false }
         _ = provider.loadTransferable(type: BotFolderDrag.self) { result in
             guard case .success(let payload) = result else { return }
-            Task { @MainActor in withAnimation(BotFolderMotion.spring) { onFolder(payload) } }
+            Task { @MainActor in withAnimation(animation) { onFolder(payload) } }
         }
         return true
     }

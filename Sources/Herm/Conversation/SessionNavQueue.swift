@@ -11,6 +11,7 @@ struct SessionNavQueue: View, Equatable {
     let model: DockModel
     @ObservedObject var botMode: BotModeModel
     let workspaceStore: WorkspaceStore
+    @ObservedObject private var pinnedOrder: PinnedSessionOrder
     let controlCenter: ControlCenterModel
     @ObservedObject var agentUpdateService: HermesUpdateService
     @ObservedObject var navigationState: SessionNavigationState
@@ -129,6 +130,7 @@ struct SessionNavQueue: View, Equatable {
         self.model = model
         self.botMode = botMode
         self.workspaceStore = workspaceStore
+        self.pinnedOrder = workspaceStore.pinnedSessionOrder
         self.controlCenter = controlCenter
         self.agentUpdateService = agentUpdateService
         self.navigationState = navigationState
@@ -198,6 +200,10 @@ struct SessionNavQueue: View, Equatable {
         let presentation =
             showsAllProfiles ? sidebarSnapshot.allProfilePinPresentation : sidebarSnapshot.scopedPinPresentation
         return navigationState.hasRequestedSessionIndex ? presentation : presentation.withInitialRequestPending()
+    }
+
+    private var pinnedOrderScope: PinnedSessionOrderScope {
+        showsAllProfiles ? .all : .profile(sidebarSnapshot.inputs.profileScopeID)
     }
 
     private func isPinned(_ session: HermesSession) -> Bool {
@@ -1065,8 +1071,20 @@ struct SessionNavQueue: View, Equatable {
                 .dockPadding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            ForEach(pinned.sessions, id: \.scopedID) { session in
-                pinnedSessionRow(session, statuses: statuses, style: style)
+            let scope = pinnedOrderScope
+            let sessions = pinnedOrder.ordered(pinned.sessions, in: scope)
+            ForEach(sessions, id: \.scopedID) { session in
+                pinnedSessionRow(
+                    session, statuses: statuses, style: style,
+                    drag: PinnedSessionDrag(session: SessionPaneDrag(session: session), scope: scope)
+                )
+                .modifier(
+                    PinnedSessionReorderTarget(enabled: sessions.count > 1) { source, after in
+                        guard source.scope == scope, scope == pinnedOrderScope else { return }
+                        pinnedOrder.move(
+                            source.id, relativeTo: session.scopedID, after: after,
+                            sessions: pinnedSessionPresentation.sessions, in: scope)
+                    })
             }
         }
     }
@@ -1080,7 +1098,8 @@ struct SessionNavQueue: View, Equatable {
     }
 
     private func pinnedSessionRow(
-        _ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette
+        _ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette,
+        drag: PinnedSessionDrag
     ) -> some View {
         let owner = ownerBot(session)
         let shown = isPinnedSessionShown(session)
@@ -1115,7 +1134,8 @@ struct SessionNavQueue: View, Equatable {
             onAddToProject: moveToProject,
             ownerBot: owner,
             ownerAvatar: owner.flatMap { botMode.avatarImages[$0.id] },
-            isShownInPane: shown
+            isShownInPane: shown,
+            pinnedDrag: drag
         )
         .equatable()
     }

@@ -123,6 +123,7 @@ final class WorkspaceStore: ObservableObject {
     }
 
     let profilePickerOrder: DockProfilePickerOrder
+    let pinnedSessionOrder: PinnedSessionOrder
     private let fileURL: URL
     private static var launchedStore: WorkspaceStore?
     static var shared: WorkspaceStore {
@@ -147,6 +148,7 @@ final class WorkspaceStore: ObservableObject {
 
     private init(url: URL, defaults: UserDefaults, state: WorkspaceState?) {
         self.profilePickerOrder = DockProfilePickerOrder(defaults: defaults)
+        self.pinnedSessionOrder = PinnedSessionOrder(defaults: defaults)
         self.fileURL = url
         if let state { apply(state) }
     }

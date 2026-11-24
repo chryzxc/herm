@@ -754,6 +754,8 @@ Dismiss on pointer exit, click, typing, scrolling, host movement/resizing/hiding
 or source removal. Preserve hover on initial attachment and cancel pending display
 when the source is removed.
 Informational tooltip windows never prevent normal notch/workspace dismissal.
+Profile previews use the same panel behavior with a rounded opaque surface,
+clear corners, and a native shadow.
 
 ### Themes
 
@@ -2078,6 +2080,11 @@ single-line preview; missing values do not leave separators behind. Project
 pills show the saved repository path on hover. Repository
 identity is inline metadata rather than a capsule so the list remains calm at
 narrow sidebar widths. The Pinned section remains a separate presentation.
+Drag a Pinned row above or below another Pinned row to set its local order for
+the current bot or All scope. Use the same opaque drag pill and drop spring
+as folder reordering. The insertion line grows into place at the destination
+edge and displays immediately with Reduce Motion.
+Recents and Projects order their sessions by last update.
 Messaging origins reported by Hermes use the shared compact source pill beside
 the preview. Known services use their icon; other reported sources use a generic
 message icon. Local and unspecified sources do not show a pill.
@@ -2150,6 +2157,8 @@ message before a queued pin starts.
 The conversation actions menu opens a fixed-size Pinned messages popover with 12pt
 titles and previews. Selecting a pin pages in older history if necessary and
 jumps to the exact original message; it never falls back to a nearby message.
+The popover and inspector use the same author icon, label, and excerpt. Hover
+shows the excerpt in the shared opaque preview panel beside the row.
 Refresh, loading, empty, unavailable, stale, and mutation errors stay inside
 this popover. A failed refresh retains existing pins with an error and disables
 mutations until a successful refresh. Mutations display pending state and

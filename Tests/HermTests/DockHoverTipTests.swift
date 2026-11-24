@@ -71,6 +71,52 @@ struct DockHoverTipTests {
         #expect(window.childWindows?.isEmpty != false)
     }
 
+    @Test(arguments: [DockThemeID.glass, DockThemeID.storm])
+    func pinnedMessagePreviewHasAnOpaqueReadingSurface(theme: DockThemeID) throws {
+        _ = DockThemeStore.shared
+        let oldTheme = DockThemeRuntime.current
+        DockThemeRuntime.current = theme
+        DockThemeRuntime.revision &+= 1
+        let window = makeWindow()
+        window.appearance = DockThemeStore.nsAppearance(for: theme) ?? NSAppearance(named: .aqua)
+        let presenter = DockHoverTipPresenter()
+        defer {
+            presenter.dismiss()
+            window.orderOut(nil)
+            DockThemeRuntime.current = oldTheme
+            DockThemeRuntime.revision &+= 1
+        }
+        let pin = PinnedMessage(
+            rowID: 1, uid: "pinned-message", role: "assistant",
+            preview: "The release notes are ready. The follow-up list covers the remaining accessibility checks.")
+        let anchor = DockHoverTipAnchorView(frame: CGRect(x: 14, y: 8, width: 180, height: 44))
+        window.contentView?.addSubview(anchor)
+        anchor.text = "Jump to pinned message"
+        anchor.edge = .leading
+        anchor.preview = DockHoverTipPreview(
+            contentID: pin.id, content: AnyView(MessagePinLabel(pin: pin, showsJump: false)))
+        presenter.show(anchor)
+
+        let panel = try #require(presenter.panel)
+        let anchorFrame = window.convertToScreen(anchor.convert(anchor.visibleAnchorRect, to: nil))
+        #expect(!panel.frame.intersects(anchorFrame))
+        #expect(panel.hasShadow && panel.ignoresMouseEvents && !panel.canBecomeKey)
+        let view = try #require(panel.contentView)
+        view.layoutSubtreeIfNeeded()
+        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        #expect(bitmap.colorAt(x: bitmap.pixelsWide - 16, y: bitmap.pixelsHigh / 2)?.alphaComponent == 1)
+        try writeSnapshot(of: panel, named: "pinned-message-\(theme.rawValue).png")
+        if ProcessInfo.processInfo.environment["TOOLTIP_SNAPSHOT_DIR"] != nil {
+            presenter.dismiss()
+            window.contentView = NSHostingView(
+                rootView: SidebarReorderDragPreview(title: "Release notes and accessibility", icon: .pushPin)
+                    .frame(width: 400, height: 60)
+                    .dockThemedRoot())
+            try writeSnapshot(of: window, named: "pinned-drag-\(theme.rawValue).png")
+        }
+    }
+
     @Test func placementUsesAnotherSideWhenFlippingWouldCoverTheControl() {
         let cases: [(CGRect, CGRect, CGSize, Edge)] = [
             (
@@ -134,6 +180,12 @@ struct DockHoverTipTests {
                 window.convertToScreen(anchor.convert(anchor.visibleAnchorRect, to: nil))))
         #expect(window.screen?.visibleFrame.contains(panel.frame) == true)
         #expect(!window.frame.contains(panel.frame))
+        try writeSnapshot(of: panel, named: "tooltip.png")
+        NotificationCenter.default.post(name: NSWindow.didResizeNotification, object: window)
+        #expect(presenter.panel == nil)
+    }
+
+    private func writeSnapshot(of panel: NSWindow, named filename: String) throws {
         if let directory = ProcessInfo.processInfo.environment["TOOLTIP_SNAPSHOT_DIR"],
             let view = panel.contentView
         {
@@ -141,10 +193,8 @@ struct DockHoverTipTests {
             let rep = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
             view.cacheDisplay(in: view.bounds, to: rep)
             let data = try #require(rep.representation(using: .png, properties: [:]))
-            try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("tooltip.png"))
+            try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent(filename))
         }
-        NotificationCenter.default.post(name: NSWindow.didResizeNotification, object: window)
-        #expect(presenter.panel == nil)
     }
 
     @Test func leavingBeforeTheDelayAndEmptyHelpShowNothing() async throws {

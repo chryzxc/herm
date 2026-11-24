@@ -1,3 +1,5 @@
+import CoreTransferable
+import UniformTypeIdentifiers
 import XCTest
 
 @testable import Herm
@@ -69,6 +71,46 @@ private final class PinRPCClient: HermesRPCClientProtocol {
 
 @MainActor
 final class PinnedSessionTests: XCTestCase {
+    func testManualOrderUsesProfileScopedIDsAndSurvivesReload() throws {
+        let suite = "PinnedSessionOrderTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = HermesSession(
+            id: "shared", profileID: "one", title: "First", preview: "", startedAt: nil, messageCount: 0, source: "cli")
+        let second = HermesSession(
+            id: "shared", profileID: "two", title: "Second", preview: "", startedAt: nil, messageCount: 0, source: "cli"
+        )
+        let third = HermesSession(
+            id: "third", profileID: "one", title: "Third", preview: "", startedAt: nil, messageCount: 0, source: "cli")
+        let sessions = [first, second, third]
+        let order = PinnedSessionOrder(defaults: defaults)
+        order.move(first.scopedID, relativeTo: third.scopedID, after: true, sessions: sessions, in: .all)
+        XCTAssertEqual(order.ordered(sessions, in: .all), [second, third, first])
+        XCTAssertEqual(order.ordered(sessions, in: .profile("one")), sessions)
+        let restored = PinnedSessionOrder(defaults: defaults)
+        XCTAssertEqual(restored.ordered([third, first, second], in: .all), [second, third, first])
+        restored.move(
+            first.scopedID, relativeTo: second.scopedID, after: false, sessions: [first, third], in: .all)
+        XCTAssertEqual(restored.ordered(sessions, in: .all), [second, third, first])
+        restored.move(second.scopedID, relativeTo: first.scopedID, after: true, sessions: sessions, in: .all)
+        XCTAssertEqual(restored.ordered(sessions, in: .all), [third, first, second])
+    }
+
+    func testPinnedDragExportsReorderAndSplitViewTypes() async throws {
+        guard #available(macOS 15.2, *) else { throw XCTSkip("Transferable round trips require macOS 15.2.") }
+        let session = SessionPaneDrag(sessionID: "saved", profileID: "bot", title: "Pinned chat")
+        let pin = PinnedSessionDrag(session: session, scope: .profile("bot"))
+        let reorderType = UTType(exportedAs: PinnedSessionDrag.pasteboardType, conformingTo: .data)
+        let splitType = UTType(exportedAs: SessionPaneDrag.pasteboardType.rawValue, conformingTo: .data)
+        XCTAssertFalse(SessionPaneDrag.exportedContentTypes().contains(reorderType))
+        let reorderData = try await pin.exported(as: reorderType)
+        let splitData = try await pin.exported(as: splitType)
+        let reorder = try await PinnedSessionDrag(importing: reorderData, contentType: reorderType)
+        let split = try await SessionPaneDrag(importing: splitData, contentType: splitType)
+        XCTAssertEqual(reorder, pin)
+        XCTAssertEqual(split, session)
+    }
+
     func testLiveActivityRefreshesUnopenedSessionsAcrossProfiles() async throws {
         for profile in [nil, "other-bot"] as [String?] {
             let client = PinRPCClient()

@@ -4,7 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// A sidebar session dragged toward the chat area to open beside the primary conversation.
-struct SessionPaneDrag: Codable, Transferable {
+struct SessionPaneDrag: Codable, Equatable, Transferable {
     let sessionID: String
     let profileID: String?
     let title: String
@@ -49,8 +49,15 @@ extension QuickDestination {
 extension View {
     /// Lets a sidebar row be dragged into the chat area to open in split view.
     @ViewBuilder
-    func sessionPaneDraggable(_ drag: SessionPaneDrag?, isEnabled: Bool = true) -> some View {
-        if let drag {
+    func sessionPaneDraggable(
+        _ drag: SessionPaneDrag?, isEnabled: Bool = true, pinnedDrag: PinnedSessionDrag? = nil
+    ) -> some View {
+        if let pinnedDrag, isEnabled {
+            draggable(pinnedDrag) {
+                SidebarReorderDragPreview(title: pinnedDrag.session.title, icon: .pushPin)
+            }
+            .modifier(DockDragCursor(isEnabled: true, isDragging: false))
+        } else if let drag, pinnedDrag == nil {
             draggable(drag) {
                 HStack(spacing: 8) {
                     // A bot always shows its avatar beside its name; a group chat its group mark.

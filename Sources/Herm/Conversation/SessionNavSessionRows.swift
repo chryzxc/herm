@@ -592,6 +592,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
     /// Shown in a split pane. Passed in rather than observed per row: one
     /// pane-store publication used to invalidate every mounted sidebar row.
     var isShownInPane = false
+    var pinnedDrag: PinnedSessionDrag? = nil
     @State private var isHovered = false
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
@@ -646,6 +647,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
             && lhs.ownerBot == rhs.ownerBot
             && lhs.ownerAvatar == rhs.ownerAvatar
             && lhs.isShownInPane == rhs.isShownInPane
+            && lhs.pinnedDrag == rhs.pinnedDrag
     }
 
     var body: some View {
@@ -696,7 +698,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
         .dockPadding(.vertical, DockSidebarListMetrics.rowGap)
         // The row background already tracks hover; a second hover tracker doubled the work per row while scrolling.
         .dockTapAction { if !isEditingTitle { onSelect(session) } }
-        .sessionPaneDraggable(SessionPaneDrag(session: session), isEnabled: !isEditingTitle)
+        .sessionPaneDraggable(SessionPaneDrag(session: session), isEnabled: !isEditingTitle, pinnedDrag: pinnedDrag)
         .focusable(!isEditingTitle)
         .focusEffectDisabled()
         .focused($rowFocused)

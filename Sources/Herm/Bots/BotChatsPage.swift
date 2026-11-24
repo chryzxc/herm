@@ -267,9 +267,9 @@ struct BotChatsPage: View, Equatable {
                     }
                     .onDrop(
                         of: [SessionPaneDrag.pasteboardType.rawValue, BotFolderDrag.pasteboardType.rawValue],
-                        delegate: BotListDropDelegate(
+                        delegate: SidebarListDropDelegate(
                             isTargeted: dropBinding("loose"),
-                            onItem: { moveItem($0, to: nil) },
+                            onItem: { item, _ in moveItem(item, to: nil) },
                             onFolder: { folders.moveFolder($0.folderID, before: nil) },
                             onFolderHover: { endGap = $0 }))
                 }
@@ -380,9 +380,9 @@ struct BotChatsPage: View, Equatable {
         }
         .onDrop(
             of: [SessionPaneDrag.pasteboardType.rawValue, BotFolderDrag.pasteboardType.rawValue],
-            delegate: BotListDropDelegate(
+            delegate: SidebarListDropDelegate(
                 isTargeted: dropBinding(folder.id),
-                onItem: { moveItem($0, to: folder.id) },
+                onItem: { item, _ in moveItem(item, to: folder.id) },
                 onFolder: { folders.moveFolder($0.folderID, before: folder.id) },
                 onFolderHover: { folderGapID = $0 ? folder.id : (folderGapID == folder.id ? nil : folderGapID) }))
     }
@@ -473,7 +473,7 @@ struct BotChatsPage: View, Equatable {
             withAnimation(reduceMotion ? nil : BotFolderMotion.spring) { folders.toggleCollapsed(folder.id) }
         }
         .draggable(BotFolderDrag(folderID: folder.id)) {
-            Label(folder.name, icon: .folderSimple).dockPill().dockPadding(6)
+            SidebarReorderDragPreview(title: folder.name, icon: .folderSimple)
         }
         .modifier(DockDragCursor(isEnabled: renamingFolderID != folder.id, isDragging: false))
         .dockContextMenu { folderActions(folder) }

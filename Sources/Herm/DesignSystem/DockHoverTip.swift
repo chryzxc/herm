@@ -1,19 +1,27 @@
 import AppKit
 import SwiftUI
 
+struct DockHoverTipPreview {
+    let contentID: AnyHashable
+    let content: AnyView
+}
+
 struct DockHoverTipAnchor: NSViewRepresentable {
     let text: String
     let edge: Edge
     let gap: CGFloat
     let hovering: Bool
+    var preview: DockHoverTipPreview? = nil
 
     func makeNSView(context: Context) -> DockHoverTipAnchorView { DockHoverTipAnchorView() }
 
     func updateNSView(_ view: DockHoverTipAnchorView, context: Context) {
-        let changed = view.text != text || view.edge != edge || view.gap != gap
+        let changed =
+            view.text != text || view.edge != edge || view.gap != gap || view.preview?.contentID != preview?.contentID
         view.text = text
         view.edge = edge
         view.gap = gap
+        view.preview = preview
         guard view.hovering != hovering || changed else { return }
         view.hovering = hovering
         guard view.window == nil else { return DockHoverTipPresenter.shared.update(view) }
@@ -35,6 +43,7 @@ final class DockHoverTipAnchorView: NSView {
     var edge: Edge = .bottom
     var gap: CGFloat = 6
     var hovering = false
+    var preview: DockHoverTipPreview?
 
     var visibleAnchorRect: CGRect { bounds.intersection(visibleRect) }
 
@@ -169,25 +178,36 @@ final class DockHoverTipPresenter {
                 UserDefaults.standard.object(forKey: DockWorkspaceScale.preferenceKey) as? Double
                     ?? DockWorkspaceScale.defaultTextSize))
         let font = DockSkinPresentation.nativeFont(size: DockTypography.size(.control, scale: scale), weight: .medium)
-        let textWidth = min(
-            320, screen.visibleFrame.width - 30,
-            ceil((anchor.text as NSString).size(withAttributes: [.font: font]).width))
-        let tip = Text(anchor.text)
-            .dockFont(.control)
-            .foregroundStyle(Color.dockPrimaryText)
-            .lineLimit(12)
-            .frame(width: textWidth, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .dockPadding(.horizontal, 7)
-            .dockPadding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 5).fill(Color.dockOpaqueCanvas))
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.dockBorderStrong, lineWidth: 1))
-            .accessibilityHidden(true)
-            .dockThemedRoot().environment(\.dockWorkspaceScale, scale)
+        let isPreview = anchor.preview != nil
+        let width =
+            isPreview
+            ? min(288, screen.visibleFrame.width - 16)
+            : min(
+                320, screen.visibleFrame.width - 30,
+                ceil((anchor.text as NSString).size(withAttributes: [.font: font]).width)) + 14
+        let shape = RoundedRectangle(cornerRadius: isPreview ? 12 : 5)
+        let tip = Group {
+            if let preview = anchor.preview {
+                preview.content.dockPadding(12)
+            } else {
+                Text(anchor.text)
+                    .dockFont(.control)
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(12)
+                    .dockPadding(.horizontal, 7)
+                    .dockPadding(.vertical, 4)
+            }
+        }
+        .frame(width: width, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(shape.fill(Color.dockOpaqueCanvas))
+        .overlay(shape.strokeBorder(isPreview ? Color.dockBorderLight : Color.dockBorderStrong, lineWidth: 1))
+        .accessibilityHidden(true)
+        .dockThemedRoot().environment(\.dockWorkspaceScale, scale)
         let host = NSHostingController(rootView: tip)
         host.sizingOptions = []
         let size = host.sizeThatFits(
-            in: CGSize(width: textWidth + 14, height: screen.visibleFrame.height - 16))
+            in: CGSize(width: width, height: screen.visibleFrame.height - 16))
         let frame = DockHoverTipPlacement.frame(
             anchor: anchorFrame, size: size,
             edge: anchor.edge, gap: anchor.gap, visibleFrame: screen.visibleFrame)
@@ -195,9 +215,9 @@ final class DockHoverTipPresenter {
             contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
             defer: false)
         panel.isReleasedWhenClosed = false
-        panel.backgroundColor = NSColor(Color.dockOpaqueCanvas).withAlphaComponent(1)
-        panel.isOpaque = true
-        panel.hasShadow = false
+        panel.backgroundColor = isPreview ? .clear : NSColor(Color.dockOpaqueCanvas).withAlphaComponent(1)
+        panel.isOpaque = !isPreview
+        panel.hasShadow = isPreview
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.level = window.level

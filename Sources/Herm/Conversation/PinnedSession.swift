@@ -1,4 +1,111 @@
-import Foundation
+import Combine
+import SwiftUI
+import UniformTypeIdentifiers
+
+enum PinnedSessionOrderScope: Hashable, Codable, Sendable {
+    case all
+    case profile(String?)
+}
+
+/// Pin membership belongs to Hermes. Only the presentation order is local.
+@MainActor
+final class PinnedSessionOrder: ObservableObject {
+    @Published private var orders: [PinnedSessionOrderScope: [ProfileScopedID]]
+    private let defaults: UserDefaults
+    private static let key = "herm.sidebar.pinnedSessionOrder"
+
+    init(defaults: UserDefaults) {
+        self.defaults = defaults
+        self.orders =
+            defaults.data(forKey: Self.key).flatMap {
+                try? JSONDecoder().decode([PinnedSessionOrderScope: [ProfileScopedID]].self, from: $0)
+            } ?? [:]
+    }
+
+    func ordered(_ sessions: [HermesSession], in scope: PinnedSessionOrderScope) -> [HermesSession] {
+        guard let keys = orders[scope] else { return sessions }
+        let ranks = Dictionary(
+            keys.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        return sessions.enumerated().sorted {
+            (ranks[$0.element.scopedID] ?? keys.count + $0.offset)
+                < (ranks[$1.element.scopedID] ?? keys.count + $1.offset)
+        }.map(\.element)
+    }
+
+    func move(
+        _ source: ProfileScopedID, relativeTo target: ProfileScopedID, after: Bool,
+        sessions: [HermesSession], in scope: PinnedSessionOrderScope
+    ) {
+        let current = ordered(sessions, in: scope).map(\.scopedID)
+        guard source != target, current.contains(source) else { return }
+        var moved = current.filter { $0 != source }
+        guard let index = moved.firstIndex(of: target) else { return }
+        moved.insert(source, at: index + (after ? 1 : 0))
+        guard moved != current else { return }
+        let visible = Set(current)
+        orders[scope] = moved + (orders[scope] ?? []).filter { !visible.contains($0) }
+        defaults.set(try? JSONEncoder().encode(orders), forKey: Self.key)
+    }
+}
+
+/// Only drags started in Pinned carry the reorder type. The proxy preserves opening a split pane.
+struct PinnedSessionDrag: Codable, Equatable, Transferable {
+    let session: SessionPaneDrag
+    let scope: PinnedSessionOrderScope
+    var id: ProfileScopedID { ProfileScopedID(profileID: session.profileID, resourceID: session.sessionID) }
+
+    static let pasteboardType = "io.github.chryzxc.Herm.pinned-session"
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: UTType(exportedAs: pasteboardType, conformingTo: .data))
+        ProxyRepresentation(exporting: \.session)
+    }
+}
+
+struct PinnedSessionReorderTarget: ViewModifier {
+    let enabled: Bool
+    let move: @MainActor (PinnedSessionDrag, Bool) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isTargeted = false
+    @State private var after = false
+    @State private var height: CGFloat = 0
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            dropTarget(content)
+        } else {
+            content
+        }
+    }
+
+    private func dropTarget(_ content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGFloat.self) {
+                $0.size.height
+            } action: {
+                height = $0
+            }
+            .overlay(alignment: after ? .bottom : .top) {
+                Capsule()
+                    .fill(Color.dockAccent)
+                    .frame(height: 2)
+                    .scaleEffect(x: isTargeted ? 1 : 0.6, anchor: .leading)
+                    .opacity(isTargeted ? 1 : 0)
+                    .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.16), value: isTargeted)
+                    .dockPadding(.horizontal, DockSidebarListMetrics.rowLeading)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .onDrop(
+                of: [PinnedSessionDrag.pasteboardType],
+                delegate: SidebarListDropDelegate(
+                    isTargeted: $isTargeted, onItem: { item, location in move(item, location.y >= height / 2) },
+                    itemType: PinnedSessionDrag.pasteboardType,
+                    onItemHover: { after = $0.y >= height / 2 },
+                    animation: DockMotion.isEnabled(reduceMotion: reduceMotion) ? BotFolderMotion.spring : nil))
+    }
+}
 
 enum PinnedSessionPresentationStatus: Equatable {
     case ready
