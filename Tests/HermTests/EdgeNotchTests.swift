@@ -573,6 +573,41 @@ struct EdgeNotchTests {
                 signals: BotActivitySignals()))
         #expect(boardOnly.working && boardOnly.workingBotIDs == ["nexus"])
     }
+
+    @MainActor @Test func previewIncludesEveryWorkingBotAndKeepsItsSessionRows() {
+        let state = EdgeNotchState()
+        let roster = ["nexus", "coder", "scout", "writer", "blocked", "idle", "hidden"].map {
+            BotActivityBoardTests.bot($0, sessions: $0 != "idle", hidden: $0 == "hidden")
+        }
+        state.botActivity = BotActivityBoard.resolve(
+            roster: roster, live: [:], signals: BotActivitySignals(attention: ["request": "blocked"]))
+        state.bots = roster
+        state.tasks = ["one", "two"].map {
+            EdgeNotchTask(
+                id: $0, title: $0, phase: .working, statusLabel: "Working", detail: nil, updatedAt: nil,
+                isCurrent: false, isStatusCurrent: true, session: nil, profileID: "nexus")
+        }
+
+        let summaryRows = state.previewTasks.filter(\.isBotStatusOnly)
+        #expect(Set(summaryRows.compactMap(\.botProfileID)) == Set(["coder", "scout", "writer"]))
+        #expect(summaryRows.allSatisfy { $0.session == nil && $0.section == .inProgress })
+        #expect(state.previewTasks.filter { !$0.isBotStatusOnly } == state.tasks)
+        #expect(state.sessionRailActivity.workingBotIDs.count == 3)
+        #expect(state.botActivity.working.count == 4)
+
+        state.tasks.append(
+            EdgeNotchTask(
+                id: "coder-session", title: "Review", phase: .working, statusLabel: "Working", detail: nil,
+                updatedAt: .now, isCurrent: false, isStatusCurrent: true, session: nil, profileID: "coder"))
+        #expect(!state.previewTasks.contains { $0.isBotStatusOnly && $0.botProfileID == "coder" })
+
+        state.activity.status = .offline
+        #expect(state.previewTasks == state.tasks)
+        state.activity.status = .idle
+        #expect(state.previewTasks.filter(\.isBotStatusOnly).count == 2)
+        state.botActivity = BotActivityBoard()
+        #expect(state.previewTasks == state.tasks)
+    }
 }
 
 struct BotActivityBoardTests {

@@ -1476,7 +1476,9 @@ with a result the user has not opened. The list has no cap; the body scrolls.
 
 - It has three sections, each with a `DockSectionLabel` and a live count:
   - **Needs your attention:** unresolved approvals and clarification questions.
-  - **In progress:** working sessions.
+  - **In progress:** working sessions and the working Bot count from
+    `BotActivityBoard`. Show working Bots without current session rows as
+    read-only avatars and names above the session list.
   - **Finished, not opened:** newest first.
 
   An empty section is omitted. Pending requests include other sessions, use a

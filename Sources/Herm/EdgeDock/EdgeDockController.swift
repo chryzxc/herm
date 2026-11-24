@@ -1927,23 +1927,34 @@ final class EdgeNotchState: ObservableObject {
     var previewTasks: [EdgeNotchTask] {
         guard composing, let quickReplyTask,
             !tasks.contains(where: { $0.presentationID == quickReplyTask.presentationID })
-        else { return tasks }
-        return tasks + [quickReplyTask]
+        else { return taskPreviewRows }
+        return taskPreviewRows + [quickReplyTask]
+    }
+
+    private var taskPreviewRows: [EdgeNotchTask] = []
+
+    private func rebuildTaskPreviewRows() {
+        taskPreviewRows = EdgeNotchTask.previewRows(
+            tasks: tasks, bots: bots, board: botActivity, isOnline: activity.status != .offline)
     }
 
     @Published var quickDraft = "" { didSet { saveQuickDraft() } }
     @Published var quickSending = false
     @Published var quickResult: String?
     @Published var deliveryAnswers: [EdgeDeliveryQuestion: AttentionAnswerState] = [:]
-    @Published var bots: [BotSummary] = []
+    @Published var bots: [BotSummary] = [] { didSet { rebuildTaskPreviewRows() } }
     /// Who is working, blocked or done; shared with the Bot picker.
-    @Published var botActivity = BotActivityBoard()
+    @Published var botActivity = BotActivityBoard() { didSet { rebuildTaskPreviewRows() } }
     @Published var avatarImages: [String: Data] = [:]
     @Published var expanded = false
     @Published var hasPet = false
     var externalPet = false
     @Published var side: EdgeDockSide = .right
-    @Published var activity = EdgeNotchActivity()
+    @Published var activity = EdgeNotchActivity() {
+        didSet {
+            if (oldValue.status == .offline) != (activity.status == .offline) { rebuildTaskPreviewRows() }
+        }
+    }
     @Published var agentUpdatePhase: HermesUpdatePhase = .idle
     @Published var name = "Herm"
     @Published var sessionTitle = "Herm"
@@ -1979,7 +1990,7 @@ final class EdgeNotchState: ObservableObject {
     @Published var detail = "Open your conversation"
     /// Sessions in progress or finished with a result not yet opened,
     /// including the current session when it has live activity.
-    @Published var tasks: [EdgeNotchTask] = []
+    @Published var tasks: [EdgeNotchTask] = [] { didSet { rebuildTaskPreviewRows() } }
     @Published var kanbanUnavailable = false
     /// Fixed so refreshes and task arrivals never resize the preview.
     static let expandedSize = CGSize(width: 368, height: 360)
@@ -2390,6 +2401,7 @@ struct EdgeNotchView: View {
                     quotaChange: state.displaysStatus || state.glimpsing ? state.announcedQuotaChange : nil,
                     kanbanUnavailable: state.kanbanUnavailable,
                     bots: state.bots, avatarImages: state.avatarImages,
+                    workingBotCount: state.activity.status == .offline ? 0 : state.botActivity.working.count,
                     quickMessage: quickMessageModel == nil
                         ? nil
                         : {

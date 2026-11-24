@@ -7,6 +7,52 @@ import Testing
 /// Opt-in native render for visual review, using the production notch view.
 @MainActor
 struct EdgeNotchRenderSnapshotTests {
+    @Test func renderWorkingBots() async throws {
+        guard let directory = ProcessInfo.processInfo.environment["NOTCH_WORKING_BOTS_SNAPSHOT_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        _ = DockThemeStore.shared
+        let app = NSApplication.shared
+        let savedTheme = DockThemeRuntime.current
+        let savedAppearance = app.appearance
+        defer {
+            DockThemeRuntime.current = savedTheme
+            DockThemeRuntime.revision &+= 1
+            app.appearance = savedAppearance
+        }
+        DockThemeRuntime.current = .island
+        DockThemeRuntime.revision &+= 1
+        app.appearance = NSAppearance(named: .darkAqua)
+        let state = EdgeNotchState()
+        state.expanded = true
+        state.side = .top
+        state.bots = ["Nexus", "Forge", "Scout"].map { BotActivityBoardTests.bot($0, sessions: true) }
+        state.botActivity = BotActivityBoard.resolve(roster: state.bots, live: [:], signals: BotActivitySignals())
+        state.tasks = ["Review the release", "Plan the next update"].map {
+            EdgeNotchTask(
+                id: $0, title: $0, phase: .working, statusLabel: "Working", detail: "Reading project files",
+                updatedAt: nil, isCurrent: false, isStatusCurrent: true, session: nil, profileID: "Nexus")
+        }
+        let size = state.panelSize
+        let content = EdgeNotchView(state: state, controlCenter: ControlCenterModel(), openDock: {})
+            .frame(width: size.width, height: size.height)
+            .environment(\.colorScheme, .dark)
+        let host = NSHostingView(rootView: content)
+        host.frame = NSRect(origin: .zero, size: size)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = EdgeNotchState.themeSurface(for: state.side).windowAppearance
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        for _ in 0..<3 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: rep)
+        let data = try #require(rep.representation(using: .png, properties: [:]))
+        try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("working-bots.png"))
+    }
+
     @Test func renderQuickReplyStates() async throws {
         guard let directory = ProcessInfo.processInfo.environment["QUICK_REPLY_SNAPSHOT_DIR"] else { return }
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)

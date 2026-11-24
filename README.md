@@ -165,7 +165,7 @@ The notch changes to reflect what Hermes is doing, so you don't have to keep a t
 
 The Tasks preview opens on **Activity** by default. Its list/grid toggle switches between session activity and **Kanban** cards, using the same controls as Quota. Both views use Herm’s compact status cards. Kanban shows running, blocked, and review cards across boards. Confirmed card moves and edits automatically expand the Kanban preview without changing your selected view; click a card to open its board and inspector. Kanban refreshes every five seconds while the workspace is closed. The initial load stays quiet, and unchanged or failed refreshes do not announce. Up to 30 recent card updates remain until opened; active cards stay visible.
 
-The Activity preview separates **Needs your attention**, **In progress**, and **Finished, not opened**. Approval requests and clarification questions show their own status and a short summary, including requests from other sessions. New requests open the preview; select the row to review and respond in the workspace.
+The Activity preview separates **Needs your attention**, **In progress**, and **Finished, not opened**. **In progress** shows the same working Bot count as the Bot picker. Working Bots without session rows appear by name and avatar above the session list. Approval requests and clarification questions show their own status and a short summary, including requests from other sessions. New requests open the preview; select the row to review and respond in the workspace.
 
 Working and waiting Bots in the notch keep animating while you scroll the workspace. Core Animation handles their whole-face movement. Reduce Motion and motion-free skins keep them still.
 

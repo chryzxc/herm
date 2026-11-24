@@ -80,6 +80,8 @@ struct EdgeNotchTask: Identifiable, Equatable {
     var profileID: String? = nil
 
     var attentionState: DockActivityState? = nil
+    /// The shared board knows this Bot is working, but the preview has no session row for it.
+    var isBotStatusOnly = false
 
     var botProfileID: String? { session?.profileID ?? profileID ?? attentionRequest?.profileID }
 
@@ -144,6 +146,27 @@ struct EdgeNotchTask: Identifiable, Equatable {
             }
             return lhs.id < rhs.id
         }
+    }
+
+    static func previewRows(
+        tasks: [EdgeNotchTask], bots: [BotSummary], board: BotActivityBoard, isOnline: Bool
+    ) -> [EdgeNotchTask] {
+        guard isOnline, !board.working.isEmpty else { return tasks }
+        let represented = Set(
+            tasks.compactMap { task -> String? in
+                guard task.isStatusCurrent, task.phase == .working, !task.isQueued else { return nil }
+                return task.bot(in: bots)?.id
+            })
+        let missing = bots.compactMap { bot -> EdgeNotchTask? in
+            guard board.status(of: bot.id) == .working, !bot.isHidden, !represented.contains(bot.id) else {
+                return nil
+            }
+            return EdgeNotchTask(
+                id: "working-bot:\(bot.id)", title: bot.name, phase: .working, statusLabel: "Working",
+                detail: nil, updatedAt: nil, isCurrent: false, isStatusCurrent: true,
+                session: nil, profileID: bot.id, isBotStatusOnly: true)
+        }
+        return missing.isEmpty ? tasks : merged(tasks + missing)
     }
 
     var tone: DockStatusTone {
@@ -283,6 +306,7 @@ struct EdgeTaskPreview: View {
     var kanbanUnavailable = false
     var bots: [BotSummary] = []
     var avatarImages: [String: Data] = [:]
+    var workingBotCount = 0
     var quickMessage: (() -> Void)? = nil
     var reply: ((EdgeNotchTask) -> Void)? = nil
     var quickState: EdgeNotchState? = nil
@@ -306,7 +330,9 @@ struct EdgeTaskPreview: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     private var keyboardItems: [EdgePreviewItemID] {
-        tasks.map { $0.previewIdentity(currentProfileID: quickModel?.sessionProfileID) }
+        tasks.compactMap { task in
+            task.isBotStatusOnly ? nil : task.previewIdentity(currentProfileID: quickModel?.sessionProfileID)
+        }
     }
 
     private func reconcileKeyboard(previous: [EdgePreviewItemID]) {
@@ -416,10 +442,18 @@ struct EdgeTaskPreview: View {
         -> some View
     {
         if !items.isEmpty {
+            let showsBotCount = section == .inProgress && workingBotCount > 0
+            let botStatuses = items.filter(\.isBotStatusOnly)
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    DockSectionLabel(title: section.title, count: items.count)
+                    DockSectionLabel(title: section.title, count: showsBotCount ? nil : items.count)
                     Spacer(minLength: 0)
+                    if showsBotCount {
+                        Text(workingBotCount == 1 ? "1 bot working" : "\(workingBotCount) bots working")
+                            .dockFont(.metadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                            .lineLimit(1)
+                    }
                     let targets = EdgeFinishedReadTargets(tasks: items)
                     if section == .finished, let markFinishedRead, !targets.isEmpty {
                         DockIconButton(
@@ -428,9 +462,32 @@ struct EdgeTaskPreview: View {
                         ) { markFinishedRead(targets) }
                     }
                 }.frame(height: 20)
-                ForEach(items, id: \.presentationID) { card($0, bots: bots, now: now) }
+                if !botStatuses.isEmpty {
+                    workingBotStatuses(botStatuses)
+                }
+                ForEach(items.filter { !$0.isBotStatusOnly }, id: \.presentationID) { card($0, bots: bots, now: now) }
             }
         }
+    }
+
+    private func workingBotStatuses(_ tasks: [EdgeNotchTask]) -> some View {
+        DockChipFlow(spacing: 12) {
+            ForEach(tasks, id: \.presentationID) { task in
+                HStack(spacing: 6) {
+                    if let bot = sessionBot(task) {
+                        BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 20, mood: .tool, live: true)
+                    }
+                    Text(task.title)
+                        .dockFont(.metadata, weight: .medium)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: 152, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(task.title), \(task.displayStatus)")
+            }
+        }
+        .dockPadding(.horizontal, 10)
+        .dockPadding(.vertical, 2)
     }
 
     private func card(_ task: EdgeNotchTask, bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
