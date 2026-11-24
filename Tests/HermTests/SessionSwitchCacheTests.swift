@@ -146,6 +146,80 @@ struct SessionSwitchCacheTests {
         #expect(await model.resumeSession(session, reportFailure: true))
         #expect(model.unreadDividerMessageID == model.messages.last?.id)
         #expect(seen.seenAt(profileID: profile, sessionID: "chat").map { $0 >= reply } == true)
+        #expect(rpc.pageCount == 1)
+    }
+
+    @Test(arguments: [2, TranscriptHistoryPaging.conversationBufferRowLimit])
+    func openedTailPlacesUnreadDividerWithoutReadingItAgain(rowCount: Int) async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        let profile = UUID().uuidString
+        let seen = SidebarSessionSeenStore.shared
+        let now = Date()
+        let seenAt = now.addingTimeInterval(-120)
+        let promptAt = rowCount == 2 ? seenAt : now.addingTimeInterval(-60)
+        let replyAt = now.addingTimeInterval(-30)
+        seen.markSeen(profileID: profile, sessionID: "a", at: seenAt)
+        defer { seen.reconcile(profileID: profile, availableSessionIDs: []) }
+        var rows: [[String: Any]] = (0..<(rowCount - 2)).map { index in
+            [
+                "id": index + 1, "role": "assistant", "content": "Earlier answer",
+                "timestamp": seenAt.timeIntervalSince1970,
+            ]
+        }
+        rows.append([
+            "id": rowCount - 1, "role": "user", "content": "Question", "timestamp": promptAt.timeIntervalSince1970,
+        ])
+        rows.append([
+            "id": rowCount, "role": "assistant", "content": "Unread reply", "timestamp": replyAt.timeIntervalSince1970,
+        ])
+        rpc.holdHistory = true
+        rpc.storedHistory = storedPage(rows, profile: profile)
+        rpc.storedTimeline = ["entries": [[String: Any]]()]
+
+        #expect(await model.resumeSession(session("a", profile: profile), reportFailure: true))
+
+        #expect(model.sessionActionsReady)
+        #expect(model.unreadDividerMessageID == model.messages.last?.id)
+        #expect(seen.seenAt(profileID: profile, sessionID: "a").map { $0 >= replyAt } == true)
+        #expect(rpc.historyPaths.filter { $0.contains("/messages?") }.count == 1)
+    }
+
+    @Test func unreadReplyBeforeLoadedTailStillGetsADivider() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        let profile = UUID().uuidString
+        let seen = SidebarSessionSeenStore.shared
+        let now = Date()
+        let seenAt = now.addingTimeInterval(-120)
+        seen.markSeen(profileID: profile, sessionID: "a", at: seenAt)
+        defer { seen.reconcile(profileID: profile, availableSessionIDs: []) }
+        let oldestReply: [String: Any] = [
+            "id": 1, "role": "assistant", "content": "Earlier unread reply",
+            "timestamp": now.addingTimeInterval(-60).timeIntervalSince1970,
+        ]
+        let tail: [[String: Any]] = (0..<TranscriptHistoryPaging.conversationBufferRowLimit).map { index in
+            [
+                "id": index + 2, "role": "assistant", "content": "Later unread reply",
+                "timestamp": now.addingTimeInterval(-30).timeIntervalSince1970,
+            ]
+        }
+        let fullHistory = storedPage([oldestReply] + tail, profile: profile)
+        let earlierPage = storedPage([oldestReply], profile: profile)
+        rpc.holdHistory = true
+        rpc.storedTimeline = ["entries": [[String: Any]]()]
+        rpc.storedHistory = storedPage(tail, profile: profile)
+        rpc.beforeStoredHistoryReturns = { [weak rpc] in
+            rpc?.storedHistory = fullHistory
+            rpc?.beforeStoredHistoryReturns = { [weak rpc] in rpc?.storedHistory = earlierPage }
+        }
+
+        #expect(await model.resumeSession(session("a", profile: profile), reportFailure: true))
+
+        #expect(model.sessionActionsReady)
+        #expect(model.messages.first?.text == "Earlier unread reply")
+        #expect(model.unreadDividerMessageID == model.messages.first?.id)
+        #expect(rpc.historyPaths.filter { $0.contains("/messages?") }.count == 3)
     }
 
     private func makeModel(_ rpc: SessionSwitchRPC) -> DockModel {
@@ -236,6 +310,60 @@ struct SessionSwitchCacheTests {
         #expect(source.snapshot.messages.map(\.id) == originalIDs)
         #expect(source.snapshot.context.actionsReady)
         #expect(model.sessionTranscriptPreview == nil)
+    }
+
+    enum PreloadedTail: CaseIterable {
+        case read, unread, partial, newerSession, unprovenOwner
+    }
+
+    @Test(arguments: PreloadedTail.allCases)
+    func firstVisitShowsOnlyAPreloadThatCoversTheReadTail(tail: PreloadedTail) async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer {
+            rpc.release()
+            model.shutdown()
+        }
+        let profile = UUID().uuidString
+        let seen = SidebarSessionSeenStore.shared
+        let seenAt = Date().addingTimeInterval(-90)
+        let updatedAt = seenAt.addingTimeInterval(-30)
+        seen.markSeen(profileID: profile, sessionID: "a", at: seenAt)
+        defer { seen.reconcile(profileID: profile, availableSessionIDs: []) }
+        func savedSession(updatedAt: Date) -> HermesSession {
+            HermesSession(
+                id: "a", profileID: profile, title: "Saved", preview: "", startedAt: nil,
+                updatedAt: updatedAt, messageCount: 2, source: "test")
+        }
+        let saved = savedSession(updatedAt: updatedAt)
+        var rows: [[String: Any]] = []
+        if tail == .partial {
+            rows = (1..<(TranscriptHistoryPaging.pageRowLimit)).map {
+                ["id": $0, "role": "tool", "content": "Earlier work", "timestamp": updatedAt.timeIntervalSince1970]
+            }
+        }
+        let replyAt = tail == .unread ? seenAt.addingTimeInterval(30) : updatedAt
+        rows.append([
+            "id": rows.count + 1, "role": "assistant", "content": "Preloaded reply",
+            "timestamp": replyAt.timeIntervalSince1970,
+        ])
+        rpc.storedHistory = storedPage(rows, profile: tail == .unprovenOwner ? "another-profile" : profile)
+        model.sessions = [saved]
+        model.scheduleTranscriptPreload()
+        await model.sessionTranscriptPreloadTask?.value
+
+        let source = ConversationTranscriptSource(
+            model: model, bots: BotModeModel(), actions: ConversationMessageActionState(),
+            voice: VoiceOutput(), coordinator: ConversationTranscriptCoordinator())
+        rpc.holdNextA = true
+        model.resumeSession(tail == .newerSession ? savedSession(updatedAt: seenAt.addingTimeInterval(1)) : saved)
+        try await waitUntil { rpc.held != nil }
+        source.refresh()
+
+        #expect((model.sessionTranscriptPreview?.isPreloaded == true) == (tail != .unprovenOwner))
+        #expect(model.positionsAtUnreadOnResume)
+        #expect(!source.snapshot.context.actionsReady)
+        #expect(source.snapshot.messages.map(\.text) == (tail == .read ? ["Preloaded reply"] : []))
     }
 
     @Test func switchingBackToAnotherBotShowsItsTranscriptInTheSelectionTurn() async throws {

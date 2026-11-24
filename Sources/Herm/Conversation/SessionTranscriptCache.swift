@@ -3,12 +3,18 @@ import Foundation
 
 /// A disposable projection of a transcript that Hermes has already returned.
 struct SessionTranscriptPreview {
+    struct ReadCoverage {
+        let updatedAt: Date
+        let latestRowAt: Date
+    }
+
     let messages: [ChatMessage]
     let rowIDs: [Int: UUID]
     let references: [UUID: StoredMessageReference]
     let pendingImages: [RestoredTranscript.PendingImages]
     // A background read does not establish that this chat has been opened before.
     var isPreloaded = false
+    var readCoverage: ReadCoverage?
     let navigator = MessageNavigatorSnapshot(items: [])
 }
 
@@ -54,6 +60,8 @@ final class SessionTranscriptCache {
 
     var hasPreloadCapacity: Bool { entries.count < maximumEntries && totalCost < maximumCost }
 
+    func contains(_ key: String) -> Bool { entries[key] != nil }
+
     func value(for key: String) -> SessionTranscriptPreview? {
         guard let entry = entries[key] else { return nil }
         order.removeAll { $0 == key }
@@ -74,16 +82,20 @@ final class SessionTranscriptCache {
         insert(entry, for: key)
     }
 
-    func preload(_ restored: RestoredTranscript, references: [UUID: StoredMessageReference], for key: String) {
+    func preload(
+        _ restored: RestoredTranscript, references: [UUID: StoredMessageReference], for key: String,
+        readCoverage: SessionTranscriptPreview.ReadCoverage?
+    ) {
         guard !restored.messages.isEmpty, entries[key] == nil, entries.count < maximumEntries,
-            let entry = makeEntry(restored, references: references, isPreloaded: true),
+            let entry = makeEntry(restored, references: references, isPreloaded: true, readCoverage: readCoverage),
             totalCost + entry.cost <= maximumCost
         else { return }
         insert(entry, for: key)
     }
 
     private func makeEntry(
-        _ restored: RestoredTranscript, references: [UUID: StoredMessageReference], isPreloaded: Bool = false
+        _ restored: RestoredTranscript, references: [UUID: StoredMessageReference], isPreloaded: Bool = false,
+        readCoverage: SessionTranscriptPreview.ReadCoverage? = nil
     ) -> Entry? {
         let messages = Array(restored.messages.suffix(Self.messageLimit))
         let ids = Set(messages.map(\.id))
@@ -104,7 +116,8 @@ final class SessionTranscriptCache {
             messages: messages,
             rowIDs: restored.rowIDs.filter { ids.contains($0.value) },
             references: references.filter { ids.contains($0.key) },
-            pendingImages: restored.pendingImages.filter { ids.contains($0.messageID) }, isPreloaded: isPreloaded)
+            pendingImages: restored.pendingImages.filter { ids.contains($0.messageID) }, isPreloaded: isPreloaded,
+            readCoverage: readCoverage)
         return Entry(preview: preview, cost: cost)
     }
 
@@ -132,8 +145,17 @@ final class SessionTranscriptCache {
 
 extension DockModel {
     /// A preload contains Hermes rows. A bot may also have finished since the last visit.
-    func openingPreview(for key: String, storageID: String) -> SessionTranscriptPreview? {
-        guard let preview = sessionTranscriptCache.value(for: key) else { return nil }
+    func openingPreview(for key: String, session: HermesSession, seenAt: Date?) -> SessionTranscriptPreview? {
+        guard var preview = sessionTranscriptCache.value(for: key) else { return nil }
+        if let coverage = preview.readCoverage {
+            if coverage.updatedAt != session.lastUpdatedAt
+                || seenAt.map({ $0 >= max(coverage.updatedAt, coverage.latestRowAt) }) != true
+                || session.isWorking || session.hasUnreadUpdate
+            {
+                preview.readCoverage = nil
+            }
+        }
+        let storageID = session.id
         guard botActivityBySessionID[storageID]?.isEmpty == false else { return preview }
         let tail = Array(
             transcriptWithBotActivities(preview.messages, for: [storageID]).suffix(SessionTranscriptCache.messageLimit))
@@ -141,7 +163,9 @@ extension DockModel {
         return SessionTranscriptPreview(
             messages: tail, rowIDs: preview.rowIDs.filter { ids.contains($0.value) },
             references: preview.references.filter { ids.contains($0.key) },
-            pendingImages: preview.pendingImages.filter { ids.contains($0.messageID) }, isPreloaded: preview.isPreloaded
+            pendingImages: preview.pendingImages.filter { ids.contains($0.messageID) },
+            isPreloaded: preview.isPreloaded,
+            readCoverage: preview.readCoverage
         )
     }
 
@@ -201,7 +225,8 @@ extension DockModel {
             }
             sessionTranscriptPreview = SessionTranscriptPreview(
                 messages: messages, rowIDs: current.rowIDs,
-                references: current.references, pendingImages: current.pendingImages, isPreloaded: current.isPreloaded)
+                references: current.references, pendingImages: current.pendingImages, isPreloaded: current.isPreloaded,
+                readCoverage: current.readCoverage)
         }
     }
 }

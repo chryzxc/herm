@@ -556,8 +556,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         }
     }
 
-    /// The first unread row can be outside the cached tail. Wait for the review
-    /// before mounting a first-visit window that would immediately be replaced.
+    /// On a first visit, only a covered read tail can paint before unread review.
     func openingMessages(model: DockModel) -> [ChatMessage] {
         if model.sessionTranscriptLoadState == .loading,
             sessionID != model.transcriptPresentationID || totalCount == 0
@@ -566,6 +565,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         }
         if model.positionsAtUnreadOnResume,
             model.sessionTranscriptLoadState == .loading || model.sessionTranscriptLoadState == .refreshing,
+            model.sessionTranscriptPreview?.readCoverage == nil,
             let id = model.transcriptPresentationID, !viewedSessionIDs.contains(id)
         {
             return []

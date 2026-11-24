@@ -126,6 +126,32 @@ final class SessionUnreadReplies {
         try await project(session: session, profileID: profileID, after: seenAt).count
     }
 
+    static func projectLoadedTail(
+        _ transcript: RestoredTranscript, cursor: TranscriptHistoryCursor?, sessionID: String,
+        after seenAt: Date, through cutoff: Date
+    ) -> Projection? {
+        guard let cursor, cursor.storageSessionID == sessionID, cursor.isSingleTimestampedTailPage else { return nil }
+        // A prompt inside the review window clears any unread count from earlier rows.
+        guard
+            !cursor.hasMore
+                || transcript.messages.contains(where: {
+                    $0.role == .user && $0.timestamp > seenAt && $0.timestamp <= cutoff
+                })
+        else { return nil }
+        let projection = projectTranscript(transcript, after: seenAt, through: cutoff)
+        return projection.count == 0 || projection.firstRowID != nil ? projection : nil
+    }
+
+    private static func projectTranscript(_ transcript: RestoredTranscript, after seenAt: Date, through cutoff: Date?)
+        -> Projection
+    {
+        let unread = ConversationUnreadMessagePolicy.project(transcript.messages, after: seenAt, through: cutoff)
+        let firstRowID = unread.firstMessageID.flatMap { firstID in
+            transcript.rowIDs.lazy.filter { $0.value == firstID }.map(\.key).min()
+        }
+        return Projection(count: unread.count, firstRowID: firstRowID)
+    }
+
     func project(session: HermesSession, profileID: String?, after seenAt: Date, through cutoff: Date? = nil)
         async throws -> Projection
     {
@@ -206,14 +232,11 @@ final class SessionUnreadReplies {
                 let (transcript, _) = await DockModel.parseMessagesOffMain(
                     projected, defaultBotProfileID: nil, defaultBotDisplayName: nil)
                 try Task.checkCancellation()
-                let unread = ConversationUnreadMessagePolicy.project(
-                    transcript.messages, after: seenAt, through: cutoff)
-                let firstRowID = transcript.rowIDs.filter { $0.value == unread.firstMessageID }.keys.min()
+                var unread = Self.projectTranscript(transcript, after: seenAt, through: cutoff)
+                unread.hasUnseenFailedTurn = SessionFailureWarningPolicy.hasUnseenFailure(
+                    in: projected, after: seenAt, through: cutoff)
                 return Read(
-                    projection: Projection(
-                        count: unread.count, firstRowID: firstRowID,
-                        hasUnseenFailedTurn: SessionFailureWarningPolicy.hasUnseenFailure(
-                            in: projected, after: seenAt, through: cutoff)),
+                    projection: unread,
                     tail: await Self.tail(of: UncheckedTranscriptValue(value: rows.last)))
             }
         }

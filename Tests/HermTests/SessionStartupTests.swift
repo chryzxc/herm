@@ -15,8 +15,10 @@ private final class SessionStartupRPCClient: HermesRPCClientProtocol {
     var storedRows: [[String: Any]]?
     var holdsOlderPage = false
     var failsOlderPage = false
+    var transcriptRows: [[String: Any]]?
     private(set) var listLimits: [Int] = []
     private(set) var sessionPageReads = 0
+    private(set) var preloadedSessionIDs: [String] = []
     private var listStarted: CheckedContinuation<Void, Never>?
     private var listResponse: CheckedContinuation<Void, Never>?
     private var olderPageStarted: CheckedContinuation<Void, Never>?
@@ -58,6 +60,14 @@ private final class SessionStartupRPCClient: HermesRPCClientProtocol {
     }
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        if let transcriptRows, let url = URLComponents(string: path), url.path.hasSuffix("/messages") {
+            let id = String(url.path.split(separator: "/").dropLast().last ?? "")
+            preloadedSessionIDs.append(id)
+            return [
+                "session_id": id, "profile": url.queryItems?.first { $0.name == "profile" }?.value ?? "",
+                "messages": transcriptRows, "pagination": ["returned": transcriptRows.count],
+            ]
+        }
         guard path.hasPrefix("/api/sessions?") else { throw HermesGateway.GatewayError.malformedResponse }
         sessionPageReads += 1
         if let storedRows {
@@ -145,8 +155,11 @@ struct SessionStartupTests {
 
     @Test func coldListShowsRecentSessionsAndPinsWhileTheSecondPageIsHeld() async throws {
         try await withModel { model, client in
+            let profile = UUID().uuidString
+            model.profileScopeID = profile
             client.rows = []
             client.storedRows = (0..<1501).map { ["id": "saved-\($0)", "pinned": $0 == 0] }
+            client.transcriptRows = [["id": 1, "role": "assistant", "content": "Saved reply", "timestamp": 100]]
             client.holdsOlderPage = true
             model.loadInitialWorkspaceSessions()
             #expect(model.workspaceStartup.phase == .loadingSessions)
@@ -157,6 +170,11 @@ struct SessionStartupTests {
             #expect(model.pinnedSessions.map(\.id) == ["saved-0"])
             #expect(model.sessionProjectionState == .loading)
             #expect(model.workspaceStartup.phase == .finished)
+            await model.sessionTranscriptPreloadTask?.value
+            #expect(client.preloadedSessionIDs.count == 2)
+            #expect(client.preloadedSessionIDs.first == "saved-0")
+            let pinnedKey = WorkspaceIdentity.session(profileID: profile, sessionID: "saved-0")
+            #expect(model.sessionTranscriptCache.value(for: pinnedKey)?.messages.first?.text == "Saved reply")
 
             client.releaseOlderPage()
             await load?.value

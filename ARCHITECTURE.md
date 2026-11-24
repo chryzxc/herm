@@ -21,6 +21,9 @@ not publish transcript updates. Each mounted message has one geometry/identity
 container around activity and reply content, including zero-height hidden rows.
 `DockModel` buffers stored transcript history in 240-row pages by default.
 The coordinator requests a refill before its mounted window reaches the oldest loaded rows.
+The first recent-session publication starts a bounded warm-up for two pinned or
+recent chats. The all-profile scan can fill the remaining preview cache. An exact,
+complete stored preload with a current read boundary can paint before unread review.
 The workspace shell observes the transcript tail and opening state. The composer
 and its trays observe the input and session controls they display. The session rail
 discovers references as history arrives and publishes changes for that session's cards.

@@ -3,6 +3,7 @@ import Foundation
 extension DockModel {
     static let allBotSessionsLimit = 100
     static let transcriptPreloadLimit = 8
+    private static let earlyTranscriptPreloadLimit = 2
     /// Matches Hermes' sidebar cache TTL: a burst of completed turns costs one scan.
     static let allBotSessionsRefreshInterval: TimeInterval = 5
 
@@ -49,11 +50,13 @@ extension DockModel {
         }
     }
 
-    private func scheduleTranscriptPreload(scanned: [HermesSession]) {
+    func scheduleTranscriptPreload(scanned: [HermesSession]? = nil) {
         guard sessionTranscriptPreloadTask == nil, sessionTranscriptCache.hasPreloadCapacity else { return }
         let scope = profileScopeID
-        let current = (pinnedSessions + sessions).map { ($0, $0.profileID ?? scope) }
-        let remote = scanned.compactMap { session -> (HermesSession, String?)? in
+        let current = (pinnedSessions + sessions.prefix(Self.transcriptPreloadLimit * 2)).map {
+            ($0, $0.profileID ?? scope)
+        }
+        let remote = (scanned ?? []).compactMap { session -> (HermesSession, String?)? in
             guard let profile = Self.normalizedProfileID(session.profileID) else { return nil }
             return (session, profile)
         }
@@ -62,12 +65,22 @@ extension DockModel {
             + current.filter { !$0.0.isPinned } + remote.filter { !$0.0.isPinned }
         sessionTranscriptPreloadTask = Task(priority: .utility) { @MainActor [weak self] in
             guard let self else { return }
-            defer { sessionTranscriptPreloadTask = nil }
-            await preloadSessionTranscripts(candidates, scope: scope)
+            defer {
+                sessionTranscriptPreloadTask = nil
+                // The cross-profile scan may finish while the first recents are warming.
+                if scanned == nil, !Task.isCancelled, profileScopeID == scope,
+                    case .ready(let rows) = allBotSessionsState
+                {
+                    scheduleTranscriptPreload(scanned: rows)
+                }
+            }
+            await preloadSessionTranscripts(
+                candidates, scope: scope,
+                limit: scanned == nil ? Self.earlyTranscriptPreloadLimit : Self.transcriptPreloadLimit)
         }
     }
 
-    private func preloadSessionTranscripts(_ candidates: [(HermesSession, String?)], scope: String?) async {
+    private func preloadSessionTranscripts(_ candidates: [(HermesSession, String?)], scope: String?, limit: Int) async {
         var seen = Set<String>()
         var attempted = 0
         for (session, profile) in candidates {
@@ -76,16 +89,20 @@ extension DockModel {
             guard let profile = Self.normalizedProfileID(profile) else { continue }
             let key = WorkspaceIdentity.session(profileID: profile, sessionID: session.id)
             guard seen.insert(key).inserted, session.id != BotService.canonicalBotChatTitle,
-                key != transcriptPresentationID, sessionTranscriptCache.value(for: key) == nil,
+                key != transcriptPresentationID, !sessionTranscriptCache.contains(key),
                 let path = TranscriptHistoryPaging.pagePath(
                     sessionID: session.id, profileID: profile, limit: TranscriptHistoryPaging.pageRowLimit, offset: 0)
             else { continue }
-            guard attempted < Self.transcriptPreloadLimit else { return }
+            guard attempted < limit else { return }
             guard await DockScrollActivity.waitForInputIdle(), profileScopeID == scope else { return }
+            guard key != transcriptPresentationID, !sessionTranscriptCache.contains(key) else { continue }
             attempted += 1
             do {
                 let response = try await sessionRPCClient.fetchHTTP(path)
                 guard let page = TranscriptHistoryPaging.page(from: response) else {
+                    throw HermesGateway.GatewayError.malformedResponse
+                }
+                if let owner = response["profile"] as? String, owner != profile {
                     throw HermesGateway.GatewayError.malformedResponse
                 }
                 guard await DockScrollActivity.waitForInputIdle(), profileScopeID == scope else { return }
@@ -94,7 +111,10 @@ extension DockModel {
                     rows, defaultBotProfileID: nil, defaultBotDisplayName: nil, priority: .utility)
                 guard !Task.isCancelled, !hasShutDown, profileScopeID == scope, key != transcriptPresentationID
                 else { continue }
-                sessionTranscriptCache.preload(restored, references: references, for: key)
+                sessionTranscriptCache.preload(
+                    restored, references: references, for: key,
+                    readCoverage: Self.preloadReadCoverage(page, response: response, session: session, profile: profile)
+                )
             } catch is CancellationError {
                 return
             } catch {
@@ -102,6 +122,21 @@ extension DockModel {
                     "model: transcript preload failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
+    }
+
+    /// Only a complete, dated page for the exact owner can establish a read tail.
+    private static func preloadReadCoverage(
+        _ page: TranscriptHistoryPaging.Page, response: [String: Any], session: HermesSession, profile: String
+    ) -> SessionTranscriptPreview.ReadCoverage? {
+        guard response["session_id"] as? String == session.id, response["profile"] as? String == profile,
+            page.returned == page.rows.count, !page.isPaginated || page.returned < TranscriptHistoryPaging.pageRowLimit,
+            page.rows.allSatisfy({ TranscriptHistoryPaging.rowID($0) != nil && $0["role"] is String }),
+            let updatedAt = session.lastUpdatedAt
+        else { return nil }
+        let timestamps = page.rows.compactMap { ($0["timestamp"] as? NSNumber)?.doubleValue }
+        guard timestamps.count == page.rows.count, timestamps.allSatisfy(\.isFinite), let latest = timestamps.max()
+        else { return nil }
+        return .init(updatedAt: updatedAt, latestRowAt: Date(timeIntervalSince1970: latest))
     }
 
     /// Parses `/api/profiles/sessions/sidebar`. A failed scan omits

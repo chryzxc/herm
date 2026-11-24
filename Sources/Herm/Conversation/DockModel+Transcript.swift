@@ -145,6 +145,9 @@ extension DockModel {
             recordSessionSwitch(
                 "history_fetch", startedAt: fetchStartedAt, extra: "page=\(pagesRead + 1) rows=\(page.returned)")
             pagesRead += 1
+            cursor.isSingleTimestampedTailPage =
+                start.nextOffset == 0 && pagesRead == 1 && page.returned == page.rows.count
+                && page.rows.allSatisfy { $0["timestamp"] is NSNumber }
             let fresh = TranscriptHistoryPaging.advance(&cursor, with: page, limit: limit)
             let projectStartedAt = DispatchTime.now().uptimeNanoseconds
             let projected = await Self.projectStoredRowsOffMain(fresh)

@@ -8,11 +8,19 @@ projection only; live events and pending sends remain in the model's canonical
 state. Session actions wait for the fresh transcript, and an unsuccessful refresh
 retains the preview with a retry action.
 
+The first recent-session publication can warm two selected-profile transcripts
+while the older inventory is still loading. Reads remain sequential and wait for
+input to settle. A preloaded preview can paint before unread review when a complete
+dated page matches the selected session and profile, its activity matches the
+current index, and the reader's seen timestamp covers the page. The fresh resume
+still reviews unread replies and confirms session actions.
+
 Opt-in `HERMES_DOCK_DEBUG_LOGS=1` or `--perf-trace` metrics record selection,
 connection, resume, history fetch and projection, parsing, publication, and native
-layout. They contain timings and counts only. Conversation history now uses a
-240-row buffer and refills when the reader approaches the oldest loaded rows
-with no more than two local pages left. A paired Release baseline and live
+layout. The `unread_review` stage records whether the opening transcript
+covered unread positioning or a separate history read was needed. Conversation
+history uses a 240-row buffer and refills when the reader approaches the oldest
+loaded rows with no more than two local pages left. A paired Release baseline and live
 switch latency for the larger buffer remain to be measured.
 
 The opt-in production transcript fixture runs five cold/cached pairs each for

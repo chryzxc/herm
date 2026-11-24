@@ -3276,8 +3276,12 @@ On a return to a recently viewed conversation, select it with its cached transcr
 in the same update, including across bots, split tabs, and detached windows. These
 surfaces share the workspace's bounded in-memory cache keyed by backend, profile,
 and saved session ID. Include saved bot replies in the cached tail before positioning
-the viewport. On a cold open, assemble the transcript before revealing the initial
-reading position. The session title uses its existing slot for “Refreshing…”
+the viewport. Warm pinned and recent chats as soon as the recent list appears.
+On a first visit, a preloaded tail may appear immediately when the complete stored
+page and the session's current activity show that the tail was already read.
+Other cold opens wait for the initial reading position. Reuse the loaded history
+for the unread divider when it covers the unread boundary. The session title uses
+its existing slot for “Refreshing…”
 or “Not current”; retry belongs in the conversation actions menu. Cached text
 remains selectable and the draft editable, while session actions wait for a
 confirmed fresh transcript. Session replacement and refresh retain the transcript

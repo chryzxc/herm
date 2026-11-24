@@ -210,6 +210,7 @@ extension DockModel {
                         "session_index stage=recent rows=\(sessions.count) ms=\(Self.elapsedMilliseconds(since: startedAt))"
                     )
                     publishedRecent = true
+                    scheduleTranscriptPreload()
                 }
                 let activeRead = recent.map { _ in
                     Task { @MainActor [sessionRPCClient] in
@@ -248,6 +249,7 @@ extension DockModel {
                 DebugLog.writePerformance(
                     "session_index stage=complete rows=\(sessions.count) ms=\(Self.elapsedMilliseconds(since: startedAt))"
                 )
+                if !publishedRecent { scheduleTranscriptPreload() }
                 loadAllBotSessions()
             } catch {
                 guard !self.hasShutDown, self.sessionLoadGeneration == generation, self.profileScopeID == scope else {
@@ -932,7 +934,7 @@ extension DockModel {
             || storageIDsByRuntimeID[requestedStorageID].map { $0 != requestedStorageID } == true
         if !isRefreshingActiveSession {
             sessionTranscriptPreview =
-                isUnprovenAlias ? nil : openingPreview(for: previewKey, storageID: requestedStorageID)
+                isUnprovenAlias ? nil : openingPreview(for: previewKey, session: session, seenAt: seenAt)
         }
         positionsAtUnreadOnResume =
             needsUnreadReview && (!isRefreshingActiveSession || messages.isEmpty)
@@ -1281,10 +1283,24 @@ extension DockModel {
             if let reviewCutoff = context.reviewCutoff {
                 let seenStore = SidebarSessionSeenStore.shared
                 let seenAt = context.seenAt
+                let reviewStartedAt = DispatchTime.now().uptimeNanoseconds
+                let seenBoundary = seenAt ?? .distantPast
+                let loadedUnread = SessionUnreadReplies.projectLoadedTail(
+                    parsed, cursor: attachedCursor, sessionID: session.id, after: seenBoundary, through: reviewCutoff)
+                defer {
+                    recordSessionSwitch(
+                        "unread_review", startedAt: reviewStartedAt,
+                        extra: "source=\(loadedUnread == nil ? "history" : "tail")", generation: resumeGeneration,
+                        token: switchToken)
+                }
                 do {
-                    let unread = try await sessionUnreadReplies.project(
-                        session: session, profileID: owningProfileID,
-                        after: seenAt ?? .distantPast, through: reviewCutoff)
+                    let unread: SessionUnreadReplies.Projection
+                    if let loadedUnread {
+                        unread = loadedUnread
+                    } else {
+                        unread = try await sessionUnreadReplies.project(
+                            session: session, profileID: owningProfileID, after: seenBoundary, through: reviewCutoff)
+                    }
                     guard resumeGeneration == sessionResumeGeneration, !Task.isCancelled else { return false }
                     if unread.count > 0, unread.firstRowID == nil {
                         throw HermesGateway.GatewayError.malformedResponse
