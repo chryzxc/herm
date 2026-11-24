@@ -78,6 +78,8 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
         var localProjectPathBySessionID: [String: String] = [:]
         /// Every bot's recent sessions, for the multi-bot groupings.
         var allBotSessionsState: HermesProjectionState<[HermesSession]> = .loading
+        /// The model reconciles bounded scan and complete scoped pin evidence.
+        var resolvedAllProfilePins: [HermesSession]? = nil
         var failedProjectSessionIDs: Set<String> = []
         var seenAtByKey: [String: Date] = [:]
         var baselinedProfiles: Set<String> = []
@@ -138,7 +140,10 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
             case .ready(let sessions), .stale(let sessions, _): sessions
             case .loading, .empty, .unavailable, .failed: []
             }
-        if let previous, previous.inputs.pinnedSessions == inputs.pinnedSessions,
+        if let resolved = inputs.resolvedAllProfilePins {
+            self.allProfilePinned = resolved
+        } else if let previous, previous.inputs.resolvedAllProfilePins == nil,
+            previous.inputs.pinnedSessions == inputs.pinnedSessions,
             previous.inputs.allBotSessionsState == inputs.allBotSessionsState,
             previous.inputs.profileScopeID == inputs.profileScopeID
         {
@@ -180,14 +185,20 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
                 scanned.isEmpty ? self.scopedRecents : SessionRecentsPresentation(self.allBotConversations)
         }
         let reusesPins = reusesConversations && previous?.inputs.pinnedSessions == inputs.pinnedSessions
-        if let previous, reusesPins, previous.inputs.sessionProjectionState == inputs.sessionProjectionState {
+        let reusesPinPresentation =
+            reusesPins && previous?.inputs.sessionProjectionState == inputs.sessionProjectionState
+        if let previous, reusesPinPresentation {
             self.scopedPinPresentation = previous.scopedPinPresentation
-            self.allProfilePinPresentation = previous.allProfilePinPresentation
         } else {
             self.scopedPinPresentation = PinnedSessionPresentation(
                 pinned: inputs.pinnedSessions, live: conversations, projection: inputs.sessionProjectionState)
+        }
+        if let previous, reusesPinPresentation, previous.allProfilePinned == allProfilePinned {
+            self.allProfilePinPresentation = previous.allProfilePinPresentation
+        } else {
             self.allProfilePinPresentation = PinnedSessionPresentation(
-                pinned: allProfilePinned, live: allBotConversations, projection: inputs.sessionProjectionState)
+                pinned: allProfilePinned, live: allBotConversations, projection: inputs.sessionProjectionState,
+                matchesProfile: true, scopeProfileID: inputs.profileScopeID)
         }
         if let previous, reusesPins,
             previous.inputs.activeSessions == inputs.activeSessions,
@@ -240,6 +251,7 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
             pinningSessionID: model.pinningSessionID,
             localProjectPathBySessionID: localProjectPaths,
             allBotSessionsState: model.allBotSessionsState,
+            resolvedAllProfilePins: model.allProfilePins(),
             failedProjectSessionIDs: Set(
                 control.projects.compactMap { project in
                     control.refreshState(for: control.projectSessionsProjectionKey(for: project.id))?.error == nil

@@ -229,6 +229,20 @@ final class DockModel: ObservableObject {
     /// Each visited profile's last conversation list and open chat, by
     /// profile ID, so switching back shows it while Hermes is re-read.
     var retainedProfileSessions: [String: RetainedProfileSessions] = [:]
+    // Pin evidence is independent of whether the older history pages finished.
+    var knownProfilePins: [ProfileScopedID: HermesSession] = [:]
+    var supersededPinScanByProfile: [String: Task<Void, Never>] = [:]
+    var supersededPinScanBySession: [ProfileScopedID: Task<Void, Never>] = [:]
+    /// Set by a profile switch and cleared by the scoped read that carries the
+    /// target profile's authoritative pins, so the merged Pinned section keeps
+    /// the rows it already knew while that read is in flight.
+    var awaitingScopedPinsAfterSwitch = false {
+        didSet {
+            guard awaitingScopedPinsAfterSwitch != oldValue else { return }
+            sidebarPinChanges.send()
+        }
+    }
+    let sidebarPinChanges = PassthroughSubject<Void, Never>()
     /// When the last session index read finished, for spacing activity refreshes.
     var lastSessionIndexReadAt: Date?
     /// One deferred read that absorbs a burst of completion/database events.
@@ -262,14 +276,32 @@ final class DockModel: ObservableObject {
         didSet {
             if !updatingSessionMetadata {
                 switch allBotSessionsState {
-                case .ready(let rows), .stale(let rows, _): allBotIndexByID = Self.indices(rows)
+                case .ready(let rows):
+                    allBotIndexByID = Self.indices(rows)
+                    if allBotSessionsTask == nil, !isPatchingAllProfilePins { reconcileScannedPins(rows) }
+                case .stale(let rows, _): allBotIndexByID = Self.indices(rows)
                 default: allBotIndexByID = [:]
                 }
             }
             syncBotActivitySignals()
         }
     }
-    var allBotSessionsTask: Task<Void, Never>?
+    var allBotSessionsTask: Task<Void, Never>? {
+        didSet {
+            if let task = oldValue, allBotSessionsTask == nil {
+                // Equal scan results do not republish Recents, but are new pin evidence.
+                if allBotSessionsLoadedAt != pinScanStartedWithLoadedAt, case .ready(let rows) = allBotSessionsState {
+                    reconcileScannedPins(rows, from: task)
+                }
+                supersededPinScanByProfile = supersededPinScanByProfile.filter { $0.value != task }
+                supersededPinScanBySession = supersededPinScanBySession.filter { $0.value != task }
+            } else if allBotSessionsTask != nil {
+                pinScanStartedWithLoadedAt = allBotSessionsLoadedAt
+            }
+        }
+    }
+    private var pinScanStartedWithLoadedAt: Date?
+    var isPatchingAllProfilePins = false
     var sessionTranscriptPreloadTask: Task<Void, Never>?
     var allBotSessionsLoadedAt: Date?
     /// Coalesces Bot activity signal syncs into one pass per main-actor turn.
@@ -728,6 +760,10 @@ final class DockModel: ObservableObject {
                     }
                     self.sessionTranscriptCache.removeAll()
                     self.retainedProfileSessions.removeAll()
+                    self.knownProfilePins.removeAll()
+                    self.supersededPinScanByProfile.removeAll()
+                    self.supersededPinScanBySession.removeAll()
+                    self.awaitingScopedPinsAfterSwitch = false
                     self.sessionTranscriptPreview = nil
                     self.sessionResumeTask?.cancel()
                     self.sessionResumeTask = nil

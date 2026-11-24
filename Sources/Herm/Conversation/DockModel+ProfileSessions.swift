@@ -63,23 +63,102 @@ extension DockModel {
             .sorted(by: SidebarAgentGrouping.newestFirst)
     }
 
+    func allProfilePins() -> [HermesSession] {
+        AllProfilesSessions.pinned(
+            scopePinned: awaitingScopedPinsAfterSwitch ? [] : pinnedSessions,
+            scanned: Array(knownProfilePins.values), scopeProfileID: profileScopeID,
+            awaitingScopedPins: awaitingScopedPinsAfterSwitch)
+    }
+
+    /// The scoped REST page contains the entire owner's pin set, even while
+    /// older conversation pages are still in flight.
+    func recordScopedPins(_ pins: [HermesSession], scope: String?) {
+        guard let owner = Self.normalizedProfileID(scope) else { return }
+        supersededPinScanByProfile[owner] = allBotSessionsTask
+        var updated = knownProfilePins.filter { $0.key.profileID != owner }
+        for row in pins {
+            let key = AllProfilesSessions.pinKey(row, scopeProfileID: owner)
+            guard key.profileID == owner else { continue }
+            updated[key] = row.withPinned(true, profileID: owner)
+        }
+        if updated != knownProfilePins {
+            knownProfilePins = updated
+            sidebarPinChanges.send()
+        }
+    }
+
+    /// Older scans cannot undo a scoped read or a mutation. A bounded scan
+    /// updates only rows it actually reports; omissions carry no pin evidence.
+    func reconcileScannedPins(_ rows: [HermesSession], from task: Task<Void, Never>? = nil) {
+        var updated = knownProfilePins
+        for row in rows {
+            let key = row.scopedID
+            if let task,
+                supersededPinScanBySession[key] == task
+                    || key.profileID.flatMap({ supersededPinScanByProfile[$0] }) == task
+            {
+                continue
+            }
+
+            updated[key] = row.isPinned ? row : nil
+        }
+        if updated != knownProfilePins {
+            knownProfilePins = updated
+            sidebarPinChanges.send()
+        }
+    }
+
     /// Hermes deleted the session: drop it from its profile's retained copy
     /// and force a full walk on return.
     func forgetRetainedSession(_ sessionID: String, profileID: String?) {
-        guard let key = Self.normalizedProfileID(profileID), var retained = retainedProfileSessions[key] else { return }
+        guard let key = Self.normalizedProfileID(profileID) else { return }
+        setKnownPin(nil, key: ProfileScopedID(profileID: key, resourceID: sessionID))
+        guard var retained = retainedProfileSessions[key] else { return }
         retained.sessions.removeAll { $0.id == sessionID }
-        retained.pinnedSessions.removeAll { $0.id == sessionID }
+        let pinCount = retained.pinnedSessions.count
+        let pinKey = ProfileScopedID(profileID: key, resourceID: sessionID)
+        retained.pinnedSessions.removeAll { AllProfilesSessions.pinKey($0, scopeProfileID: key) == pinKey }
         if retained.openSession?.id == sessionID { retained.openSession = nil }
         retained.historyLoadedAt = nil
         retainedProfileSessions[key] = retained
+        if retained.pinnedSessions.count != pinCount { sidebarPinChanges.send() }
     }
 
     /// Mirrors an acknowledged pin into another profile's retained list.
     func applyRetainedPin(_ pinned: Bool, to session: HermesSession, profileID: String?) {
-        guard let key = Self.normalizedProfileID(profileID), var retained = retainedProfileSessions[key] else { return }
-        retained.pinnedSessions.removeAll { $0.id == session.id }
-        if pinned { retained.pinnedSessions.append(session.withPinned(true, profileID: key)) }
+        guard let key = Self.normalizedProfileID(profileID) else { return }
+        let pinKey = ProfileScopedID(profileID: key, resourceID: session.id)
+        let row = pinned ? session.withPinned(true, profileID: key) : nil
+        setKnownPin(row, key: pinKey)
+        guard var retained = retainedProfileSessions[key] else { return }
+        retained.pinnedSessions.removeAll { AllProfilesSessions.pinKey($0, scopeProfileID: key) == pinKey }
+        if let row { retained.pinnedSessions.append(row) }
         retainedProfileSessions[key] = retained
+    }
+
+    private func setKnownPin(_ pin: HermesSession?, key: ProfileScopedID) {
+        supersededPinScanBySession[key] = allBotSessionsTask
+        guard knownProfilePins[key] != pin else { return }
+        knownProfilePins[key] = pin
+        sidebarPinChanges.send()
+    }
+
+    func renameKnownPin(_ session: HermesSession, title: String, profileID: String?) {
+        let key = ProfileScopedID(profileID: profileID, resourceID: session.id)
+        guard let pin = knownProfilePins[key] else { return }
+        let renamed = HermesSession(
+            id: pin.id, profileID: pin.profileID, title: title, preview: pin.preview, startedAt: pin.startedAt,
+            updatedAt: pin.updatedAt, messageCount: pin.messageCount, source: pin.source, isHidden: pin.isHidden,
+            isWorking: pin.isWorking, hasUnreadUpdate: pin.hasUnreadUpdate, isPinned: true, modelName: pin.modelName)
+        setKnownPin(renamed, key: key)
+    }
+
+    func isAllProfileSessionPinned(_ session: HermesSession) -> Bool {
+        let key = AllProfilesSessions.pinKey(session, scopeProfileID: profileScopeID)
+        if key.profileID == Self.normalizedProfileID(profileScopeID), !awaitingScopedPinsAfterSwitch {
+            return pinnedSessions.contains { AllProfilesSessions.pinKey($0, scopeProfileID: profileScopeID) == key }
+        }
+        return knownProfilePins[key] != nil
     }
 
     /// A retained history read stays valid until the session it changed is re-read.

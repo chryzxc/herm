@@ -19,16 +19,37 @@ struct PinnedSessionPresentation: Equatable {
         pinned: [HermesSession],
         live: [HermesSession],
         projection: HermesProjectionState<[HermesSession]>,
-        hasRequestedSessionIndex: Bool = true
+        hasRequestedSessionIndex: Bool = true,
+        matchesProfile: Bool = false,
+        scopeProfileID: String? = nil
     ) {
         switch projection {
         case .ready, .empty, .stale, .loading:
             if pinned.isEmpty {
                 sessions = []
             } else {
-                let liveByID = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-                sessions = pinned.map { liveByID[$0.id] ?? $0 }
-                    .sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
+                func key(_ session: HermesSession) -> ProfileScopedID {
+                    matchesProfile
+                        ? AllProfilesSessions.pinKey(session, scopeProfileID: scopeProfileID)
+                        : ProfileScopedID(profileID: nil, resourceID: session.id)
+                }
+                let liveByKey = Dictionary(live.map { (key($0), $0) }, uniquingKeysWith: { first, _ in first })
+                sessions = pinned.map { pin in
+                    let pinKey = key(pin)
+                    let row = liveByKey[pinKey] ?? pin
+                    guard matchesProfile else { return row }
+                    let owner = row.profileID ?? pinKey.profileID
+                    // The live overlay can be the raw scan used by Recents. Keep its
+                    // activity metadata without undoing a reconciled pin title.
+                    guard row.title != pin.title || row.profileID != owner else { return row }
+                    return HermesSession(
+                        id: row.id, profileID: owner, title: pin.title, preview: row.preview, startedAt: row.startedAt,
+                        updatedAt: row.updatedAt, messageCount: row.messageCount, source: row.source,
+                        isHidden: row.isHidden, isWorking: row.isWorking, hasUnreadUpdate: row.hasUnreadUpdate,
+                        isPinned: row.isPinned, modelName: row.modelName)
+                }.sorted {
+                    ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast)
+                }
             }
         case .unavailable, .failed:
             sessions = []
@@ -44,6 +65,10 @@ struct PinnedSessionPresentation: Equatable {
     }
 
     var count: Int { sessions.count }
+
+    func selectedRow(_ selected: ProfileScopedID) -> HermesSession? {
+        sessions.first { $0.scopedID == selected }
+    }
 
     func withInitialRequestPending() -> Self {
         status == .empty ? Self(sessions: sessions, status: .loading) : self
