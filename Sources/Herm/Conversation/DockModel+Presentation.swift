@@ -45,6 +45,7 @@ extension DockModel {
             ("updatingSessionVisibilityID", Self.change($updatingSessionVisibilityID)),
             ("pinningSessionID", Self.change($pinningSessionID)),
             ("pinnedSessions", Self.change($pinnedSessions)),
+            ("sidebarPinChanges", sidebarPinChanges.eraseToAnyPublisher()),
             ("isRestoringSession", Self.change($isRestoringSession)),
             ("currentSessionTitle", Self.change($currentSessionTitle)),
             ("isShowingReasoning", Self.change($isShowingReasoning)),
@@ -284,7 +285,8 @@ extension DockModel {
             $pinnedSessions.map { _ in () }.eraseToAnyPublisher(),
             $pinningSessionID.map { _ in () }.eraseToAnyPublisher(),
             $isCreatingSession.map { _ in () }.eraseToAnyPublisher(),
-            $allBotSessionsState.map { _ in () }.eraseToAnyPublisher()
+            $allBotSessionsState.map { _ in () }.eraseToAnyPublisher(),
+            sidebarPinChanges.eraseToAnyPublisher()
         ).eraseToAnyPublisher()
     }
 

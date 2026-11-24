@@ -304,8 +304,7 @@ extension DockPopover {
     }
 
     private func isWorkspaceSessionPinned(_ session: HermesSession) -> Bool {
-        AllProfilesSessions.isPinned(
-            session, scopePinned: workspaceModel.pinnedSessions, scopeProfileID: workspaceModel.profileScopeID)
+        workspaceModel.isAllProfileSessionPinned(session)
     }
 
     func selectSessionMode(_ mode: SessionWorkspaceMode) {

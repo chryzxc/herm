@@ -29,6 +29,7 @@ extension DockModel {
         retainCurrentProfileSessions()
         profileScopeID = next
         profileScopeUnavailable = nextUnavailable
+        awaitingScopedPinsAfterSwitch = next != nil
         if let next {
             defaults.set(next, forKey: profileScopeKey)
         } else {
@@ -194,6 +195,7 @@ extension DockModel {
                 else { return }
                 let total = (firstPage?["total"] as? Int).flatMap { $0 >= 0 ? $0 : nil }
                 let storedRecent = reuseStoredHistory || total != nil ? recent?.conversations ?? [] : []
+                var publishedRecent = false
                 if sessions.isEmpty, let recent, !live.isEmpty || !storedRecent.isEmpty || !recent.pinned.isEmpty {
                     // The first REST page includes every pin and authoritative recency.
                     // Keep the projection loading until older history has arrived.
@@ -207,6 +209,7 @@ extension DockModel {
                     DebugLog.writePerformance(
                         "session_index stage=recent rows=\(sessions.count) ms=\(Self.elapsedMilliseconds(since: startedAt))"
                     )
+                    publishedRecent = true
                 }
                 let activeRead = recent.map { _ in
                     Task { @MainActor [sessionRPCClient] in
@@ -233,7 +236,7 @@ extension DockModel {
                     await publishSessionIndex(
                         live: live, stored: stored, recent: recent, working: recent?.working(with: active),
                         activityGeneration: activityGeneration, loadGeneration: generation, scope: scope, quiet: quiet,
-                        retainingHistory: reuseStoredHistory)
+                        retainingHistory: reuseStoredHistory, recordPins: !publishedRecent)
                 else { return }
                 if !reuseStoredHistory, !stored.isEmpty { sessionHistoryLoadedAt = (scope, Date()) }
                 // Hermes names a session after its first turn; the header follows the list.
@@ -321,15 +324,18 @@ extension DockModel {
     @discardableResult
     func setSessionHidden(_ session: HermesSession, hidden: Bool) async -> Bool {
         guard updatingSessionVisibilityID == nil else { return false }
+        let owner = session.profileID ?? profileScopeID
         sessionVisibilityError = nil
         updatingSessionVisibilityID = session.id
         defer { updatingSessionVisibilityID = nil }
         do {
             try await sessionRPCClient.connect()
             var params: [String: Any] = ["session_id": session.id, "hidden": hidden]
-            if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
+            if let owner { params["profile"] = owner }
             _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionSetHidden.rawValue, params: params)
-            invalidateRetainedHistory(profileID: session.profileID ?? profileScopeID)
+            // A hidden chat must not come back through the retained pin fallback.
+            if hidden { forgetRetainedSession(session.id, profileID: owner) }
+            invalidateRetainedHistory(profileID: owner)
             loadSessions()
             return true
         } catch {
@@ -351,17 +357,16 @@ extension DockModel {
     func toggleSessionPinned(_ session: HermesSession, isPinned currentlyPinned: Bool? = nil) async -> Bool {
         guard pinningSessionID == nil else { return false }
         let pinned = !(currentlyPinned ?? isSessionPinned(session.id))
-        let scope = profileScopeID
-        let profileID = session.profileID ?? scope
-        let ownedByScope = Self.normalizedProfileID(profileID) == Self.normalizedProfileID(scope)
+        let profileID = session.profileID ?? profileScopeID
         pinningSessionID = session.id
         defer { pinningSessionID = nil }
         do {
             try await sessionPinService.setPinned(
                 pinned, sessionID: session.id, profileID: profileID, client: sessionRPCClient)
-            applyAllProfilePin(pinned, to: session, profileID: profileID)
             applyRetainedPin(pinned, to: session, profileID: profileID)
-            guard ownedByScope, profileScopeID == scope else { return true }
+            applyAllProfilePin(pinned, to: session, profileID: profileID)
+            // The owner may have become the selected profile while the write was in flight.
+            guard Self.normalizedProfileID(profileID) == Self.normalizedProfileID(profileScopeID) else { return true }
             // Reject list snapshots that predate the acknowledged mutation.
             sessionLoadGeneration &+= 1
             sessionLoadTask?.cancel()
@@ -382,6 +387,8 @@ extension DockModel {
     /// Reflects an acknowledged pin in the all-profile scan at once, then
     /// re-reads it; the scan is otherwise throttled.
     func applyAllProfilePin(_ pinned: Bool, to session: HermesSession, profileID: String?) {
+        isPatchingAllProfilePins = true
+        defer { isPatchingAllProfilePins = false }
         let key = ProfileScopedID(profileID: profileID, resourceID: session.id)
         func patched(_ rows: [HermesSession]) -> [HermesSession] {
             var rows = rows.filter { $0.scopedID != key }
@@ -504,7 +511,8 @@ extension DockModel {
 
     private func publishSessionIndex(
         live: [HermesSession], stored: [HermesSession], recent: SessionIndexPage?, working: Set<String>?,
-        activityGeneration: UInt64, loadGeneration: UInt64, scope: String?, quiet: Bool, retainingHistory: Bool = false
+        activityGeneration: UInt64, loadGeneration: UInt64, scope: String?, quiet: Bool, retainingHistory: Bool = false,
+        recordPins: Bool = true
     ) async -> Bool {
         while !Task.isCancelled, !hasShutDown, sessionLoadGeneration == loadGeneration, profileScopeID == scope {
             if quiet {
@@ -538,7 +546,12 @@ extension DockModel {
                 currentWorking == nil || currentActivity == sessionActivityGeneration,
                 unread == Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? [])
             else { continue }
+            // This page's `pinned` rows are authoritative for the scope, empty included.
             if let pins { pinnedSessions = pins }
+            if recent != nil, recordPins {
+                recordScopedPins(pinnedSessions, scope: scope)
+                awaitingScopedPinsAfterSwitch = false
+            }
             if let updated { sessions = updated }
             if workspaceStartup.phase == .loadingSessions, !sessions.isEmpty || !pinnedSessions.isEmpty {
                 workspaceStartup.phase = .finished
@@ -619,19 +632,21 @@ extension DockModel {
     func renameSession(_ session: HermesSession, title: String) async -> Bool {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanTitle.isEmpty, renamingSessionID == nil else { return false }
+        let owner = session.profileID ?? profileScopeID
         renamingSessionID = session.id
         defer { renamingSessionID = nil }
         do {
             try await sessionRPCClient.connect()
-            if session.id == navigationSessionID, let sessionID {
+            if session.id == navigationSessionID, owner == (sessionProfileID ?? profileScopeID), let sessionID {
                 _ = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.sessionTitle.rawValue, params: ["session_id": sessionID, "title": cleanTitle])
                 currentSessionTitle = cleanTitle
             } else {
                 try await HermesCLIAdapter(rpc: HermesControlRPC(client: sessionRPCClient)).renameSavedSession(
-                    sessionID: session.id, title: cleanTitle, profileID: session.profileID ?? profileScopeID)
+                    sessionID: session.id, title: cleanTitle, profileID: owner)
             }
-            invalidateRetainedHistory(profileID: session.profileID ?? profileScopeID)
+            renameKnownPin(session, title: cleanTitle, profileID: owner)
+            invalidateRetainedHistory(profileID: owner)
             loadSessions()
             return true
         } catch {

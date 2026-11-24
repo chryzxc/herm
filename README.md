@@ -171,6 +171,8 @@ Working and waiting Bots in the notch keep animating while you scroll the worksp
 
 Activity rows in the side notch and top island have no background fill at rest, including the current session. Both previews offer a labelled **Quick message** entry. Reply controls reserve their space so activity titles stay still on hover.
 
+The top island’s black workspace band keeps its status headline, counts, and provider quota readable with every skin.
+
 Conversation approvals, clarification choices, and secret/login requests share a compact neutral card with explicit status, labeled inputs, and grouped actions that stack in narrow panes. Reopening a chat restores its pending clarification and answer choices. Multi-select answers show their selected state; submitting keeps an in-place progress indicator and disables duplicate responses.
 
 The latest conversation approval stays visible as resolved after it is answered in the conversation or notch. This presentation is kept in memory for the current Herm process, not reconstructed after restart.
@@ -516,12 +518,16 @@ cached independently of transcript updates; status polling pauses while the
 workspace is hidden or Hermes is disconnected.
 The sidebar stacks Pinned, Recents, Projects, and Automations for the selected
 bot under its bot header. In the bot picker, drag a profile's handle to reorder it,
-or focus the handle and use the arrow keys. The order is saved locally across restarts without changing the
+or focus the handle and use the arrow keys. Drag it to the top or bottom edge and hold
+there to scroll through a long list's hidden profiles in the same drag. The order is saved locally across restarts without changing the
 selected profile or its conversations. Choose **All** at the top of the
 bot picker to merge every bot's pinned and recent conversations into one list; each
 row then shows a pill with its bot's avatar and name, and opening it switches to
 that bot. The sidebar reuses its Recents and Automations groups and unread inventory while you hover, scroll, or search. Each section header stays at the top of the scrolling
 list until the next section replaces it; rows remain lazily rendered.
+Pinned keeps the pins it already showed while the switched bot's own pin list is
+still loading; a chat drops out only when that list, a recent-session scan row, or
+an acknowledged pin change settles it.
 Recent chats and pins appear as soon as the first page arrives. Older chats load
 in the background and join search as they become available. Background polls and
 runtime notifications refresh the latest history page, reusing older loaded sessions
@@ -1507,11 +1513,18 @@ Forward to Bot restores your unsent note when you reopen it for the same message
 A successful send clears the submitted note and closes the popover. Failures keep the note and show an error for retry.
 
 ```sh
-swift build   # build
-swift test    # run the test suite
+make build    # build
+make test     # run the test suite
 make guard    # fast strict lint, color, and conflict/whitespace checks
 make check    # everything CI runs
 ```
+
+Local Makefile builds, the debug launcher, and the packaging script default to
+four concurrent build jobs. Set `HERM_BUILD_JOBS=2 make build` to use fewer jobs.
+The same environment variable works with `make run` and `make package`.
+Fewer jobs can lengthen a clean build, and release optimization can still
+use multiple threads within a single job.
+CI uses the toolchain default unless you set `HERM_BUILD_JOBS` explicitly.
 
 CI runs on every pull request and on every push to `main`.
 Run `make guard` before review and `make format` to fix mechanical Swift

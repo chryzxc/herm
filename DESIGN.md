@@ -1437,6 +1437,8 @@ the top island remains outline-free so it blends with the camera housing.
 The top island renders on the `.cameraNotch` theme surface. Its chrome
 (selection fills, outlines, buttons, text) is Onyx whatever the skin, and its
 bots keep the selected skin with Onyx ink. Left and right rails follow the skin.
+The expanded workspace’s black status band uses Onyx text and status colors
+with every workspace skin. Its headline remains full contrast when it has no action.
 
 **Preview.** Hover or new work morphs the rail into an attached preview. It is
 a fixed 368 × 360pt panel with stable inset content. The size never changes
@@ -2090,11 +2092,23 @@ When more than one Bot is visible, the Bot switcher starts with a fixed
 one row, the selected Bot first, with no overlap or backing. The choice is a local preference. It merges every
 Bot's pins into one Pinned section and every Bot's chats into Recents and
 search. The selected Bot's pins come from its own pinned list; other Bots' pins
-come from the all-profile read's `pinned` flag. Pin keys are profile-scoped. In
+come from the all-profile read's `pinned` flag. While a Bot switch is still
+waiting for that Bot's own pin list, Pinned keeps the rows it already showed and
+takes the selected Bot's scan rows as a preview, so moving between pinned chats
+never empties the section. A scan row for the same chat settles its pin either
+way; a chat the bounded scan omits keeps the pin Herm last showed. Pin keys are profile-scoped. In
 this scope each row's second line starts with a compact profile pill (14pt
 avatar and Bot name in `.dockPill(compact:)`) before the source and repository
 identity. Opening a row switches to its owning profile and keeps the merged
 scope. Picking a single Bot leaves the merged scope.
+
+Holding a dragged row in the picker's top or bottom edge band scrolls the
+picker through rows it has not shown yet, and the row's slot follows that
+scroll, so the last Bot reaches the first slot in one continuous drag. The
+scroll stops when the pointer leaves the band, the list reaches its first or
+last row, or the drag ends; a new drag starts from wherever the list then is.
+The dragged row stays under the pointer, and the pointer's own travel still
+counts, so an ordinary short drag behaves as before.
 
 Session activity uses `session.active_list`, not the REST index’s recent-write
 flag. The visible sidebar refreshes activity every ten seconds for the selected
