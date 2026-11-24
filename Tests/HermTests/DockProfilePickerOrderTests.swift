@@ -11,64 +11,40 @@ struct DockProfilePickerOrderTests {
     @Test func heldTopEdgeScrollsLastProfileToFirst() throws {
         let scroll = try overflowClip(documentHeight: 852)
         let clip = scroll.contentView
-        let startOrigin = clip.bounds.minY
-        #expect(DockEdgeAutoscroll.direction(pointerY: 2, viewport: viewport) == .towardStart)
-        var target = DockProfilePickerReorder.target(start: 19, translation: 0, pitch: 40, count: 20)
+        var drag = makeDrag(in: clip, translation: -330)
+        let direction = try #require(DockEdgeAutoscroll.direction(pointer: topPointer, viewport: viewport))
+        #expect(direction == .towardStart)
+        #expect(drag.target(pitch: 40, count: 20) > 0, "The first slot must initially be unreachable")
         var steps = 0
-        while steps < 200 {
-            let direction = try #require(DockEdgeAutoscroll.direction(pointerY: 2, viewport: viewport))
-            let next = DockEdgeAutoscroll.origin(
-                from: clip.bounds.minY, direction: direction, clip: clip.bounds,
-                documentHeight: 852, isFlipped: clip.isFlipped)
-            guard next != clip.bounds.minY else { break }
-            clip.scroll(to: NSPoint(x: clip.bounds.minX, y: next))
-            scroll.reflectScrolledClipView(clip)
-            target = DockProfilePickerReorder.target(
-                start: 19,
-                translation: DockEdgeAutoscroll.displacement(
-                    translation: 0, startOrigin: startOrigin, origin: clip.bounds.minY,
-                    isFlipped: clip.isFlipped),
-                pitch: 40, count: 20)
+        while steps < 200, DockEdgeAutoscroll.scrollStep(in: scroll, toward: direction) != 0 {
+            drag.trackClip(origin: clip.bounds.minY, isFlipped: clip.isFlipped)
             steps += 1
         }
-        #expect(steps > 40, "~800pt of hidden rows must take many held-pointer steps")
-        #expect(
-            DockEdgeAutoscroll.origin(
-                from: clip.bounds.minY, direction: .towardStart, clip: clip.bounds,
-                documentHeight: 852, isFlipped: clip.isFlipped) == clip.bounds.minY,
-            "The clip must stop at its first row, not scroll past it")
-        #expect(target == 0, "The dragged profile must land first after All")
+        #expect(steps > 40 && steps < 200)
+        #expect(clip.bounds.minY == clip.constrainBoundsRect(clip.bounds.offsetBy(dx: 0, dy: -852)).minY)
+        #expect(DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardStart) == 0)
+        #expect(drag.target(pitch: 40, count: 20) == 0, "The dragged profile must land first after All")
     }
 
     /// Reversing to the bottom edge scrolls the same drag back to the last slot, then stops.
     @Test func reversedEdgeScrollReachesTheLastProfileAndStops() throws {
         let scroll = try overflowClip(documentHeight: 852)
         let clip = scroll.contentView
-        let startOrigin = clip.bounds.minY
+        var drag = makeDrag(in: clip, translation: -330)
+        let end = clip.bounds.minY
         scrollToStart(scroll)
-        var target = 0
+        drag.trackClip(origin: clip.bounds.minY, isFlipped: clip.isFlipped)
+        #expect(drag.target(pitch: 40, count: 20) == 0)
+        drag.translation = 0
         var steps = 0
-        while steps < 200 {
-            let next = DockEdgeAutoscroll.origin(
-                from: clip.bounds.minY, direction: .towardEnd, clip: clip.bounds,
-                documentHeight: 852, isFlipped: clip.isFlipped)
-            guard next != clip.bounds.minY else { break }
-            clip.scroll(to: NSPoint(x: clip.bounds.minX, y: next))
-            scroll.reflectScrolledClipView(clip)
-            target = DockProfilePickerReorder.target(
-                start: 19,
-                translation: DockEdgeAutoscroll.displacement(
-                    translation: 0, startOrigin: startOrigin, origin: clip.bounds.minY,
-                    isFlipped: clip.isFlipped),
-                pitch: 40, count: 20)
+        while steps < 200, DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardEnd) != 0 {
+            drag.trackClip(origin: clip.bounds.minY, isFlipped: clip.isFlipped)
             steps += 1
         }
-        #expect(steps > 40)
-        #expect(target == 19)
-        #expect(
-            DockEdgeAutoscroll.origin(
-                from: clip.bounds.minY, direction: .towardEnd, clip: clip.bounds,
-                documentHeight: 852, isFlipped: clip.isFlipped) == clip.bounds.minY)
+        #expect(steps > 40 && steps < 200)
+        #expect(clip.bounds.minY == end)
+        #expect(DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardEnd) == 0)
+        #expect(drag.target(pitch: 40, count: 20) == 19)
     }
 
     /// Between the bands nothing moves, and a neighbour's clip keeps its own offset.
@@ -76,51 +52,115 @@ struct DockProfilePickerOrderTests {
         let list = try overflowClip(documentHeight: 852)
         let neighbour = try overflowClip(documentHeight: 852)
         let neighbourOrigin = neighbour.contentView.bounds.minY
-        #expect(DockEdgeAutoscroll.direction(pointerY: viewport.midY, viewport: viewport) == nil)
+        let center = CGPoint(x: viewport.midX, y: viewport.midY)
+        #expect(DockEdgeAutoscroll.direction(pointer: center, viewport: viewport) == nil)
         #expect(
             DockEdgeAutoscroll.direction(
-                pointerY: viewport.maxY - 2, viewport: viewport) == .towardEnd)
+                pointer: CGPoint(x: viewport.midX, y: viewport.maxY - 2), viewport: viewport) == .towardEnd)
         scrollToStart(list)
         #expect(list.contentView.bounds.minY != neighbourOrigin)
         #expect(neighbour.contentView.bounds.minY == neighbourOrigin)
     }
 
-    /// Drag translation alone still picks the slot when the list does not move.
-    @Test func travelIsZeroWithoutScrolling() {
-        let origin: CGFloat = 120
-        #expect(DockEdgeAutoscroll.travel(from: origin, to: origin, isFlipped: true) == 0)
-        #expect(
-            DockEdgeAutoscroll.displacement(
-                translation: -44, startOrigin: origin, origin: origin, isFlipped: true) == -44)
+    @Test func passingAnyViewportEdgeStopsAutoscroll() {
+        let outside = [
+            CGPoint(x: viewport.midX, y: viewport.minY - 1),
+            CGPoint(x: viewport.midX, y: viewport.maxY + 1),
+            CGPoint(x: viewport.minX - 1, y: topPointer.y),
+            CGPoint(x: viewport.maxX + 1, y: topPointer.y),
+        ]
+        for pointer in outside {
+            #expect(DockEdgeAutoscroll.direction(pointer: pointer, viewport: viewport) == nil)
+        }
     }
 
-    /// A clip that draws its document upward scrolls the other way and clamps at both ends.
-    @Test func unflippedClipMovesItsOriginTheOtherWay() {
-        let clip = CGRect(x: 0, y: -300, width: 300, height: 360)
-        #expect(
-            DockEdgeAutoscroll.origin(
-                from: -100, direction: .towardStart, clip: clip, documentHeight: 852, isFlipped: false) == -90)
-        #expect(
-            DockEdgeAutoscroll.origin(
-                from: 0, direction: .towardStart, clip: clip, documentHeight: 852, isFlipped: false) == 0)
-        #expect(
-            DockEdgeAutoscroll.origin(
-                from: -492, direction: .towardEnd, clip: clip, documentHeight: 852, isFlipped: false) == -492)
+    @Test func stationaryTickUpdatesLiftBeforeCrossingSlot() throws {
+        let scroll = try overflowClip(documentHeight: 852)
+        let clip = scroll.contentView
+        var drag = makeDrag(in: clip)
+        #expect(drag.liftOffset(at: 19, pitch: 40) == 0)
+        let delta = DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardStart)
+        drag.trackClip(origin: clip.bounds.minY, isFlipped: clip.isFlipped)
+        #expect(delta < 0)
+        #expect(drag.target(pitch: 40, count: 20) == 19)
+        #expect(drag.liftOffset(at: 19, pitch: 40) == delta)
+    }
+
+    @Test func travelIsZeroWithoutScrolling() throws {
+        let scroll = try overflowClip(documentHeight: 852)
+        let clip = scroll.contentView
+        var drag = makeDrag(in: clip, translation: -44)
+        drag.trackClip(origin: clip.bounds.minY, isFlipped: clip.isFlipped)
+        #expect(drag.liftOffset(at: 19, pitch: 40) == -44)
+        #expect(drag.target(pitch: 40, count: 20) == 18)
+    }
+
+    /// An unflipped document scrolls the other way, still clamping at AppKit's endpoints.
+    @Test func unflippedClipStopsAtBothEnds() {
+        let scroll = NSScrollView(frame: viewport)
+        scroll.documentView = NSView(frame: CGRect(x: 0, y: 0, width: 300, height: 852))
+        scroll.layoutSubtreeIfNeeded()
+        let clip = scroll.contentView
+        #expect(!clip.isFlipped)
+        let end = clip.constrainBoundsRect(clip.bounds.offsetBy(dx: 0, dy: -852)).origin
+        let start = clip.constrainBoundsRect(clip.bounds.offsetBy(dx: 0, dy: 852)).origin
+        clip.scroll(to: end)
+        #expect(DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardEnd) == 0)
+        #expect(DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardStart) > 0)
+        clip.scroll(to: start)
+        #expect(DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardStart) == 0)
+        #expect(DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardEnd) < 0)
+    }
+
+    @Test func scrollStepReportsZeroWhenClipDoesNotMove() {
+        let scroll = NSScrollView(frame: viewport)
+        let clip = StationaryClipView(frame: scroll.contentView.frame)
+        scroll.contentView = clip
+        scroll.documentView = FlippedDocumentView(frame: CGRect(x: 0, y: 0, width: 300, height: 852))
+        scroll.layoutSubtreeIfNeeded()
+        let origin = clip.bounds.origin
+        let requested = clip.bounds.offsetBy(dx: 0, dy: DockEdgeAutoscroll.step)
+        #expect(clip.constrainBoundsRect(requested).origin != origin)
+        #expect(DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardEnd) == 0)
+        #expect(clip.bounds.origin == origin)
+    }
+
+    @Test func replacedProbeAndOldGestureCannotAffectNewDrag() throws {
+        let scroll = try overflowClip(documentHeight: 852)
+        let target = DockScrollTarget()
+        let oldProbe = NSView()
+        let newProbe = NSView()
+        target.attach(scroll, from: oldProbe)
+        let oldDrag = makeDrag(in: scroll.contentView, attachment: target.attachment)
+        target.attach(scroll, from: newProbe)
+        #expect(!target.detach(from: oldProbe))
+        #expect(oldDrag.isCurrent(token: oldDrag.token, attachment: target.attachment))
+        #expect(target.detach(from: newProbe))
+        #expect(target.scrollView == nil)
+        target.attach(scroll, from: newProbe)
+        let newDrag = makeDrag(in: scroll.contentView, attachment: target.attachment)
+        #expect(!oldDrag.isCurrent(token: oldDrag.token, attachment: target.attachment))
+        #expect(!newDrag.isCurrent(token: oldDrag.token, attachment: target.attachment))
+        #expect(newDrag.isCurrent(token: newDrag.token, attachment: target.attachment))
     }
 
     private var viewport: CGRect { CGRect(x: 0, y: 0, width: 300, height: 360) }
+    private var topPointer: CGPoint { CGPoint(x: viewport.midX, y: viewport.minY + 2) }
+
+    private func makeDrag(
+        in clip: NSClipView, translation: CGFloat = 0, attachment: UUID = UUID()
+    ) -> DockProfilePickerDrag {
+        DockProfilePickerDrag(
+            token: UUID(), attachment: attachment, id: "last", start: 19, slot: 19,
+            startOrigin: clip.bounds.minY, translation: translation)
+    }
 
     /// Runs the top-edge steps a held pointer would run until the clip reaches its first row.
     private func scrollToStart(_ scroll: NSScrollView) {
-        let clip = scroll.contentView
-        while let direction = DockEdgeAutoscroll.direction(pointerY: 2, viewport: viewport) {
-            let next = DockEdgeAutoscroll.origin(
-                from: clip.bounds.minY, direction: direction, clip: clip.bounds,
-                documentHeight: 852, isFlipped: clip.isFlipped)
-            guard next != clip.bounds.minY else { break }
-            clip.scroll(to: NSPoint(x: clip.bounds.minX, y: next))
-            scroll.reflectScrolledClipView(clip)
+        for _ in 0..<200 {
+            if DockEdgeAutoscroll.scrollStep(in: scroll, toward: .towardStart) == 0 { return }
         }
+        Issue.record("The clip did not stop at its start")
     }
 
     /// A picker-sized overflow list, scrolled to its last row.
@@ -145,6 +185,11 @@ struct DockProfilePickerOrderTests {
     /// The picker's SwiftUI scroll view draws its rows from the top, like this document.
     private final class FlippedDocumentView: NSView {
         override var isFlipped: Bool { true }
+    }
+
+    private final class StationaryClipView: NSClipView {
+        override var isFlipped: Bool { true }
+        override func scroll(to newOrigin: NSPoint) {}
     }
 
     @Test func dragTranslationPicksTheNearestSlotWithinBounds() {
