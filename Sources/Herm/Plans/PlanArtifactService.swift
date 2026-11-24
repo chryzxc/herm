@@ -32,14 +32,7 @@ struct PlanArtifactService {
     }
 
     func list() -> [PlanArtifactSummary] {
-        guard fileManager.fileExists(atPath: plansRoot.path) else { return [] }
-        let urls = (fileManager.subpaths(atPath: plansRoot.path) ?? [])
-            .map { plansRoot.appendingPathComponent($0) }
-            // Review files are persistence metadata for annotations, not plan artifacts.
-            // Keeping them out of this projection prevents a comment from appearing as
-            // a selectable document in the library.
-            .filter { isMarkdown($0) && !isReviewArtifact($0) && isContained($0) && isRegularOrSafeSymlink($0) }
-        return urls.compactMap { summary(for: $0) }.sorted {
+        planFileCandidates().filter(isRegularOrSafeSymlink).compactMap { summary(for: $0) }.sorted {
             if $0.modifiedAt != $1.modifiedAt {
                 return ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast)
             }
@@ -47,19 +40,45 @@ struct PlanArtifactService {
         }
     }
 
-    func load(relativePath: String) throws -> PlanArtifactDocument {
+    /// The rail matches names before resolving and validating the files it will read.
+    func planFileCandidates() -> [URL] {
+        guard fileManager.fileExists(atPath: plansRoot.path) else { return [] }
+        return (fileManager.subpaths(atPath: plansRoot.path) ?? [])
+            .map { plansRoot.appendingPathComponent($0) }
+            // Review files are persistence metadata for annotations, not plan artifacts.
+            // Keeping them out of this projection prevents a comment from appearing as
+            // a selectable document in the library.
+            .filter { isMarkdown($0) && !isReviewArtifact($0) && isContained($0) }
+    }
+
+    func sourceURL(relativePath: String) throws -> URL {
         let url = try safeURL(for: relativePath, allowReviews: false)
         guard fileManager.fileExists(atPath: url.path) else { throw PlanArtifactError.missingArtifact }
         guard isMarkdown(url), isRegularOrSafeSymlink(url) else { throw PlanArtifactError.unsupportedFile }
-        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-        guard data.count <= maxArtifactBytes else { throw PlanArtifactError.fileTooLarge }
-        guard let contents = String(data: data, encoding: .utf8) else { throw PlanArtifactError.invalidUTF8 }
+        return url
+    }
+
+    func load(relativePath: String) throws -> PlanArtifactDocument {
+        let url = try sourceURL(relativePath: relativePath)
+        let (data, contents) = try readSource(at: url)
         let summary =
             summary(for: url, contents: contents)
             ?? PlanArtifactSummary(
                 relativePath: relativePath, title: title(for: relativePath, contents: contents), modifiedAt: nil,
                 byteCount: data.count, sha256: hash(data), state: .available)
         return PlanArtifactDocument(summary: summary, contents: contents)
+    }
+
+    func railText(at source: URL) throws -> (text: String, title: String) {
+        let (_, text) = try readSource(at: source)
+        return (text, title(for: relativePath(for: source), contents: text))
+    }
+
+    private func readSource(at url: URL) throws -> (Data, String) {
+        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+        guard data.count <= maxArtifactBytes else { throw PlanArtifactError.fileTooLarge }
+        guard let contents = String(data: data, encoding: .utf8) else { throw PlanArtifactError.invalidUTF8 }
+        return (data, contents)
     }
 
     func comments(for document: PlanArtifactDocument) throws -> [PlanReviewComment] {
@@ -227,7 +246,7 @@ struct PlanArtifactService {
     private func isReviewArtifact(_ url: URL) -> Bool {
         relativePath(for: url).split(separator: "/").first == "reviews"
     }
-    private func relativePath(for url: URL) -> String { String(url.path.dropFirst(plansRoot.path.count + 1)) }
+    func relativePath(for url: URL) -> String { String(url.path.dropFirst(plansRoot.path.count + 1)) }
     private func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     private func title(for relativePath: String, contents: String?) -> String {
         if let heading = contents?.split(separator: "\n").first(where: { $0.hasPrefix("# ") }) {

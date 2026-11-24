@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// A plan this session owns: a Hermes `/plan` file it named, or a Markdown file someone
@@ -32,16 +33,28 @@ enum SessionPlans {
     /// Plans whose file name the session's chat mentions, newest first. A plan in the
     /// folder that this session never named belongs to another session and is left out.
     static func mentioned(_ plans: [PlanArtifactSummary], in texts: [String]) -> [PlanArtifactSummary] {
-        plans.filter { plan in
-            let name = (plan.relativePath as NSString).lastPathComponent
-            return texts.contains { $0.contains(name) }
+        let normalized = texts.map { $0.precomposedStringWithCanonicalMapping as NSString }
+        return plans.filter { mentions(($0.relativePath as NSString).lastPathComponent, in: normalized) }
+    }
+
+    private static func mentions(_ filename: String, in normalized: [NSString]) -> Bool {
+        let name = filename.precomposedStringWithCanonicalMapping
+        return normalized.contains {
+            !Task.isCancelled && $0.range(of: name, options: .literal).location != NSNotFound
         }
     }
 
     static func plan(
         path: String, title: String, modifiedAt: Date?, text: String, tasks: [TodoPlan.Item] = []
     ) -> SessionPlan {
-        let map = SpecMapParser.parse(text, fallbackTitle: title)
+        plan(
+            path: path, title: title, modifiedAt: modifiedAt, map: SpecMapParser.parse(text, fallbackTitle: title),
+            tasks: tasks)
+    }
+
+    private static func plan(
+        path: String, title: String, modifiedAt: Date?, map: SpecMap, tasks: [TodoPlan.Item]
+    ) -> SessionPlan {
         let title = map.title.isEmpty ? title : map.title
         if let progress = map.progress {
             return SessionPlan(
@@ -61,39 +74,138 @@ enum SessionPlans {
     static func load(
         workspace: String?, texts: [String], linked: [String], tasks: [TodoPlan.Item]
     ) -> [SessionPlan] {
-        var plans: [SessionPlan] = []
-        if let workspace {
-            let service = PlanArtifactService(projectRoot: URL(fileURLWithPath: workspace))
-            plans = mentioned(service.list(), in: texts).compactMap { summary in
-                guard let document = try? service.load(relativePath: summary.relativePath) else { return nil }
-                return plan(
-                    path: service.plansRoot.appendingPathComponent(summary.relativePath).path,
-                    title: summary.title, modifiedAt: summary.modifiedAt, text: document.contents, tasks: tasks)
-            }
-        }
-        for path in linked where !plans.contains(where: { $0.path == path }) {
-            plans.append(linkedPlan(path: path, tasks: tasks))
-        }
-        return plans
+        var loader = Loader()
+        return loader.load(workspace: workspace, newTexts: texts, linked: linked, tasks: tasks)
     }
 
-    private static let maxLinkedBytes = 1_000_000
-
-    private static func linkedPlan(path: String, tasks: [TodoPlan.Item]) -> SessionPlan {
-        let url = URL(fileURLWithPath: path)
-        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-        guard let size = values?.fileSize, size <= maxLinkedBytes,
-            let text = try? String(contentsOf: url, encoding: .utf8)
-        else {
-            return SessionPlan(
-                path: path, title: url.deletingPathExtension().lastPathComponent, modifiedAt: nil, done: nil,
-                total: nil, blocked: 0, nextUp: nil, isLinked: true, isMissing: true)
+    /// One disposable cache per visible rail, carried across its file polls.
+    struct Loader: Sendable {
+        private struct Source: Hashable, Sendable {
+            let path: String
+            let isLinked: Bool
         }
-        var plan = plan(
-            path: path, title: url.deletingPathExtension().lastPathComponent,
-            modifiedAt: values?.contentModificationDate, text: text, tasks: tasks)
-        plan.isLinked = true
-        return plan
+
+        private var texts: [String] = []
+        private var mentions: [String: Bool] = [:]
+        private var maps: [Source: (FileRevision, SpecMap)] = [:]
+
+        mutating func load(
+            workspace: String?, newTexts: [String]?, linked: [String], tasks: [TodoPlan.Item]
+        ) -> [SessionPlan] {
+            if let newTexts {
+                texts = newTexts.map(\.precomposedStringWithCanonicalMapping)
+                mentions.removeAll()
+            }
+            var plans: [SessionPlan] = []
+            if let workspace {
+                let service = PlanArtifactService(projectRoot: URL(fileURLWithPath: workspace))
+                let files = service.planFileCandidates()
+                let names = Set(files.map(\.lastPathComponent))
+                let unchecked = names.subtracting(mentions.keys)
+                if !unchecked.isEmpty {
+                    let normalized = texts.map { $0 as NSString }
+                    for name in unchecked {
+                        guard !Task.isCancelled else { return [] }
+                        mentions[name] = SessionPlans.mentions(name, in: normalized)
+                    }
+                }
+                mentions = mentions.filter { names.contains($0.key) }
+                for file in files where mentions[file.lastPathComponent] == true {
+                    guard !Task.isCancelled else { return [] }
+                    guard let validated = try? service.sourceURL(relativePath: service.relativePath(for: file))
+                    else { continue }
+                    let source = Source(path: file.path, isLinked: false)
+                    guard
+                        let entry = read(
+                            source, maxBytes: service.maxArtifactBytes,
+                            contents: {
+                                try service.railText(at: validated)
+                            })
+                    else { continue }
+                    plans.append(
+                        plan(
+                            path: file.path, title: entry.1.title, modifiedAt: entry.0.modifiedAt,
+                            map: entry.1, tasks: tasks))
+                }
+                plans.sort {
+                    if $0.modifiedAt != $1.modifiedAt {
+                        return ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast)
+                    }
+                    return $0.path.localizedStandardCompare($1.path) == .orderedAscending
+                }
+            }
+            var paths = Set(plans.map(\.path))
+            for path in linked where paths.insert(path).inserted {
+                guard !Task.isCancelled else { return [] }
+                let file = URL(fileURLWithPath: path)
+                let title = file.deletingPathExtension().lastPathComponent
+                if let (revision, map) = read(
+                    Source(path: path, isLinked: true), maxBytes: 1_000_000,
+                    contents: {
+                        (try String(contentsOf: file, encoding: .utf8), title)
+                    })
+                {
+                    var value = plan(path: path, title: title, modifiedAt: revision.modifiedAt, map: map, tasks: tasks)
+                    value.isLinked = true
+                    plans.append(value)
+                } else {
+                    plans.append(
+                        SessionPlan(
+                            path: path, title: title, modifiedAt: nil, done: nil, total: nil, blocked: 0,
+                            nextUp: nil, isLinked: true, isMissing: true))
+                }
+            }
+            let visibleSources = Set(plans.map { Source(path: $0.path, isLinked: $0.isLinked) })
+            maps = maps.filter { visibleSources.contains($0.key) }
+            return plans
+        }
+
+        private mutating func read(
+            _ source: Source, maxBytes: Int, contents: () throws -> (text: String, title: String)
+        ) -> (FileRevision, SpecMap)? {
+            let file = URL(fileURLWithPath: source.path)
+            guard let revision = FileRevision(file), revision.bytes <= maxBytes,
+                FileManager.default.isReadableFile(atPath: file.path)
+            else {
+                maps[source] = nil
+                return nil
+            }
+            if let cached = maps[source], cached.0 == revision { return cached }
+            guard let value = try? contents() else {
+                maps[source] = nil
+                return nil
+            }
+            let entry = (revision, SpecMapParser.parse(value.text, fallbackTitle: value.title))
+            maps[source] = entry
+            return entry
+        }
+    }
+
+    private struct FileRevision: Equatable, Sendable {
+        let device: Int32
+        let inode: UInt64
+        let bytes: Int64
+        let modifiedAt: Date
+        let changeSeconds: Int
+        let changeNanoseconds: Int
+
+        init?(_ file: URL) {
+            var info = stat()
+            guard
+                file.withUnsafeFileSystemRepresentation({ path in
+                    guard let path else { return false }
+                    return stat(path, &info) == 0 && info.st_mode & S_IFMT == S_IFREG
+                })
+            else { return nil }
+            device = info.st_dev
+            inode = info.st_ino
+            bytes = info.st_size
+            modifiedAt = Date(
+                timeIntervalSince1970: Double(info.st_mtimespec.tv_sec)
+                    + Double(info.st_mtimespec.tv_nsec) / 1_000_000_000)
+            changeSeconds = info.st_ctimespec.tv_sec
+            changeNanoseconds = info.st_ctimespec.tv_nsec
+        }
     }
 
     /// Asks Hermes to name its task list after the plan's steps, which agents keep up to

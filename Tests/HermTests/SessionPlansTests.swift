@@ -97,6 +97,54 @@ struct SessionPlansTests {
         #expect(plans[0].total == nil)
     }
 
+    @Test func repeatedPollsFindNewFilesAndRefreshEditedOrRemovedPlans() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let directory = root.appendingPathComponent(".hermes/plans")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let initial = directory.appendingPathComponent("café.md")
+        let later = directory.appendingPathComponent("later.md")
+        let other = directory.appendingPathComponent("cafe.md")
+        try "# Initial\n## Steps\n1. Build exporter".write(to: initial, atomically: true, encoding: .utf8)
+        try "# Other".write(to: other, atomically: true, encoding: .utf8)
+        var loader = SessionPlans.Loader()
+        let first = loader.load(
+            workspace: root.path, newTexts: ["See cafe\u{301}.md and later.md, not CAFE.md"], linked: [], tasks: [])
+        #expect(first.map(\.title) == ["Initial"])
+
+        try "# Later".write(to: later, atomically: true, encoding: .utf8)
+        let second = loader.load(
+            workspace: root.path, newTexts: nil, linked: [],
+            tasks: [.init(content: "Build exporter", status: "completed")])
+        #expect(Set(second.map(\.title)) == ["Initial", "Later"])
+        #expect(second.first { $0.title == "Initial" }?.done == 1)
+
+        try "# New one\n## Steps\n1. Build exporter".write(to: initial, atomically: true, encoding: .utf8)
+        try FileManager.default.removeItem(at: later)
+        let third = loader.load(workspace: root.path, newTexts: nil, linked: [later.path], tasks: [])
+        #expect(third.map(\.title) == ["New one", "later"])
+        #expect(third.last?.isMissing == true)
+        let reset = loader.load(workspace: root.path, newTexts: ["Open cafe.md"], linked: [], tasks: [])
+        #expect(reset.map(\.title) == ["Other"])
+    }
+
+    @Test func cachedPlanCannotFollowAReplacementSymlinkOutOfThePlansFolder() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let directory = root.appendingPathComponent(".hermes/plans")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = directory.appendingPathComponent("plan.md")
+        let outside = root.appendingPathComponent("outside.md")
+        try "# Plan".write(to: file, atomically: true, encoding: .utf8)
+        try "# Outside".write(to: outside, atomically: true, encoding: .utf8)
+        var loader = SessionPlans.Loader()
+        #expect(loader.load(workspace: root.path, newTexts: ["See plan.md"], linked: [], tasks: []).count == 1)
+
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createSymbolicLink(at: file, withDestinationURL: outside)
+        #expect(loader.load(workspace: root.path, newTexts: nil, linked: [], tasks: []).isEmpty)
+    }
+
     @Test func trackProgressAsksForAMatchingTaskList() {
         let context = SessionPlans.trackProgressContext(path: "/w/.hermes/plans/a.md", title: "Add export")
         #expect(context.title == "Track progress · Add export")

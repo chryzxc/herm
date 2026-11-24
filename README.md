@@ -580,6 +580,7 @@ repository listings, searches, and other sessions' history do not add their resu
 Live results must belong to the selected response. Switching sessions or profiles resets
 rail state and its cached workspace folder; tasks, plans, outputs, attention, and pins use that session's data.
 The Plan section lists the `.hermes/plans/` files the chat names and any plan you added with **Add to rail**, with progress from their checkboxes or else the session's task list, and a Track progress action when neither has any; selecting one opens it in Plan view.
+The rail picks up file edits while it is visible and reuses the parsed plan between edits.
 Workspace uses a colored folder icon, a project name and path, and labelled branch
 and latest-commit details.
 Changes reflects Git status for the session's worktree. Explorer and Source Control follow the folder

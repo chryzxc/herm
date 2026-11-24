@@ -382,22 +382,33 @@ struct SessionPullRequestRail: View {
             // A missing manifest keeps the last one for this session rather than blanking the section.
             if let files = await context?.files, model.navigationSessionID == id { contextFiles = (id, files) }
         }
-        .task(id: [model.navigationSessionID ?? "", repositoryPath ?? "", refreshID.uuidString]) {
-            // Plan files change through ordinary edits and links through the file tab, so the
-            // plans are re-read on a slow poll rather than on transcript events.
+        .task(id: [model.navigationSessionID ?? "", repositoryPath ?? "", refreshID.uuidString, String(hostVisible)]) {
+            guard hostVisible else { return }
             guard let id = model.navigationSessionID else {
                 plans = nil
                 return
             }
             let workspace = repositoryPath
+            var loader = SessionPlans.Loader()
+            var lastRevision: UInt64?
             while !Task.isCancelled {
-                let texts = model.messages.map(\.text)
+                let revision = model.messagesRevision
+                let texts = lastRevision == revision ? nil : model.messages.map(\.text)
                 let linked = LinkedPlans.paths(sessionID: id)
                 let tasks = model.planTasks
-                let found = await Task.detached(priority: .utility) {
-                    SessionPlans.load(workspace: workspace, texts: texts, linked: linked, tasks: tasks)
-                }.value
-                guard !Task.isCancelled else { return }
+                let worker = Task.detached(priority: .utility) { [loader] in
+                    var updated = loader
+                    let found = updated.load(workspace: workspace, newTexts: texts, linked: linked, tasks: tasks)
+                    return (updated, found)
+                }
+                let (updated, found) = await withTaskCancellationHandler {
+                    await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
+                guard !Task.isCancelled, model.navigationSessionID == id else { return }
+                loader = updated
+                lastRevision = revision
                 if plans?.sessionID != id || plans?.plans != found { plans = (id, found) }
                 try? await Task.sleep(for: .seconds(2))
             }
