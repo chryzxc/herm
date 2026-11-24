@@ -21,6 +21,15 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
     var onPage: (() -> Void)?
     var pageCount = 0
     var unreadRows: [[String: Any]]?
+    var historyPaths: [String] = []
+    var storedHistory: [String: Any]?
+    var beforeStoredHistoryReturns: (@MainActor () async -> Void)?
+    var storedTimeline: [String: Any]?
+    var timeoutNextA = false
+
+    static var resumeTimeout: NSError {
+        NSError(domain: "Hermes", code: 408, userInfo: [NSLocalizedDescriptionKey: "Hermes did not respond in time."])
+    }
 
     func connect() async throws {}
     func close() {}
@@ -37,6 +46,10 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
         }
         guard method == "session.resume" else { return [:] }
         let id = params["session_id"] as? String ?? ""
+        if id == "a", timeoutNextA {
+            timeoutNextA = false
+            throw Self.resumeTimeout
+        }
         if let unreadRows {
             return [
                 "session_id": "runtime-\(id)", "session_key": id,
@@ -87,6 +100,18 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
     }
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        let endpoint = URLComponents(string: path)?.path
+        if endpoint?.hasSuffix("/messages") == true, let storedHistory {
+            historyPaths.append(path)
+            let beforeReturn = beforeStoredHistoryReturns
+            beforeStoredHistoryReturns = nil
+            await beforeReturn?()
+            return storedHistory
+        }
+        if endpoint?.hasSuffix("/timeline") == true, let storedTimeline {
+            historyPaths.append(path)
+            return storedTimeline
+        }
         if holdHistory { await withCheckedContinuation { heldHistory = $0 } }
         pageCount += 1
         onPage?()
@@ -330,6 +355,223 @@ struct SessionSwitchCacheTests {
         model.resumeSession(session("a"))
         try await waitUntil { model.sessionActionsReady && model.sessionStorageID == "a" }
         #expect(model.messages.last?.text == "answer a")
+    }
+
+    @Test func coldProfileSessionShowsStoredHistoryAfterResumeTimeout() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        let selected = session("a", profile: "other-profile")
+        let listed = session("b", profile: "current-profile")
+        model.sessionProjectionState = .ready([listed])
+        model.allBotSessionsState = .ready([listed, selected])
+        rpc.storedHistory = [
+            "session_id": "a", "profile": "other-profile", "pagination": ["returned": 2],
+            "messages": [
+                ["id": 9, "role": "user", "content": "Stored question"],
+                ["id": 10, "role": "assistant", "content": "Stored answer"],
+            ],
+        ]
+        rpc.holdNextA = true
+        rpc.nextFailure = SessionSwitchRPC.resumeTimeout
+
+        let opening = model.startSessionResume(selected, reportFailure: true, reviewUnread: false)
+        try await waitUntil { rpc.held != nil }
+        rpc.release()
+        #expect(await !opening.value)
+
+        #expect(model.displayedTranscriptMessages.map(\.text) == ["Stored question", "Stored answer"])
+        #expect(!model.sessionActionsReady)
+        #expect(model.sessionProjectionState == .ready([listed]))
+        #expect(model.allBotSessionsState == .ready([listed, selected]))
+        let path = try #require(rpc.historyPaths.first)
+        let url = try #require(URLComponents(string: path))
+        #expect(url.path == "/api/sessions/a/messages")
+        #expect(url.queryItems?.first(where: { $0.name == "profile" })?.value == "other-profile")
+    }
+
+    @Test func recoveredSelectionIgnoresLiveCompletionWithoutMarkingItSeen() async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        let profile = UUID().uuidString
+        let seen = SidebarSessionSeenStore.shared
+        defer {
+            seen.reconcile(profileID: profile, availableSessionIDs: [])
+            model.shutdown()
+        }
+        rpc.storedHistory = storedPage([["id": 1, "role": "user", "content": "stored prompt"]], profile: profile)
+        rpc.timeoutNextA = true
+        let selected = session("a", profile: profile)
+        #expect(await !model.startSessionResume(selected, reportFailure: true, reviewUnread: false).value)
+        let previousSeen = Date().addingTimeInterval(-60)
+        seen.markSeen(profileID: profile, sessionID: selected.id, at: previousSeen)
+        model.isPopoverVisible = true
+        model.receiveGatewayEvent(
+            "message.complete", params: ["session_id": selected.id, "payload": ["text": "live completion"]])
+        #expect(model.displayedTranscriptMessages.map(\.text) == ["stored prompt"])
+        #expect(seen.seenAt(profileID: profile, sessionID: selected.id) == previousSeen)
+        #expect(!model.autoTitleAttempts.contains(selected.id))
+        #expect(!model.sessionActionsReady)
+    }
+
+    @Test func authenticationChangeClearsOpenRecoveredPaneAndRejectsLateRecovery() async throws {
+        let rpc = SessionSwitchRPC()
+        let runtime = makeModel(rpc)
+        let chat = EdgeQuickConversationModel()
+        defer {
+            chat.shutdown()
+            runtime.shutdown()
+        }
+        let destination = QuickDestination(profileID: "owner", sessionID: "a")
+        rpc.storedHistory = storedPage([["id": 1, "role": "user", "content": "previous identity"]])
+        rpc.timeoutNextA = true
+        await chat.load(destination, runtime: runtime)
+        let model = try #require(chat.conversation)
+        #expect(model.hasReadableStoredTranscript)
+        #expect(!model.storedMessageReferences.isEmpty)
+
+        rpc.timeoutNextA = true
+        rpc.beforeStoredHistoryReturns = { model.invalidateGatewayAuthenticationProjection() }
+        let retry = try #require(chat.startLoad(destination, runtime: runtime))
+        #expect(await !retry.value)
+        #expect(chat.conversation === model)
+        #expect(chat.paneLoadFailed)
+        #expect(!chat.isLoading)
+        #expect(!model.hasReadableStoredTranscript)
+        #expect(model.displayedTranscriptMessages.isEmpty)
+        #expect(model.storedMessageReferences.isEmpty)
+        #expect(model.transcriptMessageIDsByRowID.isEmpty)
+        #expect(model.transcriptHistoryCursor == nil)
+        #expect(!model.sessionActionsReady)
+    }
+
+    @Test func startupKeepsSavedReadOnlySelectionWithoutResumingLatest() async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        model.profileScopeID = "owner"
+        model.defaults.set("a", forKey: model.lastSessionIDKey(for: model.profileScopeID))
+        model.sessionProjectionState = .ready([session("b", profile: "owner")])
+        model.isPollingSessions = true
+        rpc.storedHistory = storedPage([["id": 1, "role": "user", "content": "saved prompt"]])
+        rpc.timeoutNextA = true
+
+        await model.restoreLatestSessionIfNeeded()?.value
+
+        #expect(model.navigationSessionID == "a")
+        #expect(model.displayedTranscriptMessages.map(\.text) == ["saved prompt"])
+        #expect(!model.sessionActionsReady)
+        #expect(rpc.requests.filter { $0 == "session.resume" }.count == 1)
+    }
+
+    @Test func recoveredCompactionTipPagesReadOnlyAndOnlySuccessfulRetryEnablesActions() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        let selected = session("a", profile: "owner")
+        let limit = TranscriptHistoryPaging.conversationBufferRowLimit
+        let rows: [[String: Any]] = (2...(limit + 1)).map { ["id": $0, "role": "user", "content": "row \($0)"] }
+        rpc.storedHistory = storedPage(rows, sessionID: "tip")
+        rpc.storedTimeline = [
+            "session_id": "tip", "profile": "owner", "entries": [["row_id": 1, "preview": "older"]],
+        ]
+        rpc.timeoutNextA = true
+
+        #expect(await !model.startSessionResume(selected, reportFailure: true, reviewUnread: false).value)
+        #expect(model.hasReadableStoredTranscript)
+        #expect(model.navigationSessionID == "a")
+        #expect(model.sessionID == "a")
+        #expect(!model.sessionActionsReady)
+        let proof = try #require(rpc.historyPaths.dropFirst().first.flatMap { URLComponents(string: $0) })
+        #expect(proof.path == "/api/sessions/a/timeline")
+        #expect(proof.queryItems?.contains(URLQueryItem(name: "limit", value: "1")) == true)
+        #expect(proof.queryItems?.contains(URLQueryItem(name: "profile", value: "owner")) == true)
+        await model.transcriptTimelineTask?.value
+        #expect(model.unloadedTranscriptPrompts.map(\.rowID) == [1])
+        let timeline = try #require(rpc.historyPaths.last.flatMap { URLComponents(string: $0) })
+        #expect(timeline.path == "/api/sessions/tip/timeline")
+        #expect(timeline.queryItems?.contains(URLQueryItem(name: "profile", value: "owner")) == true)
+        rpc.storedTimeline = [
+            "session_id": "tip", "profile": "other", "entries": [["row_id": 1, "preview": "foreign"]],
+        ]
+        model.loadTranscriptTimeline(generation: model.sessionResumeGeneration)
+        await model.transcriptTimelineTask?.value
+        #expect(model.unloadedTranscriptPrompts.isEmpty)
+
+        rpc.storedHistory = storedPage([["id": 1, "role": "user", "content": "wrong tip"]])
+        #expect(await model.loadTranscriptHistory(through: 1) == nil)
+        #expect(model.messages.first?.text == "row 2")
+        rpc.storedHistory = storedPage([["id": 1, "role": "user", "content": "older"]], sessionID: "tip")
+        #expect(await model.loadTranscriptHistory(through: 1) != nil)
+        #expect(model.messages.first?.text == "older")
+        #expect(model.messages.count == limit + 1)
+        #expect(!model.sessionActionsReady)
+
+        let pagedIDs = model.messages.map(\.id)
+        let pagedCursor = model.transcriptHistoryCursor
+        rpc.storedHistory = storedPage(Array(rows.suffix(2)), sessionID: "tip")
+        rpc.storedTimeline = ["session_id": "tip", "profile": "owner", "entries": [[String: Any]]()]
+        rpc.holdNextA = true
+        rpc.nextFailure = SessionSwitchRPC.resumeTimeout
+        let retry = model.startSessionResume(selected, reportFailure: true, reviewUnread: false)
+        try await waitUntil { rpc.held != nil }
+        #expect(model.sessionTranscriptLoadState == .refreshing)
+        #expect(model.hasReadableStoredTranscript)
+        #expect(model.displayedTranscriptMessages.map(\.id) == pagedIDs)
+        #expect(!model.sessionActionsReady)
+        rpc.release()
+        #expect(await !retry.value)
+        #expect(model.messages.first?.text == "older")
+        #expect(model.messages.map(\.id) == pagedIDs)
+        #expect(model.transcriptHistoryCursor == pagedCursor)
+        #expect(model.hasReadableStoredTranscript)
+        #expect(!model.sessionActionsReady)
+        #expect(await model.startSessionResume(selected, reportFailure: true, reviewUnread: false).value)
+        #expect(model.sessionActionsReady)
+        #expect(model.messages.last?.text == "answer a")
+        #expect(rpc.requests.filter { $0 == "session.resume" }.count == 3)
+    }
+
+    @Test func coldRecoveryRejectsStoredRowsFromAnotherProfile() async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        rpc.storedHistory = storedPage([["id": 1, "role": "user", "content": "foreign"]], profile: "other")
+        rpc.timeoutNextA = true
+        let selected = session("a", profile: "owner")
+
+        #expect(await !model.startSessionResume(selected, reportFailure: true, reviewUnread: false).value)
+        #expect(rpc.historyPaths.count == 1)
+        #expect(!model.displayedTranscriptMessages.contains { $0.text == "foreign" })
+        #expect(!model.hasReadableStoredTranscript)
+        #expect(!model.sessionActionsReady)
+    }
+
+    @Test func lateStoredHistoryCannotReplaceANewerSelection() async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        rpc.storedHistory = storedPage([["id": 1, "role": "user", "content": "late a"]])
+        rpc.timeoutNextA = true
+        let selected = session("a", profile: "owner")
+        let newer = session("b", profile: "owner")
+        rpc.beforeStoredHistoryReturns = {
+            let opening = model.startSessionResume(newer, reportFailure: true, reviewUnread: false)
+            #expect(await opening.value)
+            #expect(model.navigationSessionID == "b")
+        }
+
+        #expect(await !model.startSessionResume(selected, reportFailure: true, reviewUnread: false).value)
+        #expect(rpc.historyPaths.count == 1)
+        #expect(model.navigationSessionID == "b")
+        #expect(model.sessionActionsReady)
+        #expect(model.messages.map(\.text) == ["question b", "answer b"])
+    }
+
+    private func storedPage(
+        _ rows: [[String: Any]], sessionID: String = "a", profile: String = "owner"
+    ) -> [String: Any] {
+        ["session_id": sessionID, "profile": profile, "pagination": ["returned": rows.count], "messages": rows]
     }
 
     @Test func cacheEvictsLeastRecentlyUsedAndRejectsOversizedEntries() {

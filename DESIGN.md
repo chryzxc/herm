@@ -3192,6 +3192,11 @@ is no matching receipt or cached attribution, the footer omits the provider.
 When a conversation is loading, the shared loading mark appears above the status
 text. The collapsed review chat places the small mark beside the text.
 
+If runtime resume times out but stored history is readable, keep the normal
+transcript and scrolling, with the existing Retry action. Responding and other
+runtime actions stay disabled until resume succeeds. The session list keeps its
+own loading and availability state.
+
 The send arrow folds into a square in the same button when its action changes to Stop. Thinking uses a three-bead relay, and live compaction folds the outer two lines into the middle line. Both use native layers and retain static marks when motion is paused. The shared progress meter interpolates its filled path inside a fixed track.
 
 A user-message reaction sits at the top-leading corner of the bubble, or of the image group when present. It grows from the corner touching the message content, and later emoji changes briefly compress the pill around that point. The assistant footer uses its leading corner.

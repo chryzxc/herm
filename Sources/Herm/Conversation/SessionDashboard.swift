@@ -130,17 +130,20 @@ struct SessionDashboard<Conversation: View>: View {
     private var conversationPane: some View {
         VStack(spacing: 0) {
             if isNewConversation || selection.session != nil {
-                if canRespond || showsCachedSelection {
+                if canRespond || showsStoredSelection {
                     conversation()
                 } else if selection.isLoading {
                     ConversationLoadingState()
                         .frame(maxHeight: .infinity)
                 } else {
                     emptyState("Conversation unavailable", detail: "Reload this session before responding.")
-                    if let session = selection.session {
-                        Button("Retry") { select(session) }.buttonStyle(.dockSecondary)
-                    }
-                    Spacer()
+                }
+                let keepsRetryVisible = model.isShowingReadOnlyStoredTranscript && showsStoredSelection
+                if !canRespond, !selection.isLoading || keepsRetryVisible, let session = selection.session {
+                    Button("Retry") { select(session) }
+                        .buttonStyle(.dockSecondary)
+                        .disabled(selection.isLoading)
+                    if !showsStoredSelection { Spacer() }
                 }
             } else {
                 emptyState(
@@ -155,14 +158,15 @@ struct SessionDashboard<Conversation: View>: View {
     }
 
     private var canRespond: Bool {
-        isNewConversation
-            || selection.canRespond(
+        if isNewConversation { return true }
+        return model.sessionActionsReady
+            && selection.canRespond(
                 activeSessionID: model.navigationSessionID, activeProfileID: model.sessionProfileID,
                 profileID: model.profileScopeID)
     }
 
-    private var showsCachedSelection: Bool {
-        selection.isLoading && model.sessionTranscriptPreview != nil
+    private var showsStoredSelection: Bool {
+        model.hasReadableStoredTranscript
             && selection.matches(
                 activeSessionID: model.navigationSessionID, activeProfileID: model.sessionProfileID,
                 profileID: model.profileScopeID)

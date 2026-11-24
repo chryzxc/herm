@@ -23,6 +23,8 @@ final class EdgeQuickConversationModel: ObservableObject {
         return conversation?.quickMessageUnavailableReason(for: conversation?.workflowSession)
     }
 
+    var paneLoadFailed: Bool { loadFailed || conversation?.sessionTranscriptLoadState.failureMessage != nil }
+
     private func prepare(_ destination: QuickDestination, session: HermesSession, runtime: DockModel) -> DockModel {
         if destinationKey == destination.sessionKey, let conversation { return conversation }
         shutdown()
@@ -41,9 +43,9 @@ final class EdgeQuickConversationModel: ObservableObject {
         model.defaultBotName = runtime.defaultBotName
         conversation = model
         connectionLink = runtime.$isHermesConnected.sink { [weak model] in model?.isHermesConnected = $0 }
-        statusLink = Publishers.CombineLatest3(
+        statusLink = Publishers.CombineLatest4(
             model.$status.removeDuplicates(), model.$isSending.removeDuplicates(),
-            model.$isRestoringSession.removeDuplicates()
+            model.$isRestoringSession.removeDuplicates(), model.$sessionTranscriptLoadState.removeDuplicates()
         )
         .sink { [weak self] _ in self?.objectWillChange.send() }
         if onSessionIdentityChange != nil {
@@ -84,12 +86,19 @@ final class EdgeQuickConversationModel: ObservableObject {
         isLoading = true
         loadFailed = false
         model.isRestoringSession = true
-        return model.startSessionResume(session, reportFailure: true) { [weak self, weak model] loaded in
-            guard let self, let model, generation == request else { return }
+        let resume = model.startSessionResume(session, reportFailure: true)
+        return Task { [weak self, weak model] in
+            let loaded = await withTaskCancellationHandler {
+                await resume.value
+            } onCancel: {
+                resume.cancel()
+            }
+            guard let self, let model, generation == request else { return false }
             model.isRestoringSession = false
             loadFailed = !loaded
             isLoading = false
             if loaded { onSessionIdentityChange?(model) }
+            return loaded
         }
     }
 

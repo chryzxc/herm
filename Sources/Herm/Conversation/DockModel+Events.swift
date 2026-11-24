@@ -30,9 +30,12 @@ extension DockModel {
     private func handleGatewayEvent(_ type: String, params: [String: Any]) {
         let noticePayload = params["payload"] as? [String: Any] ?? [:]
         let eventSessionID = (params["session_id"] as? String) ?? (noticePayload["session_id"] as? String)
+        let storedTip = transcriptHistoryCursor?.readOnlyResolvedSessionID
+        let isStoredSelection =
+            storedTip != nil && eventSessionID.map { currentSessionIDs.contains($0) || $0 == storedTip } == true
         let settlesTurn = type == "message.complete" || type == "error"
         let queueCompletionOwner =
-            settlesTurn
+            settlesTurn && !isStoredSelection
             ? eventSessionID.flatMap { owner -> String? in
                 guard
                     Self.eventBelongsToSession(
@@ -169,9 +172,10 @@ extension DockModel {
         if Self.isUnreadUpdateEvent(type) {
             markUnreadUpdate()
             if let eventSessionID {
-                updateSessionActivity(sessionID: eventSessionID, isWorking: false, unread: eventSessionID != sessionID)
+                let isCurrentLiveSession = eventSessionID == sessionID && !isStoredSelection
+                updateSessionActivity(sessionID: eventSessionID, isWorking: false, unread: !isCurrentLiveSession)
                 // A reply that lands in the chat being watched is read as it arrives.
-                if eventSessionID == sessionID, isPopoverVisible {
+                if isCurrentLiveSession, isPopoverVisible {
                     let rowID = rowSessionID(eventSessionID)
                     let profileID = sessions.first { $0.id == rowID }?.profileID ?? sessionProfileID ?? profileScopeID
                     SidebarSessionSeenStore.shared.markSeen(profileID: profileID, sessionID: rowID)
@@ -638,6 +642,7 @@ extension DockModel {
     }
 
     func handleEvent(_ type: String, params: [String: Any]) {
+        guard !isShowingReadOnlyStoredTranscript else { return }
         let rawPayload = params["payload"] as? [String: Any] ?? [:]
         let envelopeSessionID = params["session_id"] as? String
         let payloadSessionID = rawPayload["session_id"] as? String

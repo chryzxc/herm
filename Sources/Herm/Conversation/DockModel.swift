@@ -726,23 +726,7 @@ final class DockModel: ObservableObject {
                     else {
                         return
                     }
-                    self.sessionTranscriptCache.removeAll()
-                    self.retainedProfileSessions.removeAll()
-                    self.sessionTranscriptPreview = nil
-                    self.sessionResumeTask?.cancel()
-                    self.sessionResumeTask = nil
-                    self.allBotSessionsTask?.cancel()
-                    self.sessionTranscriptPreloadTask?.cancel()
-                    self.transcriptTimelineTask?.cancel()
-                    self.sessionPreviewImageTask?.cancel()
-                    self.sessionTranscriptImageTask?.cancel()
-                    self.runtimeModelOptionsTask?.cancel()
-                    self.sessionResumeGeneration &+= 1
-                    if self.sessionID != nil {
-                        self.sessionTranscriptLoadState = .failed(
-                            "Connection changed. Retry loading this conversation.")
-                        self.status = .offline
-                    }
+                    self.invalidateGatewayAuthenticationProjection()
                     // The connection owner reopens the socket for all its projections.
                     if let gateway = self.gateway {
                         gateway.close()
@@ -750,6 +734,26 @@ final class DockModel: ObservableObject {
                     }
                 }
             }
+    }
+
+    func invalidateGatewayAuthenticationProjection() {
+        sessionResumeGeneration &+= 1
+        restoreGeneration &+= 1
+        isRestoringSession = false
+        sessionTranscriptCache.removeAll()
+        retainedProfileSessions.removeAll()
+        sessionTranscriptPreview = nil
+        sessionResumeTask?.cancel()
+        sessionResumeTask = nil
+        allBotSessionsTask?.cancel()
+        sessionTranscriptPreloadTask?.cancel()
+        sessionPreviewImageTask?.cancel()
+        runtimeModelOptionsTask?.cancel()
+        clearStoredTranscriptProjection()
+        if sessionID != nil {
+            sessionTranscriptLoadState = .failed("Connection changed. Retry loading this conversation.")
+            status = .offline
+        }
     }
 
     var sendQueuedPromptAfterInterrupt = false

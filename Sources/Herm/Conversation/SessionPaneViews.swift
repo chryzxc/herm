@@ -656,25 +656,35 @@ struct SessionPaneChatContent: View {
     var body: some View {
         // One loading state at a time: the transcript has its own, so the pane never
         // overlays a second one on top of it.
-        if let conversation = chat.conversation, !chat.loadFailed,
+        if let conversation = chat.conversation, !chat.paneLoadFailed || conversation.hasReadableStoredTranscript,
             !(chat.isLoading && conversation.sessionTranscriptPreview == nil && conversation.messages.isEmpty)
         {
-            SessionPaneChat(
-                model: conversation, control: control, bots: bots, metrics: metrics, accessories: accessories
-            )
-            .id(contentID)
-        } else if chat.loadFailed {
+            VStack(spacing: 0) {
+                SessionPaneChat(
+                    model: conversation, control: control, bots: bots, metrics: metrics, accessories: accessories
+                )
+                .id(contentID)
+                if chat.paneLoadFailed || conversation.isShowingReadOnlyStoredTranscript { retryButton }
+            }
+        } else if chat.paneLoadFailed {
             VStack(spacing: 6) {
                 Text("Conversation unavailable").dockFont(.body, weight: .semibold)
-                Text("Hermes couldn't load this session.")
-                    .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                Button("Retry", action: onRetry)
-                    .buttonStyle(.dockSecondary)
+                Text(
+                    chat.conversation?.sessionTranscriptLoadState.failureMessage ?? "Hermes couldn't load this session."
+                )
+                .dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                retryButton
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ConversationLoadingState()
         }
+    }
+
+    private var retryButton: some View {
+        Button("Retry", action: onRetry)
+            .buttonStyle(.dockSecondary)
+            .disabled(chat.isLoading)
     }
 }
 

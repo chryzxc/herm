@@ -14,6 +14,7 @@ struct TranscriptHistoryCursor: Equatable {
     var nextOffset = 0
     var hasMore = true
     var seenRowIDs: Set<Int> = []
+    var readOnlyResolvedSessionID: String?
 }
 
 /// A page of older history inserted at the front of the canonical transcript.

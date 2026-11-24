@@ -537,6 +537,9 @@ live status load independently of restoration.
 Recently opened chats show their cached transcript immediately across bots, split tabs,
 and detached windows while Hermes refreshes it. The cache is bounded and held in
 memory. The opening preview includes bot replies received while you were away.
+If Hermes times out while opening a stored chat, Herm can still show its history
+read-only, including older messages as you scroll. Retry loading the conversation
+to respond. A conversation timeout does not make the session list unavailable.
 On a first visit, Herm waits for the unread check and opens directly at the first
 unread reply, or at the latest message when all replies have been read.
 
