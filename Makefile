@@ -7,7 +7,7 @@ SWIFT_FORMAT ?= $(shell xcrun --find swift-format 2>/dev/null)
 
 test:
 	# Native UI fixtures share the main actor; serialize to keep their deadlines meaningful.
-	. Scripts/appintents.sh && reset_stale_metal_cache && swift test --no-parallel --disable-automatic-resolution
+	. Scripts/appintents.sh && reset_stale_metal_cache && swift_with_build_jobs test --no-parallel --disable-automatic-resolution
 
 # Plugin pages only appear in More destinations when the git-ignored host bundle exists.
 plugin-host:
@@ -15,7 +15,7 @@ plugin-host:
 		echo 'warning: desktop plugin host not built; Hermes Desktop plugins will not appear in Herm.' >&2
 
 build: plugin-host
-	. Scripts/appintents.sh && reset_stale_metal_cache && swift build --disable-automatic-resolution
+	. Scripts/appintents.sh && reset_stale_metal_cache && swift_with_build_jobs build --disable-automatic-resolution
 
 # Same flags as Scripts/package-app.sh, so packaging reuses this build instead of recompiling.
 build-release:
@@ -34,7 +34,7 @@ format:
 
 smoke-contract:
 	sh -n Scripts/run-debug-app.sh Scripts/build-and-run-app.sh
-	swift test --disable-automatic-resolution --filter WorkflowAccessibilityIdentifierTests
+	. Scripts/appintents.sh && swift_with_build_jobs test --disable-automatic-resolution --filter WorkflowAccessibilityIdentifierTests
 
 color-contract:
 	python3 Scripts/test-color-contract.py

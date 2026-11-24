@@ -1504,11 +1504,18 @@ Forward to Bot restores your unsent note when you reopen it for the same message
 A successful send clears the submitted note and closes the popover. Failures keep the note and show an error for retry.
 
 ```sh
-swift build   # build
-swift test    # run the test suite
+make build    # build
+make test     # run the test suite
 make guard    # fast strict lint, color, and conflict/whitespace checks
 make check    # everything CI runs
 ```
+
+Local Makefile builds, the debug launcher, and the packaging script default to
+four concurrent build jobs. Set `HERM_BUILD_JOBS=2 make build` to use fewer jobs.
+The same environment variable works with `make run` and `make package`.
+Fewer jobs can lengthen a clean build, and release optimization can still
+use multiple threads within a single job.
+CI uses the toolchain default unless you set `HERM_BUILD_JOBS` explicitly.
 
 CI runs on every pull request and on every push to `main`.
 Run `make guard` before review and `make format` to fix mechanical Swift

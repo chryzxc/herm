@@ -33,9 +33,29 @@ reset_stale_metal_cache() {
     mkdir -p "$scratch" && printf %s "$metal" > "$stamp"
 }
 
+swift_with_build_jobs() {
+    swift_subcommand=$1
+    shift
+    if [ "${CI:-}" = "true" ] && [ -z "${HERM_BUILD_JOBS:-}" ]; then
+        swift "$swift_subcommand" "$@"
+        return
+    fi
+
+    # Swift Build reads the lane width from the environment. Older SwiftPM
+    # toolchains use --jobs to size their native scheduler.
+    build_jobs=${HERM_BUILD_JOBS:-4}
+    case "$build_jobs" in
+        0*|*[!0-9]*)
+            echo "error: HERM_BUILD_JOBS must be a positive integer" >&2
+            return 1
+            ;;
+    esac
+    SchedulerLaneWidth="$build_jobs" swift "$swift_subcommand" --jobs "$build_jobs" "$@"
+}
+
 swift_build_with_appintents() {
     reset_stale_metal_cache "$@"
-    swift build "$@" \
+    swift_with_build_jobs build "$@" \
         -Xswiftc -emit-const-values \
         -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file \
         -Xswiftc -Xfrontend -Xswiftc "$APPINTENTS_ROOT/Scripts/appintents-protocols.json"
