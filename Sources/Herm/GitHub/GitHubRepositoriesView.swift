@@ -2,9 +2,8 @@ import SwiftUI
 
 struct GitHubRepositoriesView: View {
     @ObservedObject var model: GitHubRepositoriesModel
-    private var selected: GitHubRepositorySummary? { model.repositories.first { $0.id == model.selectedID } }
-
     var body: some View {
+        let selected = model.repositories.first { $0.id == model.selectedID }
         VStack(spacing: 0) {
             DockPageHeader(
                 title: "Repositories", subtitle: "Browse your GitHub repositories",
@@ -45,24 +44,26 @@ struct GitHubRepositoriesView: View {
     }
 
     private var repositoryList: some View {
-        VStack(spacing: 0) {
-            toolbar
+        let visible = model.visible
+        let pinned = visible.prefix(while: model.isPinned)
+        let showsOwner = model.owners.count > 1
+        return VStack(spacing: 0) {
+            toolbar(count: visible.count)
             ScrollView {
                 LazyVStack(spacing: 2) {
-                    let pinned = model.visible.filter(model.isPinned)
                     if pinned.isEmpty {
-                        rows(model.visible)
+                        rows(visible[...], showsOwner: showsOwner)
                     } else {
                         sectionHeader("Pinned", count: pinned.count)
-                        rows(pinned)
-                        let unpinned = model.visible.filter { !model.isPinned($0) }
+                        rows(pinned, showsOwner: showsOwner)
+                        let unpinned = visible.dropFirst(pinned.count)
                         if !unpinned.isEmpty {
                             sectionHeader("All repositories", count: unpinned.count)
                                 .dockPadding(.top, 12)
-                            rows(unpinned)
+                            rows(unpinned, showsOwner: showsOwner)
                         }
                     }
-                    if model.visible.isEmpty { emptyState }
+                    if visible.isEmpty { emptyState }
                 }.dockPadding(.horizontal, 10).dockPadding(.vertical, 6)
             }
         }
@@ -72,22 +73,22 @@ struct GitHubRepositoriesView: View {
         DockSectionHeader(title: title, count: count, style: DockThemePalette(theme: DockThemeRuntime.current))
     }
 
-    private func rows(_ repositories: [GitHubRepositorySummary]) -> some View {
+    private func rows(_ repositories: ArraySlice<GitHubRepositorySummary>, showsOwner: Bool) -> some View {
         ForEach(repositories) { repository in
+            let isSelected = model.selectedID == repository.id
             Button {
                 model.selectedID = repository.id
             } label: {
                 GitHubRepositoryRow(
-                    repository: repository, isSelected: selected?.id == repository.id,
-                    showsOwner: model.owners.count > 1)
+                    repository: repository, isSelected: isSelected, showsOwner: showsOwner)
             }
             .buttonStyle(.dockHover)
-            .accessibilityAddTraits(selected?.id == repository.id ? [.isSelected] : [])
+            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             .help("View repository details")
         }
     }
 
-    private var toolbar: some View {
+    private func toolbar(count: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             DockSearchField(placeholder: "Search repositories", text: $model.query)
             ViewThatFits(in: .horizontal) {
@@ -107,7 +108,7 @@ struct GitHubRepositoriesView: View {
                     model.loading
                         ? "Refreshing repositories…"
                         : (model.error ?? model.coverage
-                            ?? "\(model.visible.count) repositories · recently updated")
+                            ?? "\(count) repositories · recently updated")
                 )
                 .foregroundStyle(model.error == nil ? Color.dockMetadataText : Color.dockWarning)
                 .lineLimit(2)

@@ -48,34 +48,51 @@ struct GitHubRepositorySummary: Identifiable, Equatable, Sendable {
 @MainActor
 final class GitHubRepositoriesModel: ObservableObject {
     let client: GitHubClient
-    @Published var query = ""
-    @Published var visibility = "All"
-    @Published var owner = "All owners"
-    var owners: [String] { Array(Set(repositories.map(\.owner))).sorted() }
-    @Published var includesArchived = false
+    @Published var query = "" { didSet { visibleCache = nil } }
+    @Published var visibility = "All" { didSet { visibleCache = nil } }
+    @Published var owner = "All owners" { didSet { visibleCache = nil } }
+    private(set) var owners: [String] = []
+    @Published var includesArchived = false { didSet { visibleCache = nil } }
     /// Owned here, not by the view, so window back/forward can restore it.
     @Published var selectedID: String?
-    @Published private(set) var repositories: [GitHubRepositorySummary] = []
+    @Published private(set) var repositories: [GitHubRepositorySummary] = [] {
+        didSet {
+            owners = Array(Set(repositories.map(\.owner))).sorted()
+            invalidateOrder()
+        }
+    }
     /// Lowercased `owner/name` of the viewer's GitHub profile pins, in profile order.
-    @Published private(set) var pinned: [String] = []
+    @Published private(set) var pinned: [String] = [] { didSet { invalidateOrder() } }
     @Published private(set) var loading = false
     @Published private(set) var hasLoaded = false
     @Published private(set) var error: String?
     @Published private(set) var coverage: String?
     @Published private(set) var accessRequirement: GitHubAccessRequirement?
+    private var orderedCache: [GitHubRepositorySummary]?
+    private var visibleCache: [GitHubRepositorySummary]?
 
     init(client: GitHubClient = GitHubClient()) { self.client = client }
 
     /// Profile pins first in GitHub's pinned order, then everything else by last update.
     var visible: [GitHubRepositorySummary] {
+        if let visibleCache { return visibleCache }
+        let ordered = orderedCache ?? Self.pinnedFirst(repositories, pinned: pinned)
+        orderedCache = ordered
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return Self.pinnedFirst(repositories, pinned: pinned).filter {
+        let visible = ordered.filter {
             (owner == "All owners" || $0.owner == owner)
                 && (includesArchived || !$0.archived)
                 && (visibility == "All" || ($0.isPrivate ? visibility == "Private" : visibility == "Public"))
                 && (needle.isEmpty || $0.id.localizedStandardContains(needle)
                     || $0.description.localizedStandardContains(needle))
         }
+        visibleCache = visible
+        return visible
+    }
+
+    private func invalidateOrder() {
+        orderedCache = nil
+        visibleCache = nil
     }
 
     func isPinned(_ repository: GitHubRepositorySummary) -> Bool { pinned.contains(repository.id.lowercased()) }
@@ -83,15 +100,18 @@ final class GitHubRepositoriesModel: ObservableObject {
     nonisolated static func pinnedFirst(_ repositories: [GitHubRepositorySummary], pinned: [String])
         -> [GitHubRepositorySummary]
     {
+        guard !pinned.isEmpty else { return repositories }
         let rank = Dictionary(pinned.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
-        return repositories.enumerated().sorted {
-            switch (rank[$0.element.id.lowercased()], rank[$1.element.id.lowercased()]) {
-            case (let left?, let right?): left < right
-            case (.some, nil): true
-            case (nil, .some): false
-            case (nil, nil): $0.offset < $1.offset
+        var ranked = Array(repeating: [GitHubRepositorySummary](), count: pinned.count)
+        var unpinned: [GitHubRepositorySummary] = []
+        for repository in repositories {
+            if let index = rank[repository.id.lowercased()] {
+                ranked[index].append(repository)
+            } else {
+                unpinned.append(repository)
             }
-        }.map(\.element)
+        }
+        return ranked.flatMap { $0 } + unpinned
     }
 
     /// Pins are optional decoration: a failed read keeps the last known pins and never fails the list.

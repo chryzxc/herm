@@ -69,14 +69,23 @@ struct GitHubIssueTests {
         model.viewerLogin = "ada"
         model.filter = .authored
         #expect(model.visible.map(\.number) == [1])
+        #expect(model.visibleGroups.first?.issues.map(\.number) == [1])
+        #expect(model.count(for: .assigned) == 1)
         model.filter = .assigned
         #expect(model.visible.map(\.number) == [2])
+        #expect(model.visibleGroups.first?.issues.map(\.number) == [2])
         model.filter = .all
         model.query = "assigned"
         #expect(model.visible.map(\.number) == [2])
+        #expect(model.count(for: .authored) == 0)
         model.query = ""
         model.repositoryScope = "owner/repo"
         #expect(model.visible.count == 2)
+        model.viewerLogin = "bob"
+        #expect(model.count(for: .authored) == 1)
+        model.records = [authored]
+        #expect(model.count(for: .authored) == 0)
+        #expect(model.visibleGroups.first?.issues.map(\.number) == [1])
     }
 
     @MainActor @Test func issueVisibleRowsRemainNewestFirstAndResetFiltersRepairsSelection() {

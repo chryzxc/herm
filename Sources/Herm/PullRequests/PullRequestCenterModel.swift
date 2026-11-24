@@ -18,6 +18,7 @@ final class PullRequestCenterModel: ObservableObject {
     var recordUpdates: AnyPublisher<[PullRequestRecord], Never> { $storedRecords.eraseToAnyPublisher() }
     @Published private var storedRecords: [PullRequestRecord] = [] {
         didSet {
+            visibleCache = nil
             guard hasLoaded else { return }
             let previous = Dictionary(oldValue.map { ($0.id, $0.updatedAt) }, uniquingKeysWith: { a, _ in a })
             for row in records where row.id != selectedID {
@@ -53,19 +54,20 @@ final class PullRequestCenterModel: ObservableObject {
     @Published private(set) var accessRequirement: GitHubAccessRequirement?
     @Published private(set) var errorMessage: String?
     @Published private(set) var failedRepositories: [String] = []
-    @Published private(set) var viewerLogin: String?
-    @Published var filter: PullRequestFilter = .all
-    @Published var query = ""
+    @Published private(set) var viewerLogin: String? { didSet { visibleCache = nil } }
+    @Published var filter: PullRequestFilter = .all { didSet { visibleCache = nil } }
+    @Published var query = "" { didSet { visibleCache = nil } }
     var commentDrafts: [String: String] {
         get { details.drafts }
         set { details.drafts = newValue }
     }
     @Published var selectedID: String? { didSet { if let selectedID { changedIDs.remove(selectedID) } } }
-    @Published var browsing = GitHubBrowseOptions()
+    @Published var browsing = GitHubBrowseOptions() { didSet { visibleCache = nil } }
     @Published private(set) var coverage: String?
     @Published private(set) var repositories: [GitHubRepositoryReference] = []
     private var generation = UUID()
     private var detailNeedsRefresh = Set<String>()
+    private var visibleCache: [PullRequestRecord]?
 
     func review(for record: PullRequestRecord) -> PullRequestReviewModel {
         if let existing = details.reviews[record.id] { return existing }
@@ -122,8 +124,9 @@ final class PullRequestCenterModel: ObservableObject {
         loadingDetailIDs.remove(id)
     }
     var visible: [PullRequestRecord] {
+        if let visibleCache { return visibleCache }
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return records.filter { item in
+        let visible = records.filter { item in
             let matchesFilter: Bool
             switch filter {
             case .merged: matchesFilter = item.mergedAt != nil
@@ -150,6 +153,8 @@ final class PullRequestCenterModel: ObservableObject {
             case .newest: (lhs.createdAt ?? .distantPast) > (rhs.createdAt ?? .distantPast)
             }
         }
+        visibleCache = visible
+        return visible
     }
 
     func refresh(projects: [ProjectSummary]) async {

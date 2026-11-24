@@ -7,6 +7,7 @@ final class IssueCenterModel: ObservableObject {
     private let repositoryRemote: @Sendable (String) async -> GitHubRepositoryReference?
     @Published var records: [GitHubIssueRecord] = [] {
         didSet {
+            invalidateVisible()
             guard hasLoaded else { return }
             let previous = Dictionary(oldValue.map { ($0.id, $0.updatedAt) }, uniquingKeysWith: { a, _ in a })
             for row in records where row.id != selectedIssueID {
@@ -21,7 +22,7 @@ final class IssueCenterModel: ObservableObject {
     @Published private(set) var accessRequirement: GitHubAccessRequirement?
     @Published private(set) var errorMessage: String?
     @Published private(set) var hasLoaded = false
-    @Published var viewerLogin: String?
+    @Published var viewerLogin: String? { didSet { invalidateVisible() } }
     @Published var selectedIssueID: String? {
         didSet {
             if oldValue != selectedIssueID { detailErrorMessage = nil }
@@ -31,16 +32,19 @@ final class IssueCenterModel: ObservableObject {
     @Published private(set) var detailByID: [String: GitHubIssueRecord] = [:]
     @Published private(set) var loadingDetailID: String?
     @Published private(set) var detailErrorMessage: String?
-    @Published var filter: GitHubIssueFilter = .all
-    @Published var query = ""
-    @Published var repositoryScope: String?
-    @Published var browsing = GitHubBrowseOptions()
+    @Published var filter: GitHubIssueFilter = .all { didSet { invalidateVisible() } }
+    @Published var query = "" { didSet { invalidateVisible() } }
+    @Published var repositoryScope: String? { didSet { invalidateVisible() } }
+    @Published var browsing = GitHubBrowseOptions() { didSet { invalidateVisible() } }
     @Published private(set) var coverage: String?
     @Published private(set) var repositories: [GitHubRepositoryReference] = []
     private var generation = UUID()
     private var detailNeedsRefresh = Set<String>()
     private var stateVersions: [String: UUID] = [:]
     private var conversations: [String: GitHubConversationModel] = [:]
+    private var visibleCache: [GitHubIssueRecord]?
+    private var groupsCache: [(repository: String, issues: [GitHubIssueRecord])]?
+    private var countCache: [GitHubIssueFilter: Int] = [:]
 
     init(
         api: GitHubIssueCenterAPI = GitHubIssueCenterAPI(),
@@ -68,31 +72,47 @@ final class IssueCenterModel: ObservableObject {
         filter != .all || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || repositoryScope != nil
     }
     var visible: [GitHubIssueRecord] {
+        if let visibleCache { return visibleCache }
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return records.filter { matches($0, filter: filter, needle: needle) }.sorted { lhs, rhs in
+        let visible = records.filter { matches($0, filter: filter, needle: needle) }.sorted { lhs, rhs in
             let left = lhs.updatedAt ?? .distantPast
             let right = rhs.updatedAt ?? .distantPast
             if browsing.sort == .newest { return (lhs.createdAt ?? .distantPast) > (rhs.createdAt ?? .distantPast) }
             if left != right { return browsing.sort == .oldest ? left < right : left > right }
             return lhs.id < rhs.id
         }
+        visibleCache = visible
+        return visible
     }
 
     /// Visible issues grouped by repository, ordered by each group's most
     /// recently updated issue.
     var visibleGroups: [(repository: String, issues: [GitHubIssueRecord])] {
+        if let groupsCache { return groupsCache }
         var order: [String] = []
         var groups: [String: [GitHubIssueRecord]] = [:]
         for issue in visible {
             if groups[issue.repository.id] == nil { order.append(issue.repository.id) }
             groups[issue.repository.id, default: []].append(issue)
         }
-        return order.map { ($0, groups[$0] ?? []) }
+        let result = order.map { ($0, groups[$0] ?? []) }
+        groupsCache = result
+        return result
     }
 
     func count(for filter: GitHubIssueFilter) -> Int {
+        if filter == self.filter { return visible.count }
+        if let count = countCache[filter] { return count }
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return records.filter { matches($0, filter: filter, needle: needle) }.count
+        let count = records.count { matches($0, filter: filter, needle: needle) }
+        countCache[filter] = count
+        return count
+    }
+
+    private func invalidateVisible() {
+        visibleCache = nil
+        groupsCache = nil
+        countCache.removeAll(keepingCapacity: true)
     }
 
     private func matches(_ issue: GitHubIssueRecord, filter: GitHubIssueFilter, needle: String) -> Bool {
