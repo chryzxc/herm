@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -7,10 +8,10 @@ import UniformTypeIdentifiers
 /// observe it and keeps its conversation/sidebar render tree stable while
 /// typing.
 struct ChatComposerView: View {
-    @ObservedObject var model: DockModel
+    let model: DockModel
     @ObservedObject var composer: ComposerText
-    @ObservedObject var speechInput: SpeechInput
-    @ObservedObject var botMode: BotModeModel
+    let speechInput: SpeechInput
+    let botMode: BotModeModel
     var onStop: () -> Void
     var requiredContext: ChatContext? = nil
     var isFullscreen = false
@@ -24,6 +25,7 @@ struct ChatComposerView: View {
     var worktreeBar: WorktreePicker? = nil
 
     @State private var composerHeight: CGFloat = ComposerLayout.minHeight
+    @State private var presentationRevision = 0
     @State private var contextCaret = 0
     @State private var inspectingContext: ChatContext?
     @State private var contextPreviewOwner: String?
@@ -42,8 +44,15 @@ struct ChatComposerView: View {
     @Environment(\.composerReservesFolderBar) private var reservesFolderBar
 
     var body: some View {
+        let _ = presentationRevision
         let _ = HermPerformanceRecorder.countBody("ChatComposerView")
         composerContent
+            .onReceive(model.composerPresentationChanges) { _ in presentationRevision &+= 1 }
+            .onReceive(speechInput.$isRecording.removeDuplicates().dropFirst()) { _ in presentationRevision &+= 1 }
+            .onReceive(speechInput.$errorMessage.removeDuplicates().dropFirst()) { _ in presentationRevision &+= 1 }
+            .onReceive(botMode.$avatarImages.dropFirst()) { _ in
+                if completions.isPresented { presentationRevision &+= 1 }
+            }
             // A single importer owns presentation; stacked importers can shadow one another.
             .fileImporter(
                 isPresented: $showingFilePicker,
@@ -885,7 +894,8 @@ struct ChatComposerView: View {
 /// Occupancy uses the full context window, not the runtime's compaction budget.
 /// Compaction replaces the last percentage until Hermes reports completion.
 private struct SessionContextRing: View {
-    @ObservedObject var model: DockModel
+    let model: DockModel
+    @State private var presentationRevision = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingDetails = false
     @State private var details: SessionContextSummary?
@@ -894,6 +904,7 @@ private struct SessionContextRing: View {
     @State private var dismissTask: Task<Void, Never>?
 
     var body: some View {
+        let _ = presentationRevision
         Group {
             if let context = model.sessionContextUsage, context.sessionID == model.sessionID {
                 let fraction = min(1, Double(context.used) / Double(context.max))
@@ -934,6 +945,11 @@ private struct SessionContextRing: View {
                 }
             }
         }
+        .onReceive(
+            Publishers.MergeMany(
+                DockModel.change(model.$sessionID), DockModel.change(model.$sessionContextUsage),
+                DockModel.change(model.$compactingSessionID))
+        ) { _ in presentationRevision &+= 1 }
         .task(id: model.sessionID) { model.refreshSessionTokenUsage() }
         .onChange(of: model.sessionID) { _, _ in
             showingDetails = false
@@ -1129,11 +1145,13 @@ enum SessionTokenFormatting {
 /// Prompts parked until the active turn settles; not yet submitted, so removable.
 private struct QueuedPromptList: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ObservedObject var model: DockModel
+    let model: DockModel
     let prompts: [QueuedPrompt]
     @State private var dropTargetID: UUID?
+    @State private var presentationRevision = 0
 
     var body: some View {
+        let _ = presentationRevision
         VStack(alignment: .leading, spacing: 6) {
             Text("Queued (\(prompts.count)) · Sends when Herm finishes")
                 .dockFont(.body, weight: .medium)
@@ -1223,6 +1241,12 @@ private struct QueuedPromptList: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: prompts.map(\.id))
+        .onReceive(
+            Publishers.MergeMany(
+                DockModel.change(model.$sessionID), DockModel.change(model.$sessionStorageID),
+                DockModel.change(model.$sessionTranscriptLoadState), DockModel.change(model.$status),
+                DockModel.change(model.$interruptState), DockModel.change(model.$redirectingPrompts))
+        ) { _ in presentationRevision &+= 1 }
     }
 
     private func rowButton(_ icon: Ph, label: String, action: @escaping () -> Void) -> some View {
@@ -1275,9 +1299,20 @@ extension String {
 
 /// The AI's todo plan and running background tasks, pinned above the input.
 private struct PinnedWorkStrip: View {
-    @ObservedObject var model: DockModel
+    let model: DockModel
+    @State private var presentationRevision = 0
 
     var body: some View {
+        let _ = presentationRevision
+        content.onReceive(
+            Publishers.MergeMany(
+                DockModel.change(model.$sessionID), DockModel.change(model.$sessionStorageID),
+                DockModel.change(model.$status), DockModel.change(model.$todoPlan),
+                DockModel.change(model.$backgroundTasks), model.latestPlanPromptChanges)
+        ) { _ in presentationRevision &+= 1 }
+    }
+
+    @ViewBuilder private var content: some View {
         let plan = model.currentTodoPlan
             .flatMap { model.status == .working && $0.done < $0.items.count ? $0 : nil }
         let tasks = model.currentSessionBackgroundTasks.filter { $0.status == .running }
@@ -1328,11 +1363,12 @@ struct RunningProcessesPresentation {
 /// Hermes background terminal processes for the current session, with a stop button each.
 struct RunningProcessesStrip: View {
     @Environment(\.dockHostVisible) private var hostVisible
-    @ObservedObject var model: DockModel
+    let model: DockModel
     @StateObject private var projection: SessionProcessProjection
     var isTurnActive = false
     @State private var isExpanded = false
     @State private var pending: ProcessStopConfirmation?
+    @State private var presentationRevision = 0
 
     init(control: ControlCenterModel, model: DockModel, isTurnActive: Bool) {
         self.model = model
@@ -1341,7 +1377,12 @@ struct RunningProcessesStrip: View {
     }
 
     var body: some View {
+        let _ = presentationRevision
         content
+            .onReceive(
+                Publishers.Merge(
+                    DockModel.change(model.$sessionID), DockModel.change(model.$isHermesConnected))
+            ) { _ in presentationRevision &+= 1 }
             .onAppear { projection.startObserving() }
             .onDisappear { projection.stopObserving() }
             // Processes outlive the turn that started them, so poll while a turn runs or any are listed.

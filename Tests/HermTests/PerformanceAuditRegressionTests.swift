@@ -45,6 +45,61 @@ struct PerformanceAuditRegressionTests {
         withExtendedLifetime((modelSubscription, controlSubscription)) {}
     }
 
+    @Test func historyRefillsPublishMessagesWithoutRefreshingChatChrome() async throws {
+        let model = DockModel(
+            initialSessionID: "chat", rpcClient: ArchiveConcurrencyClient())
+        defer { model.shutdown() }
+        let control = ControlCenterModel()
+        let workflow = DeveloperWorkflowModel()
+        let tail = ChatMessage(role: .hermes, text: "Latest answer")
+        let prompt = ChatMessage(role: .user, text: "Latest question", timestamp: .now)
+        model.messages = [prompt, tail]
+        var shells = 0
+        var composers = 0
+        var rails = 0
+        var history = 0
+        let updates = [
+            model.workspacePresentationChanges.sink { shells += 1 },
+            model.composerPresentationChanges.sink { composers += 1 },
+            SessionRailSummary.presentationChanges(model: model, workflow: workflow, control: control).sink {
+                rails += 1
+            },
+            model.$messages.dropFirst().sink { _ in history += 1 },
+        ]
+        defer { for update in updates { update.cancel() } }
+
+        for id in 1...6 {
+            model.prependEarlierTranscript(
+                [["role": "user", "text": "Older question", "row_id": id, "timestamp": Double(id)]],
+                cursor: .init(storageSessionID: "chat", profileID: nil))
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(history == 6)
+        #expect(model.messages.count == 8)
+        #expect(model.messages.last?.id == tail.id)
+        #expect(shells == 0)
+        #expect(composers == 0)
+        #expect(rails == 0)
+
+        control.isRefreshing.toggle()
+        model.isLoadingSessions.toggle()
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(composers == 0)
+        #expect(rails == 0)
+
+        model.pendingAttachmentError = "Could not open attachment"
+        control.processes = [.init(id: "job", name: "Job", state: "running", detail: nil)]
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(composers == 1)
+        #expect(rails == 1)
+
+        let previousShells = shells
+        model.messages.append(ChatMessage(role: .hermes, text: "A new reply"))
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(shells == previousShells + 1)
+        #expect(history == 7)
+    }
+
     @Test func repeatedLiveConnectionDoesNotRedrawWorkspace() async throws {
         let model = DockModel(initialSessionID: "connection-one")
         // Detach from the live gateway: without a running Hermes (CI) its own

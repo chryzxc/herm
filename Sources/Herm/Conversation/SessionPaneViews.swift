@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// The conversation workspace as columns, each a tab group of sessions. The active
@@ -688,7 +689,7 @@ struct SessionPaneChatAccessories {
 
 /// Transcript and composer for an inactive column, mirroring the PR floating chat.
 struct SessionPaneChat: View {
-    @ObservedObject var model: DockModel
+    let model: DockModel
     let control: ControlCenterModel
     let bots: BotModeModel
     @StateObject private var speech = SpeechInput()
@@ -697,6 +698,7 @@ struct SessionPaneChat: View {
     @State private var searching = false
     @State private var jumpID: UUID?
     @State private var image: ChatImagePreview?
+    @State private var presentationRevision = 0
     @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
     let metrics: ConversationWorkspaceMetrics
     let accessories: SessionPaneChatAccessories
@@ -713,7 +715,8 @@ struct SessionPaneChat: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        let _ = presentationRevision
+        return VStack(spacing: 0) {
             ConversationTranscriptView(
                 model: model, controlCenter: control, botMode: bots, messageActionState: actions,
                 voiceOutput: voice, conversationMetrics: metrics, conversationHermFaceID: nil,
@@ -744,6 +747,14 @@ struct SessionPaneChat: View {
         }
 
         .dockSheet(item: $image) { ChatImagePreviewModal(image: $0.image) }
+        .onReceive(
+            Publishers.MergeMany(
+                DockModel.change(model.$sessionID), DockModel.change(model.$sessionStorageID),
+                DockModel.change(model.$profileScopeID), DockModel.change(model.$status),
+                DockModel.change(model.$isSending))
+        ) { _ in
+            if accessories.isStandalone { presentationRevision &+= 1 }
+        }
     }
 }
 

@@ -235,11 +235,6 @@ extension DockPopover {
         synchronizeSessionMetadataFromControlCenter()
     }
 
-    func handleMessageCountChange(oldCount: Int, newCount: Int) {
-        guard newCount > oldCount else { return }
-        synchronizeWorkspace()
-    }
-
     func handleSessionMetadataChange() {
         synchronizeSessionMetadataFromControlCenter()
     }

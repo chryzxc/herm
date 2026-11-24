@@ -146,10 +146,46 @@ final class SessionPullRequestRailModel: ObservableObject {
     private var activityReferences: [GitHubItemReference] = []
     private var discoveryRevision: UInt64?
     private var activityGeneration: UInt64 = 0
+    private var historyTask: Task<Void, Never>?
+    private var activityTask: Task<Void, Never>?
 
     init(api: PullRequestCenterAPI = .init(), details: PullRequestDetailStore = .shared) {
         self.api = api
         self.details = details
+    }
+
+    var visibleRecordChanges: AnyPublisher<[String: PullRequestRecord], Never> {
+        $references.combineLatest(details.$records)
+            .map { references, records in
+                Dictionary(
+                    references.compactMap { reference in records[reference.id].map { (reference.id, $0) } },
+                    uniquingKeysWith: { first, _ in first })
+            }
+            .removeDuplicates().dropFirst().eraseToAnyPublisher()
+    }
+
+    func scheduleHistoryDiscovery(_ model: DockModel) {
+        historyTask?.cancel()
+        // The messages publisher fires before the model commits its array and revision.
+        historyTask = Task { [weak self, weak model] in
+            guard let model, !Task.isCancelled else { return }
+            await self?.discover(messages: model.messages, revision: model.messagesRevision)
+        }
+        scheduleActivityDiscovery(model)
+    }
+
+    func scheduleActivityDiscovery(_ model: DockModel) {
+        activityTask?.cancel()
+        activityTask = Task { [weak self, weak model] in
+            guard let model, !Task.isCancelled else { return }
+            await self?.discoverActivity(
+                SessionPullRequestReferences.liveActivity(model: model), revision: model.messagesRevision)
+        }
+    }
+
+    func cancelDiscovery() {
+        historyTask?.cancel()
+        activityTask?.cancel()
     }
 
     func discover(messages: [ChatMessage], revision: UInt64) async {
@@ -228,15 +264,11 @@ struct SessionRailChangeSummary: Equatable {
 }
 
 struct SessionPullRequestRail: View {
-    private struct ActivityTaskID: Equatable {
-        let messages: UInt64
-        let activity: Int
-    }
-
-    @ObservedObject var model: DockModel
-    @ObservedObject var workflow: DeveloperWorkflowModel
+    @Environment(\.dockHostVisible) private var hostVisible
+    let model: DockModel
+    let workflow: DeveloperWorkflowModel
     /// Its `processes` follow the current session; the composer's process strip keeps them polled.
-    @ObservedObject var control: ControlCenterModel
+    let control: ControlCenterModel
     let repositoryPath: String?
     let onViewAllChanges: () -> Void
     let onViewPullRequest: (GitHubItemReference) async -> Bool
@@ -247,9 +279,8 @@ struct SessionPullRequestRail: View {
     let onViewPin: (PinnedMessage) async -> Bool
     @StateObject private var rail = SessionPullRequestRailModel()
     @StateObject private var outputs = SessionRailOutputsModel()
-    @ObservedObject private var details = PullRequestDetailStore.shared
     @State private var refreshID = UUID()
-    @State private var activityRevision = 0
+    @State private var presentationRevision = 0
     @State private var lastOutputsRefreshID: UUID?
     @State private var contextFiles: (sessionID: String, files: [SessionContextFile])?
     @State private var lineSummary: RepositoryChangeLineSummary?
@@ -264,7 +295,7 @@ struct SessionPullRequestRail: View {
     private var summary: SessionRailSummary {
         var summary = SessionRailSummary.make(
             model: model, repositoryPath: repositoryPath, repository: workflow.repository,
-            outputs: outputs.records, outputsError: outputs.error,
+            outputs: outputs.snapshot, outputsError: outputs.error,
             contextFiles: contextFiles?.sessionID == model.navigationSessionID ? contextFiles?.files ?? [] : [],
             processes: control.processes, checkpoints: control.restoreCheckpoints)
         summary.isRestoringCheckpoint = control.restoreCheckpointState.isPending
@@ -273,13 +304,14 @@ struct SessionPullRequestRail: View {
     }
 
     var body: some View {
+        let _ = presentationRevision
         ScrollView {
             SessionRailCard(
                 repositoryName: repositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent },
                 repositoryPath: repositoryPath,
                 changes: changes, lines: lineSnapshot == workflow.changes ? lineSummary : nil,
                 changesUnavailable: repositoryPath == workflow.repository.path && workflow.repository.isStale,
-                references: rail.references, records: details.records, failures: rail.failures,
+                references: rail.references, records: rail.details.records, failures: rail.failures,
                 isRefreshing: rail.isRefreshing || workflow.isRefreshing || outputs.isRefreshing,
                 onRefresh: { refreshID = UUID() },
                 onViewAllChanges: onViewAllChanges, onViewPullRequest: onViewPullRequest,
@@ -307,16 +339,19 @@ struct SessionPullRequestRail: View {
             .dockPadding(16)
         }
         .foregroundStyle(Color.dockPrimaryText)
-        .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
-            activityRevision &+= 1
+        .onReceive(SessionRailSummary.presentationChanges(model: model, workflow: workflow, control: control)) { _ in
+            presentationRevision &+= 1
         }
-        .task(id: model.messagesRevision) {
-            await rail.discover(messages: model.messages, revision: model.messagesRevision)
-        }
-        .task(id: ActivityTaskID(messages: model.messagesRevision, activity: activityRevision)) {
-            await rail.discoverActivity(
-                SessionPullRequestReferences.liveActivity(model: model), revision: model.messagesRevision)
-        }
+        .onReceive(rail.visibleRecordChanges) { _ in presentationRevision &+= 1 }
+        .onAppear { rail.scheduleHistoryDiscovery(model) }
+        .onReceive(model.$messages.dropFirst()) { _ in rail.scheduleHistoryDiscovery(model) }
+        .onReceive(
+            model.activityPresentation.$revision.map { [model] _ in
+                SessionPullRequestReferences.liveActivity(model: model)
+            }
+            .removeDuplicates().dropFirst()
+        ) { _ in rail.scheduleActivityDiscovery(model) }
+        .onDisappear { rail.cancelDiscovery() }
         .task(id: rail.references.map(\.id) + [refreshID.uuidString]) { await rail.refresh() }
         .task(id: [repositoryPath ?? "", refreshID.uuidString]) { await onRefreshChanges() }
         .task(id: [

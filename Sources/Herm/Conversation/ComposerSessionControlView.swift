@@ -1,10 +1,13 @@
+import Combine
 import SwiftUI
 
 struct ComposerSessionControlView: View {
-    @ObservedObject var model: DockModel
+    let model: DockModel
+    @State private var presentationRevision = 0
     @Environment(\.dockHostVisible) private var hostVisible
 
     var body: some View {
+        let _ = presentationRevision
         let sessionID = model.sessionID
         let profileID = model.sessionProfileID ?? model.profileScopeID
         let owner = "\(profileID ?? "")|\(sessionID ?? "")|\(hostVisible)"
@@ -55,6 +58,13 @@ struct ComposerSessionControlView: View {
                 }
             }
         }
+        .onReceive(
+            Publishers.MergeMany(
+                DockModel.change(model.$sessionID), DockModel.change(model.$sessionProfileID),
+                DockModel.change(model.$profileScopeID), DockModel.change(model.$sessionControlOwner),
+                DockModel.change(model.$sessionControl), DockModel.change(model.$sessionControlStale),
+                DockModel.change(model.$sessionTranscriptLoadState))
+        ) { _ in presentationRevision &+= 1 }
         .task(id: owner) {
             guard hostVisible, let sessionID, !sessionID.isEmpty else { return }
             if model.sessionControlOwner != model.sessionControlKey(sessionID: sessionID, profileID: profileID) {

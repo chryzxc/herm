@@ -13,6 +13,16 @@ struct SessionRailSummary: Equatable {
         let branch: String?
         let latestCommit: String?
     }
+    struct Outputs: Equatable {
+        let owner: ProfileScopedID
+        let records: [ArtifactRecord]
+
+        init(owner: ProfileScopedID, records: [ArtifactRecord]) {
+            self.owner = owner
+            self.records = RichArtifactIndex.latest(records.filter { $0.scopedSessionID == owner })
+                .sorted { $0.timestamp > $1.timestamp }
+        }
+    }
     var attention: [Attention] = []
     var plan: TodoPlan?
     /// Hermes `/plan` files this session named, newest first.
@@ -41,6 +51,28 @@ struct SessionRailSummary: Equatable {
     var runningProcessCount: Int { processes.count { $0.state == "running" } }
     var runningSubagentCount: Int { subagents.count { AgentActivityPresentation.isActiveStatus($0.status) } }
 
+    @MainActor
+    static func presentationChanges(
+        model: DockModel, workflow: DeveloperWorkflowModel, control: ControlCenterModel
+    ) -> AnyPublisher<Void, Never> {
+        let workers = model.activityPresentation.$revision.map { [weak model] _ in
+            (model?.sessionAgents ?? [], model?.activeSubagents ?? [])
+        }.removeDuplicates { $0 == $1 }.dropFirst().map { _ in () }.eraseToAnyPublisher()
+        return Publishers.MergeMany(
+            DockModel.change(model.$sessionID), DockModel.change(model.$sessionStorageID),
+            DockModel.change(model.$sessionProfileID), DockModel.change(model.$profileScopeID),
+            DockModel.change(model.$status), DockModel.change(model.$isRestoringSession),
+            DockModel.change(model.$isSending), DockModel.change(model.$isHermesConnected),
+            DockModel.change(model.$approvalTitle), DockModel.change(model.$approvalText),
+            DockModel.change(model.$clarificationQuestion), DockModel.change(model.$valuePrompt),
+            DockModel.change(model.$todoPlan), model.latestPlanPromptChanges, workers,
+            DockModel.change(model.$pinnedMessages), DockModel.change(model.$messagePinError),
+            DockModel.change(workflow.$repository), DockModel.change(workflow.$changes),
+            DockModel.change(workflow.$isRefreshing), DockModel.change(control.$processes),
+            DockModel.change(control.$restoreCheckpoints), DockModel.change(control.$restoreCheckpointState)
+        ).debounce(for: .milliseconds(1), scheduler: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
     /// Live rows override their history copy; nested workers stay listed under the same session.
     @MainActor
     static func subagents(history: [HermesSubagent], live: [HermesSubagent]) -> [HermesSubagent] {
@@ -61,7 +93,7 @@ struct SessionRailSummary: Equatable {
     @MainActor
     static func make(
         model: DockModel, repositoryPath: String?, repository: RepositorySnapshot,
-        outputs: [ArtifactRecord], outputsError: String?, contextFiles: [SessionContextFile] = [],
+        outputs: Outputs? = nil, outputsError: String?, contextFiles: [SessionContextFile] = [],
         processes: [ProcessSummary] = [], checkpoints: [RestoreCheckpoint] = []
     ) -> Self {
         guard let sessionID = model.navigationSessionID, !model.isRestoringSession else { return Self() }
@@ -82,8 +114,7 @@ struct SessionRailSummary: Equatable {
             summary.attention.append(.init(id: prompt.requestID, title: prompt.title, detail: prompt.message))
         }
         if let plan = model.currentTodoPlan, !plan.items.isEmpty { summary.plan = plan }
-        summary.outputs = RichArtifactIndex.latest(outputs.filter { $0.scopedSessionID == owner })
-            .sorted { $0.timestamp > $1.timestamp }
+        if let outputs, outputs.owner == owner { summary.outputs = outputs.records }
         summary.outputsError = outputsError
         summary.contextFiles = contextFiles
         summary.processes = processes
@@ -108,7 +139,7 @@ struct SessionRailSummary: Equatable {
 /// Shares the artifact browser's disposable index; never stores another transcript.
 @MainActor
 final class SessionRailOutputsModel: ObservableObject {
-    @Published private(set) var records: [ArtifactRecord] = []
+    @Published private(set) var snapshot: SessionRailSummary.Outputs?
     @Published private(set) var error: String?
     @Published private(set) var isRefreshing = false
     private var owner: ProfileScopedID?
@@ -120,7 +151,7 @@ final class SessionRailOutputsModel: ObservableObject {
         let request = UUID()
         generation = request
         if owner != session.scopedID {
-            records = []
+            snapshot = nil
             error = nil
             owner = session.scopedID
         }
@@ -133,6 +164,9 @@ final class SessionRailOutputsModel: ObservableObject {
             return
         }
         error = result.error
-        if result.error == nil { records = result.records.filter { $0.scopedSessionID == session.scopedID } }
+        if result.error == nil {
+            let next = SessionRailSummary.Outputs(owner: session.scopedID, records: result.records)
+            if snapshot != next { snapshot = next }
+        }
     }
 }

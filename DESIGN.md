@@ -3366,6 +3366,9 @@ Herm uses 240-row pages for ordinary conversation history. When scrolling up tow
 oldest loaded history with two local pages or fewer left, it starts the next
 request within two reveal distances of the top. A refill preserves the mounted
 messages and any anchor correction already in progress.
+History refills refresh transcript and search data. The workspace shell and input
+controls update for their own state, while the rail refreshes when discovered
+content or session details change.
 A first visit that needs an unread check keeps the loading state until the opening
 row is known. Refreshing the unread divider preserves the current reading position.
 History pages prepare up to eight messages in either direction, starting at twice

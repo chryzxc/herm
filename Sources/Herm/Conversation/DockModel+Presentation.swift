@@ -24,6 +24,11 @@ extension DockModel {
                     .map { Self.workspaceMessageKey($0, voiceActive: $1 != .inactive) }
                     .removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher()
             ),
+            (
+                "transcriptPreview",
+                $sessionTranscriptPreview.map { $0?.messages.isEmpty }.removeDuplicates().dropFirst()
+                    .map { _ in () }.eraseToAnyPublisher()
+            ),
             ("isSending", Self.change($isSending)),
             ("approvalTitle", Self.change($approvalTitle)),
             ("approvalText", Self.change($approvalText)),
@@ -67,7 +72,13 @@ extension DockModel {
             ("defaultBotName", Self.change($defaultBotName)),
             ("browserActivityID", Self.change($browserActivityID)),
             ("sessions", Self.change($sessions)),
-            ("storedMessageReferences", Self.change($storedMessageReferences)),
+            (
+                "unloadedNavigator",
+                transcriptPresentationChanges.map { [weak self] in
+                    self?.hasUnloadedNavigatorWithoutMessages ?? false
+                }.prepend(hasUnloadedNavigatorWithoutMessages).removeDuplicates().dropFirst()
+                    .map { _ in () }.eraseToAnyPublisher()
+            ),
         ]
     }
 
@@ -80,13 +91,12 @@ extension DockModel {
         ).debounce(for: .milliseconds(1), scheduler: DispatchQueue.main).eraseToAnyPublisher()
     }
 
-    private static func change<Value>(_ publisher: Published<Value>.Publisher) -> AnyPublisher<Void, Never> {
+    static func change<Value>(_ publisher: Published<Value>.Publisher) -> AnyPublisher<Void, Never> {
         publisher.dropFirst().map { _ in () }.eraseToAnyPublisher()
     }
 
     struct WorkspaceMessageKey: Equatable {
-        let count: Int
-        let firstUserText: String?
+        let hasMessages: Bool
         let lastID: UUID?
         let lastIsError: Bool
         /// Streaming text only matters to the root while voice captions show it.
@@ -97,8 +107,7 @@ extension DockModel {
     /// events and history paging otherwise redraw the whole window per change.
     nonisolated static func workspaceMessageKey(_ messages: [ChatMessage], voiceActive: Bool) -> WorkspaceMessageKey {
         WorkspaceMessageKey(
-            count: messages.count,
-            firstUserText: messages.first { $0.role == .user }?.text,
+            hasMessages: !messages.isEmpty,
             lastID: messages.last?.id,
             lastIsError: messages.last?.isError ?? false,
             voiceText: voiceActive ? messages.last?.text : nil
@@ -149,6 +158,8 @@ extension DockModel {
     }
 
     var hasNavigatorMessages: Bool { !messages.isEmpty || !unloadedTranscriptPrompts.isEmpty }
+
+    private var hasUnloadedNavigatorWithoutMessages: Bool { messages.isEmpty && hasNavigatorMessages }
 
     /// Compatibility accessor over the composer's draft so send, steering,
     /// clarification, and external writers (voice transcripts, quick prompts)
@@ -362,8 +373,15 @@ extension DockModel {
     /// The open session's plan, unless a later prompt moved past it.
     var currentTodoPlan: TodoPlan? {
         guard let plan = todoPlan, currentSessionIDs.contains(plan.sessionID) else { return nil }
-        let latestPrompt = messages.last { $0.role == .user && !$0.isSteering }?.timestamp
-        return plan.isCurrent(latestPromptAt: latestPrompt) ? plan : nil
+        return plan.isCurrent(latestPromptAt: Self.latestPlanPrompt(messages)) ? plan : nil
+    }
+
+    var latestPlanPromptChanges: AnyPublisher<Void, Never> {
+        $messages.map(Self.latestPlanPrompt).removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher()
+    }
+
+    nonisolated private static func latestPlanPrompt(_ messages: [ChatMessage]) -> Date? {
+        messages.last { $0.role == .user && !$0.isSteering }?.timestamp
     }
 
     var currentSessionBackgroundTasks: [HermesBackgroundTask] {

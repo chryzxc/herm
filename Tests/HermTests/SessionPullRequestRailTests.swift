@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 
@@ -178,6 +179,29 @@ struct SessionPullRequestRailTests {
         #expect(details.records[id]?.title == "Fetched PR")
         #expect(rail.failures[id] != nil)
         #expect(!rail.isRefreshing)
+    }
+
+    @Test func sharedDetailUpdatesOnlyReachRailsReferencingTheirPullRequest() async throws {
+        let details = PullRequestDetailStore()
+        let rail = SessionPullRequestRailModel(api: .init(transport: RailPRTransport()), details: details)
+        let otherRail = SessionPullRequestRailModel(details: details)
+        await rail.discover(
+            messages: [ChatMessage(role: .hermes, text: "https://github.com/owner/repo/pull/3")], revision: 1)
+        await otherRail.discover(
+            messages: [ChatMessage(role: .hermes, text: "https://github.com/owner/repo/pull/7")], revision: 1)
+        var ownUpdates = 0
+        var unrelatedUpdates = 0
+        let own = rail.visibleRecordChanges.sink { _ in ownUpdates += 1 }
+        let unrelated = otherRail.visibleRecordChanges.sink { _ in unrelatedUpdates += 1 }
+        defer {
+            own.cancel()
+            unrelated.cancel()
+        }
+
+        await rail.refresh()
+        #expect(ownUpdates == 1)
+        #expect(unrelatedUpdates == 0)
+        #expect(try #require(details.records["github:owner/repo#3"]).title == "Fetched PR")
     }
 
 }

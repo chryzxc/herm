@@ -32,7 +32,7 @@ struct SessionRailSummaryTests {
 
     @Test func emptySessionOmitsSummarySections() {
         let summary = SessionRailSummary.make(
-            model: model(), repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil)
+            model: model(), repositoryPath: nil, repository: .empty, outputsError: nil)
         #expect(summary.isEmpty)
     }
 
@@ -53,7 +53,9 @@ struct SessionRailSummaryTests {
             isGitRepository: true)
         let summary = SessionRailSummary.make(
             model: model, repositoryPath: "/tmp/project", repository: repository,
-            outputs: [output(), output("another"), output(profile: "another")], outputsError: nil)
+            outputs: .init(
+                owner: output().scopedSessionID, records: [output(), output("another"), output(profile: "another")]),
+            outputsError: nil)
         #expect(summary.plan == nil)
         #expect(summary.outputs.count == 1)
         #expect(summary.workspace?.path == "/tmp/project")
@@ -62,7 +64,7 @@ struct SessionRailSummaryTests {
 
         model.todoPlan = .init(sessionID: "session", items: [.init(content: "Current task", status: "in_progress")])
         let current = SessionRailSummary.make(
-            model: model, repositoryPath: "/tmp/other", repository: repository, outputs: [], outputsError: nil)
+            model: model, repositoryPath: "/tmp/other", repository: repository, outputsError: nil)
         #expect(current.plan?.current?.content == "Current task")
         #expect(current.workspace?.branch == "other-branch")
     }
@@ -75,7 +77,7 @@ struct SessionRailSummaryTests {
         model.status = .needsClarification
         model.pinnedMessages = [.init(rowID: 4, uid: "pin", role: "assistant", preview: "Decision")]
         func summary() -> SessionRailSummary {
-            .make(model: model, repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil)
+            .make(model: model, repositoryPath: nil, repository: .empty, outputsError: nil)
         }
         #expect(summary().attention.map(\.id) == ["approval", "question"])
         #expect(summary().pins == model.pinnedMessages)
@@ -87,10 +89,10 @@ struct SessionRailSummaryTests {
     @Test func backgroundProcessesShowAndCountOnlyRunningOnes() {
         let model = model()
         let empty = SessionRailSummary.make(
-            model: model, repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil)
+            model: model, repositoryPath: nil, repository: .empty, outputsError: nil)
         #expect(empty.isEmpty)
         let summary = SessionRailSummary.make(
-            model: model, repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil,
+            model: model, repositoryPath: nil, repository: .empty, outputsError: nil,
             processes: [
                 .init(
                     id: "proc_1", name: "sh lane.sh 1", state: "running", detail: nil, latestOutput: "LANE 1 · build"),
@@ -144,7 +146,8 @@ struct SessionRailSummaryTests {
             source: "test")
         #expect(await model.resumeSession(next, reportFailure: true))
         let summary = SessionRailSummary.make(
-            model: model, repositoryPath: nil, repository: .empty, outputs: [output()], outputsError: nil)
+            model: model, repositoryPath: nil, repository: .empty,
+            outputs: .init(owner: output().scopedSessionID, records: [output()]), outputsError: nil)
         #expect(summary.isEmpty)
         #expect(model.todoPlan == nil)
     }
@@ -155,7 +158,8 @@ struct SessionRailSummaryTests {
         model.isRestoringSession = true
         func summary() -> SessionRailSummary {
             .make(
-                model: model, repositoryPath: "/tmp/project", repository: .empty, outputs: [output()], outputsError: nil
+                model: model, repositoryPath: "/tmp/project", repository: .empty,
+                outputs: .init(owner: output().scopedSessionID, records: [output()]), outputsError: nil
             )
         }
         #expect(summary().isEmpty)
@@ -170,8 +174,9 @@ struct SessionRailSummaryTests {
         model.todoPlan = .init(sessionID: "session", items: [.init(content: "Current task", status: "pending")])
         model.pinnedMessages = [.init(rowID: 4, uid: "pin", role: "assistant", preview: "Current decision")]
         let currentOutput = output()
+        let outputs = SessionRailSummary.Outputs(owner: currentOutput.scopedSessionID, records: [currentOutput])
         func summary() -> SessionRailSummary {
-            .make(model: model, repositoryPath: nil, repository: .empty, outputs: [currentOutput], outputsError: nil)
+            .make(model: model, repositoryPath: nil, repository: .empty, outputs: outputs, outputsError: nil)
         }
         let selected = summary()
         for (type, payload): (String, [String: Any]) in [
@@ -193,11 +198,11 @@ struct SessionRailSummaryTests {
         await outputs.refresh(session: session) {
             .init(sessionID: "session", profileID: "profile", records: [output()], error: nil)
         }
-        #expect(outputs.records.count == 1)
+        #expect(outputs.snapshot?.records.count == 1)
         await outputs.refresh(session: session) {
             .init(sessionID: "session", profileID: "profile", records: [], error: "Unavailable")
         }
-        #expect(outputs.records.count == 1)
+        #expect(outputs.snapshot?.records.count == 1)
         #expect(outputs.error == "Unavailable")
         let other = HermesSession(
             id: "other", profileID: "profile", title: "Other", preview: "", startedAt: nil, messageCount: 0,
@@ -205,7 +210,7 @@ struct SessionRailSummaryTests {
         await outputs.refresh(session: other) {
             .init(sessionID: "other", profileID: "profile", records: [], error: nil)
         }
-        #expect(outputs.records.isEmpty && outputs.error == nil && !outputs.isRefreshing)
+        #expect(outputs.snapshot?.records.isEmpty == true && outputs.error == nil && !outputs.isRefreshing)
     }
 
     @Test func lateOutputResponseCannotReplaceTheNewSessionsData() async {
@@ -229,7 +234,7 @@ struct SessionRailSummaryTests {
         continuation?.resume(
             returning: .init(sessionID: "session", profileID: "profile", records: [output()], error: nil))
         await delayed.value
-        #expect(outputs.records.map(\.sessionID) == ["next"])
+        #expect(outputs.snapshot?.records.map(\.sessionID) == ["next"])
     }
 
     @Test func subagentsMergeLiveOverHistoryNewestFirst() {
@@ -242,7 +247,7 @@ struct SessionRailSummaryTests {
         model.sessionAgents = [old, stale]
         model.activeSubagents = [live]
         let summary = SessionRailSummary.make(
-            model: model, repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil)
+            model: model, repositoryPath: nil, repository: .empty, outputsError: nil)
         #expect(summary.subagents.map(\.id) == ["b", "a"])
         #expect(summary.subagents.first?.status == "failed")
         #expect(summary.runningSubagentCount == 0)
@@ -252,7 +257,7 @@ struct SessionRailSummaryTests {
     @Test func restoredRunningSubagentIsNotCompletedBeforeLiveStatusReturns() {
         let model = model()
         func summary() -> SessionRailSummary {
-            .make(model: model, repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil)
+            .make(model: model, repositoryPath: nil, repository: .empty, outputsError: nil)
         }
         func event(_ type: String) {
             model.receiveGatewayEvent(
@@ -290,7 +295,7 @@ struct SessionRailSummaryTests {
         model.activeSubagents = DockModel.reconciledLiveAgents(
             authoritative: [], current: [worker], synthesizedIDs: [])
         let summary = SessionRailSummary.make(
-            model: model, repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil)
+            model: model, repositoryPath: nil, repository: .empty, outputsError: nil)
         let statuses = Dictionary(uniqueKeysWithValues: summary.subagents.map { ($0.id, $0.status) })
         #expect(statuses["worker"] == "stale")
         #expect(statuses["unknown"] == "stale")
@@ -306,7 +311,7 @@ struct SessionRailSummaryTests {
             RestoreCheckpoint(sessionID: "other", hash: "def")!,
         ]
         let summary = SessionRailSummary.make(
-            model: model(), repositoryPath: nil, repository: .empty, outputs: [], outputsError: nil,
+            model: model(), repositoryPath: nil, repository: .empty, outputsError: nil,
             checkpoints: checkpoints)
         #expect(summary.checkpoints.map(\.hash) == ["abc"])
     }

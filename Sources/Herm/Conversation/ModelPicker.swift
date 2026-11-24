@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 struct ModelPickerProviderGroup: Identifiable, Equatable {
@@ -127,6 +128,7 @@ struct ModelPickerView: View {
     @State private var showingEditor = false
     @State private var providerFilter: String?
     @State private var disabledModelIDs = ModelPickerPreferences().disabledIDs
+    @State private var effortRevision = 0
 
     private var catalog: ModelPickerCatalog { ModelPickerCatalog(options: options) }
     nonisolated static func refreshState(isRefreshing: Bool, error: String?, optionCount: Int)
@@ -164,6 +166,7 @@ struct ModelPickerView: View {
     }
 
     var body: some View {
+        let _ = effortRevision
         // Anchored to the label's leading edge: its width changes with the model and effort text, and a
         // popover attached to the whole label would slide sideways on every change.
         DockMenu(anchor: .rect(.rect(CGRect(x: 0, y: 0, width: 24, height: 28)))) {
@@ -208,6 +211,8 @@ struct ModelPickerView: View {
             ModelPickerEditorView(options: options, activeID: selectedID, disabledIDs: $disabledModelIDs)
         }
         .onAppear { reconcileActiveModelPreference() }
+        .onReceive(effortModel?.composerModelLabelChanges ?? Empty().eraseToAnyPublisher()) { _ in effortRevision &+= 1
+        }
         .onChange(of: selectedID) { _, _ in reconcileActiveModelPreference() }
     }
 

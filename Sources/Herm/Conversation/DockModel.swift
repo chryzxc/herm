@@ -40,6 +40,7 @@ final class DockModel: ObservableObject {
     let workspaceStartup = DockWorkspaceStartup()
     lazy var botMode = makeBotMode()
     lazy var workspacePresentationChanges = makeWorkspacePresentationChanges()
+    lazy var composerPresentationChanges = makeComposerPresentationChanges()
     lazy var inspectorPresentationChanges = makeInspectorPresentationChanges()
     var interruptionCoordinator: HermInterruptionCoordinator?
     var completionNoticeIDs: [String: String] = [:]
@@ -120,7 +121,10 @@ final class DockModel: ObservableObject {
     /// blocked approval, or a turn that ended first). Not yet submitted, so
     /// removable; sent one per turn once Hermes settles (desktop parity).
     @Published var queuedPrompts: [QueuedPrompt] = []
-    var queuedSubmissions: [String: UUID] = [:]
+    var queuedSubmissions: [String: UUID] = [:] {
+        didSet { if oldValue != queuedSubmissions { queuedSubmissionChanges.send() } }
+    }
+    let queuedSubmissionChanges = PassthroughSubject<Void, Never>()
     // Hold newer input until a redirect resolves or its Hermes-queued follow-up finishes.
     @Published var redirectingPrompts: [String: RedirectingPrompt] = [:]
     /// Resume may replace the runtime handle; unsent prompts belong to the

@@ -21,6 +21,9 @@ not publish transcript updates. Each mounted message has one geometry/identity
 container around activity and reply content, including zero-height hidden rows.
 `DockModel` buffers stored transcript history in 240-row pages by default.
 The coordinator requests a refill before its mounted window reaches the oldest loaded rows.
+The workspace shell observes the transcript tail and opening state. The composer
+and its trays observe the input and session controls they display. The session rail
+discovers references as history arrives and publishes changes for that session's cards.
 `ConversationMessageWindow` sets eight-message history pages, a 12-message initial
 window, and the existing 36-row backstop with visible-row protection. Markdown
 prefetch uses that same page size in both directions.

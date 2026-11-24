@@ -188,8 +188,8 @@ extension DockPopover {
             .onChange(of: controlCenter.projectIDBySessionID) { _, _ in
                 handleProjectMembershipChange()
             }
-            .onChange(of: model.messages.count) { oldCount, newCount in
-                handleMessageCountChange(oldCount: oldCount, newCount: newCount)
+            .onChange(of: model.messages.last?.id) { _, latestMessageID in
+                if latestMessageID != nil { synchronizeWorkspace() }
             }
             .onChange(of: botMode.bots.first(where: \.isDefault)?.name, initial: true) { _, name in
                 workspaceModel.defaultBotName = name
