@@ -110,8 +110,11 @@ struct ComposerEffortControls: View {
                     if barChoices.isEmpty {
                         speedSwitch
                     } else {
-                        ComposerEffortSlider(choices: barChoices, selection: $selection) { speedSwitch }
-                            .disabled(presentation.disabled)
+                        ComposerEffortSlider(
+                            choices: barChoices, selection: $selection,
+                            isFast: model.sessionID != nil && offersFast && fastBinding.wrappedValue
+                        ) { speedSwitch }
+                        .disabled(presentation.disabled)
                     }
                 } else if choices.count <= 3, !choices.isEmpty {
                     HStack(spacing: 8) {

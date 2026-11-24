@@ -1421,7 +1421,7 @@ struct GroupChatView: View {
                     .frame(maxWidth: .infinity)
                     .clipped()
                     if !attachments.isEmpty || uploadingCount > 0 {
-                        attachmentChips.transition(DockMotion.composerTray(reduceMotion: reduceMotion))
+                        attachmentChips
                     }
                     composerControls
                 }
@@ -1472,11 +1472,9 @@ struct GroupChatView: View {
                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                             .dockSurfaceFill(Color.dockSurface)
                     )
-                    .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                 }
                 if uploadingCount > 0 { DockLoadingIndicator().controlSize(.small).help("Uploading") }
             }
-            .animation(DockMotion.disclosure(reduceMotion: reduceMotion), value: attachments.count)
         }
     }
 

@@ -3563,7 +3563,10 @@ and grows only for multiline drafts, attachments, suggestions, or actionable
 errors. Files, Images, and Folder share one native picker presentation, configured for
 the selected action. Files and composer drops accept generic files up to 8 MB as
 removable context chips, using the existing protected file upload on send.
-Dragging files over an editable composer traces its outline once. Staged items settle into the attachment tray, and dragging a queued prompt marks the insertion point above the destination row.
+Dragging files over an editable composer traces its outline once. Attachment
+chips appear as soon as the item is staged, with no entrance animation. An image
+icon occupies the thumbnail's fixed slot while the preview decodes in the
+background. Dragging a queued prompt marks the insertion point above the destination row.
 
 Context attachments use one removable tray chip per source. Attaching or refreshing
 context never inserts a second chip into the text editor. Restored inline context
@@ -3590,6 +3593,10 @@ The send uses that conversation’s runtime and profile without switching the vi
 Queued slash commands and direct Bot relays wait for their conversation to reopen.
 Attach is icon-only; model and reasoning context remain available at
 normal widths, while the send/steer action retains the strongest emphasis.
+When Fast is selected, two amber streaks travel through the filled part of the
+effort bar on its existing motion clock. A soft amber glow pulses behind the
+model chip's lightning icon while Fast is active and the window is visible.
+Reduce Motion and motion-free skins keep the Fast label and lightning icon static.
 Streaming, approvals, clarifications, voice state, and errors may use semantic
 surfaces when they represent an active decision or recovery path.
 Smart turn detection downloads show byte-weighted progress from 0–100%. Keep the

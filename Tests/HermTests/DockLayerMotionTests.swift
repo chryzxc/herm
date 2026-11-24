@@ -110,6 +110,42 @@ struct DockLayerMotionTests {
         }
     }
 
+    @Test func fastModelPickerGlowRepeatsWhileVisible() async throws {
+        _ = DockThemeStore.shared
+        let previous = DockThemeRuntime.current
+        DockThemeRuntime.current = .glass
+        defer { DockThemeRuntime.current = previous }
+        let model = DockModel(defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "fast-model")
+        let option = HermesModelOption(provider: "openai", model: "fixture")
+        let motionEnabled = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        for (fast, visible) in [(true, true), (true, false), (false, true)] {
+            model.sessionFastEnabled = fast
+            let picker = ModelPickerView(
+                options: [option], selectedID: option.id, isRefreshing: false, refreshError: nil, onRefresh: {},
+                onSelect: { _ in }, effortModel: model)
+            let host = NSHostingView(rootView: picker.environment(\.dockHostVisible, visible))
+            host.frame = NSRect(x: 0, y: 0, width: 260, height: 32)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            defer { window.contentView = nil }
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(30))
+            let glow = motionView(in: host)
+            if fast && motionEnabled {
+                let layer = try #require(glow?.layer?.sublayers?.first)
+                if visible {
+                    let pulse = try #require(layer.animation(forKey: "opacity"))
+                    #expect(pulse.repeatCount == .infinity)
+                    #expect(pulse.autoreverses)
+                } else {
+                    #expect(animationCount(layer) == 0)
+                }
+            } else {
+                #expect(glow == nil)
+            }
+        }
+    }
+
     @Test func chatsRailMosaicRespondsToHostVisibility() async throws {
         let previous = DockThemeRuntime.current
         DockThemeRuntime.current = .glass

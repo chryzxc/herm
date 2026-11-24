@@ -77,7 +77,6 @@ struct ChatComposerView: View {
             .onChange(of: model.composerFocusRequest) { _, _ in
                 isComposerFocused = true
             }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: composerHeight)
             .onChange(of: dictation.isRecording) { _, isRecording in
                 if !isRecording {
                     updateDictation()
@@ -328,6 +327,7 @@ struct ChatComposerView: View {
                             // grows, so wheel and trackpad scrolling stay inside the
                             // editor after the composer reaches its maximum height.
                             .frame(height: effectiveComposerHeight)
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: effectiveComposerHeight)
                             .frame(maxWidth: .infinity)
                             .disabled(model.isRestoringSession)
 
@@ -350,16 +350,14 @@ struct ChatComposerView: View {
                         .clipped()
                     }
 
-                    // Image Attachment Previews (if any images are pending)
                     if !model.pendingImages.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(model.pendingImages) { image in
                                     HStack(spacing: 6) {
-                                        // A downsampled file thumbnail: drawing the full-size image at
-                                        // 32pt resampled it on every frame of the chip's entrance.
                                         AttachmentThumbnailView(
-                                            url: image.fileURL, maximumPixelSize: 96, contentMode: .fill
+                                            url: image.fileURL, maximumPixelSize: 96, contentMode: .fill,
+                                            placeholderIcon: .image
                                         )
                                         .frame(width: 32, height: 32)
                                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -391,13 +389,9 @@ struct ChatComposerView: View {
                                         }
                                         .disabled(model.extractingImageTextIDs.contains(image.id))
                                     }
-                                    .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                                 }
                             }
-                            .animation(
-                                DockMotion.disclosure(reduceMotion: reduceMotion), value: model.pendingImages.count)
                         }
-                        .transition(DockMotion.composerTray(reduceMotion: reduceMotion))
                     }
                     if !model.attachedContexts.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -435,13 +429,9 @@ struct ChatComposerView: View {
                                             .dockSurfaceFill(Color.dockSurface)
                                     )
                                     .help("Inspect context")
-                                    .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                                 }
                             }
-                            .animation(
-                                DockMotion.disclosure(reduceMotion: reduceMotion), value: model.attachedContexts.count)
                         }
-                        .transition(DockMotion.composerTray(reduceMotion: reduceMotion))
                     }
                     if !model.pendingPDFURLs.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -473,13 +463,9 @@ struct ChatComposerView: View {
                                         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                                             .dockSurfaceFill(Color.dockSurface)
                                     )
-                                    .transition(DockMotion.composerChip(reduceMotion: reduceMotion))
                                 }
                             }
-                            .animation(
-                                DockMotion.disclosure(reduceMotion: reduceMotion), value: model.pendingPDFURLs.count)
                         }
-                        .transition(DockMotion.composerTray(reduceMotion: reduceMotion))
                     }
                     ForEach([model.pendingPDFError, model.pendingAttachmentError].compactMap { $0 }, id: \.self) {
                         error in

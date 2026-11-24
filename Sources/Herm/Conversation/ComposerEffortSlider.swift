@@ -28,6 +28,7 @@ private final class EffortSliderState: ObservableObject {
 struct ComposerEffortSlider<Trailing: View>: View {
     let choices: [HermesReasoningVariant]
     @Binding var selection: HermesReasoningVariant?
+    let isFast: Bool
     /// Sits level with the level name, at the end of the row.
     @ViewBuilder var trailing: Trailing
 
@@ -74,7 +75,7 @@ struct ComposerEffortSlider<Trailing: View>: View {
                 Capsule().fill(Color.dockControlSurface)
                 Capsule()
                     .fill(Self.gradient(variant))
-                    .overlay { effects(width: center + knob / 2) }
+                    .overlay { effects }
                     .clipShape(Capsule())
                     .frame(width: center + knob / 2)
                 ForEach(choices.indices, id: \.self) { step in
@@ -114,20 +115,24 @@ struct ComposerEffortSlider<Trailing: View>: View {
     }
 
     @ViewBuilder
-    private func effects(width: CGFloat) -> some View {
-        if !reduceMotion, variant >= .high {
+    private var effects: some View {
+        if DockMotion.isEnabled(reduceMotion: reduceMotion), isFast || variant >= .high {
             TimelineView(.dockMotion()) { timeline in
                 Canvas { context, size in
                     let time = timeline.date.timeIntervalSinceReferenceDate
-                    let speed = variant >= .max ? 0.9 : 0.5
-                    let phase = (time * speed).truncatingRemainder(dividingBy: 1)
-                    let band = size.width * 0.5
-                    let x = -band + (size.width + band) * phase
-                    context.fill(
-                        Path(CGRect(x: x, y: 0, width: band, height: size.height)),
-                        with: .linearGradient(
-                            Gradient(colors: [.clear, Color.dockPrimaryText.opacity(0.28), .clear]),
-                            startPoint: CGPoint(x: x, y: 0), endPoint: CGPoint(x: x + band, y: 0)))
+                    if isFast {
+                        drawTurboSweep(in: context, size: size, at: timeline.date)
+                    } else {
+                        let speed = variant >= .max ? 0.9 : 0.5
+                        let phase = (time * speed).truncatingRemainder(dividingBy: 1)
+                        let band = size.width * 0.5
+                        let x = -band + (size.width + band) * phase
+                        context.fill(
+                            Path(CGRect(x: x, y: 0, width: band, height: size.height)),
+                            with: .linearGradient(
+                                Gradient(colors: [.clear, Color.dockPrimaryText.opacity(0.28), .clear]),
+                                startPoint: CGPoint(x: x, y: 0), endPoint: CGPoint(x: x + band, y: 0)))
+                    }
                     let count = variant >= .ultra ? 14 : variant >= .max ? 8 : variant >= .xhigh ? 4 : 0
                     for item in 0..<count {
                         let seed = Double(item) * 12.9898
@@ -144,6 +149,26 @@ struct ComposerEffortSlider<Trailing: View>: View {
                 }
             }
             .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    private func drawTurboSweep(in context: GraphicsContext, size: CGSize, at date: Date) {
+        let progress = DockMotionSchedule.loop(date, period: 0.75)
+        let length = size.width * 0.42
+        let lead = CGFloat(progress) * (size.width + length * 1.25)
+        let amber = DockAccentColor.amber.fill
+        let streaks = [
+            CGRect(x: lead - length, y: size.height * 0.32, width: length, height: 2.5),
+            CGRect(x: lead - length * 1.25, y: size.height * 0.65, width: length * 0.78, height: 1.5),
+        ]
+        for streak in streaks {
+            context.fill(
+                Capsule().path(in: streak),
+                with: .linearGradient(
+                    Gradient(colors: [.clear, amber.opacity(0.88), amber]),
+                    startPoint: CGPoint(x: streak.minX, y: streak.midY),
+                    endPoint: CGPoint(x: streak.maxX, y: streak.midY)))
         }
     }
 

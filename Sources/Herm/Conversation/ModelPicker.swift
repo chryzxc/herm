@@ -438,14 +438,22 @@ struct ModelPickerView: View {
 
 private struct FastModeIcon: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var appeared = false
+    @Environment(\.dockWorkspaceScale) private var workspaceScale
 
     var body: some View {
-        DockIcon(.lightning, size: 11, color: .dockSecondaryText)
-            .scaleEffect(appeared || !DockMotion.isEnabled(reduceMotion: reduceMotion) ? 1 : 0.65)
-            .opacity(appeared || !DockMotion.isEnabled(reduceMotion: reduceMotion) ? 1 : 0)
-            .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.25), value: appeared)
-            .onAppear { appeared = true }
+        DockIcon(.lightning, size: 11, color: DockAccentColor.amber.color)
+            .background {
+                if DockMotion.isEnabled(reduceMotion: reduceMotion) {
+                    let size = DockWorkspaceScale.points(13, scale: workspaceScale)
+                    DockLayerMotion(
+                        kind: .breathe(period: 1.8), color: DockAccentColor.amber.fill.opacity(0.30),
+                        glow: DockAccentColor.amber.fill.opacity(0.75)
+                    )
+                    .frame(width: size, height: size)
+                    .allowsHitTesting(false)
+                }
+            }
+            .accessibilityHidden(true)
     }
 }
 

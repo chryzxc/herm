@@ -59,12 +59,17 @@ struct AttachmentThumbnailView: View {
     let url: URL
     var maximumPixelSize = AttachmentThumbnailLoader.maximumPixelSize
     var contentMode: ContentMode = .fit
+    var placeholderIcon: Ph? = nil
     @State private var image: CGImage?
 
     var body: some View {
         Group {
             if let image {
                 Image(decorative: image, scale: 2).resizable().aspectRatio(contentMode: contentMode)
+            } else if let placeholderIcon {
+                DockIcon(placeholderIcon, size: 16, color: Color.dockSecondaryText)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityHidden(true)
             } else {
                 Color.clear
             }
