@@ -1437,6 +1437,8 @@ the top island remains outline-free so it blends with the camera housing.
 The top island renders on the `.cameraNotch` theme surface. Its chrome
 (selection fills, outlines, buttons, text) is Onyx whatever the skin, and its
 bots keep the selected skin with Onyx ink. Left and right rails follow the skin.
+The expanded workspace’s black status band uses Onyx text and status colors
+with every workspace skin. Its headline remains full contrast when it has no action.
 
 **Preview.** Hover or new work morphs the rail into an attached preview. It is
 a fixed 368 × 360pt panel with stable inset content. The size never changes
