@@ -243,6 +243,16 @@ protocol NativeMarkdownMeasurableSection: NSView {
     func measuredHeight(forWidth width: CGFloat) -> CGFloat
 }
 
+struct NativeMarkdownPreparedLayout {
+    let context: NativeMarkdownDocumentContainerView.MeasurementContext
+    let frames: [CGRect]
+
+    static func frame(after previous: CGRect?, width: CGFloat, height: CGFloat, spacing: CGFloat) -> CGRect {
+        let y = previous?.maxY ?? 0
+        return CGRect(x: 0, y: y > 0 && height > 0 ? y + spacing : y, width: width, height: max(0, height))
+    }
+}
+
 /// Small memo of measured heights. SwiftUI probes a few widths during one
 /// layout pass; TextKit relayout is paid only for a width not seen since the
 /// content last changed.
@@ -325,6 +335,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     /// stay hidden subviews, so `subviews` is not the mounted set.
     var mountedSectionViews: [NSView] { mountedIndices.sorted().compactMap { entries[$0].view } }
     private var source = ""
+    private var completedDocumentKey: MarkdownRenderKey?
     private var renderedSections: [MarkdownRenderSection] = []
     private var isStreamingDocument = false
     private(set) var sectionMeasurementCount = 0
@@ -479,11 +490,17 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         if let cached = cachedIntrinsicHeight, cachedSolveWidth == width {
             return cached
         }
-        let preparedMeasurements = scrollController?.preparedPage?.measurements
+        let preparedPage = scrollController?.preparedPage
+        if !isStreamingDocument, let key = completedDocumentKey,
+            let prepared = preparedPage?.layouts[key], prepared.context == context,
+            preparedPage?.documents[key]?.source == source,
+            prepared.frames.count == entries.count
+        {
+            return cacheLayout(prepared.frames, width: width)
+        }
+        let preparedMeasurements = preparedPage?.measurements
         var frames = cachedSolveWidth == width ? cachedFrames : []
         frames.reserveCapacity(entries.count)
-        var y = frames.last?.maxY ?? 0
-        var hasVisibleSection = y > 0
         for entry in entries.dropFirst(frames.count) {
             let sharesHeight = !isStreamingDocument || (retainsStreamingMeasurements && entry.section.id >= 0)
             let height: CGFloat
@@ -517,16 +534,15 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                 }
                 entry.heights.store(height, forWidth: measurementWidth)
             }
-            guard height > 0 else {
-                frames.append(CGRect(x: 0, y: y, width: width, height: 0))
-                continue
-            }
-            if hasVisibleSection { y += entry.spacingBefore }
-            frames.append(CGRect(x: 0, y: y, width: width, height: height))
-            y += height
-            hasVisibleSection = true
+            frames.append(
+                NativeMarkdownPreparedLayout.frame(
+                    after: frames.last, width: width, height: height, spacing: entry.spacingBefore))
         }
-        let height = ceil(y)
+        return cacheLayout(frames, width: width)
+    }
+
+    private func cacheLayout(_ frames: [CGRect], width: CGFloat) -> CGFloat {
+        let height = ceil(frames.last?.maxY ?? 0)
         cachedSolveWidth = width
         cachedIntrinsicHeight = height
         cachedFrames = frames
@@ -741,6 +757,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     func apply(document: MarkdownRenderDocument) {
         let finishingStream = isStreamingDocument
         isStreamingDocument = false
+        completedDocumentKey = document.key
         applyProjection(document, finishingStream: finishingStream)
     }
 
@@ -889,7 +906,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
 
     /// Sections carry their source whitespace. A streaming section can end
     /// mid-paragraph; only a completed line boundary opens block spacing.
-    private static func spacing(after previousSource: String, before section: MarkdownRenderSection) -> CGFloat {
+    static func spacing(after previousSource: String, before section: MarkdownRenderSection) -> CGFloat {
         if case .code = section.kind,
             let firstLine = section.source.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first,
             MarkdownFence(opening: String(firstLine)) == nil

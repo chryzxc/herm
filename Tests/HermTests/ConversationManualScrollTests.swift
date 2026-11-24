@@ -312,24 +312,13 @@ struct ConversationManualScrollTests {
                             onImagePreview: { _ in }
                         )
                         .equatable()
-                        .background {
-                            GeometryReader { geometry in
-                                let _ = { metrics.geometryReads += 1 }()
-                                Color.clear.preference(
-                                    key: MessageNavigatorViewportPreferenceKey.self,
-                                    value: [
-                                        MessageNavigatorViewport(
-                                            target: MessageNavigatorTarget(
-                                                sessionID: "fixture", messageID: messageIDs[index]),
-                                            index: index,
-                                            minY: geometry.frame(in: .named("document")).minY,
-                                            maxY: geometry.frame(in: .named("document")).maxY
-                                        )
-                                    ]
-                                )
-                            }
-                        }
+                        .conversationRowBounds(
+                            target: .init(sessionID: "fixture", messageID: messageIDs[index]), index: index)
                     }
+                }
+                .conversationRowGeometry { rows in
+                    let _ = { metrics.geometryReads += 1 }()
+                    Color.clear.preference(key: MessageNavigatorViewportPreferenceKey.self, value: rows)
                 }
                 .background {
                     GeometryReader { geometry in
@@ -499,7 +488,10 @@ struct ConversationManualScrollTests {
         }
         let cpuMS = Double(clock() - started) / Double(CLOCKS_PER_SEC) * 1_000
         let mainCPU = mainThreadCPUMilliseconds() - mainCPUStarted
-        if !streams { #expect(controller.geometry?.documentHeight == initial.documentHeight) }
+        if !streams {
+            #expect(controller.geometry?.documentHeight == initial.documentHeight)
+            #expect(metrics.geometryReads - readsBefore <= 360)
+        }
         if streams { #expect(streaming?.text == longMarkdown) }
         if keepsAllSections {
             #expect(containers.allSatisfy { $0.keepsAccessibilitySectionsMounted })
@@ -515,7 +507,7 @@ struct ConversationManualScrollTests {
             "manual_scroll_latency mode=\(mode) source_bytes=\(longMarkdown?.utf8.count ?? Self.source.utf8.count) setup_ms=\(String(format: "%.1f", setupMS)) p50_step_ms=\(String(format: "%.1f", sortedSteps[sortedSteps.count / 2])) p95_step_ms=\(String(format: "%.1f", sortedSteps[Int(Double(sortedSteps.count - 1) * 0.95)])) max_step_ms=\(String(format: "%.1f", sortedSteps.last ?? 0))"
         )
         print(
-            "manual_scroll_fixture mode=\(mode) steps=120 cpu_ms=\(String(format: "%.1f", cpuMS)) main_cpu_ms=\(String(format: "%.1f", mainCPU)) mounted_sections=\(mounted) row_geometry_reads=\(metrics.geometryReads - readsBefore) measurements=\(NativeMarkdownDocumentContainerView.totalForegroundMeasurements - measurementsBefore) visits=\(NativeMarkdownDocumentContainerView.totalViewportSectionVisits - visitsBefore) mount_changes=\(NativeMarkdownDocumentContainerView.totalViewportMountChanges - mountsBefore)"
+            "manual_scroll_fixture mode=\(mode) steps=120 cpu_ms=\(String(format: "%.1f", cpuMS)) main_cpu_ms=\(String(format: "%.1f", mainCPU)) mounted_sections=\(mounted) row_geometry_batches=\(metrics.geometryReads - readsBefore) measurements=\(NativeMarkdownDocumentContainerView.totalForegroundMeasurements - measurementsBefore) visits=\(NativeMarkdownDocumentContainerView.totalViewportSectionVisits - visitsBefore) mount_changes=\(NativeMarkdownDocumentContainerView.totalViewportMountChanges - mountsBefore)"
         )
         try await Task.sleep(for: .milliseconds(150))
         host.layoutSubtreeIfNeeded()

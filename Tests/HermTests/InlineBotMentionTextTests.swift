@@ -133,6 +133,39 @@ struct InlineBotMentionTextTests {
         #expect(view.frame.width <= naturalWidth + 2)
     }
 
+    @Test func userBubbleKeepsWrappedLinesInsideWhenConversationResizes() async throws {
+        let row = ConversationMessageRow(
+            message: ChatMessage(
+                role: .user, text: "It is still looking simple for me, I want a complete redesign"),
+            isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
+            botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in })
+        let content = ScrollView { LazyVStack { row.equatable() } }
+            .environment(\.dockWorkspaceScale, 1)
+        let host = NSHostingView(rootView: content)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 240),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil }
+
+        func textView(in view: NSView) -> NativeMarkdownTextView? {
+            (view as? NativeMarkdownTextView) ?? view.subviews.lazy.compactMap { textView(in: $0) }.first
+        }
+
+        for width: CGFloat in [640, 436, 416, 397.5, 396, 360, 320, 436, 640] {
+            window.setContentSize(NSSize(width: width, height: 240))
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+            host.layoutSubtreeIfNeeded()
+            let view = try #require(textView(in: host))
+            let container = try #require(view.textContainer)
+            let layout = try #require(view.layoutManager)
+            layout.ensureLayout(for: container)
+            let height = ceil(layout.usedRect(for: container).height)
+            #expect(height <= view.bounds.height, "Conversation width \(width), text width \(view.bounds.width)")
+        }
+    }
+
     @Test func firstLayoutDisplaysMentionAndBodyWithoutAnotherUpdate() throws {
         for width: CGFloat in [240, 700] {
             let body = "Please check the project and report what you find. "

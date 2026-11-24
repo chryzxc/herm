@@ -17,8 +17,9 @@ The snapshot scopes bot steps to selected-session record identities and omits li
 activity for unmounted streaming rows; canonical activity remains in `DockModel`.
 `ConversationTranscriptCoordinator` owns the session-scoped mounted window, page
 transaction, navigation generation, and deferred native scroll work. Geometry does
-not publish transcript updates. Each mounted message has one geometry/identity
-container around activity and reply content, including zero-height hidden rows.
+not publish transcript updates. The transcript resolves mounted row bounds together in
+one document-space geometry reader. Activity and reply content share one measured row,
+including zero-height hidden rows.
 `DockModel` buffers stored transcript history in 240-row pages by default.
 The coordinator requests a refill before its mounted window reaches the oldest loaded rows.
 The first recent-session publication starts a bounded warm-up for two pinned or

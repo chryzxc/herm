@@ -21,6 +21,7 @@ struct InlineBotMentionText: NSViewRepresentable {
 
     final class Coordinator {
         var applied: RenderKey?
+        var naturalWidth: CGFloat = 0
         var measuredSizes: [(width: CGFloat, size: CGSize)] = []
     }
 
@@ -43,9 +44,13 @@ struct InlineBotMentionText: NSViewRepresentable {
         guard key != context.coordinator.applied else { return }
         context.coordinator.applied = key
         context.coordinator.measuredSizes.removeAll(keepingCapacity: true)
-        view.setMarkdownText(
-            Self.attributedString(
-                text: text, botMentions: botMentions, colorScheme: key.colorScheme, bodySize: key.bodySize))
+        let attributed = Self.attributedString(
+            text: text, botMentions: botMentions, colorScheme: key.colorScheme, bodySize: key.bodySize)
+        view.setMarkdownText(attributed)
+        let naturalBounds = attributed.boundingRect(
+            with: NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading])
+        context.coordinator.naturalWidth = ceil(naturalBounds.width) + 1
         view.setAccessibilityLabel(text)
         view.invalidateIntrinsicContentSize()
         view.window?.invalidateCursorRects(for: view)
@@ -66,31 +71,24 @@ struct InlineBotMentionText: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NativeMarkdownTextView, context: Context) -> CGSize? {
-        let width: CGFloat
+        let availableWidth: CGFloat
         if let proposed = proposal.width, proposed.isFinite, proposed > 1 {
-            width = proposed
+            availableWidth = proposed
         } else if nsView.bounds.width > 1 {
-            width = nsView.bounds.width
+            availableWidth = nsView.bounds.width
         } else {
-            width = NativeMarkdownDocumentSizing.fallbackWidth
+            availableWidth = NativeMarkdownDocumentSizing.fallbackWidth
         }
         let coordinator = context.coordinator
+        // Short messages hug their unwrapped width. Wrapping messages use the
+        // full proposal so a narrower fitted line cannot change their layout again.
+        let width = min(availableWidth, coordinator.naturalWidth)
         if let measured = coordinator.measuredSizes.first(where: { $0.width == width }) { return measured.size }
-        guard let container = nsView.textContainer, let layout = nsView.layoutManager else { return nil }
-        // A trial proposal must not change wrapping in the displayed bubble.
-        defer {
-            if nsView.bounds.width > 1 {
-                container.size = NSSize(width: nsView.bounds.width, height: .greatestFiniteMagnitude)
-            }
-        }
-        // TextKit's usedRect can initially fill the container; measure the attributed text for a stable tight width.
-        let textBounds = nsView.attributedString().boundingRect(
+        // Keep sizing probes detached from the on-screen TextKit container.
+        let bounds = nsView.attributedString().boundingRect(
             with: NSSize(width: width, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading])
-        let huggedWidth = min(width, ceil(textBounds.width) + 1)
-        container.size = NSSize(width: huggedWidth, height: .greatestFiniteMagnitude)
-        layout.ensureLayout(for: container)
-        let size = CGSize(width: huggedWidth, height: ceil(layout.usedRect(for: container).height))
+        let size = CGSize(width: width, height: ceil(bounds.height))
         // Stack layout repeats a handful of trial widths while adjacent rows move.
         coordinator.measuredSizes.append((width, size))
         if coordinator.measuredSizes.count > 4 { coordinator.measuredSizes.removeFirst() }

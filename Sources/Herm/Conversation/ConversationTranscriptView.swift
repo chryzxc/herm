@@ -110,14 +110,10 @@ struct ConversationTranscriptView: View, Equatable {
                                     ConversationLoadingState(
                                         minHeight: max(300, viewport.size.height - 16))
                                 }
-                                let range = snapshot.range
-                                let generation = snapshot.layoutGeneration
-                                let sessionID = snapshot.sessionID
                                 let defaultBot = botMode.visibleBots.first(where: \.isDefault)
                                 ForEach(snapshot.rows, id: \.message.id) { descriptor in
                                     let message = descriptor.message
-                                    // Activity and body are sibling views. One container must own
-                                    // geometry and identity, including a zero-height hidden row.
+                                    // The activity and reply share one measured row, including when hidden.
                                     VStack(spacing: 0) {
                                         if message.id == snapshot.unreadDividerMessageID {
                                             unreadDivider
@@ -125,26 +121,12 @@ struct ConversationTranscriptView: View, Equatable {
                                         messageRow(
                                             message, index: descriptor.index, snapshot: snapshot,
                                             defaultBot: defaultBot)
-
                                     }
                                     .opacity(spotlightMessageID == nil || spotlightMessageID == message.id ? 1 : 0.3)
-                                    .background {
-                                        GeometryReader { geometry in
-                                            let frame = geometry.frame(in: .named("conversation-document"))
-                                            Color.clear.preference(
-                                                key: ConversationTranscriptLayoutPreferenceKey.self,
-                                                value: ConversationTranscriptLayout(
-                                                    sessionID: snapshot.layoutSessionID, generation: generation,
-                                                    range: range,
-                                                    rows: [
-                                                        MessageNavigatorViewport(
-                                                            target: MessageNavigatorTarget(
-                                                                sessionID: sessionID ?? "", messageID: message.id),
-                                                            index: descriptor.index,
-                                                            minY: frame.minY, maxY: frame.maxY)
-                                                    ]))
-                                        }
-                                    }
+                                    .conversationRowBounds(
+                                        target: .init(sessionID: snapshot.sessionID ?? "", messageID: message.id),
+                                        index: descriptor.index
+                                    )
                                     .id(message.id)
                                 }
                                 if model.sessionActionsReady || snapshot.context.conversationApproval != nil {
@@ -193,6 +175,15 @@ struct ConversationTranscriptView: View, Equatable {
                             .padding(.trailing, trailingContentInset)
                             Color.clear.frame(height: 1).id("conversation-bottom")
                         }
+                        .conversationRowGeometry { rows in
+                            Color.clear.preference(
+                                key: ConversationTranscriptLayoutPreferenceKey.self,
+                                value: rows.isEmpty
+                                    ? nil
+                                    : ConversationTranscriptLayout(
+                                        sessionID: snapshot.layoutSessionID, generation: snapshot.layoutGeneration,
+                                        range: snapshot.range, rows: rows))
+                        }
                         .background {
                             ConversationScrollEventObserver(
                                 controller: coordinator.controller,
@@ -202,7 +193,6 @@ struct ConversationTranscriptView: View, Equatable {
                                 onContentResize: { coordinator.contentResized() }
                             )
                         }
-                        .coordinateSpace(name: "conversation-document")
                     }
                     .id(snapshot.layoutSessionID)
                     .onPreferenceChange(ConversationTranscriptLayoutPreferenceKey.self) { layout in

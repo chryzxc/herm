@@ -49,6 +49,41 @@ import Testing
         return "Intro\n\n```swift\n" + code.joined(separator: "\n") + "\n```\n\nOutro."
     }
 
+    @Test func preparedDocumentGeometryUsesTheMatchingWidth() throws {
+        let document = MarkdownRenderDocumentBuilder.build(
+            source: codeSource, key: .init(messageID: UUID(), contentRevision: 1, themeRevision: 1))
+        let reference = NativeMarkdownDocumentContainerView()
+        let controller = ConversationScrollController()
+        reference.scrollController = controller
+        reference.apply(document: document)
+        let height = reference.measuredHeight(forWidth: 620)
+        let context = try #require(controller.markdownMeasurementContext)
+        var frames: [CGRect] = []
+        for (index, section) in document.sections.enumerated() {
+            let key = NativeMarkdownDocumentContainerView.measurementKey(for: section, context: context)
+            let sectionHeight = try #require(NativeMarkdownCompletedHeightCache.height(for: key))
+            let spacing =
+                index == 0
+                ? 0
+                : NativeMarkdownDocumentContainerView.spacing(
+                    after: document.sections[index - 1].source, before: section)
+            frames.append(
+                NativeMarkdownPreparedLayout.frame(
+                    after: frames.last, width: context.width, height: sectionHeight, spacing: spacing))
+        }
+        controller.preparedPage = ConversationPreparedPage(
+            documents: [document.key: document], measurements: [:],
+            layouts: [document.key: .init(context: context, frames: frames)])
+        let mounted = NativeMarkdownDocumentContainerView()
+        mounted.scrollController = controller
+        mounted.apply(document: document)
+        let hits = NativeMarkdownCompletedHeightCache.hits
+        #expect(mounted.measuredHeight(forWidth: 620) == height)
+        #expect(NativeMarkdownCompletedHeightCache.hits == hits)
+        #expect(mounted.sectionMeasurementCount == 0)
+        #expect(mounted.measuredHeight(forWidth: 440) == reference.measuredHeight(forWidth: 440))
+    }
+
     @Test func finishingStreamRetainsTheSelectedTextViewAcrossSectionIDChanges() throws {
         let source = "Paragraph to keep selected"
         let fixture = makeFixture(source)

@@ -578,15 +578,20 @@ struct ConversationTranscriptCoordinatorTests {
         #expect(!coordinator.presentation.isAtBottom)
     }
 
-    @Test func restoredAnchorStaysPinnedWhileRowsAboveSettle() throws {
+    @Test(arguments: [false, true])
+    func restoredAnchorStaysPinnedWhileRowsAboveSettle(paging: Bool) throws {
         let controller = ConversationScrollController()
         let coordinator = ConversationTranscriptCoordinator(controller: controller)
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 600))
         scroll.documentView = Document(frame: NSRect(x: 0, y: 0, width: 640, height: 20_000))
         controller.clipView = scroll.contentView
         leaveAwayFromBottom(coordinator, controller: controller, id: "one")
-        coordinator.reset(sessionID: "two", totalCount: 500, bubbleCount: 500, messages: messages())
-        coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500, messages: messages())
+        if paging {
+            coordinator.userMoved(try #require(controller.geometry), delta: -5)
+        } else {
+            coordinator.reset(sessionID: "two", totalCount: 500, bubbleCount: 500, messages: messages())
+            coordinator.reset(sessionID: "one", totalCount: 500, bubbleCount: 500, messages: messages())
+        }
         let anchor = try #require(coordinator.pendingPage?.anchor)
         coordinator.receiveLayout(layout(coordinator))
         #expect(coordinator.pendingPage == nil)

@@ -5,22 +5,16 @@ struct ConversationTranscriptLayout: Equatable {
     let sessionID: String?
     let generation: UInt64
     let range: Range<Int>
-    var rows: [MessageNavigatorViewport]
+    let rows: [MessageNavigatorViewport]
 }
 
 struct ConversationTranscriptLayoutPreferenceKey: PreferenceKey {
     static let defaultValue: ConversationTranscriptLayout? = nil
+
     static func reduce(
         value: inout ConversationTranscriptLayout?, nextValue: () -> ConversationTranscriptLayout?
     ) {
-        guard let next = nextValue() else { return }
-        if value?.sessionID == next.sessionID, value?.generation == next.generation,
-            value?.range == next.range
-        {
-            value?.rows += next.rows
-        } else {
-            value = next
-        }
+        if let next = nextValue() { value = next }
     }
 }
 
@@ -69,7 +63,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     /// The reader already saw this session in this run: reopening keeps their
     /// last position (or the live tail) instead of jumping to the unread divider.
     private(set) var restoresViewedPosition = false
-    /// A restored session position stays pinned while rows above it finish
+    /// A restored reading position stays pinned while rows above it finish
     /// measuring, until the reader scrolls or navigates.
     private var restoredAnchor: ConversationScrollAnchor?
     private var lastResponseCount = 0
@@ -478,7 +472,9 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         controller.shiftVisibleTop(
             by: page.anchor.correction(rowMinY: row.minY, visibleTop: geometry.visibleTop)
         ) { [weak self] in
-            guard let self, self.generation == page.generation, self.pendingPage != nil else { return }
+            guard let self, self.generation == page.generation, let landed = self.pendingPage else { return }
+            // Native Markdown can report its final height after the page first lands.
+            if !self.presentation.isAtBottom { self.restoredAnchor = landed.anchor }
             self.pendingPage = nil
             self.controller.isConcealed = false
             self.controller.preparedPage = nil

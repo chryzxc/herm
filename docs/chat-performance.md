@@ -39,6 +39,19 @@ inventory, and the first sidebar snapshot with rows. Compare the stages on the
 same profile in cold and warm Release launches, and use `session_open`'s
 `fresh_layout` for transcript readiness.
 
+## Conversation scroll geometry and paging — 24 November 2026
+
+The transcript resolves mounted row bounds in one document-space geometry reader.
+In an isolated AppKit comparison, 12 mounted rows over 120 scroll steps went
+from 1,440 individual reader evaluations to 120 shared evaluations. Both methods
+reported the same row positions after scrolling, inserting earlier rows, and
+growing a reply. This comparison measures layout work in the fixture.
+
+The rich-history paging fixture exposed a second layout pass where Markdown above
+the viewport grew by 4,819 points after the first anchor correction. The
+coordinator now keeps the landed anchor until the reader moves so the later
+layout can preserve the same message and offset.
+
 ## Session composer drafts — 23 October 2026
 
 Draft snapshots run only during session/new-chat navigation. They retain existing

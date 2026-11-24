@@ -1176,6 +1176,8 @@ before and after staging. Both paths validate the staged code signature. A faile
 trust check stays in Updates and does not replace the installed app.
 
 User-message bubbles follow the selected text size, including when it changes while a chat is open. Short prompts hug their text from the first layout, without briefly stretching across the chat.
+Wrapped prompts measure their full text height at the available bubble width,
+including when a conversation pane resizes across a wrap point.
 The chat composer keeps its minimum input height for a short draft and grows as text wraps.
 
 Generated HTML previews inherit the selected text size and update without resetting interactive inputs; authored styles may override the default.
@@ -3400,11 +3402,14 @@ pages mount in batches of up to four, and ready rows can appear near the edge wh
 the rest prepare. The initial window stays at 12 messages and the normal mounting
 backstop stays at 36. A larger visible span is protected from eviction.
 There are no show-more buttons, and the reader's position is held while a page
-mounts. Page anchors track reader movement during layout and repair native origin clamps;
+mounts. The reading anchor also holds through later Markdown measurements until the reader
+moves again. Page anchors track reader movement during layout and repair native origin clamps;
 programmatic corrections and resize events do not trigger edge paging. One session-scoped
 coordinator owns mounting, anchors, navigation, and deferred scroll work. A page remains
 pending until its session, generation, range, and anchor match the measured row batch;
-settling alone never completes it. Session changes and explicit navigation cancel stale work. Each message owns one geometry container around its activity and body; hidden messages still report a zero-height row, so complete page batches remain measurable.
+settling alone never completes it. Session changes and explicit navigation cancel stale work.
+The document resolves row positions together in one geometry reader. Activity and reply
+content share one measured row, including zero-height rows for hidden messages.
 AppKit scroll phase notifications pause transcript hover while the viewport moves.
 An explicit jump to the latest reply positions the native scroll view immediately
 when its window is hidden.

@@ -4,6 +4,7 @@ import Foundation
 struct ConversationPreparedPage {
     let documents: [MarkdownRenderKey: MarkdownRenderDocument]
     let measurements: [NativeMarkdownCompletedHeightCache.Key: NativeMarkdownCompletedHeightCache.Measurement]
+    let layouts: [MarkdownRenderKey: NativeMarkdownPreparedLayout]
 }
 
 @MainActor
@@ -59,6 +60,8 @@ final class ConversationMarkdownPrefetch {
     private var requestedDocuments: [MarkdownRenderKey: MarkdownRenderDocument] = [:]
     private var requestedMeasurements:
         [NativeMarkdownCompletedHeightCache.Key: NativeMarkdownCompletedHeightCache.Measurement] = [:]
+    private var requestedLayouts: [MarkdownRenderKey: NativeMarkdownPreparedLayout] = [:]
+    private var readyFrames: [CGRect] = []
     private(set) var preparedPage: ConversationPreparedPage?
     var onProgress: (() -> Void)?
     private(set) var committedDocuments = 0
@@ -433,31 +436,47 @@ final class ConversationMarkdownPrefetch {
                         ?? MarkdownRenderDocumentCache.cached(source: input.source, key: input.key)
                 else {
                     restartIfIdle()
-                    return (readyCount, .init(documents: requestedDocuments, measurements: requestedMeasurements))
+                    return (readyCount, currentPage())
                 }
                 requestedDocuments[input.key] = document
                 while readySection < document.sections.count {
-                    let key = NativeMarkdownDocumentContainerView.measurementKey(
-                        for: document.sections[readySection], context: context)
+                    let section = document.sections[readySection]
+                    let key = NativeMarkdownDocumentContainerView.measurementKey(for: section, context: context)
                     guard
                         let measurement = requestedMeasurements[key]
                             ?? NativeMarkdownCompletedHeightCache.measurement(for: key)
                     else {
                         restartIfIdle()
-                        return (readyCount, .init(documents: requestedDocuments, measurements: requestedMeasurements))
+                        return (readyCount, currentPage())
                     }
                     requestedMeasurements[key] = measurement
+                    let spacing =
+                        readySection == 0
+                        ? 0
+                        : NativeMarkdownDocumentContainerView.spacing(
+                            after: document.sections[readySection - 1].source, before: section)
+                    readyFrames.append(
+                        NativeMarkdownPreparedLayout.frame(
+                            after: readyFrames.last, width: context.width, height: measurement.height, spacing: spacing)
+                    )
                     readySection += 1
                 }
+                requestedLayouts[input.key] = NativeMarkdownPreparedLayout(context: context, frames: readyFrames)
                 readyInput += 1
                 readySection = 0
+                readyFrames.removeAll()
             }
             readyCount += 1
             readyInput = 0
         }
-        let page = ConversationPreparedPage(documents: requestedDocuments, measurements: requestedMeasurements)
+        let page = currentPage()
         preparedPage = readyCount == messageIDs.count ? page : nil
         return (readyCount, page)
+    }
+
+    private func currentPage() -> ConversationPreparedPage {
+        ConversationPreparedPage(
+            documents: requestedDocuments, measurements: requestedMeasurements, layouts: requestedLayouts)
     }
 
     func isReady(messageIDs: [UUID], context: NativeMarkdownDocumentContainerView.MeasurementContext) -> Bool {
@@ -474,6 +493,8 @@ final class ConversationMarkdownPrefetch {
         requestedDocumentKeys.removeAll()
         requestedDocuments.removeAll()
         requestedMeasurements.removeAll()
+        requestedLayouts.removeAll()
+        readyFrames.removeAll()
         preparedPage = nil
     }
 
