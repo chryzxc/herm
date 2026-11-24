@@ -161,38 +161,48 @@ extension ControlCenterModel {
             if rows.isEmpty || !hasMore { break }
         } while true
 
-        guard let sessions = Self.parseSessions(["data": sessionRows]) else {
+        let rows = LatestActivityArchivePayload(value: sessionRows)
+        let inventory = await Task.detached(priority: .utility) {
+            let sessions = Self.parseSessions(["data": rows.value])
+            let revisions = Dictionary(
+                rows.value.compactMap { row -> (String, LatestActivityRevision)? in
+                    guard let id = row["id"] as? String, let revision = LatestActivityRevision(row) else { return nil }
+                    return (id, revision)
+                }, uniquingKeysWith: { first, _ in first })
+            return (sessions, revisions)
+        }.value
+        try Task.checkCancellation()
+        guard binding == clientBindingGeneration else { return }
+        guard let sessions = inventory.0 else {
             throw HermesGateway.GatewayError.malformedResponse
         }
         var stepsBySessionID: [String: [SessionActivityStep]] = [:]
         var failedSessionCount = 0
-        let revisions = Dictionary(
-            sessionRows.compactMap { row -> (String, LatestActivityRevision)? in
-                guard let id = row["id"] as? String, let revision = LatestActivityRevision(row) else { return nil }
-                return (id, revision)
-            }, uniquingKeysWith: { first, _ in first })
+        let revisions = inventory.1
         var nextCache: [String: LatestActivityCacheEntry] = [:]
-        var cachedStepCount = 0
+        // Each entry retains only the rows that can appear in the global feed.
+        let cacheLimit = 10_000
 
         for start in stride(from: 0, to: sessions.count, by: 2) {
             try Task.checkCancellation()
             guard binding == clientBindingGeneration else { return }
             let end = min(start + 2, sessions.count)
-            let batch = Array(sessions[start..<end])
+            var batch: [SessionSummary] = []
+            for session in sessions[start..<end] {
+                if let revision = revisions[session.id], let cached = latestActivityCache[session.id],
+                    cached.revision == revision
+                {
+                    stepsBySessionID[session.id] = cached.steps
+                    if nextCache.count < cacheLimit { nextCache[session.id] = cached }
+                } else {
+                    batch.append(session)
+                }
+            }
+            guard !batch.isEmpty else { continue }
             let fetched = await withTaskGroup(
                 of: (String, [SessionActivityStep], Bool).self, returning: [(String, [SessionActivityStep], Bool)].self
             ) { group in
                 for session in batch {
-                    if let revision = revisions[session.id], let cached = latestActivityCache[session.id],
-                        cached.revision == revision
-                    {
-                        stepsBySessionID[session.id] = cached.steps
-                        if cachedStepCount + cached.steps.count <= 10_000, nextCache.count < 512 {
-                            nextCache[session.id] = cached
-                            cachedStepCount += cached.steps.count
-                        }
-                        continue
-                    }
                     group.addTask { [weak self] in
                         guard let self, !Task.isCancelled else { return (session.id, [], false) }
                         let result = await self.fetchActivitySteps(rpc: rpc, sessionID: session.id)
@@ -209,11 +219,8 @@ extension ControlCenterModel {
             for (sessionID, steps, succeeded) in fetched {
                 stepsBySessionID[sessionID] = steps
                 if !succeeded { failedSessionCount += 1 }
-                if succeeded, let revision = revisions[sessionID],
-                    cachedStepCount + steps.count <= 10_000, nextCache.count < 512
-                {
+                if succeeded, let revision = revisions[sessionID], nextCache.count < cacheLimit {
                     nextCache[sessionID] = LatestActivityCacheEntry(revision: revision, steps: steps)
-                    cachedStepCount += steps.count
                 }
             }
         }
@@ -221,10 +228,6 @@ extension ControlCenterModel {
         guard binding == clientBindingGeneration else { return }
         latestActivityCache = nextCache
 
-        let projectedActivities = GlobalSessionActivityPresentation.latestActivity(
-            sessions,
-            stepsBySessionID: stepsBySessionID
-        )
         if failedSessionCount > 0 {
             throw NSError(
                 domain: "HermesControl",
@@ -235,6 +238,12 @@ extension ControlCenterModel {
                 ]
             )
         }
+        let compactSteps = stepsBySessionID
+        let projectedActivities = await Task.detached(priority: .utility) {
+            GlobalSessionActivityPresentation.latestActivity(sessions, stepsBySessionID: compactSteps)
+        }.value
+        try Task.checkCancellation()
+        guard binding == clientBindingGeneration else { return }
         if latestActivities != projectedActivities { latestActivities = projectedActivities }
     }
 
@@ -242,8 +251,11 @@ extension ControlCenterModel {
         steps: [SessionActivityStep], succeeded: Bool
     ) {
         do {
-            let result = try await rpc.sessionMessages(sessionID: sessionID)
-            guard let steps = Self.parseActivityStepsEnvelope(result) else {
+            let response = LatestActivityArchivePayload(value: try await rpc.sessionMessages(sessionID: sessionID))
+            let steps = await Task.detached(priority: .utility) {
+                Self.parseActivityStepsEnvelope(response.value).map(GlobalSessionActivityPresentation.newestSteps)
+            }.value
+            guard let steps else {
                 return ([], false)
             }
             return (steps, true)
@@ -257,7 +269,7 @@ extension ControlCenterModel {
         }
     }
 
-    static func parseActivityStepsEnvelope(_ result: [String: Any]) -> [SessionActivityStep]? {
+    nonisolated static func parseActivityStepsEnvelope(_ result: [String: Any]) -> [SessionActivityStep]? {
         guard result["messages"] == nil,
             let rows = result["data"] as? [[String: Any]]
         else {
@@ -278,7 +290,8 @@ extension ControlCenterModel {
                 seenActivityIDs.insert(id).inserted
             else { return nil }
             if let role = row["role"], !(role is String) { return nil }
-            if let timestamp = row["timestamp"], activityDate(timestamp) == nil { return nil }
+            let timestamp = activityDate(row["timestamp"])
+            if row["timestamp"] != nil, timestamp == nil { return nil }
             if let toolName = row["tool_name"], !(toolName is String) { return nil }
 
             var names: [String] = []
@@ -303,10 +316,9 @@ extension ControlCenterModel {
                 names = ["Response"]
             }
 
-            let timestamp = activityDate(row["timestamp"]) ?? .distantPast
             steps.append(
                 contentsOf: names.enumerated().map { nameIndex, name in
-                    SessionActivityStep(id: "\(id)-\(nameIndex)", name: name, timestamp: timestamp)
+                    SessionActivityStep(id: "\(id)-\(nameIndex)", name: name, timestamp: timestamp ?? .distantPast)
                 })
         }
         return steps
@@ -353,7 +365,7 @@ extension ControlCenterModel {
         return nil
     }
 
-    static func parseSessions(_ result: [String: Any]) -> [SessionSummary]? {
+    nonisolated static func parseSessions(_ result: [String: Any]) -> [SessionSummary]? {
         let rows: [[String: Any]]
         if let value = result["sessions"] {
             guard let parsed = value as? [[String: Any]] else { return nil }
@@ -398,7 +410,7 @@ extension ControlCenterModel {
         return sessions
     }
 
-    static func isOptionalString(_ value: Any?) -> Bool {
+    nonisolated static func isOptionalString(_ value: Any?) -> Bool {
         value == nil || value is String
     }
 

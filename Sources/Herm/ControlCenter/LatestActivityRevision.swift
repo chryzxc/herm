@@ -1,12 +1,11 @@
 import Foundation
 
 /// Reuse only explicit recency plus message count; a creation date cannot prove freshness.
-struct LatestActivityRevision: Equatable {
+struct LatestActivityRevision: Equatable, Sendable {
     let profile: String?
     let updated: Date
     let messages: Int
 
-    @MainActor
     init?(_ row: [String: Any]) {
         guard
             let updated = ControlCenterModel.activityDate(row["updated_at"])
@@ -21,7 +20,12 @@ struct LatestActivityRevision: Equatable {
     }
 }
 
-struct LatestActivityCacheEntry {
+struct LatestActivityCacheEntry: Sendable {
     let revision: LatestActivityRevision
     let steps: [SessionActivityStep]
+}
+
+/// Read-only JSON values returned by the archive transport.
+struct LatestActivityArchivePayload<Value>: @unchecked Sendable {
+    let value: Value
 }

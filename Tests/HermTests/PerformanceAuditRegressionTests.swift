@@ -25,6 +25,24 @@ struct PerformanceAuditRegressionTests {
         #expect(client.completed == 8)
         #expect(control.latestActivities.count == 8)
     }
+
+    @Test func unchangedLargeArchiveOnlyReadsTheSessionWithANewRevision() async throws {
+        let client = ArchiveConcurrencyClient(count: 700)
+        let rpc = HermesControlRPC(client: client)
+        let control = ControlCenterModel(rpc: rpc)
+        try await control.refreshLatestActivities(rpc: rpc)
+        #expect(client.completed == 700)
+        #expect(control.latestActivities.count == 10)
+
+        try await control.refreshLatestActivities(rpc: rpc)
+        #expect(client.completed == 700)
+
+        client.changedSession = 699
+        try await control.refreshLatestActivities(rpc: rpc)
+        #expect(client.completed == 701)
+        #expect(control.latestActivities.count == 10)
+    }
+
     @Test func workspaceObservationSkipsBackgroundActivityButKeepsNavigation() async throws {
         let model = DockModel(initialSessionID: "workspace-one")
         let control = ControlCenterModel()
@@ -340,24 +358,31 @@ private final class ArchiveConcurrencyClient: HermesRPCClientProtocol {
     var concurrent = 0
     var maximumConcurrent = 0
     var completed = 0
+    let count: Int
+    var changedSession: Int?
+
+    init(count: Int = 8) { self.count = count }
+
     func connect() async throws {}
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         if path.hasPrefix("/api/sessions?") {
+            let offset = Int(path.components(separatedBy: "offset=").last ?? "") ?? 0
+            let end = min(offset + 100, count)
             return [
-                "data": (0..<8).map {
+                "data": (offset..<end).map {
                     [
-                        "id": "s\($0)", "title": "Session \($0)", "updated_at": 100,
+                        "id": "s\($0)", "title": "Session \($0)", "updated_at": $0 == changedSession ? 200 : 100,
                         "message_count": 1,
                     ]
-                }, "has_more": false,
+                }, "has_more": end < count,
             ]
         }
         concurrent += 1
         maximumConcurrent = max(maximumConcurrent, concurrent)
         defer { concurrent -= 1 }
-        try await Task.sleep(for: .milliseconds(10))
+        if count == 8 { try await Task.sleep(for: .milliseconds(10)) }
         completed += 1
         return ["data": [["id": "1", "role": "assistant", "timestamp": 100, "tool_name": "terminal"]]]
     }

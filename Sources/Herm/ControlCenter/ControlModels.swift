@@ -500,7 +500,7 @@ enum SessionPreviewPresentation {
     }
 }
 
-struct SessionActivityStep: Equatable {
+struct SessionActivityStep: Equatable, Sendable {
     let id: String
     let name: String
     let timestamp: Date
@@ -528,14 +528,31 @@ enum LatestActivityPresentation {
 /// feed. A session may contribute multiple rows when several of its steps are
 /// newer than the latest step from other sessions.
 enum GlobalSessionActivityPresentation {
+    static let defaultLimit = 10
+
+    static func newestSteps(_ steps: [SessionActivityStep]) -> [SessionActivityStep] {
+        guard steps.count > defaultLimit else { return steps }
+        return Array(
+            steps.sorted {
+                $0.timestamp != $1.timestamp ? $0.timestamp > $1.timestamp : $0.id > $1.id
+            }.prefix(defaultLimit))
+    }
+
     static func latestActivity(
         _ sessions: [SessionSummary],
         stepsBySessionID: [String: [SessionActivityStep]],
-        limit: Int = 10
+        limit: Int = defaultLimit
     ) -> [LatestActivityItem] {
-        let items = sessions.flatMap { session in
-            (stepsBySessionID[session.id] ?? []).map { step in
-                LatestActivityItem(
+        guard limit > 0 else { return [] }
+        var items: [LatestActivityItem] = []
+        for session in sessions {
+            for step in stepsBySessionID[session.id] ?? [] {
+                if items.count == limit, let last = items.last,
+                    step.timestamp < last.timestamp
+                {
+                    continue
+                }
+                let item = LatestActivityItem(
                     id: "\(session.id)|\(step.id)",
                     sessionID: session.id,
                     sessionTitle: session.title,
@@ -543,13 +560,19 @@ enum GlobalSessionActivityPresentation {
                     activityName: step.name,
                     timestamp: step.timestamp
                 )
+                let index = items.firstIndex { precedes(item, $0) } ?? items.endIndex
+                if index < limit {
+                    items.insert(item, at: index)
+                    if items.count > limit { items.removeLast() }
+                }
             }
         }
-        return Array(
-            items.sorted { lhs, rhs in
-                if lhs.timestamp != rhs.timestamp { return lhs.timestamp > rhs.timestamp }
-                return lhs.id > rhs.id
-            }.prefix(max(0, limit)))
+        return items
+    }
+
+    private static func precedes(_ lhs: LatestActivityItem, _ rhs: LatestActivityItem) -> Bool {
+        if lhs.timestamp != rhs.timestamp { return lhs.timestamp > rhs.timestamp }
+        return lhs.id > rhs.id
     }
 }
 

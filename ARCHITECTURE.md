@@ -59,7 +59,9 @@ The Talk stage owns microphone observations and its orb observes audio levels.
 
 Chats Tiles prepares large board snapshots and search results on a worker and
 publishes them together. Visible cards subscribe to tool activity by session ID
-and share a bounded preview-read budget.
+and share a bounded preview-read budget. The archive activity feed retains each
+session's newest candidates by its Hermes revision and merges the global feed
+off the main actor.
 Sidebar search uses the same navigation snapshot and matches it off the main actor.
 The right-hand session rail runs discovery and refresh only while visible.
 Each composer shares one in-flight process read and queues one follow-up as needed.
