@@ -487,6 +487,11 @@ private struct DockSelectionSurface<S: Shape>: View {
                 .overlay(shape.stroke(palette.neonHues[0].opacity(0.22), lineWidth: 0.5))
             default:
                 shape.fill(fill)
+                    .overlay {
+                        if theme.style.emphasizesOutlines {
+                            shape.stroke(palette.divider, lineWidth: theme.style.outlineWidth)
+                        }
+                    }
             }
         }
         .overlay(alignment: .bottom) {
@@ -2021,6 +2026,19 @@ extension ToggleStyle where Self == DockCheckboxStyle {
 }
 
 extension Shape {
+    /// A filled compact control whose rim follows the skin without changing its hit target.
+    @MainActor
+    func dockControlFace(_ fill: Color, outlined: Bool = true) -> some View {
+        dockChrome { shape, theme in
+            shape.fill(fill).overlay {
+                if outlined && theme.style.emphasizesOutlines {
+                    shape.stroke(
+                        DockThemePalette(theme: theme).divider.opacity(0.72), lineWidth: theme.style.outlineWidth)
+                }
+            }
+        }
+    }
+
     /// Theme-aware box/control fill: Liquid Glass on the glass skin, else `fallback`.
     /// Use it for any card, field, chip or segmented track instead of `fill(Color.dockSurface…)`.
     /// Neutral outlines are dropped on glass (native glass has its own rim);
@@ -2206,7 +2224,8 @@ extension View {
                     shape.stroke(
                         tint
                             ?? (isActive || style.outlineWidth > 1
-                                ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72)),
+                                ? Color.dockBorderStrong
+                                : style.emphasizesOutlines ? Color.dockBorder : Color.dockBorderLight.opacity(0.72)),
                         lineWidth: tint == nil ? style.outlineWidth : max(style.outlineWidth, 1)
                     ).opacity(style.outlineWidth > 0 || tint != nil ? 1 : 0)
                 )
@@ -2231,7 +2250,9 @@ extension View {
             view.background(
                 (radius.map { DockThemeShape(cornerRadius: $0, role: role, geometry: theme.style.geometry) }
                     ?? DockThemeShape(theme: theme, role: role))
-                    .dockSurfaceFill(tone.fill, stroke: stroke ?? tone.stroke))
+                    .dockSurfaceFill(
+                        tone.fill, stroke: stroke ?? tone.stroke,
+                        lineWidth: theme.style.emphasizesOutlines ? theme.style.outlineWidth : DockLayout.hairline))
         }
     }
 
@@ -2371,12 +2392,12 @@ struct DockTabSegment<Label: View>: View {
                     shape, active: isSelected,
                     fill: style.material == .glass
                         ? (colorScheme == .light ? Color.white.opacity(0.9) : Color.dockPrimaryText.opacity(0.14))
-                        : Color.dockSurface4,
+                        : style.emphasizesOutlines ? DockThemePalette(theme: theme).selectedFill : Color.dockSurface4,
                     theme: theme, namespace: selectionNamespace
                 )
                 .overlay(
                     shape.stroke(
-                        isSelected && style.material != .glass
+                        isSelected && style.material != .glass && !style.emphasizesOutlines
                             && (showsSelectionMark || style.outlineWidth > 1) ? Color.dockBorderStrong : .clear,
                         lineWidth: style.outlineWidth))
         }
@@ -2435,7 +2456,11 @@ extension View {
     func dockTabTrack() -> some View {
         dockChrome { view, theme in
             view.dockPadding(2)
-                .background(DockThemeShape(theme: theme, delta: 1).dockSurfaceFill(Color.dockSurface4.opacity(0.5)))
+                .background(
+                    DockThemeShape(theme: theme, delta: 1).dockSurfaceFill(
+                        Color.dockSurface4.opacity(0.5),
+                        stroke: theme.style.emphasizesOutlines ? Color.dockBorderLight : nil,
+                        lineWidth: theme.style.outlineWidth))
         }
     }
 }
@@ -2544,11 +2569,14 @@ struct DockSearchField: View {
     @Binding var text: String
     var accessibilityDescription: String? = nil
     var accessibilityID: String = ""
+    @FocusState private var focused: Bool
+    @DockChromeTheme private var theme
 
     var body: some View {
         HStack(spacing: DockSpacing.tight) {
             DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
             DockTextField(placeholder, text: $text)
+                .focused($focused)
                 .textFieldStyle(.plain)
                 .dockFont(.body)
                 .foregroundStyle(Color.dockPrimaryText)
@@ -2564,7 +2592,7 @@ struct DockSearchField: View {
         }
         .dockPadding(.horizontal, DockSpacing.control)
         .frame(minHeight: 32)
-        .dockWell(.sunken)
+        .dockWell(.sunken, stroke: focused && theme.style.emphasizesOutlines ? .dockAccent : nil)
     }
 }
 

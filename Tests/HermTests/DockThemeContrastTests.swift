@@ -138,6 +138,20 @@ struct DockThemeContrastTests {
         #expect(abs(resolve(palette.windowBackground, dark: true, opaque: false).alphaComponent - 0.12) < 0.001)
     }
 
+    @Test func cleanKeepsCardEdgesSelectionAndSupportingInkDistinct() {
+        let palette = DockThemePalette(theme: .clean)
+        for dark in [false, true] {
+            let canvas = resolve(palette.background, dark: dark)
+            let card = resolve(palette.surface, dark: dark)
+            let control = resolve(palette.surface4, dark: dark)
+            let outline = resolve(palette.divider, dark: dark)
+            #expect(ratio(card, canvas) >= 1.03)
+            #expect(ratio(outline, card) >= 1.45)
+            #expect(ratio(resolve(palette.selectedFill, dark: dark), control) >= 1.07)
+            #expect(ratio(resolve(palette.metadataText, dark: dark), control) >= 4.5)
+        }
+    }
+
     @Test @available(macOS 26.0, *) func nativeGlassUsesClearStyleInLightAppearance() {
         #expect(NativeLiquidGlassBackground.style(for: .light) == .clear)
         #expect(NativeLiquidGlassBackground.style(for: .dark) == .regular)

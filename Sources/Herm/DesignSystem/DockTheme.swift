@@ -139,7 +139,7 @@ enum DockBuiltInTheme: String, CaseIterable, Sendable {
         switch self {
         case .glass: "Native macOS Liquid Glass with neutral graphite tint. Follows macOS appearance."
         case .clean:
-            "Airy porcelain surfaces, graphite controls, gray selection, and hairline cards. Follows macOS appearance."
+            "Airy porcelain surfaces, fine graphite outlines, and clear selection. Follows macOS appearance."
         case .hermesClassic:
             "The Hermes desktop look: clean chrome, Nous blue, square controls, and a faint etched backdrop. Follows macOS appearance."
         case .ares: "Oxblood panels, bronze contours, crisp corners, and hard offset shadows."
@@ -276,7 +276,8 @@ enum DockBuiltInTheme: String, CaseIterable, Sendable {
                 motion: .mechanical, pressScale: 1, neutralUserBubble: true, actionFace: .rule)
         case .clean:
             DockThemeStyle(
-                controlRadius: 12, paneRadius: 16, outlineWidth: 0.5, cardShadow: 2, pressScale: 0.98, cardFill: 1,
+                controlRadius: 12, paneRadius: 16, outlineWidth: 0.75, emphasizesOutlines: true,
+                cardShadow: 0, pressScale: 0.98, cardFill: 1,
                 neutralUserBubble: true, tintedSidebar: true)
         case .slate:
             DockThemeStyle(
@@ -336,6 +337,8 @@ struct DockThemeStyle: Equatable {
     var paneRadius: CGFloat = 10
     /// Outline weight for controls and cards; 0.5 is the hairline default.
     var outlineWidth: CGFloat = 0.5
+    /// Defines filled controls, selected items, and panels with a visible contour.
+    var emphasizesOutlines = false
     /// Offset of a hard, blur-free ink shadow under controls and cards; 0 = none.
     var stickerShadow: CGFloat = 0
     var geometry: DockThemeGeometry = .rounded
@@ -662,12 +665,12 @@ struct DockThemePalette {
         case .clean:
             return isDark
                 ? (
-                    "#2A2B31", "#33343B", "#303137", "#40414A", "#EDEDF1", "#CFCFD6", "#AEAEB8", "#C4C4C4", "#3D3E42",
-                    "#44454D", "#4CC27A", "#E5A640", "#FF6B6B"
+                    "#2A2B31", "#33343B", "#303137", "#40414A", "#EDEDF1", "#CFCFD6", "#AEAEB8", "#C4C4C4", "#494A4F",
+                    "#535561", "#4CC27A", "#E5A640", "#FF6B6B"
                 )
                 : (
-                    "#FFFFFF", "#FFFFFF", "#F8F9FB", "#F1F3F6", "#1F2025", "#4B4D57", "#666975", "#505050", "#EDEEF1",
-                    "#DFE1E7", "#2F8F4E", "#B26A00", "#D13B3B"
+                    "#FFFFFF", "#F9FAFC", "#F2F4F7", "#EBEEF3", "#1F2025", "#474A54", "#5B606B", "#505050", "#E2E4E8",
+                    "#BFC6D0", "#2F8F4E", "#B26A00", "#D13B3B"
                 )
         case .eInk:
             return (

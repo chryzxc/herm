@@ -27,9 +27,10 @@ struct SkinRenderSnapshotTests {
                     Text(theme.signature).font(DockTypography.body).foregroundStyle(Color.dockSecondaryText)
                     DockSkinSpecimen(theme: theme)
                     DockNavRow(title: "Appearance", icon: .sparkle, isSelected: true, style: palette, action: {})
-                    HStack {
-                        DockTabButton(title: "Selected", isSelected: true, action: {})
-                        DockTabButton(title: "Other", isSelected: false, action: {})
+                    DockChatsScopeSwitch(showsBots: false, onShowSessions: {}, onShowBots: {})
+                    HStack(spacing: 6) {
+                        DockSearchField(placeholder: "Search sessions", text: .constant(""))
+                        DockIconButton(icon: .notePencil, label: "New chat", size: 32, style: palette, action: {})
                     }
                     HStack(spacing: 12) {
                         DockRailButton(title: "Active", icon: .files, isSelected: true, style: palette, action: {})
@@ -61,7 +62,7 @@ struct SkinRenderSnapshotTests {
                     DockTextField("Message", text: .constant("")).textFieldStyle(.dockGlass)
                 }
                 .padding(20)
-                .frame(width: 320, height: 650, alignment: .topLeading)
+                .frame(width: 320, height: 700, alignment: .topLeading)
                 .background(palette.background.overlay(DockBackdrop()))
                 .background(dark ? Color.black : Color.white)
                 .dockThemedRoot()

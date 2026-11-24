@@ -553,10 +553,11 @@ struct ChatComposerView: View {
                                         .frame(width: 28, height: 28)
                                         .background(
                                             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                                .fill(
+                                                .dockControlFace(
                                                     dictation.isRecording
                                                         ? Color.dockDestructiveFill.opacity(0.14)
-                                                        : DockSkinPresentation.current.composerControlFill)
+                                                        : DockSkinPresentation.current.composerControlFill,
+                                                    outlined: !dictation.isRecording)
                                         )
                                         .frame(width: 32, height: 32)
                                         .contentShape(Rectangle())
@@ -710,7 +711,7 @@ struct ChatComposerView: View {
         .frame(height: 28)
         .background(
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .fill(DockSkinPresentation.current.composerControlFill)
+                .dockControlFace(DockSkinPresentation.current.composerControlFill)
         )
         .frame(height: 32)
         .help("Select model")

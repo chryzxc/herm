@@ -471,12 +471,13 @@ struct DockIconButtonLabel: View {
             height: DockWorkspaceScale.points(size, scale: workspaceScale)
         )
         .background(
-            shape.fill(
+            shape.dockControlFace(
                 !hasBackground
                     ? Color.clear
                     : isProminent
                         ? style.accent.opacity(isHovering ? 0.9 : 1)
-                        : style.surface4.opacity(isHovering ? 0.9 : 0.6))
+                        : style.surface4.opacity(isHovering ? 0.9 : 0.6),
+                outlined: hasBackground && !isProminent)
         )
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }

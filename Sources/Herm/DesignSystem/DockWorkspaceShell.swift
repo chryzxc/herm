@@ -60,8 +60,12 @@ struct DockWorkspaceShell<Rail: View, Content: View>: View {
                         toolbarHeight: toolbarHeight, margin: margin, radius: DockShell.radius)
                 )
                 .overlay {
+                    let style = DockThemeStyle.current
                     RoundedRectangle(cornerRadius: DockShell.radius, style: .continuous)
-                        .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+                        .stroke(
+                            style.emphasizesOutlines ? Color.dockBorder : Color.dockBorderLight,
+                            lineWidth: style.emphasizesOutlines ? style.outlineWidth : DockLayout.hairline
+                        )
                         .padding(EdgeInsets(top: toolbarHeight, leading: 0, bottom: margin, trailing: margin))
                 }
         }

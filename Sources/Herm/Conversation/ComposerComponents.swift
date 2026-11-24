@@ -8,7 +8,7 @@ struct ComposerControlLabel: View {
             .frame(width: 28, height: 28)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .fill(DockSkinPresentation.current.composerControlFill)
+                    .dockControlFace(DockSkinPresentation.current.composerControlFill)
             )
             .frame(width: 32, height: 32)
             .contentShape(Rectangle())
@@ -55,8 +55,11 @@ struct ComposerInputSurface: ViewModifier {
                     .frame(maxHeight: .infinity, alignment: .bottom)
             } else {
                 // Glass already draws its own rim, so only state strokes (focus, recording) go on top.
-                let isGlass = DockThemeStyle.current.material == .glass
+                let style = DockThemeStyle.current
+                let isGlass = style.material == .glass
                 let showsNeutralOutline = DockLayout.outline > 0 && !isGlass
+                let focusInk = Color.dockAccent.opacity(isGlass ? 0.2 : style.emphasizesOutlines ? 0.72 : 0.42)
+                let activeWidth = max(DockLayout.outline, isFocused && style.emphasizesOutlines ? 1.5 : 1)
                 shape.dockInputFill()
                     .overlay {
                         if isRecording && !reduceMotion && DockThemeStyle.current.animates {
@@ -71,8 +74,8 @@ struct ComposerInputSurface: ViewModifier {
                                 isRecording
                                     ? Color.dockDestructive.opacity(
                                         ComposerRecordingPulse.opacity(at: .now, animates: false))
-                                    : (isFocused ? Color.dockAccent.opacity(isGlass ? 0.2 : 0.42) : Color.dockBorder),
-                                lineWidth: isFocused || isRecording ? max(1, DockLayout.outline) : DockLayout.outline
+                                    : (isFocused ? focusInk : Color.dockBorder),
+                                lineWidth: isFocused || isRecording ? activeWidth : DockLayout.outline
                             )
                             .opacity(showsNeutralOutline || isFocused || isRecording ? 1 : 0)
                         }
@@ -91,7 +94,7 @@ struct ComposerInputSurface: ViewModifier {
                     .dockBevel(pressed: true)
                     .dockCardMarks()
                     .shadow(
-                        color: Color.black.opacity(0.10), radius: skin.composerShadow,
+                        color: Color.black.opacity(style.emphasizesOutlines ? 0.05 : 0.10), radius: skin.composerShadow,
                         y: skin.composerShadow == 0 ? 0 : 2)
             }
         }

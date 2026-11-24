@@ -769,8 +769,12 @@ explicitly monospaced content retain their semantic typography.
 The native unified title row remains 52pt with title-bar clearance. Keep workspace
 identity, current context, and contextual actions in one header hierarchy. Use
 sentence-case labels and quiet counts, and omit decorative pills and icons. Avoid
-redundant dividers under title rows. Clean is the opaque porcelain alternative (airy white cards with hairline borders, 12pt controls, 16pt panes, graphite primary action);
-it is neither the default skin nor a separate layout specification. Open-layout
+redundant dividers under title rows. Clean is the opaque porcelain alternative with
+12pt controls, 16pt panes, and graphite actions. In Light, a white reading canvas
+sits within a cool gray frame and pale raised panels. Fine graphite outlines
+define the frame, cards, search wells, segmented controls, and composer chips.
+Selected items retain a stronger tonal fill and focused inputs have a clearer rim.
+Clean Dark uses the same hierarchy with graphite surfaces and softer edges. Open-layout
 skins retain their unboxed treatment rather than inheriting Glass panel chrome.
 
 **Skin identities.** Each skin has a short material signature in the gallery.
