@@ -1370,7 +1370,10 @@ struct RunningProcessesStrip: View {
                 Publishers.Merge(
                     DockModel.change(model.$sessionID), DockModel.change(model.$isHermesConnected))
             ) { _ in presentationRevision &+= 1 }
-            .onAppear { projection.startObserving() }
+            .onAppear { if hostVisible { projection.startObserving() } }
+            .onChange(of: hostVisible) { _, visible in
+                if visible { projection.startObserving() } else { projection.stopObserving() }
+            }
             .onDisappear { projection.stopObserving() }
             // Processes outlive the turn that started them, so poll while a turn runs or any are listed.
             .task(

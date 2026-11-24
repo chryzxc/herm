@@ -339,26 +339,40 @@ struct SessionPullRequestRail: View {
             .dockPadding(16)
         }
         .foregroundStyle(Color.dockPrimaryText)
-        .onReceive(SessionRailSummary.presentationChanges(model: model, workflow: workflow, control: control)) { _ in
+        .onReceive(
+            hostVisible
+                ? SessionRailSummary.presentationChanges(model: model, workflow: workflow, control: control)
+                : Empty().eraseToAnyPublisher()
+        ) { _ in
             presentationRevision &+= 1
         }
-        .onReceive(rail.visibleRecordChanges) { _ in presentationRevision &+= 1 }
-        .onAppear { rail.scheduleHistoryDiscovery(model) }
-        .onReceive(model.$messages.dropFirst()) { _ in rail.scheduleHistoryDiscovery(model) }
+        .onReceive(rail.visibleRecordChanges) { _ in
+            if hostVisible { presentationRevision &+= 1 }
+        }
+        .onChange(of: hostVisible, initial: true) { _, visible in
+            if visible { rail.scheduleHistoryDiscovery(model) } else { rail.cancelDiscovery() }
+        }
+        .onReceive(model.$messages.dropFirst()) { _ in
+            if hostVisible { rail.scheduleHistoryDiscovery(model) }
+        }
         .onReceive(
-            model.activityPresentation.$revision.map { [model] _ in
-                SessionPullRequestReferences.liveActivity(model: model)
-            }
-            .removeDuplicates().dropFirst()
+            model.activityPresentation.$revision
+                .filter { _ in hostVisible }
+                .map { [model] _ in SessionPullRequestReferences.liveActivity(model: model) }
+                .removeDuplicates().dropFirst()
         ) { _ in rail.scheduleActivityDiscovery(model) }
         .onDisappear { rail.cancelDiscovery() }
-        .task(id: rail.references.map(\.id) + [refreshID.uuidString]) { await rail.refresh() }
-        .task(id: [repositoryPath ?? "", refreshID.uuidString]) { await onRefreshChanges() }
+        .task(id: hostVisible ? rail.references.map(\.id) + [refreshID.uuidString] : []) {
+            if hostVisible { await rail.refresh() }
+        }
+        .task(id: hostVisible ? [repositoryPath ?? "", refreshID.uuidString] : []) {
+            if hostVisible { await onRefreshChanges() }
+        }
         .task(id: [
             refreshID.uuidString, String(model.isSending), String(model.isRestoringSession),
-            String(model.isHermesConnected),
+            String(model.isHermesConnected), String(hostVisible),
         ]) {
-            guard !model.isRestoringSession, !model.isSending, model.isHermesConnected,
+            guard hostVisible, !model.isRestoringSession, !model.isSending, model.isHermesConnected,
                 let id = model.navigationSessionID
             else { return }
             let force = lastOutputsRefreshID != nil && lastOutputsRefreshID != refreshID
@@ -380,7 +394,9 @@ struct SessionPullRequestRail: View {
             }
             await pins
             // A missing manifest keeps the last one for this session rather than blanking the section.
-            if let files = await context?.files, model.navigationSessionID == id { contextFiles = (id, files) }
+            if let files = await context?.files, !Task.isCancelled, model.navigationSessionID == id {
+                contextFiles = (id, files)
+            }
         }
         .task(id: [model.navigationSessionID ?? "", repositoryPath ?? "", refreshID.uuidString, String(hostVisible)]) {
             guard hostVisible else { return }
@@ -413,8 +429,8 @@ struct SessionPullRequestRail: View {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
-        .task(id: workflow.changes) {
-            guard changes != nil, let repositoryPath, let snapshot = workflow.changes else { return }
+        .task(id: hostVisible ? workflow.changes : nil) {
+            guard hostVisible, changes != nil, let repositoryPath, let snapshot = workflow.changes else { return }
             let lines = await RepositoryService.changeLineSummary(path: repositoryPath, changes: snapshot)
             guard !Task.isCancelled else { return }
             lineSummary = lines

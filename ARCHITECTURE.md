@@ -61,6 +61,8 @@ Chats Tiles prepares large board snapshots and search results on a worker and
 publishes them together. Visible cards subscribe to tool activity by session ID
 and share a bounded preview-read budget.
 Sidebar search uses the same navigation snapshot and matches it off the main actor.
+The right-hand session rail runs discovery and refresh only while visible.
+Each composer shares one in-flight process read and queues one follow-up as needed.
 
 - `HermesRuntime/` — the Hermes boundary: `HermesControlRPC` (WebSocket JSON-RPC), `HermesCLIAdapter` (quoted-word Hermes CLI commands via `shell.exec`), `HermesCapabilityService` (fail-closed capability probes), `HermesFeatureContract` (feature IDs). All transport/process-launch concerns live here.
 - `Conversation/` — `DockModel` (central presentation state machine; stored state + init in `DockModel.swift`, behaviour in `DockModel+<Feature>.swift` extensions), `DockPopover` (+ extensions, same pattern), session navigation rail/queue/session rows, transcript views, composer, session lifecycle guards.

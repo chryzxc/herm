@@ -147,9 +147,9 @@ struct ConversationTranscriptView: View, Equatable {
                                     snapshot.sessionID ?? "", snapshot.context.actionsReady ? "ready" : "loading",
                                     hostVisible ? "visible" : "hidden",
                                 ]
-                                    + model.workingBotDispatches.map(\.id)
+                                    + snapshot.context.workingBots.map(\.id)
                             ) {
-                                guard hostVisible, snapshot.context.actionsReady, !model.workingBotDispatches.isEmpty
+                                guard hostVisible, snapshot.context.actionsReady, !snapshot.context.workingBots.isEmpty
                                 else { return }
                                 var tick = 0
                                 repeat {

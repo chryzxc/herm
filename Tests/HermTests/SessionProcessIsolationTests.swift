@@ -73,6 +73,29 @@ struct SessionProcessIsolationTests {
         #expect(client.processSessionIDs == ["session-a"])
     }
 
+    @Test func aBurstDuringAProcessReadSharesOneFollowUp() async throws {
+        let client = SessionProcessIsolationClient()
+        client.deferNextProcess = true
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        let model = DockModel(initialSessionID: "session-a", rpcClient: client)
+        defer { model.shutdown() }
+        let projection = SessionProcessProjection(control: control, model: model)
+        projection.reset(for: model.sessionID)
+        projection.startObserving()
+        defer { projection.stopObserving() }
+        let firstRead = Task { await projection.poll() }
+        await client.waitForDeferredProcess()
+        for _ in 0..<40 {
+            model.eventRouter.route(type: "process.changed", params: ["session_id": "session-a"])
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(client.processSessionIDs == ["session-a"])
+        client.completeDeferredProcess(fails: false)
+        await firstRead.value
+        #expect(client.processSessionIDs == ["session-a", "session-a"])
+        #expect(projection.processes.map(\.id) == [client.processID])
+    }
+
     @Test func oldProcessCannotBeStoppedAfterBackendRebind() async throws {
         let client = SessionProcessIsolationClient()
         client.processState = "running"

@@ -10,6 +10,8 @@ final class SessionProcessProjection: ObservableObject {
     private let model: DockModel
     private var generation = UUID()
     private var inventoryBinding: UInt64?
+    private var pollTask: Task<Void, Never>?
+    private var pollRequested = false
 
     init(control: ControlCenterModel, model: DockModel) {
         self.control = control
@@ -25,23 +27,54 @@ final class SessionProcessProjection: ObservableObject {
             let payload = params["payload"] as? [String: Any] ?? [:]
             let session = (params["session_id"] as? String) ?? (payload["session_id"] as? String)
             guard session == nil || session == self.model.sessionID else { return }
-            Task { await self.poll() }
+            let subscription = self.subscription
+            Task {
+                guard self.subscription == subscription, subscription != nil else { return }
+                await self.poll()
+            }
         }
     }
 
     func stopObserving() {
         if let subscription { model.eventRouter.unsubscribe(subscription) }
         subscription = nil
+        cancelPoll()
     }
 
     func reset(for sessionID: String?) {
         guard self.sessionID != sessionID else { return }
+        cancelPoll()
         self.sessionID = sessionID
         generation = UUID()
         processes = []
     }
 
     func poll() async {
+        guard !Task.isCancelled else { return }
+        if let pollTask {
+            pollRequested = true
+            await pollTask.value
+            return
+        }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            repeat {
+                pollRequested = false
+                await readProcesses()
+            } while pollRequested && !Task.isCancelled
+            if !Task.isCancelled { pollTask = nil }
+        }
+        pollTask = task
+        await task.value
+    }
+
+    private func cancelPoll() {
+        pollTask?.cancel()
+        pollTask = nil
+        pollRequested = false
+    }
+
+    private func readProcesses() async {
         guard let sessionID, !sessionID.isEmpty, model.sessionID == sessionID,
             let rpc = control.rpc
         else { return }

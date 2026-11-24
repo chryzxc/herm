@@ -212,7 +212,7 @@ extension DockModel {
             var rowsSignature = ""
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
-                guard let self, generation == self.sessionResumeGeneration,
+                guard let self, !Task.isCancelled, generation == self.sessionResumeGeneration,
                     self.streamingMessageID != nil,
                     let storageID = self.sessionStorageID
                 else { return }
@@ -220,14 +220,16 @@ extension DockModel {
                     TranscriptHistoryPaging.maximumPageRowLimit,
                     max(TranscriptHistoryPaging.pageRowLimit, self.transcriptHistoryCursor?.nextOffset ?? 0)
                 )
+                let revision = self.messagesRevision
                 guard
                     let loaded = try? await self.fetchEarlierTranscriptRows(
                         from: TranscriptHistoryCursor(storageSessionID: storageID, profileID: self.sessionProfileID),
                         limit: limit,
                         minimumDisplayRows: ConversationMessageWindow.initialLimit
-                    ), generation == self.sessionResumeGeneration, self.streamingMessageID != nil
+                    ), generation == self.sessionResumeGeneration, self.streamingMessageID != nil,
+                    revision == self.messagesRevision, !Task.isCancelled
                 else { continue }
-                // Stored rows only append, so an unchanged tail means nothing to re-parse on the main actor.
+                // Stored rows only append, so an unchanged tail can reuse the last projection.
                 let tail = loaded.rows.last
                 let tailID = tail.flatMap { TranscriptHistoryPaging.rowID($0, key: "row_id") } ?? -1
                 let nextRows = "\(loaded.rows.count)|\(tailID)|\(Self.messageText(tail?["content"]).utf8.count)"
@@ -238,10 +240,13 @@ extension DockModel {
                     }
                     continue
                 }
-                rowsSignature = nextRows
-                let restored = Self.parseMessages(
+                let (restored, _) = await Self.parseMessagesOffMain(
                     loaded.rows, defaultBotProfileID: self.activeBotProfileID,
-                    defaultBotDisplayName: self.activeBotDisplayName)
+                    defaultBotDisplayName: self.activeBotDisplayName, priority: .utility)
+                guard generation == self.sessionResumeGeneration, self.streamingMessageID != nil,
+                    revision == self.messagesRevision, !Task.isCancelled
+                else { continue }
+                rowsSignature = nextRows
                 let next = Self.externalTurnSignature(restored.trailingActivity) + "|\(restored.messages.count)"
                 guard next != signature else {
                     if Date().timeIntervalSince(lastChange) > idleLimit {

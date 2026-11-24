@@ -47,12 +47,16 @@ extension DockModel {
         guard let expectedSessionID = sessionID, !expectedSessionID.isEmpty else { return }
         isRefreshingDelegationStatus = true
         Task {
+            defer {
+                isRefreshingDelegationStatus = false
+                if delegationRefreshRequested, !hasShutDown { refreshDelegationStatus() }
+            }
             do {
                 let result = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.delegationStatus.rawValue,
                     params: ["session_id": expectedSessionID]
                 )
-                guard sessionID == expectedSessionID else { return }
+                guard sessionID == expectedSessionID, !hasShutDown else { return }
                 // Hermes can return global live workers even when a session is
                 // supplied. An unscoped worker must never animate in the
                 // current conversation; showing no activity is safer than
@@ -66,6 +70,7 @@ extension DockModel {
                     else { return nil }
                     return (row, agent)
                 }
+                let previous = (sessionAgents, activeSubagents, agentActivities, synthesizedSubagentIDs)
                 for projection in projections {
                     self.reconcileSyntheticPlaceholder(for: projection.agent)
                     self.recordTelemetryActivityIfChanged(row: projection.row, agent: projection.agent)
@@ -84,14 +89,12 @@ extension DockModel {
                     synthesizedIDs: synthesizedSubagentIDs
                 )
                 if activeSubagents != reconciled { activeSubagents = reconciled }
-                cacheCurrentAgentState()
+                if previous != (sessionAgents, activeSubagents, agentActivities, synthesizedSubagentIDs) {
+                    cacheCurrentAgentState()
+                }
             } catch {
                 DebugLog.write(
                     "workspace: delegation status failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
-            }
-            self.isRefreshingDelegationStatus = false
-            if self.delegationRefreshRequested {
-                self.refreshDelegationStatus()
             }
         }
     }
@@ -676,7 +679,7 @@ extension DockModel {
 
     func upsertSessionAgent(_ agent: HermesSubagent) {
         if let index = sessionAgents.firstIndex(where: { $0.id == agent.id }) {
-            sessionAgents[index] = agent
+            if sessionAgents[index] != agent { sessionAgents[index] = agent }
         } else {
             sessionAgents.append(agent)
         }
@@ -684,7 +687,7 @@ extension DockModel {
 
     func upsertActiveAgent(_ agent: HermesSubagent) {
         if let index = activeSubagents.firstIndex(where: { $0.id == agent.id }) {
-            activeSubagents[index] = agent
+            if activeSubagents[index] != agent { activeSubagents[index] = agent }
         } else {
             activeSubagents.append(agent)
         }
@@ -694,7 +697,7 @@ extension DockModel {
     /// bridge the short gap before that first event. Remove the matching
     /// placeholder so a batch never renders both identities for one worker.
     func reconcileSyntheticPlaceholder(for nativeAgent: HermesSubagent) {
-        guard !synthesizedSubagentIDs.contains(nativeAgent.id) else { return }
+        guard !synthesizedSubagentIDs.isEmpty, !synthesizedSubagentIDs.contains(nativeAgent.id) else { return }
         let normalizedGoal = nativeAgent.goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalizedGoal.isEmpty, normalizedGoal != "hermes subagent" else { return }
         guard

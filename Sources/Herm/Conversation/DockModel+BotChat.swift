@@ -555,7 +555,8 @@ extension DockModel {
     /// land while Herm is offline, or never be stored. Hermes' process
     /// registry is the truth: a DM whose process is no longer running is done.
     func reconcileBotDispatches() async {
-        let pending = botActivityBySessionID.values.joined().filter {
+        let generation = sessionResumeGeneration
+        let pending = conversationBotActivities.filter {
             $0.id.hasPrefix("bot-dispatch:") && $0.processID != nil && ($0.state == .working || $0.state == .queued)
         }
         // `agents.list` lists every running and recently finished background
@@ -563,7 +564,8 @@ extension DockModel {
         // capability: a failed call just leaves the records as they were.
         guard !pending.isEmpty,
             let result = try? await sessionRPCClient.request(HermesFeatureIDs.ID.agentsList.rawValue, params: [:]),
-            let rows = result["processes"] as? [[String: Any]]
+            let rows = result["processes"] as? [[String: Any]],
+            generation == sessionResumeGeneration, !Task.isCancelled
         else { return }
         let status = Dictionary(
             rows.compactMap { row in (row["session_id"] as? String).map { ($0, row["status"] as? String ?? "") } },
@@ -582,11 +584,14 @@ extension DockModel {
     func reconcileKanbanAssignments(status: (String) async -> (status: String, summary: String?)?) async {
         // Hidden card references stay `.queued` forever and are not Bot work;
         // polling them spawned a `kanban show` per reference every pass.
-        let pending = botActivityBySessionID.values.joined().filter {
+        let generation = sessionResumeGeneration
+        let pending = conversationBotActivities.filter {
             $0.linkedCardID != nil && $0.isLive && !$0.isKanbanReference
         }
         for record in pending {
+            guard generation == sessionResumeGeneration, !Task.isCancelled else { return }
             guard let card = await status(record.linkedCardID!) else { continue }
+            guard generation == sessionResumeGeneration, !Task.isCancelled else { return }
             let state: BotActivityState =
                 switch card.status.lowercased() {
                 case "done", "archived", "completed", "review": .completed
@@ -598,6 +603,13 @@ extension DockModel {
                 updateBotActivity(id: record.id, state: state, result: card.summary)
             }
         }
+    }
+
+    private var conversationBotActivities: [BotActivityRecord] {
+        var seenSessions: Set<String> = []
+        var seenRecords: Set<String> = []
+        return botActivitySessionIDs.compactMap { $0 }.filter { seenSessions.insert($0).inserted }
+            .flatMap { botActivityBySessionID[$0] ?? [] }.filter { seenRecords.insert($0.id).inserted }
     }
 
     /// Reads what each working Bot DM is doing from the Bot's own session.
