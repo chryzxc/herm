@@ -5,7 +5,7 @@ import SwiftUI
 /// Each shell retains its screen and scrollback when switching tabs.
 @MainActor
 final class SessionTerminalEmulator: NSObject, @preconcurrency TerminalViewDelegate {
-    let view: TerminalView
+    let view: ContextTerminalView
     private weak var session: LocalTerminalSession?
 
     init(session: LocalTerminalSession) {
@@ -19,7 +19,7 @@ final class SessionTerminalEmulator: NSObject, @preconcurrency TerminalViewDeleg
         view.setAccessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalOutput)
     }
 
-    func reset() { view.feed(text: "\u{1b}c") }
+    func reset() { view.receiveOutput(Array("\u{1b}c".utf8)[...]) }
     func send(source: TerminalView, data: ArraySlice<UInt8>) { session?.sendInput(data) }
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
         session?.resize(columns: newCols, rows: newRows)
@@ -31,36 +31,57 @@ final class SessionTerminalEmulator: NSObject, @preconcurrency TerminalViewDeleg
 }
 
 struct SessionTerminalCanvas: NSViewRepresentable {
+    final class Coordinator {}
+
     @Environment(\.dockWorkspaceScale) private var workspaceScale
+    @Environment(\.dockHostVisible) private var hostVisible
     let session: LocalTerminalSession
     var onAttach: ((String, Int, Int) -> Void)? = nil
 
-    func makeNSView(context: Context) -> TerminalView {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> ContextTerminalView {
         let view = session.emulator.view
-        (view as? ContextTerminalView)?.onAttach = onAttach
-        applyTheme(view)
-        DispatchQueue.main.async { [weak view] in
-            guard let view, let window = view.window else { return }
-            window.makeFirstResponder(view)
-        }
+        view.presentationOwner = ObjectIdentifier(context.coordinator)
+        view.requestsInitialFocus = true
+        updateNSView(view, context: context)
         return view
     }
 
-    func updateNSView(_ view: TerminalView, context: Context) {
-        (view as? ContextTerminalView)?.onAttach = onAttach
+    func updateNSView(_ view: ContextTerminalView, context: Context) {
+        let owner = ObjectIdentifier(context.coordinator)
+        guard view.presentationOwner == owner else { return }
+        view.onAttach = onAttach
         applyTheme(view)
+        view.presentsOutput = hostVisible
+        if hostVisible, view.requestsInitialFocus {
+            DispatchQueue.main.async { [weak view] in
+                guard let view, view.presentationOwner == owner, view.requestsInitialFocus,
+                    view.presentsOutput, let window = view.window
+                else { return }
+                view.requestsInitialFocus = false
+                window.makeFirstResponder(view)
+            }
+        }
     }
 
-    private func applyTheme(_ view: TerminalView) {
+    static func dismantleNSView(_ view: ContextTerminalView, coordinator: Coordinator) {
+        // A retained emulator may already be mounted by a new representable.
+        guard view.presentationOwner == ObjectIdentifier(coordinator) else { return }
+        view.presentationOwner = nil
+        view.presentsOutput = false
+        view.onAttach = nil
+        view.requestsInitialFocus = false
+    }
+
+    private func applyTheme(_ view: ContextTerminalView) {
         let font = NSFont.monospacedSystemFont(
             ofSize: DockTypography.size(.code, scale: workspaceScale), weight: .regular)
         if view.font != font { view.font = font }
+        guard view.paletteRevision != DockThemeRuntime.revision else { return }
+        view.paletteRevision = DockThemeRuntime.revision
         view.nativeBackgroundColor = NSColor(Color.dockCanvas)
         view.nativeForegroundColor = NSColor(Color.dockPrimaryText)
-        guard let themed = view as? ContextTerminalView,
-            themed.paletteRevision != DockThemeRuntime.revision
-        else { return }
-        themed.paletteRevision = DockThemeRuntime.revision
         view.caretColor = NSColor(Color.dockAccent)
         view.caretTextColor = NSColor(Color.dockOnAccentText)
         view.selectedTextBackgroundColor = NSColor(Color.dockAccentMuted)
@@ -83,6 +104,36 @@ struct SessionTerminalCanvas: NSViewRepresentable {
 final class ContextTerminalView: TerminalView {
     var paletteRevision: Int?
     var onAttach: ((String, Int, Int) -> Void)?
+    var presentationOwner: ObjectIdentifier?
+    var requestsInitialFocus = false
+    private var hasPendingDisplay = false
+    var presentsOutput = false {
+        didSet {
+            guard presentsOutput, !oldValue, hasPendingDisplay else { return }
+            hasPendingDisplay = false
+            super.bufferActivated(source: getTerminal())
+            feed(byteArray: [])
+        }
+    }
+
+    func receiveOutput(_ bytes: ArraySlice<UInt8>) {
+        if presentsOutput {
+            feed(byteArray: bytes)
+        } else {
+            // Keep the ANSI parser and scrollback live while deferring the AppKit refresh.
+            getTerminal().feed(buffer: bytes)
+            hasPendingDisplay = true
+        }
+    }
+
+    override func scrolled(source: Terminal, yDisp: Int) {
+        if presentsOutput { super.scrolled(source: source, yDisp: yDisp) }
+    }
+
+    override func bufferActivated(source: Terminal) {
+        if presentsOutput { super.bufferActivated(source: source) }
+    }
+
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
         let item = NSMenuItem(title: "Attach to chat", action: #selector(attachSelection), keyEquivalent: "")

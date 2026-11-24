@@ -200,7 +200,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
                     self.processID = 0
                     self.state = .exited
                 } else {
-                    self.emulator.view.feed(byteArray: Array(data)[...])
+                    self.emulator.view.receiveOutput(Array(data)[...])
                     self.consume(text)
                     if self.state == .starting { self.state = .ready }
                 }
@@ -348,7 +348,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
     }
 
     func clear() {
-        emulator.view.feed(text: "\u{1b}[2J\u{1b}[3J\u{1b}[H")
+        emulator.view.receiveOutput(Array("\u{1b}[2J\u{1b}[3J\u{1b}[H".utf8)[...])
         outputBuffer.removeAll()
     }
 

@@ -3846,6 +3846,7 @@ events, and main-agent tool activity.
   Each Terminal inspector tab owns one shell; use the inspector's new-tab control
   for another. Clear, interrupt, and restart are in the options menu immediately
   after Previews. Its grid resizes with the panel; failed and closed shells offer recovery.
+  Covered terminals continue processing output and update their canvas when shown again.
   PTY input is queued in order and written in bounded, nonblocking chunks.
   Interrupt discards a blocked paste and signals the foreground job. Verification
   waits for a complete exit receipt before reporting a result.

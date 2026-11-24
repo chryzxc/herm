@@ -58,6 +58,20 @@ struct LocalTerminalSessionTests {
         #expect(line == "world")
     }
 
+    @MainActor @Test func coveredTerminalPreservesParserStateAndScrollbackWhenRevealed() {
+        let session = LocalTerminalSession()
+        let view = session.emulator.view
+        let terminal = view.getTerminal()
+        terminal.resize(cols: 40, rows: 3)
+        view.receiveOutput(Array("First\r\nSecond\r\nThird\r\nFourth\r\n\u{1b}[".utf8)[...])
+        #expect(terminal.getScrollInvariantLine(row: 0)?.translateToString(trimRight: true) == "First")
+
+        view.presentsOutput = true
+        view.receiveOutput(Array("31mFifth\u{1b}[0m".utf8)[...])
+        #expect(terminal.getLine(row: 2)?.translateToString(trimRight: true) == "Fifth")
+        #expect(terminal.getScrollInvariantLine(row: 0)?.translateToString(trimRight: true) == "First")
+    }
+
     @MainActor @Test func commandsRequireAnOpenShell() {
         let terminal = LocalTerminalSession()
         #expect(!terminal.submitCommand("pwd"))
