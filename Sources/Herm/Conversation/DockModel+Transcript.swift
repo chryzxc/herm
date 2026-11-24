@@ -29,19 +29,9 @@ extension DockModel {
         fallbackResumeParams: [String: Any]
     ) async throws -> (rows: [[String: Any]], cursor: TranscriptHistoryCursor?) {
         let generation = sessionResumeGeneration
-        let cursor = TranscriptHistoryCursor(storageSessionID: storageSessionID, profileID: profileID)
-        let limit = min(
-            TranscriptHistoryPaging.maximumPageRowLimit,
-            max(TranscriptHistoryPaging.conversationBufferRowLimit, minimumRowCount)
-        )
         do {
-            let loaded = try await fetchEarlierTranscriptRows(
-                from: cursor,
-                limit: limit,
-                minimumDisplayRows: ConversationMessageWindow.initialLimit,
-                maximumPages: limit == TranscriptHistoryPaging.conversationBufferRowLimit
-                    ? TranscriptHistoryPaging.maximumConversationBufferPages
-                    : TranscriptHistoryPaging.maximumPagesPerLoad
+            let loaded = try await readStoredTranscriptTail(
+                storageSessionID: storageSessionID, profileID: profileID, minimumRowCount: minimumRowCount
             )
             return (loaded.rows, loaded.cursor)
         } catch is CancellationError {
@@ -72,6 +62,44 @@ extension DockModel {
         }
     }
 
+    func readStoredTranscriptTail(
+        storageSessionID: String, profileID: String?, minimumRowCount: Int, readOnly: Bool = false
+    ) async throws -> (rows: [[String: Any]], cursor: TranscriptHistoryCursor) {
+        let cursor = TranscriptHistoryCursor(storageSessionID: storageSessionID, profileID: profileID)
+        let limit = min(
+            TranscriptHistoryPaging.maximumPageRowLimit,
+            max(TranscriptHistoryPaging.conversationBufferRowLimit, minimumRowCount)
+        )
+        return try await fetchEarlierTranscriptRows(
+            from: cursor,
+            limit: limit,
+            minimumDisplayRows: ConversationMessageWindow.initialLimit,
+            maximumPages: limit == TranscriptHistoryPaging.conversationBufferRowLimit
+                ? TranscriptHistoryPaging.maximumConversationBufferPages
+                : TranscriptHistoryPaging.maximumPagesPerLoad,
+            readOnly: readOnly
+        )
+    }
+
+    var isShowingReadOnlyStoredTranscript: Bool { transcriptHistoryCursor?.readOnlyResolvedSessionID != nil }
+
+    var hasReadableStoredTranscript: Bool {
+        sessionTranscriptPreview != nil || (isShowingReadOnlyStoredTranscript && !messages.isEmpty)
+    }
+
+    func clearStoredTranscriptProjection() {
+        transcriptTimelineTask?.cancel()
+        sessionTranscriptImageTask?.cancel()
+        transcriptHistoryCursor = nil
+        transcriptMessageIDsByRowID = [:]
+        transcriptTimeline = []
+        lastTranscriptPrepend = nil
+        isLoadingEarlierTranscript = false
+        isLoadingTranscriptHistory = false
+        clearMessagePins()
+        messages = []
+    }
+
     /// Reads older pages until at least `minimumDisplayRows` visible messages
     /// arrive or history is exhausted. Returned rows are display-projected and
     /// chronological.
@@ -80,7 +108,8 @@ extension DockModel {
         limit: Int,
         minimumDisplayRows: Int,
         maximumPages: Int = TranscriptHistoryPaging.maximumPagesPerLoad,
-        through targetRowID: Int? = nil
+        through targetRowID: Int? = nil,
+        readOnly: Bool = false
     ) async throws -> (rows: [[String: Any]], cursor: TranscriptHistoryCursor) {
         var cursor = start
         var collected: [[String: Any]] = []
@@ -98,11 +127,21 @@ extension DockModel {
                 )
             else { throw HermesGateway.GatewayError.malformedResponse }
             let fetchStartedAt = DispatchTime.now().uptimeNanoseconds
-            guard let page = TranscriptHistoryPaging.page(from: try await sessionRPCClient.fetchHTTP(path)) else {
+            let response = try await sessionRPCClient.fetchHTTP(path)
+            guard let page = TranscriptHistoryPaging.page(from: response) else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
             try Task.checkCancellation()
             guard generation == sessionResumeGeneration else { throw CancellationError() }
+            if readOnly || cursor.readOnlyResolvedSessionID != nil {
+                guard let pagination = response["pagination"] as? [String: Any],
+                    pagination["returned"] as? Int == page.rows.count, page.returned <= limit,
+                    page.rows.allSatisfy({ TranscriptHistoryPaging.rowID($0) != nil && $0["role"] is String })
+                else { throw HermesGateway.GatewayError.malformedResponse }
+                cursor.readOnlyResolvedSessionID = try await verifyStoredTranscriptOwner(response, cursor: cursor)
+                try Task.checkCancellation()
+                guard generation == sessionResumeGeneration else { throw CancellationError() }
+            }
             recordSessionSwitch(
                 "history_fetch", startedAt: fetchStartedAt, extra: "page=\(pagesRead + 1) rows=\(page.returned)")
             pagesRead += 1
@@ -120,6 +159,30 @@ extension DockModel {
             }
         }
         return (collected, cursor)
+    }
+
+    private func verifyStoredTranscriptOwner(_ response: [String: Any], cursor: TranscriptHistoryCursor) async throws
+        -> String
+    {
+        guard let profileID = cursor.profileID, response["profile"] as? String == profileID,
+            let resolvedID = response["session_id"] as? String, !resolvedID.isEmpty
+        else { throw HermesGateway.GatewayError.malformedResponse }
+        if let pinnedID = cursor.readOnlyResolvedSessionID {
+            guard resolvedID == pinnedID else { throw HermesGateway.GatewayError.malformedResponse }
+        } else if resolvedID != cursor.storageSessionID {
+            // Messages may resolve prefixes. The timeline only resolves an exact, owned ID to its compaction tip.
+            guard
+                let path = TranscriptHistoryPaging.sessionPath(
+                    sessionID: cursor.storageSessionID, endpoint: "timeline", profileID: profileID,
+                    query: [URLQueryItem(name: "limit", value: "1")]
+                )
+            else { throw HermesGateway.GatewayError.malformedResponse }
+            let proof = try await sessionRPCClient.fetchHTTP(path)
+            guard proof["profile"] as? String == profileID, proof["session_id"] as? String == resolvedID,
+                TranscriptHistoryPaging.timelinePage(from: proof) != nil
+            else { throw HermesGateway.GatewayError.malformedResponse }
+        }
+        return resolvedID
     }
 
     /// A stored turn with tool calls but no reply, that this gateway is not
@@ -327,8 +390,11 @@ extension DockModel {
         // Loaded prompts leave the navigator's unloaded list with the cursor.
         messageNavigatorNeedsRefresh = true
         guard !restored.messages.isEmpty else { return }
-        let reconciliation = reconcilePendingSends(
-            for: composerDraftKey, restored: restored.messages, rowIDs: restored.rowIDs, visibleHistory: true)
+        let reconciliation =
+            cursor.readOnlyResolvedSessionID == nil
+            ? reconcilePendingSends(
+                for: composerDraftKey, restored: restored.messages, rowIDs: restored.rowIDs, visibleHistory: true)
+            : SessionPendingSendReconciliation()
         var previous = transcriptMessageIDsByRowID
         for match in reconciliation.resolved where previous[match.rowID] == nil {
             previous[match.rowID] = match.messageID
@@ -382,6 +448,7 @@ extension DockModel {
     /// navigator covering loaded messages only.
     func loadTranscriptTimeline(generation: Int) {
         guard let cursor = transcriptHistoryCursor else { return }
+        let timelineSessionID = cursor.readOnlyResolvedSessionID ?? cursor.storageSessionID
         transcriptTimelineTask?.cancel()
         transcriptTimelineTask = Task { @MainActor in
             var entries: [TranscriptTimelineEntry] = []
@@ -392,16 +459,20 @@ extension DockModel {
                     guard generation == sessionResumeGeneration else { return }
                     guard
                         let path = TranscriptHistoryPaging.timelinePath(
-                            sessionID: cursor.storageSessionID,
+                            sessionID: timelineSessionID,
                             profileID: cursor.profileID,
                             afterRowID: after
-                        ),
-                        let page = TranscriptHistoryPaging.timelinePage(
-                            from: try await sessionRPCClient.fetchHTTP(path)
                         )
                     else { break }
+                    let response = try await sessionRPCClient.fetchHTTP(path)
                     try Task.checkCancellation()
                     guard generation == sessionResumeGeneration else { return }
+                    if cursor.readOnlyResolvedSessionID != nil {
+                        guard response["profile"] as? String == cursor.profileID,
+                            response["session_id"] as? String == timelineSessionID
+                        else { break }
+                    }
+                    guard let page = TranscriptHistoryPaging.timelinePage(from: response) else { break }
                     entries += page.entries
                     guard let next = page.nextCursor, next > after else { break }
                     after = next
@@ -410,8 +481,9 @@ extension DockModel {
                 DebugLog.write(
                     "model: transcript timeline read failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
-            guard generation == sessionResumeGeneration,
-                sessionStorageID == cursor.storageSessionID
+            guard !Task.isCancelled, generation == sessionResumeGeneration,
+                sessionStorageID == cursor.storageSessionID,
+                transcriptHistoryCursor?.readOnlyResolvedSessionID == cursor.readOnlyResolvedSessionID
             else { return }
             transcriptTimeline = entries
         }

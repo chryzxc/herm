@@ -17,6 +17,8 @@ extension DockModel {
         sessionIndexRefreshTask = nil
         streamingMessageFlushTask?.cancel()
         sessionResumeTask?.cancel()
+        storedTranscriptAttach = nil
+        pendingAttachedEvents.removeAll()
         transcriptTimelineTask?.cancel()
         runtimeModelOptionsTask?.cancel()
         sessionPreviewImageTask?.cancel()

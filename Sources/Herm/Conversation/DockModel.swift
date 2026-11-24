@@ -565,6 +565,13 @@ final class DockModel: ObservableObject {
     /// The latest ordered agent-state commit; tests await it before relaunching.
     var agentStateCommit: Task<Void, Never>?
     var sessionResumeGeneration = 0
+    // Gateway ownership is independent of the cursor displayed by the reader.
+    enum StoredTranscriptAttach {
+        case awaitingOwnership
+        case publishing
+    }
+    var storedTranscriptAttach: StoredTranscriptAttach?
+    var pendingAttachedEvents: [(type: String, params: [String: Any])] = []
     let sessionTranscriptCache: SessionTranscriptCache
     let ownsSessionTranscriptCache: Bool
     @Published var sessionTranscriptPreview: SessionTranscriptPreview?
@@ -758,27 +765,7 @@ final class DockModel: ObservableObject {
                     else {
                         return
                     }
-                    self.sessionTranscriptCache.removeAll()
-                    self.retainedProfileSessions.removeAll()
-                    self.knownProfilePins.removeAll()
-                    self.supersededPinScanByProfile.removeAll()
-                    self.supersededPinScanBySession.removeAll()
-                    self.awaitingScopedPinsAfterSwitch = false
-                    self.sessionTranscriptPreview = nil
-                    self.sessionResumeTask?.cancel()
-                    self.sessionResumeTask = nil
-                    self.allBotSessionsTask?.cancel()
-                    self.sessionTranscriptPreloadTask?.cancel()
-                    self.transcriptTimelineTask?.cancel()
-                    self.sessionPreviewImageTask?.cancel()
-                    self.sessionTranscriptImageTask?.cancel()
-                    self.runtimeModelOptionsTask?.cancel()
-                    self.sessionResumeGeneration &+= 1
-                    if self.sessionID != nil {
-                        self.sessionTranscriptLoadState = .failed(
-                            "Connection changed. Retry loading this conversation.")
-                        self.status = .offline
-                    }
+                    self.invalidateGatewayAuthenticationProjection()
                     // The connection owner reopens the socket for all its projections.
                     if let gateway = self.gateway {
                         gateway.close()
@@ -786,6 +773,32 @@ final class DockModel: ObservableObject {
                     }
                 }
             }
+    }
+
+    func invalidateGatewayAuthenticationProjection() {
+        sessionResumeGeneration &+= 1
+        storedTranscriptAttach = nil
+        pendingAttachedEvents.removeAll()
+        restoreGeneration &+= 1
+        isRestoringSession = false
+        sessionTranscriptCache.removeAll()
+        retainedProfileSessions.removeAll()
+        knownProfilePins.removeAll()
+        supersededPinScanByProfile.removeAll()
+        supersededPinScanBySession.removeAll()
+        awaitingScopedPinsAfterSwitch = false
+        sessionTranscriptPreview = nil
+        sessionResumeTask?.cancel()
+        sessionResumeTask = nil
+        allBotSessionsTask?.cancel()
+        sessionTranscriptPreloadTask?.cancel()
+        sessionPreviewImageTask?.cancel()
+        runtimeModelOptionsTask?.cancel()
+        clearStoredTranscriptProjection()
+        if sessionID != nil {
+            sessionTranscriptLoadState = .failed("Connection changed. Retry loading this conversation.")
+            status = .offline
+        }
     }
 
     var sendQueuedPromptAfterInterrupt = false
