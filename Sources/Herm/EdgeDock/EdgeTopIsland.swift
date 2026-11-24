@@ -32,6 +32,8 @@ struct EdgeIslandRail: View {
 /// you, what finished, and quota. It reads the notch's own state, so the band
 /// and the collapsed island never disagree.
 struct EdgeIslandStatusStrip: View {
+    private static let palette = DockThemePalette(theme: .island)
+
     @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .defaultStyle
     @ObservedObject var state: EdgeNotchState
     @ObservedObject var control: ControlCenterModel
@@ -91,33 +93,43 @@ struct EdgeIslandStatusStrip: View {
                 } else {
                     crewStack(crew)
                 }
-                Button {
-                    headline.task.map(openTask)
-                } label: {
-                    Text(headline.text).lineLimit(1).truncationMode(.tail)
-                        .contentTransition(.opacity)
-                        .animation(.dockEase(duration: 0.25), value: headline.text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+                let title = Text(headline.text)
+                    .foregroundStyle(Self.palette.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .contentTransition(.opacity)
+                    .animation(.dockEase(duration: 0.25), value: headline.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Group {
+                    if let task = headline.task {
+                        Button {
+                            openTask(task)
+                        } label: {
+                            title.contentShape(Rectangle())
+                        }
+                    } else {
+                        title.dockFont(.control)
+                    }
                 }
-                .disabled(headline.task == nil)
                 .help(headline.text)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Color.clear.frame(width: state.notchSize.width + 24)
             HStack(spacing: 10) {
                 if let first = attention.first {
-                    chip("exclamationmark.circle.fill", "\(attention.count)", tint: .dockWarning) { openTask(first) }
-                        .help("\(attention.count) need\(attention.count == 1 ? "s" : "") your attention")
+                    chip("exclamationmark.circle.fill", "\(attention.count)", tint: Self.palette.warning) {
+                        openTask(first)
+                    }
+                    .help("\(attention.count) need\(attention.count == 1 ? "s" : "") your attention")
                 }
                 if let first = finished.first {
-                    chip("checkmark.circle.fill", "\(finished.count)", tint: .dockSuccess) { openTask(first) }
+                    chip("checkmark.circle.fill", "\(finished.count)", tint: Self.palette.success) { openTask(first) }
                         .help("\(finished.count) finished · open \(first.title)")
                 }
                 if let quota {
                     chip(
                         "gauge.with.dots.needle.33percent", "\(Int(quota.percent.rounded()))%",
-                        tint: quota.percent < 20 ? .dockWarning : .dockSecondaryText, action: openQuota
+                        tint: quota.percent < 20 ? Self.palette.warning : Self.palette.secondaryText, action: openQuota
                     )
                     .help("\(quota.provider): \(Int(quota.percent.rounded()))% quota left")
                 }
@@ -126,7 +138,7 @@ struct EdgeIslandStatusStrip: View {
         }
         .buttonStyle(.dockHover)
         .dockFont(.body, weight: .medium)
-        .foregroundStyle(Color.dockSecondaryText)
+        .foregroundStyle(Self.palette.secondaryText)
         .frame(height: height)
     }
 
@@ -160,7 +172,7 @@ struct EdgeIslandStatusStrip: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: symbol).foregroundStyle(tint)
-                Text(text).monospacedDigit()
+                Text(text).monospacedDigit().foregroundStyle(Self.palette.primaryText)
             }
             .dockPadding(.horizontal, 6)
             .contentShape(Rectangle())
