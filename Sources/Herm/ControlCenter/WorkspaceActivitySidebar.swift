@@ -125,8 +125,6 @@ struct WorkspaceActivitySidebar: View {
     @State var isShowingHandoffConfirmation = false
     @State var pendingProcess: ProcessStopConfirmation?
     @State var pendingAgentID: String?
-    @State var isShowingAgentUpdateConfirmation = false
-    @State var isAgentUpdateOutputExpanded = false
     @State var isShowingDockRestartConfirmation = false
     /// Read on appear: `status` is a blocking XPC call, and a `@State` default re-runs on every init.
     @State var opensAtLogin = false

@@ -1430,6 +1430,7 @@ visible through More. Connection and window-switch actions stay directly accessi
 ### Settings organization
 
 - **Updates** groups Herm and Hermes Agent under Software updates, followed by Agent compatibility.
+- **Quick updates:** Open **Updates** from the rail’s gear menu to see installed and available versions, download and install Herm, or confirm a Hermes Agent update without opening Settings.
 - **Updates → Herm changelog** shows offline release highlights. Choose a version to read what changed or open its full release notes on GitHub.
 - **General:** startup, global keyboard shortcuts, keep-awake behavior, and app restart.
 - **Gateway:** backend connections and the local messaging gateway service.

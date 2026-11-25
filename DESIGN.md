@@ -2409,8 +2409,13 @@ opens at the top when the category changes.
   Panel and window share one agent updater. Its owner-scoped phase affects only
   ambient rail and companion activity, never session tasks or announcements.
   Herm checks for app updates hourly, and on app activation or opening Settings
-  when the last result is over 15 minutes old. It badges the Settings rail icon,
-  its Settings menu row, and Updates when one is available. Supported builds offer Download, then Install and
+  when the last result is over 15 minutes old. An available update badges the Settings
+  rail icon and Updates in both the gear menu and the full Settings page. The gear
+  menu’s Updates submenu places Herm first and Hermes Agent second in a compact
+  popover. Both use the same update controls and show installed and available
+  versions, progress, and failures. Hermes Agent keeps its explicit confirmation.
+  Compatibility and the changelog stay in the full Settings page.
+  Supported builds offer Download, then Install and
   restart; a requested restart waits for the current turn. Builds that cannot
   install in-app explain why. A secondary Release page button remains visible in every
   state. Downloading shows an animated byte-based progress meter and percentage;

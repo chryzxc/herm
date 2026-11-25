@@ -156,6 +156,7 @@ struct SessionNavRail: View {
     @State private var showsNotchMenu = false
     @State private var showsVoiceMenu = false
     @State private var showsStatusBarMenu = false
+    @State private var showsUpdatesMenu = false
     @AppStorage(DockWorkspaceScale.preferenceKey) private var textSize = DockWorkspaceScale.defaultTextSize
     @ObservedObject private var desktopPlugins = DesktopPluginStore.shared
     @State private var dragOrder: [DockRailItem]?
@@ -363,13 +364,10 @@ struct SessionNavRail: View {
 
     private var hasUpdateBadge: Bool { agentUpdateService.phase == .updateAvailable || appUpdater.hasUpdate }
 
-    /// Settings, appearance, status bar preferences and window mode.
+    /// Settings, quick controls, and window mode.
     private var viewMenu: some View {
         VStack(alignment: .leading, spacing: 2) {
-            viewMenuRow(
-                "Settings", selected: navigationState.selection.isGlobalSelected(.core),
-                badgeColor: hasUpdateBadge ? DockThemePalette(theme: dockThemeStore.selectedThemeID).warning : nil
-            ) {
+            viewMenuRow("Settings", selected: navigationState.selection.isGlobalSelected(.core)) {
                 showsViewMenu = false
                 onOpenGlobal(.core)
             }
@@ -387,6 +385,15 @@ struct SessionNavRail: View {
                 .dockPopover(isPresented: $showsStatusBarMenu, arrowEdge: .trailing) {
                     WorkspaceStatusBarSettings.QuickMenu()
                 }
+            viewMenuRow(
+                "Updates", selected: false, hasSubmenu: true,
+                badgeColor: hasUpdateBadge ? DockThemePalette(theme: dockThemeStore.selectedThemeID).warning : nil
+            ) {
+                showsUpdatesMenu.toggle()
+            }
+            .dockPopover(isPresented: $showsUpdatesMenu, arrowEdge: .trailing) {
+                SoftwareUpdateControls(appUpdater: appUpdater, agentUpdateService: agentUpdateService, compact: true)
+            }
             if let onOpenWindow {
                 Color.dockBorderLight.frame(height: 0.5).dockPadding(.vertical, 4)
                 viewMenuRow(isDockedWindow ? "Switch to floating" : "Switch to window", selected: false) {
