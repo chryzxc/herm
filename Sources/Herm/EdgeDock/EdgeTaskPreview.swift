@@ -82,8 +82,28 @@ struct EdgeNotchTask: Identifiable, Equatable {
     var attentionState: DockActivityState? = nil
     /// The shared board knows this Bot is working, but the preview has no session row for it.
     var isBotStatusOnly = false
+    var dispatchOriginSessionID: String? = nil
+    var dispatchStep: String? = nil
 
     var botProfileID: String? { session?.profileID ?? profileID ?? attentionRequest?.profileID }
+
+    func liveBotWork(scopeProfileID: String?, currentSessionID: String?) -> BotLiveWork? {
+        guard isStatusCurrent, !isQueued, !isFailure, !isBotStatusOnly,
+            session != nil || isCurrent || profileID != nil,
+            kanbanTask == nil, deliveryQuestion == nil, routine == nil,
+            let owner = botProfileID ?? scopeProfileID
+        else { return nil }
+        switch phase {
+        case .working, .attention:
+            return BotLiveWork(
+                profileID: owner, sessionID: isCurrent ? currentSessionID : session?.id,
+                status: phase == .working ? .working : .blocked, title: title,
+                detail: dispatchOriginSessionID == nil ? detail : dispatchStep,
+                dispatchID: id, originSessionID: dispatchOriginSessionID)
+        case .pending, .finished:
+            return nil
+        }
+    }
 
     /// The Bot running this session row: its profile's Bot, else the default Bot.
     /// Nil for rows with no session (Kanban, routines) or when no Bots are loaded.
@@ -291,7 +311,7 @@ extension EdgeNotchTask {
                 detail: [record.botName, detail].compactMap { $0 }.joined(separator: " · "),
                 updatedAt: record.updatedAt, isCurrent: false, isStatusCurrent: isOnline,
                 session: session, isFailure: record.state == .failed, isQueued: record.state == .queued,
-                profileID: record.botID)
+                profileID: record.botID, dispatchOriginSessionID: record.originSessionID, dispatchStep: detail)
         }
     }
 }

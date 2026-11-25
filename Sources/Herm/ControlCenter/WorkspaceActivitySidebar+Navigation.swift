@@ -330,14 +330,41 @@ extension WorkspaceActivitySidebar {
     }
 
     var officePreviewContent: some View {
-        OfficePreviewView(
+        let aliases = Dictionary(
+            control.activeSessions.compactMap { row in row.storedSessionID.map { (row.id, $0) } },
+            uniquingKeysWith: { first, _ in first })
+        func canonicalID(_ id: String) -> String { aliases[id] ?? model.rowSessionID(id) }
+        let activity = OfficeSessionActivity(control.latestActivities, sessions: control.activeSessions)
+        let liveWork = officeLiveWork(activity: activity)
+        let routes = officeTimelineRoutes(liveWork)
+        let recentOrigins = Set(control.activeSessions.map { canonicalID($0.id) })
+            .union(model.sessions.prefix(24).map(\.id))
+            .union(model.currentSessionIDs)
+            .union(liveWork.compactMap(\.originSessionID))
+        let handoffs = recentOrigins.sorted().flatMap { model.botActivityBySessionID[$0, default: []].suffix(12) }
+        let handoffTitles = officeHandoffTitles(
+            Set(liveWork.compactMap(\.originSessionID) + handoffs.map(\.originSessionID)))
+        return OfficePreviewView(
             kanbanTasks: control.globalKanbanTasks,
             bots: botMode.bots,
-            mainSessions: officeMainSessions,
+            mainSessions: officeMainSessions(liveWork: liveWork, activity: activity, canonicalID: canonicalID),
+            liveWork: liveWork,
+            botActivity: model.status == .offline || botMode.inventory.availability != .ready
+                ? BotActivityBoard() : botMode.activity,
+            activityBySession: activity.steps,
+            handoffTitles: handoffTitles,
+            recentEvents: OfficeDeskEvent.recent(
+                activity: control.latestActivities, handoffs: handoffs, tasks: control.globalKanbanTasks,
+                originTitles: handoffTitles),
+            timelineSessions: Set(routes.keys),
+            onOpenTimeline: { target in
+                if let session = routes[target] { onOpenOfficeTimeline?(session) }
+            },
+            isOnline: model.status != .offline,
             onOpenSession: { id in
                 if let session = model.sessions.first(where: { $0.id == id }) {
                     model.resumeSession(session)
-                } else if let session = control.activeSessions.first(where: { $0.id == id }) {
+                } else if let session = control.activeSessions.first(where: { canonicalID($0.id) == id }) {
                     control.openLatestActivitySession(session)
                 }
             },
@@ -360,8 +387,95 @@ extension WorkspaceActivitySidebar {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    var officeMainSessions: [OfficeMainSession] {
+    private func officeHandoffTitles(_ origins: Set<String>) -> [String: String] {
+        guard !origins.isEmpty else { return [:] }
+        var titles: [String: String] = [:]
+        for session in control.activeSessions {
+            for id in [session.id, session.storedSessionID].compactMap({ $0 }) where origins.contains(id) {
+                titles[id] = session.title
+            }
+        }
+        for session in model.sessions where origins.contains(session.id) { titles[session.id] = session.displayTitle }
+        if let title = model.currentSessionTitle {
+            for id in model.currentSessionIDs where origins.contains(id) { titles[id] = title }
+        }
+        return titles
+    }
+
+    private func officeLiveWork(activity: OfficeSessionActivity) -> [BotLiveWork] {
+        guard model.status != .offline else { return [] }
+        let currentProfile =
+            model.activeBotProfileID ?? model.sessionProfileID ?? model.profileScopeID
+            ?? botMode.bots.first(where: \.isDefault)?.id
+        let current = Set(
+            model.currentSessionIDs.map {
+                activity.canonical(ProfileScopedID(profileID: currentProfile, resourceID: $0))
+            })
+        var work = model.liveBotWork.map { item in
+            var item = item
+            if let id = item.sessionID {
+                let key = activity.canonical(ProfileScopedID(profileID: item.profileID, resourceID: id))
+                item.sessionID = key.resourceID
+                if item.detail == nil, item.status == .working {
+                    item.detail = activity.steps[key]?.first?.activityName
+                }
+            }
+            return item
+        }
+        guard case .ready = control.projectionState(for: "sessions") else { return work }
+        var known = Set(
+            work.compactMap { item in
+                item.sessionID.map { ProfileScopedID(profileID: item.profileID, resourceID: $0) }
+            })
+        for session in control.activeSessions {
+            guard let profile = session.profileID, botMode.botsByID[profile] != nil else { continue }
+            let key = activity.canonical(ProfileScopedID(profileID: profile, resourceID: session.id))
+            let lane = OfficeMainSession.lane(for: session.state)
+            guard !current.contains(key), lane == .running || lane == .blocked, known.insert(key).inserted
+            else { continue }
+            work.append(
+                BotLiveWork(
+                    profileID: profile, sessionID: key.resourceID, status: lane == .blocked ? .blocked : .working,
+                    title: session.title, detail: lane == .running ? activity.steps[key]?.first?.activityName : nil))
+        }
+        return work
+    }
+
+    private func officeTimelineRoutes(_ work: [BotLiveWork]) -> [ProfileScopedID: HermesSession] {
+        guard onOpenOfficeTimeline != nil else { return [:] }
+        let detached = ConversationWindowStore.shared.detachedSessionIDs
+        let targets = Set(
+            work.compactMap { item in
+                item.sessionID.map { ProfileScopedID(profileID: item.profileID, resourceID: $0) }
+            })
+        guard !targets.isEmpty else { return [:] }
+        var routes: [ProfileScopedID: HermesSession] = [:]
+        func add(_ sessions: [HermesSession], scope: String? = nil) {
+            for session in sessions {
+                let key = ProfileScopedID(profileID: session.profileID ?? scope, resourceID: session.id)
+                guard targets.contains(key), routes[key] == nil, !detached.contains(session.id) else { continue }
+                routes[key] = session
+            }
+        }
+        add(model.sessions, scope: model.profileScopeID)
+        add(model.pinnedSessions, scope: model.profileScopeID)
+        if case .ready(let sessions) = model.allBotSessionsState { add(sessions) }
+        add(
+            control.activeSessions.compactMap { session in
+                guard let id = session.storedSessionID, let profile = session.profileID else { return nil }
+                return HermesSession(
+                    id: id, profileID: profile, title: session.title, preview: "", startedAt: nil,
+                    updatedAt: session.updatedAt, messageCount: 0, source: HermesFeatureIDs.sessionSource)
+            })
+        return routes
+    }
+
+    private func officeMainSessions(
+        liveWork: [BotLiveWork], activity: OfficeSessionActivity, canonicalID: (String) -> String
+    ) -> [OfficeMainSession] {
         let botIDs = Set(botMode.bots.filter { !$0.isDefault }.map(\.id))
+        let namedBotSessionIDs = Set(liveWork.filter { botIDs.contains($0.profileID) }.compactMap(\.sessionID))
+        let currentID = model.sessionID.map(canonicalID)
         let sessionsCurrent: Bool
         if case .ready = control.projectionState(for: "sessions") {
             sessionsCurrent = true
@@ -369,10 +483,14 @@ extension WorkspaceActivitySidebar {
             sessionsCurrent = false
         }
         var summaries = control.activeSessions.filter { session in
-            session.profileID.map { !botIDs.contains($0) } ?? true
+            !namedBotSessionIDs.contains(canonicalID(session.id))
+                && (session.profileID.map { !botIDs.contains($0) } ?? true)
         }
-        if let id = model.sessionID, !summaries.contains(where: { $0.id == id }),
-            model.sessionProfileID.map({ !botIDs.contains($0) }) ?? true
+        if let id = currentID, !summaries.contains(where: { canonicalID($0.id) == id }),
+            !namedBotSessionIDs.contains(id),
+            (model.activeBotProfileID ?? model.sessionProfileID).map({
+                !botIDs.contains($0)
+            }) ?? true
         {
             summaries.append(
                 .init(
@@ -380,7 +498,8 @@ extension WorkspaceActivitySidebar {
                     state: "unknown", preview: nil))
         }
         return summaries.map { session in
-            let current = session.id == model.sessionID
+            let id = canonicalID(session.id)
+            let current = id == currentID
             let state: String
             if current {
                 switch model.status {
@@ -393,11 +512,12 @@ extension WorkspaceActivitySidebar {
             } else {
                 state = sessionsCurrent ? session.state : "unknown"
             }
-            let activities = control.latestActivities.filter { $0.sessionID == session.id }.prefix(12).map {
+            let key = activity.canonical(ProfileScopedID(profileID: session.profileID, resourceID: session.id))
+            let activities = activity.steps[key, default: []].prefix(12).map {
                 OfficeMainSession.Activity(id: $0.id, name: $0.activityName, timestamp: $0.timestamp)
             }
             return OfficeMainSession(
-                id: session.id, title: session.title, state: state, isCurrent: current, activities: activities)
+                id: id, title: session.title, state: state, isCurrent: current, activities: activities)
         }
     }
 

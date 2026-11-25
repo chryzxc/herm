@@ -231,6 +231,18 @@ final class DockModel: ObservableObject {
         sessionActivityLabelSubject.prepend(()).eraseToAnyPublisher()
     }
 
+    private let liveBotWorkSubject = PassthroughSubject<Void, Never>()
+    private(set) var liveBotWork: [BotLiveWork] = []
+    var liveBotWorkUpdates: AnyPublisher<Void, Never> {
+        liveBotWorkSubject.eraseToAnyPublisher()
+    }
+
+    func updateLiveBotWork(_ work: [BotLiveWork]) {
+        guard liveBotWork != work else { return }
+        liveBotWork = work
+        liveBotWorkSubject.send()
+    }
+
     func observeSessionActivityLabel(
         ids: [String], receive: @escaping (String?) -> Void
     ) -> AnyCancellable {

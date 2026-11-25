@@ -48,6 +48,7 @@ struct WorkspaceActivitySidebar: View {
     /// Settings › Bots hands its chat buttons back to the host's Bots page.
     var onOpenBotChat: (BotSummary) -> Void = { _ in }
     var onOpenRecentBotSession: (BotSummary, BotChatReference) -> Void = { _, _ in }
+    var onOpenOfficeTimeline: ((HermesSession) -> Void)?
     var showsHeader = true
     var showsModePicker = true
     @State var selectedMode: ControlTab = .kanban
@@ -169,6 +170,7 @@ struct WorkspaceActivitySidebar: View {
         onSessionOpened: @escaping (String) -> Void = { _ in },
         onOpenBotChat: @escaping (BotSummary) -> Void = { _ in },
         onOpenRecentBotSession: @escaping (BotSummary, BotChatReference) -> Void = { _, _ in },
+        onOpenOfficeTimeline: ((HermesSession) -> Void)? = nil,
         showsHeader: Bool = true,
         showsModePicker: Bool = true,
         initialMode: ControlTab = .kanban,
@@ -191,6 +193,7 @@ struct WorkspaceActivitySidebar: View {
         self.onSessionOpened = onSessionOpened
         self.onOpenBotChat = onOpenBotChat
         self.onOpenRecentBotSession = onOpenRecentBotSession
+        self.onOpenOfficeTimeline = onOpenOfficeTimeline
         self.showsHeader = showsHeader
         self.showsModePicker = showsModePicker
         self.agentUpdateService = agentUpdateService
@@ -536,7 +539,10 @@ struct WorkspaceActivitySidebar: View {
         case .officePreview:
             sources += [
                 DockModel.change(model.$observedKanbanTaskRevision), DockModel.change(model.$sessionProfileID),
+                DockModel.change(model.$activeBotProfileID),
+                DockModel.change(model.$botActivityRevision),
                 model.selectedSessionPresentationChanges(id: model.sessionID, profileID: model.sessionProfileID),
+                model.liveBotWorkUpdates,
             ]
         case .quota:
             sources.append(DockModel.change(model.$runtimeConfiguration))

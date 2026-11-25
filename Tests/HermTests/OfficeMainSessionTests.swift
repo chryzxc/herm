@@ -38,8 +38,10 @@ struct OfficeMainSessionTests {
                 .init(id: "chat", title: "Feature", state: "working", isCurrent: true, activities: [])
             ])
         #expect(simulation.agents.count == 1)
-        #expect(simulation.agents[0].name == "Atlas · Feature")
+        #expect(simulation.agents[0].name == "Atlas")
+        #expect(simulation.agents[0].id == nexus.id)
         #expect(simulation.agents[0].mainSession?.id == "chat")
+        #expect(simulation.agents[0].reportedWork.map(\.sessionID) == ["chat"])
         #expect(simulation.agents[0].faceID == nexus.id)
     }
 

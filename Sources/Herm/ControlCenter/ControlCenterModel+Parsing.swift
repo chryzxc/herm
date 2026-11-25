@@ -206,7 +206,8 @@ extension ControlCenterModel {
                 for session in batch {
                     group.addTask { [weak self] in
                         guard let self, !Task.isCancelled else { return (session.id, [], false) }
-                        let result = await self.fetchActivitySteps(rpc: rpc, sessionID: session.id)
+                        let result = await self.fetchActivitySteps(
+                            rpc: rpc, sessionID: session.id, profileID: session.profileID)
                         return (session.id, result.steps, result.succeeded)
                     }
                 }
@@ -248,11 +249,12 @@ extension ControlCenterModel {
         if latestActivities != projectedActivities { latestActivities = projectedActivities }
     }
 
-    func fetchActivitySteps(rpc: HermesControlRPC, sessionID: String) async -> (
+    func fetchActivitySteps(rpc: HermesControlRPC, sessionID: String, profileID: String? = nil) async -> (
         steps: [SessionActivityStep], succeeded: Bool
     ) {
         do {
-            let response = LatestActivityArchivePayload(value: try await rpc.sessionMessages(sessionID: sessionID))
+            let response = LatestActivityArchivePayload(
+                value: try await rpc.sessionMessages(sessionID: sessionID, profileID: profileID))
             let steps = await Task.detached(priority: .utility) {
                 Self.parseActivityStepsEnvelope(response.value).map(GlobalSessionActivityPresentation.newestSteps)
             }.value

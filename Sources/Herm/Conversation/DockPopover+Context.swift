@@ -142,6 +142,14 @@ extension DockPopover {
         return workspaceModel
     }
 
+    private func openOfficeTimeline(_ session: HermesSession) {
+        if ConversationWindowStore.shared.focus(sessionID: session.id) { return }
+        sessionNavNavigation.openSession(session.id)
+        fullscreenSurface = .conversation
+        let conversation = openSessionInWorkspace(session)
+        showSessionRailInspector(.timeline, conversation: conversation)
+    }
+
     var currentNavigationDestination: NavigationDestination {
         NavigationDestination(
             surface: fullscreenSurface,
@@ -318,6 +326,7 @@ extension DockPopover {
             },
             onOpenBotChat: { bot in openBotsPage(with: bot) },
             onOpenRecentBotSession: openRecentBotSession,
+            onOpenOfficeTimeline: openOfficeTimeline,
             showsHeader: false,
             showsModePicker: false,
             initialMode: fullscreenGlobalTab,
@@ -703,6 +712,7 @@ extension DockPopover {
                                 agentUpdateService.restartDock()
                             },
                             onOpenArtifacts: { inspectorScope = .artifacts },
+                            onOpenOfficeTimeline: openOfficeTimeline,
                             showsHeader: false,
                             initialMode: fullscreenGlobalTab,
                             agentUpdateService: agentUpdateService,

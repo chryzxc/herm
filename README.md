@@ -1282,8 +1282,9 @@ limited to two concurrent requests.
 
 - A 3D office where each bot has its own character. Bots using Herm Faces appear as matching 3D Herm characters with their seeded shape, eyes, and skin-aware color; bots with custom artwork keep the robot. Avatar changes update the character in place. Bots with running work sit at computers, bots in review go to Mission Control, and bots that are planning use the Kanban room. Idle bots take coffee breaks and walk around the garden.
 - Idle bots start at randomly chosen, unoccupied activities around the office. Positions are saved locally every ten seconds and when leaving Office, and restored after app relaunch. Active work still determines working bots’ destinations.
-- Task ownership and status come live from Hermes. The movement and gestures are only visual.
-- Compact status counts above the scene focus the next bot in each state.
+- Office bots use the same live activity as the notch. A bot can be working or waiting on you without a Kanban assignment, and its bubble and inspector show the reported session or dispatch title and latest step when available. The movement and gestures are only visual.
+- The Office desk sits beside the scene. Work puts blocked and running bots first, with each bot's concurrent sessions kept together. Activity combines reported session steps, handoffs, and Kanban events in a filterable chronological feed. Crew is searchable, and Kanban keeps the board out of the scene.
+- Select a bot to see its sessions and focus the camera. Open the existing Timeline for a known stored session. Any bot with running work goes to its assigned workstation and types there, even if another session is blocked.
 - Pan or orbit by dragging, use the keyboard to navigate, or choose a camera preset. Bots plan their walks in the background while you move around the office. The camera and bots support Reduce Motion.
 - Office's warm lighting finish uses reusable GPU buffers to reduce the rendering cost during longer visits.
 - Hover the lounge record player to see what's playing in the Spotify app, play or pause, and skip tracks. macOS asks once for permission to control Spotify; no Spotify login is needed.

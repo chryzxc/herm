@@ -256,6 +256,10 @@ final class EdgeDockController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] sessions in self?.refreshNoteworthySessions(sessions) }
             .store(in: &subscriptions)
+        model.$allBotSessionsState.dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.rebuildTasks() }
+            .store(in: &subscriptions)
         controlCenter.$cronJobs.combineLatest(controlCenter.$cronRuns)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -809,6 +813,7 @@ final class EdgeDockController: NSObject {
         }
         tasks.removeAll { finishedBots.isAcknowledged($0) }
         tasks = EdgeNotchTask.merged(tasks)
+        publishLiveBotWork(tasks, hasCurrentRequest: request != nil)
         if tasks != state.tasks {
             state.invalidateNewerResults(tasks)
             state.tasks = tasks
@@ -817,6 +822,46 @@ final class EdgeDockController: NSObject {
         controlCenter.pet.updateNotchActivity(
             working: state.railActivity.working || tasks.contains { $0.isStatusCurrent && $0.phase == .working },
             attention: state.railActivity.attention || tasks.contains { $0.isStatusCurrent && $0.phase == .attention })
+    }
+
+    private func publishLiveBotWork(_ tasks: [EdgeNotchTask], hasCurrentRequest: Bool) {
+        let status = state.activity.status
+        guard status != .offline else {
+            model.updateLiveBotWork([])
+            return
+        }
+        let hasCurrentTurn = hasCurrentRequest || [.working, .needsApproval, .needsClarification].contains(status)
+        let scope = model.profileScopeID ?? model.botMode.bots.first(where: \.isDefault)?.id
+        var work = tasks.compactMap { task -> BotLiveWork? in
+            guard !task.isCurrent || hasCurrentTurn else { return nil }
+            return task.liveBotWork(scopeProfileID: scope, currentSessionID: model.sessionID)
+        }
+        // The office also has desks for profiles outside the notch's session list.
+        if case .ready(let sessions) = model.allBotSessionsState {
+            let represented = Set(tasks.compactMap { $0.session?.id })
+                .union(model.currentSessionIDs.map { model.rowSessionID($0) })
+            let background = sessions.filter {
+                $0.profileID != nil && $0.isWorking && model.recentIndexByID[$0.id] == nil
+                    && !represented.contains($0.id)
+            }
+            let rows = EdgeNotchTask.build(
+                current: nil, sessions: background, activity: latestActivityLabels,
+                currentSessionIDs: [], isOnline: true, attention: latestAttention)
+            work += EdgeNotchTask.merged(rows).compactMap {
+                $0.liveBotWork(scopeProfileID: nil, currentSessionID: nil)
+            }
+        }
+        let origin = model.sessionStorageID ?? model.sessionID ?? ""
+        let handoffs = Dictionary(
+            model.botActivityBySessionID[origin, default: []].compactMap { record -> (ProfileScopedID, String)? in
+                guard record.isLive, !record.isKanbanReference, let id = record.botChatSessionID else { return nil }
+                return (ProfileScopedID(profileID: record.botID, resourceID: id), record.originSessionID)
+            }, uniquingKeysWith: { _, newest in newest })
+        for index in work.indices {
+            guard work[index].originSessionID == nil, let id = work[index].sessionID else { continue }
+            work[index].originSessionID = handoffs[ProfileScopedID(profileID: work[index].profileID, resourceID: id)]
+        }
+        model.updateLiveBotWork(work)
     }
 
     private func refreshDeliveryQuestionWatch() {

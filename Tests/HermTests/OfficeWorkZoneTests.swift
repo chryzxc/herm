@@ -50,61 +50,57 @@ struct OfficeWorkZoneTests {
         #expect(agent.location == .desk)
     }
 
-    @Test func laneStillDecidesWhetherTheWorkRoomIsUsed() {
+    @Test func runningBotsTypeAtTheirWorkstationsRegardlessOfTaskKind() {
         for (status, location) in [
-            ("running", OfficePreviewLocation.qaLab), ("review", .reviewTable), ("blocked", .desk),
+            ("running", OfficePreviewLocation.desk), ("review", .reviewTable), ("blocked", .desk),
             ("ready", .kanbanBoard), ("todo", .lounge), ("done", .lounge),
         ] {
             let agent = OfficePreviewAgentPresentation(
                 id: "bot", name: "Bot", tasks: [OfficePreviewTaskData(task("t", status: status, step: "qa"))])
             #expect(agent.location == location, "\(status)")
             #expect((agent.work != nil) == (status == "running"))
+            if status == "running" { #expect(agent.phase == .implementing) }
         }
         let running = OfficePreviewAgentPresentation(
             id: "bot", name: "Bot", tasks: [OfficePreviewTaskData(task("t", step: "pentest"))])
         #expect(running.activitySymbol == .shieldCheck)
     }
 
-    @MainActor @Test func noisySignalsSettleBeforeTheBotChangesRooms() {
+    @MainActor @Test func reportedWorkKindCanChangeWithoutMovingTheBotFromItsDesk() {
         let bots = [bot("bot")]
         let start = Date(timeIntervalSince1970: 1_000)
         let simulation = OfficePreviewSimulation(
             bots: bots, tasks: [task("t", assignee: "bot", note: "running swift test")])
-        #expect(simulation.agents.first?.location == .qaLab)
+        #expect(simulation.agents.first?.work?.kind == .testing)
         simulation.update(bots: bots, tasks: [task("t", assignee: "bot", note: "reading the docs")], now: start)
-        #expect(simulation.agents.first?.location == .qaLab)
+        #expect(simulation.agents.first?.work?.kind == .testing)
         simulation.update(
             bots: bots, tasks: [task("t", assignee: "bot", note: "reading the docs")],
             now: start.addingTimeInterval(OfficeWorkStabilizer.settle))
-        #expect(simulation.agents.first?.location == .library)
-        // An explicit step moves the bot at once.
+        #expect(simulation.agents.first?.work?.kind == .research)
+        // An explicit step updates the evidence at once.
         simulation.update(
             bots: bots, tasks: [task("t", assignee: "bot", step: "deploy")], now: start.addingTimeInterval(21))
-        #expect(simulation.agents.first?.location == .serverRoom)
+        #expect(simulation.agents.first?.work?.kind == .infrastructure)
+        #expect(simulation.agents.first?.location == .desk)
         // A lane change resets the smoothing.
         simulation.update(
             bots: bots, tasks: [task("t", status: "review", assignee: "bot")], now: start.addingTimeInterval(22))
         simulation.update(
             bots: bots, tasks: [task("t", assignee: "bot", note: "docker build")], now: start.addingTimeInterval(23))
-        #expect(simulation.agents.first?.location == .serverRoom)
+        #expect(simulation.agents.first?.work?.kind == .infrastructure)
     }
 
-    @Test func workRoomSeatsAreStableExclusiveAndOverflowToDesks() {
+    @Test func concurrentWorkersUsePrivateDeskSlotsInsteadOfSharedStations() {
         let agents = (0..<5).map {
             OfficePreviewAgentPresentation(
                 id: "bot-\($0)", name: "Bot", tasks: [OfficePreviewTaskData(task("t\($0)", step: "verify"))])
         }
-        let plan = OfficePreviewInteractionPlan.make(agents: agents, zoneCapacity: [.qaLab: 3])
-        let seats = agents.compactMap { plan.stations[$0.id] }
-        #expect(seats.count == 3)
-        #expect(Set(seats) == [0, 1, 2])
-        #expect(
-            OfficePreviewInteractionPlan.make(agents: agents.reversed(), zoneCapacity: [.qaLab: 3]).stations
-                == plan.stations)
-        // Seats already held do not move when an unseated colleague leaves.
-        let seated = agents.filter { plan.stations[$0.id] != nil }
-        #expect(OfficePreviewInteractionPlan.make(agents: seated, zoneCapacity: [.qaLab: 3]).stations == plan.stations)
         #expect(OfficePreviewInteractionPlan.make(agents: agents).stations.isEmpty)
+        #expect(agents.allSatisfy { $0.location == .desk && $0.phase == .implementing })
+        var layout = OfficePreviewLayout()
+        layout.reconcile(ids: agents.map(\.id))
+        #expect(Set(layout.slots.values).count == agents.count)
     }
 
     @MainActor @Test func everyWorkRoomHasReachableSeatsAfterTheWingsMove() {

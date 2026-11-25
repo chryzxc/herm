@@ -400,6 +400,8 @@ struct PerformanceAuditRegressionTests {
             #expect(client.messageReads == expectedReads)
         }
         #expect(control.latestActivities.count == 1)
+        #expect(control.latestActivities.first?.profileID == "atlas")
+        #expect(client.messagePaths == Array(repeating: "/api/sessions/s/messages?limit=500&profile=atlas", count: 2))
     }
 
     @Test func deletingBrowserWorkspaceReleasesOnlyItsOwnTabs() {
@@ -513,6 +515,7 @@ private final class ActivityCacheClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     var messageReads = 0
     var messageCount = 2
+    var messagePaths: [String] = []
     func connect() async throws {}
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
@@ -521,13 +524,14 @@ private final class ActivityCacheClient: HermesRPCClientProtocol {
             return [
                 "data": [
                     [
-                        "id": "s", "title": "Session", "updated_at": 100,
+                        "id": "s", "title": "Session", "updated_at": 100, "profile": "atlas",
                         "message_count": messageCount,
                     ]
                 ], "has_more": false,
             ]
         }
         messageReads += 1
+        messagePaths.append(path)
         return ["data": [["id": "1", "role": "assistant", "timestamp": 100]]]
     }
 }

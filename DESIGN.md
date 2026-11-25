@@ -1986,8 +1986,16 @@ placement and Quit. Screen changes clamp the surface to an available display.
 
 ### Office simulation and exterior
 
-The 3D office projects canonical bot identities and Kanban activity. Each bot
-starts at a distinct home position; shared leisure destinations are reserved
+The 3D office projects canonical bot identities, live session activity, and Kanban
+assignments. The office reuses the notch's live session and dispatch titles and
+steps, along with the shared Bot activity board when no details are available.
+Live session status does not depend on Kanban freshness. Any bot with
+running work takes its assigned workstation and types while seated. If another
+session is blocked, the attention status stays visible without stopping the
+work pose. A status-only working signal does not replace a current running
+Kanban card's details. Each rostered bot has one character even if it is
+working in several sessions. Each bot starts at a distinct home position;
+shared leisure destinations are reserved
 before travel. Refreshes and desk changes preserve walking continuity. Ambient
 breaks do not claim task progress. Planning/review interactions require a shared
 reported board and phase, and begin only after both participants arrive.
@@ -1996,8 +2004,9 @@ Bots persist. Hiding bots only hides them; the simulation keeps running and
 showing them resumes where each bot stands. Placements also survive closing and
 reopening the office and app relaunch. New idle bots randomly choose among
 uncrowded activity spots. Coordinates are checkpointed every ten seconds and
-on leaving Office; no task content is persisted. Working bots go to the computer their reported location
-calls for. Idle bots spread across the whole office. Solo activities are ranked
+on leaving Office; no task content is persisted. Newly shown working bots start
+at their assigned workstation. Bots already in the scene walk back when work
+starts. Idle bots spread across the whole office. Solo activities are ranked
 against crowding and repeat visits, so every room gets used. Activities include
 coffee, reading, strolling, arcade games, charging bays, workbenches and parts
 shelves. Idle
@@ -2106,32 +2115,38 @@ and blinking follow the reported phase and stop under Reduce Motion.
 Each bot carries an AppKit task bubble instead of an icon. The full tier shows
 a status dot, bot name, reported status with time elapsed since the task
 started, task title, and the latest reported step. Running work shows an
-indeterminate shimmer, never a percentage. Wide views show name pills, and
+indeterminate shimmer, never a percentage. Wide views and selected idle bots
+show name pills. Other idle and not-current bots have no floating labels, and
 crowded bubbles step down to a dot instead of overlapping. Bubbles rise in when
 they appear and pop when status or task changes. Those animations stop under
 Reduce Motion.
 
-The office container is a game-style HUD over the scene. All panels share one
-floating treatment: canvas at 92% opacity, a hairline border, a 12pt radius and
-a shadow. It has four parts:
-- **Status bar (top left):** compact controls for each status with its live count. The
-  Not current chip appears only when data is stale. A chip cycles the camera and
-  selection through the bots in that status, and it is disabled at zero.
-- **Crew roster (left, toggleable):** bots sorted by status priority. Rows show
-  the name and current task title. The selected row uses the muted accent.
-  Selecting a row focuses the camera on that bot.
-- **Inspector (right):** replaces the modal sheet. It shows the bot's avatar
-  with a status dot, a status pill, the current task (with the reported step and
-  running time), task fields and the "Assign existing task…" menu. Main sessions
-  get Open conversation and recent activity. The task board inspector lists
-  lanes with count badges.
-- **Toolbar (bottom center):** show bots, show roster, the task board and
-  camera reset, with 44pt targets and a selected state for the open board.
+The Office desk is a docked leading pane, divided from the scene by a single
+hairline. It never overlaps the scene. In narrow containers, the same layout
+slot switches between desk and scene without losing the tab, filter, bot
+selection, or camera state. The header toggle frees the full scene on demand.
+Only show/hide bots and camera reset float over the scene.
 
-The HUD shows only projected Kanban and session state. It has no
-fabricated stats, percentages or resource meters. Narrow containers hide the
-roster. Status chips scroll horizontally when needed; opening an inspector
-hides the roster when both panels would crowd the scene.
+- **Work** groups bots by needs attention, working now, and review or queue.
+  A bot appears once, at its highest-priority status. Rows use the bot avatar,
+  up to two lines of reported work and step, and a concurrent-work count only
+  when there are multiple active items. Idle bots do not fill the work list.
+- **Activity** mixes real session steps, recorded bot handoffs, and reported
+  Kanban events in timestamp order, with a filter for each source. Each source
+  keeps a bounded recent window so a burst of one kind does not erase the
+  other kinds. Offline events are last reported, not live.
+- **Crew** is a searchable directory. Selecting a bot focuses its workstation
+  or current scene position and opens the same desk details.
+- **Kanban** retains the read-only board with populated lanes, counts, and card
+  fields. An unavailable board shows last reported tasks or an unavailable
+  state. The physical Kanban wall opens this tab.
+- **Bot details** are a drill-in within the desk. Each concurrent session or
+  dispatch has its own state and reported step, with recent events and recorded
+  handoff origins when available. Known stored sessions open the existing
+  Timeline inspector. Kanban task evidence and the confirmed assignment action
+  remain separate.
+
+No percentages, invented timelines, or resource meters are shown.
 
 ### Navigation sidebar
 

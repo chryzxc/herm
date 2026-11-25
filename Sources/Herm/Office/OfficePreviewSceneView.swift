@@ -11,7 +11,7 @@ enum OfficeAgentStatus: Int, CaseIterable, Identifiable {
     var id: Int { rawValue }
 
     init(agent: OfficePreviewAgentPresentation, isDataCurrent: Bool) {
-        let current = agent.mainSession.map { $0.lane != .unknown } ?? isDataCurrent
+        let current = agent.isActivityCurrent(kanbanCurrent: isDataCurrent)
         if !current {
             self = .stale
             return
@@ -187,35 +187,29 @@ final class OfficePreviewTaskBubble: NSView {
     }
 
     func update(agent: OfficePreviewAgentPresentation, reduceMotion: Bool, isDataCurrent: Bool) {
-        let isDataCurrent = agent.mainSession.map { $0.lane != .unknown } ?? isDataCurrent
+        let current = agent.isActivityCurrent(kanbanCurrent: isDataCurrent)
         let lane = agent.activityLane ?? .todo
         let status = OfficeAgentStatus(agent: agent, isDataCurrent: isDataCurrent)
         let tint = status.nsColor
-        let running = lane == .running
-        let detail: String? = {
-            if let session = agent.mainSession {
-                return session.activities.max(by: { $0.timestamp < $1.timestamp })?.name
-            }
-            guard running, let task = agent.taskData else { return nil }
-            return [task.currentStepKey, task.latestEventNote].compactMap {
-                $0?.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            .first { !$0.isEmpty }?.replacingOccurrences(of: "_", with: " ")
-        }()
+        let running = agent.isAtWork
         let next = Content(
             name: agent.name,
-            status: isDataCurrent ? agent.monitorStatus : "Status not current",
+            status: !current
+                ? "Status not current"
+                : agent.reportedWork.count > 1
+                    ? "\(agent.monitorStatus) · \(agent.reportedWork.count) active"
+                    : agent.monitorStatus,
             title: agent.monitorTitle,
-            detail: isDataCurrent ? detail : nil,
-            startedAt: isDataCurrent && running ? agent.taskData?.startedAt : nil,
+            detail: current ? agent.monitorDetail : nil,
+            startedAt: current && running && agent.liveWork == nil ? agent.taskData?.startedAt : nil,
             tint: tint,
-            isWorking: isDataCurrent && running,
-            needsAttention: isDataCurrent && (lane == .blocked || lane == .unknown),
+            isWorking: current && running,
+            needsAttention: current && (lane == .blocked || lane == .unknown),
             isEmphasized: agent.mainSession?.isCurrent == true
         )
         self.reduceMotion = reduceMotion
-        toolTip =
-            "\(agent.name) · \(isDataCurrent ? agent.availabilityLabel : "Kanban status not current")\n\(agent.monitorStatus) · \(agent.monitorTitle)"
+        toolTip = ["\(agent.name) · \(next.status)", next.title, next.detail]
+            .compactMap { $0 }.joined(separator: "\n")
         setAccessibilityLabel(toolTip)
         guard next != content else { return }
         let changedState = content.map { $0.status != next.status || $0.title != next.title } ?? false
@@ -878,6 +872,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         }
 
         private func mainOfficeOwner(in agents: [OfficePreviewAgentPresentation]) -> String? {
+            if let defaultBot = agents.first(where: \.ownsMainOffice) { return defaultBot.id }
             let main = agents.filter { $0.mainSession != nil }
             return main.first(where: { $0.mainSession?.isCurrent == true })?.id ?? main.map(\.id).sorted().first
         }
@@ -903,8 +898,8 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             lastDataCurrent = isDataCurrent
             lastPresentations = agents
             labelOrder = agents.sorted {
-                let left = $0.taskData?.lane.rank ?? 99
-                let right = $1.taskData?.lane.rank ?? 99
+                let left = OfficeAgentStatus(agent: $0, isDataCurrent: isDataCurrent).rawValue
+                let right = OfficeAgentStatus(agent: $1, isDataCurrent: isDataCurrent).rawValue
                 return left == right ? $0.id < $1.id : left < right
             }.map(\.id)
             let oldCapacity = roomLayout.capacity
@@ -915,12 +910,8 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 if wholeOfficePreset && !manuallyMovedCamera { resetCamera(reduceMotion: true, wholeOffice: true) }
             }
             desiredAgents = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0) })
-            let zoneCapacity = Dictionary(
-                uniqueKeysWithValues: OfficePreviewLocation.workZones.map {
-                    ($0, roomLayout.authored?.stations[$0]?.count ?? 0)
-                })
             interactionPlan =
-                isDataCurrent ? .make(agents: agents, zoneCapacity: zoneCapacity) : OfficePreviewInteractionPlan()
+                isDataCurrent ? .make(agents: agents) : OfficePreviewInteractionPlan()
             for id in Array(avatarRoots.keys) where desiredAgents[id] == nil {
                 if let node = currentNodes[id] { placements[id] = node }
                 endConversation(id)
@@ -976,7 +967,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     anchor.addChild(root)
                     // Resume where the bot was last seen. New idle bots start
                     // at a free activity across the office instead of a desk.
-                    var start = restoredNode(for: agent, slot: slot)
+                    var start = agent.isAtWork && dataCurrent(for: agent) ? nil : restoredNode(for: agent, slot: slot)
                     if start == nil, agent.canWander, !reduceMotion,
                         let spot = leisureCandidates(for: agent, slot: slot, current: nil).prefix(8).randomElement()
                     {
@@ -1030,13 +1021,11 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             // Every bot owns a unique home. Shared leisure seats are claimed
             // only when walking there, never used as overlapping spawn points.
             if agent.canWander { return roomLayout.node(slot: slot, location: .desk) }
-            // A full work room, or stale data, keeps the bot at its own desk.
-            if agent.location.isWorkZone { return roomLayout.node(slot: slot, location: .desk) }
             return roomLayout.node(slot: slot, location: agent.location)
         }
 
         private func dataCurrent(for agent: OfficePreviewAgentPresentation) -> Bool {
-            agent.mainSession.map { $0.lane != .unknown } ?? isDataCurrent
+            agent.isActivityCurrent(kanbanCurrent: isDataCurrent)
         }
 
         /// The last place a bot stood, if it is still a valid spot in this layout.
@@ -1270,7 +1259,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         private func updateComputers() {
             let active = Set(
                 desiredAgents.values.compactMap { agent -> Int? in
-                    guard dataCurrent(for: agent), agent.activityLane == .running,
+                    guard dataCurrent(for: agent), agent.isAtWork,
                         let slot = roomLayout.slots[agent.id],
                         currentNodes[agent.id] == roomLayout.node(slot: slot, location: .desk),
                         movementTasks[agent.id] == nil
@@ -1595,6 +1584,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             selectedAgentID = id
             if let id, let ring = avatarRoots[id]?.findEntity(named: "selection-ring") { ring.isEnabled = true }
             if let id, let label = labels[id] { label.superview?.addSubview(label) }
+            layoutLabels()
         }
 
         /// A brief, identity-offset blink every few seconds.
@@ -2175,16 +2165,22 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             var occupied: [CGRect] = []
             // Close views show full task bubbles; wider views show name pills.
             // Crowded bubbles step down to smaller tiers instead of overlapping.
-            let preferred: OfficePreviewTaskBubble.Tier = cameraState.distance <= 24 ? .full : .compact
             for id in labelOrder {
                 let lift = (characterVisuals[id]?.position.y ?? 0) + 1.5
-                guard let label = labels[id], let root = avatarRoots[id],
+                guard let agent = desiredAgents[id], let label = labels[id], let root = avatarRoots[id],
                     let point = view.project(root.position + [0, lift, 0]),
                     point.x.isFinite, point.y.isFinite, view.bounds.contains(point)
                 else {
                     labels[id]?.setVisible(false)
                     continue
                 }
+                let status = OfficeAgentStatus(agent: agent, isDataCurrent: isDataCurrent)
+                if (status == .idle || status == .stale) && id != selectedAgentID {
+                    label.setVisible(false)
+                    continue
+                }
+                let preferred: OfficePreviewTaskBubble.Tier =
+                    status != .idle && status != .stale && cameraState.distance <= 24 ? .full : .compact
                 var placed: CGRect?
                 for tier in [OfficePreviewTaskBubble.Tier.full, .compact, .dot] where tier <= preferred {
                     let size = label.size(for: tier)

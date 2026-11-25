@@ -517,6 +517,7 @@ struct LatestActivityItem: Identifiable, Equatable, Sendable {
     let state: String
     let activityName: String
     let timestamp: Date
+    var profileID: String? = nil
 }
 
 enum LatestActivityPresentation {
@@ -562,7 +563,8 @@ enum GlobalSessionActivityPresentation {
                     sessionTitle: session.title,
                     state: session.state,
                     activityName: step.name,
-                    timestamp: step.timestamp
+                    timestamp: step.timestamp,
+                    profileID: session.profileID
                 )
                 let index = items.firstIndex { precedes(item, $0) } ?? items.endIndex
                 if index < limit {

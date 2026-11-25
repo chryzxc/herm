@@ -1,7 +1,7 @@
 import Foundation
 
-/// What kind of work a running bot is doing, and therefore which room it uses.
-/// Kanban lanes still decide *whether* a bot works; this only picks the room.
+/// Classifies a running bot's reported work for evidence in the Office desk.
+/// Running bots use their assigned workstation regardless of classification.
 enum OfficeWorkKind: String, CaseIterable, Sendable {
     case coding, research, testing, security, infrastructure, design, build, writing, orchestration
 
@@ -19,19 +19,6 @@ enum OfficeWorkKind: String, CaseIterable, Sendable {
         }
     }
 
-    var location: OfficePreviewLocation {
-        switch self {
-        case .coding: .desk
-        case .research, .writing: .library
-        case .testing: .qaLab
-        case .security: .securityOps
-        case .infrastructure: .serverRoom
-        case .design: .designStudio
-        case .build: .assemblyBay
-        case .orchestration: .missionWall
-        }
-    }
-
     var symbol: Ph {
         switch self {
         case .coding: .desktop
@@ -46,7 +33,7 @@ enum OfficeWorkKind: String, CaseIterable, Sendable {
         }
     }
 
-    /// Existing desk poses reused while the bot works in the room.
+    /// A reported Kanban task's descriptive phase.
     var phase: OfficePreviewPhase {
         switch self {
         case .testing: .testing

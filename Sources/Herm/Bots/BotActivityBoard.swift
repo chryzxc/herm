@@ -8,6 +8,19 @@ enum BotActivityStatus: Int, Comparable, Sendable {
     static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
+/// A live session or dispatch the notch can attribute to a Bot. The shared
+/// activity board still supplies status when no session details are known.
+struct BotLiveWork: Identifiable, Equatable, Sendable {
+    let profileID: String
+    var sessionID: String? = nil
+    let status: BotActivityStatus
+    var title: String? = nil
+    var detail: String? = nil
+    var dispatchID: String? = nil
+    var originSessionID: String? = nil
+    var id: String { sessionID.map { "session:\($0)" } ?? dispatchID ?? "bot:\(profileID)" }
+}
+
 /// A session's state in the gateway's live list (`session.active_list`).
 enum BotLiveSessionStatus: Equatable, Sendable {
     case working, waiting, idle

@@ -2,13 +2,20 @@ import SwiftUI
 
 private enum OfficePreviewSelection: Equatable {
     case agent(String)
-    case board
 }
 
 struct OfficePreviewView: View {
     let kanbanTasks: [KanbanTaskSummary]
     let bots: [BotSummary]
     let mainSessions: [OfficeMainSession]
+    let liveWork: [BotLiveWork]
+    let botActivity: BotActivityBoard
+    let activityBySession: [ProfileScopedID: [LatestActivityItem]]
+    let handoffTitles: [String: String]
+    let recentEvents: [OfficeDeskEvent]
+    let timelineSessions: Set<ProfileScopedID>
+    let onOpenTimeline: (ProfileScopedID) -> Void
+    let isOnline: Bool
     let onOpenSession: (String) -> Void
     let avatarImages: [String: Data]
     let canAssignTasks: Bool
@@ -20,17 +27,25 @@ struct OfficePreviewView: View {
     @StateObject private var simulation: OfficePreviewSimulation
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dockHostVisible) private var hostVisible
     @State private var selection: OfficePreviewSelection?
     @State private var cameraFocusID: String?
     @State private var cameraResetToken = 0
     @State private var wholeOffice = true
     @State private var showsAgents = true
-    @State private var showsRoster = false
+    @State private var showsDesk = true
+    @State private var deskTab: OfficeDeskTab = .work
+    @State private var crewQuery = ""
+    @State private var eventFilter: OfficeDeskEvent.Kind?
     // Not observed here: only the hover card and the scene read it.
     @State private var music = OfficeMusicService()
 
     init(
         kanbanTasks: [KanbanTaskSummary] = [], bots: [BotSummary] = [], mainSessions: [OfficeMainSession] = [],
+        liveWork: [BotLiveWork] = [], botActivity: BotActivityBoard = BotActivityBoard(),
+        activityBySession: [ProfileScopedID: [LatestActivityItem]] = [:], handoffTitles: [String: String] = [:],
+        recentEvents: [OfficeDeskEvent] = [], timelineSessions: Set<ProfileScopedID> = [],
+        onOpenTimeline: @escaping (ProfileScopedID) -> Void = { _ in }, isOnline: Bool = true,
         onOpenSession: @escaping (String) -> Void = { _ in }, avatarImages: [String: Data] = [:],
         canAssignTasks: Bool = false, isDataCurrent: Bool = true,
         subtitle: String = "Live bot assignments in a simulated 3D office", onRefresh: @escaping () -> Void = {},
@@ -40,6 +55,14 @@ struct OfficePreviewView: View {
         self.kanbanTasks = kanbanTasks
         self.bots = bots
         self.mainSessions = mainSessions
+        self.liveWork = liveWork
+        self.botActivity = botActivity
+        self.activityBySession = activityBySession
+        self.handoffTitles = handoffTitles
+        self.recentEvents = recentEvents
+        self.timelineSessions = timelineSessions
+        self.onOpenTimeline = onOpenTimeline
+        self.isOnline = isOnline
         self.onOpenSession = onOpenSession
         self.avatarImages = avatarImages
         self.canAssignTasks = canAssignTasks
@@ -49,34 +72,39 @@ struct OfficePreviewView: View {
         self.isRefreshing = isRefreshing
         self.onAssignTask = onAssignTask
         _simulation = StateObject(
-            wrappedValue: OfficePreviewSimulation(bots: bots, tasks: kanbanTasks, sessions: mainSessions))
+            wrappedValue: OfficePreviewSimulation(
+                bots: bots, tasks: kanbanTasks, sessions: mainSessions, liveWork: liveWork, botActivity: botActivity,
+                kanbanCurrent: isDataCurrent))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             DockPageHeader(
                 title: "Office", subtitle: subtitle,
-                onRefresh: onRefresh, isRefreshing: isRefreshing, windowBottomPadding: 0)
+                onRefresh: onRefresh, isRefreshing: isRefreshing, windowBottomPadding: 0
+            ) {
+                Button(showsDesk ? "Hide desk" : "Show desk") { showsDesk.toggle() }
+                    .buttonStyle(.dockSecondary)
+            }
 
+            Divider()
             GeometryReader { geometry in
-                ZStack {
-                    OfficePreviewSceneView(
-                        agents: simulation.agents, avatarImages: avatarImages, reduceMotion: reduceMotion,
-                        resetToken: cameraResetToken, wholeOffice: wholeOffice,
-                        focusAgentID: cameraFocusID,
-                        onSelectAgent: { select($0) },
-                        onSelectBoard: { selection = .board },
-                        boardLanes: simulation.board, showsAgents: showsAgents, isDataCurrent: isDataCurrent,
-                        selectedAgentID: selectedAgentID,
-                        palette: .current(isDark: colorScheme == .dark),
-                        music: music
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    hud(in: geometry.size)
+                let compact = geometry.size.width < 760
+                HStack(spacing: 0) {
+                    if !compact && showsDesk {
+                        desk.frame(width: min(364, geometry.size.width * 0.46))
+                        Divider()
+                    }
+                    ZStack {
+                        scene
+                            .environment(\.dockHostVisible, hostVisible && (!compact || !showsDesk))
+                            .opacity(compact && showsDesk ? 0 : 1)
+                            .allowsHitTesting(!compact || !showsDesk)
+                            .accessibilityHidden(compact && showsDesk)
+                        if compact && showsDesk { desk }
+                    }
+                    .clipped()
                 }
-                .clipShape(Rectangle())
-                .overlay(Rectangle().stroke(Color.dockBorder, lineWidth: 0.5))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -85,67 +113,47 @@ struct OfficePreviewView: View {
         .onChange(of: kanbanTasks) { _, _ in updateProjection() }
         .onChange(of: bots) { _, _ in updateProjection() }
         .onChange(of: mainSessions) { _, _ in updateProjection() }
+        .onChange(of: liveWork) { _, _ in updateProjection() }
+        .onChange(of: botActivity) { _, _ in updateProjection() }
+        .onChange(of: isDataCurrent) { _, _ in updateProjection() }
         .onChange(of: simulation.agents.map(\.id)) { _, ids in
             if case .agent(let id) = selection, !ids.contains(id) { selection = nil }
         }
     }
 
-    // MARK: HUD
-
-    @ViewBuilder
-    private func hud(in size: CGSize) -> some View {
-        let compact = size.width < 760
-        let panelHeight = max(0, size.height - 24 - 56)
-        ZStack(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: 8) {
-                ScrollView(.horizontal) {
-                    OfficeCrewStatusBar(counts: statusCounts, onSelect: focusNext(in:))
-                }
-                .scrollIndicators(.hidden)
-                .frame(height: 34)
-                .frame(maxWidth: max(0, size.width - (selection == nil ? 24 : 376)), alignment: .leading)
-                .opacity(compact && selection != nil ? 0 : 1)
-                .allowsHitTesting(!compact || selection == nil)
-                .accessibilityHidden(compact && selection != nil)
-                if showsRoster && showsAgents && !compact && (selection == nil || size.width >= 1000) {
-                    OfficeRosterPanel(
-                        agents: rosterAgents, isDataCurrent: isDataCurrent,
-                        selectedID: selectedAgentID, onSelect: { focus($0) }
-                    )
-                    .frame(width: 244)
-                    .frame(maxHeight: max(0, panelHeight - 42), alignment: .top)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-                }
-            }
-            .dockPadding(12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-            if let selection {
-                inspector(for: selection)
-                    .frame(width: min(340, max(0, size.width - 24)))
-                    .frame(maxHeight: panelHeight, alignment: .top)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .dockPadding(12)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
-
+    private var scene: some View {
+        OfficePreviewSceneView(
+            agents: simulation.agents, avatarImages: avatarImages, reduceMotion: reduceMotion,
+            resetToken: cameraResetToken, wholeOffice: wholeOffice, focusAgentID: cameraFocusID,
+            onSelectAgent: { select($0) }, onSelectBoard: { openBoard() },
+            boardLanes: simulation.board, showsAgents: showsAgents, isDataCurrent: isDataCurrent,
+            selectedAgentID: selectedAgentID, palette: .current(isDark: colorScheme == .dark), music: music
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .bottom) {
             OfficeToolbar(
-                showsAgents: showsAgents, showsRoster: showsRoster,
-                canShowRoster: !compact && (selection == nil || size.width >= 1000), boardSelected: selection == .board,
-                onToggleAgents: { showsAgents.toggle() },
-                onToggleRoster: { withAnimation(hudAnimation) { showsRoster.toggle() } },
-                onShowBoard: { withAnimation(hudAnimation) { selection = selection == .board ? nil : .board } },
-                onResetCamera: resetCamera
+                showsAgents: showsAgents, onToggleAgents: { showsAgents.toggle() }, onResetCamera: resetCamera
             )
             .dockPadding(.bottom, 12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
-        .animation(hudAnimation, value: selection)
     }
 
-    private var hudAnimation: Animation? { reduceMotion ? nil : .dockEase(duration: 0.2) }
+    private var desk: some View {
+        VStack(spacing: 0) {
+            if let selection {
+                inspector(for: selection)
+            } else {
+                OfficeDeskView(
+                    tab: $deskTab, crewQuery: $crewQuery, eventFilter: $eventFilter,
+                    agents: rosterAgents, bots: bots, avatarImages: avatarImages, events: recentEvents,
+                    lanes: simulation.board, isKanbanCurrent: isDataCurrent, isOnline: isOnline,
+                    onFocus: focus
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.dockCanvas)
+    }
 
     @ViewBuilder
     private func inspector(for selection: OfficePreviewSelection) -> some View {
@@ -153,21 +161,16 @@ struct OfficePreviewView: View {
         case .agent(let id):
             if let agent = simulation.agents.first(where: { $0.id == id }) {
                 let bot = bots.first(where: { $0.id == id })
-                OfficeHUDPanel {
-                    OfficeAgentInspector(
-                        agent: agent, bot: bot, avatarData: bot.flatMap { avatarImages[$0.id] },
-                        status: OfficeAgentStatus(agent: agent, isDataCurrent: isDataCurrent),
-                        isDataCurrent: isDataCurrent, canAssignTasks: canAssignTasks,
-                        assignableTasks: assignableTasks,
-                        onOpenSession: onOpenSession,
-                        onAssignTask: { onAssignTask?($0, agent.id) },
-                        onClose: { self.selection = nil }
-                    )
-                }
-            }
-        case .board:
-            OfficeHUDPanel {
-                OfficeBoardInspector(lanes: simulation.board, onClose: { self.selection = nil })
+                OfficeAgentInspector(
+                    agent: agent, bot: bot, avatarData: bot.flatMap { avatarImages[$0.id] },
+                    status: OfficeAgentStatus(agent: agent, isDataCurrent: isDataCurrent),
+                    isDataCurrent: isDataCurrent, canAssignTasks: canAssignTasks,
+                    assignableTasks: assignableTasks, activityBySession: activityBySession,
+                    handoffTitles: handoffTitles, timelineSessions: timelineSessions,
+                    onOpenTimeline: onOpenTimeline, onOpenSession: onOpenSession,
+                    onAssignTask: { onAssignTask?($0, agent.id) },
+                    onClose: { self.selection = nil }
+                )
             }
         }
     }
@@ -175,15 +178,6 @@ struct OfficePreviewView: View {
     private var selectedAgentID: String? {
         if case .agent(let id) = selection { return id }
         return nil
-    }
-
-    private var statusCounts: [(OfficeAgentStatus, Int)] {
-        let statuses = simulation.agents.map { OfficeAgentStatus(agent: $0, isDataCurrent: isDataCurrent) }
-        return OfficeAgentStatus.allCases.compactMap { status in
-            let count = statuses.filter { $0 == status }.count
-            // "Not current" appears only when some state is actually stale.
-            return status == .stale && count == 0 ? nil : (status, count)
-        }
     }
 
     private var rosterAgents: [OfficePreviewAgentPresentation] {
@@ -201,27 +195,29 @@ struct OfficePreviewView: View {
         }
     }
 
-    private func updateProjection() { simulation.update(bots: bots, tasks: kanbanTasks, sessions: mainSessions) }
-
-    private func select(_ id: String) {
-        withAnimation(hudAnimation) { selection = .agent(id) }
+    private func updateProjection() {
+        simulation.update(
+            bots: bots, tasks: kanbanTasks, sessions: mainSessions, liveWork: liveWork, botActivity: botActivity,
+            kanbanCurrent: isDataCurrent)
     }
 
-    /// Opens a bot's details and flies the camera to it.
+    private func select(_ id: String) {
+        selection = .agent(id)
+        showsDesk = true
+    }
+
+    private func openBoard() {
+        deskTab = .kanban
+        selection = nil
+        showsDesk = true
+    }
+
     private func focus(_ id: String) {
         showsAgents = true
         select(id)
         cameraFocusID = id
         wholeOffice = false
         cameraResetToken += 1
-    }
-
-    /// Cycles through bots that share a status, like a unit-select hotkey.
-    private func focusNext(in status: OfficeAgentStatus) {
-        let matches = rosterAgents.filter { OfficeAgentStatus(agent: $0, isDataCurrent: isDataCurrent) == status }
-        guard !matches.isEmpty else { return }
-        let index = matches.firstIndex { $0.id == cameraFocusID }.map { ($0 + 1) % matches.count } ?? 0
-        focus(matches[index].id)
     }
 
     private func resetCamera() {
@@ -247,135 +243,9 @@ private struct OfficeStatusDot: View {
     var body: some View { DockStatusDot(tone: status.tone, size: size) }
 }
 
-/// Live crew counts by status. Each chip jumps to the next bot in that state.
-private struct OfficeCrewStatusBar: View {
-    let counts: [(OfficeAgentStatus, Int)]
-    let onSelect: (OfficeAgentStatus) -> Void
-
-    var body: some View {
-        OfficeHUDPanel {
-            HStack(spacing: 2) {
-                ForEach(counts, id: \.0) { status, count in
-                    Button {
-                        onSelect(status)
-                    } label: {
-                        HStack(spacing: 6) {
-                            OfficeStatusDot(status: status)
-                            Text(status.label)
-                                .dockFont(.control)
-                                .foregroundStyle(count > 0 ? Color.dockPrimaryText : Color.dockMetadataText)
-                            Text("\(count)")
-                                .dockFont(.metadata, weight: .semibold).monospacedDigit()
-                                .foregroundStyle(count > 0 ? Color.dockSecondaryText : Color.dockMetadataText)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.dockCompact)
-                    .disabled(count == 0)
-                    .help(
-                        count > 0
-                            ? "Focus the next \(status.label.lowercased()) bot" : "No \(status.label.lowercased()) bots"
-                    )
-                    .accessibilityLabel("\(status.label): \(count) bots")
-                }
-            }
-            .dockButtonSize(.compact)
-            .dockPadding(3)
-        }
-        .fixedSize()
-    }
-}
-
-private struct OfficeRosterPanel: View {
-    let agents: [OfficePreviewAgentPresentation]
-    let isDataCurrent: Bool
-    let selectedID: String?
-    let onSelect: (String) -> Void
-
-    var body: some View {
-        OfficeHUDPanel {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("Crew")
-                        .dockFont(.body, weight: .semibold)
-                        .foregroundStyle(Color.dockPrimaryText)
-                    Spacer()
-                    Text("\(agents.count)")
-                        .dockFont(.metadata, weight: .semibold).monospacedDigit()
-                        .foregroundStyle(Color.dockMetadataText)
-                }
-                .dockPadding(.horizontal, 12)
-                .frame(height: 34)
-                Divider().overlay(Color.dockBorderLight)
-                if agents.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("No bots in the office")
-                            .dockFont(.body, weight: .semibold)
-                        Text("Bots appear here when Hermes reports them.")
-                            .dockFont(.body)
-                            .foregroundStyle(Color.dockSecondaryText)
-                    }
-                    .dockPadding(12)
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 2) {
-                            ForEach(agents) { agent in row(agent) }
-                        }
-                        .dockPadding(4)
-                    }
-                }
-            }
-        }
-    }
-
-    private func row(_ agent: OfficePreviewAgentPresentation) -> some View {
-        let status = OfficeAgentStatus(agent: agent, isDataCurrent: isDataCurrent)
-        let isSelected = agent.id == selectedID
-        return Button {
-            onSelect(agent.id)
-        } label: {
-            HStack(spacing: 9) {
-                OfficeStatusDot(status: status, size: 8)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(agent.name)
-                        .dockFont(.body, weight: .semibold)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(1)
-                    Text(agent.monitorTitle)
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Text(status.label)
-                    .dockFont(.metadata, weight: .medium)
-                    .foregroundStyle(Color.dockMetadataText)
-            }
-            .dockPadding(.horizontal, 8)
-            .frame(height: 44)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(
-                    isSelected ? Color.dockAccentMuted : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius).stroke(
-                    isSelected ? Color.dockAccent.opacity(0.5) : .clear, lineWidth: 1)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.dockHover)
-        .accessibilityLabel("\(agent.name), \(status.label), \(agent.monitorTitle)")
-    }
-}
-
 private struct OfficeToolbar: View {
     let showsAgents: Bool
-    let showsRoster: Bool
-    let canShowRoster: Bool
-    let boardSelected: Bool
     let onToggleAgents: () -> Void
-    let onToggleRoster: () -> Void
-    let onShowBoard: () -> Void
     let onResetCamera: () -> Void
 
     var body: some View {
@@ -384,12 +254,6 @@ private struct OfficeToolbar: View {
                 iconButton(
                     .users, help: showsAgents ? "Hide bots" : "Show bots",
                     isOn: showsAgents, action: onToggleAgents)
-                if canShowRoster {
-                    iconButton(
-                        .sidebarSimple, help: showsRoster ? "Hide crew roster" : "Show crew roster",
-                        isOn: showsRoster, action: onToggleRoster)
-                }
-                iconButton(.kanban, help: "Kanban task board", isOn: boardSelected, action: onShowBoard)
                 separator
                 iconButton(.arrowCounterClockwise, help: "Reset camera", isOn: false, action: onResetCamera)
             }
@@ -441,15 +305,15 @@ private struct OfficeInspectorHeader<Leading: View>: View {
             }
             Spacer()
             Button(action: onClose) {
-                DockIcon(.x)
+                DockIcon(.arrowLeft)
                     .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
                     .background(Circle().fill(Color.dockControlSurface))
             }
             .buttonStyle(.dockHover)
-            .help("Close details")
-            .accessibilityLabel("Close details")
+            .help("Back to Office desk")
+            .accessibilityLabel("Back to Office desk")
         }
         .dockPadding(.horizontal, 14)
         .dockPadding(.vertical, 12)
@@ -464,6 +328,10 @@ private struct OfficeAgentInspector: View {
     let isDataCurrent: Bool
     let canAssignTasks: Bool
     let assignableTasks: [KanbanTaskSummary]
+    let activityBySession: [ProfileScopedID: [LatestActivityItem]]
+    let handoffTitles: [String: String]
+    let timelineSessions: Set<ProfileScopedID>
+    let onOpenTimeline: (ProfileScopedID) -> Void
     let onOpenSession: (String) -> Void
     let onAssignTask: (KanbanTaskSummary) -> Void
     let onClose: () -> Void
@@ -471,7 +339,7 @@ private struct OfficeAgentInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             OfficeInspectorHeader(
-                title: agent.name, subtitle: agent.mainSession != nil ? "Main session" : "Bot",
+                title: agent.name, subtitle: bot == nil && agent.mainSession != nil ? "Main session" : "Bot",
                 onClose: onClose
             ) {
                 ZStack(alignment: .bottomTrailing) {
@@ -493,16 +361,82 @@ private struct OfficeAgentInspector: View {
                 VStack(alignment: .leading, spacing: 12) {
                     OfficeStatusPill(
                         status: status,
-                        text: agent.mainSession != nil || isDataCurrent
-                            ? agent.availabilityLabel : "Kanban status not current")
-                    if let session = agent.mainSession {
+                        text: status == .stale ? "Status not current" : agent.availabilityLabel)
+                    if let session = agent.mainSession, bot == nil {
                         sessionContent(session)
                     } else {
+                        if !agent.reportedWork.isEmpty {
+                            OfficeCard(title: "Active work · \(agent.reportedWork.count)") {
+                                if agent.liveWork?.title == nil, status == .blocked {
+                                    Text("Blocking session details unavailable.")
+                                        .dockFont(.metadata)
+                                        .foregroundStyle(Color.dockSecondaryText)
+                                }
+                                ForEach(agent.reportedWork) { work in
+                                    if work.id != agent.reportedWork.first?.id { Divider() }
+                                    workRow(work)
+                                }
+                            }
+                        } else if agent.liveWork != nil {
+                            OfficeCard(title: "Current work") { liveWorkContent }
+                        }
                         taskContent
                     }
                 }
                 .dockPadding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func workRow(_ work: BotLiveWork) -> some View {
+        let target = work.sessionID.map { ProfileScopedID(profileID: work.profileID, resourceID: $0) }
+        let recent = target.flatMap { activityBySession[$0] } ?? []
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(work.title ?? "Activity details unavailable")
+                    .dockFont(.body, weight: .semibold)
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Spacer(minLength: 0)
+                Text(work.status == .blocked ? "Blocked" : "Working")
+                    .dockFont(.metadata, weight: .medium)
+                    .foregroundStyle(work.status == .blocked ? OfficeAgentStatus.blocked.color : .dockMetadataText)
+            }
+            if let detail = work.detail {
+                Text(detail)
+                    .dockFont(.metadata)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .textSelection(.enabled)
+            }
+            if let origin = work.originSessionID {
+                Label(
+                    handoffTitles[origin].map { "Handed off from \($0)" } ?? "Bot handoff",
+                    icon: .arrowBendUpRight
+                )
+                .dockFont(.metadata)
+                .foregroundStyle(Color.dockSecondaryText)
+            }
+            ForEach(recent.prefix(3)) { activity in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(activity.activityName)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(activity.timestamp, style: .time)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+                .dockFont(.metadata)
+            }
+            if let target, timelineSessions.contains(target) {
+                Button {
+                    onOpenTimeline(target)
+                } label: {
+                    Label("Open session timeline", icon: .arrowUpRight)
+                }
+                .buttonStyle(.dockLink)
+                .accessibilityHint("Opens the conversation and its Timeline inspector")
             }
         }
     }
@@ -518,10 +452,7 @@ private struct OfficeAgentInspector: View {
         .buttonStyle(.dockPrimary)
         .tint(Color.dockAccent)
         OfficeCard(title: "Current work") {
-            Text(session.title)
-                .dockFont(.body, weight: .semibold)
-                .foregroundStyle(Color.dockPrimaryText)
-                .textSelection(.enabled)
+            liveWorkContent
             Text(session.isCurrent ? "Current conversation" : "Background conversation")
                 .dockFont(.metadata)
                 .foregroundStyle(Color.dockSecondaryText)
@@ -547,9 +478,23 @@ private struct OfficeAgentInspector: View {
     }
 
     @ViewBuilder
+    private var liveWorkContent: some View {
+        Text(agent.monitorTitle)
+            .dockFont(.body, weight: .semibold)
+            .foregroundStyle(Color.dockPrimaryText)
+            .textSelection(.enabled)
+        if let detail = agent.liveWork?.detail {
+            Text(detail)
+                .dockFont(.metadata)
+                .foregroundStyle(Color.dockSecondaryText)
+                .textSelection(.enabled)
+        }
+    }
+
+    @ViewBuilder
     private var taskContent: some View {
         if let task = agent.taskData {
-            OfficeCard(title: "Current task") {
+            OfficeCard(title: agent.liveWork == nil ? "Current task" : "Kanban task") {
                 Text(task.title)
                     .dockFont(.body, weight: .semibold)
                     .foregroundStyle(Color.dockPrimaryText)
@@ -569,14 +514,11 @@ private struct OfficeAgentInspector: View {
                     .dockFont(.metadata).monospacedDigit()
                     .foregroundStyle(Color.dockSecondaryText)
                 }
+                if let work = agent.work, agent.liveWork == nil {
+                    OfficeField(label: "Work", value: "\(work.kind.title) · \(work.evidence)")
+                }
             }
             OfficeCard(title: "Task details") { OfficeTaskFields(task: task) }
-        } else {
-            OfficeCard(title: "Current task") {
-                Text("No assigned Kanban task.")
-                    .dockFont(.body)
-                    .foregroundStyle(Color.dockSecondaryText)
-            }
         }
         DockMenu {
             ForEach(assignableTasks) { task in Button(task.title) { onAssignTask(task) } }
@@ -588,16 +530,6 @@ private struct OfficeAgentInspector: View {
             canAssignTasks
                 ? "Choose an unassigned Kanban task; confirm through Hermes."
                 : "Task assignment is unavailable through the installed Hermes CLI.")
-        OfficeCard(title: "In the office") {
-            OfficeField(label: "Activity", value: agent.phase.rawValue.capitalized)
-            OfficeField(label: "Destination", value: agent.location.rawValue)
-            if let work = agent.work { OfficeField(label: "Work", value: "\(work.kind.title) · \(work.evidence)") }
-            OfficeField(label: "Bot ID", value: agent.id)
-            Text("Ownership and task fields come from Kanban. Office poses and travel illustrate that state.")
-                .dockFont(.metadata)
-                .foregroundStyle(Color.dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
         if agent.tasks.count > 1 {
             OfficeCard(title: "Other assigned tasks · \(agent.tasks.count - 1)") {
                 ForEach(Array(agent.tasks.dropFirst())) { task in
@@ -616,25 +548,27 @@ private struct OfficeAgentInspector: View {
     }
 }
 
-private struct OfficeBoardInspector: View {
+struct OfficeBoardInspector: View {
     let lanes: [OfficePreviewBoardLane]
-    let onClose: () -> Void
-    @State private var expandedLanes: Set<OfficePreviewLane> = [.todo, .running]
+    let isCurrent: Bool
+    @State private var expandedLanes: Set<OfficePreviewLane> = [.blocked, .running]
     @State private var selectedTaskID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            OfficeInspectorHeader(title: "Kanban task board", subtitle: "Live tasks · Read only", onClose: onClose) {
-                DockIcon(.kanban)
-                    .dockFont(.conversation)
-                    .foregroundStyle(Color.dockAccent)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(Color.dockControlSurface))
+            if !isCurrent {
+                Text(lanes.allSatisfy { $0.tasks.isEmpty } ? "Kanban is unavailable" : "Last reported tasks")
+                    .dockFont(.body, weight: .medium)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .dockPadding(14)
             }
-            Divider().overlay(Color.dockBorderLight)
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(lanes) { lane in laneCard(lane) }
+                    let populated = lanes.filter { !$0.tasks.isEmpty }.sorted { $0.lane.rank < $1.lane.rank }
+                    if isCurrent && populated.isEmpty {
+                        Text("No Kanban tasks reported.").dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                    }
+                    ForEach(populated) { lane in laneCard(lane) }
                 }
                 .dockPadding(14)
             }

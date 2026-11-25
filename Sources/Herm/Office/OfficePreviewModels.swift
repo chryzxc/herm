@@ -275,7 +275,9 @@ struct OfficeMainSession: Equatable, Sendable, Identifiable {
     let state: String
     let isCurrent: Bool
     let activities: [Activity]
-    var lane: OfficePreviewLane {
+    var lane: OfficePreviewLane { Self.lane(for: state) }
+
+    static func lane(for state: String) -> OfficePreviewLane {
         switch state.lowercased() {
         case "idle", "completed", "done": .done
         case "working", "running", "active", "busy", "streaming": .running
@@ -292,36 +294,55 @@ struct OfficePreviewAgentPresentation: Identifiable, Equatable, Sendable {
     let name: String
     let tasks: [OfficePreviewTaskData]
     var mainSession: OfficeMainSession? = nil
+    var liveWork: BotLiveWork? = nil
+    var reportedWork: [BotLiveWork] = []
+    var ownsMainOffice = false
+    var kanbanCurrent = true
     var avatarID: String? = nil
     var faceID: String { avatarID ?? id }
     /// Settled work kind from `OfficePreviewSimulation`; nil means unsmoothed.
     var settledWork: OfficeWorkClassification? = nil
-    var activityLane: OfficePreviewLane? { mainSession?.lane ?? taskData?.lane }
+    var activityLane: OfficePreviewLane? {
+        if let liveWork { return liveWork.status == .blocked ? .blocked : .running }
+        return mainSession?.lane ?? taskData?.lane
+    }
+    func isActivityCurrent(kanbanCurrent: Bool) -> Bool {
+        if liveWork != nil { return true }
+        return mainSession.map { $0.lane != .unknown } ?? kanbanCurrent
+    }
+    var isAtWork: Bool {
+        activityLane == .running || reportedWork.contains { $0.status == .working }
+            || (kanbanCurrent && tasks.contains { $0.lane == .running })
+    }
     var taskData: OfficePreviewTaskData? { tasks.first }
     var phase: OfficePreviewPhase {
+        if isAtWork { return .implementing }
+        if liveWork != nil { return activityLane == .blocked ? .waiting : .implementing }
         if let mainSession {
             return mainSession.lane == .running ? .implementing : mainSession.lane == .done ? .resting : .waiting
         }
-        guard let taskData else { return .resting }
-        return taskData.lane == .running ? (work?.kind.phase ?? .implementing) : taskData.phase
+        return taskData?.phase ?? .resting
     }
     /// The running work kind and its evidence; nil when no work is in progress.
     var work: OfficeWorkClassification? {
-        if let mainSession { return mainSession.lane == .running ? OfficeWorkClassifier.classify(mainSession) : nil }
+        if let mainSession { return activityLane == .running ? OfficeWorkClassifier.classify(mainSession) : nil }
+        if liveWork != nil { return nil }
         guard let taskData, taskData.lane == .running else { return nil }
         return settledWork ?? taskData.work
     }
     var location: OfficePreviewLocation {
+        if isAtWork || liveWork != nil { return .desk }
         if let mainSession { return mainSession.lane == .done ? .lounge : .desk }
-        guard let taskData else { return .lounge }
-        return taskData.lane == .running ? (work?.kind.location ?? .desk) : taskData.lane.location
+        return taskData?.lane.location ?? .lounge
     }
-    /// Availability here describes the loaded Kanban queue, not runtime capacity.
-    var hasNoPendingTasks: Bool { mainSession == nil && tasks.allSatisfy { $0.lane == .done } }
+    var hasNoPendingTasks: Bool { liveWork == nil && mainSession == nil && tasks.allSatisfy { $0.lane == .done } }
     var canWander: Bool {
-        mainSession.map { $0.lane == .done } ?? tasks.allSatisfy { [.todo, .scheduled, .done].contains($0.lane) }
+        liveWork == nil
+            && (mainSession.map { $0.lane == .done }
+                ?? tasks.allSatisfy { [.todo, .scheduled, .done].contains($0.lane) })
     }
     var availabilityLabel: String {
+        if liveWork != nil { return monitorStatus }
         if let mainSession { return "Orchestrator · \(mainSession.state.replacingOccurrences(of: "_", with: " "))" }
         if hasNoPendingTasks { return "No pending Kanban tasks" }
         if tasks.contains(where: { $0.lane == .running }) { return "Working" }
@@ -329,6 +350,7 @@ struct OfficePreviewAgentPresentation: Identifiable, Equatable, Sendable {
         return "Assigned work · \(tasks.filter { $0.lane != .done }.count) pending"
     }
     var activitySymbol: Ph {
+        if liveWork != nil { return activityLane == .blocked ? .warningCircle : .desktop }
         if let mainSession {
             switch mainSession.lane {
             case .running: return .desktop
@@ -348,11 +370,24 @@ struct OfficePreviewAgentPresentation: Identifiable, Equatable, Sendable {
         default: return .listBullets
         }
     }
-    var monitorTitle: String { mainSession?.title ?? taskData?.title ?? "No assigned Kanban task" }
+    var monitorTitle: String {
+        if let liveWork { return liveWork.title ?? "No reported activity details" }
+        return mainSession?.title ?? taskData?.title ?? "No assigned Kanban task"
+    }
     var monitorStatus: String {
+        if liveWork != nil { return activityLane == .blocked ? "Blocked" : "Working" }
         if let mainSession { return mainSession.state.replacingOccurrences(of: "_", with: " ").capitalized }
         guard let taskData else { return "No assigned task" }
         return taskData.lane == .unknown ? "Unknown status" : taskData.lane.rawValue.capitalized
+    }
+    var monitorDetail: String? {
+        if let detail = liveWork?.detail { return detail }
+        if let mainSession { return mainSession.activities.max(by: { $0.timestamp < $1.timestamp })?.name }
+        guard liveWork == nil, let task = taskData, task.lane == .running else { return nil }
+        return [task.currentStepKey, task.latestEventNote].compactMap {
+            $0?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        .first { !$0.isEmpty }?.replacingOccurrences(of: "_", with: " ")
     }
     var bubbleText: String {
         guard let taskData else { return "No assigned task" }
@@ -414,25 +449,64 @@ final class OfficePreviewSimulation: ObservableObject {
     @Published private(set) var board: [OfficePreviewBoardLane] = []
     private var stabilizer = OfficeWorkStabilizer()
 
-    init(bots: [BotSummary] = [], tasks: [KanbanTaskSummary] = [], sessions: [OfficeMainSession] = []) {
-        update(bots: bots, tasks: tasks, sessions: sessions)
+    init(
+        bots: [BotSummary] = [], tasks: [KanbanTaskSummary] = [], sessions: [OfficeMainSession] = [],
+        liveWork: [BotLiveWork] = [], botActivity: BotActivityBoard = BotActivityBoard(), kanbanCurrent: Bool = true
+    ) {
+        update(
+            bots: bots, tasks: tasks, sessions: sessions, liveWork: liveWork, botActivity: botActivity,
+            kanbanCurrent: kanbanCurrent)
     }
 
-    func update(bots: [BotSummary], tasks: [KanbanTaskSummary], sessions: [OfficeMainSession] = [], now: Date = Date())
-    {
+    func update(
+        bots: [BotSummary], tasks: [KanbanTaskSummary], sessions: [OfficeMainSession] = [],
+        liveWork: [BotLiveWork] = [], botActivity: BotActivityBoard = BotActivityBoard(), kanbanCurrent: Bool = true,
+        now: Date = Date()
+    ) {
         var seen = Set<String>()
         // The default bot's current name; users can rename it in Hermes.
         let defaultBot = bots.first(where: \.isDefault)
-        let orchestrator = defaultBot?.name ?? "Herm"
-        let main = sessions.filter {
-            seen.insert($0.id).inserted && ($0.isCurrent || [.running, .blocked].contains($0.lane))
+        let defaultProfileID = defaultBot?.id ?? "nexus"
+        var workByBot = Dictionary(grouping: liveWork, by: \.profileID)
+        let main = sessions.filter { seen.insert($0.id).inserted }.sorted { $0.id < $1.id }
+        var unrostered: [OfficePreviewAgentPresentation] = []
+        for session in main {
+            let matching = workByBot[defaultProfileID]?.filter { $0.sessionID == session.id } ?? []
+            let exact = matching.first { $0.status == .blocked } ?? matching.first
+            if let defaultBot {
+                guard exact == nil, [.running, .blocked].contains(session.lane) else { continue }
+                workByBot[defaultBot.id, default: []].append(
+                    BotLiveWork(
+                        profileID: defaultBot.id, sessionID: session.id,
+                        status: session.lane == .blocked ? .blocked : .working, title: session.title))
+            } else if exact != nil || session.isCurrent || [.running, .blocked].contains(session.lane) {
+                unrostered.append(
+                    OfficePreviewAgentPresentation(
+                        id: "main-session:\(session.id)", name: "Herm · \(session.title)", tasks: [],
+                        mainSession: session, liveWork: exact, avatarID: defaultProfileID))
+            }
         }
-        .sorted { $0.id < $1.id }.map {
-            OfficePreviewAgentPresentation(
-                id: "main-session:\($0.id)", name: "\(orchestrator) · \($0.title)", tasks: [], mainSession: $0,
-                avatarID: defaultBot?.id ?? "nexus")
+        let roster = OfficePreviewResolver.agents(bots: bots, tasks: tasks, includeDefault: true).map { agent in
+            var agent = agent
+            agent.kanbanCurrent = kanbanCurrent
+            agent.ownsMainOffice = agent.id == defaultBot?.id
+            agent.reportedWork = Self.distinctWork(workByBot[agent.id] ?? [])
+            let exact = agent.reportedWork.first
+            let status = max(exact?.status ?? .idle, botActivity.status(of: agent.id))
+            if let exact, exact.status == status {
+                agent.liveWork = exact
+            } else if status >= .working {
+                let lane = agent.taskData?.lane
+                if !kanbanCurrent || (lane != .blocked && (lane != .running || status == .blocked)) {
+                    agent.liveWork = BotLiveWork(profileID: agent.id, status: status)
+                }
+            }
+            if agent.ownsMainOffice, let sessionID = agent.liveWork?.sessionID {
+                agent.mainSession = main.first { $0.id == sessionID }
+            }
+            return agent
         }
-        var next = main + OfficePreviewResolver.agents(bots: bots, tasks: tasks, includeDefault: main.isEmpty)
+        var next = unrostered + roster
         var keys = Set<String>()
         for index in next.indices {
             guard let task = next[index].taskData else { continue }
@@ -445,6 +519,22 @@ final class OfficePreviewSimulation: ObservableObject {
         let lanes = OfficePreviewResolver.board(tasks: tasks)
         if lanes != board { board = lanes }
     }
+
+    private static func distinctWork(_ work: [BotLiveWork]) -> [BotLiveWork] {
+        var indices: [String: Int] = [:]
+        var distinct: [BotLiveWork] = []
+        for item in work {
+            guard let index = indices[item.id] else {
+                indices[item.id] = distinct.count
+                distinct.append(item)
+                continue
+            }
+            var merged = item.status > distinct[index].status ? item : distinct[index]
+            merged.originSessionID = distinct[index].originSessionID ?? item.originSessionID
+            distinct[index] = merged
+        }
+        return distinct.filter { $0.status == .blocked } + distinct.filter { $0.status == .working }
+    }
 }
 
 /// Visual conversations only: a shared board and reported planning/review phase
@@ -453,25 +543,8 @@ struct OfficePreviewInteractionPlan {
     var partners: [String: String] = [:]
     var stations: [String: Int] = [:]
 
-    /// `zoneCapacity` is the authored seat count per work room. Bots beyond it
-    /// have no seat and work at their own desk; a seat is never shared.
-    static func make(agents: [OfficePreviewAgentPresentation], zoneCapacity: [OfficePreviewLocation: Int] = [:]) -> Self
-    {
+    static func make(agents: [OfficePreviewAgentPresentation]) -> Self {
         var plan = Self()
-        for zone in OfficePreviewLocation.workZones {
-            let capacity = zoneCapacity[zone] ?? 0
-            guard capacity > 0 else { continue }
-            var taken = Set<Int>()
-            // Each bot prefers a seat derived from its identity, so a refresh
-            // or a colleague leaving does not reshuffle the room.
-            for agent in agents.filter({ $0.mainSession == nil && $0.location == zone }).sorted(by: { $0.id < $1.id }) {
-                guard taken.count < capacity else { break }
-                var seat = Int(agent.identitySeed % UInt64(capacity))
-                while taken.contains(seat) { seat = (seat + 1) % capacity }
-                taken.insert(seat)
-                plan.stations[agent.id] = seat
-            }
-        }
         for phase in [OfficePreviewPhase.planning, .reviewing] {
             let participants = agents.filter { $0.mainSession == nil && $0.phase == phase }
                 .sorted {
