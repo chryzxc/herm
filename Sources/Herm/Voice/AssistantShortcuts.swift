@@ -149,7 +149,7 @@ enum AssistantShortcuts {
                 matching: CNContact.predicateForContacts(matchingName: query), keysToFetch: keys)
         else { return [] }
         var seen = Set<String>()
-        return contacts.flatMap { contact in
+        return contacts.flatMap { contact -> [Recipient] in
             let name = [contact.givenName, contact.familyName].filter { !$0.isEmpty }.joined(separator: " ")
             let addresses =
                 channel == .mail

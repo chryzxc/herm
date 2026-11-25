@@ -195,7 +195,7 @@ struct VoiceOutputSettings: View {
 
     private func refreshAppleVoices() {
         let local = Locale.current
-        let voices = VoiceSpeechEngine.appleVoices.map { voice in
+        let voices = VoiceSpeechEngine.appleVoices.map { voice -> (String, String) in
             let language = local.localizedString(forIdentifier: voice.language) ?? voice.language
             return (voice.identifier, "\(voice.name) · \(language)")
         }.sorted { $0.1.localizedStandardCompare($1.1) == .orderedAscending }
