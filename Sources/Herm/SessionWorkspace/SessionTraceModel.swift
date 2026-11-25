@@ -148,21 +148,17 @@ final class SessionTraceModel: ObservableObject {
         previous = inputs
         projectionCount += 1
         if connected != inputs.connected { connected = inputs.connected }
-        var projected = SessionTraceProjection.make(
+        let projectedTurns = SessionTraceProjection.make(
             turns: requests, live: inputs.live, agents: inputs.agents,
             working: inputs.working, connected: inputs.connected, activities: inputs.activities, cache: historyCache,
             historyRevision: model.messagesRevision)
         let botTurns = SessionCrewProjection.botTurns(inputs.botRecords, connected: inputs.connected)
-            .sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
-        // Transcript order is authoritative, including prepended history whose
-        // timestamps may arrive out of order. Insert dispatches without sorting it.
-        for turn in botTurns {
-            let index = projected.firstIndex { $0.start > turn.start } ?? projected.endIndex
-            projected.insert(turn, at: index)
-        }
+        var projected = SessionTraceProjection.interleave(projectedTurns, with: botTurns)
+        let requestIndices = Dictionary(
+            projected.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
         for bot in inputs.participants {
             for requestID in bot.requestIDs {
-                guard let index = projected.firstIndex(where: { $0.id == requestID }) else { continue }
+                guard let index = requestIndices[requestID] else { continue }
                 projected[index].rows.append(
                     SessionTraceRow(
                         id: "transcript-bot:" + requestID + ":" + bot.id, kind: .agent, title: bot.name,

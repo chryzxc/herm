@@ -4,6 +4,30 @@ import Testing
 @testable import Herm
 
 struct SessionTraceTests {
+    @Test func dispatchMergePreservesTranscriptOrderAndStableTies() {
+        func turn(_ id: String, _ time: TimeInterval) -> SessionTraceTurn {
+            SessionTraceTurn(id: id, title: id, start: Date(timeIntervalSince1970: time))
+        }
+        let transcript = [turn("a", 10), turn("b", 30), turn("c", 20)]
+        let bots = [turn("bot-z", 30), turn("bot-mid", 15), turn("bot-a", 30)]
+        #expect(
+            SessionTraceProjection.interleave(transcript, with: bots).map(\.id)
+                == ["a", "bot-mid", "b", "c", "bot-a", "bot-z"])
+    }
+
+    @Test func participantRequestDeduplicationKeepsOrderAndSeparatesBots() {
+        let first = ChatMessage(role: .user, text: "first", botProfileID: "a")
+        let second = ChatMessage(role: .user, text: "second", botProfileID: "b")
+        let replies = [
+            ChatMessage(role: .hermes, text: "reply", botProfileID: "a"),
+            ChatMessage(role: .hermes, text: "another", botProfileID: "a"),
+        ]
+        let participants = SessionBotParticipants.collect(messages: [first] + replies + [second] + replies)
+        #expect(participants.map(\.id) == ["a", "b"])
+        #expect(participants[0].requestIDs == [first.id.uuidString, second.id.uuidString])
+        #expect(participants[1].requestIDs == [second.id.uuidString])
+    }
+
     @Test func rulerLabelsAreCompact() {
         #expect(SessionTraceCanvas.tickLabel(0) == "0s")
         #expect(SessionTraceCanvas.tickLabel(43) == "43s")
@@ -47,9 +71,11 @@ struct SessionTraceTests {
         #expect(project(current, cache: cache) == project(current, cache: nil))
         #expect(cache.reused == 1)
         #expect(cache.indexBuildCount == 1)
+        #expect(cache.visitedTurnCount == 1)
         let late = current + [call("old", 1, duration: 2)]
         #expect(project(late, cache: cache) == project(late, cache: nil))
         #expect(cache.reused == 1)
+        #expect(cache.visitedTurnCount == 2)
     }
 
     @Test func newDelegateActivityKeepsUnrelatedHistoryCached() {

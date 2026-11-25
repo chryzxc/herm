@@ -3864,7 +3864,9 @@ extraction runs off the main actor in bounded pages, with at most four concurren
 session reads. Indexing starts as each session-list page arrives and reads recent transcript
 pages first, keeping the earliest citation for repeated output when the scan completes.
 The browser groups incremental updates before rebuilding its results, with indexing status in
-the fixed header; only complete sessions enter the shared cache. Sidebar updates do not
+the fixed header; only complete sessions enter the shared cache. Search prepares the
+latest result in the background, preserving the prior list and selection until it
+can publish the matching results and their counts together. Sidebar updates do not
 cancel indexing. Opening the page or using Refresh starts a scan. Partial profile/index
 failures keep readable results and prior outputs for unreadable sessions, with a warning
 in the existing header subtitle. The bounded in-memory cache retains the most recent sessions

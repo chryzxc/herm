@@ -21,6 +21,8 @@ enum SessionBotParticipants {
     ) -> [Participant] {
         var result: [Participant] = []
         var indices: [String: Int] = [:]
+        var seenRequests: [Int: Set<String>] = [:]
+        var seenDispatches: [Int: Set<String>] = [:]
         var requestID: String?
         func index(_ id: String, name: String?) -> Int {
             if let existing = indices[id] {
@@ -43,11 +45,13 @@ enum SessionBotParticipants {
             else { continue }
             let i = index(id, name: message.botDisplayName)
             result[i].messageIDs.append(message.id)
-            if let requestID, !result[i].requestIDs.contains(requestID) { result[i].requestIDs.append(requestID) }
+            if let requestID, seenRequests[i, default: []].insert(requestID).inserted {
+                result[i].requestIDs.append(requestID)
+            }
         }
         for record in records where !record.isKanbanReference {
             let i = index(record.botID, name: record.botName)
-            if !result[i].dispatchIDs.contains(record.id) { result[i].dispatchIDs.append(record.id) }
+            if seenDispatches[i, default: []].insert(record.id).inserted { result[i].dispatchIDs.append(record.id) }
         }
         return result
     }
