@@ -14,6 +14,7 @@ private final class PagedTranscriptRPCClient: HermesRPCClientProtocol {
     var failHTTP = false
     var inlineOverride: [String: Any]?
     var timelinePageSize = 500
+    var pageDelay: Duration = .zero
 
     func connect() async throws {}
 
@@ -47,6 +48,7 @@ private final class PagedTranscriptRPCClient: HermesRPCClientProtocol {
         }
         let limit = Int(query.first { $0.name == "limit" }?.value ?? "") ?? 500
         let offset = Int(query.first { $0.name == "offset" }?.value ?? "") ?? 0
+        if pageDelay > .zero { try await Task.sleep(for: pageDelay) }
         let upper = max(0, storedRows.count - offset)
         let lower = max(0, upper - limit)
         let page = Array(storedRows[lower..<upper])
@@ -201,7 +203,7 @@ struct TranscriptHistoryPagingTests {
         let stored = ChatMessage(role: .user, text: "fix it")
         let steer = ChatMessage(role: .user, text: "also add tests")
         let pending = DockModel.unconfirmedUserMessages(
-            [stored, ChatMessage(role: .hermes, text: "On it"), steer], storedIDs: [stored.id]
+            [stored, ChatMessage(role: .hermes, text: "On it"), steer], isStored: { $0 == stored.id }
         )
         #expect(pending.map(\.id) == [steer.id])
         #expect(DockModel.missingUserMessages(pending, from: [stored]).map(\.id) == [steer.id])
@@ -288,9 +290,11 @@ struct TranscriptHistoryPagingTests {
         let rpc = PagedTranscriptRPCClient()
         rpc.storedRows = storedTranscript(turns: 240)
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(
-            HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 720, source: "test"))
-        try await waitUntil { !model.isRestoringSession && !model.messages.isEmpty }
+        let loaded = await model.startSessionResume(
+            HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 720, source: "test"),
+            reportFailure: false, reviewUnread: false
+        ).value
+        try #require(loaded)
 
         let resume = try #require(rpc.requests.first { $0.method == "session.resume" })
         #expect(resume.params["defer_history"] as? Bool == true)
@@ -348,6 +352,10 @@ struct TranscriptHistoryPagingTests {
         let model = DockModel(rpcClient: rpc)
         model.resumeSession(
             HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 600, source: "test"))
+        try await waitUntil { !model.isRestoringSession && model.hasUnloadedTranscript }
+        #expect(!rpc.fetchedPaths.contains { $0.contains("/timeline") })
+        model.loadTranscriptTimelineIfNeeded()
+        model.loadTranscriptTimelineIfNeeded()
         try await waitUntil { !model.isRestoringSession && model.unloadedTranscriptPrompts.count == 120 }
 
         #expect(rpc.fetchedPaths.filter { $0.contains("/timeline") }.count == 4)
@@ -373,6 +381,8 @@ struct TranscriptHistoryPagingTests {
         let model = DockModel(rpcClient: rpc)
         model.resumeSession(
             HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 1200, source: "test"))
+        try await waitUntil { !model.isRestoringSession && model.hasUnloadedTranscript }
+        model.loadTranscriptTimelineIfNeeded()
         try await waitUntil { !model.isRestoringSession && !model.unloadedTranscriptPrompts.isEmpty }
 
         let before = model.messages.count
@@ -396,7 +406,7 @@ struct TranscriptHistoryPagingTests {
         #expect(jump?.windowRange.contains(index) == true)
     }
 
-    @Test func searchLoadsTheRemainingHistory() async throws {
+    @Test func searchFindsOlderRepliesWithoutPrependingUntilSelection() async throws {
         let rpc = PagedTranscriptRPCClient()
         rpc.storedRows = storedTranscript(turns: 400)
         let model = DockModel(rpcClient: rpc)
@@ -404,11 +414,112 @@ struct TranscriptHistoryPagingTests {
             HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 1200, source: "test"))
         try await waitUntil { !model.isRestoringSession && !model.messages.isEmpty }
 
-        #expect(await model.loadTranscriptHistory(through: nil) == nil)
-        #expect(model.messages.count == 800)
-        #expect(!model.hasUnloadedTranscript)
-        #expect(model.unloadedTranscriptPrompts.isEmpty)
-        #expect(MessageNavigator.search(items: model.messageNavigatorItems, query: "answer 3").count == 111)
+        let before = model.messages.map(\.id)
+        let input = MessageNavigatorSearchRequest(
+            snapshot: model.messageNavigatorSnapshot, sessionID: try #require(model.sessionID), query: "ANSWER 3")
+        let results = try await model.searchTranscript(input)
+        #expect(results.count == 111)
+        #expect(results.map(\.ordinal) == results.map(\.ordinal).sorted())
+        #expect(results.contains { $0.storedRowID == nil })
+        #expect(model.messages.map(\.id) == before)
+        #expect(model.lastTranscriptPrepend == nil)
+        #expect(model.hasUnloadedTranscript)
+
+        let historyReads = rpc.fetchedPaths.count
+        let nextInput = MessageNavigatorSearchRequest(
+            snapshot: model.messageNavigatorSnapshot, sessionID: input.sessionID, query: "ANSWER 2")
+        let nextResults = try await model.searchTranscript(nextInput)
+        #expect(nextResults.first?.preview == "answer 2")
+        #expect(rpc.fetchedPaths.count == historyReads)
+
+        let first = try #require(results.first)
+        #expect(first.preview == "answer 3")
+        let id = try #require(await model.loadTranscriptHistory(through: try #require(first.storedRowID)))
+        #expect(model.messages.first { $0.id == id }?.text == "answer 3")
+    }
+
+    @Test func searchRetainsBoundedPagesAndStillFindsHitsInTheUncachedTail() async throws {
+        let rpc = PagedTranscriptRPCClient()
+        let limit = TranscriptHistoryPaging.conversationBufferRowLimit
+        let large = String(repeating: "z", count: 40_000)
+        rpc.storedRows = (1...(2 * limit)).map { id in
+            ["id": id, "role": "assistant", "content": id <= limit ? "older needle " + large : "newer needle"]
+        }
+        let model = DockModel(initialSessionID: "long", loadArchives: false, rpcClient: rpc)
+        defer { model.shutdown() }
+        model.sessionStorageID = "long"
+        model.transcriptHistoryCursor = .init(storageSessionID: "long", profileID: nil)
+        let input = MessageNavigatorSearchRequest(
+            snapshot: model.messageNavigatorSnapshot, sessionID: "long", query: "older needle")
+        let first = try await model.searchTranscript(input)
+        #expect(first.count == limit)
+        #expect(first.first?.storedRowID == 1)
+        #expect(first.last?.storedRowID == limit)
+        #expect(first.map(\.ordinal) == Array(1...limit))
+        #expect(first.allSatisfy { $0.searchText.isEmpty })
+        let index = try #require(model.storedSearchCache?.1)
+        #expect(index.pages.count == 1)
+        #expect(index.tail.nextOffset == limit)
+        #expect(model.messages.isEmpty)
+
+        let start = rpc.fetchedPaths.count
+        let repeated = try await model.searchTranscript(input)
+        #expect(repeated.map(\.storedRowID) == first.map(\.storedRowID))
+        let paths = rpc.fetchedPaths.dropFirst(start)
+        #expect(paths.count == 2)
+        #expect(paths.allSatisfy { !$0.contains("offset=0") })
+    }
+
+    @Test func externalTurnPollingBacksOffButNeverSleepsPastExpiry() {
+        let window = Duration.seconds(900)
+        #expect(DockModel.externalTurnPollDelay(failures: 0, remaining: window) == .seconds(3))
+        #expect(DockModel.externalTurnPollDelay(failures: 1, remaining: window) == .seconds(6))
+        #expect(DockModel.externalTurnPollDelay(failures: 10, remaining: window) == .seconds(24))
+        #expect(DockModel.externalTurnPollDelay(failures: 10, remaining: .seconds(2)) == .seconds(2))
+        #expect(DockModel.externalTurnPollDelay(failures: 10, remaining: .zero) == .zero)
+    }
+
+    @Test func cancelledJumpLeavesTheInFlightScrollReadInCharge() async throws {
+        let model = DockModel(rpcClient: PagedTranscriptRPCClient())
+        model.isLoadingEarlierTranscript = true
+        let jump = Task { await model.loadTranscriptHistory(through: 1) }
+        try await Task.sleep(for: .milliseconds(5))
+        jump.cancel()
+
+        #expect(await jump.value == nil)
+        #expect(model.isLoadingEarlierTranscript)
+        #expect(!model.isLoadingTranscriptHistory)
+    }
+
+    @Test func supersededDeepJumpKeepsCompletedBatchesAndResumesWithoutLosingTurns() async throws {
+        let rpc = PagedTranscriptRPCClient()
+        rpc.storedRows = storedTranscript(turns: 501)
+        rpc.pageDelay = .milliseconds(100)
+        let model = DockModel(initialSessionID: "deep", loadArchives: false, rpcClient: rpc)
+        defer { model.shutdown() }
+        model.sessionStorageID = "deep"
+        model.transcriptHistoryCursor = .init(storageSessionID: "deep", profileID: nil)
+        let coordinator = ConversationTranscriptCoordinator(controller: ConversationScrollController())
+        let item = MessageNavigatorItem(
+            target: .init(sessionID: "deep", messageID: UUID()), ordinal: 1, roleLabel: "You", preview: "First",
+            contentRevision: 0, hasImages: false, storedRowID: 1)
+        coordinator.select(item, model: model) { _ in Issue.record("A superseded jump landed") }
+        try await waitUntil { rpc.fetchedPaths.count == 2 }
+        let retained = model.messages
+        #expect(!retained.isEmpty)
+        #expect(retained.count < 500)
+        #expect(retained.first?.role == .user)
+        coordinator.invalidate()
+        try await waitUntil { !model.isLoadingTranscriptHistory }
+        #expect(model.messages == retained)
+        #expect(model.loadedMessageID(forRowID: 1) == nil)
+
+        let first = try #require(await model.loadTranscriptHistory(through: 1))
+        #expect(model.messages.first?.id == first)
+        #expect(model.messages.count == 1002)
+        #expect(Array(model.messages.suffix(retained.count)).map(\.id) == retained.map(\.id))
+        #expect(model.messages.filter { $0.role == .hermes }.allSatisfy { $0.activity.count == 1 })
+        #expect(model.transcriptPrependGeneration > 1)
     }
 
     @Test func unavailableTranscriptPagesFallBackToInlineResume() async throws {

@@ -225,28 +225,29 @@ private struct BotStatusMotionModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dockHostVisible) private var hostVisible
     @Environment(\.dockHostResizing) private var hostResizing
-    @ObservedObject private var focus = HermFocus.shared
-    @State private var startedAt = Date()
     @State private var hopAt: Date?
 
     private var moves: Bool {
-        hostVisible && !hostResizing && DockMotion.isEnabled(reduceMotion: reduceMotion) && (live || focus.engaged)
+        hostVisible && !hostResizing && DockMotion.isEnabled(reduceMotion: reduceMotion)
     }
 
     func body(content: Content) -> some View {
-        let running = moves && (motion.loops(live: live) || hopAt != nil)
-        TimelineView(.dockMotion(rate: 30, paused: !running)) { context in
-            let pose =
-                running
-                ? motion.pose(
-                    at: context.date.timeIntervalSince(startedAt),
-                    hopAge: hopAt.map { context.date.timeIntervalSince($0) }, live: live)
-                : .rest
-            pose.applied(to: content, size: size)
+        Group {
+            if motion.loops(live: live) {
+                BotStatusArtwork(content: content, size: size, motion: moves ? motion : .resting)
+                    .frame(width: size, height: size)
+                    .id(size)
+            } else if let hopAt, moves {
+                TimelineView(.dockMotion(rate: 30)) { context in
+                    BotWorkingPose.reaction(at: context.date.timeIntervalSince(hopAt), variation: 0)
+                        .applied(to: content, size: size)
+                }
+            } else {
+                content
+            }
         }
         .onChange(of: motion) { old, new in
-            startedAt = Date()
-            if new == .finished, old != .finished { hop() }
+            if new == .finished, old != .finished, !live { hop() }
         }
         .onChange(of: moves) { _, moving in
             // Never replay a stale hop when motion resumes.
@@ -262,4 +263,20 @@ private struct BotStatusMotionModifier: ViewModifier {
             if hopAt == now { hopAt = nil }
         }
     }
+}
+
+/// Only the face's own expression clock remains in SwiftUI. The surrounding reach and shake are composited.
+private struct BotStatusArtwork<Artwork: View>: NSViewRepresentable {
+    let content: Artwork
+    let size: CGFloat
+    let motion: BotStatusMotion
+
+    func makeNSView(context: Context) -> BotNotchFaceMotion.Host { .init(size: size) }
+
+    func updateNSView(_ view: BotNotchFaceMotion.Host, context: Context) {
+        view.face.rootView = AnyView(content.environment(\.self, context.environment))
+        view.apply(motion, cue: 0)
+    }
+
+    static func dismantleNSView(_ view: BotNotchFaceMotion.Host, coordinator: ()) { view.apply(.resting, cue: 0) }
 }

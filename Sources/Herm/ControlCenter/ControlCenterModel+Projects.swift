@@ -2,9 +2,42 @@ import Combine
 import Foundation
 
 extension ControlCenterModel {
+    func readProjectSessions(_ projectID: String, profileID: String?) async throws -> [SessionSummary] {
+        try Task.checkCancellation()
+        guard let rpc else { throw HermesGateway.GatewayError.disconnected }
+        let key = ProfileScopedID(profileID: profileID, resourceID: projectID)
+        if let (_, pending) = projectSessionReads[key] {
+            let rows = try await pending.value
+            try Task.checkCancellation()
+            return rows
+        }
+        let readID = UUID()
+        let task = Task {
+            let response = try await rpc.projectSessions(projectID: projectID, profileID: profileID)
+            guard !(response["project"] is NSNull) else { throw HermesGateway.GatewayError.malformedResponse }
+            let payload = UncheckedTranscriptValue(value: response)
+            let worker = Task.detached(priority: .utility) { Self.parseProjectSessions(payload.value) }
+            let rows = await worker.value
+            try Task.checkCancellation()
+            return rows
+        }
+        projectSessionReads[key] = (readID, task)
+        defer { if projectSessionReads[key]?.0 == readID { projectSessionReads[key] = nil } }
+        let rows = try await task.value
+        try Task.checkCancellation()
+        return rows
+    }
+
+    func invalidateProjectSessionReads() {
+        for (_, task) in projectSessionReads.values { task.cancel() }
+        projectSessionReads.removeAll()
+        projectMembershipGeneration = UUID()
+        projectSessionsGeneration = UUID()
+    }
+
     func openProject(_ project: ProjectSummary) {
         let projectionKey = projectSessionsProjectionKey(for: project.id)
-        guard let rpc else {
+        guard rpc != nil else {
             recordProjectionUnavailable(projectionKey)
             return
         }
@@ -20,12 +53,12 @@ extension ControlCenterModel {
         let profileID = projectProfileID
         Task {
             do {
-                let result = try await rpc.projectSessions(projectID: project.id, profileID: profileID)
+                let rows = try await readProjectSessions(project.id, profileID: profileID)
                 guard generation == projectSessionsGeneration,
                     selectedProjectID == project.id,
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
-                projectSessions = Self.parseProjectSessions(result)
+                projectSessions = rows
                 projectSessionsByProjectID[project.id] = projectSessions
                 recordProjectionSuccess(projectionKey, count: projectSessions.count)
                 for session in projectSessions {
@@ -74,6 +107,7 @@ extension ControlCenterModel {
         }
         // A refresh already in flight carries pre-move membership: drop it
         // and start a fresh one so it cannot put the session back.
+        invalidateProjectSessionReads()
         projectNavigationRefreshGeneration = nil
         projectNavigationReads.removeAll()
         isRefreshingProjectNavigation = false
@@ -152,21 +186,28 @@ extension ControlCenterModel {
         pendingProjectNavigationSessions = [:]
         completedProjectNavigationIDs = []
         if refreshProjects { refresh() }
-        for project in navigationProjects {
-            let projectID = project.id
-            guard let rpc else {
-                completeProjectNavigationRefresh(projectID, generation: generation)
-                continue
-            }
-            Task { @MainActor [weak self] in
-                let sessions = try? await rpc.projectSessions(projectID: projectID, profileID: profileID)
-                guard let self,
-                    self.projectNavigationRefreshGeneration == generation
-                else { return }
-                if let sessions {
-                    self.pendingProjectNavigationSessions[projectID] = Self.parseProjectSessions(sessions)
+        Task { [weak self] in
+            let projectIDs = navigationProjects.map(\.id)
+            await withTaskGroup(of: (String, [SessionSummary]?).self) { group in
+                var pending = projectIDs.makeIterator()
+                func enqueue(_ id: String) {
+                    group.addTask { [weak self] in
+                        let rows = try? await self?.readProjectSessions(id, profileID: profileID)
+                        return (id, rows)
+                    }
                 }
-                self.completeProjectNavigationRefresh(projectID, generation: generation)
+                for _ in 0..<min(4, projectIDs.count) {
+                    if let id = pending.next() { enqueue(id) }
+                }
+                for await (id, rows) in group {
+                    guard let self, self.projectNavigationRefreshGeneration == generation else {
+                        group.cancelAll()
+                        return
+                    }
+                    if let rows { self.pendingProjectNavigationSessions[id] = rows }
+                    self.completeProjectNavigationRefresh(id, generation: generation)
+                    if let next = pending.next() { enqueue(next) }
+                }
             }
         }
     }
@@ -174,7 +215,7 @@ extension ControlCenterModel {
     /// Hydrates the expanded project that asked for rows, independently of its siblings.
     @discardableResult
     func loadProjectNavigationSessions(_ projectID: String) -> Task<Void, Never>? {
-        guard let rpc, !projectProfileScopeUnavailable, !isRefreshingProjectNavigation,
+        guard rpc != nil, !projectProfileScopeUnavailable, !isRefreshingProjectNavigation,
             projectNavigationReads[projectID] == nil, projectSessionsByProjectID[projectID] == nil,
             projects.contains(where: { $0.id == projectID && $0.sessionCount > 0 })
         else { return nil }
@@ -189,11 +230,9 @@ extension ControlCenterModel {
                 if projectNavigationReads[projectID] == request { projectNavigationReads[projectID] = nil }
             }
             do {
-                let response = try await rpc.projectSessions(projectID: projectID, profileID: profile)
+                let rows = try await readProjectSessions(projectID, profileID: profile)
                 guard projectNavigationReads[projectID] == request, projects.contains(where: { $0.id == projectID })
                 else { return }
-                guard !(response["project"] is NSNull) else { throw HermesGateway.GatewayError.malformedResponse }
-                let rows = Self.parseProjectSessions(response)
                 projectSessionsByProjectID[projectID] = rows
                 if selectedProjectID == projectID { projectSessions = rows }
                 recordProjectionSuccess(key, count: rows.count)

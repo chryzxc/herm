@@ -13,7 +13,6 @@ struct WorkspaceFoundationRenderTests {
         let name = "ComposerQuota.\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
-        defaults.set(true, forKey: ChatQuotaSettingsKey.chip)
         let model = DockModel(defaults: defaults, initialSessionID: "quota-fixture", rpcClient: FoundationFixtureRPC())
         defer { model.shutdown() }
         model.sessionModelOptionID = HermesModelOption(provider: "openai-codex", model: "fixture-model").id
@@ -28,16 +27,20 @@ struct WorkspaceFoundationRenderTests {
                         limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)
                 ], safeDetail: nil)
         ]
-        let host = NSHostingView(
-            rootView: ChatComposerView(
-                model: model, composer: model.composer, speechInput: SpeechInput(), botMode: BotModeModel(),
+        let speech = SpeechInput()
+        let bots = BotModeModel()
+        func content(width: CGFloat) -> some View {
+            ChatComposerView(
+                model: model, composer: model.composer, speechInput: speech, botMode: bots,
                 onStop: {}, controlCenter: control
             )
-            .frame(width: 550, height: 180)
+            .frame(width: width, height: 220)
             .defaultAppStorage(defaults)
-            .dockThemedRoot())
+            .dockThemedRoot()
+        }
+        let host = NSHostingView(rootView: content(width: 550))
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 550, height: 180),
+            contentRect: NSRect(x: 0, y: 0, width: 550, height: 220),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         window.orderFrontRegardless()
@@ -50,16 +53,37 @@ struct WorkspaceFoundationRenderTests {
         defaults.set(false, forKey: ChatQuotaSettingsKey.chip)
         #expect(try await !showsPercentage())
 
+        defaults.set(true, forKey: ChatQuotaSettingsKey.chip)
+        model.sessionContextUsage = ("quota-fixture", 21, 100)
+        model.status = .working
+        model.draft = "Continue the current turn"
+        window.setContentSize(CGSize(width: 280, height: 220))
+        host.rootView = content(width: 280)
+        let narrow = try await visibleText(snapshotName: "composer-narrow-controls.png")
+        for label in ["fixture-model", "36%", "21%"] {
+            #expect(narrow.contains { $0.contains(label) }, "Missing \(label) from the narrow composer: \(narrow)")
+        }
+
         func showsPercentage() async throws -> Bool {
+            try await visibleText().contains { $0.contains("36%") }
+        }
+
+        func visibleText(snapshotName: String? = nil) async throws -> [String] {
             try await Task.sleep(for: .milliseconds(200))
             host.layoutSubtreeIfNeeded()
             let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
+            if let snapshotName, let path = ProcessInfo.processInfo.environment["HERM_FOUNDATION_UI_DIR"] {
+                let directory = URL(fileURLWithPath: path)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try #require(bitmap.representation(using: .png, properties: [:])).write(
+                    to: directory.appendingPathComponent(snapshotName))
+            }
             let image = try #require(bitmap.cgImage)
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             try VNImageRequestHandler(cgImage: image).perform([request])
-            return request.results?.contains { $0.topCandidates(1).first?.string.contains("36%") == true } == true
+            return request.results?.compactMap { $0.topCandidates(1).first?.string } ?? []
         }
     }
 

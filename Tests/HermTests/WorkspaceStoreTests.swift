@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 
@@ -141,6 +142,37 @@ struct WorkspaceStoreTests {
                 == "/tmp/hermes-project")
         #expect(store.resolvedProjectPath(forSessionID: "unbound-session", hermesProjectPath: nil) == nil)
         #expect(store.resolvedProjectPath(forSessionID: nil, hermesProjectPath: "/tmp/hermes-project") == nil)
+    }
+
+    @Test func projectInventoryPublishesOneAttachmentAndSkipsUnchangedRefreshes() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let store = WorkspaceStore(fileURL: fixture.fileURL)
+        let existing = store.createTask(title: "Local title", sessionID: "existing")
+        var taskUpdates = 0
+        var referenceUpdates = 0
+        var pathUpdates = 0
+        let subscriptions = [
+            store.$tasks.dropFirst().sink { _ in taskUpdates += 1 },
+            store.$controlReferences.dropFirst().sink { _ in referenceUpdates += 1 },
+            store.$projectPath.dropFirst().sink { _ in pathUpdates += 1 },
+        ]
+        let sessions = ["existing", "first", "existing", "second"].map { id in
+            SessionSummary(id: id, title: id, state: "active", preview: nil)
+        }
+        store.attachProject(at: "/work/project", toSessions: sessions)
+        #expect(taskUpdates == 1 && referenceUpdates == 1 && pathUpdates == 1)
+        #expect(store.tasks.compactMap(\.sessionID) == ["second", "first", "existing"])
+        #expect(store.controlReferences.map(\.sourceID) == ["existing", "first", "second"])
+        #expect(store.task(forSessionID: "existing")?.id == existing.id)
+        #expect(store.task(forSessionID: "existing")?.title == "Local title")
+        #expect(store.projectPath(forSessionID: "first") == "/work/project")
+        let attached = store.tasks
+
+        store.attachProject(at: "/work/project", toSessions: sessions)
+        #expect(taskUpdates == 1 && referenceUpdates == 1 && pathUpdates == 1)
+        #expect(store.tasks == attached)
+        withExtendedLifetime(subscriptions) {}
     }
 
     @Test func attachmentBeforeTaskCreationSurvivesSessionSynchronizationAndReload() async throws {

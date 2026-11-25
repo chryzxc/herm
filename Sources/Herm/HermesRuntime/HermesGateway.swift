@@ -60,7 +60,13 @@ final class HermesGateway: NSObject {
     private var sshBridge: GatewaySSHBridge?
     private var backend: Process?
     private var urlSession: URLSession?
-    private var socket: URLSessionWebSocketTask?
+    private var socket: URLSessionWebSocketTask? {
+        didSet {
+            if oldValue !== socket { connectionIdentity = UUID() }
+        }
+    }
+    private var connectionIdentity = UUID()
+    var prepareBrowserForPrompt: ((String?, UUID) async -> Void)?
     private var port: Int?
     private var token = ""
     private var nextID = 0
@@ -230,11 +236,25 @@ final class HermesGateway: NSObject {
     }
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        try Task.checkCancellation()
         DebugLog.write("request: \(method)")
         if socket == nil { try await connect() }
+        if Self.shouldPrepareBrowser(for: method) {
+            await prepareBrowserForPrompt?(params["profile"] as? String, connectionIdentity)
+        }
         let response = try await send(
             method: method, params: HermesSimulatorPreference.applying(to: params, method: method))
         return response.object
+    }
+
+    static func shouldPrepareBrowser(for method: String) -> Bool {
+        switch method {
+        case HermesFeatureIDs.ID.promptSubmit.rawValue, HermesFeatureIDs.ID.promptBackground.rawValue,
+            HermesFeatureIDs.ID.promptBtw.rawValue:
+            true
+        default:
+            false
+        }
     }
 
     func close() {
@@ -357,6 +377,7 @@ final class HermesGateway: NSObject {
     }
 
     private func send(method: String, params: [String: Any]) async throws -> HermesGatewayResponse {
+        try Task.checkCancellation()
         guard let socket else { throw GatewayError.disconnected }
         nextID += 1
         let id = nextID
@@ -364,29 +385,46 @@ final class HermesGateway: NSObject {
         let body: [String: Any] = ["jsonrpc": "2.0", "id": id, "method": method, "params": params]
         let data = try JSONSerialization.data(withJSONObject: body)
         guard let text = String(data: data, encoding: .utf8) else { throw GatewayError.malformedResponse }
-        return try await withCheckedThrowingContinuation { continuation in
-            pending[id] = continuation
-            timeoutTasks[id] = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(Self.requestTimeout(for: method, params: params)))
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard let self, let waiting = self.pending.removeValue(forKey: id) else { return }
-                    self.timeoutTasks.removeValue(forKey: id)
-                    waiting.resume(
-                        throwing: NSError(
-                            domain: "Hermes", code: 408,
-                            userInfo: [NSLocalizedDescriptionKey: "Hermes did not respond in time."]))
-                }
-            }
+        return try await waitForResponse(id: id, timeout: Self.requestTimeout(for: method, params: params)) {
             socket.send(.string(text)) { [weak self] error in
                 guard let error else { return }
                 Task { @MainActor in
                     DebugLog.write("send: id=\(id) failed: \(error.localizedDescription)")
-                    self?.timeoutTasks.removeValue(forKey: id)?.cancel()
-                    self?.pending.removeValue(forKey: id)?.resume(throwing: error)
+                    self?.failRequest(id, error: error)
                 }
             }
         }
+    }
+
+    func waitForResponse(id: Int, timeout: TimeInterval, transmit: () -> Void) async throws -> HermesGatewayResponse {
+        let response: HermesGatewayResponse = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                pending[id] = continuation
+                timeoutTasks[id] = Task { [weak self] in
+                    do { try await Task.sleep(for: .seconds(timeout)) } catch { return }
+                    self?.failRequest(
+                        id,
+                        error: NSError(
+                            domain: "Hermes", code: 408,
+                            userInfo: [NSLocalizedDescriptionKey: "Hermes did not respond in time."]))
+                }
+                transmit()
+            }
+        } onCancel: {
+            // Only the local waiter is cancelled. Hermes may still finish the RPC.
+            Task { @MainActor [weak self] in self?.failRequest(id, error: CancellationError()) }
+        }
+        try Task.checkCancellation()
+        return response
+    }
+
+    private func failRequest(_ id: Int, error: any Error) {
+        timeoutTasks.removeValue(forKey: id)?.cancel()
+        pending.removeValue(forKey: id)?.resume(throwing: error)
     }
 
     private func sendFrame(_ frame: [String: Any]) {

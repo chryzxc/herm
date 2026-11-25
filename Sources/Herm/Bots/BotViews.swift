@@ -110,11 +110,11 @@ struct BotRosterPage: View {
             // this visible surface so the roster's blue activity state stays
             // truthful without creating a background poller for hidden pages.
             guard hostVisible else { return }
-            await model.refreshNow()
+            await model.refreshNow(probeCapability: true, minimumInterval: 5)
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled else { return }
-                await model.refreshNow(force: true)
+                await model.refreshNow(probeCapability: true, minimumInterval: 5)
             }
         }
     }

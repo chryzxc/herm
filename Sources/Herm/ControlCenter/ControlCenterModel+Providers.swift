@@ -599,7 +599,7 @@ extension ControlCenterModel {
         guard configEditor.state == .ready else { return }
         let credentials = reportedProviderQuotas.compactMap(\.hermesCredential)
         let plan = Self.hermesPrimaryRestorePlan(pins: pins, credentials: credentials) {
-            self.configEditor.value("credential_pool_strategies.\($0)") as? String
+            self.poolStrategy(for: $0)
         }
         if plan.forget.isEmpty == false {
             hermesPrimaryCredentials = pins.filter { !plan.forget.contains($0.key) }
@@ -607,6 +607,10 @@ extension ControlCenterModel {
         for credential in plan.restore {
             _ = try? await cli.authPriority(provider: credential.provider, credentialID: credential.id, priority: 0)
         }
+    }
+
+    func poolStrategy(for provider: String) -> String? {
+        (configEditor.value("credential_pool_strategies") as? [String: Any])?[provider] as? String
     }
 
     nonisolated static func hermesPrimaryRestorePlan(

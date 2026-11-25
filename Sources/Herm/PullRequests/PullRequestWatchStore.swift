@@ -35,6 +35,7 @@ final class PullRequestWatchStore: ObservableObject {
     private let defaults: UserDefaults
     private let client: GitHubClient
     private var task: Task<Void, Never>?
+    var isPolling: Bool { task != nil }
     private var workspaceVisible = false
     private var retryNotBefore: Date?
     var onNotice: ((WatchedPullRequest, [String]) -> Void)?
@@ -85,6 +86,10 @@ final class PullRequestWatchStore: ObservableObject {
                 }
                 let result = await poll()
                 guard !Task.isCancelled else { return }
+                if watched.isEmpty {
+                    task = nil
+                    return
+                }
                 if result > 120 { retryNotBefore = Date().addingTimeInterval(result) } else { retryNotBefore = nil }
                 let delay = max(result, workspaceVisible ? 120 : 300)
                 do { try await Task.sleep(for: .seconds(delay)) } catch { return }

@@ -702,6 +702,35 @@ struct StreamingPerformanceTests {
         #expect(source[..<boundary].utf8.count == StreamingChunkPolicy.maxMutableTailBytes)
     }
 
+    @Test func restoredStreamingBurstPublishesInOrderWithoutLosingUnicode() async throws {
+        let streaming = StreamingText()
+        let restored = String(repeating: "👩🏽‍💻 café ", count: 16_000)
+        streaming.enqueuePresentation(restored)
+        #expect(streaming.chunks.isEmpty)
+        streaming.enqueuePresentation(" first")
+        streaming.enqueuePresentation(" second")
+        let expected = restored + " first second"
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while streaming.text != expected, .now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(streaming.text == expected)
+        #expect(streaming.chunks.map(\.text).joined() == expected)
+        #expect(streaming.chunks.last?.text.utf8.count ?? .max <= StreamingChunkPolicy.maxMutableTailBytes)
+    }
+
+    @Test func completionAndReplacementDoNotWaitForAnObsoleteLargeBurst() async throws {
+        let streaming = StreamingText()
+        let restored = String(repeating: "unfinished reply ", count: 20_000)
+        streaming.enqueuePresentation(restored)
+        #expect(!streaming.reconcileForCompletion(with: restored + " done"))
+        streaming.clearLivePresentation()
+        streaming.enqueuePresentation("the next turn")
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(streaming.text == "the next turn")
+        #expect(streaming.chunks.map(\.text) == ["the next turn"])
+    }
+
     @Test func chunkPromotionUsesStrictMutableTailThreshold() {
         let exact = String(repeating: "a", count: StreamingChunkPolicy.maxMutableTailBytes)
         #expect(StreamingChunkPolicy.promotionBoundary(in: exact) == nil)

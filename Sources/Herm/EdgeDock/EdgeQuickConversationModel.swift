@@ -57,11 +57,7 @@ final class EdgeQuickConversationModel: ObservableObject {
                 }
         }
         eventOwner = runtime
-        eventSubscription = runtime.eventRouter.subscribe { [weak model] type, params in
-            guard let model, Self.needsEvent(type, params: params, model: model, requestedSessionID: session.id)
-            else { return }
-            model.receiveGatewayEvent(type, params: params)
-        }
+        eventSubscription = model.subscribeSessionEvents(from: runtime.eventRouter, requestedSessionID: session.id)
         return model
     }
 
@@ -103,28 +99,6 @@ final class EdgeQuickConversationModel: ObservableObject {
     }
 
     func retarget(_ destination: QuickDestination) { destinationKey = destination.sessionKey }
-
-    private static func needsEvent(
-        _ type: String, params: [String: Any], model: DockModel, requestedSessionID: String
-    ) -> Bool {
-        let payload = params["payload"] as? [String: Any] ?? [:]
-        let envelope = params["session_id"] as? String
-        guard type != "gateway.ready", let owner = envelope ?? (payload["session_id"] as? String), !owner.isEmpty
-        else { return true }
-        if owner == model.sessionID || owner == model.sessionStorageID || owner == model.kanbanAttributionSessionID
-            || (model.isRestoringSession && owner == requestedSessionID) || model.quickSessionOwners[owner] != nil
-        {
-            return true
-        }
-        if type.hasPrefix("subagent."), let sessionID = model.sessionID,
-            DockModel.eventBelongsToSession(
-                type: type, envelopeSessionID: envelope, eventSessionID: owner, payload: payload,
-                currentSessionID: sessionID, agents: model.sessionAgents + model.activeSubagents)
-        {
-            return true
-        }
-        return model.inFlightBotActivities.values.contains { $0.botChatSessionID == owner }
-    }
 
     func shutdown() {
         generation = UUID()

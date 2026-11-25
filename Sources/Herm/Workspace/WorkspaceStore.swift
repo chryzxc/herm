@@ -295,22 +295,13 @@ final class WorkspaceStore: ObservableObject {
     /// the selected local folder against each known session so change review
     /// follows the current session instead of relying on a global path.
     func attachProject(at path: String, toSessions sessions: [SessionSummary]) {
-        projectPath = path
-        for session in sessions {
-            if let index = tasks.firstIndex(where: { $0.sessionID == session.id }) {
-                tasks[index].projectPath = path
-                tasks[index].updatedAt = Date()
-            } else {
-                let task = WorkspaceTask(
-                    title: session.title,
-                    status: .inProgress,
-                    projectPath: path,
-                    sessionID: session.id
-                )
-                tasks.insert(task, at: 0)
-                addControlReference(for: task)
-            }
-        }
+        let attachment = WorkspaceProjectAttachment(
+            path: path, sessions: sessions, tasks: tasks, indexBySessionID: taskIndexBySessionID,
+            references: controlReferences, now: .now)
+        guard projectPath != path || attachment.tasks != nil || attachment.references != nil else { return }
+        if projectPath != path { projectPath = path }
+        if let tasks = attachment.tasks { self.tasks = tasks }
+        if let references = attachment.references { controlReferences = references }
         save()
     }
 

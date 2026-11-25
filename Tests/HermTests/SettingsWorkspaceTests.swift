@@ -46,7 +46,7 @@ struct SettingsWorkspaceTests {
     func categoryOrder() {
         #expect(
             SettingsCategory.allCases == [
-                .general, .gateway, .appearance, .notifications, .runtime, .subagents, .providers, .chat,
+                .general, .gateway, .appearance, .statusBar, .notifications, .runtime, .subagents, .providers, .chat,
                 .workspace,
                 .safety, .browser, .passwords, .memory, .voice, .advanced, .integrations, .session, .diagnostics,
                 .updates,
@@ -54,7 +54,7 @@ struct SettingsWorkspaceTests {
         let grouped = SettingsCategoryGroup.allCases.flatMap(\.categories)
         #expect(grouped.count == Set(grouped).count)
         #expect(Set(grouped) == Set(SettingsCategory.allCases))
-        #expect(SettingsCategoryGroup.app.categories == [.general, .gateway, .appearance, .notifications])
+        #expect(SettingsCategoryGroup.app.categories == [.general, .gateway, .appearance, .statusBar, .notifications])
         #expect(!SettingsCategoryGroup.agent.categories.map(\.rawValue).contains("bots"))
         #expect(SettingsCategory.general.title == "General")
         #expect(SettingsCategory.diagnostics.icon == .stethoscope)
@@ -92,10 +92,8 @@ struct SettingsWorkspaceTests {
         #expect(SettingsCategoryBadge(kind: .count(2), isWarning: true).kind == .count(2))
     }
 
-    @Test("provider and file limits live with the controls they configure")
+    @Test("file limits live with the controls they configure")
     func configCategories() {
-        let providerKeys = HermesConfigCatalog.pages[.providers, default: []].flatMap(\.fields).map(\.key)
-        #expect(providerKeys.contains("credential_pool_strategies.openai-codex"))
         let workspaceKeys = HermesConfigCatalog.pages[.workspace, default: []].flatMap(\.fields).map(\.key)
         #expect(workspaceKeys.contains("tool_output.max_bytes"))
         #expect(workspaceKeys.contains("tool_output.max_lines"))

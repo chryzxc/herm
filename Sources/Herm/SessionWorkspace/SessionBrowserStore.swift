@@ -73,11 +73,11 @@ final class SessionBrowserWorkspace: ObservableObject {
         self.agent = agent ?? AgentBrowser(profileID: key.profileID)
         dataStore = Self.dataStore(for: key.profileID)
         primary = BrowserController(key: key, dataStore: dataStore)
-        titleSubscriptions[primary.id] = primary.web.publisher(for: \.title)
+        titleSubscriptions[primary.id] = primary.$pageTitle
             .combineLatest(self.agent.$state, self.agent.$pages, self.agent.$activeTargetID)
             .map { title, state, pages, target in
                 let usesAgent = state == .starting || state == .running
-                return usesAgent ? pages.first(where: { $0.id == target })?.title ?? "" : title ?? ""
+                return usesAgent ? pages.first(where: { $0.id == target })?.title ?? "" : title
             }
             .removeDuplicates()
             .sink { [weak self] title in
@@ -87,23 +87,39 @@ final class SessionBrowserWorkspace: ObservableObject {
     }
 
     func addTab() -> BrowserController {
+        let tab = makeExtraTab()
+        extras.append(tab)
+        return tab
+    }
+
+    private func makeExtraTab() -> BrowserController {
         let tab = BrowserController(key: key, dataStore: dataStore)
         let cookies = dataStore.httpCookieStore
         tab.prepareLoad = { [weak agent] url in await agent?.copySignIns(for: url, into: cookies) }
         tab.didLoad = { [weak agent] url in await agent?.receiveSignIns(for: url, from: cookies) }
         let id = tab.id
-        titleSubscriptions[id] = tab.web.publisher(for: \.title)
-            .map { $0 ?? "" }
+        titleSubscriptions[id] = tab.$pageTitle
             .removeDuplicates()
+            .dropFirst()
             .sink { [weak self] title in self?.pageTitles[id] = title }
-        extras.append(tab)
         return tab
+    }
+
+    func restoreExtraTabs(_ addresses: [String]) {
+        guard extras.isEmpty else { return }
+        let restored = addresses.prefix(16).compactMap { address -> BrowserController? in
+            guard let safe = WorkspacePresentationStore.restorableBrowserURL(address) else { return nil }
+            let tab = makeExtraTab()
+            tab.address = safe
+            return tab
+        }
+        if !restored.isEmpty { extras = restored }
     }
 
     func closeTab(_ id: UUID) {
         titleSubscriptions.removeValue(forKey: id)?.cancel()
         pageTitles.removeValue(forKey: id)
-        extras.first { $0.id == id }?.web.stopLoading()
+        extras.first { $0.id == id }?.stopLoading()
         extras.removeAll { $0.id == id }
     }
 
@@ -133,14 +149,14 @@ final class SessionBrowserWorkspace: ObservableObject {
     /// Loading `about:blank` into a view that never loaded a page launches a
     /// WebKit content process (and its font registration) only to show nothing.
     func suspend() {
-        primary.web.stopLoading()
-        guard Self.hasLoadedPage(primary.web.url) else { return }
+        primary.stopLoading()
+        guard Self.hasLoadedPage(primary.loadedURL) else { return }
         primary.web.load(URLRequest(url: URL(string: "about:blank")!))
     }
 
     /// A tab, loaded page or pending link the user could lose. Without one, quitting loses nothing.
     var isInUse: Bool {
-        !extras.isEmpty || Self.hasLoadedPage(primary.web.url)
+        !extras.isEmpty || Self.hasLoadedPage(primary.loadedURL)
     }
 
     nonisolated static func hasLoadedPage(_ url: URL?) -> Bool {
@@ -179,7 +195,6 @@ final class SessionBrowserStore: ObservableObject {
     @Published var presentation: SessionBrowserKey?
     private var workspaces: [SessionBrowserKey: SessionBrowserWorkspace] = [:]
     private var agents: [String?: AgentBrowser] = [:]
-    private var subscriptions: [SessionBrowserKey: AnyCancellable] = [:]
     private var activeKey: SessionBrowserKey?
 
     func signOutAll() async {
@@ -204,8 +219,12 @@ final class SessionBrowserStore: ObservableObject {
         if let existing = workspaces[key] { return existing }
         let workspace = SessionBrowserWorkspace(key: key, agent: agent(for: key.profileID))
         workspaces[key] = workspace
-        subscriptions[key] = workspace.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         return workspace
+    }
+
+    func presentationChanges(for key: SessionBrowserKey?) -> AnyPublisher<Void, Never> {
+        guard let key else { return Empty().eraseToAnyPublisher() }
+        return workspace(for: key).objectWillChange.eraseToAnyPublisher()
     }
 
     /// Hermes deleted the session: its pages go; the profile's agent Chrome stays.
@@ -216,14 +235,17 @@ final class SessionBrowserStore: ObservableObject {
 
     /// Only dispose after Hermes confirms deletion; retained live pages otherwise belong to the user.
     func remove(_ key: SessionBrowserKey) {
+        remove(key, preserveAgent: false)
+    }
+
+    private func remove(_ key: SessionBrowserKey, preserveAgent: Bool) {
         guard let workspace = workspaces.removeValue(forKey: key) else { return }
-        subscriptions.removeValue(forKey: key)?.cancel()
         workspace.suspend()
         for tab in workspace.extras { workspace.closeTab(tab.id) }
         if presentation == key { presentation = nil }
         if activeKey == key { activeKey = nil }
         // The profile's last session went: quit its Chrome and disconnect Hermes.
-        if !workspaces.keys.contains(where: { $0.profileID == key.profileID }) {
+        if !preserveAgent, !workspaces.keys.contains(where: { $0.profileID == key.profileID }) {
             agents.removeValue(forKey: key.profileID)?.stop()
         }
     }
@@ -237,32 +259,31 @@ final class SessionBrowserStore: ObservableObject {
 
     func activate(model: DockModel, reconnect: Bool = false) {
         guard let key = model.browserSessionKey else {
-            // A new chat has no session until its first turn starts: launch the profile's Chrome
-            // now so Hermes' first browser call doesn't race the launch.
-            let agent = agent(for: model.profileScopeID)
-            agent.model = model
-            if !agent.isActive { agent.start() } else if reconnect { agent.reconnectHermes() }
+            if let activeKey { releaseIfUnused(activeKey) }
+            if let agent = agents[model.profileScopeID] {
+                agent.model = model
+                if reconnect { agent.reconnectHermes() }
+            }
+            activeKey = nil
             return
         }
-        // Create first, so releasing the previous session never quits the Chrome this one shares.
         let agent = workspace(for: key).agent
         if let activeKey, activeKey != key { releaseIfUnused(activeKey) }
         agent.model = model
         agent.show(session: key.sessionID)
-        if !agent.isActive {
-            agent.start()
-        } else if reconnect || activeKey?.profileID != key.profileID {
-            // Hermes holds one connection per profile; a session switch within it keeps that.
-            agent.reconnectHermes()
-        }
+        if reconnect { agent.reconnectHermes() }
         activeKey = key
     }
 
-    /// Selecting a session starts its profile's Chrome so Hermes' browser tools reach it.
-    /// Leaving one that was never used drops its pages.
+    func prepareForTurn(profileID: String?, client: HermesRPCClientProtocol, connection: UUID) async {
+        guard GatewayConnectionStore.isLocalBackend, !Task.isCancelled else { return }
+        await agent(for: profileID).prepareForTurn(client: client, connection: connection)
+    }
+
+    /// Drop unused session views, but don't disconnect a browser a running turn can still need.
     func releaseIfUnused(_ key: SessionBrowserKey) {
         guard presentation != key, let workspace = workspaces[key], !workspace.isInUse else { return }
-        remove(key)
+        remove(key, preserveAgent: workspace.agent.isActive)
     }
 
     @discardableResult
@@ -272,7 +293,9 @@ final class SessionBrowserStore: ObservableObject {
             return nil
         }
         activate(model: model)
-        let tabID = url.flatMap { workspace(for: key).openLink($0) }
+        let workspace = workspace(for: key)
+        if url != nil { workspace.agent.start() }
+        let tabID = url.flatMap { workspace.openLink($0) }
         presentation = key
         return tabID
     }

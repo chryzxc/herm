@@ -54,8 +54,6 @@ extension DockModel {
             ("renamingSessionID", Self.change($renamingSessionID)),
             ("updatingSessionVisibilityID", Self.change($updatingSessionVisibilityID)),
             ("pinningSessionID", Self.change($pinningSessionID)),
-            ("pinnedSessions", Self.change($pinnedSessions)),
-            ("sidebarPinChanges", sidebarPinChanges.eraseToAnyPublisher()),
             ("isRestoringSession", Self.change($isRestoringSession)),
             ("currentSessionTitle", Self.change($currentSessionTitle)),
             ("isShowingReasoning", Self.change($isShowingReasoning)),
@@ -82,7 +80,6 @@ extension DockModel {
             ("activeBotDisplayName", Self.change($activeBotDisplayName)),
             ("defaultBotName", Self.change($defaultBotName)),
             ("browserActivityID", Self.change($browserActivityID)),
-            ("sessions", Self.change($sessions)),
             (
                 "unloadedNavigator",
                 transcriptPresentationChanges.map { [weak self] in
@@ -91,6 +88,45 @@ extension DockModel {
                     .map { _ in () }.eraseToAnyPublisher()
             ),
         ]
+    }
+
+    /// The session action menu reads display metadata for one row. Recency,
+    /// working state and unread markers belong to the sidebar.
+    func selectedSessionPresentationChanges(id: String?, profileID: String?) -> AnyPublisher<Void, Never> {
+        guard let id else { return Empty().eraseToAnyPublisher() }
+        let scope = profileScopeID
+        let key = ProfileScopedID(profileID: profileID ?? scope, resourceID: id)
+        func row(in rows: [HermesSession], index: Int?) -> HermesSession? {
+            func matches(_ row: HermesSession) -> Bool {
+                row.id == id && ProfileScopedID(profileID: row.profileID ?? scope, resourceID: row.id) == key
+            }
+            if let index, rows.indices.contains(index), matches(rows[index]) { return rows[index] }
+            return rows.first(where: matches)
+        }
+        let selected = $sessions.combineLatest($allBotSessionsState).map { [weak self] recent, all in
+            let scanned: [HermesSession]
+            switch all {
+            case .ready(let rows), .stale(let rows, _): scanned = rows
+            default: scanned = []
+            }
+            let value =
+                row(in: recent, index: self?.recentIndexByID[id])
+                ?? row(in: scanned, index: self?.allBotIndexByID[id])
+            return value.map { SelectedSessionMenuRow(title: $0.title, hidden: $0.isHidden) }
+        }.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher()
+        let pinned = $pinnedSessions.combineLatest(sidebarPinChanges.prepend(())).map { [weak self] pins, _ in
+            guard let self else { return false }
+            if key.profileID == Self.normalizedProfileID(scope), !awaitingScopedPinsAfterSwitch {
+                return row(in: pins, index: pinnedIndexByID[id]) != nil
+            }
+            return knownProfilePins[key] != nil
+        }.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher()
+        return selected.merge(with: pinned).eraseToAnyPublisher()
+    }
+
+    private struct SelectedSessionMenuRow: Equatable {
+        let title: String
+        let hidden: Bool
     }
 
     /// What the session inspector itself reads; its tabs observe their own inputs.
@@ -131,37 +167,61 @@ extension DockModel {
 
     /// Invalidate at the canonical array mutation boundary, not by hashing
     /// the entire history again on each scroll or live-tail layout update.
+    func appendChatMessage(_ message: ChatMessage) {
+        let index = messages.count
+        let pending = navigatorChangedRows
+        messages.append(message)
+        navigatorChangedRows = pending?.union([index])
+    }
+
+    func editChatMessage(at index: Int, _ edit: (inout ChatMessage) -> Void) {
+        let pending = navigatorChangedRows
+        edit(&messages[index])
+        navigatorChangedRows = pending?.union([index])
+    }
+
+    var messageNavigatorKey: MessageNavigatorProjection.Key {
+        .init(owner: transcriptPresentationID, sessionID: sessionID ?? "", revision: messageNavigatorRevision)
+    }
+
+    var previousMessageNavigator: MessageNavigatorProjection.Result? {
+        let key = messageNavigatorKey
+        guard let cached = cachedMessageNavigatorItems, cached.key.owner == key.owner,
+            cached.key.sessionID == key.sessionID
+        else { return nil }
+        return cached
+    }
+
     var messageNavigatorSnapshot: MessageNavigatorSnapshot {
-        let owner = sessionID ?? ""
-        if !messageNavigatorNeedsRefresh, let cached = cachedMessageNavigatorItems, cached.sessionID == owner {
-            return cached.snapshot
+        if let cached = previousMessageNavigator, cached.key == messageNavigatorKey { return cached.snapshot }
+        let result = navigatorProjection().build()
+        installMessageNavigator(result)
+        return result.snapshot
+    }
+
+    func prepareMessageNavigator() async {
+        let request = UncheckedTranscriptValue(value: navigatorProjection())
+        let worker = Task.detached(priority: .userInitiated) { request.value.build() }
+        let result = await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
         }
-        if cachedMessageNavigatorItems?.sessionID != owner { cachedMessageNavigatorRows.removeAll() }
-        let items: [MessageNavigatorItem]
-        if let cached = cachedMessageNavigatorItems, cached.sessionID == owner,
-            let prepend = lastTranscriptPrepend,
-            prepend.isInsertion(
-                after: cached.messagesRevision, previousCount: cached.messageCount,
-                revision: messagesRevision, count: messages.count)
-        {
-            items = MessageNavigator.items(
-                prepending: messages.prefix(prepend.count), to: cached.snapshot.items.suffix(cached.messageCount),
-                earlierPrompts: unloadedTranscriptPrompts, sessionID: owner, reusing: &cachedMessageNavigatorRows)
-        } else {
-            items = MessageNavigator.items(
-                messages: messages, earlierPrompts: unloadedTranscriptPrompts, sessionID: owner,
-                reusing: &cachedMessageNavigatorRows)
-        }
-        // Metadata-only message edits must not invalidate navigator identity.
-        let snapshot: MessageNavigatorSnapshot
-        if let cached = cachedMessageNavigatorItems, cached.sessionID == owner, cached.snapshot.items == items {
-            snapshot = cached.snapshot
-        } else {
-            snapshot = MessageNavigatorSnapshot(items: items)
-        }
-        cachedMessageNavigatorItems = (owner, snapshot, messages.count, messagesRevision)
-        messageNavigatorNeedsRefresh = false
-        return snapshot
+        guard !Task.isCancelled, result.key == messageNavigatorKey else { return }
+        installMessageNavigator(result)
+    }
+
+    private func navigatorProjection() -> MessageNavigatorProjection {
+        .init(
+            key: messageNavigatorKey, messages: messages, messagesRevision: messagesRevision,
+            timeline: transcriptTimeline, timelineRevision: messageNavigatorTimelineRevision,
+            seenRowIDs: hasUnloadedTranscript ? transcriptHistoryCursor?.seenRowIDs : nil,
+            changes: navigatorChangedRows, prepend: lastTranscriptPrepend, previous: previousMessageNavigator)
+    }
+
+    private func installMessageNavigator(_ result: MessageNavigatorProjection.Result) {
+        cachedMessageNavigatorItems = result
+        navigatorChangedRows = []
     }
 
     var messageNavigatorItems: [MessageNavigatorItem] {

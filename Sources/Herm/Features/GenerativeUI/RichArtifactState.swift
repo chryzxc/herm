@@ -40,7 +40,7 @@ struct RichArtifactReference: Codable, Equatable, Hashable, Sendable, Identifiab
     }
 }
 
-struct RichArtifactBookmark: Codable, Equatable, Identifiable {
+struct RichArtifactBookmark: Codable, Equatable, Identifiable, Sendable {
     let reference: RichArtifactReference
     let title: String
     let sessionTitle: String
@@ -69,7 +69,7 @@ enum RichSelectionIdentity {
     static func edge(_ id: String) -> String { "edge:" + id }
 }
 
-struct ArtifactResourceBookmark: Codable, Equatable, Identifiable {
+struct ArtifactResourceBookmark: Codable, Equatable, Identifiable, Sendable {
     let value: String
     let sessionID: String
     let profileID: String?

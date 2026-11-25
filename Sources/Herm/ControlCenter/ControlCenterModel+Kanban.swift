@@ -288,7 +288,7 @@ extension ControlCenterModel {
             hasInFlightTask: sessionKanbanTask != nil,
             requested: requested
         ) {
-            sessionKanbanRefreshPending = true
+            if !quiet { sessionKanbanRefreshPending = true }
             return
         }
         let generation = UUID()
@@ -339,16 +339,7 @@ extension ControlCenterModel {
                 }
             }
             do {
-                let result = try await cli.kanbanList(
-                    boardSlug: requestedBoardSlug,
-                    // Finished session cards get archived; keep them in Recent.
-                    filter: KanbanListFilter(includeArchived: true, sort: "updated"),
-                    background: quiet
-                )
-                let parsed =
-                    result.succeeded
-                    ? await Self.parseKanbanTasksOffMain(result.stdout, boardSlug: requestedBoardSlug)
-                    : nil
+                let inventory = try await cli.sessionKanbanInventory(background: quiet)
                 guard
                     Self.isCurrentSessionKanbanResult(
                         generationMatches: generation == self.sessionKanbanRefreshGeneration,
@@ -358,28 +349,9 @@ extension ControlCenterModel {
                         requestedBoardSlug: requestedBoardSlug
                     )
                 else { return }
-                guard result.succeeded else {
-                    if quiet { return }
-                    self.recordProjectionFailure(
-                        "kanban.session",
-                        error: Self.safeUserDiagnostic(result.stderr).isEmpty
-                            ? "Hermes Kanban is unavailable." : Self.safeUserDiagnostic(result.stderr)
-                    )
-                    return
-                }
                 // A card may carry any of the session's aliases (runtime,
                 // storage or attribution ID), so match them all.
-                guard let parsed else {
-                    if quiet { return }
-                    self.recordProjectionFailure("kanban.session", error: "Hermes returned malformed Kanban data.")
-                    return
-                }
-                var sessionTasks = Self.filterSessionKanbanTasks(
-                    parsed,
-                    sessionID: requestedSessionID,
-                    aliases: aliases,
-                    observedIDs: Set(observedIDs)
-                )
+                var sessionTasks = inventory.matching(aliases: aliases, observedIDs: observedIDs)
 
                 // Hermes agents can create a card through the kanban toolset
                 // without persisting the originating chat session on the
@@ -389,8 +361,8 @@ extension ControlCenterModel {
                 // those exact IDs; never match by assignee or title.
                 // Cards already in the list were judged above; only look up the
                 // missing ones, or rehydrating a busy session takes minutes.
-                let knownIDs = Set(parsed.map(\.id))
-                for taskID in observedIDs where !knownIDs.contains(taskID) {
+                for taskID in observedIDs where !inventory.contains(taskID) {
+                    guard !Task.isCancelled else { return }
                     let missKey = "\(requestedBoardSlug ?? "")|\(taskID)"
                     guard !self.unrecoverableKanbanTaskIDs.contains(missKey),
                         let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID)
@@ -477,31 +449,36 @@ extension ControlCenterModel {
         guard beginAction(refreshKanbanBoardsActionID) else { return }
         let generation = UUID()
         kanbanBoardsGeneration = generation
+        let projection = "kanban.boards"
+        beginProjectionRefresh(projection)
         let cliListingAvailable = capabilityAvailable("kanban.boards")
         Task {
             defer { finishAction(refreshKanbanBoardsActionID) }
             do {
                 let result: HermesCLIResult
+                let usesHTTP: Bool
                 if let http = try? await cli.kanbanBoardsOverHTTP() {
                     result = http
-                    kanbanBoardsUseHTTP = true
+                    usesHTTP = true
                 } else if cliListingAvailable {
                     result = try await cli.kanbanBoards()
-                    kanbanBoardsUseHTTP = false
+                    usesHTTP = false
                 } else {
                     guard generation == kanbanBoardsGeneration else { return }
                     kanbanBoardsUseHTTP = false
-                    lastError = "Hermes Kanban boards are unavailable."
+                    recordProjectionFailure(projection, error: "Hermes Kanban boards are unavailable.")
                     return
                 }
                 guard generation == kanbanBoardsGeneration else { return }
+                kanbanBoardsUseHTTP = usesHTTP
                 guard result.succeeded else {
-                    lastError =
-                        Self.safeUserDiagnostic(result.stderr).isEmpty
-                        ? "Hermes Kanban boards are unavailable." : Self.safeUserDiagnostic(result.stderr)
+                    let diagnostic = Self.safeUserDiagnostic(result.stderr)
+                    recordProjectionFailure(
+                        projection, error: diagnostic.isEmpty ? "Hermes Kanban boards are unavailable." : diagnostic)
                     return
                 }
                 let boards = Self.parseKanbanBoards(result.stdout)
+                recordProjectionSuccess(projection, count: boards.count)
                 if kanbanBoards != boards {
                     kanbanBoards = boards
                 }
@@ -530,7 +507,7 @@ extension ControlCenterModel {
                 }
             } catch {
                 guard generation == kanbanBoardsGeneration else { return }
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                recordProjectionFailure(projection, error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }

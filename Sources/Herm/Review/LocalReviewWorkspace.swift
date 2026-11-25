@@ -6,7 +6,7 @@ struct LocalReviewWorkspace: View {
     var onOpenConversation: ((HermesSession) -> Void)?
     let path: String
     private let guideOwner: QuickDestination
-    @ObservedObject var model: DockModel
+    let model: DockModel
     @StateObject private var review: LocalReviewModel
     @State private var scope = RepositoryComparison.Scope.working
     @State private var reference = "HEAD"
@@ -14,6 +14,19 @@ struct LocalReviewWorkspace: View {
     @State private var query = ""
     @State private var search = ""
     @State private var searchIndex = 0
+    @State private var projectedSearch = ""
+    @State private var projectedComparison = 0
+    @State private var projection = DiffSearch.Projection(files: [], matches: [])
+
+    private struct SearchRequest: Equatable {
+        let search: String
+        let filter: String
+        let revision: Int
+    }
+
+    private var searchRequest: SearchRequest {
+        SearchRequest(search: search, filter: query, revision: review.patchRevision)
+    }
     @FocusState private var searchFocused: Bool
     @State private var references: [String] = []
     @State private var navigatorWidth: CGFloat = 280
@@ -47,12 +60,12 @@ struct LocalReviewWorkspace: View {
                 revisionNotes: ReviewDraftStore.shared.notes(key: identity + ":repository:" + path)))
     }
     private var files: [String] {
-        (review.comparison?.files ?? []).filter {
-            query.isEmpty || $0.localizedCaseInsensitiveContains(query)
-                || review.patches[$0]?.text.localizedCaseInsensitiveContains(query) == true
-        }
+        query.isEmpty || projectedComparison != review.comparisonRevision
+            ? review.comparison?.files ?? [] : projection.files
     }
-    private var matches: [DiffSearchMatch] { DiffSearch.matches(query: search, patches: review.patches) }
+    private var matches: [DiffSearchMatch] {
+        search == projectedSearch && projectedComparison == review.comparisonRevision ? projection.matches : []
+    }
     private var activeMatch: DiffSearchMatch? { matches.indices.contains(searchIndex) ? matches[searchIndex] : nil }
     private func moveMatch(_ delta: Int) {
         guard !matches.isEmpty else { return }
@@ -61,7 +74,8 @@ struct LocalReviewWorkspace: View {
         selected = matches[searchIndex].path
     }
     var body: some View {
-        DockExpandedPage(
+        let request = searchRequest
+        return DockExpandedPage(
             title: "Review changes", subtitle: "Local Git comparison", onRefresh: { requestID += 1 },
             isRefreshing: review.loading, close: { if let closeAction { closeAction() } else { dismiss() } }
         ) {
@@ -93,7 +107,7 @@ struct LocalReviewWorkspace: View {
                     .listStyle(.sidebar).scrollContentBackground(.hidden).background(Color.dockCanvas).frame(
                         minWidth: 220, idealWidth: 280, maxWidth: 360),
                     trailing: ScrollView {
-                        if let selected, files.contains(selected), let diff = review.patches[selected] {
+                        if let selected, files.contains(selected), let diff = review.patches[selected]?.diff {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(selected).dockFont(.body, weight: .semibold).textSelection(.enabled)
                                 SharedDiffView(
@@ -208,26 +222,45 @@ struct LocalReviewWorkspace: View {
                         (review.comparison?.files.contains($0) ?? false) && review.patches[$0] == nil
                     } == true)
         }
-        .onChange(of: matches) { previous, current in
-            searchIndex = LocalReviewPresentation.matchIndex(previous: previous, index: searchIndex, current: current)
-            if current.indices.contains(searchIndex) {
-                let match = current[searchIndex]
-                if !files.contains(match.path) { query = "" }
-                selected = match.path
+        .task(id: request) {
+            guard !Task.isCancelled, request == searchRequest else { return }
+            if request.search.isEmpty && request.filter.isEmpty {
+                applyProjection(.init(files: [], matches: []), search: request.search)
+                return
             }
-        }
-        .onChange(of: search) { _, _ in
-            searchIndex = 0
-            if let first = matches.first {
-                selected = first.path
-                query = ""
-            }
+            // A burst of arriving patches or keystrokes needs only its latest projection.
+            do { try await Task.sleep(for: .milliseconds(75)) } catch { return }
+            guard request == searchRequest else { return }
+            let result = await DiffSearch.project(
+                search: request.search, filter: request.filter,
+                files: review.comparison?.files ?? [], patches: review.patches)
+            guard !Task.isCancelled, request == searchRequest else { return }
+            applyProjection(result, search: request.search)
         }
         .task(id: "\(path):\(scope.rawValue):\(ignoreWhitespace):\(requestID)") {
             await review.load(path: path, scope: scope, reference: reference, ignoreWhitespace: ignoreWhitespace)
             if selected == nil || !files.contains(selected ?? "") { selected = files.first }
         }
     }
+    private func applyProjection(_ result: DiffSearch.Projection, search term: String) {
+        let newComparison = projectedComparison != review.comparisonRevision
+        let previousMatches = newComparison ? [] : projection.matches
+        let newSearch = projectedSearch != term
+        projectedSearch = term
+        projectedComparison = review.comparisonRevision
+        projection = result
+        guard newSearch || newComparison || previousMatches != result.matches else { return }
+        searchIndex =
+            newSearch || newComparison
+            ? 0
+            : LocalReviewPresentation.matchIndex(previous: previousMatches, index: searchIndex, current: result.matches)
+        if result.matches.indices.contains(searchIndex) {
+            let match = result.matches[searchIndex]
+            if newSearch || !files.contains(match.path) { query = "" }
+            selected = match.path
+        }
+    }
+
     private func comparisonControls(layout: AnyLayout) -> some View {
         layout {
             DockOptionPicker(
@@ -280,7 +313,7 @@ struct LocalReviewWorkspace: View {
             model: model, owner: guideOwner, reviewerProfileID: reviewerProfileID, directory: path,
             identity: comparison.identity,
             documents: review.patches.keys.sorted().compactMap {
-                review.patches[$0].map { DiffDocument(path: $0.path, patch: $0.text) }
+                review.patches[$0]?.document
             }, partial: review.partial)
         readingGuide = true
     }

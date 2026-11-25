@@ -164,11 +164,8 @@ extension DockPopover {
             }
             .modifier(MessagePinFeedbackPresentation(model: model, isPresented: $isShowingMessagePins))
             .onChange(of: model.currentSessionTitle) { _, _ in handleWorkspaceChange() }
-            .onChange(of: controlCenter.projectSessions) { _, _ in
-                handleSessionMetadataChange()
-            }
-            .onChange(of: controlCenter.activeSessions) { _, _ in
-                handleSessionMetadataChange()
+            .onReceive(controlCenter.workspaceSessionMetadataChanges(for: model.sessionID)) { _ in
+                handleProjectMembershipChange()
             }
             .onChange(of: activeSessionRepositoryIdentity) { _, _ in
                 clearSessionSurfaceSelections()
@@ -182,12 +179,6 @@ extension DockPopover {
 
     func observerLayerFour<V: View>(_ view: V) -> some View {
         view
-            // Refresh the cached project name whenever the membership map updates.
-            // This fires after the async resolveProjectMembership completes and
-            // ensures the label reappears even after a refresh cycle wiped it.
-            .onChange(of: controlCenter.projectIDBySessionID) { _, _ in
-                handleProjectMembershipChange()
-            }
             .onChange(of: model.messages.last?.id) { _, latestMessageID in
                 if latestMessageID != nil { synchronizeWorkspace() }
             }
@@ -348,8 +339,12 @@ extension DockPopover {
         }
         .modifier(
             WorkflowWorkspaceNavigation(
-                model: model, control: controlCenter,
-                openRepository: openRequestedRepositoryReview, openAutomation: openRequestedAutomation)
+                repositoryRequest: controlCenter.requestedRepositoryReview,
+                isRestoringSession: model.isRestoringSession,
+                automationJobID: controlCenter.requestedAutomationJobID,
+                automationError: controlCenter.automationNavigationError,
+                openRepository: openRequestedRepositoryReview, openAutomation: openRequestedAutomation,
+                clearAutomationError: { controlCenter.automationNavigationError = nil })
         )
         .confirmationDialog(
             "Delete Session?",
@@ -699,7 +694,7 @@ extension DockPopover {
                         VStack(spacing: 0) {
                             conversationToolbar(
                                 identity: AnyView(
-                                    SessionPaneActiveTabs(store: sessionPanes, runtime: model) {
+                                    SessionPaneActiveTabs(store: sessionPanes, liveTitle: model.currentSessionTitle) {
                                         toolbarIdentity(style: DockThemePalette(theme: dockThemeStore.selectedThemeID))
                                     }),
                                 groupActions: nil, showsLeadingControls: isLeading)
@@ -789,12 +784,13 @@ extension DockPopover {
     func chatConversationContent(railWidth: CGFloat) -> some View {
         ConversationComposerLayout(
             showsWelcome: model.displayedTranscriptMessages.isEmpty
+                && model.currentConversationApproval?.resolved != false
                 && (model.sessionTranscriptPreview != nil || model.status != .working) && !speechInput.isRecording,
             hermFaceID: conversationHermFaceID,
             trailingContentInset: railWidth
         ) {
             conversation(trailingContentInset: railWidth)
-        } composer: {
+        } composer: { visibleApprovalID in
             ChatComposerView(
                 model: model,
                 composer: model.composer,
@@ -821,7 +817,8 @@ extension DockPopover {
                         canMoveChat: model.canMoveSessionWorkspace,
                         newTask: { await startWorktreeTask(from: scope.repositoryPath) }
                     )
-                }
+                },
+                returnApprovalID: speechInput.isRecording ? nil : visibleApprovalID
             )
             .padding(.trailing, railWidth)
         }

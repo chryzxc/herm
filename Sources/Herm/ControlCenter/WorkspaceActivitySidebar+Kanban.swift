@@ -257,7 +257,11 @@ extension WorkspaceActivitySidebar {
             }
             .buttonStyle(.dockHover)
             .fixedSize()
-            .help("Select or create a Kanban board")
+            .help(
+                control.refreshState(for: "kanban.boards")?.isStale == true
+                    ? "Board inventory could not refresh. Showing the last available boards."
+                    : "Select or create a Kanban board"
+            )
 
             kanbanFilterControls
 

@@ -57,6 +57,38 @@ final class SessionTranscriptCache {
     private var entries: [String: Entry] = [:]
     private var order: [String] = []
     private var totalCost = 0
+    private struct PageKey: Hashable {
+        let client: ObjectIdentifier
+        let path: String
+    }
+    let externalReads = ExternalTranscriptReads()
+    private var warmingPages: [PageKey: Task<UncheckedTranscriptValue<[String: Any]>, Error>] = [:]
+    private(set) var foregroundReads = 0
+
+    func beginForegroundRead() { foregroundReads += 1 }
+    func endForegroundRead() { foregroundReads -= 1 }
+
+    func warmFirstPage(path: String, client: HermesRPCClientProtocol) async throws -> [String: Any] {
+        let key = PageKey(client: ObjectIdentifier(client), path: path)
+        if let pending = warmingPages[key] { return try await pending.value.value }
+        let task = Task(priority: .utility) { UncheckedTranscriptValue(value: try await client.fetchHTTP(path)) }
+        warmingPages[key] = task
+        defer { warmingPages[key] = nil }
+        // The shared read may still have a foreground reader if warm-up is cancelled.
+        return try await task.value.value
+    }
+
+    func firstPage(path: String, client: HermesRPCClientProtocol) async throws -> [String: Any] {
+        if let pending = warmingPages[PageKey(client: ObjectIdentifier(client), path: path)] {
+            do {
+                return try await pending.value.value
+            } catch {
+                try Task.checkCancellation()
+                // A failed speculative request must not prevent a foreground retry.
+            }
+        }
+        return try await client.fetchHTTP(path)
+    }
 
     var hasPreloadCapacity: Bool { entries.count < maximumEntries && totalCost < maximumCost }
 
@@ -115,7 +147,7 @@ final class SessionTranscriptCache {
         let preview = SessionTranscriptPreview(
             messages: messages,
             rowIDs: restored.rowIDs.filter { ids.contains($0.value) },
-            references: references.filter { ids.contains($0.key) },
+            references: Dictionary(uniqueKeysWithValues: ids.compactMap { id in references[id].map { (id, $0) } }),
             pendingImages: restored.pendingImages.filter { ids.contains($0.messageID) }, isPreloaded: isPreloaded,
             readCoverage: readCoverage)
         return Entry(preview: preview, cost: cost)
@@ -198,35 +230,25 @@ extension DockModel {
         let generation = sessionResumeGeneration
         let pendingImages = preview.pendingImages
         sessionPreviewImageTask = Task { @MainActor [weak self] in
-            let worker = Task.detached(priority: .userInitiated) {
-                pendingImages.map { image in
-                    (
-                        image.messageID,
-                        image.fileURLs.compactMap { url -> Data? in
-                            guard !Task.isCancelled else { return nil }
-                            return DockModel.transcriptImageData(url)
-                        }
-                    )
+            var queue = TranscriptImageHydration.Queue(pendingImages)
+            var application = TranscriptImageHydration.Application()
+            while !Task.isCancelled {
+                let jobs = queue.next(prioritizing: [])
+                guard !jobs.isEmpty else { return }
+                let batch = await TranscriptImageHydration.Worker.shared.prepare(
+                    jobs, load: DockModel.transcriptImageData)
+                guard let self, !Task.isCancelled, generation == sessionResumeGeneration,
+                    let current = sessionTranscriptPreview
+                else { return }
+                var messages = current.messages
+                if application.apply(batch, to: &messages) {
+                    sessionTranscriptPreview = SessionTranscriptPreview(
+                        messages: messages, rowIDs: current.rowIDs,
+                        references: current.references, pendingImages: current.pendingImages,
+                        isPreloaded: current.isPreloaded, readCoverage: current.readCoverage)
                 }
+                await Task.yield()
             }
-            let loaded = await withTaskCancellationHandler {
-                await worker.value
-            } onCancel: {
-                worker.cancel()
-            }
-            guard let self, !Task.isCancelled, generation == sessionResumeGeneration,
-                let current = sessionTranscriptPreview
-            else { return }
-            var messages = current.messages
-            for (id, data) in loaded {
-                guard let index = messages.firstIndex(where: { $0.id == id }) else { continue }
-                let images = data.compactMap { NSImage(data: $0) }
-                if !images.isEmpty { messages[index] = messages[index].attachingImages(images) }
-            }
-            sessionTranscriptPreview = SessionTranscriptPreview(
-                messages: messages, rowIDs: current.rowIDs,
-                references: current.references, pendingImages: current.pendingImages, isPreloaded: current.isPreloaded,
-                readCoverage: current.readCoverage)
         }
     }
 }

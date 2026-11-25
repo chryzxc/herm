@@ -643,14 +643,12 @@ struct SignalTrace: View {
 private struct SignalGlyph: View {
     let icon: Ph
     let color: Color
-    @ObservedObject private var focus = HermFocus.shared
-    @Environment(\.dockBotIndicatorLive) private var live
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
             DockLayerMotion(
-                kind: .breathe(period: 2.4), color: color.opacity(0.18), paused: !(live || focus.engaged)
+                kind: .breathe(period: 2.4), color: color.opacity(0.18)
             )
             .frame(width: 28, height: 28)
             TracingGlyph(icon: icon, color: color)

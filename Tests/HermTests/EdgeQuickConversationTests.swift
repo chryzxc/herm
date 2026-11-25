@@ -127,6 +127,40 @@ struct EdgeQuickConversationTests {
         #expect(rpc.calls.filter { $0.0 == "session.resume" }.count == resumed)
     }
 
+    @Test func restoringSplitLoadsTheFocusedColumnBeforeBackgroundColumns() async throws {
+        let rpc = QuickConversationRPC()
+        let runtime = runtime(rpc)
+        let panes = SessionPaneStore()
+        panes.runtime = runtime
+        defer {
+            rpc.pendingResume?.resume(throwing: CancellationError())
+            for panel in panes.panels { panel.chat.shutdown() }
+            runtime.shutdown()
+        }
+        panes.open(.init(profileID: "default", sessionID: "background"), target: .newPanel(1))
+        panes.open(.init(profileID: "default", sessionID: "focused"), target: .newPanel(2))
+        #expect(panes.focusOpenSession("focused", profileID: "default"))
+        for _ in 0..<100 where panes.panels.contains(where: { $0.chat.isLoading }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        panes.showLayout(bots: true)
+        rpc.calls.removeAll()
+        rpc.holdResume = true
+        panes.showLayout(bots: false)
+        for _ in 0..<100 where rpc.pendingResume == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let pending = try #require(rpc.pendingResume)
+        func resumedIDs() -> [String] {
+            rpc.calls.filter { $0.0 == "session.resume" }.compactMap { $0.1["session_id"] as? String }
+        }
+        #expect(resumedIDs() == ["focused"])
+        rpc.pendingResume = nil
+        pending.resume(returning: [
+            "session_id": "runtime-focused", "stored_session_id": "focused", "profile": "default", "messages": [],
+        ])
+        for _ in 0..<100 where resumedIDs().count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(resumedIDs() == ["focused", "background"])
+    }
+
     @Test func reopenedProjectionSharesTheWorkspaceCacheWhileHermesResponds() async throws {
         let rpc = QuickConversationRPC()
         rpc.rows = [["role": "assistant", "text": "Previous reply", "row_id": 1]]

@@ -1,7 +1,7 @@
 import CoreServices
 import Foundation
 
-struct WatchedRepository: Hashable {
+private struct WatchedRepository {
     let id: String
     let path: String
 }
@@ -9,17 +9,27 @@ struct WatchedRepository: Hashable {
 /// Owns FSEvent stream lifetime. It only reports filesystem activity; callers
 /// decide whether Git state changed and whether to show a notification.
 final class RepositoryWatchService {
-    var onEvent: ((String) -> Void)?
+    enum Change: Equatable, Sendable {
+        case files(Set<String>)
+        case rescan
+
+        func merging(_ other: Change) -> Change {
+            guard case .files(let lhs) = self, case .files(let rhs) = other else { return .rescan }
+            let paths = lhs.union(rhs)
+            return paths.count <= 128 ? .files(paths) : .rescan
+        }
+    }
+
+    var onEvent: ((String, Change) -> Void)?
     // Watched-repository file storms are delivered and filtered here, off the
     // main thread; consumers hop to the main actor for refresh decisions.
     private let watchQueue = DispatchQueue(label: "io.github.chryzxc.Herm.repository-watch", qos: .utility)
     private var registrations: [String: Registration] = [:]
 
-    func synchronize(_ repositories: Set<WatchedRepository>) {
-        let desired = Dictionary(uniqueKeysWithValues: repositories.map { ($0.id, $0) })
-        for id in Set(registrations.keys).subtracting(desired.keys) { stop(id) }
-        for repository in desired.values where registrations[repository.id] == nil {
-            start(repository)
+    func synchronize(_ paths: [String: String]) {
+        for (id, registration) in registrations where paths[id] != registration.repository.path { stop(id) }
+        for (id, path) in paths where registrations[id] == nil {
+            start(WatchedRepository(id: id, path: path))
         }
     }
 
@@ -47,7 +57,7 @@ final class RepositoryWatchService {
                 [repository.path] as CFArray,
                 FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
                 0.75,
-                UInt32(kFSEventStreamCreateFlagFileEvents)
+                UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot)
             )
         else { return }
         registration.stream = stream
@@ -63,8 +73,28 @@ final class RepositoryWatchService {
         FSEventStreamRelease(stream)
     }
 
-    fileprivate func receive(_ repositoryID: String) {
-        onEvent?(repositoryID)
+    fileprivate func receive(_ repositoryID: String, change: Change) {
+        onEvent?(repositoryID, change)
+    }
+
+    static func change(root: String, paths: [String], flags: [FSEventStreamEventFlags]) -> Change {
+        guard !paths.isEmpty, paths.count == flags.count, paths.count <= 128 else { return .rescan }
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        var files: Set<String> = []
+        for (path, flag) in zip(paths, flags) {
+            // A directory event may conceal tracked children, and a lost event may conceal anything.
+            let uncertain =
+                kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged
+                | kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemRemoved
+            guard flag & UInt32(uncertain) == 0, flag & UInt32(kFSEventStreamEventFlagItemIsFile) != 0,
+                path.hasPrefix(prefix)
+            else { return .rescan }
+            let relative = String(path.dropFirst(prefix.count))
+            // Git metadata (including linked-worktree markers) is never an ignore candidate.
+            guard !relative.isEmpty, relative != ".git", !relative.hasPrefix(".git/") else { return .rescan }
+            files.insert(relative)
+        }
+        return .files(files)
     }
 
     fileprivate final class Registration {
@@ -93,5 +123,13 @@ private func repositoryWatchFSEventCallback(
     let id = registration.repository.id
     // Runs on the watch queue, not the main queue; onEvent consumers hop to
     // the main actor themselves (see DeveloperWorkflowModel's watcher setup).
-    registration.service?.receive(id)
+    guard numEvents > 0, numEvents <= 128 else {
+        registration.service?.receive(id, change: .rescan)
+        return
+    }
+    let cPaths = eventPaths.assumingMemoryBound(to: UnsafePointer<CChar>.self)
+    let paths = (0..<numEvents).compactMap { String(validatingCString: cPaths[$0]) }
+    let flags = Array(UnsafeBufferPointer(start: eventFlags, count: numEvents))
+    registration.service?.receive(
+        id, change: RepositoryWatchService.change(root: registration.repository.path, paths: paths, flags: flags))
 }

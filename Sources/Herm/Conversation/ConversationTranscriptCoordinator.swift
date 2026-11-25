@@ -45,6 +45,7 @@ final class ConversationTranscriptCoordinator: ObservableObject {
     let presentation = ConversationScrollPresentationState()
     let performance = ConversationPerformanceMonitor()
     private(set) var navigationGeneration: UInt64 = 0
+    private var navigationLoad: Task<Void, Never>?
     private var totalCount = 0
     /// A reading position survives a transcript re-parse (new message ids) by
     /// its Hermes row id, then by its distance from the end.
@@ -200,6 +201,8 @@ final class ConversationTranscriptCoordinator: ObservableObject {
 
     func invalidate() {
         navigationGeneration &+= 1
+        navigationLoad?.cancel()
+        navigationLoad = nil
         restoredAnchor = nil
         cancelMounting()
     }
@@ -714,17 +717,20 @@ final class ConversationTranscriptCoordinator: ObservableObject {
         let sessionID = model.sessionID
         invalidate()
         let requestGeneration = navigationGeneration
-        Task { @MainActor [weak self, weak model] in
-            guard let self, let model else { return }
+        navigationLoad = Task { @MainActor [weak self, weak model] in
+            guard let model else { return }
+            defer { if self?.navigationGeneration == requestGeneration { self?.navigationLoad = nil } }
             var messageID = item.messageID
             if let rowID = item.storedRowID {
                 guard let loadedID = await model.loadTranscriptHistory(through: rowID) else { return }
                 messageID = loadedID
             }
-            guard model.sessionID == sessionID, self.navigationGeneration == requestGeneration,
+            guard let self, !Task.isCancelled, model.sessionID == sessionID,
+                self.navigationGeneration == requestGeneration,
                 let index = model.messages.firstIndex(where: { $0.id == messageID })
             else { return }
             self.synchronize(model: model)
+            self.navigationLoad = nil
             self.jump(to: index) { onScroll(messageID) }
         }
     }

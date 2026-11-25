@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Foundation
 import Testing
 
 @testable import Herm
@@ -116,6 +117,20 @@ struct BrowserFramePerformanceTests {
             }
         }
         let base64 = try #require(bitmap.representation(using: .png, properties: [:])).base64EncodedString()
+        let event: [String: Any] = [
+            "method": "Page.screencastFrame", "sessionId": "visible",
+            "params": ["data": base64, "sessionId": 12],
+        ]
+        let message = URLSessionWebSocketTask.Message.data(try JSONSerialization.data(withJSONObject: event))
+        let discarded = CDPConnection.decode(message) { _ in false }?["params"] as? [String: Any]
+        #expect(discarded?["data"] == nil)
+        #expect(discarded?["decodedFrame"] == nil)
+        #expect(discarded?["sessionId"] as? Int == 12)
+        let accepted = CDPConnection.decode(message) { $0 == "visible" }?["params"] as? [String: Any]
+        #expect((accepted?["decodedFrame"] as? CDPConnection.Frame)?.image.width == 32)
+        #expect(
+            AgentBrowser.screencastParameters(pixelSize: CGSize(width: 32, height: 16))["everyNthFrame"] as? Int == 1)
+
         let decoded = await Task.detached { CDPConnection.decodeFrame(base64) }.value
         let image = try #require(decoded)
         #expect(image.width == 32)

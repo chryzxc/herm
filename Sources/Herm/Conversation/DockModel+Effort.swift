@@ -103,6 +103,9 @@ extension DockModel {
                     if sessionReasoningVariant != variant { sessionReasoningWire = nil }
                     sessionReasoningVariant = variant
                     sessionReasoningStale = false
+                    if let variant {
+                        rememberComposerSelection(modelID: sessionModelOptionID, reasoning: variant, profileID: profile)
+                    }
                 } catch {
                     guard sessionID == self.sessionID, sessionResumeGeneration == generation,
                         (sessionProfileID ?? profileScopeID) == profile, sessionReasoningMutationToken == token

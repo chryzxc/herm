@@ -8,7 +8,7 @@ import Foundation
 /// so `nextOffset` is simply the number of rows already fetched. Rows appended
 /// by live turns while the reader pages shift those offsets forward; the
 /// overlap they cause is removed by `seenRowIDs`.
-struct TranscriptHistoryCursor: Equatable {
+struct TranscriptHistoryCursor: Equatable, Sendable {
     let storageSessionID: String
     let profileID: String?
     var nextOffset = 0
@@ -73,6 +73,15 @@ enum TranscriptHistoryPaging {
                 // without them the transcript ends at the compaction boundary.
                 URLQueryItem(name: "include_compacted", value: "true"),
             ])
+    }
+
+    // A backend that cannot provide a reliable one-row marker keeps the bounded full-read fallback.
+    static func externalTurnTail(_ response: [String: Any]) -> Data? {
+        guard let page = page(from: response), page.returned == 1, page.rows.count == 1,
+            page.isPaginated, let row = page.rows.first, rowID(row) != nil
+        else { return nil }
+        let marker: [Any] = [response["session_id"] as? String ?? "", row]
+        return try? JSONSerialization.data(withJSONObject: marker, options: [.sortedKeys])
     }
 
     static func timelinePath(sessionID: String, profileID: String?, afterRowID: Int) -> String? {
@@ -140,6 +149,15 @@ enum TranscriptHistoryPaging {
 
     static func rowID(_ row: [String: Any], key: String = "id") -> Int? {
         (row[key] as? Int) ?? (row[key] as? NSNumber)?.intValue
+    }
+
+    static func startsTurn(_ row: [String: Any]) -> Bool {
+        guard row["role"] as? String == "user", row["display_kind"] as? String != "steer",
+            let raw = row["text"] as? String
+        else { return false }
+        let text = DockModel.userTextWithoutRecalledMemory(raw)
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return SystemEvent.classify(role: "user", text: text, displayKind: row["display_kind"] as? String) == nil
     }
 
     /// Entries of one timeline page and the cursor for the next, if any.

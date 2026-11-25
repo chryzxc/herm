@@ -2,26 +2,30 @@ import SwiftUI
 
 /// Keep scoped navigation outside the workspace's large presentation expression.
 struct WorkflowWorkspaceNavigation: ViewModifier {
-    @ObservedObject var model: DockModel
-    @ObservedObject var control: ControlCenterModel
+    let repositoryRequest: QuickDestination?
+    let isRestoringSession: Bool
+    let automationJobID: String?
+    let automationError: String?
     let openRepository: () -> Void
     let openAutomation: () async -> Void
+    let clearAutomationError: () -> Void
+
     func body(content: Content) -> some View {
         content
-            .onChange(of: control.requestedRepositoryReview, initial: true) { _, _ in openRepository() }
-            .onChange(of: model.isRestoringSession) { _, restoring in if !restoring { openRepository() } }
-            .onChange(of: control.requestedAutomationJobID, initial: true) { _, id in
+            .onChange(of: repositoryRequest, initial: true) { _, _ in openRepository() }
+            .onChange(of: isRestoringSession) { _, restoring in if !restoring { openRepository() } }
+            .onChange(of: automationJobID, initial: true) { _, id in
                 if id != nil { Task { await openAutomation() } }
             }
             .alert(
                 "Routine profile unavailable",
                 isPresented: Binding(
-                    get: { control.automationNavigationError != nil },
-                    set: { if !$0 { control.automationNavigationError = nil } })
+                    get: { automationError != nil },
+                    set: { if !$0 { clearAutomationError() } })
             ) {
-                Button("OK", role: .cancel) { control.automationNavigationError = nil }
+                Button("OK", role: .cancel, action: clearAutomationError)
             } message: {
-                Text(control.automationNavigationError ?? "")
+                Text(automationError ?? "")
             }
     }
 }

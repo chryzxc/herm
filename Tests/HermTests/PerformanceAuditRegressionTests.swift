@@ -66,6 +66,50 @@ struct PerformanceAuditRegressionTests {
         withExtendedLifetime((modelSubscription, controlSubscription)) {}
     }
 
+    @Test func backgroundSessionRowsSkipTheShellAndSelectedMetadataStillPublishes() async throws {
+        let model = DockModel(initialSessionID: "selected", loadArchives: false)
+        defer { model.shutdown() }
+        func row(_ id: String, title: String, hidden: Bool = false) -> HermesSession {
+            HermesSession(
+                id: id, title: title, preview: "", startedAt: nil, messageCount: 0, source: "test", isHidden: hidden)
+        }
+        model.sessions = [row("selected", title: "Selected"), row("other", title: "Other")]
+        var rootUpdates = 0
+        var selectionUpdates = 0
+        let root = model.workspacePresentationChanges.sink { rootUpdates += 1 }
+        let selection = model.selectedSessionPresentationChanges(id: "selected", profileID: nil)
+            .sink { selectionUpdates += 1 }
+        model.updateSessionActivity(sessionID: "other", isWorking: true)
+        model.touchSession(sessionID: "selected", at: .now)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(rootUpdates == 0)
+        #expect(selectionUpdates == 0)
+        model.sessions[0] = row("selected", title: "New title", hidden: true)
+        #expect(selectionUpdates == 1)
+        withExtendedLifetime((root, selection)) {}
+    }
+
+    @Test func controlSessionRowsOnlyNotifyTheShellAboutTheSelectedMetadata() async throws {
+        let control = ControlCenterModel()
+        func row(_ id: String, title: String) -> SessionSummary {
+            .init(id: id, title: title, state: "active", preview: nil)
+        }
+        control.activeSessions = [row("selected", title: "Selected"), row("other", title: "Other")]
+        var rootUpdates = 0
+        var titles: [String?] = []
+        let root = control.workspacePresentationChanges.sink { rootUpdates += 1 }
+        let selected = control.workspaceSessionMetadataChanges(for: "selected").sink { titles.append($0.title) }
+        control.activeSessions[1] = row("other", title: "Background title")
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(rootUpdates == 0)
+        #expect(titles.isEmpty)
+        control.activeSessions[0] = row("selected", title: "New title")
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(rootUpdates == 0)
+        #expect(titles == ["New title"])
+        withExtendedLifetime((root, selected)) {}
+    }
+
     @Test func historyRefillsPublishMessagesWithoutRefreshingChatChrome() async throws {
         let model = DockModel(
             initialSessionID: "chat", rpcClient: ArchiveConcurrencyClient())
@@ -235,29 +279,48 @@ struct PerformanceAuditRegressionTests {
         #expect(DockModel.boundedEventValue("short", depth: 0) as? String == "short")
     }
 
-    @Test func artifactProjectionReusesUnchangedInputsAndInvalidatesFilters() {
+    @Test func artifactProjectionReusesUnchangedInputsAndInvalidatesFilters() async throws {
         let record = ArtifactRecord(value: "/tmp/example.png", sessionID: "s", sessionTitle: "Session", timestamp: .now)
         let index = RichArtifactIndex.Snapshot([record])
         let cache = ArtifactBrowserProjectionCache()
+        let day = Calendar.current.startOfDay(for: .now)
+        func request(_ index: RichArtifactIndex.Snapshot, _ query: String) -> ArtifactBrowserProjectionCache.Request {
+            .init(index: index, query: query, kind: nil, savedOnly: false, bookmarks: [], resources: [], day: day)
+        }
+
         for _ in 0..<20 {
-            let value = cache.project(
-                index: index, query: "", kind: nil, savedOnly: false,
-                bookmarks: [], resources: [], isSaved: { _ in false })
-            #expect(value.images == 1)
+            let value = try #require(await cache.project(request(index, "")))
+            #expect(value.counts.images == 1)
             #expect(value.visible.count == 1)
         }
         #expect(cache.buildCount == 1)
-        let filtered = cache.project(
-            index: index, query: "missing", kind: nil, savedOnly: false,
-            bookmarks: [], resources: [], isSaved: { _ in false })
+        let filtered = try #require(await cache.project(request(index, "missing")))
         #expect(filtered.visible.isEmpty)
-        #expect(filtered.total == 1)
+        #expect(filtered.counts.total == 1)
         #expect(cache.buildCount == 2)
-        let changed = cache.project(
-            index: RichArtifactIndex.Snapshot([]), query: "missing", kind: nil,
-            savedOnly: false, bookmarks: [], resources: [], isSaved: { _ in false })
-        #expect(changed.total == 0)
+        #expect(cache.metadataBuildCount == 1)
+
+        let changed = try #require(await cache.project(request(RichArtifactIndex.Snapshot([]), "missing")))
+        #expect(changed.counts.total == 0)
         #expect(cache.buildCount == 3)
+        #expect(cache.metadataBuildCount == 2)
+    }
+
+    @Test func cancelledArtifactSearchCannotReplaceCurrentResults() async throws {
+        let record = ArtifactRecord(value: "/tmp/example.png", sessionID: "s", sessionTitle: "Session", timestamp: .now)
+        let index = RichArtifactIndex.Snapshot([record])
+        let cache = ArtifactBrowserProjectionCache()
+        let day = Calendar.current.startOfDay(for: .now)
+        let obsolete = ArtifactBrowserProjectionCache.Request(
+            index: index, query: "missing", kind: nil, savedOnly: false, bookmarks: [], resources: [], day: day)
+        let current = ArtifactBrowserProjectionCache.Request(
+            index: index, query: "example", kind: nil, savedOnly: false, bookmarks: [], resources: [], day: day)
+        let old = Task { await cache.project(obsolete) }
+        old.cancel()
+        let projection = try #require(await cache.project(current))
+        #expect(await old.value == nil)
+        #expect(projection.visibleIDs == [record.id])
+        #expect(cache.buildCount == 1)
     }
 
     @Test func activityRevisionRequiresActualRecencyAndMessageCount() {
@@ -352,6 +415,26 @@ struct PerformanceAuditRegressionTests {
         #expect(store.presentation == nil)
         #expect(store.workspace(for: otherKey) === retained)
         #expect(store.workspace(for: key) !== deleted)
+    }
+
+    @Test func browserTabUpdatesReachOnlyTheirOwningInspector() {
+        let store = SessionBrowserStore()
+        let selected = SessionBrowserKey(profileID: "profile", sessionID: "selected")
+        let background = SessionBrowserKey(profileID: "profile", sessionID: "background")
+        let selectedWorkspace = store.workspace(for: selected)
+        let backgroundWorkspace = store.workspace(for: background)
+        var globalUpdates = 0
+        var selectedUpdates = 0
+        let global = store.objectWillChange.sink { globalUpdates += 1 }
+        let scoped = store.presentationChanges(for: selected).sink { selectedUpdates += 1 }
+
+        _ = backgroundWorkspace.addTab()
+        #expect(selectedUpdates == 0 && globalUpdates == 0)
+        _ = selectedWorkspace.addTab()
+        #expect(selectedUpdates > 0 && globalUpdates == 0)
+        store.presentation = selected
+        #expect(globalUpdates == 1)
+        withExtendedLifetime((scoped, global)) {}
     }
 }
 

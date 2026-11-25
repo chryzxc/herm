@@ -84,6 +84,25 @@ struct SessionTraceTurn: Identifiable, Equatable {
 }
 
 enum SessionTraceProjection {
+    /// Transcript order is authoritative even if stored timestamps are out of order.
+    static func interleave(_ transcript: [SessionTraceTurn], with dispatches: [SessionTraceTurn]) -> [SessionTraceTurn]
+    {
+        guard !dispatches.isEmpty else { return transcript }
+        let sorted = dispatches.sorted { $0.start == $1.start ? $0.id < $1.id : $0.start < $1.start }
+        var result: [SessionTraceTurn] = []
+        result.reserveCapacity(transcript.count + sorted.count)
+        var next = 0
+        for dispatch in sorted {
+            while next < transcript.count, transcript[next].start <= dispatch.start {
+                result.append(transcript[next])
+                next += 1
+            }
+            result.append(dispatch)
+        }
+        result.append(contentsOf: transcript.dropFirst(next))
+        return result
+    }
+
     static func measuredDuration(_ value: Any?) -> Double? {
         guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else {
             return nil
@@ -132,6 +151,7 @@ enum SessionTraceProjection {
         let calls: [[String: ActiveToolCall]]
         let ownerByCall: [String: Int]
         let agentsByTurn: [Set<String>]
+        let turnsByAgent: [String: Set<Int>]
 
         init(_ turns: [SessionTraceTurn]) {
             starts = turns.map(\.start)
@@ -144,7 +164,13 @@ enum SessionTraceProjection {
                 for key in calls[index].keys { owners[key] = index }
             }
             ownerByCall = owners
-            agentsByTurn = calls.map { Set($0.values.compactMap(\.agentID)) }
+            let agents = calls.map { Set($0.values.compactMap(\.agentID)) }
+            agentsByTurn = agents
+            var turnsByAgent: [String: Set<Int>] = [:]
+            for (index, ids) in agents.enumerated() {
+                for id in ids { turnsByAgent[id, default: []].insert(index) }
+            }
+            self.turnsByAgent = turnsByAgent
         }
 
         func lastTurn(startingBy date: Date) -> Int? {
@@ -176,8 +202,16 @@ enum SessionTraceProjection {
             let calls: [String: ActiveToolCall]
             let result: SessionTraceTurn
         }
+        fileprivate struct Projection {
+            let generation: Int
+            let turns: [SessionTraceTurn]
+            let calls: [Int: [String: ActiveToolCall]]
+            let workers: [String: Worker]
+            let placements: [String: [Int]]
+        }
         private var indexed: (revision: UInt64, count: Int, lastID: String?, lastStart: Date?, index: HistoryIndex)?
         private(set) var indexBuildCount = 0
+        fileprivate(set) var visitedTurnCount = 0
 
         fileprivate func historyIndex(for turns: [SessionTraceTurn], revision: UInt64?) -> HistoryIndex {
             if let indexed, indexed.revision == revision,
@@ -192,9 +226,10 @@ enum SessionTraceProjection {
         }
 
         fileprivate var entries: [String: Entry] = [:]
+        fileprivate var projection: Projection?
         fileprivate var connected = false
         private(set) var reused = 0
-        fileprivate func recordReuse() { reused += 1 }
+        fileprivate func recordReuse(_ count: Int = 1) { reused += count }
     }
 
     static func make(
@@ -202,15 +237,18 @@ enum SessionTraceProjection {
         working: Bool, connected: Bool, activities: [AgentActivity] = [], cache: HistoryCache? = nil,
         historyRevision: UInt64? = nil
     ) -> [SessionTraceTurn] {
-        var nextEntries: [String: HistoryCache.Entry] = [:]
-        let reuse = cache?.connected == connected
-        defer {
-            cache?.entries = nextEntries
-            cache?.connected = connected
+        guard let lastTurn = input.indices.last else {
+            cache?.entries = [:]
+            cache?.projection = nil
+            return []
         }
-        var turns = input
-        guard !turns.isEmpty else { return [] }
         let history = cache?.historyIndex(for: input, revision: historyRevision) ?? HistoryIndex(input)
+        let reuse = cache?.connected == connected
+        let prior = cache?.projection.flatMap {
+            reuse && historyRevision != nil && $0.generation == cache?.indexBuildCount ? $0 : nil
+        }
+        var turns = prior?.turns ?? input
+        var nextEntries = prior != nil ? cache?.entries ?? [:] : [:]
         var patchedCalls: [Int: [String: ActiveToolCall]] = [:]
         let agentByID = Dictionary(agents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var liveOwners: [String: Int] = [:]
@@ -242,12 +280,35 @@ enum SessionTraceProjection {
         }
         var placedWorkers: [Int: Set<String>] = [:]
         let workerIndices = Dictionary(uniqueKeysWithValues: allWorkers.indices.map { (allWorkers[$0].agent.id, $0) })
+        let workersByID = Dictionary(uniqueKeysWithValues: allWorkers.map { ($0.agent.id, $0) })
+        var placements: [String: [Int]] = [:]
         for worker in allWorkers {
             if let date = worker.agent.startedAt ?? worker.start?.timestamp ?? worker.agent.completedAt {
-                for turn in history.turns(containing: date) { placedWorkers[turn, default: []].insert(worker.agent.id) }
+                let positions = history.turns(containing: date)
+                placements[worker.agent.id] = positions
+                for turn in positions { placedWorkers[turn, default: []].insert(worker.agent.id) }
             }
         }
-        for index in turns.indices {
+        let indices: [Int]
+        if let prior {
+            let liveTurns = Set(patchedCalls.keys).union(prior.calls.keys)
+            var dirty = liveTurns.filter { patchedCalls[$0] != prior.calls[$0] }
+            for id in Set(workersByID.keys).union(prior.workers.keys)
+            where workersByID[id] != prior.workers[id] || placements[id] != prior.placements[id] {
+                dirty.formUnion(history.turnsByAgent[id] ?? [])
+                dirty.formUnion(placements[id] ?? [])
+                dirty.formUnion(prior.placements[id] ?? [])
+                dirty.formUnion(liveTurns)
+            }
+            dirty.insert(lastTurn)
+            indices = dirty.sorted()
+            cache?.recordReuse(turns.count - indices.count)
+        } else {
+            indices = Array(turns.indices)
+        }
+        cache?.visitedTurnCount = indices.count
+        for index in indices {
+            turns[index] = input[index]
             let rootID = "turn:" + turns[index].id
             let current = index == turns.count - 1
             let calls = patchedCalls[index] ?? history.calls[index]
@@ -408,6 +469,15 @@ enum SessionTraceProjection {
             if !current, cache != nil {
                 nextEntries[input[index].id] = .init(
                     input: input[index], workers: workers, calls: calls, result: turns[index])
+            }
+        }
+        if let cache {
+            cache.entries = nextEntries
+            cache.connected = connected
+            cache.projection = historyRevision.map { _ in
+                .init(
+                    generation: cache.indexBuildCount, turns: turns, calls: patchedCalls,
+                    workers: workersByID, placements: placements)
             }
         }
         return turns

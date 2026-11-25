@@ -6,7 +6,7 @@ struct OnDeviceAssistNotice: View {
     var help = OnDeviceAssist.generatedTextHelp
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
+        HStack(spacing: 4) {
             DockIcon(.info, size: 12, color: DockAccentColor.orange.color)
                 .accessibilityHidden(true)
             Text(text)

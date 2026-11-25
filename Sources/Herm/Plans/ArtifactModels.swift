@@ -1,6 +1,6 @@
 import Foundation
 
-enum ArtifactKind: String, CaseIterable, Equatable {
+enum ArtifactKind: String, CaseIterable, Equatable, Sendable {
     case image
     case file
     case link
@@ -8,12 +8,12 @@ enum ArtifactKind: String, CaseIterable, Equatable {
 }
 
 /// How the artifact surfaced: returned by a producer tool, or shown in a reply.
-enum ArtifactOrigin: String, Equatable {
+enum ArtifactOrigin: String, Equatable, Sendable {
     case generated = "Generated"
     case shared = "Shared"
 }
 
-struct ArtifactRecord: Identifiable, Equatable {
+struct ArtifactRecord: Identifiable, Equatable, Sendable {
     let value: String
     let sessionID: String
     let sessionTitle: String
@@ -57,7 +57,7 @@ struct ArtifactRecord: Identifiable, Equatable {
     }
 }
 
-struct RichGeneratedArtifact: Equatable {
+struct RichGeneratedArtifact: Equatable, Sendable {
     let reference: RichArtifactReference
     let surface: RichSurface
     let source: String
@@ -82,7 +82,7 @@ enum RichArtifactIndex {
         return previous
     }
     /// Construct once per record change; rendering only looks up the resulting groups.
-    final class Snapshot {
+    final class Snapshot: Sendable {
         let records: [ArtifactRecord]
         let latest: [ArtifactRecord]
         private let roots: [String: String]

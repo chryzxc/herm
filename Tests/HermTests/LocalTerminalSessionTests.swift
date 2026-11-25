@@ -6,6 +6,18 @@ import Testing
 @testable import Herm
 
 struct LocalTerminalSessionTests {
+    @MainActor
+    @Test func terminalMigrationDoesNotAllocateAnUnusedWorkspace() {
+        let store = TerminalWorkspaceStore()
+        let key = "unused-terminal-\(UUID())"
+        #expect(store.separateShells(key: key) { $0.uuidString }.isEmpty)
+        #expect(store.existingWorkspace(key: key) == nil)
+        let terminal = store.workspace(key: key)
+        #expect(store.separateShells(key: key) { $0.uuidString }.isEmpty)
+        #expect(store.existingWorkspace(key: key) === terminal)
+        #expect(terminal.selected.workingDirectory == nil)
+    }
+
     @Test func terminalBatchPreservesBytesAndReachesEOF() throws {
         let pipe = Pipe()
         let bytes = Data((0..<2048).map { UInt8(truncatingIfNeeded: $0) })
@@ -219,6 +231,14 @@ struct LocalTerminalSessionTests {
         buffer.removeAll()
 
         #expect(buffer.text.isEmpty)
+    }
+
+    @Test func outputBufferKeepsTheSameTailAcrossRepeatedCompaction() {
+        var buffer = LocalTerminalSession.OutputBuffer(maxBytes: 64, maxLines: 3)
+        for index in 0..<500 {
+            buffer.append("行 \(index)\n")
+        }
+        #expect(buffer.text == "行 497\n行 498\n行 499\n")
     }
 
     @Test func terminalLimitsAreExplicit() {

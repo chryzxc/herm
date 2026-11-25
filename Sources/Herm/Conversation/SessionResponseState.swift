@@ -70,7 +70,7 @@ extension DockModel {
                 for: owner, restored: parsed.messages, rowIDs: parsed.rowIDs, restrictedTo: Set(outstanding.map(\.id)))
             for match in result.resolved {
                 storedMessageReferences[match.messageID] = StoredMessageReference(rowID: match.rowID, uid: nil)
-                transcriptMessageIDsByRowID[match.rowID] = match.messageID
+                setTranscriptRowID(match.rowID, message: match.messageID)
             }
             if pendingSessionSends.contains(where: { $0.owner == owner && $0.phase == .uncertain }) {
                 deliveryCheckNotes[owner] = "Still unconfirmed"
@@ -95,7 +95,7 @@ extension DockModel {
         let messageID = pending.visibleMessageID ?? pending.message.id
         if owner == composerDraftKey {
             storedMessageReferences[messageID] = StoredMessageReference(rowID: rowID, uid: nil)
-            transcriptMessageIDsByRowID[rowID] = messageID
+            setTranscriptRowID(rowID, message: messageID)
         }
     }
 

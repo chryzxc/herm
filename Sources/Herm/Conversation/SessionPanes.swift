@@ -128,6 +128,7 @@ final class SessionPaneStore: ObservableObject {
     let tabStatus = SessionPaneTabStatusModel()
     private var showsBotsLayout = false
     private var parkedLayouts: [Bool: (panels: [Panel], activeIndex: Int)] = [:]
+    private var layoutRestoreTask: Task<Void, Never>?
 
     var activePanel: Panel? { panels.indices.contains(activeIndex) ? panels[activeIndex] : nil }
 
@@ -406,13 +407,28 @@ final class SessionPaneStore: ObservableObject {
     /// (projections shut down); returning restores them and resumes their active session.
     func showLayout(bots: Bool) {
         guard bots != showsBotsLayout else { return }
+        layoutRestoreTask?.cancel()
+        layoutRestoreTask = nil
         refreshWorkspaceTitle()
         for panel in panels { panel.chat.shutdown() }
         parkedLayouts[showsBotsLayout] = (panels, activeIndex)
         showsBotsLayout = bots
         (panels, activeIndex) = parkedLayouts.removeValue(forKey: bots) ?? ([], 0)
-        for index in panels.indices { load(index) }
+        let remaining = panels.indices.filter { $0 != activeIndex }.map { panels[$0].id }
+        let focused = panels.indices.contains(activeIndex) ? load(activeIndex) : nil
         updateFocusedProjection()
+        guard !remaining.isEmpty else { return }
+        layoutRestoreTask = Task { [weak self] in
+            _ = await focused?.value
+            for id in remaining {
+                guard !Task.isCancelled, let self, self.showsBotsLayout == bots else { return }
+                guard let index = self.panels.firstIndex(where: { $0.id == id }),
+                    self.panels[index].chat.conversation == nil
+                else { continue }
+                let next = self.load(index)
+                _ = await next?.value
+            }
+        }
     }
 
     func retry(_ panelID: String) {
@@ -445,28 +461,31 @@ final class SessionPaneStore: ObservableObject {
         updateFocusedProjection()
     }
 
-    private func load(_ index: Int) {
-        guard let runtime, let destination = panels[index].selected else { return }
+    @discardableResult
+    private func load(_ index: Int) -> Task<Bool, Never>? {
+        guard let runtime, let destination = panels[index].selected else { return nil }
         if panels[index].usesWorkspaceConversation {
             if destination.groupRoomID == nil, let session = destination.session,
                 runtime.navigationSessionID != session.id
             {
                 runtime.resumeSession(session, profileID: session.profileID)
+                return runtime.sessionResumeTask
             }
-            return
+            return nil
         }
         let chat = panels[index].chat
         if destination.groupRoomID != nil {
             chat.shutdown()
             updateFocusedProjection()
-            return
+            return nil
         }
         chat.onSessionIdentityChange = { [weak self, weak chat] model in
             guard let self, let chat, let index = panels.firstIndex(where: { $0.chat === chat }) else { return }
             synchronizeProjection(model, at: index)
         }
-        chat.startLoad(destination, runtime: runtime)
+        let task = chat.startLoad(destination, runtime: runtime)
         updateFocusedProjection()
+        return task
     }
 
     private func synchronizeProjection(_ model: DockModel, at index: Int) {

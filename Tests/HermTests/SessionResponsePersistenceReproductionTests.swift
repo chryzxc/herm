@@ -529,7 +529,7 @@ struct SessionResponsePersistenceReproductionTests {
         let rpc = ResponsePersistenceRPCClient()
         let model = DockModel(rpcClient: rpc)
         defer { model.delegationMonitoringTask?.cancel() }
-        #expect(await model.resumeSession(session("origin"), reportFailure: true))
+        #expect(await model.resumeSession(session("origin"), reportFailure: true, reviewUnread: false))
         let snapshot = SessionComposerDraft(
             text: "check me", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)
@@ -540,10 +540,11 @@ struct SessionResponsePersistenceReproductionTests {
                 id: UUID(), owner: model.composerDraftKey, snapshot: snapshot, message: message,
                 baselineRowID: 4, phase: .uncertain))
         rpc.historyRows = [["id": 5, "role": "user", "content": "check me"]]
-        let before = rpc.requests.count
+        // Resume can still refresh configuration and delegation in the background.
+        let before = rpc.requests.count { $0.method == "prompt.submit" }
         await model.checkDeliveryStatus()
         #expect(rpc.historyPaths.count == 1)
-        #expect(rpc.requests.count == before)
+        #expect(rpc.requests.count { $0.method == "prompt.submit" } == before)
         #expect(model.pendingSessionSends.isEmpty)
         #expect(model.storedMessageReferences[message.id]?.rowID == 5)
         #expect(model.messages.filter { $0.id == message.id }.count == 1)

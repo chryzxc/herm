@@ -65,7 +65,7 @@ struct ConversationScrollNavigator: View {
     @Binding var isSearchPresented: Bool
     let showsMap: Bool
     let isLoadingHistory: Bool
-    let onSearch: () -> Void
+    let searchHistory: (MessageNavigatorSearchRequest) async throws -> [MessageNavigatorItem]
     let onSelect: (MessageNavigatorItem) -> Void
 
     var body: some View {
@@ -76,7 +76,7 @@ struct ConversationScrollNavigator: View {
             isSearchPresented: $isSearchPresented,
             showsMap: showsMap,
             isLoadingHistory: isLoadingHistory,
-            onSearch: onSearch,
+            searchHistory: searchHistory,
             onSelect: onSelect
         )
     }

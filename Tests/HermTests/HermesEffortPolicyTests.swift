@@ -29,6 +29,7 @@ private final class EffortFixtureRPC: HermesRPCClientProtocol {
             return ["value": readValue]
         }
         if method == "model.options" { return modelOptionsResult }
+        if method == "session.create" { return ["session_id": "created"] }
         return [:]
     }
 }
@@ -205,7 +206,8 @@ struct HermesEffortPolicyTests {
 
     @Test func eventBeforeAcknowledgementStillReadsBack() async {
         let client = EffortFixtureRPC()
-        let model = DockModel(initialSessionID: "owner", rpcClient: client)
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "owner", rpcClient: client)
         client.onSet = {
             model.receiveGatewayEvent(
                 "session.info",
@@ -324,21 +326,70 @@ struct HermesEffortPolicyTests {
     }
     @Test func effortMutationRequiresReadback() async {
         let client = EffortFixtureRPC()
-        let model = DockModel(initialSessionID: "effort-test", rpcClient: client)
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "effort-test", rpcClient: client)
         model.sessionProfileID = "effort-profile"
+        model.sessionModelOptionID = "example|chosen"
         model.sessionReasoningVariant = .low
         model.updateSessionReasoning(.high)
         for _ in 0..<100 { await Task.yield() }
         #expect(client.requests.map(\.0) == ["config.set", "config.get"])
         #expect(client.requests.first?.1["profile"] as? String == "effort-profile")
         #expect(model.sessionReasoningVariant == .medium)
+        let remembered = model.lastComposerSelection(for: "effort-profile")
+        #expect(remembered.model?.id == "example|chosen")
+        #expect(remembered.reasoning == .medium)
     }
 
     @Test func draftChoiceDoesNotChangeGlobalDefault() {
-        let model = DockModel(rpcClient: EffortFixtureRPC())
+        let model = DockModel(defaults: UserDefaults(suiteName: UUID().uuidString)!, rpcClient: EffortFixtureRPC())
         model.defaultReasoningVariant = .medium
         model.updateDefaultReasoning(.high)
         #expect(model.defaultReasoningVariant == .medium)
+    }
+
+    @Test(arguments: [true, false])
+    func newChatRestoresLastComposerChoiceAndChecksTheCatalog(selectedModelAvailable: Bool) async throws {
+        let suite = "composer-selection-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let client = EffortFixtureRPC()
+        let option = HermesModelOption(provider: "example", model: "chosen")
+        let first = DockModel(defaults: defaults, rpcClient: client)
+        first.profileScopeID = "work"
+        first.updateSessionModel(option)
+        first.updateDefaultReasoning(.xhigh)
+        first.shutdown()
+
+        client.modelOptionsResult = [
+            "provider": "example", "model": "fallback",
+            "providers": [
+                [
+                    "slug": "example", "models": selectedModelAvailable ? ["chosen", "fallback"] : ["fallback"],
+                    "capabilities": ["fallback": ["reasoning": false]],
+                ]
+            ],
+        ]
+        let restored = DockModel(defaults: defaults, rpcClient: client)
+        defer { restored.shutdown() }
+        restored.profileScopeID = "personal"
+        restored.newChat()
+        #expect(restored.sessionModelOptionID == nil)
+        #expect(restored.draftReasoningVariant == nil)
+
+        restored.profileScopeID = "work"
+        restored.newChat()
+        #expect(restored.sessionModelOptionID == option.id)
+        #expect(restored.sessionModelValue == option.displayName)
+        #expect(restored.draftReasoningVariant == .xhigh)
+        #expect(try await restored.createAuthorizedSession(source: "test") == "created")
+
+        let create = try #require(client.requests.first { $0.0 == "session.create" }?.1)
+        #expect(create["profile"] as? String == "work")
+        #expect(create["model"] as? String == (selectedModelAvailable ? option.model : nil))
+        #expect(create["provider"] as? String == (selectedModelAvailable ? option.provider : nil))
+        #expect(create["reasoning_effort"] as? String == (selectedModelAvailable ? "xhigh" : nil))
+        #expect(!client.requests.contains { $0.0 == "config.set" })
     }
 
     @Test func sessionInfoOnlyReconcilesOwningSession() {
@@ -361,7 +412,8 @@ struct HermesEffortPolicyTests {
     @Test func failedReadbackRefreshDoesNotRewrite() async {
         let client = EffortFixtureRPC()
         client.failRead = true
-        let model = DockModel(initialSessionID: "owner", rpcClient: client)
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "owner", rpcClient: client)
         model.sessionReasoningVariant = .low
         model.updateSessionReasoning(.high)
         for _ in 0..<100 { await Task.yield() }
@@ -373,6 +425,7 @@ struct HermesEffortPolicyTests {
         #expect(!model.sessionReasoningStale)
         #expect(model.sessionReasoningVariant == .medium)
         #expect(client.requests.map(\.0) == ["config.set", "config.get", "config.get"])
+        #expect(model.lastComposerSelection(for: nil).reasoning == nil)
     }
 
     @Test func slashReasoningRefreshesSelection() async throws {

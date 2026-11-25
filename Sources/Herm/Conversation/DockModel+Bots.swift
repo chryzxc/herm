@@ -9,8 +9,8 @@ extension DockModel {
 
     /// Feeds the Bot activity board the session state Herm tracks from
     /// gateway events, so a Bot's status flips without waiting for a poll.
-    /// Session lists mutate on every streamed event; this coalesces a burst
-    /// into one pass on the next main-actor turn.
+    /// Coalesces inventory changes into one pass. Live status updates send
+    /// the affected session's signal directly.
     func syncBotActivitySignals() {
         guard !botActivitySyncPending else { return }
         botActivitySyncPending = true

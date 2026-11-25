@@ -44,6 +44,23 @@ struct CalendarAgendaTests {
         #expect(agenda.keys.sorted() == [date(19, 0), date(20, 0)])
     }
 
+    @Test func filteringPreservesTheFullDayAndItsConflicts() throws {
+        let day = date(20, 0)
+        let events = [
+            event("standup", start: date(20, 9), end: date(20, 10)),
+            event("planning", start: date(20, 9, 30), end: date(20, 11)),
+        ]
+        let inputs = CalendarAgenda.Inputs(
+            events: events, jobs: [], tasks: [], hiddenSources: "", today: day, range: week, calendar: calendar)
+        let unfiltered = try CalendarAgenda.project(.init(inputs: inputs, query: "", filter: .all), reusing: nil)
+        let filtered = try CalendarAgenda.project(
+            .init(inputs: inputs, query: "planning", filter: .events), reusing: unfiltered)
+
+        #expect(filtered.visible[day]?.map(\.id) == ["event:planning"])
+        #expect(filtered.full[day] == events)
+        #expect(filtered.conflicts[day] == ["event:standup", "event:planning"])
+    }
+
     @Test func automationsWithoutATimestampAreDroppedNotGuessed() {
         let jobs = [
             CronSummary(id: "a", name: "Digest", schedule: "0 9 * * *", enabled: true, nextRun: "2026-10-21T01:00:00Z"),

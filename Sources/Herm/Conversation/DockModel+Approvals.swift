@@ -7,6 +7,19 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 extension DockModel {
+    /// The visible card supplies the identity. An empty composer never approves a replacement request.
+    func allowOnceFromEmptyComposer(requestID: UUID) -> Bool {
+        guard sessionActionsReady, composerIsEmptyForRecovery, composer.selectedBots.isEmpty,
+            !composer.isCompletionOpen, !isRespondingToApproval,
+            let record = currentConversationApproval, record.id == requestID, !record.resolved,
+            record.approval.choices.contains(ApprovalChoice.once)
+        else { return false }
+        let answer = record.target.flatMap { attentionAnswers[$0] } ?? record.legacyAnswer
+        guard answer?.blocksSubmission != true else { return false }
+        respondToApproval(ApprovalChoice.once)
+        return true
+    }
+
     func respondToApproval(_ choice: String) {
         guard sessionActionsReady, let sessionID else { return }
         guard !isRespondingToApproval else { return }

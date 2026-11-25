@@ -36,7 +36,8 @@ struct FilePreviewPane: View {
 
     @ObservedObject private var center = FilePreviewCenter.shared
     @State private var content: ArtifactTextPreview.Content?
-    @State private var modifiedAt: Date?
+    @State private var fileRevision: PlanFileRevision?
+    @State private var watchedURL: URL?
     /// Off by default so the tab reads as a plain preview until review starts.
     @State private var isAnnotating = false
     /// Derived from the loaded text on every reload; nil for non-Markdown.
@@ -53,6 +54,7 @@ struct FilePreviewPane: View {
     /// Recomputed only when its inputs change, never on the token stream that re-runs body.
     @State private var mapOverlay = SpecMapOverlay()
     @Environment(\.sessionPreviewWorkspace) private var previewWorkspace
+    @Environment(\.dockHostVisible) private var hostVisible
 
     private var kind: FilePreviewKind? { FilePreviewKind(url: url) }
     private var path: String { url.path }
@@ -76,7 +78,9 @@ struct FilePreviewPane: View {
             center.planRequest = nil
             showsMap = true
         }
-        .task(id: url) { await watch() }
+        .task(id: hostVisible ? url : nil) {
+            if hostVisible { await watch() }
+        }
     }
 
     private var header: some View {
@@ -360,34 +364,43 @@ struct FilePreviewPane: View {
                 id: "spec:\(path):\(nodes.map { String($0.line) }.joined(separator: ","))", title: title, body: body))
     }
 
-    /// ponytail: 1s mtime poll (Hermes writes atomically, which breaks fd
+    /// ponytail: 1s revision poll (Hermes writes atomically, which breaks fd
     /// watches); switch to FSEvents like RepositoryWatchService if needed.
     private func watch() async {
-        content = nil
-        modifiedAt = nil
-        specMap = nil
-        mapSelection = nil
-        updatedTitles = []
+        if watchedURL != url {
+            watchedURL = url
+            content = nil
+            fileRevision = nil
+            specMap = nil
+            mapSelection = nil
+            updatedTitles = []
+        }
         guard kind != .image else { return }
         let url = url
+        let isMarkdown = kind == .markdown
         while !Task.isCancelled {
-            let date = await Task.detached(priority: .utility) {
-                (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-            }.value
+            let previous = fileRevision
+            let worker = Task.detached(priority: .utility) {
+                PlanFileCache.shared.preview(at: url, markdown: isMarkdown, after: previous)
+            }
+            let update = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
             guard !Task.isCancelled else { return }
-            if content == nil || date != modifiedAt {
-                modifiedAt = date
-                let isMarkdown = kind == .markdown
-                let (loaded, map) = await Task.detached {
-                    let loaded = ArtifactTextPreview.Content.load(url)
-                    guard isMarkdown, case .text(let text, _) = loaded else { return (loaded, SpecMap?.none) }
-                    return (loaded, SpecMapParser.parse(text, fallbackTitle: url.lastPathComponent))
-                }.value
-                guard !Task.isCancelled else { return }
-                content = loaded
-                if let old = specMap, let map { updatedTitles.formUnion(map.changedTitles(since: old)) }
-                specMap = map
-                if let text { center.reconcile(path, contents: text) }
+            if let update {
+                if fileRevision != update.revision { fileRevision = update.revision }
+                if content != update.content {
+                    content = update.content
+                    if let text { center.reconcile(path, contents: text) }
+                }
+                if specMap != update.map {
+                    if let old = specMap, let map = update.map {
+                        updatedTitles.formUnion(map.changedTitles(since: old))
+                    }
+                    specMap = update.map
+                }
             }
             try? await Task.sleep(for: .seconds(1))
         }

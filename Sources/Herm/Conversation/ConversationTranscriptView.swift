@@ -83,9 +83,9 @@ struct ConversationTranscriptView: View, Equatable {
         let _ = coordinator.performance.recordTranscriptEvaluation()
         let _ = HermPerformanceRecorder.countBody("ConversationTranscriptView")
         GeometryReader { viewport in
-            let showsMap =
-                snapshot.navigatorCount >= MessageNavigator.minimumMessagesToShowNavigator
-                && viewport.size.width - trailingContentInset >= 820
+            let mapFits = viewport.size.width - trailingContentInset >= 820
+            let showsMap = mapFits && snapshot.navigatorCount >= MessageNavigator.minimumMessagesToShowNavigator
+            let needsTimeline = hostVisible && mapFits && snapshot.hasEarlierHistory
             let needsNavigator = hostVisible && (showsMap || isShowingMessageSearch)
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottom) {
@@ -216,10 +216,7 @@ struct ConversationTranscriptView: View, Equatable {
                             presentation: coordinator.presentation, snapshot: snapshot.navigator,
                             sessionID: snapshot.sessionID ?? "", isSearchPresented: $isShowingMessageSearch,
                             showsMap: showsMap, isLoadingHistory: snapshot.context.historyLoading,
-                            onSearch: {
-                                guard model.hasUnloadedTranscript, !snapshot.context.historyLoading else { return }
-                                Task { await model.loadTranscriptHistory(through: nil) }
-                            },
+                            searchHistory: { try await model.searchTranscript($0) },
                             onSelect: { jumpToMessage($0, proxy: proxy) }
                         )
                         .frame(width: 286, height: viewport.size.height)
@@ -240,12 +237,16 @@ struct ConversationTranscriptView: View, Equatable {
                 }
                 .onChange(of: pinnedMessageJumpID) { _, id in
                     guard let id, !snapshot.isPreview,
-                        let item = model.messageNavigatorItems.first(where: { $0.messageID == id })
+                        let sessionID = model.sessionID,
+                        let index = model.messages.firstIndex(where: { $0.id == id })
                     else { return }
+                    let item = MessageNavigator.item(
+                        for: model.messages[index], ordinal: index + 1, sessionID: sessionID)
                     jumpToMessage(item, proxy: proxy)
                     pinnedMessageJumpID = nil
                 }
                 .onChange(of: needsNavigator, initial: true) { _, demanded in source.setNavigatorDemand(demanded) }
+                .onChange(of: needsTimeline, initial: true) { _, demanded in source.setTimelineDemand(demanded) }
             }
         }
         .background {
@@ -260,7 +261,11 @@ struct ConversationTranscriptView: View, Equatable {
             if visible { source.resume() } else { source.suspend() }
         }
         .onChange(of: themeRevision) { _, _ in source.prefetch() }
+        .onChange(of: hostVisible && isShowingMessageSearch, initial: true) { _, searching in
+            model.setTranscriptSearchDemand(ObjectIdentifier(source), active: searching)
+        }
         .onDisappear {
+            model.setTranscriptSearchDemand(ObjectIdentifier(source), active: false)
             coordinator.invalidate()
             coordinator.onScrollToBottom = nil
             source.suspend()

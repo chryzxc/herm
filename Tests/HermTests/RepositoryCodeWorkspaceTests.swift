@@ -557,6 +557,38 @@ struct RepositoryCodeWorkspaceTests {
         #expect(before != after)
     }
 
+    @Test func batchedFileIdentitiesMatchGitEvenWithOddNamesAndADisappearingFile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-batch-fingerprint-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(runGit(path: root.path, arguments: ["init", "-q"]))
+        let staged = ":(glob)indexed.txt"
+        let working = "-notes\tβ\n.txt"
+        let missing = "vanished.txt"
+        for name in [staged, working, missing] {
+            try "content for \(name)".write(to: root.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        #expect(runGit(path: root.path, arguments: ["--literal-pathspecs", "add", "--", staged]))
+        let changes = await RepositoryService.changeSnapshot(path: root.path)
+        try FileManager.default.removeItem(at: root.appendingPathComponent(missing))
+        let revision = try #require(await RepositoryService.changeRevision(path: root.path, changes: changes))
+        let expectedStaged = await RepositoryService.runGit(path: root.path, arguments: ["rev-parse", ":\(staged)"])
+        let expectedWorking = await RepositoryService.runGit(
+            path: root.path, arguments: ["hash-object", "--no-filters", "--", working])
+        #expect(expectedStaged.exitCode == 0 && expectedWorking.exitCode == 0)
+        #expect(
+            revision.fileIdentities == [
+                "staged:\(staged)": expectedStaged.output, "worktree:\(working)": expectedWorking.output,
+            ])
+        let parts = changes.files.map {
+            "\($0.id)|\($0.status.rawValue)|\(revision.fileIdentities[$0.id] ?? "unavailable")"
+        }
+        #expect(
+            revision.fingerprint
+                == RepositoryService.fingerprint(
+                    repositoryID: changes.repositoryID, headRevision: changes.headRevision, identities: parts))
+    }
+
     private func runGit(path: String, arguments: [String]) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")

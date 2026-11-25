@@ -101,27 +101,41 @@ struct ConversationTranscriptSourceTests {
         #expect(source.snapshot.context.deliveryStates.isEmpty)
     }
 
-    @Test func navigatorReusesLongHistoryAndUpdatesOffscreenSearchContent() {
+    @Test func navigatorReusesLongHistoryAndUpdatesOffscreenSearchContent() async throws {
         let model = DockModel(initialSessionID: "navigator-owner")
         model.messages = (0..<5_000).map { ChatMessage(role: .hermes, text: "Message \($0)") }
         let source = ConversationTranscriptSource(
             model: model, bots: BotModeModel(),
             actions: ConversationMessageActionState(), voice: VoiceOutput(),
             coordinator: ConversationTranscriptCoordinator())
+        defer { source.suspend() }
+        func waitForProjection() async throws {
+            let deadline = ContinuousClock.now + .seconds(10)
+            while model.previousMessageNavigator?.key != model.messageNavigatorKey
+                || source.snapshot.navigator !== model.previousMessageNavigator?.snapshot
+            {
+                try #require(ContinuousClock.now < deadline)
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        #expect(source.snapshot.navigatorItems.isEmpty)
+        try await waitForProjection()
         let original = source.snapshot.navigator
+        let originalCount = source.publicationCount
         for _ in 0..<100 {
             source.refresh()
             #expect(source.snapshot.navigator === original)
         }
-        #expect(source.publicationCount == 0)
+        #expect(source.publicationCount == originalCount)
         #expect(source.snapshot.rows.count == 12)
         let metadata = model.messages[1]
         model.messages[1] = ChatMessage(
             id: metadata.id, role: metadata.role, text: metadata.text,
             timestamp: metadata.timestamp, tokenCount: 50)
         source.refresh()
+        try await waitForProjection()
         #expect(source.snapshot.navigator === original)
-        #expect(source.publicationCount == 0)
+        #expect(source.publicationCount == originalCount)
         model.streamingText.appendPresentation("Only the live leaf observes this")
         model.approvalText = "Current approval"
         source.refresh()
@@ -132,6 +146,7 @@ struct ConversationTranscriptSourceTests {
         model.messages[0] = ChatMessage(
             id: old.id, role: old.role, text: "Edited offscreen search needle", timestamp: old.timestamp)
         source.refresh()
+        try await waitForProjection()
         #expect(source.snapshot.navigator !== original)
         #expect(original.items[0].searchText == "Message 0")
         #expect(
@@ -141,8 +156,18 @@ struct ConversationTranscriptSourceTests {
         let edited = source.snapshot.navigator
         model.sessionID = "another-owner"
         source.refresh()
+        #expect(source.snapshot.navigatorItems.isEmpty)
+        try await waitForProjection()
         #expect(source.snapshot.navigator !== edited)
         #expect(source.snapshot.navigatorItems.allSatisfy { $0.sessionID == "another-owner" })
+    }
+
+    @Test func delegatedWorkerPollingKeepsFastCadenceOnlyWithWorkers() {
+        #expect(DockModel.delegationPollInterval(hasLiveWorkers: true, working: true, visible: false) == .seconds(3))
+        #expect(DockModel.delegationPollInterval(hasLiveWorkers: false, working: true, visible: true) == .seconds(15))
+        #expect(DockModel.delegationPollInterval(hasLiveWorkers: false, working: true, visible: false) == .seconds(60))
+        #expect(
+            DockModel.delegationPollInterval(hasLiveWorkers: false, working: false, visible: false) == .seconds(300))
     }
 
     @Test func navigatorInvalidatesForStoredPromptsAndHistoryPrepend() {
@@ -231,7 +256,8 @@ struct ConversationTranscriptSourceTests {
         coordinator.jump(to: 250)
         let source = ConversationTranscriptSource(
             model: model, bots: BotModeModel(),
-            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: coordinator)
+            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: coordinator,
+            needsNavigator: false)
         for batch in 0..<5 {
             model.streamingTurnActivity.append(
                 ActiveToolCall(
@@ -262,7 +288,8 @@ struct ConversationTranscriptSourceTests {
         coordinator.reset(sessionID: model.transcriptPresentationID, totalCount: 500, bubbleCount: 500)
         let source = ConversationTranscriptSource(
             model: model, bots: BotModeModel(),
-            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: coordinator)
+            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: coordinator,
+            needsNavigator: false)
         #expect(source.snapshot.rows.count == 12)
         model.sessions = []
         model.isLoadingSessions = true

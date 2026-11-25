@@ -60,11 +60,7 @@ extension ControlCenterModel {
     func makeWorkspacePresentationChanges() -> AnyPublisher<Void, Never> {
         Publishers.MergeMany(
             $capabilities.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $activeSessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $projectSessions.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $projects.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $projectIDBySessionID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $projectSessionsByProjectID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $projectProfileID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $integrationDestination.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $requestedAutomationJobID.dropFirst().map { _ in () }.eraseToAnyPublisher(),
@@ -73,6 +69,24 @@ extension ControlCenterModel {
             $requestedRepositoryReview.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $automationNavigationError.dropFirst().map { _ in () }.eraseToAnyPublisher()
         ).debounce(for: .milliseconds(1), scheduler: DispatchQueue.main).eraseToAnyPublisher()
+    }
+
+    struct WorkspaceSessionMetadata: Equatable {
+        let title: String?
+        let projectPath: String?
+    }
+
+    func workspaceSessionMetadataChanges(for sessionID: String?) -> AnyPublisher<WorkspaceSessionMetadata, Never> {
+        guard let sessionID else { return Empty().eraseToAnyPublisher() }
+        func metadata() -> WorkspaceSessionMetadata {
+            .init(title: sessionSummary(for: sessionID)?.title, projectPath: project(forSessionID: sessionID)?.name)
+        }
+        return Publishers.MergeMany(
+            DockModel.change($activeSessions), DockModel.change($projectSessions),
+            DockModel.change($projectIDBySessionID), DockModel.change($projects), DockModel.change($selectedProject)
+        )
+        .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main)
+        .map { metadata() }.prepend(metadata()).removeDuplicates().dropFirst().eraseToAnyPublisher()
     }
 
     /// Installs deterministic navigation data for local scroll profiling. It

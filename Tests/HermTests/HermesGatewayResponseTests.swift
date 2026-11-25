@@ -136,6 +136,70 @@ struct HermesGatewayResponseTests {
         #expect(gateway.timeoutTasks.isEmpty)
     }
 
+    @Test func cancelledRequestDropsOnlyItsWaiterAndDeadline() async throws {
+        let gateway = HermesGateway()
+        let late = try frame(#"{"id":1,"result":{"late":true}}"#)
+        let live = try frame(#"{"id":2,"result":{"value":"live"}}"#)
+        let request = Task { @MainActor in
+            try await gateway.waitForResponse(id: 1, timeout: 15) {}
+        }
+        while gateway.pending[1] == nil { await Task.yield() }
+        let cancelledDeadline = try #require(gateway.timeoutTasks[1])
+        let response = try await gateway.waitForResponse(id: 2, timeout: 15) {
+            request.cancel()
+            Task { @MainActor in
+                _ = await request.result
+                gateway.handle(late)
+                #expect(gateway.pending[2] != nil)
+                gateway.handle(live)
+            }
+        }
+        if case .failure(let error) = await request.result {
+            #expect(error is CancellationError)
+        } else {
+            Issue.record("A cancelled request accepted a late result")
+        }
+        #expect(response.object["value"] as? String == "live")
+        #expect(cancelledDeadline.isCancelled)
+        #expect(gateway.pending.isEmpty)
+        #expect(gateway.timeoutTasks.isEmpty)
+    }
+
+    @Test func alreadyCancelledRequestNeverTransmits() async {
+        let gateway = HermesGateway()
+        let request = Task { @MainActor in
+            try await gateway.waitForResponse(id: 1, timeout: 15) {
+                Issue.record("An already cancelled request transmitted")
+            }
+        }
+        request.cancel()
+        if case .failure(let error) = await request.result {
+            #expect(error is CancellationError)
+        } else {
+            Issue.record("An already cancelled request succeeded")
+        }
+        #expect(gateway.pending.isEmpty)
+        #expect(gateway.timeoutTasks.isEmpty)
+    }
+
+    @Test func cancellationWinsOverAReplyAlreadyBeingDelivered() async throws {
+        let gateway = HermesGateway()
+        let frame = try frame(#"{"id":1,"result":{"late":true}}"#)
+        let request = Task { @MainActor in
+            try await gateway.waitForResponse(id: 1, timeout: 15) {}
+        }
+        while gateway.pending[1] == nil { await Task.yield() }
+        request.cancel()
+        gateway.handle(frame)
+        if case .failure(let error) = await request.result {
+            #expect(error is CancellationError)
+        } else {
+            Issue.record("A cancelled request accepted a late result")
+        }
+        #expect(gateway.pending.isEmpty)
+        #expect(gateway.timeoutTasks.isEmpty)
+    }
+
     @Test func closeDrainsPendingResponsesAndDeadlines() async throws {
         let gateway = HermesGateway()
         let deadline = Task<Void, Never> {}

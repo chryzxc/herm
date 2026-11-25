@@ -145,6 +145,37 @@ struct HermesControlTransportTests {
         #expect(received == 1)
     }
 
+    @Test func conversationRoutingUpdatesAliasesAndKeepsWorkerAndGlobalEvents() {
+        let router = HermesEventRouter()
+        var received: [String] = []
+        var workerChecks = 0
+        let subscription = router.subscribeConversation(
+            sessionIDs: ["stored", "runtime"],
+            matchesWorker: { event in
+                workerChecks += 1
+                return event.sessionID == "worker"
+            },
+            handler: { type, _ in received.append(type) })
+        router.route(type: "message.delta", params: ["payload": ["session_id": "runtime"]])
+        router.route(type: "message.complete", params: ["session_id": "unrelated"])
+        router.updateSessionIDs(["stored", "new", "worker"], for: subscription)
+        router.route(type: "message.complete", params: ["session_id": "runtime"])
+        router.route(type: "message.complete", params: ["session_id": "new"])
+        router.route(type: "subagent.progress", params: ["session_id": "worker"])
+        router.updateSessionIDs(["stored", "new"], for: subscription)
+        router.route(type: "subagent.complete", params: ["session_id": "worker"])
+        router.route(type: "gateway.ready", params: ["session_id": "unrelated"])
+        router.route(type: "status.update", params: [:])
+        router.unsubscribe(subscription)
+        router.route(type: "message.delta", params: ["session_id": "stored"])
+        #expect(workerChecks == 1)
+        #expect(
+            received == [
+                "message.delta", "message.complete", "subagent.progress", "subagent.complete", "gateway.ready",
+                "status.update",
+            ])
+    }
+
     @Test func webSocketRequestUsesCompatibleUpgradeCredentials() {
         let request = HermesGateway.webSocketRequest(port: 54321, token: "secret-session-token")
 

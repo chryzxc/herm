@@ -11,7 +11,7 @@ extension DockModel {
                 rowID: rowID, role: payload["role"] as? String, messages: messages,
                 knownRows: transcriptMessageIDsByRowID)
         else { return }
-        transcriptMessageIDsByRowID[rowID] = messages[index].id
+        setTranscriptRowID(rowID, message: messages[index].id)
         messages[index].reactions = MessageReaction.parse(payload["reactions"])
     }
 }

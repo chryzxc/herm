@@ -1,3 +1,4 @@
+import Combine
 import CryptoKit
 import SwiftUI
 
@@ -5,7 +6,7 @@ import SwiftUI
 /// disposable projections; only the existing seen timestamp is persisted.
 @MainActor
 final class SessionUnreadReplies {
-    struct Projection: Equatable {
+    struct Projection: Equatable, Sendable {
         let count: Int
         let firstRowID: Int?
         var hasUnseenFailedTurn = false
@@ -39,7 +40,7 @@ final class SessionUnreadReplies {
         /// When the projection was last built from a full read.
         let readAt: Date
     }
-    private struct Read {
+    private struct Read: Sendable {
         let projection: Projection
         let tail: Tail?
     }
@@ -60,7 +61,17 @@ final class SessionUnreadReplies {
         let key: Key
         let updatedAt: Date?
     }
-    private var pending: [PendingKey: Task<Entry, Error>] = [:]
+    private struct PendingRead {
+        let id: UUID
+        let task: Task<Entry, Error>
+        var consumers: Set<UUID>
+    }
+    private var pending: [PendingKey: PendingRead] = [:]
+    private static let backgroundReadLimit = 3
+    private var backgroundReads = 0
+    private var waiting: [(id: UUID, continuation: CheckedContinuation<Void, Error>)] = []
+    lazy var refreshTick = Timer.publish(every: 15, tolerance: 2, on: .main, in: .common)
+        .autoconnect().eraseToAnyPublisher()
 
     private let now: () -> Date
 
@@ -144,7 +155,9 @@ final class SessionUnreadReplies {
         return projection.count == 0 || projection.firstRowID != nil ? projection : nil
     }
 
-    private static func projectTranscript(_ transcript: RestoredTranscript, after seenAt: Date, through cutoff: Date?)
+    nonisolated private static func projectTranscript(
+        _ transcript: RestoredTranscript, after seenAt: Date, through cutoff: Date?
+    )
         -> Projection
     {
         let unread = ConversationUnreadMessagePolicy.project(transcript.messages, after: seenAt, through: cutoff)
@@ -166,28 +179,84 @@ final class SessionUnreadReplies {
     }
 
     private func resolve(session: HermesSession, key: Key, previous entry: Entry?) async throws -> Entry {
+        try Task.checkCancellation()
         let updatedAt = session.lastUpdatedAt
         if let entry, entry.updatedAt == updatedAt, entry.expiresAt > now() { return entry }
         let pendingKey = PendingKey(key: key, updatedAt: updatedAt)
-        if let task = pending[pendingKey] { return try await task.value }
-        let profileID = key.identity.profileID
-        let task = Task { () throws -> Entry in
-            if let entry, let tail = entry.tail, self.now().timeIntervalSince(entry.readAt) < Self.maximumReuse,
-                try await self.newestRow(session: session, profileID: profileID) == tail
-            {
-                return Entry(
-                    projection: entry.projection, tail: tail, updatedAt: updatedAt,
-                    expiresAt: self.now().addingTimeInterval(Self.freshFor), readAt: entry.readAt)
+        let consumer = UUID()
+        let task: Task<Entry, Error>
+        if let existing = pending[pendingKey] {
+            task = existing.task
+            pending[pendingKey]?.consumers.insert(consumer)
+        } else {
+            let id = UUID()
+            task = Task {
+                defer { if pending[pendingKey]?.id == id { pending[pendingKey] = nil } }
+                if key.cutoff != nil {
+                    // Opening a conversation must not queue behind sidebar refreshes.
+                    return try await readEntry(session: session, key: key, previous: entry)
+                }
+                try await acquireBackgroundRead()
+                defer { releaseBackgroundRead() }
+                try Task.checkCancellation()
+                return try await readEntry(session: session, key: key, previous: entry)
             }
-            let read = try await self.read(
-                session: session, profileID: profileID, after: key.seenAt, through: key.cutoff)
-            return Entry(
-                projection: read.projection, tail: read.tail, updatedAt: updatedAt,
-                expiresAt: self.now().addingTimeInterval(Self.freshFor), readAt: self.now())
+            pending[pendingKey] = PendingRead(id: id, task: task, consumers: [consumer])
         }
-        pending[pendingKey] = task
-        defer { pending[pendingKey] = nil }
-        return try await task.value
+        return try await withTaskCancellationHandler {
+            let entry = try await task.value
+            try Task.checkCancellation()
+            return entry
+        } onCancel: {
+            Task { @MainActor in
+                guard self.pending[pendingKey]?.consumers.remove(consumer) != nil,
+                    self.pending[pendingKey]?.consumers.isEmpty == true
+                else { return }
+                self.pending.removeValue(forKey: pendingKey)?.task.cancel()
+            }
+        }
+    }
+
+    private func acquireBackgroundRead() async throws {
+        try Task.checkCancellation()
+        if backgroundReads < Self.backgroundReadLimit {
+            backgroundReads += 1
+            return
+        }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { waiting.append((id, $0)) }
+        } onCancel: {
+            Task { @MainActor in
+                guard let index = self.waiting.firstIndex(where: { $0.id == id }) else { return }
+                self.waiting.remove(at: index).continuation.resume(throwing: CancellationError())
+            }
+        }
+    }
+
+    private func releaseBackgroundRead() {
+        if waiting.isEmpty {
+            backgroundReads -= 1
+        } else {
+            waiting.removeFirst().continuation.resume()
+        }
+    }
+
+    private func readEntry(session: HermesSession, key: Key, previous entry: Entry?) async throws -> Entry {
+        let profileID = key.identity.profileID
+        let updatedAt = session.lastUpdatedAt
+        if let entry, let tail = entry.tail, now().timeIntervalSince(entry.readAt) < Self.maximumReuse,
+            try await newestRow(session: session, profileID: profileID) == tail
+        {
+            return Entry(
+                projection: entry.projection, tail: tail, updatedAt: updatedAt,
+                expiresAt: now().addingTimeInterval(Self.freshFor), readAt: entry.readAt)
+        }
+        let read = try await read(session: session, profileID: profileID, after: key.seenAt, through: key.cutoff)
+        let readAt = now()
+        return Entry(
+            projection: read.projection, tail: read.tail, updatedAt: updatedAt,
+            expiresAt: readAt.addingTimeInterval(Self.freshFor), readAt: readAt)
     }
 
     private func newestRow(session: HermesSession, profileID: String?) async throws -> Tail? {
@@ -212,7 +281,7 @@ final class SessionUnreadReplies {
         async throws -> Read
     {
         var cursor = TranscriptHistoryCursor(storageSessionID: session.id, profileID: profileID)
-        var rows: [[String: Any]] = []
+        var pages: [[[String: Any]]] = []
         let limit = TranscriptHistoryPaging.maximumPageRowLimit
         for _ in 0..<TranscriptHistoryPaging.maximumPagesPerLoad {
             try Task.checkCancellation()
@@ -221,25 +290,35 @@ final class SessionUnreadReplies {
                     sessionID: session.id, profileID: profileID, limit: limit, offset: cursor.nextOffset),
                 let page = TranscriptHistoryPaging.page(from: try await client.fetchHTTP(path))
             else { throw HermesGateway.GatewayError.malformedResponse }
-            rows = TranscriptHistoryPaging.advance(&cursor, with: page, limit: limit) + rows
+            try Task.checkCancellation()
+            pages.append(TranscriptHistoryPaging.advance(&cursor, with: page, limit: limit))
             let reachedSeen = page.rows.allSatisfy { row in
                 (row["timestamp"] as? NSNumber).map { $0.doubleValue <= seenAt.timeIntervalSince1970 } ?? false
             }
             if !cursor.hasMore || reachedSeen {
-                // Missing timestamps must not turn into Date() in the parser.
-                guard rows.allSatisfy({ $0["timestamp"] is NSNumber }) else {
-                    throw HermesGateway.GatewayError.malformedResponse
+                let input = UncheckedTranscriptValue(value: pages)
+                let worker = Task.detached(priority: cutoff == nil ? .utility : .userInitiated) {
+                    let rows = input.value.reversed().flatMap { $0 }
+                    // Missing timestamps must not turn into Date() in the parser.
+                    guard rows.allSatisfy({ $0["timestamp"] is NSNumber }) else {
+                        throw HermesGateway.GatewayError.malformedResponse
+                    }
+                    let projected = TranscriptHistoryPaging.displayRows(fromStoredRows: rows, cancelOnTask: true)
+                    let transcript = DockModel.parseMessages(
+                        projected, defaultBotProfileID: nil, defaultBotDisplayName: nil, cancelOnTask: true)
+                    try Task.checkCancellation()
+                    var unread = Self.projectTranscript(transcript, after: seenAt, through: cutoff)
+                    unread.hasUnseenFailedTurn = SessionFailureWarningPolicy.hasUnseenFailure(
+                        in: projected, after: seenAt, through: cutoff)
+                    return Read(
+                        projection: unread,
+                        tail: await Self.tail(of: UncheckedTranscriptValue(value: rows.last)))
                 }
-                let projected = await DockModel.projectStoredRowsOffMain(rows)
-                let (transcript, _) = await DockModel.parseMessagesOffMain(
-                    projected, defaultBotProfileID: nil, defaultBotDisplayName: nil)
-                try Task.checkCancellation()
-                var unread = Self.projectTranscript(transcript, after: seenAt, through: cutoff)
-                unread.hasUnseenFailedTurn = SessionFailureWarningPolicy.hasUnseenFailure(
-                    in: projected, after: seenAt, through: cutoff)
-                return Read(
-                    projection: unread,
-                    tail: await Self.tail(of: UncheckedTranscriptValue(value: rows.last)))
+                return try await withTaskCancellationHandler {
+                    try await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
             }
         }
         // A partial history read cannot claim an exact unread count.
@@ -295,11 +374,13 @@ struct SessionUnreadReplyBadge: View {
 
     var layout: Layout = .inline
     @Environment(\.sessionUnreadReplies) private var replies
-    @ObservedObject var seenStore = SidebarSessionSeenStore.shared
+    @Environment(\.dockHostVisible) private var hostVisible
+    var seenStore = SidebarSessionSeenStore.shared
     @State private var result: CountState?
     @State private var lastRead: Read?
+    @State private var seenRevision = 0
 
-    private enum CountState {
+    private enum CountState: Equatable {
         case loaded(SessionUnreadReplies.Projection)
         case unavailable
     }
@@ -309,25 +390,18 @@ struct SessionUnreadReplyBadge: View {
         let updatedAt: Date?
         let seenAt: Date?
         let baselined: Bool
-        let refresh: Int
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 15)) { timeline in
-            badge(now: timeline.date)
-        }
-    }
-
-    private func badge(now: Date) -> some View {
+        let _ = seenRevision
         let profileID = session.profileID ?? replies?.profileID
         let read = Read(
             identity: ProfileScopedID(profileID: profileID, resourceID: session.id),
             updatedAt: session.lastUpdatedAt,
             seenAt: seenStore.seenAt(profileID: profileID, sessionID: session.id),
-            baselined: seenStore.isBaselined(profileID: profileID),
-            refresh: Int(now.timeIntervalSince1970 / 15))
+            baselined: seenStore.isBaselined(profileID: profileID))
         let showsFailure = !session.isWorking && (hasKnownFailure || loadedFailure)
-        return HStack(spacing: 4) {
+        HStack(spacing: 4) {
             if showsFailure {
                 SessionFailureWarning()
             }
@@ -336,7 +410,11 @@ struct SessionUnreadReplyBadge: View {
             }
         }
         .fixedSize()
-        .task(id: read) {
+        .onReceive(seenStore.changes(profileID: profileID, sessionID: session.id)) { _ in
+            seenRevision &+= 1
+        }
+        .task(id: hostVisible ? read : nil) {
+            guard hostVisible else { return }
             if lastRead?.identity != read.identity || lastRead?.seenAt != read.seenAt
                 || lastRead?.baselined != read.baselined
             {
@@ -344,17 +422,25 @@ struct SessionUnreadReplyBadge: View {
             }
             lastRead = read
             guard let replies, read.seenAt != nil || read.baselined else { return }
-            do {
-                let projection = try await replies.replies.project(
-                    session: session, profileID: read.identity.profileID, after: read.seenAt ?? .distantPast)
-                try Task.checkCancellation()
-                result = .loaded(projection)
-            } catch is CancellationError {
-                return
-            } catch {
+            await refreshBadge(read, from: replies.replies)
+            for await _ in replies.replies.refreshTick.values {
                 guard !Task.isCancelled else { return }
-                result = .unavailable
+                await refreshBadge(read, from: replies.replies)
             }
+        }
+    }
+
+    private func refreshBadge(_ read: Read, from replies: SessionUnreadReplies) async {
+        do {
+            let projection = try await replies.project(
+                session: session, profileID: read.identity.profileID, after: read.seenAt ?? .distantPast)
+            try Task.checkCancellation()
+            let next = CountState.loaded(projection)
+            if result != next { result = next }
+        } catch is CancellationError {
+            return
+        } catch {
+            if !Task.isCancelled && result != .unavailable { result = .unavailable }
         }
     }
 

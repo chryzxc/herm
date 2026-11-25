@@ -103,6 +103,10 @@ extension WorkspaceActivitySidebar {
 
             if selectedSettingsCategory == .providers {
                 ProvidersSettingsView(model: model, control: control)
+                SettingsSection(title: "Account pooling", subtitle: "", tint: .dockAccent) {
+                    QuotaPoolRotationSettings(model: control.poolRotation, providers: control.hermesProviderRows ?? [])
+                        .dockPadding(.vertical, -8)
+                }
             }
 
             if selectedSettingsCategory == .browser {

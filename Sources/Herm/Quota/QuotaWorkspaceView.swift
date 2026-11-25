@@ -15,6 +15,7 @@ struct QuotaWorkspaceView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var connectTarget: QuotaProviderDescriptor?
     @State private var addingPoolAccount = false
+    @State private var showsPoolRotation = false
     @State private var signInSlug: String?
     @State private var renamingProviderID: String?
     @State private var renameDraft = ""
@@ -88,6 +89,23 @@ struct QuotaWorkspaceView: View {
             ProviderConnectSheet(descriptor: descriptor, control: control)
         }
         .dockSheet(isPresented: $addingPoolAccount) { AddPoolAccountSheet(control: control) }
+        .dockSheet(isPresented: $showsPoolRotation) {
+            DockModal(
+                title: "Account rotation",
+                subtitle: "Choose how Hermes selects accounts within each provider’s pool.",
+                onClose: { showsPoolRotation = false }
+            ) {
+                ScrollView {
+                    QuotaPoolRotationSettings(model: control.poolRotation, providers: control.hermesProviderRows ?? [])
+                }
+                .frame(height: 180)
+            } footer: {
+                Spacer()
+                Button("Done") { showsPoolRotation = false }
+                    .buttonStyle(.dockPrimary)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
         .dockSheet(item: Binding(get: { signInSlug.map(SlugItem.init) }, set: { signInSlug = $0?.id })) { item in
             AddPoolAccountSheet(
                 control: control, initialProvider: item.id,
@@ -288,6 +306,9 @@ struct QuotaWorkspaceView: View {
                     }
                 }
             }
+            Divider()
+            Button("Account rotation…", icon: .gear) { showsPoolRotation = true }
+                .help("Choose a rotation strategy for each Hermes credential pool.")
         } label: {
             DockIconButtonLabel(icon: .slidersHorizontal)
         }
@@ -649,9 +670,7 @@ struct QuotaWorkspaceView: View {
             Divider()
             if !(control.isHermesActiveCredential(credential) && control.isHermesPinnedPrimary(credential)) {
                 // round_robin rewrites the order after every pick, so "first" only means next in line.
-                let rotates =
-                    control.configEditor.value("credential_pool_strategies.\(credential.provider)") as? String
-                    == "round_robin"
+                let rotates = control.poolStrategy(for: credential.provider) == "round_robin"
                 Button(rotates ? "Make next in line" : "Make primary", icon: .arrowUp) {
                     control.makeHermesPooledCredentialPrimary(for: snapshot.provider)
                 }

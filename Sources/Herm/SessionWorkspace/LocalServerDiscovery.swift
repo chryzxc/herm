@@ -52,7 +52,32 @@ enum LocalServerDiscovery {
         return servers.sorted { $0.port < $1.port }
     }
     static func discover(roots: [Int32]) async throws -> [LocalPreviewServer] {
-        guard !roots.isEmpty else { return [] }
+        try await reads.discover(roots: Array(Set(roots.filter { $0 > 0 })).sorted())
+    }
+
+    private static let reads = Reads()
+
+    private actor Reads {
+        private var inFlight: [[Int32]: Task<[LocalPreviewServer], Error>] = [:]
+        private var recent: (roots: [Int32], at: ContinuousClock.Instant, servers: [LocalPreviewServer])?
+
+        func discover(roots: [Int32]) async throws -> [LocalPreviewServer] {
+            guard !roots.isEmpty else { return [] }
+            try Task.checkCancellation()
+            if let task = inFlight[roots] { return try await task.value }
+            if let recent, recent.roots == roots, recent.at.duration(to: .now) < .seconds(3) {
+                return recent.servers
+            }
+            let task = Task { try await LocalServerDiscovery.scan(roots: roots) }
+            inFlight[roots] = task
+            defer { inFlight[roots] = nil }
+            let servers = try await task.value
+            recent = (roots, .now, servers)
+            return servers
+        }
+    }
+
+    private static func scan(roots: [Int32]) async throws -> [LocalPreviewServer] {
         let candidates = try await Task.detached(priority: .utility) {
             func run(_ command: String, _ arguments: [String], emptyExit: Int32? = nil) throws -> String {
                 let process = Process()

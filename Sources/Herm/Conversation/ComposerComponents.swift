@@ -32,6 +32,66 @@ struct ComposerSubmitLabel<Content: View>: View {
     }
 }
 
+/// Keeps the model, readings and actions mounted while the toolbar reflows.
+struct ComposerToolbarLayout: Layout {
+    private let spacing = DockSpacing.control
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrangement(width: proposal.width, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let frames = arrangement(width: bounds.width, subviews: subviews).frames
+        for (subview, frame) in zip(subviews, frames) {
+            subview.place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                anchor: .topLeading, proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func arrangement(width proposedWidth: CGFloat?, subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
+        guard subviews.count == 3 else { return (.zero, []) }
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified) }
+        let readingsGap: CGFloat = ideal[1].width > 0 ? spacing : 0
+        let trailingWidth = ideal[1].width + readingsGap + ideal[2].width
+        let inlineWidth = ideal[0].width + spacing + trailingWidth
+        let width = proposedWidth.flatMap { $0.isFinite ? $0 : nil } ?? inlineWidth
+        let leading = subviews[0].sizeThatFits(ProposedViewSize(width: min(width, ideal[0].width), height: nil))
+        let readings = ideal[1]
+        let actions = ideal[2]
+        let trailingHeight = max(readings.height, actions.height)
+        let actionsX = max(0, width - actions.width)
+        let leadingY: CGFloat
+        let readingsY: CGFloat
+        let actionsY: CGFloat
+        let readingsX: CGFloat
+        if inlineWidth <= width {
+            let rowHeight = max(leading.height, trailingHeight)
+            leadingY = (rowHeight - leading.height) / 2
+            readingsY = (rowHeight - readings.height) / 2
+            actionsY = (rowHeight - actions.height) / 2
+            readingsX = width - trailingWidth
+        } else {
+            leadingY = 0
+            readingsX = 0
+            let nextRow = leading.height + spacing
+            if trailingWidth <= width {
+                readingsY = nextRow + (trailingHeight - readings.height) / 2
+                actionsY = nextRow + (trailingHeight - actions.height) / 2
+            } else {
+                readingsY = nextRow
+                actionsY = nextRow + readings.height + readingsGap
+            }
+        }
+        let frames = [
+            CGRect(origin: CGPoint(x: 0, y: leadingY), size: leading),
+            CGRect(origin: CGPoint(x: readingsX, y: readingsY), size: readings),
+            CGRect(origin: CGPoint(x: actionsX, y: actionsY), size: actions),
+        ]
+        return (CGSize(width: width, height: frames.map(\.maxY).max() ?? 0), frames)
+    }
+}
+
 struct ComposerInputSurface: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isFocused: Bool

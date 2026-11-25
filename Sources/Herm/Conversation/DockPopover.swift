@@ -95,7 +95,7 @@ struct DockPopover: View {
     @State var sessionRailReplyRequest = 0
     @State var isSessionIdentityHovering = false
     @State var sessionPickerQuery = ""
-    @ObservedObject var sidebarSessionSeenStore = SidebarSessionSeenStore.shared
+    let sidebarSessionSeenStore = SidebarSessionSeenStore.shared
     /// Read-only handle; `SessionPaneRow` observes the panes so this view does not re-render for them.
     var sessionPanes: SessionPaneStore { .shared }
     @State var isSessionMenuHovering = false
@@ -318,6 +318,12 @@ struct DockPopover: View {
         // Bound the root's generic layout before observer modifiers copy its sheet state.
         return observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(AnyView(rootPopoverContent)))))
             .onReceive(workspaceModel.workspacePresentationChanges) { _ in modelPresentationRevision &+= 1 }
+            .onReceive(
+                workspaceModel.selectedSessionPresentationChanges(
+                    id: model.navigationSessionID, profileID: model.sessionProfileID ?? model.profileScopeID
+                )
+                .receive(on: DispatchQueue.main)
+            ) { _ in modelPresentationRevision &+= 1 }
             .onReceive(focusedPaneModel?.workspacePresentationChanges ?? Empty().eraseToAnyPublisher()) { _ in
                 modelPresentationRevision &+= 1
             }

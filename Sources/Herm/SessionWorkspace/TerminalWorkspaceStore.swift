@@ -5,7 +5,10 @@ import Foundation
 @MainActor
 final class TerminalWorkspaceStore {
     static let shared = TerminalWorkspaceStore()
+    let verificationChanges = PassthroughSubject<Void, Never>()
     private var workspaces: [String: TerminalTabStore] = [:]
+    func existingWorkspace(key: String) -> TerminalTabStore? { workspaces[key] }
+
     func workspace(key: String) -> TerminalTabStore {
         if let existing = workspaces[key] { return existing }
         let created = TerminalTabStore(persistenceKey: key)
@@ -31,17 +34,29 @@ final class TerminalWorkspaceStore {
             return (id, tabs)
         }
     }
-    func closeWorkspace(key: String) { workspaces.removeValue(forKey: key)?.closeAll() }
+    func closeWorkspace(key: String) {
+        guard let workspace = workspaces.removeValue(forKey: key) else { return }
+        workspace.closeAll()
+        verificationChanges.send()
+    }
 
     /// Move legacy nested shells into independently owned inspector workspaces without stopping them.
     func separateShells(key: String, makeKey: (UUID) -> String) -> [UUID] {
-        let source = workspace(key: key)
-        return source.takeUnselectedSessions().map { session in
+        let source: TerminalTabStore
+        if let existing = existingWorkspace(key: key) {
+            source = existing
+        } else {
+            guard TerminalTabStore.hasNestedLayout(key: key) else { return [] }
+            source = workspace(key: key)
+        }
+        let moved = source.takeUnselectedSessions().map { session in
             let id = UUID()
             let targetKey = makeKey(id)
             workspaces[targetKey] = TerminalTabStore(session: session, persistenceKey: targetKey)
             return id
         }
+        if !moved.isEmpty { verificationChanges.send() }
+        return moved
     }
     func shutdown() {
         for workspace in workspaces.values { workspace.closeAll() }
@@ -60,16 +75,9 @@ final class TerminalTabStore: ObservableObject {
     private var subscriptions: [AnyCancellable] = []
 
     init(persistenceKey: String? = nil) {
-        self.persistenceKey = persistenceKey.map {
-            "herm.terminal-layout." + SHA256.hash(data: Data($0.utf8)).map { String(format: "%02x", $0) }.joined()
-        }
-        let layout = self.persistenceKey.flatMap { UserDefaults.standard.data(forKey: $0 + ".v2") }.flatMap {
-            try? JSONDecoder().decode(TerminalLayout.self, from: $0)
-        }
-        let count =
-            layout.map { max(1, min(16, $0.count)) } ?? self.persistenceKey.map {
-                max(1, min(16, UserDefaults.standard.integer(forKey: $0)))
-            } ?? 1
+        self.persistenceKey = persistenceKey.map(Self.layoutKey)
+        let layout = self.persistenceKey.map(Self.loadLayout)
+        let count = max(1, min(16, layout?.count ?? 1))
         let restored = (0..<count).map { _ in LocalTerminalSession() }
         sessions = restored
         selectedID = restored[min(max(0, layout?.selected ?? 0), count - 1)].id
@@ -80,9 +88,7 @@ final class TerminalTabStore: ObservableObject {
         sessions.forEach(observe)
     }
     init(session: LocalTerminalSession, persistenceKey: String) {
-        self.persistenceKey =
-            "herm.terminal-layout."
-            + SHA256.hash(data: Data(persistenceKey.utf8)).map { String(format: "%02x", $0) }.joined()
+        self.persistenceKey = Self.layoutKey(persistenceKey)
         sessions = [session]
         selectedID = session.id
         observe(session)
@@ -106,6 +112,24 @@ final class TerminalTabStore: ObservableObject {
         let splits: [Int]
         let axis: Int
     }
+    private static func layoutKey(_ key: String) -> String {
+        "herm.terminal-layout." + SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func loadLayout(_ key: String) -> TerminalLayout {
+        if let data = UserDefaults.standard.data(forKey: key + ".v2"),
+            let layout = try? JSONDecoder().decode(TerminalLayout.self, from: data)
+        {
+            return layout
+        }
+        return TerminalLayout(count: UserDefaults.standard.integer(forKey: key), selected: 0, splits: [], axis: 0)
+    }
+
+    static func hasNestedLayout(key: String) -> Bool {
+        let layout = loadLayout(layoutKey(key))
+        return layout.count > 1 || !layout.splits.isEmpty
+    }
+
     private func persistLayout() {
         guard let persistenceKey else { return }
         let layout = TerminalLayout(
@@ -169,6 +193,7 @@ final class TerminalTabStore: ObservableObject {
         subscriptions.removeAll()
         sessions.forEach(observe)
         selectedID = sessions[min(index, sessions.count - 1)].id
+        TerminalWorkspaceStore.shared.verificationChanges.send()
     }
 
     func closeAll() {
@@ -176,6 +201,10 @@ final class TerminalTabStore: ObservableObject {
     }
 
     private func observe(_ session: LocalTerminalSession) {
+        session.$lastVerificationRun.dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { _ in TerminalWorkspaceStore.shared.verificationChanges.send() }
+            .store(in: &subscriptions)
         session.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &subscriptions)

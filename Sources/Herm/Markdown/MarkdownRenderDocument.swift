@@ -111,6 +111,7 @@ enum MarkdownRenderDocumentCache {
 @MainActor
 struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
+    @Environment(\.dockHostResizing) private var hostResizing
     @Environment(\.conversationScrollController) private var scrollController
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @Environment(\.accessibilitySwitchControlEnabled) private var switchControlEnabled
@@ -146,6 +147,7 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
         view.scrollController = scrollController
         view.markdownOpenURL = context.environment.markdownOpenURL
         view.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
+        view.defersWidthMeasurement = hostResizing
         view.setBodyStyle(size: DockWorkspaceScale.points(bodySize, scale: workspaceScale), weight: bodyWeight)
         context.coordinator.update(
             view, source: source, key: key, sections: streamingSections, cacheResult: cacheResult)
@@ -156,6 +158,7 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
         nsView.scrollController = scrollController
         nsView.markdownOpenURL = context.environment.markdownOpenURL
         nsView.keepsAccessibilitySectionsMounted = voiceOverEnabled || switchControlEnabled
+        nsView.defersWidthMeasurement = hostResizing
         nsView.setBodyStyle(size: DockWorkspaceScale.points(bodySize, scale: workspaceScale), weight: bodyWeight)
         context.coordinator.update(
             nsView, source: source, key: key, sections: streamingSections, cacheResult: cacheResult)
@@ -359,6 +362,10 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     @MainActor private final class ClipViewport {
         private static let byClip = NSMapTable<NSClipView, ClipViewport>.weakToWeakObjects()
         let documents = NSHashTable<NativeMarkdownDocumentContainerView>.weakObjects()
+        private let movedDocuments = NSHashTable<NativeMarkdownDocumentContainerView>.weakObjects()
+        private var geometryUpdateScheduled = false
+        private var lastBounds: NSRect?
+        private var lastKeyboardAccess: Bool?
         nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
 
         static func forClip(_ clip: NSClipView) -> ClipViewport {
@@ -377,13 +384,39 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                         [weak self, weak clip] _ in
                         MainActor.assumeIsolated {
                             guard let self, let clip else { return }
-                            let bounds = clip.bounds
-                            let keyboardAccess = NSApp?.isFullKeyboardAccessEnabled == true
-                            for document in self.documents.allObjects {
-                                document.clipViewportDidChange(bounds, keyboardAccess: keyboardAccess)
-                            }
+                            self.update(clip)
                         }
                     })
+            }
+        }
+
+        private func update(_ clip: NSClipView) {
+            let bounds = clip.bounds
+            let keyboardAccess = NSApp?.isFullKeyboardAccessEnabled == true
+            guard bounds != lastBounds || keyboardAccess != lastKeyboardAccess else { return }
+            lastBounds = bounds
+            lastKeyboardAccess = keyboardAccess
+            movedDocuments.removeAllObjects()
+            for document in documents.allObjects {
+                document.clipViewportDidChange(bounds, keyboardAccess: keyboardAccess)
+            }
+        }
+
+        func geometryChanged(_ document: NativeMarkdownDocumentContainerView) {
+            movedDocuments.add(document)
+            guard !geometryUpdateScheduled else { return }
+            geometryUpdateScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.geometryUpdateScheduled = false
+                let moved = self.movedDocuments.allObjects
+                self.movedDocuments.removeAllObjects()
+                let keyboardAccess = NSApp?.isFullKeyboardAccessEnabled == true
+                for document in moved where document.clipViewport === self && document.frameInClip == nil {
+                    if let clip = document.observedClipView {
+                        document.clipViewportDidChange(clip.bounds, keyboardAccess: keyboardAccess)
+                    }
+                }
             }
         }
 
@@ -401,6 +434,21 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         didSet {
             if oldValue != keepsAccessibilitySectionsMounted { needsLayout = true }
         }
+    }
+    var defersWidthMeasurement = false {
+        didSet {
+            guard oldValue != defersWidthMeasurement else { return }
+            clipsToBounds = defersWidthMeasurement
+            if !defersWidthMeasurement {
+                needsLayout = true
+                invalidateIntrinsicContentSize()
+            }
+        }
+    }
+
+    private var usesFrozenWidth: Bool {
+        defersWidthMeasurement && !isStreamingDocument && !keepsAccessibilitySectionsMounted
+            && !fullKeyboardAccess && cachedIntrinsicHeight != nil
     }
 
     override var isFlipped: Bool { true }
@@ -458,8 +506,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
                         MainActor.assumeIsolated {
                             guard let self else { return }
                             self.frameInClip = nil
-                            self.viewportDidChange(
-                                keepAll: self.keepsAccessibilitySectionsMounted || self.fullKeyboardAccess)
+                            self.clipViewport?.geometryChanged(self)
                         }
                     })
             }
@@ -481,6 +528,9 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     }
 
     func measuredHeight(forWidth proposedWidth: CGFloat) -> CGFloat {
+        // Keep using the solved reply while the divider moves. The final width
+        // reuses exact prepared or shared measurements on the next layout.
+        if usesFrozenWidth, let cachedIntrinsicHeight { return cachedIntrinsicHeight }
         let width = max(1, proposedWidth)
         let context = MeasurementContext(
             width: width, bodySize: bodySize, bodyWeight: bodyWeight,
@@ -553,7 +603,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     override func setFrameSize(_ newSize: NSSize) {
         let widthChanged = frame.width != newSize.width
         super.setFrameSize(newSize)
-        if widthChanged {
+        if widthChanged && !usesFrozenWidth {
             needsLayout = true
             invalidateIntrinsicContentSize()
         }
@@ -572,7 +622,7 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
         let keepAll = keepsAccessibilitySectionsMounted || keyboardAccess
         // Clip scrolling keeps the document's frame in clip coordinates unchanged.
         if let frameInClip, let lastMountedRange, keepAll == lastKeepAll {
-            if lastMountedRange.isEmpty, viewIndices.isEmpty, !clipBounds.intersects(frameInClip) { return }
+            if lastMountedRange.isEmpty, mountedIndices.isEmpty, !clipBounds.intersects(frameInClip) { return }
             if lastMountedRange == entries.indices, clipBounds.contains(frameInClip) { return }
         }
         viewportDidChange(keepAll: keepAll)
@@ -585,7 +635,9 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
     private func viewportDidChange(keepAll: Bool) {
         let start = HermPerformanceRecorder.active ? CACurrentMediaTime() : 0
         defer { if start > 0 { HermPerformanceRecorder.recordWork("markdown.viewport", since: start) } }
-        guard bounds.width > 1, cachedSolveWidth == bounds.width, entries.count == cachedFrames.count else {
+        guard bounds.width > 1, cachedSolveWidth == bounds.width || usesFrozenWidth,
+            entries.count == cachedFrames.count
+        else {
             needsLayout = true
             return
         }
@@ -658,7 +710,11 @@ final class NativeMarkdownDocumentContainerView: NSView, MarkdownLinkHost {
             if let existing = entry.view {
                 view = existing
             } else {
-                view = Self.makeView(for: entry.section)
+                if case .code = entry.section.kind {
+                    view = NativeMarkdownCodeTiming.measure(.creation) { Self.makeView(for: entry.section) }
+                } else {
+                    view = Self.makeView(for: entry.section)
+                }
                 let preparedSize: NSSize?
                 if !isStreamingDocument, case .code = entry.section.kind {
                     let context = MeasurementContext(
@@ -1546,7 +1602,11 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         typingAttributes = output.string.length > 0 ? output.string.attributes(at: 0, effectiveRange: nil) : [:]
         defaultParagraphStyle = typingAttributes[.paragraphStyle] as? NSParagraphStyle
         let installStarted = DispatchTime.now().uptimeNanoseconds
-        setMarkdownText(output.string)
+        if case .code = kind {
+            NativeMarkdownCodeTiming.measure(.textInstallation) { setMarkdownText(output.string) }
+        } else {
+            setMarkdownText(output.string)
+        }
         textRevision &+= 1
         let installed = DispatchTime.now().uptimeNanoseconds
         DebugLog.writePerformance(
@@ -1782,6 +1842,33 @@ final class NativeMarkdownHorizontalScrollView: NSScrollView {
 }
 
 @MainActor
+enum NativeMarkdownCodeTiming {
+    enum Phase: String {
+        case creation, textInstallation, layout
+    }
+
+    private static let fixtureEnabled = ProcessInfo.processInfo.environment["HERM_CHAT_PROFILE"] == "1"
+    private(set) static var milliseconds: [Phase: Double] = [:]
+
+    static func start() -> CFTimeInterval? {
+        fixtureEnabled || HermPerformanceRecorder.active ? CACurrentMediaTime() : nil
+    }
+
+    static func finish(_ phase: Phase, startedAt: CFTimeInterval?) {
+        guard let startedAt else { return }
+        let elapsed = (CACurrentMediaTime() - startedAt) * 1_000
+        if fixtureEnabled { milliseconds[phase, default: 0] += elapsed }
+        HermPerformanceRecorder.recordWork("markdown.code.\(phase.rawValue)", milliseconds: elapsed)
+    }
+
+    static func measure<T>(_ phase: Phase, _ work: () -> T) -> T {
+        let startedAt = start()
+        defer { finish(phase, startedAt: startedAt) }
+        return work()
+    }
+}
+
+@MainActor
 final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
     private static let horizontalPadding: CGFloat = 10
     private static let verticalPadding: CGFloat = 8
@@ -1879,6 +1966,8 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
     }
 
     override func layout() {
+        let startedAt = NativeMarkdownCodeTiming.start()
+        defer { NativeMarkdownCodeTiming.finish(.layout, startedAt: startedAt) }
         super.layout()
         let header = headerHeight
         if opensBlock {

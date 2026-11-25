@@ -4,6 +4,26 @@ import XCTest
 @testable import Herm
 
 final class MessageNavigatorTests: XCTestCase {
+    func testTailChangesKeepEarlierPromptOrdinalsAndLookup() throws {
+        let earlier = [TranscriptTimelineEntry(rowID: 10, preview: "Older prompt", timestamp: nil)]
+        let reply = ChatMessage(role: .hermes, text: "Before")
+        let prompt = ChatMessage(role: .user, text: "Next")
+        let previous = MessageNavigatorSnapshot(
+            items: MessageNavigator.items(messages: [reply], earlierPrompts: earlier, sessionID: "chat"))
+        let updatedReply = ChatMessage(id: reply.id, role: .hermes, text: "After")
+        let updated = try XCTUnwrap(
+            MessageNavigator.updating(
+                previous, oldMessageCount: 1, messages: [updatedReply, prompt], changed: [0, 1], sessionID: "chat"))
+
+        XCTAssertEqual(
+            updated.items,
+            MessageNavigator.items(
+                messages: [updatedReply, prompt], earlierPrompts: earlier, sessionID: "chat"))
+        XCTAssertEqual(updated.index(of: updated.items[0].id), 0)
+        XCTAssertEqual(updated.item(for: updated.items[2].id)?.preview, "Next")
+        XCTAssertEqual(previous.items.map(\.preview), ["Older prompt", "Before"])
+    }
+
     func testBuildsStableSessionScopedTargetsAndBoundedPreviews() {
         let sessionID = "session-a"
         let messageID = UUID()

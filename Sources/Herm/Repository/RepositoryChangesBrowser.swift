@@ -17,10 +17,10 @@ struct RepositoryChangesBrowser: View {
     var showsBranch = true
 
     @Environment(\.expandedReviewRouter) private var reviewRouter
+    @Environment(\.dockHostVisible) private var hostVisible
     @State private var showingReview = false
-    @State private var diffs: [String: RepositoryDiff] = [:]
+    @StateObject private var diffReads = RepositoryInlineDiffReads()
     @State private var expandedFileIDs: Set<String> = []
-    @State private var loadingFileIDs: Set<String> = []
     @State private var commitMessages: [String: String] = [:]
     @State private var isCommitsExpanded = true
     @State private var expandedCommitIDs: Set<String> = []
@@ -31,7 +31,6 @@ struct RepositoryChangesBrowser: View {
     @State private var hoveredFileID: String?
     @State private var discardRequest: [RepositoryFileChange]?
     @FocusState private var focusedStageFileID: String?
-    @State private var diffGeneration = UUID()
     @State private var isCommitPopoverPresented = false
 
     private var reviewScope: String { WorkspaceIdentity.session(model) + ":repository:" + (projectPath ?? "") }
@@ -123,23 +122,25 @@ struct RepositoryChangesBrowser: View {
             Text(discardMessage)
         }
         .onChange(of: workflow.repository.path) { _, _ in
-            diffs = [:]
             expandedFileIDs = []
-            loadingFileIDs = []
             expandedCommitIDs = []
             commitDetails = [:]
             failedCommitDetailIDs = []
-            diffGeneration = UUID()
         }
-        .onChange(of: changes) { _, newChanges in
-            // Cached diffs go stale with the working tree; refetch the open ones.
-            let liveIDs = Set(newChanges.files.map(\.id))
-            diffs = [:]
-            loadingFileIDs = []
-            diffGeneration = UUID()
-            expandedFileIDs.formIntersection(liveIDs)
-            for file in newChanges.files where expandedFileIDs.contains(file.id) { loadDiff(for: file) }
+        .onChange(of: hostVisible ? diffInput(changes) : nil, initial: true) { _, input in
+            diffReads.update(input)
+            if let input { expandedFileIDs.formIntersection(input.changes.files.lazy.map(\.id)) }
         }
+        .onDisappear { diffReads.update(nil) }
+    }
+
+    private func diffInput(_ changes: RepositoryChangeSnapshot) -> RepositoryInlineDiffReads.Input {
+        let visibleIDs = expandedFileIDs.filter {
+            $0.hasPrefix("staged:") ? isStagedExpanded : isChangesExpanded
+        }
+        return .init(
+            path: workflow.repository.path, changes: changes, revision: workflow.changeRevision,
+            expandedIDs: visibleIDs)
     }
 
     private func changeGroup(
@@ -804,7 +805,7 @@ struct RepositoryChangesBrowser: View {
     @ViewBuilder
     private func diffCard(for file: RepositoryFileChange) -> some View {
         Group {
-            if let diff = diffs[file.id] {
+            if case .ready(let diff?) = diffReads.states[file.id] {
                 let lines = Self.displayLines(diff.text)
                 if lines.isEmpty {
                     diffNotice(
@@ -850,7 +851,7 @@ struct RepositoryChangesBrowser: View {
                     .id(reviewScope + ":" + file.id)
                 }
                 if diff.isTruncated { diffNotice("Diff truncated for safe display.", color: .dockWarning) }
-            } else if loadingFileIDs.contains(file.id) {
+            } else if diffReads.states[file.id] == .loading {
                 HStack(spacing: 8) {
                     DockLoadingIndicator().controlSize(.small)
                     Text("Loading diff…").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
@@ -1026,19 +1027,6 @@ struct RepositoryChangesBrowser: View {
     private func toggle(_ file: RepositoryFileChange) {
         if expandedFileIDs.remove(file.id) == nil {
             expandedFileIDs.insert(file.id)
-            if diffs[file.id] == nil { loadDiff(for: file) }
-        }
-    }
-
-    private func loadDiff(for file: RepositoryFileChange) {
-        guard loadingFileIDs.insert(file.id).inserted else { return }
-        let path = workflow.repository.path
-        let token = diffGeneration
-        Task {
-            let diff = await RepositoryService.diff(path: path, file: file)
-            guard path == workflow.repository.path, token == diffGeneration else { return }
-            loadingFileIDs.remove(file.id)
-            diffs[file.id] = diff
         }
     }
 

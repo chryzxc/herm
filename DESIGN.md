@@ -411,7 +411,7 @@ Core Animation lifts and brightens each tile in clockwise order. Reduce Motion
 and motion-free skins show all four tiles at rest. Native layer loops
 centrally honor Reduce Motion, motion-free skins, and host visibility, and release
 animations on dismantle. No extra continuous animation clock is introduced.
-Visible animations keep their cadence during direct scrolling and momentum.
+Visible animations keep their cadence during direct scrolling, momentum, and when another app has focus. App activation does not gate motion. Hidden surfaces may stop scheduling presentation work without changing the underlying agent state.
 Reduce Motion and motion-free skins suppress shared motion, including press
 scaling and inherited explicit animation transactions at themed roots. Disabled
 controls do not compress. Existing skin-specific feedback curves remain in use.
@@ -482,6 +482,10 @@ and `DockComponentStyles.swift`.
 | Inspector group | `.dockCard(padding:)` | Grouped detail inside an inspector |
 | Buttons | `.dockCompact`, `.dockPress`, `.dockSecondary`, `.dockPrimary`, `.dockLink`, `DockActionLabel` | Compatibility alias, icon controls, outlined actions, the local primary action, inline navigation, pending state; text-action size is inherited |
 | Inputs | `.dockGlass`, `.dockSwitch`, `DockTabBar` / `DockTabButton` | Text fields, toggles, local scopes (never native `.segmented`) |
+
+Horizontal and vertical three-dot menu icons use Phosphor's bold paths at the
+existing control size in both SwiftUI and native menus. They inherit the
+control's themed ink and retain its orientation.
 
 **Signage card anatomy.** Row 1 has the status dot, a one-line 12pt semibold
 title, and trailing monospaced metadata such as relative time or "Current".
@@ -558,6 +562,8 @@ attaches a context chip asking Hermes to name its task list after the plan's ste
 Herm never edits the plan or ticks steps. A linked file that is gone or unreadable
 shows "File not found." in the warning color with Remove from rail, never old numbers.
 Selecting a row opens the file tab in Plan view.
+The rail and document preview refresh from the same local file revision. Visible
+previews pick up external edits and atomic saves during reading and review.
 Tasks and the composer reuse `TodoPlanTaskList`: in-progress tasks first, pending
 tasks next, and completed/cancelled tasks last, preserving original order within each
 group and original slots for identity. The active task has a progress indicator,
@@ -900,6 +906,7 @@ the rail gear menu’s Status bar submenu. `WorkspaceStatusModel` gathers its in
 publishers (Edge tasks, routines, repository, plan, queue, pull requests,
 Calendar), so it adds no whole-model observers. Optional local previews and test failures
 use the active session's existing terminal workspaces.
+New Git revisions and terminal verification events recheck test evidence without clearing the current local server. Turning the bar off stops its idle clock.
 `StatusBarLayout.make` is the pure rule for what shows, in which order and tone (`StatusBarLayoutTests`).
 
 - With default item settings, the visible bar shows the attention count (a `.dockWarning` pill)
@@ -1202,8 +1209,10 @@ is preserved. GitHub overview links retain their native inspector routing.
 Primary and additional Browser tabs show the live webpage title, updating when
 the page name changes. Empty, untitled, and URL-only titles retain the generic
 Browser label (with the existing number for additional tabs).
+Tab changes update the inspector for that conversation without changing the
+visible inspector for another session.
 
-The model chip shows the current thinking effort beside the model name and a lightning icon when Fast is enabled. The icon briefly animates on appearance, respecting Reduce Motion and motion-free skins. The speed switch moves immediately and indicates a pending change; the chip reflects the confirmed setting, and a failed change restores the switch. The picker stays open for model selection and catalog refresh, with vertical insets around its contents. The model picker keeps provider marks beside a search field and compact model list. Matching leading circles mark model choices, with a check identifying the active model; available thinking effort choices wrap into a compact grid below the choices, with a check and contour identifying the selected effort, with fast and catalog actions separated by a divider.
+The model chip shows the current thinking effort beside the model name and a lightning icon when Fast is enabled. The speed switch moves immediately and indicates a pending change; the chip reflects the confirmed setting, and a failed change restores the switch. The picker stays open for model selection and catalog refresh, with vertical insets around its contents. The model picker keeps provider marks beside a search field and compact model list. Matching leading circles mark model choices, with a check identifying the active model; available thinking effort choices wrap into a compact grid below the choices, with a check and contour identifying the selected effort, with fast and catalog actions separated by a divider.
 
 ### Compact workspace controls
 
@@ -1231,7 +1240,10 @@ not every session in the archive. Manual Refresh remains explicit forced work.
 Latest activity enrichment has an independent cancellable owner so archive reads
 do not delay core status. Only explicit recency and message-count metadata can
 validate reused activity steps; storage is bounded to 512 sessions/10,000 steps.
-Diff gutters use cached UTF-16 row offsets to start at the visible range. Confirmed
+Diff gutters use cached UTF-16 row offsets to start at the visible range.
+Local Review matches prepared patches off the UI actor and applies only the
+current query and comparison revision. Keep the existing search controls and
+selection in place while results update. Confirmed
 session deletion releases its browser pages and subscription; merely switching
 sessions continues to preserve user page state.
 
@@ -1320,7 +1332,7 @@ The notch is visible during startup while Herm reads local workspace preferences
 and activity archives. Clicks and shortcut requests can open the workspace as soon
 as those reads finish. The normal notch preview becomes available at that point.
 
-Visible notch Bot status animations continue during workspace scrolling.
+Visible notch Bot status animations continue during workspace scrolling and when Herm is not the active app.
 The native notch window fits the opening or closing shell in a single resize.
 The shell animates inside that frame, and task rows update as their sources change.
 Clearing a completion updates its status immediately. The task list refreshes
@@ -2194,7 +2206,7 @@ Updates uses a leading-aligned column up to 920pt wide. A Software updates card 
 
 Settings groups destinations by purpose:
 
-- **App:** General, Gateway, Appearance, Notifications.
+- **App:** General, Gateway, Appearance, Status bar, Notifications.
 - **Agent:** Models & tools, Providers, Chat, Memory & Context, Voice, Advanced.
 - **Tools & access:** Files & terminal, Browser, Privacy & safety, Integrations.
 - **Activity & maintenance:** Active session, Diagnostics, Updates.
@@ -2216,7 +2228,7 @@ opens at the top when the category changes.
   divider and an 11pt semibold `settingsSubheading`.
 - **Predictable locations.** General contains Startup, Keyboard shortcuts, Power, and app Restart.
   Gateway owns backend connections and the local messaging gateway service.
-  Chat owns Typing (including autocorrect), visual Replies, reply summaries,
+  Chat owns Typing (including autocorrect and Apple Intelligence follow-ups), visual Replies, reply summaries,
   automatic session titles, quota display, personality, timezone, and attachments.
   Privacy & safety owns screen-sharing privacy, Spotlight indexing, window
   capture permissions, approval assistance and authentication, and checkpoints.
@@ -2313,10 +2325,18 @@ slot shows peak-hour sync progress or failure). Trailing actions are Refresh and
 the Quota options menu (icon buttons at their drawn size, 6pt apart, no 44pt hit
 frame), then the secondary Sync peak hours (pending "Syncing…" in place) and the
 primary Add account. The options menu starts with Show in sidebar. A Quota in chat section groups
-the Show quota beside the composer and Quota drop banner toggles. Dividers
+the Show quota beside the composer and Quota drop banner toggles. All three visibility
+options are on by default and honor saved choices. Dividers
 separate these groups from one another and from the Auto-refresh section listing Off/1/5/15 minutes as checkable
 choices (no submenu; refresh runs only while the page is open). In narrow
 windows the actions wrap below the status.
+
+- **Account rotation.** Quota options opens the same per-provider rotation
+  controls as Account pooling in Settings → Providers. Show the pools reported
+  by Hermes, independent of quota availability. The strategy picker’s tooltip
+  and VoiceOver hint explain the four choices. Confirm the affected provider
+  before saving. Keep the current choice visible until Hermes acknowledges
+  the change. Hermes uses the new strategy the next time it loads that pool.
 
 - **Remote backend.** Display Hermes-reported backend quota and supported
   OpenRouter credit balance without substituting this Mac's backend credentials.
@@ -2369,27 +2389,28 @@ windows the actions wrap below the status.
   Herm does not own their logins.
 - Disconnected providers appear afterward under Available to connect with
   Connect and website actions.
-- **Sidebar rings.** Show in sidebar (Quota options, on by default) adds one
-  38pt ring button per provider below the rail's pinned destinations, after a
-  hairline, in the shared custom order. Hairline 2pt rings: the outer is the
+- **Sidebar quota.** Show in sidebar (Quota options, on by default) adds one
+  38pt provider slot pinned above Connection in the rail footer, after a
+  hairline, in the shared custom order. Long lists scroll within the footer so
+  Connection and Settings remain visible. Hairline 2pt rings: the outer is the
   first percentage window (5-hour), the inner the second (weekly), around the
   bare provider mark; tracks use a faint `dockBorder`, arcs the health colors.
-  Providers without a percentage get no ring. A short radial tick mirrors
-  the Quota page's daily budget marker when it is visible. The Hermes-active
-  pool account has a 7pt accent dot on the outer ring at 45°, with a canvas
+  Providers with a credit balance and no percentage show their bare mark. A
+  short radial tick mirrors the Quota page's daily budget marker when visible.
+  The Hermes-active pool account has a 7pt accent dot at 45°, with a canvas
   colored outline to match the card's Active pill; there is no fill or glow
   behind the mark. Hovering opens a popover with that provider's card windows
-  (shared `QuotaWindowCell` in its compact type: 13pt figure, 11pt labels) and
-  Open Quota; clicking opens Quota. Dragging a ring reorders it like the
+  (shared `QuotaWindowCell` in its compact type: 13pt figure, 11pt labels).
+  The provider mark has no press action. Dragging a mark reorders it like the
   pinned destinations (lifted 1.045×, neighbours spring aside, no popover
   while lifted), and the context menu and VoiceOver actions offer Move up /
   Move down. Both write the shared Quota order, so the page cards follow;
-  ringless providers keep their slots.
+  providers outside the rail keep their slots.
 - **Multi-day sessions.** A window labeled Session or Rolling that resets more
   than a day out (Codex's account-wide allowance) is a weekly (≤7d) or monthly
   (≤30d) cycle: it gets the budget marker, pace forecast, and daily allowance
   on the page, a tick on its ring, and its real label in the ring's VoiceOver
-  value instead of "5-hour".
+  announcement instead of "5-hour".
 - **Meter motion.** Quota meters (page cards, rail popover) grow from empty on
   first appearance over 0.6s and ease to each new reading over 0.45s; rail arcs
   sweep clockwise from 12 o'clock over 0.7s, then ease 0.45s per reading or
@@ -2474,6 +2495,8 @@ Dropping onto a tab moves to its position without changing selection or restarti
 content. The tab context menu offers Move tab left/right as a non-drag alternative.
 Order is presentation state scoped to the backend/profile/session workspace for the
 current app run. New tabs append, and closed tabs disappear without leaving gaps.
+Only tabs belonging to the active workspace enter the inspector layout. A
+session switch does not close a live terminal or clear its scrollback.
 
 
 Bot and activity previews share the message reading tab strip and its workspace
@@ -2929,6 +2952,10 @@ device privileges for them.
 
 ### Kanban
 
+The session Activity panel and conversation handoffs use the same archived
+card read. Each shows cards attributed to its session and includes completed
+cards in Recent.
+
 The fullscreen Kanban page uses a compact native board. Its header subtitle
 names the selected board and reports filtered results as “shown of total”. A
 single persistent toolbar keeps board selection, Status, Assignee, Mine, Sort,
@@ -3198,8 +3225,11 @@ lives in an `Equatable` caption so frames never re-lay it out. There is no elaps
 timer or live tool rows. Who is replying comes from `groups.state` `driver_status.member_activity`,
 falling back to open `turn.started` log rows on gateways that don't report it.
 Header faces (`GroupHeaderFace`) show each member's live mood anywhere in the room: approval,
-sleepy (stalled), tool or thinking, queued, offline (RoomLink `peer_routes` not ready). They hop
-when that member's reply lands, turn attentive (listening) when the draft would reach them (`@handle`,
+sleepy (stalled), tool or thinking, queued, offline (RoomLink `peer_routes` not ready). Live
+expressions keep the faces centered on the same row while members reply. Faces use
+28×44pt slots with 4pt gaps so each animation is visible without enlarging the toolbar.
+Narrow toolbars shorten or hide the activity subtitle before compressing the room name.
+Faces hop when that member's reply lands and turn attentive (listening) when the draft would reach them (`@handle`,
 `@all`, or no mention: everyone, or the lead in lead routing), and doze after 15 minutes of quiet.
 Clicking a face jumps to its last reply (thread switch, scroll, brief accent highlight); hovering
 450ms opens a member popover with identity, description, model and live state.
@@ -3223,14 +3253,17 @@ Group chat action errors use toast notifications without an inline error row abo
 In the Sessions title strip, a vertical ellipsis beside the Chat tiles button
 opens the themed Bot picker layout menu. Mark the active choice in the
 popover. **Bot menu** shows the inline picker. **Bot rail** replaces it with a
-scrollable avatar column between the main navigation rail and the session list.
+scrollable 72pt avatar column between the main navigation rail and the session list.
 Keep **All** above the scroll area when several bots are visible. Center the
-label on a neutral avatar tile the same size as the bot avatars. The avatar
-list scrolls within the available height with the scrollbar hidden. Hovering
+label on a neutral avatar tile the same size as the bot avatars. Both use a
+38pt base size inside the 52pt row target. The avatar list scrolls within the
+available height with the scrollbar hidden. Hovering
 over a bot shows a profile preview beside the rail. The bot's avatar, name,
 and role form its header. A hairline separates the description when one is
 set. Activity and unread badges use separate corners within each avatar
 slot. Drag an avatar to reorder it using the same saved order as the picker.
+Both layouts use the same edge scrolling. Hold the pointer near or past the top
+or bottom of the avatar list during a drag to reach offscreen bots.
 New Bot appears when creation is available. The layout choice persists locally.
 
 ### Conversation workspace
@@ -3262,6 +3295,11 @@ independently of catalog loading. A reported name alone does not imply a provide
 The chip shows the thinking level supplied by the session resume response or its
 scoped settings read while the transcript and model catalog load. Level choices
 wait for the catalog, and changing the level requires transcript confirmation.
+When Fast is confirmed, the chip shows an accent-tinted lightning icon with a
+faint pulse. The icon stays visible at rest with Reduce Motion or in a motion-free skin.
+New chats prefill the last composer model and thinking choices for the active
+profile. The session-create request applies choices that the profile's current
+catalog supports. Existing chats continue to show their Hermes session settings.
 
 Reserve the session rail's actual width in both density settings, including for the
 transcript, composer, welcome and floating controls; density only tightens visual spacing.
@@ -3481,17 +3519,28 @@ The canonical stream and activity continue accumulating while browsing history;
 returning to the live reply presents the current state without replaying UI updates.
 The jump-to-message rail sits on the left edge of wide conversations, with hover
 previews opening inward to its right. Find opens at the same left edge.
-The message navigator prepares previews when the rail or Find needs them. It reuses
-unchanged previews when messages are edited or older pages are loaded. Ordinary
-Markdown chunks do not restart visual-reply parsing tasks.
-Find matches full message text away from the main thread. Query edits, history
+The message navigator prepares previews when the rail or Find needs them. A visible
+wide transcript requests the stored prompt timeline for its message map. Long
+maps build in the background and keep the last map for the same session while
+updating. Unchanged previews are reused when prompts are sent, replies complete,
+or older pages load. Ordinary Markdown chunks do not restart visual-reply
+parsing tasks.
+Find matches full message text away from the main thread. It shows matches from
+the loaded conversation first and marks the result count as still searching
+while it scans older history. Query edits reuse the bounded search projection
+of recent history and scan uncached pages one at a time. Choosing an older result
+loads through it in batches without moving the reader before the target is ready.
+A newer jump cancels the older one and keeps batches already loaded.
+If earlier history is unavailable, Find labels its results as partial. Query edits, history
 changes, closing Find, and session changes cancel obsolete matching; stale results
 cannot be selected. Return reuses matching results or waits for the current query,
 and the existing result slot shows progress while matching is pending.
 
 Completed assistant replies use the section renderer at every length, including
 replies over 8 KB. Long native Markdown documents retain their full measured height while mounting
-only visible sections and one viewport of buffer. Adjacent completed pages prefetch pure
+only visible sections and one viewport of buffer. While the divider or window is
+being resized, a completed reply can keep its existing line wraps until the final
+width settles. Adjacent completed pages prefetch pure
 Markdown sections away from the main actor. Adjacent pages prepare native layout in
 small slices, and the current page stays visible until its next page is ready.
 Preparation creates native measurement views only for sections missing a cached size.
@@ -3569,10 +3618,21 @@ There is no dedicated Writing Tools button. All shared chat composers use native
 macOS spelling correction by default, controlled by Autocorrect in chat under
 Settings → Chat → Typing. Changes apply to open composers without replacing
 the draft or moving its selection. This setting does not require Apple Intelligence.
+
+After a completed exchange, Apple Intelligence can suggest one short follow-up
+in the focused, empty shared composer. It replaces the placeholder on the same
+baseline in secondary text, with a trailing “Tab to insert” hint and no change to
+editor height. Tab inserts ordinary editable text without sending. Typing, attaching
+context, switching conversations, or starting another turn hides the suggestion.
+While loading or when unavailable, the original placeholder stays in place.
+Only bounded excerpts from the current conversation go to the on-device model.
+Suggest follow-ups with Apple Intelligence is on by default under Settings → Chat → Typing.
 Attach, model, and reasoning are 28pt control-surface chips inside 44pt
 targets. It is aligned to the reading column, stays at a compact two-row idle height,
-and grows only for multiline drafts, attachments, suggestions, or actionable
-errors. Files, Images, and Folder share one native picker presentation, configured for
+and grows for narrow toolbars, multiline drafts, attachments, suggestions, and actionable
+errors. When the toolbar runs out of width, the model and attachment controls take
+the first row. Quota and context stay on one line each, and the action group stays
+trailing on the bottom row. Files, Images, and Folder share one native picker presentation, configured for
 the selected action. Files and composer drops accept generic files up to 8 MB as
 removable context chips, using the existing protected file upload on send.
 Dragging files over an editable composer traces its outline once. Attachment
@@ -3723,8 +3783,16 @@ indicator. Plan updates preserve disclosure; changing sessions resets it.
 
 In-chat approvals, clarification requests, input prompts, and errors use the shared
 neutral callout surface with a tone-colored icon and status. Decision actions use
-compact button sizing and wrap when the available width requires it. Reopening a chat
-restores its pending clarification card, including its answer choices.
+compact button sizing. The approval footer groups session and permanent permissions
+apart from the immediate decisions. Deny and the primary Allow once sit at the
+trailing edge with matching icon-only Delete and Enter keycaps. The groups use
+separate lines when space is tight, and buttons wrap within their group as needed.
+With only immediate choices, the repeat-request note leads the same footer and
+moves above the decisions when the pane is narrow.
+Unmodified Return or Enter applies Allow once when
+the card is focused, or from an empty composer when its Allow once button is in
+view. The shortcut never takes over draft submission or answers another request.
+Reopening a chat restores its pending clarification card, including its answer choices.
 
 #### Pop-out conversation windows
 
@@ -3811,7 +3879,9 @@ extraction runs off the main actor in bounded pages, with at most four concurren
 session reads. Indexing starts as each session-list page arrives and reads recent transcript
 pages first, keeping the earliest citation for repeated output when the scan completes.
 The browser groups incremental updates before rebuilding its results, with indexing status in
-the fixed header; only complete sessions enter the shared cache. Sidebar updates do not
+the fixed header; only complete sessions enter the shared cache. Search prepares the
+latest result in the background, preserving the prior list and selection until it
+can publish the matching results and their counts together. Sidebar updates do not
 cancel indexing. Opening the page or using Refresh starts a scan. Partial profile/index
 failures keep readable results and prior outputs for unreadable sessions, with a warning
 in the existing header subtitle. The bounded in-memory cache retains the most recent sessions
@@ -3876,6 +3946,8 @@ events, and main-agent tool activity.
 - File rows are single-line, 30pt rows with a file icon, name, secondary directory,
   a 20pt stage/unstage toggle shown on hover or keyboard focus (its slot stays
   reserved so rows never shift), and textual Git status.
+- Expanded file diffs stay open on repository refresh. An unrelated file update
+  leaves the existing diff in place. Closing the section stops its pending read.
 - Rows and group headers carry VS Code–ordered context menus. Discard is
   working-tree only, always confirms, restores tracked files from the index,
   and moves untracked files to the Trash; conflicted and staged rows offer none.
@@ -3928,7 +4000,8 @@ events, and main-agent tool activity.
   Each Terminal inspector tab owns one shell; use the inspector's new-tab control
   for another. Clear, interrupt, and restart are in the options menu immediately
   after Previews. Its grid resizes with the panel; failed and closed shells offer recovery.
-  Covered terminals continue processing output and update their canvas when shown again.
+  Covered terminals continue processing output in shared batches and update their
+  canvas when shown again.
   PTY input is queued in order and written in bounded, nonblocking chunks.
   Interrupt discards a blocked paste and signals the foreground job. Verification
   waits for a complete exit receipt before reporting a result.
@@ -4033,6 +4106,9 @@ events, and main-agent tool activity.
   stale marker. Never infer support from a Hermes version string alone.
 
 ### Pull requests and Issues metadata
+
+When a pull request chat closes, Herm keeps the most recent idle chats ready to
+reopen. Open chats, running turns, and unsent drafts stay available.
 
 The pull request detail header is one toolbar row: tabs lead and actions trail, stacking only when narrow. In Changes, the branch line and diff tools share a single 38pt row so the diff keeps the space.
 
@@ -4399,7 +4475,7 @@ and WebKit stores; sessions of that profile share them. No cross-profile sharing
 controls or browser Keychain unlock appear. Sign Out of All Sites is disabled
 while its reset is pending. The agent canvas mirrors the page's cursor shape and opens
 `<select>` dropdowns as a native menu anchored on the field, since headless
-Chrome paints them where the screencast can't see. When Hermes starts browsing or
+Chrome paints them where the screencast can't see. Frame capture follows the visibility of its canvas, not app activation. Hiding the canvas does not close the page or interrupt browser tools. When Hermes starts browsing or
 shows a page, the inspector expands to the Browser tab; Settings → Browser →
 Use Herm's browser (a switch, on by default) turns that off and sends shown
 pages to the default browser.
@@ -4437,7 +4513,9 @@ Week and Month share a search row with Agenda, a weekly list grouped by date.
 Search matches titles, source names, and locations within the displayed range;
 a type menu narrows the projection and Clear resets both filters. The month heading
 opens a date picker. Agenda rows select the day and expand the item in the inspector.
-Search and type changes reuse the full date index for the same range and sources.
+Calendar prepares the date index in the background. Search and type changes
+reuse it for the same range and sources. The current range stays visible while a
+filter updates. A new range shows loading in the agenda until its index is ready.
 The inspector separates all-day items from the schedule and labels overlapping timed
 events using all enabled sources before search/type filtering. Touching event boundaries
 do not conflict. Plan in chat includes the complete selected day from enabled sources.
@@ -4456,7 +4534,9 @@ Date navigation keeps Today in a fixed slot, disabled on today. The toolbar
 wraps into two rows when needed. Narrow windows stack the grid and agenda in a
 scrollable workspace. Very narrow grids show category icons and item counts
 instead of truncated event titles; full titles remain in the daily agenda. Agenda headers show the selected date and actual item
-count; the read-only Mac connection prompt follows the schedule.
+count; the read-only Mac connection prompt follows the schedule. Agenda and
+selected-day lists mount individual rows on demand, keeping their existing day
+headers and selection. Apply the day selection treatment once to its header.
 
 ### Activity usage heatmap
 
@@ -4540,8 +4620,9 @@ Summaries use the shared `MarkdownMessageView` at body size, preserving paragrap
 and list breaks. Generation requests a short overview and 2–3 bullets with bold
 labels, up to 90 words, focusing on concrete changes rather than repeating totals.
 Apple Intelligence attribution uses the shared `OnDeviceAssistNotice`: a content-width
-neutral badge with 6pt horizontal and 3pt vertical padding, a 12pt orange info icon from `DockAccentColor.orange.color`,
-and unchanged `dockMetadataText` body text. Reuse it for Activity and notch
+neutral badge with 6pt horizontal and 3pt vertical padding. Center the 12pt orange
+info icon from `DockAccentColor.orange.color` vertically beside the `dockMetadataText`
+body label. Reuse it for Activity and notch
 summaries, automatic title information, and Apple Intelligence settings.
 Generated summaries show “Generated by Apple Intelligence” with help explaining
 local generation and possible inaccuracies. Existing reply summaries retain that
@@ -5007,6 +5088,8 @@ A failed or incomplete history read shows `?` with an unavailable description, n
 a guessed number. Read sessions show no completion marker.
 
 The sidebar counts Hermes history after the existing profile/session seen timestamp.
+Marking a conversation as seen updates its visible badge immediately and writes
+the local timestamps in the background.
 The floating latest-message control counts replies arriving while away from the tail.
 Both use `ConversationUnreadMessagePolicy`: only nonempty AI replies (including
 image replies) count, excluding user prompts, steering, tool/activity-only rows,

@@ -14,11 +14,17 @@ struct StatusBarEvent {
 /// DockModel or ControlCenterModel, and records what Herm sees change.
 @MainActor
 final class WorkspaceStatusModel: ObservableObject {
+    struct TerminalProcessScope: Equatable {
+        let identity: String
+        let directory: String
+    }
+
     struct TerminalScope: Equatable {
         let identity: String
         let directory: String
         let repositoryID: String?
         let fingerprint: String?
+        var processes: TerminalProcessScope { .init(identity: identity, directory: directory) }
     }
 
     @Published private(set) var layout = StatusBarLayout()
@@ -28,7 +34,7 @@ final class WorkspaceStatusModel: ObservableObject {
     @Published private(set) var returnSummary: (since: Date, text: String)?
     /// The Activity tray, shared so the ⌘J registry command and the bar button agree.
     @Published var isTrayPresented = false
-    private(set) var terminalScope: TerminalScope?
+    @Published private(set) var terminalScope: TerminalScope?
     private let startedAt: Date
     private let now: () -> Date
     private(set) var events: [StatusBarEvent] = []
@@ -38,8 +44,10 @@ final class WorkspaceStatusModel: ObservableObject {
     private var awaySince: Date?
     private var subscriptions = Set<AnyCancellable>()
     private var simulatorTask: Task<Void, Never>?
+    private var clock: AnyCancellable?
     private var calendar: SystemCalendarService?
     private var calendarSubscription: AnyCancellable?
+    private var monitorsTerminalTests = false
     private let preferences: StatusBarPreferences
     private weak var edge: EdgeNotchState?
     private weak var model: DockModel?
@@ -55,6 +63,7 @@ final class WorkspaceStatusModel: ObservableObject {
     ) {
         guard self.edge !== edge || self.model !== model else { return }
         subscriptions.removeAll()
+        clock = nil
         self.edge = edge
         self.model = model
         model.$status.map { $0 == .offline }.removeDuplicates()
@@ -105,8 +114,11 @@ final class WorkspaceStatusModel: ObservableObject {
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification).sink { [weak self] _ in
             self?.loadCalendar(refreshAccess: true)
         }.store(in: &subscriptions)
-        Timer.publish(every: 30, tolerance: 5, on: .main, in: .common).autoconnect()
-            .sink { [weak self] _ in self?.tickFired() }.store(in: &subscriptions)
+        TerminalWorkspaceStore.shared.verificationChanges.sink { [weak self] in
+            guard let self, self.preferences.isEnabled, self.monitorsTerminalTests else { return }
+            self.updateFailedTest(in: self.terminalScope)
+            self.rebuild()
+        }.store(in: &subscriptions)
         preferencesChanged()
     }
 
@@ -124,31 +136,48 @@ final class WorkspaceStatusModel: ObservableObject {
 
     func dismissReturnSummary() { returnSummary = nil }
 
-    func monitorTerminals(in scope: TerminalScope?, servers: Bool, tests: Bool) async {
-        terminalScope = scope
-        input.localServer = nil
-        input.failedTest = nil
+    func updateTerminalScope(_ scope: TerminalScope?, tests: Bool) {
+        let scope = scope.map {
+            tests
+                ? $0
+                : TerminalScope(
+                    identity: $0.identity, directory: $0.directory, repositoryID: nil, fingerprint: nil)
+        }
+        guard terminalScope != scope || monitorsTerminalTests != tests else { return }
+        if terminalScope?.processes != scope?.processes { input.localServer = nil }
+        if terminalScope != scope { terminalScope = scope }
+        monitorsTerminalTests = tests
+        updateFailedTest(in: tests ? scope : nil)
         rebuild()
-        guard let scope, servers || tests else { return }
+    }
+
+    func monitorTerminals(in scope: TerminalProcessScope?, servers: Bool) async {
+        if !servers || scope == nil, input.localServer != nil { update(\.localServer, nil) }
+        guard let scope, servers else { return }
         while !Task.isCancelled {
-            let workspaces = TerminalWorkspaceStore.shared.tabs(identity: scope.identity, directory: scope.directory)
-            if tests {
-                let runs = workspaces.flatMap { workspace in
-                    workspace.tabs.sessions.compactMap { shell in
-                        shell.lastVerificationRun.map { ($0, workspace.extraID, shell.id) }
-                    }
-                }
-                input.failedTest = Self.failedTest(in: runs, scope: scope)
-            }
-            if servers {
-                let roots = workspaces.flatMap { $0.tabs.sessions.map(\.shellProcessID) }.filter { $0 > 0 }
-                let reachable = try? await LocalServerDiscovery.discover(roots: roots)
-                guard !Task.isCancelled, terminalScope == scope else { return }
-                input.localServer = reachable?.first
-            }
+            let workspaces = TerminalWorkspaceStore.shared.tabs(
+                identity: scope.identity, directory: scope.directory)
+            let roots = workspaces.flatMap { $0.tabs.sessions.map(\.shellProcessID) }.filter { $0 > 0 }
+            let reachable = try? await LocalServerDiscovery.discover(roots: roots)
+            guard !Task.isCancelled, terminalScope?.processes == scope else { return }
+            input.localServer = reachable?.first
             rebuild()
             do { try await Task.sleep(for: .seconds(15)) } catch { return }
         }
+    }
+
+    private func updateFailedTest(in scope: TerminalScope?) {
+        guard let scope, scope.repositoryID != nil, scope.fingerprint != nil else {
+            input.failedTest = nil
+            return
+        }
+        let workspaces = TerminalWorkspaceStore.shared.tabs(identity: scope.identity, directory: scope.directory)
+        let runs = workspaces.flatMap { workspace in
+            workspace.tabs.sessions.compactMap { shell in
+                shell.lastVerificationRun.map { ($0, workspace.extraID, shell.id) }
+            }
+        }
+        input.failedTest = Self.failedTest(in: runs, scope: scope)
     }
 
     static func failedTest(
@@ -215,6 +244,15 @@ final class WorkspaceStatusModel: ObservableObject {
     }
 
     private func preferencesChanged() {
+        if preferences.isEnabled {
+            if clock == nil {
+                clock = Timer.publish(every: 30, tolerance: 5, on: .main, in: .common).autoconnect()
+                    .sink { [weak self] _ in self?.tickFired() }
+            }
+        } else {
+            clock = nil
+            awaySince = nil
+        }
         input.enabled = preferences.enabledItems
         input.stalledAfter = TimeInterval(preferences.stalledMinutes * 60)
         loadCalendar()
@@ -223,6 +261,7 @@ final class WorkspaceStatusModel: ObservableObject {
     }
 
     private func rebuild() {
+        guard preferences.isEnabled else { return }
         input.mode = GatewayConnectionStore.shared.selected.mode
         input.now = now()
         input.nextMeeting = nextMeeting(after: input.now)
@@ -236,6 +275,7 @@ final class WorkspaceStatusModel: ObservableObject {
     }
 
     private func tickFired() {
+        guard preferences.isEnabled else { return }
         checkIdle()
         loadCalendar()
         rebuild()

@@ -96,7 +96,7 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
         }
     }
 
-    let inputs: Inputs
+    private(set) var inputs: Inputs
     let linkedProjectGroups: [SessionNavConversationGroup]
     let conversations: [HermesSession]
     let attentionDots: [String: SessionAttentionDot]
@@ -112,7 +112,9 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
     let allProfilePinned: [HermesSession]
     let scopedPinPresentation: PinnedSessionPresentation
     let allProfilePinPresentation: PinnedSessionPresentation
-    let sessionStatuses: [String: SidebarSessionStatus]
+    private(set) var sessionStatuses: [String: SidebarSessionStatus]
+    private let statusSessionsByID: [String: HermesSession]
+    private let activeSummariesByID: [String: SessionSummary]
     struct UnreadInventory: Equatable, Sendable {
         let sessions: [HermesSession]
         let rows: Set<SidebarUnreadSession>
@@ -220,7 +222,21 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
                 pinned: allProfilePinned, live: allBotConversations, projection: inputs.sessionProjectionState,
                 matchesProfile: true, scopeProfileID: inputs.profileScopeID)
         }
-        if let previous, reusesPins,
+        let reusesStatusSessions = reusesPins && previous?.allProfilePinned == allProfilePinned
+        if let previous, reusesStatusSessions {
+            statusSessionsByID = previous.statusSessionsByID
+        } else {
+            statusSessionsByID = Dictionary(
+                (allBotConversations + inputs.pinnedSessions + allProfilePinned).map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first })
+        }
+        if let previous, previous.inputs.activeSessions == inputs.activeSessions {
+            activeSummariesByID = previous.activeSummariesByID
+        } else {
+            activeSummariesByID = Dictionary(
+                inputs.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+        if let previous, reusesStatusSessions,
             previous.inputs.activeSessions == inputs.activeSessions,
             previous.inputs.activeSessionID == inputs.activeSessionID,
             previous.inputs.activeStatus == inputs.activeStatus,
@@ -230,9 +246,14 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
         {
             self.sessionStatuses = previous.sessionStatuses
         } else {
-            self.sessionStatuses = SidebarSessionStatusResolver.statuses(
-                for: allBotConversations + inputs.pinnedSessions + allProfilePinned, inputs: inputs,
-                attention: attentionDots, seenAtByKey: inputs.seenAtByKey, baselinedProfiles: inputs.baselinedProfiles)
+            let attention = attentionDots
+            let summaries = activeSummariesByID
+            self.sessionStatuses = statusSessionsByID.mapValues { session in
+                SidebarSessionStatusResolver.status(
+                    for: session, summary: summaries[session.id], inputs: inputs,
+                    attention: attention[session.id], seenAtByKey: inputs.seenAtByKey,
+                    baselinedProfiles: inputs.baselinedProfiles)
+            }
         }
         if let previous, reusesPins, previous.inputs.activeSessions == inputs.activeSessions {
             unreadInventory = previous.unreadInventory
@@ -240,6 +261,23 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
             unreadInventory = UnreadInventory(
                 sessions: SessionDashboardProjection.sessions(in: inputs, allBotConversations: allBotConversations))
         }
+    }
+
+    /// The selection affects at most two status marks. Share every inventory projection.
+    func selecting(_ id: String?, status: HermesStatus?) -> Self {
+        guard inputs.activeSessionID != id || inputs.activeStatus != status else { return self }
+        var next = self
+        next.inputs.activeSessionID = id
+        next.inputs.activeStatus = status
+        for id in Set([inputs.activeSessionID, id].compactMap { $0 }) {
+            guard let session = statusSessionsByID[id] else { continue }
+            let resolved = SidebarSessionStatusResolver.status(
+                for: session, summary: activeSummariesByID[id], inputs: next.inputs,
+                attention: attentionDots[id], seenAtByKey: inputs.seenAtByKey,
+                baselinedProfiles: inputs.baselinedProfiles)
+            if next.sessionStatuses[id] != resolved { next.sessionStatuses[id] = resolved }
+        }
+        return next
     }
 
     @MainActor
@@ -519,7 +557,7 @@ final class SessionNavSidebarModel: ObservableObject {
     }
 
     private func requiresImmediateRefresh(from inputs: SessionNavSidebarSnapshot.Inputs) -> Bool {
-        if model.navigationSessionID != inputs.activeSessionID || model.profileScopeID != inputs.profileScopeID
+        if model.profileScopeID != inputs.profileScopeID
             || (inputs.pinnedSessions.isEmpty && !model.pinnedSessions.isEmpty)
             || (inputs.sessions.isEmpty && !model.sessions.isEmpty)
         {
@@ -533,6 +571,7 @@ final class SessionNavSidebarModel: ObservableObject {
     /// Coalesce activity before projecting the inventory away from the UI thread.
     private func scheduleRefresh() {
         if requiresImmediateRefresh(from: snapshot.inputs) { return refresh() }
+        applySelection()
         guard coalescedRefreshTask == nil else {
             refreshRequested = true
             return
@@ -541,6 +580,18 @@ final class SessionNavSidebarModel: ObservableObject {
             try? await Task.sleep(for: .milliseconds(250))
             guard let self, !Task.isCancelled else { return }
             await self.refreshInBackground()
+        }
+    }
+
+    private var activeStatus: HermesStatus {
+        model.isSending && model.status == .idle ? .working : model.status
+    }
+
+    private func applySelection() {
+        let id = model.navigationSessionID
+        let status = activeStatus
+        if snapshot.inputs.activeSessionID != id || snapshot.inputs.activeStatus != status {
+            publish(snapshot.selecting(id, status: status))
         }
     }
 
@@ -565,7 +616,7 @@ final class SessionNavSidebarModel: ObservableObject {
         guard !Task.isCancelled else { return }
         if requiresImmediateRefresh(from: inputs) { return refresh() }
         coalescedRefreshTask = nil
-        if let next { publish(next) }
+        if let next { publish(next.selecting(model.navigationSessionID, status: activeStatus)) }
         if refreshRequested { scheduleRefresh() }
     }
 

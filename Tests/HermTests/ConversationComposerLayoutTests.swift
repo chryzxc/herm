@@ -51,7 +51,7 @@ struct ConversationComposerLayoutTests {
         func content(empty: Bool) -> some View {
             ConversationComposerLayout(showsWelcome: empty, hermFaceID: nil) {
                 Text("First message")
-            } composer: {
+            } composer: { _ in
                 ComposerProbe(field: field).frame(height: 100)
             }
             .transaction { $0.disablesAnimations = true }

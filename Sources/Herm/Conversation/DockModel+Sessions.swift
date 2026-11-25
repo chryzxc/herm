@@ -916,6 +916,8 @@ extension DockModel {
         // paged in, so refreshing never collapses the transcript they scrolled.
         let refreshedTranscriptRowCount = isRefreshingActiveSession ? (transcriptHistoryCursor?.nextOffset ?? 0) : 0
         sessionResumeGeneration &+= 1
+        externalTurnWatchTask?.cancel()
+        clearStoredSearch()
         storedTranscriptAttach = isRefreshingActiveSession && storedTranscriptAttach != nil ? .awaitingOwnership : nil
         pendingAttachedEvents.removeAll()
         transcriptTimelineTask?.cancel()
@@ -951,7 +953,7 @@ extension DockModel {
         if !keepsStoredTranscript {
             transcriptHistoryCursor = nil
             transcriptTimeline = []
-            transcriptMessageIDsByRowID = [:]
+            replaceTranscriptRowIDs([:])
             clearMessagePins()
         }
         isLoadingEarlierTranscript = false
@@ -1016,9 +1018,6 @@ extension DockModel {
             openingRowIDs: openingRowIDs, isRefresh: isRefreshingActiveSession, rowCount: refreshedTranscriptRowCount,
             canReadStoredHistory: !isUnprovenAlias && !requestedStorageID.isEmpty,
             reviewCutoff: needsUnreadReview ? reviewCutoff : nil, seenAt: seenAt)
-        if keepsStoredTranscript, transcriptHistoryCursor?.hasMore == true, transcriptTimeline.isEmpty {
-            loadTranscriptTimeline(generation: resumeGeneration)
-        }
         let task = Task { [weak self] in
             guard let self, context.generation == sessionResumeGeneration else { return false }
             let loaded = await finishSessionResume(
@@ -1200,6 +1199,7 @@ extension DockModel {
             guard resumeGeneration == sessionResumeGeneration else { return false }
             if isShowingReadOnlyStoredTranscript {
                 transcriptTimelineTask?.cancel()
+                transcriptTimelineTask = nil
                 transcriptTimeline = []
                 isLoadingEarlierTranscript = false
                 isLoadingTranscriptHistory = false
@@ -1218,27 +1218,14 @@ extension DockModel {
                 },
                 rowIDs: stable.rowIDs,
                 trailingActivity: parsed.trailingActivity)
-            transcriptMessageIDsByRowID = restored.rowIDs
+            replaceTranscriptRowIDs(restored.rowIDs)
             storedMessageReferences = Dictionary(
                 references.map { (renamed[$0.key] ?? $0.key, $0.value) }, uniquingKeysWith: { first, _ in first })
             let resolvedKey = WorkspaceIdentity.session(profileID: owningProfileID, sessionID: sessionStorageID)
             if sessionStorageID != BotService.canonicalBotChatTitle {
                 sessionTranscriptCache.store(restored, references: storedMessageReferences, for: resolvedKey)
             }
-            let previewImages = Dictionary(
-                (sessionTranscriptPreview?.messages ?? []).filter { !$0.images.isEmpty }.map { ($0.id, $0.images) },
-                uniquingKeysWith: { first, _ in first })
-            let previewPaths = Dictionary(
-                (sessionTranscriptPreview?.pendingImages ?? []).map { ($0.messageID, $0.fileURLs) },
-                uniquingKeysWith: { first, _ in first })
-            let restoredPaths = Dictionary(
-                restored.pendingImages.map { ($0.messageID, $0.fileURLs) }, uniquingKeysWith: { first, _ in first })
-            let freshMessages = restored.messages.map { message in
-                guard let images = previewImages[message.id], let paths = previewPaths[message.id],
-                    restoredPaths[message.id] == paths
-                else { return message }
-                return message.attachingImages(images)
-            }
+            let imageHandoff = TranscriptImageHydration.reusePreview(sessionTranscriptPreview, in: restored)
             // A turn that went live while the transcript loaded keeps its row.
             let liveRow = streamingMessageID.flatMap { id in messages.first { $0.id == id } }
             // Mid-turn messages Hermes has not stored yet stay until it does.
@@ -1246,7 +1233,7 @@ extension DockModel {
                 sessionStorageID
                 .flatMap { unconfirmedUserMessagesBySessionID.removeValue(forKey: $0) }
                 .map { Self.missingUserMessages($0, from: restored.messages) } ?? []
-            messages = freshMessages + [liveRow].compactMap { $0 }
+            messages = imageHandoff.messages + [liveRow].compactMap { $0 }
             let pendingSends = reconcilePendingSends(
                 for: composerDraftKey, restored: restored.messages, rowIDs: restored.rowIDs, replacingTranscript: true)
             messages.append(contentsOf: pendingSends.unmatchedMessages)
@@ -1276,12 +1263,9 @@ extension DockModel {
                 messages.insert(contentsOf: Self.missingUserMessages(pendingUserMessages, from: messages), at: index)
             }
             sessionTranscriptImageTask = rehydratePendingTranscriptImages(
-                restored.pendingImages,
+                imageHandoff.pending,
                 requestedSessionID: resolvedSessionID
             )
-            if transcriptHistoryCursor?.hasMore == true {
-                loadTranscriptTimeline(generation: resumeGeneration)
-            }
             if let reviewCutoff = context.reviewCutoff {
                 let seenStore = SidebarSessionSeenStore.shared
                 let seenAt = context.seenAt
@@ -1443,7 +1427,7 @@ extension DockModel {
         let renamed = Dictionary(
             parsed.rowIDs.compactMap { row, id in stable.rowIDs[row].map { (id, $0) } },
             uniquingKeysWith: { first, _ in first })
-        transcriptMessageIDsByRowID = stable.rowIDs
+        replaceTranscriptRowIDs(stable.rowIDs)
         transcriptHistoryCursor = tail.cursor
         storedMessageReferences = Dictionary(
             references.map { (renamed[$0.key] ?? $0.key, $0.value) }, uniquingKeysWith: { first, _ in first })
@@ -1454,7 +1438,6 @@ extension DockModel {
             parsed.pendingImages.map {
                 .init(messageID: renamed[$0.messageID] ?? $0.messageID, fileURLs: $0.fileURLs)
             }, requestedSessionID: session.id)
-        if tail.cursor.hasMore { loadTranscriptTimeline(generation: context.generation) }
     }
 
     /// Sets the project the not-yet-created chat will start in (the new-chat project picker).
@@ -1471,7 +1454,7 @@ extension DockModel {
         if let sessionStorageID, streamingMessageID != nil {
             inFlightTurnActivityBySessionID[sessionStorageID] = streamingTurnActivity
             unconfirmedUserMessagesBySessionID[sessionStorageID] = Self.unconfirmedUserMessages(
-                messages, storedIDs: Set(transcriptMessageIDsByRowID.values))
+                messages, isStored: hasStoredTranscriptRow(for:))
         }
         commitStreamingMessage()
     }
@@ -1481,13 +1464,15 @@ extension DockModel {
         guard sessionTranscriptLoadState == .ready, sessionTranscriptPreview == nil,
             let id = sessionStorageID, id != BotService.canonicalBotChatTitle
         else { return }
+        let tail = Array(messages.suffix(SessionTranscriptCache.messageLimit))
         sessionTranscriptCache.refresh(
-            RestoredTranscript(messages: messages, pendingImages: [], rowIDs: transcriptMessageIDsByRowID),
+            RestoredTranscript(messages: tail, pendingImages: [], rowIDs: transcriptRowIDs(for: tail)),
             references: storedMessageReferences,
             for: WorkspaceIdentity.session(profileID: sessionProfileID, sessionID: id))
     }
 
     func newChat(projectPath: String? = nil) {
+        externalTurnWatchTask?.cancel()
         commitStreamingMessage()
         cacheLeavingTranscript()
         sessionWorkspace = nil
@@ -1513,6 +1498,7 @@ extension DockModel {
         stopVoiceConversation()
         saveComposerDraft()
         sessionResumeGeneration &+= 1
+        clearStoredSearch()
         storedTranscriptAttach = nil
         pendingAttachedEvents.removeAll()
         // A new chat has no session catalog; reload the global one or effort stays unavailable.
@@ -1528,7 +1514,7 @@ extension DockModel {
         activeBotDisplayName = nil
         sessionProfileID = profileScopeID
         sessionStorageID = nil
-        transcriptMessageIDsByRowID = [:]
+        replaceTranscriptRowIDs([:])
         clearMessagePins()
         newSessionCreationAuthorized = true
         newSessionProjectPath = projectPath
@@ -1547,8 +1533,10 @@ extension DockModel {
         defaults.removeObject(forKey: lastSessionIDKey(for: sessionProfileID ?? profileScopeID))
         currentSessionTitle = nil
         currentModelName = nil
-        sessionModelOptionID = nil
-        sessionModelValue = nil
+        let selection = lastComposerSelection(for: profileScopeID)
+        sessionModelOptionID = selection.model?.id
+        sessionModelValue = selection.model?.displayName
+        draftReasoningVariant = selection.reasoning
         messages = []
         activeToolCalls = []
         reasoningState = nil
@@ -1679,8 +1667,8 @@ extension DockModel {
 
     /// User messages after the last row Hermes returned: sent live, not yet
     /// confirmed by a reload.
-    static func unconfirmedUserMessages(_ messages: [ChatMessage], storedIDs: Set<UUID>) -> [ChatMessage] {
-        let start = (messages.lastIndex { storedIDs.contains($0.id) }).map { $0 + 1 } ?? 0
+    static func unconfirmedUserMessages(_ messages: [ChatMessage], isStored: (UUID) -> Bool) -> [ChatMessage] {
+        let start = (messages.lastIndex { isStored($0.id) }).map { $0 + 1 } ?? 0
         return messages[start...].filter { $0.role == .user }
     }
 

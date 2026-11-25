@@ -91,14 +91,18 @@ extension DockModel {
             guard seen.insert(key).inserted, session.id != BotService.canonicalBotChatTitle,
                 key != transcriptPresentationID, !sessionTranscriptCache.contains(key),
                 let path = TranscriptHistoryPaging.pagePath(
-                    sessionID: session.id, profileID: profile, limit: TranscriptHistoryPaging.pageRowLimit, offset: 0)
+                    sessionID: session.id, profileID: profile,
+                    limit: TranscriptHistoryPaging.conversationBufferRowLimit, offset: 0)
             else { continue }
             guard attempted < limit else { return }
+            while isRestoringSession || sessionTranscriptCache.foregroundReads > 0 {
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+            }
             guard await DockScrollActivity.waitForInputIdle(), profileScopeID == scope else { return }
             guard key != transcriptPresentationID, !sessionTranscriptCache.contains(key) else { continue }
             attempted += 1
             do {
-                let response = try await sessionRPCClient.fetchHTTP(path)
+                let response = try await sessionTranscriptCache.warmFirstPage(path: path, client: sessionRPCClient)
                 guard let page = TranscriptHistoryPaging.page(from: response) else {
                     throw HermesGateway.GatewayError.malformedResponse
                 }
@@ -106,7 +110,8 @@ extension DockModel {
                     throw HermesGateway.GatewayError.malformedResponse
                 }
                 guard await DockScrollActivity.waitForInputIdle(), profileScopeID == scope else { return }
-                let rows = await Self.projectStoredRowsOffMain(page.rows, priority: .utility)
+                let previewRows = Array(page.rows.suffix(TranscriptHistoryPaging.pageRowLimit))
+                let rows = await Self.projectStoredRowsOffMain(previewRows, priority: .utility)
                 let (restored, references) = await Self.parseMessagesOffMain(
                     rows, defaultBotProfileID: nil, defaultBotDisplayName: nil, priority: .utility)
                 guard !Task.isCancelled, !hasShutDown, profileScopeID == scope, key != transcriptPresentationID
@@ -129,7 +134,9 @@ extension DockModel {
         _ page: TranscriptHistoryPaging.Page, response: [String: Any], session: HermesSession, profile: String
     ) -> SessionTranscriptPreview.ReadCoverage? {
         guard response["session_id"] as? String == session.id, response["profile"] as? String == profile,
-            page.returned == page.rows.count, !page.isPaginated || page.returned < TranscriptHistoryPaging.pageRowLimit,
+            page.returned == page.rows.count,
+            page.returned <= TranscriptHistoryPaging.pageRowLimit,
+            !page.isPaginated || page.returned < TranscriptHistoryPaging.conversationBufferRowLimit,
             page.rows.allSatisfy({ TranscriptHistoryPaging.rowID($0) != nil && $0["role"] is String }),
             let updatedAt = session.lastUpdatedAt
         else { return nil }

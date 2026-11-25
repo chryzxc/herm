@@ -95,7 +95,8 @@ final class DeveloperWorkflowModel: ObservableObject {
     var turnBaselines: [String: TurnRepositoryBaseline] = [:]
     private var interruptionCoordinator: HermInterruptionCoordinator?
     @Published private(set) var repository: RepositorySnapshot = .empty
-    @Published private(set) var repositoryFingerprint: String?
+    @Published private(set) var changeRevision: RepositoryChangeRevision?
+    var repositoryFingerprint: String? { changeRevision?.fingerprint }
     @Published private(set) var githubRepository: GitHubRepositoryReference?
     @Published private(set) var githubPullRequests: [GitHubPullRequestSummary] = []
     @Published private(set) var githubError: GitHubCodeHostError?
@@ -128,7 +129,9 @@ final class DeveloperWorkflowModel: ObservableObject {
     @Published private(set) var sourceControlError: String?
     private var activePath: String?
     private var generation = UUID()
+    private var reviewGeneration = UUID()
     private var debounceTasks: [String: Task<Void, Never>] = [:]
+    private var pendingWatchChanges: [String: RepositoryWatchService.Change] = [:]
     private var watchGeneration = UUID()
     private var notificationsEnabled = false
     private var watchedPaths: [String: String] = [:]
@@ -169,8 +172,8 @@ final class DeveloperWorkflowModel: ObservableObject {
     }
 
     init() {
-        watcher.onEvent = { [weak self] repositoryID in
-            Task { @MainActor in self?.receivedFilesystemEvent(repositoryID: repositoryID) }
+        watcher.onEvent = { [weak self] repositoryID, change in
+            Task { @MainActor in self?.receivedFilesystemEvent(repositoryID: repositoryID, change: change) }
         }
     }
 
@@ -198,6 +201,7 @@ final class DeveloperWorkflowModel: ObservableObject {
         commitsError = nil
         sourceControlError = nil
         generation = UUID()
+        reviewGeneration = UUID()
         review = nil
         reviewedFileIDs = []
         worktrees = []
@@ -205,7 +209,7 @@ final class DeveloperWorkflowModel: ObservableObject {
         guard path != nil else {
             DebugLog.writeDiagnostic("repository.workflow cleared")
             repository = .empty
-            repositoryFingerprint = nil
+            changeRevision = nil
             githubRepository = nil
             githubPullRequests = []
             githubError = nil
@@ -228,21 +232,22 @@ final class DeveloperWorkflowModel: ObservableObject {
         generation = token
         isRefreshing = true
         publish(\.error, nil)
-        async let snapshot = RepositoryService.inspect(path: path)
-        async let changes = RepositoryService.changeSnapshot(path: path)
         async let worktrees = RepositoryService.worktrees(path: path)
         async let branches = RepositoryService.branches(path: path)
-        async let fingerprint = RepositoryService.fingerprint(path: path)
         async let githubRemote = RepositoryService.githubRemote(path: path)
         async let recentCommits = RepositoryService.recentCommits(path: path)
         async let stashEntries = RepositoryService.stashes(path: path)
+        let resolvedChanges = await RepositoryService.changeSnapshot(path: path)
+        async let snapshot = RepositoryService.inspect(path: path, changes: resolvedChanges)
+        async let revision = RepositoryService.changeRevision(path: path, changes: resolvedChanges)
         let (
-            resolvedSnapshot, resolvedChanges, resolvedWorktrees, resolvedBranches, resolvedFingerprint,
+            resolvedSnapshot, resolvedWorktrees, resolvedBranches, resolvedRevision,
             resolvedGitHubRemote
-        ) = await (snapshot, changes, worktrees, branches, fingerprint, githubRemote)
+        ) = await (snapshot, worktrees, branches, revision, githubRemote)
         guard token == generation, path == activePath else { return }
         let (resolvedCommits, resolvedStashes) = await (recentCommits, stashEntries)
         guard token == generation, path == activePath else { return }
+        let resolvedFingerprint = resolvedRevision?.fingerprint
         // Watcher refreshes mostly re-read unchanged state; publishing equal
         // values still redrew every observer once per property.
         publish(\.stashes, resolvedStashes ?? [])
@@ -251,7 +256,12 @@ final class DeveloperWorkflowModel: ObservableObject {
         publish(\.commitsError, resolvedCommits == nil ? "Could not refresh commits. Refresh to try again." : nil)
         let githubRepositoryChanged = githubRepository != resolvedGitHubRemote
         publish(\.repository, resolvedSnapshot) { $0.hasSameContent(as: $1) }
-        publish(\.repositoryFingerprint, resolvedFingerprint)
+        if repositoryFingerprint != resolvedFingerprint { reviewGeneration = UUID() }
+        publish(\.changeRevision, resolvedRevision)
+        if let review, review.fingerprint != resolvedFingerprint {
+            self.review = nil
+            reviewedFileIDs = []
+        }
         publish(\.githubRepository, resolvedGitHubRemote)
         publish(\.changes, resolvedChanges, unchangedWhen: Self.sameChanges)
         publish(\.sourceControlError, resolvedChanges.error)
@@ -561,9 +571,9 @@ final class DeveloperWorkflowModel: ObservableObject {
         preferencesStore = preferences
         guard let path = activePath else { return }
         let token = UUID()
-        generation = token
+        reviewGeneration = token
         let result = await RepositoryService.review(path: path)
-        guard token == generation, path == activePath, let result else { return }
+        guard !Task.isCancelled, token == reviewGeneration, path == activePath, let result else { return }
         review = result
         reviewedFileIDs = []
         watchedFingerprints[result.repositoryID] = result.fingerprint
@@ -614,68 +624,100 @@ final class DeveloperWorkflowModel: ObservableObject {
     func syncWatchers(preferences: CommandCenterPreferencesStore, control: ControlCenterModel) {
         preferencesStore = preferences
         notificationsEnabled = preferences.repositoryNotificationsEnabled
-        var desired = Set(preferences.watchedRepositoryIDs).map { WatchedRepository(id: $0, path: $0) }
-        if repository.isGitRepository, preferences.isWatchingRepository(repository.repositoryID) {
-            desired.append(WatchedRepository(id: repository.repositoryID, path: repository.path))
-        }
+        let desired = Self.watchPaths(ids: preferences.watchedRepositoryIDs, active: repository)
+        updateWatchState(preferences: preferences)
+        guard desired != watchedPaths else { return }
         watchGeneration = UUID()
         for task in debounceTasks.values { task.cancel() }
         debounceTasks = [:]
-        watchedPaths = Dictionary(uniqueKeysWithValues: desired.map { ($0.id, $0.path) })
-        watchedFingerprints = watchedFingerprints.filter { watchedPaths[$0.key] != nil }
-        watcher.synchronize(Set(desired))
-        updateWatchState(preferences: preferences)
+        pendingWatchChanges = [:]
+        watchedFingerprints = watchedFingerprints.filter { key, _ in
+            desired[key].map { $0 == watchedPaths[key] } ?? false
+        }
+        watchedPaths = desired
+        watcher.synchronize(desired)
+        if let repositoryFingerprint, desired[repository.repositoryID] == repository.path {
+            watchedFingerprints[repository.repositoryID] = repositoryFingerprint
+        }
         let token = watchGeneration
-        for repository in desired where watchedFingerprints[repository.id] == nil {
+        for (id, path) in desired where watchedFingerprints[id] == nil {
             Task { [weak self] in
-                guard let fingerprint = await RepositoryService.fingerprint(path: repository.path) else { return }
+                guard let fingerprint = await RepositoryService.fingerprint(path: path) else { return }
                 await MainActor.run {
-                    guard let self, token == self.watchGeneration, self.watchedPaths[repository.id] == repository.path
+                    guard let self, token == self.watchGeneration, self.watchedPaths[id] == path,
+                        self.watchedFingerprints[id] == nil
                     else { return }
-                    self.watchedFingerprints[repository.id] = fingerprint
+                    self.watchedFingerprints[id] = fingerprint
                 }
             }
         }
     }
 
+    static func watchPaths(ids: [String], active: RepositorySnapshot) -> [String: String] {
+        var paths = Dictionary(ids.map { ($0, $0) }, uniquingKeysWith: { first, _ in first })
+        if active.isGitRepository, paths[active.repositoryID] != nil {
+            paths[active.repositoryID] = active.path
+        }
+        return paths
+    }
+
     func setRepositoryNotificationsEnabled(_ enabled: Bool) { notificationsEnabled = enabled }
 
-    private func receivedFilesystemEvent(repositoryID id: String) {
+    private func receivedFilesystemEvent(repositoryID id: String, change: RepositoryWatchService.Change) {
         guard watchedPaths[id] != nil else { return }
+        pendingWatchChanges[id] = pendingWatchChanges[id].map { $0.merging(change) } ?? change
         let token = watchGeneration
         debounceTasks[id]?.cancel()
         debounceTasks[id] = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(750))
-            guard !Task.isCancelled, let self else { return }
-            await self.refreshWatchedRepository(id, watchToken: token)
+            guard !Task.isCancelled, let self, let path = self.watchedPaths[id] else { return }
+            // Keep the batch pending while checking ignores, so cancellation cannot lose a real edit.
+            let ignored: Bool
+            if case .files(let files) = self.pendingWatchChanges[id] {
+                ignored = await RepositoryService.watchPathsAreIgnored(files, in: path)
+            } else {
+                ignored = false
+            }
+            guard !Task.isCancelled, token == self.watchGeneration else { return }
+            if !ignored { await self.refreshWatchedRepository(id, watchToken: token) }
+            guard !Task.isCancelled, token == self.watchGeneration else { return }
+            self.pendingWatchChanges[id] = nil
+            self.debounceTasks[id] = nil
         }
     }
 
     private func refreshWatchedRepository(_ id: String, watchToken: UUID) async {
         guard let path = watchedPaths[id] else { return }
-        let fingerprint = await RepositoryService.fingerprint(path: path)
-        guard watchToken == watchGeneration, watchedPaths[id] == path, let fingerprint else { return }
+        let changes = await RepositoryService.changeSnapshot(path: path)
+        let revision = await RepositoryService.changeRevision(path: path, changes: changes)
+        guard !Task.isCancelled, watchToken == watchGeneration, watchedPaths[id] == path, let revision else {
+            return
+        }
+        let fingerprint = revision.fingerprint
         guard let prior = watchedFingerprints[id] else {
             watchedFingerprints[id] = fingerprint
             return
         }
         guard prior != fingerprint else { return }
-        async let snapshotResult = RepositoryService.inspect(path: path)
-        async let changesResult = RepositoryService.changeSnapshot(path: path)
-        async let reviewResult = RepositoryService.review(path: path)
-        let (snapshot, refreshedChanges, refreshedReview) = await (snapshotResult, changesResult, reviewResult)
-        guard watchToken == watchGeneration, watchedPaths[id] == path else { return }
-        watchedFingerprints[id] = fingerprint
         if id == repository.repositoryID, activePath == path {
-            generation = UUID()
-            publish(\.repository, snapshot) { $0.hasSameContent(as: $1) }
-            publish(\.changes, refreshedChanges, unchangedWhen: Self.sameChanges)
-            publish(\.review, refreshedReview)
-            publish(\.reviewedFileIDs, [])
+            let capturedGeneration = generation
+            let snapshot = await RepositoryService.inspect(path: path, changes: changes)
+            guard !Task.isCancelled, watchToken == watchGeneration, watchedPaths[id] == path else { return }
+            if capturedGeneration == generation, activePath == path {
+                publish(\.repository, snapshot) { $0.hasSameContent(as: $1) }
+                publish(\.changeRevision, revision)
+                publish(\.changes, changes, unchangedWhen: Self.sameChanges)
+                if review?.fingerprint != fingerprint {
+                    reviewGeneration = UUID()
+                    publish(\.review, nil)
+                    publish(\.reviewedFileIDs, [])
+                }
+            }
         }
+        watchedFingerprints[id] = fingerprint
         let notice = RepositoryChangeNotice(
             repositoryID: id, displayName: URL(fileURLWithPath: path).lastPathComponent,
-            changedFiles: snapshot.changedFiles, createdAt: .now)
+            changedFiles: changes.changedFiles, createdAt: .now)
         // One publication, not three.
         notices = Array(([notice] + notices.filter { $0.repositoryID != id }).prefix(20))
         if id == repository.repositoryID, let preferencesStore {

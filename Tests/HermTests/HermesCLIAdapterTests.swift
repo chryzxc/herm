@@ -205,17 +205,40 @@ struct HermesCLIAdapterTests {
         #expect(client.httpPaths == [path, archivedPath, path, path])
     }
 
+    @Test func sessionKanbanPollsShareTheIndexedArchiveAndInvalidateAfterAMutation() async throws {
+        let client = CLITestRPCClient()
+        client.boardTasks = [
+            ["id": "owned", "title": "Owned", "session_id": "storage", "updated_at": 200],
+            ["id": "observed", "title": "Observed", "updated_at": 100],
+            ["id": "foreign", "title": "Foreign", "session_id": "other", "updated_at": 300],
+        ]
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+        let first = try await adapter.sessionKanbanInventory(background: true)
+        #expect(
+            first.matching(aliases: ["storage", "runtime"], observedIDs: ["observed", "foreign"]).map(\.id)
+                == ["owned", "observed"])
+        let second = try await adapter.sessionKanbanInventory(background: true)
+        #expect(second.matching(aliases: ["other"], observedIDs: []).map(\.id) == ["foreign"])
+        _ = try await adapter.kanbanListAggregate(
+            filter: KanbanListFilter(includeArchived: true), background: true)
+        #expect(client.httpPaths.count == 3)
+
+        _ = try await adapter.kanbanComment(boardSlug: "default", taskID: "t_12", text: "done")
+        _ = try await adapter.sessionKanbanInventory(background: true)
+        #expect(client.httpPaths.count == 6)
+    }
+
     @Test func aggregateKanbanIncludesArchivedBoardsOnlyWhenRequested() async throws {
         let client = CLITestRPCClient()
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
 
         let result = try await adapter.kanbanList(filter: KanbanListFilter(includeArchived: true))
 
+        #expect(client.httpPaths.first == "/api/plugins/kanban/boards?include_archived=true")
         #expect(
-            client.httpPaths == [
-                "/api/plugins/kanban/boards?include_archived=true",
-                "/api/plugins/kanban/board?board=default&include_archived=true",
+            client.httpPaths.dropFirst().sorted() == [
                 "/api/plugins/kanban/board?board=archived-board&include_archived=true",
+                "/api/plugins/kanban/board?board=default&include_archived=true",
             ])
         #expect(result.stdout.contains("archived-task"))
     }

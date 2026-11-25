@@ -172,7 +172,7 @@ struct PullRequestDetailView: View {
             .overlay(alignment: .bottomTrailing) {
                 if !isInspector, let model = contextRouter?.model {
                     PullRequestFloatingChatView(
-                        chat: chats.chat(for: pr), runtime: model, record: pr, expanded: $chatExpanded
+                        chat: chats.chat(for: pr), store: chats, runtime: model, record: pr, expanded: $chatExpanded
                     )
                     .id(pr.id)
                     .dockPadding(20)

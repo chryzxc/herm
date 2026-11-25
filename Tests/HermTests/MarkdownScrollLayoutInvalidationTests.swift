@@ -52,6 +52,23 @@ import Testing
         #expect(!fixture.container.needsLayout)
     }
 
+    @Test func completedDocumentReusesItsSolveDuringResizeAndReflowsAfterward() {
+        let fixture = makeFixture()
+        let document = fixture.container
+        let previousWidth = document.cachedSolveWidth
+        let measured = document.sectionMeasurementCount
+        document.defersWidthMeasurement = true
+        let narrowWidth = previousWidth / 2
+
+        #expect(document.measuredHeight(forWidth: narrowWidth) == fixture.height)
+        #expect(document.cachedSolveWidth == previousWidth)
+        #expect(document.sectionMeasurementCount == measured)
+
+        document.defersWidthMeasurement = false
+        #expect(document.measuredHeight(forWidth: narrowWidth) > fixture.height)
+        #expect(document.cachedSolveWidth == narrowWidth)
+    }
+
     /// Scrolling far enough to need other sections mounts them from the scroll
     /// notification itself, so no layout pass is spent on the new range.
     @Test func scrollingIntoOtherSectionsMountsWithoutLayoutRequest() throws {

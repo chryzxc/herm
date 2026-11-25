@@ -1715,6 +1715,22 @@ struct ControlCenterProjectTests {
         #expect(model.projectSessions.isEmpty)
     }
 
+    @Test func overlappingProjectReadsShareOnlyTheSameProfileAndProject() async throws {
+        let client = ProjectSessionRaceClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        async let first = model.readProjectSessions("slow", profileID: "alpha")
+        async let second = model.readProjectSessions("slow", profileID: "alpha")
+        async let otherProfile = model.readProjectSessions("slow", profileID: "beta")
+        let firstIDs = try await first.map(\.id)
+        let secondIDs = try await second.map(\.id)
+        let otherIDs = try await otherProfile.map(\.id)
+        #expect(firstIDs == ["slow-session"])
+        #expect(secondIDs == firstIDs)
+        #expect(otherIDs == firstIDs)
+        #expect(client.requestedProfiles.sorted() == ["alpha", "beta"])
+        #expect(model.projectSessionReads.isEmpty)
+    }
+
     @Test func projectSessionRefreshStateDoesNotLeakAcrossProjects() async throws {
         let client = ProjectSessionIsolationClient()
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
@@ -1892,6 +1908,7 @@ struct ControlCenterProjectTests {
 @MainActor
 private final class ProjectSessionRaceClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
+    private(set) var requestedProfiles: [String] = []
 
     func connect() async throws {}
     func close() {}
@@ -1900,6 +1917,7 @@ private final class ProjectSessionRaceClient: HermesRPCClientProtocol {
         guard method == "projects.project_sessions",
             let projectID = params["project_id"] as? String
         else { return [:] }
+        if let profile = params["profile"] as? String { requestedProfiles.append(profile) }
         if projectID == "slow" {
             try await Task.sleep(for: .milliseconds(40))
         }

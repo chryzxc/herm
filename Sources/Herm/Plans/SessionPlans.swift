@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 /// A plan this session owns: a Hermes `/plan` file it named, or a Markdown file someone
@@ -78,19 +77,14 @@ enum SessionPlans {
         return loader.load(workspace: workspace, newTexts: texts, linked: linked, tasks: tasks)
     }
 
-    /// One disposable cache per visible rail, carried across its file polls.
+    /// One transcript mention index per visible rail. Files are shared across rails.
     struct Loader: Sendable {
-        private struct Source: Hashable, Sendable {
-            let path: String
-            let isLinked: Bool
-        }
-
         private var texts: [String] = []
         private var mentions: [String: Bool] = [:]
-        private var maps: [Source: (FileRevision, SpecMap)] = [:]
 
         mutating func load(
-            workspace: String?, newTexts: [String]?, linked: [String], tasks: [TodoPlan.Item]
+            workspace: String?, newTexts: [String]?, linked: [String], tasks: [TodoPlan.Item],
+            discoveryMaxAge: TimeInterval = 0
         ) -> [SessionPlan] {
             if let newTexts {
                 texts = newTexts.map(\.precomposedStringWithCanonicalMapping)
@@ -99,7 +93,7 @@ enum SessionPlans {
             var plans: [SessionPlan] = []
             if let workspace {
                 let service = PlanArtifactService(projectRoot: URL(fileURLWithPath: workspace))
-                let files = service.planFileCandidates()
+                let files = PlanFileCache.shared.candidates(in: service, maxAge: discoveryMaxAge)
                 let names = Set(files.map(\.lastPathComponent))
                 let unchecked = names.subtracting(mentions.keys)
                 if !unchecked.isEmpty {
@@ -114,13 +108,10 @@ enum SessionPlans {
                     guard !Task.isCancelled else { return [] }
                     guard let validated = try? service.sourceURL(relativePath: service.relativePath(for: file))
                     else { continue }
-                    let source = Source(path: file.path, isLinked: false)
                     guard
-                        let entry = read(
-                            source, maxBytes: service.maxArtifactBytes,
-                            contents: {
-                                try service.railText(at: validated)
-                            })
+                        let entry = PlanFileCache.shared.plan(
+                            at: validated, maxBytes: service.maxArtifactBytes, linked: false,
+                            title: { service.railTitle(at: validated, contents: $0) })
                     else { continue }
                     plans.append(
                         plan(
@@ -139,11 +130,8 @@ enum SessionPlans {
                 guard !Task.isCancelled else { return [] }
                 let file = URL(fileURLWithPath: path)
                 let title = file.deletingPathExtension().lastPathComponent
-                if let (revision, map) = read(
-                    Source(path: path, isLinked: true), maxBytes: 1_000_000,
-                    contents: {
-                        (try String(contentsOf: file, encoding: .utf8), title)
-                    })
+                if let (revision, map) = PlanFileCache.shared.plan(
+                    at: file, maxBytes: PlanFileCache.maximumPlanBytes, linked: true, title: { _ in title })
                 {
                     var value = plan(path: path, title: title, modifiedAt: revision.modifiedAt, map: map, tasks: tasks)
                     value.isLinked = true
@@ -155,56 +143,7 @@ enum SessionPlans {
                             nextUp: nil, isLinked: true, isMissing: true))
                 }
             }
-            let visibleSources = Set(plans.map { Source(path: $0.path, isLinked: $0.isLinked) })
-            maps = maps.filter { visibleSources.contains($0.key) }
             return plans
-        }
-
-        private mutating func read(
-            _ source: Source, maxBytes: Int, contents: () throws -> (text: String, title: String)
-        ) -> (FileRevision, SpecMap)? {
-            let file = URL(fileURLWithPath: source.path)
-            guard let revision = FileRevision(file), revision.bytes <= maxBytes,
-                FileManager.default.isReadableFile(atPath: file.path)
-            else {
-                maps[source] = nil
-                return nil
-            }
-            if let cached = maps[source], cached.0 == revision { return cached }
-            guard let value = try? contents() else {
-                maps[source] = nil
-                return nil
-            }
-            let entry = (revision, SpecMapParser.parse(value.text, fallbackTitle: value.title))
-            maps[source] = entry
-            return entry
-        }
-    }
-
-    private struct FileRevision: Equatable, Sendable {
-        let device: Int32
-        let inode: UInt64
-        let bytes: Int64
-        let modifiedAt: Date
-        let changeSeconds: Int
-        let changeNanoseconds: Int
-
-        init?(_ file: URL) {
-            var info = stat()
-            guard
-                file.withUnsafeFileSystemRepresentation({ path in
-                    guard let path else { return false }
-                    return stat(path, &info) == 0 && info.st_mode & S_IFMT == S_IFREG
-                })
-            else { return nil }
-            device = info.st_dev
-            inode = info.st_ino
-            bytes = info.st_size
-            modifiedAt = Date(
-                timeIntervalSince1970: Double(info.st_mtimespec.tv_sec)
-                    + Double(info.st_mtimespec.tv_nsec) / 1_000_000_000)
-            changeSeconds = info.st_ctimespec.tv_sec
-            changeNanoseconds = info.st_ctimespec.tv_nsec
         }
     }
 

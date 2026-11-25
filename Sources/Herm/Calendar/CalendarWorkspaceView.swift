@@ -40,66 +40,25 @@ struct CalendarWorkspaceView: View {
         return DateInterval(start: start, end: end)
     }
 
-    private struct AgendaInputs: Equatable {
-        let events: [CalendarItem]
-        let jobs: [CronSummary]
-        let tasks: [KanbanTaskSummary]
-        let hidden: String
-        let today: Date
-        let range: DateInterval
-        let calendar: Calendar
-    }
-    @MainActor private final class AgendaCache {
-        private var inputs: AgendaInputs?
-        private var items: [CalendarItem] = []
-        private var search: (query: String, filter: CalendarAgenda.Filter)?
-        private var conflicts: (day: Date, ids: Set<String>)?
-        private(set) var full: [Date: [CalendarItem]] = [:]
-        private(set) var filtered: [Date: [CalendarItem]] = [:]
-
-        func update(_ next: AgendaInputs, query: String, filter: CalendarAgenda.Filter) {
-            if inputs != next {
-                let excluded = Set(next.hidden.split(separator: "\n").map(String.init))
-                items =
-                    next.events.filter { $0.sourceID.map { !excluded.contains($0) } ?? true }
-                    + CalendarAgenda.automationItems(next.jobs)
-                    + CalendarAgenda.taskItems(next.tasks, now: next.today, calendar: next.calendar)
-                full = CalendarAgenda.build(items, in: next.range, calendar: next.calendar)
-                inputs = next
-                search = nil
-                conflicts = nil
-            }
-            let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard search?.query != query || search?.filter != filter else { return }
-            filtered =
-                filter == .all && query.isEmpty
-                ? full
-                : CalendarAgenda.build(
-                    CalendarAgenda.filtered(items, query: query, kind: filter), in: next.range,
-                    calendar: next.calendar)
-            search = (query, filter)
-        }
-
-        func conflicts(on day: Date) -> Set<String> {
-            if let conflicts, conflicts.day == day { return conflicts.ids }
-            let ids = CalendarAgenda.overlappingEventIDs(full[day] ?? [])
-            conflicts = (day, ids)
-            return ids
-        }
-    }
-    @State private var cache = AgendaCache()
+    @State private var projection: CalendarAgenda.Projection?
 
     private var isFiltering: Bool {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || itemFilter != .all
     }
 
     var body: some View {
-        let _ = cache.update(
-            AgendaInputs(
-                events: system.items, jobs: control.cronJobs, tasks: control.globalKanbanTasks,
-                hidden: hiddenRaw, today: today, range: range, calendar: calendar), query: query, filter: itemFilter)
-        let agenda = cache.filtered
-        let fullDay = cache.full[selected] ?? []
+        let range = range
+        let request = CalendarAgenda.Request(
+            inputs: CalendarAgenda.Inputs(
+                events: useSystem ? system.items : [], jobs: control.cronJobs, tasks: control.globalKanbanTasks,
+                hiddenSources: hiddenRaw, today: today, range: range, calendar: calendar),
+            query: query.trimmingCharacters(in: .whitespacesAndNewlines), filter: itemFilter)
+        let displayed = projection.flatMap { previous in
+            let inputs = previous.request.inputs
+            return inputs.range == range && inputs.hiddenSources == hiddenRaw && (useSystem || inputs.events.isEmpty)
+                ? previous : nil
+        }
+        let agenda = displayed?.visible ?? [:]
         VStack(alignment: .leading, spacing: 16) {
             toolbar
             searchControls
@@ -107,25 +66,25 @@ struct CalendarWorkspaceView: View {
                 if proxy.size.width >= 1000 {
                     HStack(alignment: .top, spacing: 20) {
                         if scope == .agenda {
-                            agendaList(agenda)
+                            agendaList(agenda, loading: displayed == nil)
                         } else {
                             ScrollView {
                                 calendarPane(agenda).frame(height: max(560, proxy.size.height))
                             }
                         }
-                        detail(agenda, fullDayItems: fullDay).frame(width: 340)
+                        detail(displayed).frame(width: 340)
                     }
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
                             if scope == .agenda {
-                                agendaList(agenda).frame(height: 360)
+                                agendaList(agenda, loading: displayed == nil).frame(height: 360)
                             } else {
                                 calendarPane(agenda).frame(
                                     height: proxy.size.width < 560
                                         ? (scope == .month ? 440 : 240) : (scope == .month ? 600 : 420))
                             }
-                            detail(agenda, fullDayItems: fullDay, stacked: true).frame(height: 380)
+                            detail(displayed, stacked: true).frame(height: 380)
                         }
                     }
                 }
@@ -139,6 +98,7 @@ struct CalendarWorkspaceView: View {
             system.setEnabled(useSystem)
             system.load(range)
         }
+        .task(id: request) { await loadAgenda(request) }
         .onChange(of: useSystem) { _, enabled in system.setEnabled(enabled) }
         // Access granted in System Settings shows up when Herm comes back.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -279,65 +239,113 @@ struct CalendarWorkspaceView: View {
         }
     }
 
-    private func agendaList(_ agenda: [Date: [CalendarItem]]) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+    private func loadAgenda(_ request: CalendarAgenda.Request) async {
+        let previous = projection
+        if previous?.request.inputs == request.inputs, previous?.request.query != request.query {
+            try? await Task.sleep(for: .milliseconds(120))
+        }
+        guard !Task.isCancelled else { return }
+        let worker = Task.detached(priority: .userInitiated) { try CalendarAgenda.project(request, reusing: previous) }
+        let result = await withTaskCancellationHandler {
+            try? await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+        if let result, !Task.isCancelled { projection = result }
+    }
+
+    private func agendaList(_ agenda: [Date: [CalendarItem]], loading: Bool) -> some View {
+        let emptyMessage = isFiltering ? "No matching items this week" : "Nothing scheduled this week"
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if agenda.isEmpty {
-                    Text(isFiltering ? "No matching items this week" : "Nothing scheduled this week")
+                    Text(loading ? "Loading calendar…" : emptyMessage)
                         .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockSecondaryText)
                         .dockPadding(16)
                 }
                 ForEach(agenda.keys.sorted(), id: \.self) { day in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Button {
-                            selected = day
-                        } label: {
-                            HStack {
-                                Text(day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                                if day == today { Text("Today") }
-                                Spacer()
-                                Text("\(agenda[day]?.count ?? 0) items")
-                            }
-                            .dockFont(.body, weight: .semibold)
+                    let items = agenda[day] ?? []
+                    Section {
+                        ForEach(items) { item in
+                            agendaRow(item, day: day, last: item.id == items.last?.id)
                         }
-                        .buttonStyle(.dockCompact)
-                        ForEach(agenda[day] ?? []) { item in
-                            Button {
-                                selected = day
-                                selectedItemID = item.id
-                            } label: {
-                                HStack(alignment: .top, spacing: 12) {
-                                    Text(item.isAllDay ? "All day" : timeLabel(item))
-                                        .monospacedDigit().frame(width: 110, alignment: .leading)
-                                        .foregroundStyle(Color.dockSecondaryText)
-                                    DockIcon(icon(item), size: 12, color: tint(item))
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(item.title).foregroundStyle(Color.dockPrimaryText)
-                                        Text(source(item)).foregroundStyle(Color.dockMetadataText)
-                                    }
-                                    Spacer(minLength: 0)
-                                    DockIcon(.caretRight, size: 10, color: .dockMetadataText)
-                                }
-                                .dockFont(.body)
-                                .multilineTextAlignment(.leading)
-                                .dockPadding(10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.dockHover)
-                            .help("Show this day's agenda and actions")
-                        }
-                    }
-                    .dockPadding(12)
-                    .background {
-                        DockThemeShape(cornerRadius: DockLayout.paneRadius)
-                            .dockSelectionFill(day == selected, fallback: Color.dockSurface)
+                    } header: {
+                        agendaDayHeader(day, count: items.count)
+                    } footer: {
+                        Color.clear.frame(height: 16).accessibilityHidden(true)
                     }
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func agendaRow(_ item: CalendarItem, day: Date, last: Bool) -> some View {
+        agendaButton(item, day: day)
+            .dockPadding(.horizontal, 12)
+            .dockPadding(.bottom, last ? 12 : 0)
+            .background { agendaDaySurface(day, last: last) }
+    }
+
+    private func agendaDayHeader(_ day: Date, count: Int) -> some View {
+        Button {
+            selected = day
+        } label: {
+            HStack {
+                Text(day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                if day == today { Text("Today") }
+                Spacer()
+                Text("\(count) items")
+            }
+            .dockFont(.body, weight: .semibold)
+        }
+        .buttonStyle(.dockCompact)
+        .dockPadding(12)
+        .background { agendaDaySurface(day, first: true) }
+    }
+
+    @ViewBuilder
+    private func agendaDaySurface(_ day: Date, first: Bool = false, last: Bool = false) -> some View {
+        let radius = DockLayout.paneRadius
+        let surface = UnevenRoundedRectangle(
+            topLeadingRadius: first ? radius : 0,
+            bottomLeadingRadius: last ? radius : 0,
+            bottomTrailingRadius: last ? radius : 0,
+            topTrailingRadius: first ? radius : 0
+        )
+        if first && day == selected {
+            surface.dockSelectionFill(true, fallback: Color.dockSurface)
+        } else {
+            surface.fill(Color.dockSurface)
+        }
+    }
+
+    private func agendaButton(_ item: CalendarItem, day: Date) -> some View {
+        Button {
+            selected = day
+            selectedItemID = item.id
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Text(item.isAllDay ? "All day" : timeLabel(item))
+                    .monospacedDigit().frame(width: 110, alignment: .leading)
+                    .foregroundStyle(Color.dockSecondaryText)
+                DockIcon(icon(item), size: 12, color: tint(item))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.title).foregroundStyle(Color.dockPrimaryText)
+                    Text(source(item)).foregroundStyle(Color.dockMetadataText)
+                }
+                Spacer(minLength: 0)
+                DockIcon(.caretRight, size: 10, color: .dockMetadataText)
+            }
+            .dockFont(.body)
+            .multilineTextAlignment(.leading)
+            .dockPadding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockHover)
+        .help("Show this day's agenda and actions")
     }
 
     private var legend: some View {
@@ -538,11 +546,9 @@ struct CalendarWorkspaceView: View {
 
     // MARK: Detail
 
-    private func detail(_ agenda: [Date: [CalendarItem]], fullDayItems: [CalendarItem], stacked: Bool = false)
-        -> some View
-    {
-        let dayItems = agenda[selected] ?? []
-        let overlaps = cache.conflicts(on: selected)
+    private func detail(_ displayed: CalendarAgenda.Projection?, stacked: Bool = false) -> some View {
+        let dayItems = displayed?.visible[selected] ?? []
+        let overlaps = displayed?.conflicts[selected] ?? []
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -552,22 +558,27 @@ struct CalendarWorkspaceView: View {
                     Text(selected.formatted(.dateTime.month(.wide).day()))
                         .dockFont(.body)
                         .foregroundStyle(Color.dockMetadataText)
-                    Text("\(dayItems.count) \(dayItems.count == 1 ? "item" : "items")")
+                    Text(displayed == nil ? "Loading…" : "\(dayItems.count) \(dayItems.count == 1 ? "item" : "items")")
                         .dockFont(.metadata)
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 Spacer(minLength: 8)
                 if let router {
                     Button("Plan in chat") {
-                        router.attach(CalendarAgenda.dayContext(selected, items: fullDayItems), to: nil)
+                        guard let displayed else { return }
+                        router.attach(
+                            CalendarAgenda.dayContext(selected, items: displayed.full[selected] ?? []), to: nil)
                     }
                     .buttonStyle(.dockSecondary)
+                    .disabled(displayed == nil)
                     .help("Start a new chat with this day's agenda attached")
                 }
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if dayItems.isEmpty {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if displayed == nil {
+                        DockLoadingIndicator(size: 16).accessibilityLabel("Loading calendar")
+                    } else if dayItems.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(isFiltering ? "No matching items" : "Nothing scheduled")
                                 .dockFont(.body, weight: .semibold)
@@ -585,18 +596,20 @@ struct CalendarWorkspaceView: View {
                         ForEach([true, false], id: \.self) { allDay in
                             let sectionItems = dayItems.filter { $0.isAllDay == allDay }
                             if !sectionItems.isEmpty {
-                                VStack(alignment: .leading, spacing: 0) {
-                                    Text(allDay ? "All day" : "Schedule")
-                                        .dockFont(.body, weight: .semibold)
-                                        .foregroundStyle(Color.dockSecondaryText)
+                                Section {
                                     ForEach(sectionItems) { item in
                                         itemRow(item, overlaps: overlaps.contains(item.id))
                                     }
+                                } header: {
+                                    Text(allDay ? "All day" : "Schedule")
+                                        .dockFont(.body, weight: .semibold)
+                                        .foregroundStyle(Color.dockSecondaryText)
+                                        .dockPadding(.top, allDay || !dayItems.contains(where: \.isAllDay) ? 0 : 16)
                                 }
                             }
                         }
                     }
-                    accessCard
+                    accessCard.dockPadding(.top, 16)
                 }
             }
             .scrollIndicators(.hidden)

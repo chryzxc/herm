@@ -6,30 +6,59 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 extension DockModel {
+    func subscribeSessionEvents(from router: HermesEventRouter, requestedSessionID: String?) -> UUID {
+        let subscription = router.subscribeConversation(
+            sessionIDs: sessionEventOwners(requestedSessionID: requestedSessionID),
+            matchesWorker: { [weak self] event in
+                guard let self, let owner = event.sessionID, let sessionID else { return false }
+                return Self.eventBelongsToSession(
+                    type: event.type, envelopeSessionID: event.envelopeSessionID, eventSessionID: owner,
+                    payload: event.payload, currentSessionID: sessionID, agents: sessionAgents + activeSubagents)
+            },
+            handler: { [weak self] type, params in
+                self?.receiveGatewayEvent(type, params: params)
+            })
+        sessionEventOwnersChanged = { [weak self, weak router] in
+            guard let self else { return }
+            router?.updateSessionIDs(sessionEventOwners(requestedSessionID: requestedSessionID), for: subscription)
+        }
+        return subscription
+    }
+
+    private func sessionEventOwners(requestedSessionID: String?) -> Set<String> {
+        var owners = currentSessionIDs
+        if isRestoringSession, let requestedSessionID { owners.insert(requestedSessionID) }
+        owners.formUnion(quickSessionOwners.keys)
+        owners.formUnion(inFlightBotActivities.values.compactMap(\.botChatSessionID))
+        return owners
+    }
+
     /// The command center consumes the global Hermes stream, while the
     /// conversation handler below intentionally filters events to its active
     /// session. Own unread state at this shared boundary so attention from a
     /// different session cannot appear in Control without reaching the menu bar.
     func receiveGatewayEvent(_ type: String, params: [String: Any]) {
-        guard HermPerformanceRecorder.active else { return handleGatewayEvent(type, params: params) }
+        let event = HermesEventRouter.Event(type: type, params: params)
+        guard HermPerformanceRecorder.active else { return handleGatewayEvent(event) }
         // Profiling only: split main-thread event cost between the open chat and
         // the other running sessions, since every session's events land here.
-        let metric = gatewayEventMetric(params: params)
+        let metric = gatewayEventMetric(event)
         HermPerformanceRecorder.mark(metric)
-        HermPerformanceRecorder.measure("gateway_event", as: metric) { handleGatewayEvent(type, params: params) }
+        HermPerformanceRecorder.measure("gateway_event", as: metric) { handleGatewayEvent(event) }
     }
 
-    private func gatewayEventMetric(params: [String: Any]) -> String {
-        let payload = params["payload"] as? [String: Any]
-        guard let owner = (params["session_id"] as? String) ?? (payload?["session_id"] as? String) else {
+    private func gatewayEventMetric(_ event: HermesEventRouter.Event) -> String {
+        guard let owner = event.sessionID else {
             return "events.unscoped"
         }
         return currentSessionIDs.contains(owner) ? "events.current" : "events.background"
     }
 
-    private func handleGatewayEvent(_ type: String, params: [String: Any]) {
-        let noticePayload = params["payload"] as? [String: Any] ?? [:]
-        let eventSessionID = (params["session_id"] as? String) ?? (noticePayload["session_id"] as? String)
+    private func handleGatewayEvent(_ event: HermesEventRouter.Event) {
+        let type = event.type
+        let params = event.params
+        let noticePayload = event.payload
+        let eventSessionID = event.sessionID
         let storedTip = transcriptHistoryCursor?.readOnlyResolvedSessionID
         let matchesSelection = eventSessionID.map { owner in
             currentSessionIDs.contains(owner) || owner == storedTip || rowSessionID(owner) == sessionStorageID
@@ -135,7 +164,7 @@ extension DockModel {
                 completionRowID: completionRow)
         }
         if storedTranscriptAttach == nil { captureObservedKanbanTaskIDs(type: type, params: params) }
-        eventRouter.route(type: type, params: params)
+        eventRouter.route(event)
         reconcileDirectBotLifecycle(type: type, params: params)
         capturePendingApproval(type: type, params: params)
         capturePendingClarification(type: type, params: params)
@@ -1428,7 +1457,7 @@ extension DockModel {
             responseStartedAt = turnStartedAtBySession[sessionID] ?? now
             turnStartedAtBySession[sessionID] = responseStartedAt
         }
-        messages.append(ChatMessage(role: .hermes, text: "", timestamp: now, modelName: currentModelName))
+        appendChatMessage(ChatMessage(role: .hermes, text: "", timestamp: now, modelName: currentModelName))
         streamingMessageID = messages.last?.id
         streamingMessageSessionID = sessionID
         streamingResponseStartedAt = responseStartedAt
@@ -1943,7 +1972,7 @@ extension DockModel {
         } else {
             let delta = streamingMessagePendingPresentationDelta
             streamingMessagePendingPresentationDelta = ""
-            streamingText.appendPresentation(delta)
+            streamingText.enqueuePresentation(delta)
         }
         streamingMessagePublishedSuffix = String(publishedText.suffix(Self.visionUnsupportedPhrase.count - 1))
     }
@@ -1967,14 +1996,14 @@ extension DockModel {
         // Completion may arrive before the adaptive presentation timer flushes
         // its final delta. Reconcile the live projection first so the native
         // completion handoff can reuse every promoted section.
-        streamingText.reconcilePresentation(with: publishedText)
+        let preparedHandoff = streamingText.reconcileForCompletion(with: publishedText)
         let message = messages[index]
         let attribution = Self.botAttribution(from: publishedText)
         let botProfileID = attribution?.profileID ?? activeBotProfileID
         let botDisplayName = attribution?.displayName ?? activeBotDisplayName
         closeTurnThinking()
         let reactions = message.reactions
-        messages[index] = ChatMessage(
+        var completed = ChatMessage(
             id: id,
             role: .hermes,
             text: attribution?.body ?? publishedText,
@@ -1992,9 +2021,10 @@ extension DockModel {
                 return call
             }
         )
-        messages[index].reactions = reactions
+        completed.reactions = reactions
+        editChatMessage(at: index) { $0 = completed }
         streamingMessagePendingPresentationDelta = ""
-        streamingText.retainCompletionPresentation(for: id)
+        if preparedHandoff { streamingText.retainCompletionPresentation(for: id) }
         streamingText.clearLivePresentation()
         streamingResponseStartedAt = nil
     }

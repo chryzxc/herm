@@ -5,6 +5,14 @@ final class ComposerInputTextView: NSTextView {
     var onPrepareForInput: ((NSTextView) -> Void)?
     var onSubmit: (() -> Void)?
     var onCompletionKey: ((ComposerCompletionKey) -> Bool)?
+    var onEmptyReturn: (() -> Bool)?
+    var onFollowUpSuggestion: (() -> String?)? {
+        didSet {
+            setAccessibilityHelp(
+                onFollowUpSuggestion?().map { "Apple Intelligence suggestion. \($0) Press Tab to insert." })
+        }
+    }
+    var onFirstResponderChanged: ((Bool) -> Void)?
     var animatesFileDrop = false
     private var fileDragSequence: Int?
     private var fileDragRevision: Int?
@@ -15,6 +23,19 @@ final class ComposerInputTextView: NSTextView {
     var onWidthChanged: (() -> Void)?
     var contexts: [ChatContext] = []
     var onInspectContext: ((ChatContext) -> Void)?
+
+    // NSTextView's editing notification waits for the first edit, which is too late for a placeholder.
+    override func becomeFirstResponder() -> Bool {
+        guard super.becomeFirstResponder() else { return false }
+        onFirstResponderChanged?(true)
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        guard super.resignFirstResponder() else { return false }
+        onFirstResponderChanged?(false)
+        return true
+    }
 
     override func setFrameSize(_ newSize: NSSize) {
         let widthChanged = frame.width != newSize.width
@@ -158,14 +179,18 @@ final class ComposerInputTextView: NSTextView {
         }
         let editingModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
         if event.modifierFlags.intersection(editingModifiers).isEmpty,
-            let key = ComposerCompletionKey(keyCode: event.keyCode),
-            onCompletionKey?(key) == true
+            let key = ComposerCompletionKey(keyCode: event.keyCode)
         {
-            return
+            if onCompletionKey?(key) == true { return }
+            if key == .tab, !event.isARepeat, isEditable, string.isEmpty, let suggestion = onFollowUpSuggestion?() {
+                insertText(suggestion, replacementRange: selectedRange())
+                return
+            }
         }
         if event.keyCode == 36 || event.keyCode == 76,
             event.modifierFlags.intersection(editingModifiers).isEmpty
         {
+            if isEditable, !event.isARepeat, string.isEmpty, onEmptyReturn?() == true { return }
             onSubmit?()
             return
         }

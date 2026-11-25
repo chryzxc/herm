@@ -1003,6 +1003,7 @@ struct ConversationTranscriptIntegrationTests {
                     let hitsBefore = NativeMarkdownCompletedHeightCache.hits
                     let missesBefore = NativeMarkdownCompletedHeightCache.misses
                     let cpuStarted = mainThreadCPUMilliseconds()
+                    let codeBefore = NativeMarkdownCodeTiming.milliseconds
                     let start = DispatchTime.now().uptimeNanoseconds
                     try fixture.move(to: first.minY + 20)
                     if scenario == "streaming" {
@@ -1011,12 +1012,21 @@ struct ConversationTranscriptIntegrationTests {
                     fixture.host.layoutSubtreeIfNeeded()
                     fixture.host.displayIfNeeded()
                     let workMS = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+                    let codeAfter = NativeMarkdownCodeTiming.milliseconds
                     try await fixture.settle()
                     let pageWork = workMS + fixture.layoutWorkMS - previousLayoutWork
                     let mainCPU = mainThreadCPUMilliseconds() - cpuStarted
                     print(
                         "chat_release scenario=\(scenario) pair=\(pair) warm=\(warm) step_work_ms=\(workMS) page_work_ms=\(pageWork) main_thread_cpu_ms=\(mainCPU) sync_parses=\(MarkdownRenderDocumentCache.parseCount - parsesBefore) measurement_hits=\(NativeMarkdownCompletedHeightCache.hits - hitsBefore) measurement_misses=\(NativeMarkdownCompletedHeightCache.misses - missesBefore)"
                     )
+                    if scenario == "code" {
+                        func elapsed(_ phase: NativeMarkdownCodeTiming.Phase) -> Double {
+                            codeAfter[phase, default: 0] - codeBefore[phase, default: 0]
+                        }
+                        print(
+                            "native_code pair=\(pair) warm=\(warm) creation_ms=\(elapsed(.creation)) install_ms=\(elapsed(.textInstallation)) layout_ms=\(elapsed(.layout))"
+                        )
+                    }
                 }
             }
         }

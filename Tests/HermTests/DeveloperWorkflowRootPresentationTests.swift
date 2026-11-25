@@ -5,6 +5,16 @@ import Testing
 
 @Suite @MainActor
 struct DeveloperWorkflowRootPresentationTests {
+    @Test func activeWatchedRepositoryUsesOneRegistrationAtTheActivePath() {
+        let active = RepositorySnapshot(
+            path: "/tmp/worktree", branch: "main", changedFiles: 0, latestCommit: "a", isGitRepository: true,
+            repositoryID: "/tmp/project")
+        #expect(
+            DeveloperWorkflowModel.watchPaths(ids: ["/tmp/project", "/tmp/other", "/tmp/project"], active: active)
+                == ["/tmp/project": "/tmp/worktree", "/tmp/other": "/tmp/other"])
+        #expect(DeveloperWorkflowModel.watchPaths(ids: [], active: active).isEmpty)
+    }
+
     @Test func emitsOnlyWhenRootReadFieldsChange() {
         let repository = CurrentValueSubject<RepositorySnapshot, Never>(
             RepositorySnapshot(

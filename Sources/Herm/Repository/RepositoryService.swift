@@ -47,11 +47,16 @@ struct RepositoryChangeSnapshot: Equatable {
     var conflictedCount: Int { files.filter { $0.status == .conflicted }.count }
 }
 
-struct RepositoryDiff: Equatable {
+struct RepositoryDiff: Equatable, Sendable {
     let path: String
     let text: String
     let isTruncated: Bool
     let isStaged: Bool
+}
+
+struct RepositoryChangeRevision: Equatable {
+    let fingerprint: String
+    let fileIdentities: [String: String]
 }
 
 enum RepositorySourceControlAction {
@@ -413,24 +418,26 @@ enum RepositoryService {
     static let maxProjectExplorerEntries = 400
     static let maxBlameLines = 10_000
 
-    static func inspect(path: String) async -> RepositorySnapshot {
+    static func inspect(path: String, changes existingChanges: RepositoryChangeSnapshot? = nil) async
+        -> RepositorySnapshot
+    {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-        let branchResult = await runGit(path: normalizedPath, arguments: ["branch", "--show-current"])
-        guard branchResult.exitCode == 0 else {
-            return RepositorySnapshot(
-                path: normalizedPath, branch: "Not a Git repository", changedFiles: 0, latestCommit: "",
-                isGitRepository: false)
+        if existingChanges?.error != nil || existingChanges == nil {
+            let branchResult = await runGit(path: normalizedPath, arguments: ["branch", "--show-current"])
+            guard branchResult.exitCode == 0 else {
+                return RepositorySnapshot(
+                    path: normalizedPath, branch: "Not a Git repository", changedFiles: 0, latestCommit: "",
+                    isGitRepository: false)
+            }
         }
-        async let changes = changeSnapshot(path: normalizedPath)
-        async let head = runGit(path: normalizedPath, arguments: ["rev-parse", "--short", "HEAD"])
         async let commit = runGit(path: normalizedPath, arguments: ["log", "-1", "--pretty=format:%h %s"])
         async let upstream = runGit(
             path: normalizedPath, arguments: ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
         async let worktrees = runGit(path: normalizedPath, arguments: ["worktree", "list", "--porcelain"])
         async let stashes = runGit(path: normalizedPath, arguments: ["stash", "list"])
         async let operation = operationState(path: normalizedPath)
-        let result = await changes
-        let headResult = await head
+        let result: RepositoryChangeSnapshot
+        if let existingChanges { result = existingChanges } else { result = await changeSnapshot(path: normalizedPath) }
         let commitResult = await commit
         let upstreamResult = await upstream
         let worktreeResult = await worktrees
@@ -439,11 +446,11 @@ enum RepositoryService {
         let counts = upstreamCounts(upstreamResult)
         return RepositorySnapshot(
             path: normalizedPath,
-            branch: branchResult.output.isEmpty ? "detached HEAD" : branchResult.output,
+            branch: result.branch,
             changedFiles: result.changedFiles,
             latestCommit: commitResult.output,
             isGitRepository: true,
-            headRevision: headResult.exitCode == 0 ? headResult.output : nil,
+            headRevision: result.headRevision,
             stagedFiles: result.stagedCount,
             unstagedFiles: result.unstagedCount,
             untrackedFiles: result.untrackedCount,
@@ -511,10 +518,19 @@ enum RepositoryService {
             ? (true, nil) : (false, result.output.isEmpty ? "Git could not switch branches" : result.output)
     }
 
+    static func watchPathsAreIgnored(_ files: Set<String>, in path: String) async -> Bool {
+        guard !files.isEmpty, files.allSatisfy(isSafeRelativePath) else { return false }
+        let paths = files.sorted().map { "./" + $0 }
+        let result = await runGit(path: path, arguments: ["check-ignore", "--"] + paths, trimOutput: false)
+        // Git quotes unusual names. An ambiguous or mixed batch takes the ordinary refresh path.
+        return result.exitCode == 0 && Set(result.output.split(separator: "\n").map(String.init)) == Set(paths)
+    }
+
     static func changeSnapshot(path: String) async -> RepositoryChangeSnapshot {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
         let status = await runGit(
-            path: normalizedPath, arguments: ["status", "--porcelain=v1", "--untracked-files=all", "-z"],
+            path: normalizedPath,
+            arguments: ["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all", "-z"],
             trimOutput: false)
         let branch = await runGit(path: normalizedPath, arguments: ["branch", "--show-current"])
         let head = await runGit(path: normalizedPath, arguments: ["rev-parse", "--short", "HEAD"])
@@ -951,43 +967,86 @@ enum RepositoryService {
         }
         results.sort { $0.change.id < $1.change.id }
         let partial = omitted > 0 || results.contains { !$0.isReadable || $0.isTruncated || $0.isBinary }
-        let fingerprint = await canonicalFingerprint(path: path, changes: changes)
+        let revision = await changeRevision(path: path, changes: changes)
+        guard let revision else { return nil }
         return RepositoryReviewSnapshot(
-            repositoryID: changes.repositoryID, headRevision: changes.headRevision, fingerprint: fingerprint,
+            repositoryID: changes.repositoryID, headRevision: changes.headRevision, fingerprint: revision.fingerprint,
             files: results, completeness: partial ? .partial : .complete, refreshedAt: .now, omittedFileCount: omitted)
     }
 
     /// Stable, content-free identity for baseline invalidation and watch events.
     static func fingerprint(path: String) async -> String? {
         let changes = await changeSnapshot(path: path)
-        guard changes.error == nil else { return nil }
-        return await canonicalFingerprint(path: path, changes: changes)
+        return await fingerprint(path: path, changes: changes)
     }
 
-    private static func canonicalFingerprint(path: String, changes: RepositoryChangeSnapshot) async -> String {
-        let root = await topLevel(path: path)
-        let identities = await withTaskGroup(of: String.self, returning: [String].self) { group in
-            var iterator = changes.files.makeIterator()
-            for _ in 0..<min(4, changes.files.count) {
-                if let file = iterator.next() {
-                    group.addTask {
-                        "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file, root: root) ?? "unavailable")"
-                    }
-                }
+    static func fingerprint(path: String, changes: RepositoryChangeSnapshot) async -> String? {
+        await changeRevision(path: path, changes: changes)?.fingerprint
+    }
+
+    static func changeRevision(path: String, changes: RepositoryChangeSnapshot) async -> RepositoryChangeRevision? {
+        guard changes.error == nil else { return nil }
+        var identities: [String: String] = [:]
+        if !changes.files.isEmpty, let root = await topLevel(path: path) {
+            let files = changes.files.filter { isSafeRelativePath($0.path) }
+            let staged = files.filter(\.isStaged)
+            let working = files.filter { !$0.isStaged && $0.status != .deleted }
+            for offset in stride(from: 0, to: staged.count, by: 128) {
+                guard !Task.isCancelled else { return nil }
+                let batch = staged[offset..<min(offset + 128, staged.count)]
+                let result = await runGit(
+                    path: root.path,
+                    arguments: ["--literal-pathspecs", "ls-files", "--stage", "-z", "--"] + batch.map(\.path),
+                    trimOutput: false)
+                guard result.exitCode == 0 else { continue }
+                let blobs = stagedBlobIdentities(result.output)
+                for file in batch { identities[file.id] = blobs[file.path] }
             }
-            var values: [String] = []
-            while let value = await group.next() {
-                values.append(value)
-                if let file = iterator.next() {
-                    group.addTask {
-                        "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file, root: root) ?? "unavailable")"
-                    }
-                }
+            for offset in stride(from: 0, to: working.count, by: 128) {
+                guard !Task.isCancelled else { return nil }
+                let batch = working[offset..<min(offset + 128, working.count)]
+                let blobs = await workingBlobIdentities(batch, root: root.path)
+                identities.merge(blobs) { _, new in new }
             }
-            return values
+            for file in files where !file.isStaged && file.status == .deleted { identities[file.id] = "deleted" }
         }
-        return fingerprint(
-            repositoryID: changes.repositoryID, headRevision: changes.headRevision, identities: identities)
+        guard !Task.isCancelled else { return nil }
+        let parts = changes.files.map { "\($0.id)|\($0.status.rawValue)|\(identities[$0.id] ?? "unavailable")" }
+        return .init(
+            fingerprint: fingerprint(
+                repositoryID: changes.repositoryID, headRevision: changes.headRevision, identities: parts),
+            fileIdentities: identities)
+    }
+
+    private static func stagedBlobIdentities(_ output: String) -> [String: String] {
+        var blobs: [String: String] = [:]
+        for record in output.split(separator: "\0") {
+            let parts = record.split(separator: "\t", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            let fields = parts[0].split(separator: " ")
+            guard fields.count == 3, fields[2] == "0" else { continue }
+            blobs[String(parts[1])] = String(fields[1])
+        }
+        return blobs
+    }
+
+    private static func workingBlobIdentities(_ files: ArraySlice<RepositoryFileChange>, root: String) async
+        -> [String: String]
+    {
+        guard !files.isEmpty, !Task.isCancelled else { return [:] }
+        let result = await runGit(
+            path: root, arguments: ["hash-object", "--no-filters", "--"] + files.map(\.path))
+        let hashes = result.output.split(separator: "\n")
+        if result.exitCode == 0, hashes.count == files.count {
+            return Dictionary(zip(files.map(\.id), hashes.map(String.init)), uniquingKeysWith: { _, new in new })
+        }
+        // A file can disappear after status. Keep the healthy paths without mispairing hashes.
+        guard files.count > 1 else { return [:] }
+        let middle = files.index(files.startIndex, offsetBy: files.count / 2)
+        var first = await workingBlobIdentities(files[..<middle], root: root)
+        let last = await workingBlobIdentities(files[middle...], root: root)
+        first.merge(last) { _, new in new }
+        return first
     }
 
     static func fingerprint(repositoryID: String, headRevision: String?, identities: [String]) -> String {

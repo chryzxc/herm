@@ -1,6 +1,12 @@
 import AppKit
 import SwiftUI
 
+enum DockBotRailMetrics {
+    static let width: CGFloat = 72
+    static let rowSize: CGFloat = 52
+    static let avatarSize: CGFloat = 38
+}
+
 @MainActor
 struct DockProfilePickerList<Header: View, Row: View>: View {
     let bots: [BotSummary]
@@ -14,7 +20,7 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     @GestureState private var gestureSample: DragSample?
     @State private var drag: DockProfilePickerDrag?
     @State private var scrollTarget = DockScrollTarget()
-    /// The scroll view's frame in the same space as the drag, and the pointer inside it.
+    /// The scroll view's frame and the drag pointer in the same coordinate space.
     @State private var viewport: CGRect = .zero
     @State private var pointer: CGPoint = .zero
     @State private var edgeScroll: Task<Void, Never>?
@@ -74,10 +80,10 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     private func reorderableRow(_ bot: BotSummary, index: Int, count: Int) -> some View {
         if isRail {
             row(bot)
-                .frame(height: DockControlMetrics.hitTarget)
+                .frame(height: rowHeight)
                 .modifier(DockDragCursor(isEnabled: count > 1, isDragging: drag?.id == bot.id))
-                // As on the main rail, an avatar click selects and a drag starts after the pointer moves.
-                .simultaneousGesture(reorderGesture(for: bot.id, at: index))
+                // A click selects the bot. Once the drag starts, it owns the rest of the press.
+                .highPriorityGesture(reorderGesture(for: bot.id, at: index))
                 .accessibilityAdjustableAction { adjust(bot.id, direction: $0) }
         } else {
             HStack(spacing: 0) {
@@ -85,7 +91,7 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
                 DockIcon(.dotsSixVertical)
                     .dockFont(.metadata, weight: .semibold)
                     .foregroundStyle(style.secondaryText)
-                    .frame(width: 28, height: 38)
+                    .frame(width: 28, height: rowHeight)
                     .contentShape(Rectangle())
                     .modifier(DockDragCursor(isEnabled: true, isDragging: drag?.id == bot.id))
                     .gesture(reorderGesture(for: bot.id, at: index))
@@ -99,7 +105,8 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
     }
 
     private var rowSpacing: CGFloat { isRail ? DockWorkspaceScale.spacing(6, scale: workspaceScale) : 2 }
-    private var rowPitch: CGFloat { (isRail ? DockControlMetrics.hitTarget : 38) + rowSpacing }
+    private var rowHeight: CGFloat { isRail ? DockBotRailMetrics.rowSize : 38 }
+    private var rowPitch: CGFloat { rowHeight + rowSpacing }
 
     /// Keeps the lifted row under the pointer while the list reflows around it.
     private func liftOffset(for id: String, at index: Int) -> CGFloat {
@@ -158,7 +165,7 @@ struct DockProfilePickerList<Header: View, Row: View>: View {
         }
     }
 
-    /// Scrolls the list while the pointer is held in an edge band. One step at a time, so the
+    /// Scrolls the list while the pointer is held near or past a vertical edge. One step at a time, so the
     /// slot update always sees the rows the scroll revealed.
     private func updateEdgeScroll() {
         guard let token = drag?.token,

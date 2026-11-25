@@ -210,7 +210,8 @@ struct SessionUnreadRepliesTests {
         var onEvent: ((String, [String: Any]) -> Void)?
         var rows: [[String: Any]] = []
         var requests = 0
-        private var held: CheckedContinuation<Void, Never>?
+        var holdBackground = false
+        private var held: [CheckedContinuation<Void, Never>] = []
 
         func connect() async throws {}
         func close() {}
@@ -219,13 +220,17 @@ struct SessionUnreadRepliesTests {
         func fetchHTTP(_ path: String) async throws -> [String: Any] {
             requests += 1
             let page = rows
-            if requests == 1 { await withCheckedContinuation { held = $0 } }
+            if requests == 1 || (holdBackground && !path.contains("opening")) {
+                await withCheckedContinuation { held.append($0) }
+            }
             return ["messages": page, "pagination": ["returned": page.count]]
         }
 
         func release() {
-            held?.resume()
-            held = nil
+            holdBackground = false
+            let reads = held
+            held.removeAll()
+            for read in reads { read.resume() }
         }
     }
 
@@ -245,6 +250,37 @@ struct SessionUnreadRepliesTests {
         client.release()
         #expect(try await older.value == 1)
         #expect(try await newer.value == 2)
+    }
+
+    @Test func badgeReadsAreBoundedAndOpeningDoesNotWaitForThem() async throws {
+        let client = HeldClient()
+        client.holdBackground = true
+        client.rows = [row(1, role: "assistant", text: "Reply", timestamp: 102)]
+        let replies = SessionUnreadReplies(client: client)
+        let seenAt = Date(timeIntervalSince1970: 100)
+        let badgeTasks = (0..<12).map { index in
+            Task {
+                try await replies.count(
+                    session: session(updatedAt: 200 + Double(index)), profileID: "bot",
+                    after: seenAt)
+            }
+        }
+        for _ in 0..<1_000 where client.requests < 3 { await Task.yield() }
+        #expect(client.requests == 3)
+        let opening = HermesSession(
+            id: "opening", title: "Opening", preview: "", startedAt: nil,
+            messageCount: 1, source: "test")
+        let projected = try await replies.project(
+            session: opening, profileID: "bot", after: seenAt, through: Date(timeIntervalSince1970: 120))
+        #expect(projected.count == 1)
+        #expect(client.requests == 4)
+        for task in badgeTasks { task.cancel() }
+        // Let cancelled consumers relinquish their queued reads before freeing slots.
+        await Task.yield()
+        client.release()
+        for task in badgeTasks {
+            await #expect(throws: CancellationError.self) { _ = try await task.value }
+        }
     }
 
     @Test func staleSessionTimestampDoesNotHideUnreadReplyFromBadge() async throws {

@@ -152,6 +152,7 @@ final class ControlCenterModel: ObservableObject {
     @Published var projectSessionsByProjectID: [String: [SessionSummary]] = [:]
     @Published var isRefreshingProjectNavigation = false
     var projectNavigationReads: [String: UUID] = [:]
+    var projectSessionReads: [ProfileScopedID: (UUID, Task<[SessionSummary], Error>)] = [:]
     @Published var selectedProjectID: String?
     /// Profile scope used exclusively by the Projects projection and its
     /// mutations. Other Control tabs remain gateway-global by design.
@@ -192,6 +193,17 @@ final class ControlCenterModel: ObservableObject {
     /// Desktop-parity editor for Hermes `config.yaml`, over the same backend.
     lazy var configEditor = HermesConfigEditor(
         profile: { [weak self] in self?.dockModel?.profileScopeID }, rpc: { [weak self] in self?.rpc })
+    lazy var poolRotation = HermesPoolRotationModel(
+        service: { [weak self] in
+            guard let self, let rpc else { return nil }
+            let profile = dockModel?.profileScopeID
+            if !GatewayConnectionStore.isLocalBackend {
+                return HermesPoolRotationService(rpc: rpc, profile: HermesRemoteProviderService.profileName(profile))
+            }
+            return HermesPoolRotationService(rpc: rpc, profile: profile)
+        },
+        onSaved: { [weak self] in Task { await self?.configEditor.load(forceSchema: false) } }
+    )
     var cli: HermesCLIAdapter?
     var refreshTask: Task<Void, Never>?
     var sidebarCapabilityTask: Task<Void, Never>?
@@ -205,8 +217,8 @@ final class ControlCenterModel: ObservableObject {
     }
     var latestActivityCache: [String: LatestActivityCacheEntry] = [:]
     var eventRefreshTask: Task<Void, Never>?
-    var pendingEventRefreshes: Set<String> = []
-    var inFlightEventRefreshes: Set<String> = []
+    var pendingEventRefreshes: Set<EventRefresh> = []
+    var inFlightEventRefreshes: Set<EventRefresh> = []
     var refreshGeneration: UInt64 = 0
     var clientBindingGeneration: UInt64 = 0
     var searchTask: Task<Void, Never>?

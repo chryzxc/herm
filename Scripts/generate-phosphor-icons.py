@@ -9,8 +9,8 @@ Usage:
     Scripts/generate-phosphor-icons.py [path-to-phosphor-icons/core checkout]
 
 Without a path, the pinned commit below is shallow-cloned into a temp dir.
-Every icon is vendored in regular and fill weights so dynamic navigation and
-stateful controls never silently fall back to an outline for their active state.
+Every icon has a default and a fill path so selected controls can use their
+filled variant. The three-dot menu icons use bold artwork as their default.
 """
 import pathlib
 import re
@@ -20,6 +20,7 @@ import tempfile
 
 CORE_REPO = "https://github.com/phosphor-icons/core.git"
 CORE_COMMIT = "2b75f3ad12b420c9504ef05df8d2564a28f8500e"  # @phosphor-icons/core 2.1.1
+BOLD_MENU_ICONS = {"dots-three", "dots-three-vertical"}
 SWIFT_KEYWORDS = {"repeat", "import", "return", "switch", "case", "default", "class", "struct", "enum", "func", "var", "let",
                   "if", "else", "for", "while", "do", "in", "is", "as", "try", "throw", "true", "false", "nil", "self",
                   "super", "init", "operator", "protocol", "extension", "static", "where", "break", "continue", "defer",
@@ -35,6 +36,12 @@ def case_name(slug: str) -> str:
 
 def path_data(svg: pathlib.Path) -> str:
     return " ".join(re.findall(r' d="([^"]+)"', svg.read_text()))
+
+
+def default_path(core: pathlib.Path, svg: pathlib.Path) -> str:
+    if svg.stem in BOLD_MENU_ICONS:
+        return path_data(core / "assets/bold" / f"{svg.stem}-bold.svg")
+    return path_data(svg)
 
 
 def generate(core: pathlib.Path) -> str:
@@ -54,7 +61,7 @@ def generate(core: pathlib.Path) -> str:
         "extension Ph {",
         "    var regularPath: String {",
         "        switch self {",
-        *(f'        case .{case_name(svg.stem).strip("`")}: return "{path_data(svg)}"' for svg in regular),
+        *(f'        case .{case_name(svg.stem).strip("`")}: return "{default_path(core, svg)}"' for svg in regular),
         "        }",
         "    }",
         "",

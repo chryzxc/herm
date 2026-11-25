@@ -146,6 +146,7 @@ enum BrowserPageMessage {
 /// send-page and console errors.
 struct SessionBrowserView: View {
     @Environment(\.dockWorkspaceScale) private var workspaceScale
+    @Environment(\.dockHostVisible) private var hostVisible
     /// Not observed: the page only acts on the model. Observing it redrew the toolbar
     /// (three `ViewThatFits` layouts) and the live canvas on every chat delta.
     let model: DockModel
@@ -157,6 +158,8 @@ struct SessionBrowserView: View {
     @ObservedObject private var signOut = BrowserSignOutState.shared
     @State private var field = ""
     @State private var sendingPage = false
+    @State private var consoleHostID = UUID()
+    @State private var consoleErrorCount = 0
     @FocusState private var isEditingAddress: Bool
 
     init(model: DockModel, workspace: SessionBrowserWorkspace, browser: BrowserController? = nil) {
@@ -173,7 +176,7 @@ struct SessionBrowserView: View {
 
     private var showsAgent: Bool { isPrimary && agent.isActive }
     private var palette: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
-    private var consoleErrors: [String] { showsAgent ? agent.consoleErrors : browser.consoleErrors }
+    private var console: BrowserConsoleBuffer { showsAgent ? agent.console : browser.console }
     private var annotating: Bool { showsAgent ? agent.annotating : browser.annotating }
     private var navigation: BrowserNavigationState { showsAgent ? agent.navigation : browser.navigation }
     private var controlHeight: CGFloat { DockWorkspaceScale.points(28, scale: workspaceScale) }
@@ -245,22 +248,27 @@ struct SessionBrowserView: View {
         }
         .onAppear {
             browser.model = model
-            if browser.currentURL == nil, browser.address.isEmpty || browser.address == "about:blank",
+            if isPrimary, browser.currentURL == nil, browser.address.isEmpty || browser.address == "about:blank",
                 let restored = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))?.browserURL
             {
                 browser.address = restored
             }
             field = displayAddress(pageURL.isEmpty ? browser.address : pageURL)
-            guard isPrimary else { return }
-            agent.model = model
-            agent.presetWidth = viewport.rawValue
-            if !agent.isActive { agent.start() }  // opening the tab retries a failed browser
-            if !showsAgent { browser.loadAddressIfNeeded() }
+        }
+        .task(id: hostVisible) {
+            guard hostVisible, !Task.isCancelled else { return }
+            if isPrimary {
+                agent.model = model
+                agent.presetWidth = viewport.rawValue
+                if !agent.isActive { agent.start() }
+            }
+            if !showsAgent && !browser.navigation.isLoading { browser.loadAddressIfNeeded() }
         }
         .onReceive(browser.$currentURL) { url in
             guard let url, !showsAgent else { return }
             if !isEditingAddress { field = displayAddress(url) }
             browser.address = url
+            guard isPrimary else { return }
             let key = WorkspaceIdentity.session(model)
             var presentation = WorkspacePresentationStore.shared.load(key) ?? InspectorPresentation()
             presentation.browserURL = WorkspacePresentationStore.restorableBrowserURL(url)
@@ -275,7 +283,21 @@ struct SessionBrowserView: View {
         .onChange(of: showsAgent) { _, agentMode in
             field = displayAddress(agentMode ? agent.activePage?.url ?? "" : browser.currentURL ?? browser.address)
             // Agent browser failed to start: carry on in WebKit.
-            if !agentMode { browser.loadAddressIfNeeded() }
+            if hostVisible && !agentMode { browser.loadAddressIfNeeded() }
+        }
+        .onReceive(console.$count) { count in
+            if hostVisible && consoleErrorCount != count { consoleErrorCount = count }
+        }
+        .onChange(of: hostVisible ? ObjectIdentifier(console) : nil, initial: true) { _, visible in
+            browser.console.setVisible(consoleHostID, visible == ObjectIdentifier(browser.console))
+            if isPrimary {
+                agent.console.setVisible(consoleHostID, visible == ObjectIdentifier(agent.console))
+            }
+            if visible != nil { consoleErrorCount = console.count }
+        }
+        .onDisappear {
+            browser.console.setVisible(consoleHostID, false)
+            if isPrimary { agent.console.setVisible(consoleHostID, false) }
         }
     }
 
@@ -422,12 +444,12 @@ struct SessionBrowserView: View {
                 if let url = URL(string: pageURL) { ExternalOpen.open(url) }
             }.disabled(!["http", "https"].contains(URL(string: pageURL)?.scheme?.lowercased() ?? ""))
             Button(
-                consoleErrors.isEmpty ? "No Console Errors" : "Send \(consoleErrors.count) Console Errors",
+                consoleErrorCount == 0 ? "No Console Errors" : "Send \(consoleErrorCount) Console Errors",
                 icon: .bugBeetle
             ) {
                 sendConsole()
             }
-            .disabled(consoleErrors.isEmpty)
+            .disabled(consoleErrorCount == 0)
             Button("Sign Out of All Sites", icon: .signOut) {
                 Task { await SessionBrowserStore.shared.signOutAll() }
             }
@@ -442,15 +464,15 @@ struct SessionBrowserView: View {
                     }
                 }
                 .dockFont(.conversation, weight: .medium)
-                .foregroundStyle(consoleErrors.isEmpty ? Color.dockSecondaryText : Color.dockWarning)
+                .foregroundStyle(consoleErrorCount == 0 ? Color.dockSecondaryText : Color.dockWarning)
                 .frame(width: controlHeight, height: controlHeight)
                 .background(DockThemeShape(cornerRadius: 7).fill(Color.dockControlSurface))
                 .contentShape(Rectangle())
         }
-        .help(consoleErrors.isEmpty ? "More browser actions" : "\(consoleErrors.count) console errors")
+        .help(consoleErrorCount == 0 ? "More browser actions" : "\(consoleErrorCount) console errors")
         .accessibilityLabel(
-            consoleErrors.isEmpty
-                ? "More browser actions" : "More browser actions, \(consoleErrors.count) console errors")
+            consoleErrorCount == 0
+                ? "More browser actions" : "More browser actions, \(consoleErrorCount) console errors")
     }
 
     @ViewBuilder private var pageContent: some View {
@@ -523,7 +545,7 @@ struct SessionBrowserView: View {
     }
 
     private func sendConsole() {
-        let errors = consoleErrors
+        let errors = console.lines
         guard !errors.isEmpty else { return }
         let body = "Console errors on \(pageURL) (untrusted page output):\n```\n\(errors.joined(separator: "\n"))\n```"
         BrowserAnnotation.deliver(
@@ -555,11 +577,21 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
 final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavigationDelegate {
     let id = UUID()
     let key: SessionBrowserKey
-    let web: WKWebView
+    private let dataStore: WKWebsiteDataStore
+    private var webView: WKWebView?
+    var web: WKWebView {
+        if let webView { return webView }
+        let created = makeWebView()
+        webView = created
+        return created
+    }
+    var hasWebView: Bool { webView != nil }
+    var loadedURL: URL? { webView?.url }
+    @Published private(set) var pageTitle = ""
     var address = ""
     @Published private(set) var navigation = BrowserNavigationState()
     @Published var currentURL: String?
-    @Published var consoleErrors: [String] = []
+    let console = BrowserConsoleBuffer()
     @Published var annotating = false { didSet { if annotating != oldValue { applyAnnotating() } } }
     weak var model: DockModel?
     /// Runs before each `open` loads, e.g. to bring sign-ins over from the agent browser.
@@ -573,13 +605,17 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
 
     init(key: SessionBrowserKey, dataStore: WKWebsiteDataStore) {
         self.key = key
+        self.dataStore = dataStore
+        super.init()
+    }
+
+    private func makeWebView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore
         // WKWebView's default UA has no Safari token, so sites like Google serve their no-JS page.
         // shortcut: fixed version, bump if sites start sniffing it.
         configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"
-        web = WKWebView(frame: .zero, configuration: configuration)
-        super.init()
+        let web = WKWebView(frame: .zero, configuration: configuration)
         let content = configuration.userContentController
         let handler = WeakMessageHandler(self)
         // Annotate runs in Herm's own content world: the page can't call its handler.
@@ -609,9 +645,19 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
                 address = url.absoluteString
                 currentURL = url.absoluteString
             }.store(in: &webObservations)
+        web.publisher(for: \.title)
+            .map { $0 ?? "" }
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] title in
+                guard let self, pageTitle != title else { return }
+                pageTitle = title
+            }
+            .store(in: &webObservations)
         themeCancellable = DockThemeStore.shared.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.applyAnnotating() }
+        return web
     }
 
     func open(_ url: URL) {
@@ -657,7 +703,8 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     func stopLoading() {
-        web.stopLoading()
+        pendingLoad = nil
+        webView?.stopLoading()
         activeNavigation = nil
         navigation.finish()
     }
@@ -665,12 +712,14 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     func clearNavigationError() { navigation.error = nil }
 
     func loadAddressIfNeeded() {
-        guard !address.isEmpty, let url = URL(string: address), web.url == nil || currentURL != address else { return }
+        guard !address.isEmpty, let url = URL(string: address), loadedURL == nil || currentURL != address else {
+            return
+        }
         open(url)
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        consoleErrors = []
+        console.clear()
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -708,7 +757,7 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     func received(_ message: WKScriptMessage) {
         guard let body = message.body as? String else { return }
         if message.name == "hermConsole" {
-            consoleErrors = Array((consoleErrors + [String(body.prefix(2000))]).suffix(50))
+            console.append(body)
             return
         }
         guard message.name == "hermAnnotate", message.frameInfo.isMainFrame else { return }
@@ -751,7 +800,7 @@ final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     private func evaluate(_ script: String) {
-        web.evaluateJavaScript(script, in: nil, in: .defaultClient, completionHandler: nil)
+        webView?.evaluateJavaScript(script, in: nil, in: .defaultClient, completionHandler: nil)
     }
 }
 

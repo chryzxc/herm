@@ -414,7 +414,8 @@ struct SessionPullRequestRail: View {
                 let tasks = model.planTasks
                 let worker = Task.detached(priority: .utility) { [loader] in
                     var updated = loader
-                    let found = updated.load(workspace: workspace, newTexts: texts, linked: linked, tasks: tasks)
+                    let found = updated.load(
+                        workspace: workspace, newTexts: texts, linked: linked, tasks: tasks, discoveryMaxAge: 2)
                     return (updated, found)
                 }
                 let (updated, found) = await withTaskCancellationHandler {

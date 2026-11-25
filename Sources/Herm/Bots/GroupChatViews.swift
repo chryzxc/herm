@@ -794,10 +794,17 @@ struct GroupChatView: View {
                 .dockFont(.navigation, weight: .semibold)
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
-            Text(headerSubtitle)
-                .dockFont(.metadata)
-                .foregroundStyle(Color.dockMetadataText)
-                .lineLimit(1)
+                .layoutPriority(1)
+            ViewThatFits(in: .horizontal) {
+                Text(headerSubtitle).fixedSize(horizontal: true, vertical: false)
+                if !thinkingMembers.isEmpty {
+                    Text("Replying").fixedSize(horizontal: true, vertical: false)
+                }
+                Color.clear.frame(width: 0, height: 0).accessibilityHidden(true)
+            }
+            .dockFont(.metadata)
+            .foregroundStyle(Color.dockMetadataText)
+            .lineLimit(1)
             if store.pendingRooms.contains(roomID) {
                 DockLoadingIndicator().controlSize(.mini).accessibilityLabel("Updating group")
             }
@@ -843,7 +850,7 @@ struct GroupChatView: View {
         return "\(room.members.count) members"
     }
 
-    /// Stacked member faces beside the title. Each shows what its member is doing
+    /// Spaced member faces beside the title. Each shows what its member is doing
     /// anywhere in the room, perks up when a draft would reach it, hops when its
     /// reply lands, and dozes once the room has been quiet a while.
     private var memberAvatars: some View {
@@ -854,7 +861,7 @@ struct GroupChatView: View {
             let attentive = GroupMentionTargets.attentive(draft: draft, members: members, driver: driver)
             let dozing = GroupRoomQuiet.isDozing(
                 lastActivity: allEvents.last?.createdAt, working: isWorking, draft: draft, now: context.date)
-            HStack(spacing: -4) {
+            HStack(spacing: DockSpacing.micro) {
                 ForEach(members, id: \.memberID) { member in
                     let (bot, image) = botInfo(member)
                     let live = presence[member.memberID]?.presence ?? .idle
