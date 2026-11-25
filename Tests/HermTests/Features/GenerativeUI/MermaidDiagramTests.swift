@@ -19,10 +19,18 @@ struct MermaidDiagramTests {
         #expect(RichDocument.mentionsSurface(text))
     }
 
-    @Test func streamingAndUnclosedFencesStayCode() {
+    @Test func closedMermaidFencesBecomeDiagramsWhileStreaming() {
+        let closed = "```mermaid\n\(flowchart)\n```"
+        #expect(RichDocument(closed, streaming: true).segments == [.diagram(flowchart)])
+    }
+
+    @Test func unclosedMermaidFencesStayCode() {
         let open = "```mermaid\n\(flowchart)"
-        #expect(RichDocument(open + "\n```", streaming: true).segments == [.markdown(open + "\n```")])
+        #expect(RichDocument(open, streaming: true).segments == [.markdown(open)])
         #expect(RichDocument(open).segments == [.markdown(open)])
+    }
+
+    @Test func otherFencesStayCode() {
         #expect(
             RichDocument("```swift\nlet mermaid = 1\n```").segments == [.markdown("```swift\nlet mermaid = 1\n```")])
     }
