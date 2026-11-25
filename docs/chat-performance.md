@@ -1035,6 +1035,80 @@ Chats reuses pin and status projections across pointer and search updates and
 pauses unread-count reads when collapsed or covered. Agent-state commits reuse
 unchanged encoded session entries and keep the existing atomic v1 archive format.
 
+### Workspace updates and session reads
+
+Focused regressions verify that background session changes leave the shell quiet,
+two Kanban consumers share one archived board inventory, and opening a warming
+session uses its in-flight first page. A live Timeline update visits the tail
+turn. A late tool completion also visits the historical turn it belongs to.
+
+In Release, the chat fixture's six synchronous scroll steps ranged from 7.4 to
+15.9 ms across one cold and warm pair each for prose, code, and streaming. The
+1,000-row Timeline fixture measured 0.84 ms p95 for synchronous scroll work.
+The native working avatar recorded eight hosting layout passes across three
+windows in two separate two-second observations. These fixtures use programmatic
+input and synthetic data. Live frame pacing and a paired baseline remain unmeasured.
+
+The standard Release test bundle failed to link on SwiftUI task type descriptors
+referenced by SettingsConstructionTests. A local relink omitted that test object
+and ran the three performance fixtures against the compiled Release app objects.
+
+### Final architecture pass
+
+Background session records no longer invalidate the workspace host. The selected
+title and project path publish separately, and control pages subscribe to the chat
+signals they display. Project requests share reads by profile and project, with
+four slots per navigation refresh. External-turn polls back off on failures and
+honor their existing idle deadline. Find publishes loaded matches before reading
+older history, with an 8 MiB cache budget for recent stored search projections.
+
+Opt-in timing separates native code-view creation, text installation, and layout.
+Two Debug runs of the code fixture covered 20 synchronous scroll steps ranging
+from 6.6 to 18.3 ms. They did not create or install code views during those steps.
+Measured code-view layout took at most 0.72 ms. One first-run sample took 150 ms
+including deferred layout, compared with a 16.5 ms maximum on the repeat.
+This fixture does not isolate the deferred outlier, measure cold code-view
+mounting, or establish live frame pacing.
+
+### Deep jumps and repository refresh
+
+Selecting older history keeps regular UI publications at turn boundaries.
+Cancelling a jump leaves published batches available and does not advance past
+the unread part of its next page. A turn longer than one REST page is still
+parsed as a unit to preserve tool and reply attribution.
+
+Repository fingerprints batch index and working-tree reads while preserving
+the existing digest format. Changes uses the same identities to retain
+unaffected open diffs, with no more than two active reads per browser.
+Navigation notifications flow through the scoped shell values already used
+for page routing.
+
+### Focused refresh and large message maps
+
+Gateway event batches retain the reported session and profile. A foreign message
+or process event may update shared inventory but does not start the focused chat's
+cockpit, prompt budget, verification, or process reads. Ordinary generating turns
+use a slower delegation recovery poll than turns with live workers.
+
+Long message maps reuse projected stored prompts and build their lookup index
+away from the main actor. The transcript keeps the last accepted map only while
+its session is still selected. Git revision changes update test evidence in the
+status bar without restarting its terminal discovery task.
+
+### Project metadata and browser ownership
+
+Project refreshes merge local folder attachments into one snapshot per store
+field. An unchanged inventory leaves existing task timestamps untouched and
+does not queue a save. The browser store routes explicit open requests, while
+visible inspectors subscribe only to the selected browser workspace for title
+and tab changes.
+
+An isolated 300-session fixture ran the old and new WorkspaceStore attachment
+paths. It recorded 600 task publications versus one for the initial attach,
+and 600 versus zero for an unchanged refresh. One run measured about 285 ms
+versus 0.7 ms for the synchronous attachment. These numbers exclude background
+persistence, SwiftUI layout, and real app frame pacing.
+
 ### Performance contract
 
 `make perf-contract` (part of `make guard`) rejects, in `Sources/Herm`:
@@ -1052,5 +1126,31 @@ unchanged encoded session entries and keep the existing atomic v1 archive format
 the reason is required (the pet's drag wobble uses it). The script also
 ratchets observation fan-out: the `@Published` count of `DockModel` (118)
 and `ControlCenterModel` (93), and the number of views observing either
-model whole (43 and 28), may not grow. Lower the caps when a change reduces
+model whole (30 and 25), may not grow. Lower the caps when a change reduces
 them.
+
+## Battery audit follow-up — 25 November 2026
+
+Visible motion follows host visibility, not app activation. Bot status
+transforms reuse the notch's native keyframes while face artwork retains its
+expression clock. Office movement waits for its next visible frame instead of
+polling an occluded window. The pet moves at its existing cadence while walking,
+schedules its next trip directly, and does not keep an idle window tick.
+
+The agent browser keeps every changed frame, with JPEG quality 85 instead of
+95. Capture stops when its last viewer leaves. Late frames are still
+acknowledged but do not decode for an inactive capture session. Workspace quota
+polls schedule directly at the visible or hidden interval. Bot and Kanban
+background consumers reuse fresh reads within the same scopes. The external
+transcript watch checks one stored row without inlining images between full
+reconciliations. Git's watcher skips confirmed ignored-file-only batches and
+reads status without optional index writes. Terminal test completion updates
+the enabled status bar directly. Local server viewers share discovery, and
+the PR watcher stops after its last watched PR merges.
+
+The original AC Debug sample observed Chromium frame decode and native window
+layout. It did not measure battery drain or establish that either dominates a
+Release build. For a paired battery run, hold Low Power Mode and display refresh
+rate constant; compare visible foreground, visible behind another app, and
+hidden. Include Herm, WindowServer, and browser helper CPU and wakeups, browser
+typing and resizing, and foreground/background animation timing.

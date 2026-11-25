@@ -75,11 +75,11 @@ struct ActivityPresentationIsolationTests {
         let explicit = [
             "Conversation/ConversationTranscriptSource.swift", "Conversation/DockPopover.swift",
             "Appearance/HermesPetModel.swift", "EdgeDock/EdgeDockController.swift",
-            "SessionWorkspace/SessionTraceModel.swift",
+            "SessionWorkspace/SessionTraceModel.swift", "SessionWorkspace/SessionPullRequestRail.swift",
         ]
         let views = [
             "Agents/AgentBoardView.swift", "ControlCenter/WorkspaceActivitySidebar.swift",
-            "SessionWorkspace/SessionDataPreviewView.swift", "SessionWorkspace/SessionPullRequestRail.swift",
+            "SessionWorkspace/SessionDataPreviewView.swift",
             "Voice/VoiceActivityPills.swift", "Voice/VoiceHUD.swift",
         ]
         for path in explicit + views {
