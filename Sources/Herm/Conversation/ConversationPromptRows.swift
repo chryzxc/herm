@@ -50,6 +50,7 @@ struct ConversationPromptRows: View {
     @State private var valuePromptIdentifier = ""
     @FocusState private var approvalCardIsFocused: Bool
     @State private var approvalKeyboardFocus = false
+    @DockChromeTheme private var theme
 
     private var canAnswerApproval: Bool {
         state.matchesApproval(in: model) && model.sessionActionsReady
@@ -103,7 +104,12 @@ struct ConversationPromptRows: View {
             default: resolved ? "Resolved" : isPending ? "Sending…" : "Needs approval"
             }
         let alwaysAllowCaption = ApprovalPresentation.alwaysAllowCaption(for: approval)
-        let enterHint = "Return or Enter allows once when this card is focused or visible above an empty composer."
+        let scopeWarning =
+            approval.smartDenied
+            ? "Hermes' safety check blocked this. You can override it once."
+            : choices.contains(ApprovalChoice.always) ? alwaysAllowCaption : nil
+        let repeatNote = "Herm asks again next time."
+        let footerNote = scopeWarning == nil && !choices.contains(ApprovalChoice.session) ? repeatNote : nil
         return DockCallout(
             tone: .warning, icon: .shieldWarning, title: "Approval required", message: approval.title,
             badge: resolved ? "Resolved" : badge
@@ -129,71 +135,8 @@ struct ConversationPromptRows: View {
                 }
 
                 if !resolved {
-                    DockCalloutActions {
-                        if choices.contains(ApprovalChoice.once) {
-                            Button {
-                                if canAnswerApproval { model.respondToApproval(ApprovalChoice.once) }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    DockActionLabel(
-                                        title: "Allow once", pendingTitle: "Allowing…", isPending: isPending,
-                                        tint: .dockPrimaryText
-                                    )
-                                    DockIcon(.arrowElbowDownLeft, size: 16, weight: .fill)
-                                        .dockPill(compact: true, outline: .dockBorderLight)
-                                        .accessibilityHidden(true)
-                                }
-                            }
-                            .buttonStyle(DockPrimaryButtonStyle())
-                            .help(enterHint)
-                            .accessibilityHint(enterHint)
-                            .background {
-                                if let id = conversationApproval?.id, canAnswerApproval, !isPending {
-                                    GeometryReader { geometry in
-                                        let button = CGRect(origin: .zero, size: geometry.size)
-                                        let viewport = geometry.bounds(of: .scrollView(axis: .vertical))
-                                        Color.clear.preference(
-                                            key: VisibleApprovalShortcutKey.self,
-                                            value: viewport?.contains(button) == true ? id : nil
-                                        )
-                                    }
-                                    .allowsHitTesting(false)
-                                    .accessibilityHidden(true)
-                                }
-                            }
-                        }
-                        if choices.contains(ApprovalChoice.session) {
-                            Button {
-                                if canAnswerApproval { model.respondToApproval(ApprovalChoice.session) }
-                            } label: {
-                                Text("Allow this session")
-                            }
-                            .buttonStyle(DockSecondaryButtonStyle())
-                            .help("Don't ask again for this command until the session ends.")
-                        }
-                        if choices.contains(ApprovalChoice.always) {
-                            Button {
-                                if canAnswerApproval { model.respondToApproval(ApprovalChoice.always) }
-                            } label: {
-                                Text("Always allow")
-                            }
-                            .buttonStyle(DockSecondaryButtonStyle())
-                            .help(alwaysAllowCaption)
-                        }
-                        if choices.contains(ApprovalChoice.deny) {
-                            Button(role: .destructive) {
-                                if canAnswerApproval { model.respondToApproval(ApprovalChoice.deny) }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Text("Deny")
-                                    Spacer(minLength: 4)
-                                    approvalKeyHint("Delete")
-                                }
-                            }
-                            .buttonStyle(DockSecondaryButtonStyle())
-                        }
-                    }
-                    .disabled(isPending || !model.sessionActionsReady)
+                    approvalActions(
+                        choices, alwaysAllowCaption: alwaysAllowCaption, isPending: isPending, note: footerNote)
 
                     if let answer = approvalAnswer {
                         Text(answer.message)
@@ -212,15 +155,12 @@ struct ConversationPromptRows: View {
                         }
                     }
 
-                    Text(
-                        approval.smartDenied
-                            ? "Hermes' safety check blocked this. You can override it once."
-                            : choices.contains(ApprovalChoice.always)
-                                ? alwaysAllowCaption : "Herm asks again next time."
-                    )
-                    .dockFont(.body)
-                    .foregroundStyle(Color.dockMetadataText)
-                    .fixedSize(horizontal: false, vertical: true)
+                    if footerNote == nil {
+                        Text(scopeWarning ?? repeatNote)
+                            .dockFont(.body)
+                            .foregroundStyle(Color.dockMetadataText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
@@ -260,11 +200,92 @@ struct ConversationPromptRows: View {
         .dockPadding(.vertical, 8)
     }
 
-    private func approvalKeyHint(_ title: String) -> some View {
-        Text(title)
-            .dockFont(.metadata, weight: .semibold)
-            .foregroundStyle(Color.dockSecondaryText)
-            .dockPill(compact: true)
+    private func approvalActions(_ choices: [String], alwaysAllowCaption: String, isPending: Bool, note: String?)
+        -> some View
+    {
+        DockCalloutActions(alignment: .trailing, spacing: DockSpacing.section, note: note) {
+            if choices.contains(ApprovalChoice.session) || choices.contains(ApprovalChoice.always) {
+                DockChipFlow(spacing: DockSpacing.control, hugsContent: true) {
+                    if choices.contains(ApprovalChoice.session) {
+                        Button("Allow this session") {
+                            if canAnswerApproval { model.respondToApproval(ApprovalChoice.session) }
+                        }
+                        .buttonStyle(.dockSecondary)
+                        .help("Don't ask again for this command until the session ends.")
+                    }
+                    if choices.contains(ApprovalChoice.always) {
+                        Button("Always allow") {
+                            if canAnswerApproval { model.respondToApproval(ApprovalChoice.always) }
+                        }
+                        .buttonStyle(.dockSecondary)
+                        .help(alwaysAllowCaption)
+                    }
+                }
+            }
+
+            if choices.contains(ApprovalChoice.deny) || choices.contains(ApprovalChoice.once) {
+                DockChipFlow(spacing: DockSpacing.control, hugsContent: true) {
+                    if choices.contains(ApprovalChoice.deny) {
+                        let denyHint = "Press Delete to deny while the approval card is focused."
+                        Button(role: .destructive) {
+                            if canAnswerApproval { model.respondToApproval(ApprovalChoice.deny) }
+                        } label: {
+                            HStack(spacing: DockSpacing.control) {
+                                Text("Deny")
+                                approvalKeyHint(.backspace, ink: .dockSecondaryText)
+                            }
+                        }
+                        .buttonStyle(.dockSecondary)
+                        .help(denyHint)
+                        .accessibilityHint(denyHint)
+                    }
+                    if choices.contains(ApprovalChoice.once) {
+                        allowOnceButton(isPending: isPending)
+                    }
+                }
+            }
+        }
+        .disabled(isPending || !canAnswerApproval)
+    }
+
+    private func allowOnceButton(isPending: Bool) -> some View {
+        let hint = "Press Return or Enter to allow once when the card is focused or visible above an empty composer."
+        let ink = DockPrimaryButtonStyle.foregroundColor(theme)
+        let isAllowing =
+            approvalAnswer == .sending(ApprovalChoice.once)
+            || (approvalAnswer == nil && state.approvalPending)
+        return Button {
+            if canAnswerApproval { model.respondToApproval(ApprovalChoice.once) }
+        } label: {
+            HStack(spacing: DockSpacing.control) {
+                DockActionLabel(
+                    title: "Allow once", pendingTitle: "Allowing…", isPending: isAllowing, tint: ink, icon: .check)
+                approvalKeyHint(.arrowElbowDownLeft, ink: ink)
+            }
+        }
+        .buttonStyle(.dockPrimary)
+        .help(hint)
+        .accessibilityHint(hint)
+        .background {
+            if let id = conversationApproval?.id, canAnswerApproval, !isPending {
+                GeometryReader { geometry in
+                    let button = CGRect(origin: .zero, size: geometry.size)
+                    let viewport = geometry.bounds(of: .scrollView(axis: .vertical))
+                    Color.clear.preference(
+                        key: VisibleApprovalShortcutKey.self,
+                        value: viewport?.contains(button) == true ? id : nil
+                    )
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private func approvalKeyHint(_ icon: Ph, ink: Color) -> some View {
+        DockIcon(icon, size: 14, weight: .fill, color: ink)
+            .dockPill(tint: ink, compact: true, outline: ink.opacity(0.2))
+            .accessibilityHidden(true)
     }
 
     /// The question itself stays in the transcript as Hermes' message; this

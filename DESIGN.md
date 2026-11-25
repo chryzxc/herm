@@ -3776,8 +3776,13 @@ indicator. Plan updates preserve disclosure; changing sessions resets it.
 
 In-chat approvals, clarification requests, input prompts, and errors use the shared
 neutral callout surface with a tone-colored icon and status. Decision actions use
-compact button sizing and wrap when the available width requires it. Allow once
-shows an icon-only Enter pill. Unmodified Return or Enter applies that choice when
+compact button sizing. The approval footer groups session and permanent permissions
+apart from the immediate decisions. Deny and the primary Allow once sit at the
+trailing edge with matching icon-only Delete and Enter keycaps. The groups use
+separate lines when space is tight, and buttons wrap within their group as needed.
+With only immediate choices, the repeat-request note leads the same footer and
+moves above the decisions when the pane is narrow.
+Unmodified Return or Enter applies Allow once when
 the card is focused, or from an empty composer when its Allow once button is in
 view. The shortcut never takes over draft submission or answers another request.
 Reopening a chat restores its pending clarification card, including its answer choices.

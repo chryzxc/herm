@@ -175,7 +175,7 @@ The top island’s black workspace band keeps its status headline, counts, and p
 
 Conversation approvals, clarification choices, and secret/login requests share a compact neutral card with explicit status, labeled inputs, and grouped actions that stack in narrow panes. Reopening a chat restores its pending clarification and answer choices. Multi-select answers show their selected state; submitting keeps an in-place progress indicator and disables duplicate responses.
 
-The Enter-arrow pill marks **Allow once**. Press Return or Enter with the approval card focused, or from an empty composer while **Allow once** is in view.
+Chat approvals group **Deny** and **Allow once** apart from longer-lasting permissions, with matching keyboard icons. Press Return or Enter with the approval card focused, or from an empty composer while **Allow once** is in view.
 
 The latest conversation approval stays visible as resolved after it is answered in the conversation or notch. This presentation is kept in memory for the current Herm process, not reconstructed after restart.
 

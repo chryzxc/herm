@@ -1660,13 +1660,17 @@ struct DockActionLabel: View {
     let pendingTitle: String
     let isPending: Bool
     var tint: Color? = nil
+    var icon: Ph? = nil
 
     var body: some View {
         let distance = DockMotion.isEnabled(reduceMotion: reduceMotion) ? DockMotion.revealDistance : 0
         ZStack {
-            Text(title)
-                .opacity(isPending ? 0 : 1)
-                .offset(y: isPending ? -distance : 0)
+            HStack(spacing: DockSpacing.tight) {
+                if let icon { DockIcon(icon, size: 14) }
+                Text(title)
+            }
+            .opacity(isPending ? 0 : 1)
+            .offset(y: isPending ? -distance : 0)
             HStack(spacing: 6) {
                 ZStack {
                     if isPending {
@@ -1850,6 +1854,9 @@ struct DockExpandableText: View {
 
 /// Keep related decisions together, stacking when the pane cannot fit them.
 struct DockCalloutActions<Content: View>: View {
+    var alignment: Alignment = .leading
+    var spacing: CGFloat = DockSpacing.control
+    var note: String? = nil
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -1861,12 +1868,30 @@ struct DockCalloutActions<Content: View>: View {
 
     private var actions: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: DockSpacing.control, content: content)
-                .fixedSize(horizontal: true, vertical: false)
-            VStack(alignment: .leading, spacing: DockSpacing.control, content: content)
+            HStack(spacing: spacing) {
+                if let note {
+                    noteLabel(note).fixedSize()
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: spacing, content: content)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            VStack(alignment: alignment.horizontal, spacing: DockSpacing.control) {
+                if let note {
+                    noteLabel(note).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                content()
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: alignment)
         .controlSize(.small)
+    }
+
+    private func noteLabel(_ note: String) -> some View {
+        Text(note)
+            .dockFont(.body)
+            .foregroundStyle(Color.dockMetadataText)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
