@@ -125,8 +125,9 @@ final class HermesControlRPC {
             params: Self.profileParams(["session_id": sessionID, "action": action.rawValue], profileID: profileID))
     }
 
-    func activeSessions() async throws -> [String: Any] {
-        try await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])
+    func activeSessions(profileID: String? = nil) async throws -> [String: Any] {
+        try await client.request(
+            HermesFeatureIDs.ID.sessionActiveList.rawValue, params: Self.profileParams([:], profileID: profileID))
     }
     func sessions(limit: Int = 50, profileID: String? = nil) async throws -> [String: Any] {
         try await client.request(
@@ -210,6 +211,99 @@ final class HermesControlRPC {
                 return true
             }
         }
+    }
+
+    func hasPendingSidebarApproval(runtimeID: String, profileID: String) async throws -> Bool {
+        let result = try await client.request(
+            HermesFeatureIDs.ID.approvalPending.rawValue, params: ["session_id": runtimeID, "profile": profileID])
+        guard let approvals = result["approvals"] as? [[String: Any]] else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        return !approvals.isEmpty
+    }
+
+    func sidebarLiveStatus(for filter: SessionSidebarFilter, profiles: [String]) async -> SessionSidebarLiveStatus {
+        var status = SessionSidebarLiveStatus()
+        for profile in profiles {
+            guard !Task.isCancelled else { break }
+            do {
+                // Hermes routes explicit profile requests to that profile's session authority.
+                let result = try await activeSessions(profileID: profile)
+                guard let rows = ControlCenterModel.parseSessions(result) else {
+                    throw HermesGateway.GatewayError.malformedResponse
+                }
+                for row in rows where row.profileID == nil || row.profileID == profile {
+                    guard !Task.isCancelled else { break }
+                    let key = ProfileScopedID(profileID: profile, resourceID: row.storedSessionID ?? row.id)
+                    if filter == .running, SessionSidebarFilterInventory.isRunning(row) {
+                        status.ids.insert(key)
+                    } else if filter == .needsYou, row.state.lowercased() == "waiting" {
+                        do {
+                            if try await hasPendingSidebarApproval(runtimeID: row.id, profileID: profile) {
+                                status.ids.insert(key)
+                            }
+                        } catch {
+                            status.isIncomplete = true
+                        }
+                    }
+                }
+            } catch {
+                status.isIncomplete = true
+            }
+        }
+        return status
+    }
+
+    func archivedSidebarSessions(scope: SessionSidebarArchive.Scope) async throws -> SessionSidebarArchive {
+        var query = URLComponents()
+        query.queryItems = [URLQueryItem(name: "profile", value: scope.queryValue)]
+        // A literal plus must not be decoded as a space by the server.
+        let profile = query.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B") ?? ""
+        let pageSize = 100
+        var offset = 0
+        var incomplete = false
+        var sessions: [HermesSession] = []
+        var seen = Set<ProfileScopedID>()
+        while true {
+            try Task.checkCancellation()
+            do {
+                let path =
+                    "/api/profiles/sessions?\(profile)&archived=only&order=recent"
+                    + "&limit=\(pageSize)&offset=\(offset)"
+                let page = try await client.fetchHTTP(path)
+                try Task.checkCancellation()
+                guard let rows = page["sessions"] as? [[String: Any]],
+                    let total = page["total"] as? Int, total >= 0
+                else { throw HermesGateway.GatewayError.malformedResponse }
+
+                incomplete =
+                    incomplete || !(page["errors"] as? [[String: Any]] ?? []).isEmpty
+                    || !(page["storage"] as? [String: String] ?? [:]).isEmpty
+                let archivedRows = rows.filter { $0["archived"] as? Bool == true }
+                for row in archivedRows {
+                    guard let owner = row["profile"] as? String, !owner.isEmpty, scope.includes(owner),
+                        let session = DockModel.parseSession(row, profileID: owner)
+                    else {
+                        incomplete = true
+                        continue
+                    }
+                    if seen.insert(session.scopedID).inserted { sessions.append(session) }
+                }
+                // The server can append live pinned rows outside its archive window.
+                offset += min(pageSize, archivedRows.count)
+                if offset >= total { break }
+                if archivedRows.count < pageSize {
+                    incomplete = true
+                    break
+                }
+            } catch {
+                try Task.checkCancellation()
+                guard offset > 0 else { throw error }
+                incomplete = true
+                break
+            }
+        }
+        return SessionSidebarArchive(sessions: sessions, isIncomplete: incomplete)
     }
 
     /// Every profile's recent sessions in one read. Hermes single-flights and

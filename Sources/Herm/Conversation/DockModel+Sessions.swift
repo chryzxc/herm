@@ -294,6 +294,7 @@ extension DockModel {
             var params: [String: Any] = ["session_id": session.id]
             if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
             _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: params)
+            invalidateArchivedSidebar()
             sessionTranscriptCache.remove(
                 WorkspaceIdentity.session(
                     profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id))
@@ -648,6 +649,7 @@ extension DockModel {
                     sessionID: session.id, title: cleanTitle, profileID: owner)
             }
             renameKnownPin(session, title: cleanTitle, profileID: owner)
+            invalidateArchivedSidebar()
             invalidateRetainedHistory(profileID: owner)
             loadSessions()
             return true

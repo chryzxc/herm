@@ -13,6 +13,7 @@ final class SessionUnreadReplies {
 
     struct BotCounts: Equatable {
         var counts: [String: Int] = [:]
+        var unreadSessions: Set<ProfileScopedID> = []
         var incomplete: Bool
     }
 
@@ -112,6 +113,7 @@ final class SessionUnreadReplies {
                 if generation == botCountGeneration { botCountEntries[key] = entry }
                 if entry.projection.count > 0, let profileID = key.identity.profileID {
                     result.counts[profileID, default: 0] += 1
+                    result.unreadSessions.insert(key.identity)
                 }
             } catch is CancellationError {
                 throw CancellationError()

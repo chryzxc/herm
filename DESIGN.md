@@ -1980,6 +1980,13 @@ row limit. A count and no-match state describe loaded sessions; projection failu
 remain visible. Clearing search or pressing Escape restores existing disclosures.
 While the first search runs, use its results heading for the loading status.
 Search is transient presentation state and does not fetch transcript history.
+Below search, a compact status picker offers All, Unread, Needs you (approval),
+Running, and Archived for the selected profile or All profiles. A status narrows
+results together with the search text. Archived reads the archive on demand;
+loading and incomplete results are described in the results heading.
+The sidebar ellipsis groups Bot rail and Bot menu under Layout. Its Filters
+submenu remembers visibility for Pinned, Projects, Automations, and each status.
+Recents cannot be hidden; hiding the selected status returns the picker to All.
 Pointer and search updates reuse the sidebar’s session inventory for unread badges.
 Recents and Automations reuse sections prepared when the session inventory changes.
 Pinned rows and status marks also come from that projection. Unread-count reads
