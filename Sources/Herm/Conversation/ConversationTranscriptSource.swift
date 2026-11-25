@@ -88,6 +88,7 @@ struct ConversationTranscriptSnapshot: Equatable {
     let prepend: TranscriptHistoryPrepend?
     let navigator: MessageNavigatorSnapshot
     let navigatorCount: Int
+    let hasEarlierHistory: Bool
     var navigatorItems: [MessageNavigatorItem] { navigator.items }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -97,6 +98,7 @@ struct ConversationTranscriptSnapshot: Equatable {
             && lhs.messages.count == rhs.messages.count
             && lhs.range == rhs.range && lhs.rows == rhs.rows && lhs.context == rhs.context
             && lhs.prepend == rhs.prepend && lhs.navigator === rhs.navigator && lhs.navigatorCount == rhs.navigatorCount
+            && lhs.hasEarlierHistory == rhs.hasEarlierHistory
     }
 }
 
@@ -114,6 +116,9 @@ final class ConversationTranscriptSource: ObservableObject {
     private var subscriptions: Set<AnyCancellable> = []
     private var refreshScheduled = false
     private var needsNavigator: Bool
+    private var navigatorTask: Task<Void, Never>?
+    private var navigatorTaskKey: MessageNavigatorProjection.Key?
+    private var needsTimeline = false
     private var holdingPrefetch = false
     private var heldMeasurementContext: NativeMarkdownDocumentContainerView.MeasurementContext?
     private var isActive = true
@@ -136,7 +141,8 @@ final class ConversationTranscriptSource: ObservableObject {
         snapshot = Self.makeSnapshot(
             model: model, bots: bots, actions: actions, voice: voice,
             messages: coordinator.openingMessages(model: model), range: coordinator.mountedRange,
-            generation: coordinator.generation, needsNavigator: needsNavigator)
+            generation: coordinator.generation,
+            navigator: Self.readyNavigator(model, demanded: needsNavigator))
         coordinator.onAcceptedLayout = { [weak self] sessionID in
             guard let self, self.model.transcriptPresentationID == sessionID,
                 self.snapshot.layoutSessionID == sessionID,
@@ -208,7 +214,10 @@ final class ConversationTranscriptSource: ObservableObject {
         observe(coordinator.$mountedRange)
         observe(model.transcriptPresentationChanges.prepend(()))
         prefetch()
+        if needsNavigator, Self.needsNavigatorWorker(model) { scheduleRefresh() }
     }
+
+    deinit { navigatorTask?.cancel() }
 
     private func observe<P: Publisher>(_ publisher: P) where P.Failure == Never {
         publisher.dropFirst().sink { [weak self] _ in self?.scheduleRefresh() }.store(in: &subscriptions)
@@ -230,6 +239,7 @@ final class ConversationTranscriptSource: ObservableObject {
     }
 
     private func refreshSnapshot() {
+        if needsTimeline { model.loadTranscriptTimelineIfNeeded() }
         let hasPreview = model.sessionTranscriptPreview != nil
         if showingPreview && !hasPreview && model.sessionActionsReady {
             coordinator.promotePreview(model: model, previewRows: snapshot.rows)
@@ -241,7 +251,7 @@ final class ConversationTranscriptSource: ObservableObject {
         let next = Self.makeSnapshot(
             model: model, bots: bots, actions: actions, voice: voice,
             messages: coordinator.openingMessages(model: model), range: coordinator.mountedRange,
-            generation: coordinator.generation, needsNavigator: needsNavigator)
+            generation: coordinator.generation, navigator: navigatorForPresentation())
         guard next != snapshot else {
             // A refresh that changes nothing was triggered by an unrelated
             // publisher (often another running session); counted to find them.
@@ -256,6 +266,16 @@ final class ConversationTranscriptSource: ObservableObject {
 
     func resume() {
         isActive = true
+        model.prioritizedTranscriptImageIDs = { [weak self] in
+            guard let self, isActive, !snapshot.isPreview,
+                snapshot.layoutSessionID == model.transcriptPresentationID,
+                let geometry = coordinator.controller.geometry
+            else { return [] }
+            let bottom = geometry.visibleTop + geometry.visibleHeight
+            return coordinator.rowViewports.compactMap {
+                $0.maxY > geometry.visibleTop && $0.minY < bottom ? $0.target.messageID : nil
+            }
+        }
         refresh()
         prefetch()
     }
@@ -266,10 +286,56 @@ final class ConversationTranscriptSource: ObservableObject {
         refresh()
     }
 
+    func setTimelineDemand(_ demanded: Bool) {
+        needsTimeline = demanded
+        if isActive && demanded { model.loadTranscriptTimelineIfNeeded() }
+    }
+
     func suspend() {
         isActive = false
+        cancelNavigator()
         coordinator.cancelHistoryRequest()
         markdownPrefetch.cancel()
+    }
+
+    private static func needsNavigatorWorker(_ model: DockModel) -> Bool {
+        model.messages.count + model.transcriptTimeline.count > 64
+    }
+
+    private static func readyNavigator(_ model: DockModel, demanded: Bool) -> MessageNavigatorSnapshot {
+        guard demanded else { return .empty }
+        if let preview = model.sessionTranscriptPreview { return preview.navigator }
+        if needsNavigatorWorker(model) { return model.previousMessageNavigator?.snapshot ?? .empty }
+        return model.messageNavigatorSnapshot
+    }
+
+    private func navigatorForPresentation() -> MessageNavigatorSnapshot {
+        let ready = Self.readyNavigator(model, demanded: needsNavigator)
+        guard needsNavigator, model.sessionTranscriptPreview == nil, Self.needsNavigatorWorker(model) else {
+            cancelNavigator()
+            return ready
+        }
+        let key = model.messageNavigatorKey
+        guard model.previousMessageNavigator?.key != key else { return ready }
+        if let inFlight = navigatorTaskKey, inFlight.owner == key.owner, inFlight.sessionID == key.sessionID {
+            return ready
+        }
+        cancelNavigator()
+        navigatorTaskKey = key
+        navigatorTask = Task { [weak self, weak model] in
+            await model?.prepareMessageNavigator()
+            guard let self, !Task.isCancelled, navigatorTaskKey == key else { return }
+            navigatorTask = nil
+            navigatorTaskKey = nil
+            scheduleRefresh()
+        }
+        return ready
+    }
+
+    private func cancelNavigator() {
+        navigatorTask?.cancel()
+        navigatorTask = nil
+        navigatorTaskKey = nil
     }
 
     func prefetch() {
@@ -328,7 +394,8 @@ final class ConversationTranscriptSource: ObservableObject {
 
     private static func makeSnapshot(
         model: DockModel, bots: BotModeModel, actions: ConversationMessageActionState,
-        voice: VoiceOutput, messages: [ChatMessage], range: Range<Int>, generation: UInt64, needsNavigator: Bool
+        voice: VoiceOutput, messages: [ChatMessage], range: Range<Int>, generation: UInt64,
+        navigator: MessageNavigatorSnapshot
     ) -> ConversationTranscriptSnapshot {
         let preview = model.sessionTranscriptPreview
         let clamped = ConversationMessageWindow.visibleRange(range, totalCount: messages.count)
@@ -403,8 +470,8 @@ final class ConversationTranscriptSource: ObservableObject {
                 deliveryCheckNote: model.deliveryCheckNotes[model.composerDraftKey],
                 deliveryCheckAvailable: model.sessionStorageID != nil
             ), prepend: model.lastTranscriptPrepend,
-            navigator: needsNavigator ? (preview?.navigator ?? model.messageNavigatorSnapshot) : .empty,
-            navigatorCount: loadedCount + olderCount
+            navigator: navigator,
+            navigatorCount: loadedCount + olderCount, hasEarlierHistory: preview == nil && model.hasUnloadedTranscript
         )
     }
 }

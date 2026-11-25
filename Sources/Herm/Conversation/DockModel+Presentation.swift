@@ -131,37 +131,61 @@ extension DockModel {
 
     /// Invalidate at the canonical array mutation boundary, not by hashing
     /// the entire history again on each scroll or live-tail layout update.
+    func appendChatMessage(_ message: ChatMessage) {
+        let index = messages.count
+        let pending = navigatorChangedRows
+        messages.append(message)
+        navigatorChangedRows = pending?.union([index])
+    }
+
+    func editChatMessage(at index: Int, _ edit: (inout ChatMessage) -> Void) {
+        let pending = navigatorChangedRows
+        edit(&messages[index])
+        navigatorChangedRows = pending?.union([index])
+    }
+
+    var messageNavigatorKey: MessageNavigatorProjection.Key {
+        .init(owner: transcriptPresentationID, sessionID: sessionID ?? "", revision: messageNavigatorRevision)
+    }
+
+    var previousMessageNavigator: MessageNavigatorProjection.Result? {
+        let key = messageNavigatorKey
+        guard let cached = cachedMessageNavigatorItems, cached.key.owner == key.owner,
+            cached.key.sessionID == key.sessionID
+        else { return nil }
+        return cached
+    }
+
     var messageNavigatorSnapshot: MessageNavigatorSnapshot {
-        let owner = sessionID ?? ""
-        if !messageNavigatorNeedsRefresh, let cached = cachedMessageNavigatorItems, cached.sessionID == owner {
-            return cached.snapshot
+        if let cached = previousMessageNavigator, cached.key == messageNavigatorKey { return cached.snapshot }
+        let result = navigatorProjection().build()
+        installMessageNavigator(result)
+        return result.snapshot
+    }
+
+    func prepareMessageNavigator() async {
+        let request = UncheckedTranscriptValue(value: navigatorProjection())
+        let worker = Task.detached(priority: .userInitiated) { request.value.build() }
+        let result = await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
         }
-        if cachedMessageNavigatorItems?.sessionID != owner { cachedMessageNavigatorRows.removeAll() }
-        let items: [MessageNavigatorItem]
-        if let cached = cachedMessageNavigatorItems, cached.sessionID == owner,
-            let prepend = lastTranscriptPrepend,
-            prepend.isInsertion(
-                after: cached.messagesRevision, previousCount: cached.messageCount,
-                revision: messagesRevision, count: messages.count)
-        {
-            items = MessageNavigator.items(
-                prepending: messages.prefix(prepend.count), to: cached.snapshot.items.suffix(cached.messageCount),
-                earlierPrompts: unloadedTranscriptPrompts, sessionID: owner, reusing: &cachedMessageNavigatorRows)
-        } else {
-            items = MessageNavigator.items(
-                messages: messages, earlierPrompts: unloadedTranscriptPrompts, sessionID: owner,
-                reusing: &cachedMessageNavigatorRows)
-        }
-        // Metadata-only message edits must not invalidate navigator identity.
-        let snapshot: MessageNavigatorSnapshot
-        if let cached = cachedMessageNavigatorItems, cached.sessionID == owner, cached.snapshot.items == items {
-            snapshot = cached.snapshot
-        } else {
-            snapshot = MessageNavigatorSnapshot(items: items)
-        }
-        cachedMessageNavigatorItems = (owner, snapshot, messages.count, messagesRevision)
-        messageNavigatorNeedsRefresh = false
-        return snapshot
+        guard !Task.isCancelled, result.key == messageNavigatorKey else { return }
+        installMessageNavigator(result)
+    }
+
+    private func navigatorProjection() -> MessageNavigatorProjection {
+        .init(
+            key: messageNavigatorKey, messages: messages, messagesRevision: messagesRevision,
+            timeline: transcriptTimeline, timelineRevision: messageNavigatorTimelineRevision,
+            seenRowIDs: hasUnloadedTranscript ? transcriptHistoryCursor?.seenRowIDs : nil,
+            changes: navigatorChangedRows, prepend: lastTranscriptPrepend, previous: previousMessageNavigator)
+    }
+
+    private func installMessageNavigator(_ result: MessageNavigatorProjection.Result) {
+        cachedMessageNavigatorItems = result
+        navigatorChangedRows = []
     }
 
     var messageNavigatorItems: [MessageNavigatorItem] {

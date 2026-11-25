@@ -72,46 +72,73 @@ enum StreamingChunkPolicy {
 
     static func promotionBoundary(in tail: String) -> String.Index? {
         guard tail.utf8.count > maxMutableTailBytes else { return nil }
+        return promotionBoundary(in: tail[...], bytes: tail.utf8.count, context: .markdown)
+    }
 
-        // A blank line is only a block boundary outside a fenced block.
-        // Promoting inside a fence loses the language and parses code as prose.
+    private static func promotionBoundary(
+        in tail: Substring, bytes: Int, context: StreamingChunkContext
+    ) -> String.Index {
         var fence: MarkdownFence?
-        var start = tail.startIndex
-        var bytes = 0
-        while let newline = tail[start...].firstIndex(of: "\n") {
-            let line = String(tail[start..<newline])
-            let end = tail.index(after: newline)
-            bytes += tail[start..<end].utf8.count
-            if let active = fence {
-                if active.isClosed(by: line) { fence = nil }
-                if bytes >= targetStableChunkBytes {
-                    // Promote the first complete code line past the target,
-                    // rather than waiting until the end of an open fence and
-                    // inserting one unexpectedly large native section.
-                    return end
-                }
-            } else if let opening = MarkdownFence(opening: line) {
-                fence = opening
-            } else if line.trimmingCharacters(in: .whitespaces).isEmpty,
-                bytes >= targetStableChunkBytes,
-                !inlineBoundaries(in: tail[..<end]).isUnclosed
-            {
-                return end
-            }
-            start = end
+        if case .fencedCode(let marker, let length, let language) = context {
+            fence = MarkdownFence(marker: marker, length: length, language: language)
         }
-        // A long paragraph (or an open code fence) must not remain one
-        // ever-growing mutable Text. Split at a complete line when possible;
-        // the streaming renderer carries the fence context for code lines.
-        let target = min(maxMutableTailBytes, max(targetStableChunkBytes, tail.utf8.count / 2))
-        // Convert the byte budget back to a valid scalar boundary. A response
-        // may contain multi-byte Unicode characters, so never slice a UTF-8
-        // sequence in the middle.
-        let safePrefix = String(decoding: tail.utf8.prefix(target), as: UTF8.self)
-        let targetIndex = tail.index(tail.startIndex, offsetBy: safePrefix.count)
-        // Find the last safe whitespace in one pass. Rechecking every prefix
-        // is quadratic for a long unfinished code span, link, or emphasis.
-        return inlineBoundaries(in: tail[..<targetIndex]).lastSafeWhitespace ?? targetIndex
+        let target = min(maxMutableTailBytes, max(targetStableChunkBytes, bytes / 2))
+        var lineStart = tail.startIndex
+        var cursor = lineStart
+        var fallback = cursor
+        var scanned = 0
+        // Search only a chunk-sized window. A restored one-line reply may be megabytes long.
+        while cursor < tail.endIndex, scanned < maxMutableTailBytes {
+            let character = tail[cursor]
+            let next = tail.index(after: cursor)
+            scanned += tail[cursor..<next].utf8.count
+            if scanned > maxMutableTailBytes, fallback != tail.startIndex { break }
+            if scanned <= target || fallback == tail.startIndex { fallback = next }
+            if character == "\n" {
+                let line = String(tail[lineStart..<cursor])
+                if let active = fence {
+                    if active.isClosed(by: line) { fence = nil }
+                    if scanned >= targetStableChunkBytes { return next }
+                } else if let opening = MarkdownFence(opening: line) {
+                    fence = opening
+                } else if scanned >= targetStableChunkBytes, line.trimmingCharacters(in: .whitespaces).isEmpty,
+                    !inlineBoundaries(in: tail[..<next]).isUnclosed
+                {
+                    return next
+                }
+                lineStart = next
+            }
+            cursor = next
+        }
+        if fence != nil { return fallback }
+        return inlineBoundaries(in: tail[..<fallback]).lastSafeWhitespace ?? fallback
+    }
+
+    struct Promotion: Sendable {
+        struct Segment: Sendable {
+            let text: String
+            let context: StreamingChunkContext
+        }
+        let stable: [Segment]
+        let tail: String
+        let context: StreamingChunkContext
+    }
+
+    static func prepare(_ input: String, startingIn initial: StreamingChunkContext) -> Promotion {
+        var remaining = input[...]
+        var bytes = remaining.utf8.count
+        var context = initial
+        var segments: [Promotion.Segment] = []
+        while bytes > maxMutableTailBytes, !Task.isCancelled {
+            let boundary = promotionBoundary(in: remaining, bytes: bytes, context: context)
+            let stable = remaining[..<boundary]
+            let text = String(stable)
+            segments.append(.init(text: text, context: context))
+            context = contextAfter(text, startingIn: context)
+            bytes -= stable.utf8.count
+            remaining = remaining[boundary...]
+        }
+        return Promotion(stable: segments, tail: String(remaining), context: context)
     }
 
     /// A promoted section is parsed independently. Do not cut through the
@@ -185,6 +212,9 @@ final class StreamingText: ObservableObject {
     private(set) var text = ""
     @Published private(set) var chunks: [StreamingPresentationChunk] = []
 
+    private static let backgroundThreshold = 2 * StreamingChunkPolicy.maxMutableTailBytes
+    private var promotionTask: Task<Void, Never>?
+    private var queuedDelta = ""
     private var stableChunks: [StreamingPresentationChunk] = []
     private var mutableTail = ""
     private var mutableTailContext: StreamingChunkContext = .markdown
@@ -197,10 +227,57 @@ final class StreamingText: ObservableObject {
     func appendPresentation(_ delta: String) {
         guard !delta.isEmpty else { return }
         text.append(delta)
-        mutableTail.append(delta)
-        promoteStableChunks()
-        tailRevision &+= 1
-        publishChunks()
+        apply(StreamingChunkPolicy.prepare(mutableTail + delta, startingIn: mutableTailContext))
+    }
+
+    /// Stream deltas arriving during work stay ordered in one queue for this turn only.
+    func enqueuePresentation(_ delta: String) {
+        guard !delta.isEmpty else { return }
+        if promotionTask == nil, queuedDelta.isEmpty, delta.utf8.count <= Self.backgroundThreshold {
+            appendPresentation(delta)
+        } else {
+            queuedDelta.append(delta)
+            drainPresentationQueue()
+        }
+    }
+
+    private func drainPresentationQueue() {
+        guard promotionTask == nil, !queuedDelta.isEmpty else { return }
+        let delta = queuedDelta
+        queuedDelta = ""
+        let input = mutableTail + delta
+        let context = mutableTailContext
+        let worker = Task.detached(priority: .userInitiated) {
+            StreamingChunkPolicy.prepare(input, startingIn: context)
+        }
+        promotionTask = Task { [weak self] in
+            let prepared = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.text.append(delta)
+            self.apply(prepared)
+            self.promotionTask = nil
+            self.drainPresentationQueue()
+        }
+    }
+
+    /// A completed row can prepare its Markdown independently if the live projection is still catching up.
+    func reconcileForCompletion(with value: String) -> Bool {
+        guard promotionTask == nil,
+            value.utf8.count <= Self.backgroundThreshold
+                || (value.utf8.count - text.utf8.count <= Self.backgroundThreshold && value.hasPrefix(text))
+        else { return false }
+        reconcilePresentation(with: value)
+        return true
+    }
+
+    private func cancelPreparation() {
+        promotionTask?.cancel()
+        promotionTask = nil
+        queuedDelta = ""
     }
 
     /// Reconciles a completion envelope without replacing the already
@@ -216,21 +293,15 @@ final class StreamingText: ObservableObject {
     }
 
     func replacePresentation(with value: String) {
+        cancelPreparation()
         completionSnapshot = nil
         completionSnapshotText = ""
         completionSnapshotMessageID = nil
-        text = ""
         stableChunks = []
-        mutableTail = ""
-        mutableTailContext = .markdown
         nextStableChunkID = 0
         tailRevision &+= 1
         text = value
-        mutableTail = value
-        mutableTailContext = .markdown
-        promoteStableChunks()
-        tailRevision &+= 1
-        publishChunks()
+        apply(StreamingChunkPolicy.prepare(value, startingIn: .markdown))
     }
 
     func clearPresentation() {
@@ -296,6 +367,7 @@ final class StreamingText: ObservableObject {
     /// Clears live observation without throwing away the projection used by a
     /// completed native row during the SwiftUI identity handoff.
     func clearLivePresentation() {
+        cancelPreparation()
         text = ""
         stableChunks = []
         mutableTail = ""
@@ -305,24 +377,18 @@ final class StreamingText: ObservableObject {
         chunks = []
     }
 
-    private func promoteStableChunks() {
-        while let boundary = StreamingChunkPolicy.promotionBoundary(in: mutableTail) {
-            let stableText = String(mutableTail[..<boundary])
+    private func apply(_ prepared: StreamingChunkPolicy.Promotion) {
+        for segment in prepared.stable {
             stableChunks.append(
                 StreamingPresentationChunk(
-                    id: nextStableChunkID,
-                    text: stableText,
-                    revision: tailRevision,
-                    isMutableTail: false,
-                    context: mutableTailContext
-                ))
+                    id: nextStableChunkID, text: segment.text, revision: tailRevision,
+                    isMutableTail: false, context: segment.context))
             nextStableChunkID += 1
-            mutableTailContext = StreamingChunkPolicy.contextAfter(
-                stableText,
-                startingIn: mutableTailContext
-            )
-            mutableTail = String(mutableTail[boundary...])
         }
+        mutableTail = prepared.tail
+        mutableTailContext = prepared.context
+        tailRevision &+= 1
+        publishChunks()
     }
 
     private func publishChunks() {

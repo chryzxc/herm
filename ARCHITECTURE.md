@@ -20,33 +20,70 @@ transaction, navigation generation, and deferred native scroll work. Geometry do
 not publish transcript updates. The transcript resolves mounted row bounds together in
 one document-space geometry reader. Activity and reply content share one measured row,
 including zero-height hidden rows.
+Mounted native Markdown replies share clip notifications and batch geometry
+changes. Completed replies reuse their current layout during an active resize
+and solve the final width when the drag ends. The transcript indexes stored
+rows in both directions so the outgoing cache gathers metadata for its 36
+retained messages directly.
 `DockModel` buffers stored transcript history in 240-row pages by default.
 The coordinator requests a refill before its mounted window reaches the oldest loaded rows.
 The first recent-session publication starts a bounded warm-up for two pinned or
-recent chats. The all-profile scan can fill the remaining preview cache. An exact,
-complete stored preload with a current read boundary can paint before unread review.
+recent chats. The all-profile scan can fill the remaining preview cache. A foreground
+open can join the matching first-page read while it is in flight. New speculative
+reads wait for foreground history reads. An exact, complete stored preload with a
+current read boundary can paint before unread review.
 The workspace shell observes the transcript tail and opening state. The composer
 and its trays observe the input and session controls they display. The session rail
 discovers references as history arrives and publishes changes for that session's cards.
+An externally running turn's history watch belongs to the selected transcript
+and streaming message. Views of the same session share in-flight reads and
+one-second results with the same gateway and profile. A paginated one-row tail
+check skips unchanged work. Bounded reconciliation merges stored row identities
+into the local transcript without replacing older pages, changing their cursor,
+or moving a reader to the tail. Failed reads back off to 24 seconds without
+extending the idle deadline. Switching sessions or shutting down cancels the watch.
 `ConversationMessageWindow` sets eight-message history pages, a 12-message initial
 window, and the existing 36-row backstop with visible-row protection. Markdown
 prefetch uses that same page size in both directions.
+Stored transcript images and cached switch previews share a worker. Hydration
+pulls four attachments at a time, prioritizes the visible transcript, and
+applies completed message attachments by ID. A successfully transferred preview
+attachment is not decoded again during fresh history hydration.
 Markdown section parsing is independent of AppKit;
 adjacent-page prefetch runs off the main actor, while styling and exact measurement
 remain on it. The shared completed-height cache retains numbers only. The native streaming
 coordinator retains stable chunk sections and byte offsets, rebuilding only changed
-suffixes and reading canonical text from `StreamingText`. Activity row inputs are
+suffixes and reading canonical text from `StreamingText`. Large restore and
+stream batches prepare their bounded chunks on a cancellable worker, with new
+deltas queued in order. Completion never waits for obsolete live chunks.
+Activity row inputs are
 scoped by their tool-call identities before the equatable view boundary.
 `DockModel` caches an immutable `MessageNavigatorSnapshot` at message/history
-mutation boundaries; transcript equality compares its identity instead of walking
-all navigator entries. Ordinary Markdown keeps a nil rich-document parse request;
+mutation boundaries. Long maps build their index on a worker and reuse stored
+prompt previews across prepends. A result is accepted only for the current
+session and revision. Known prompt appends and reply edits update their indexed
+rows. Transcript equality compares the snapshot's identity. Ordinary Markdown
+keeps a nil rich-document parse request;
 only visual replies schedule parsing, keyed by source, stream completion, and reply identity.
-Find matches immutable navigator items in a cancellable background task. Its
+Find matches immutable navigator items in a cancellable background task. Queries
+show loaded matches first and share an in-flight read for the recent unloaded
+history. The text cache retains up to 8 MiB. Older pages are read and matched
+individually without retaining their bodies.
+Older matches carry stored row IDs so selection can prepend through the requested
+row. Deep jumps publish at complete turn boundaries, leaving already loaded
+history intact if the next jump supersedes them. A turn spanning more than one
+REST page is kept together so its tool results do not detach from the reply.
+The wide message map requests its stored prompt timeline only while visible
+and looks up viewport targets by row ID. Find's
 `MessageNavigatorSearchState` scopes results and queued Return selection to the
 query, session, and snapshot identity; views never rescan history on submission.
 
 `SessionTraceModel` owns Timeline’s focused execution subscriptions and coalesced
 projection, caching completed request inputs by `DockModel.messagesRevision`.
+Within the same history revision, Timeline updates the live turn and any
+historical turns touched by changed tools or workers. Participant request IDs
+deduplicate with sets, and one turn index attaches Bot appearances without
+walking the full timeline for each appearance.
 `SessionTraceRowViewport` adapts the native vertical clip view for both fixed-height
 label and bar windows; it owns presentation geometry only. Clock bounds and visible
 grid/ruler drawing keep time ticks independent of history length.
@@ -65,6 +102,8 @@ off the main actor.
 Sidebar search uses the same navigation snapshot and matches it off the main actor.
 The right-hand session rail runs discovery and refresh only while visible.
 Each composer shares one in-flight process read and queues one follow-up as needed.
+Cancelling a WebSocket RPC waiter releases the local continuation and deadline
+without interrupting Hermes or the shared connection.
 
 - `HermesRuntime/` — the Hermes boundary: `HermesControlRPC` (WebSocket JSON-RPC), `HermesCLIAdapter` (quoted-word Hermes CLI commands via `shell.exec`), `HermesCapabilityService` (fail-closed capability probes), `HermesFeatureContract` (feature IDs). All transport/process-launch concerns live here.
 - `Conversation/` — `DockModel` (central presentation state machine; stored state + init in `DockModel.swift`, behaviour in `DockModel+<Feature>.swift` extensions), `DockPopover` (+ extensions, same pattern), session navigation rail/queue/session rows, transcript views, composer, session lifecycle guards.

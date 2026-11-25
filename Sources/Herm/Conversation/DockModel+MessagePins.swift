@@ -97,7 +97,7 @@ extension DockModel {
             let rowID = TranscriptHistoryPaging.rowID(receipt, key: "final_assistant_row_id"), rowID > 0
         {
             storedMessageReferences[id] = StoredMessageReference(rowID: rowID, uid: nil)
-            transcriptMessageIDsByRowID[rowID] = id
+            setTranscriptRowID(rowID, message: id)
         }
     }
 

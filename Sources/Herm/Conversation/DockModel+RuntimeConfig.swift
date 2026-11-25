@@ -361,7 +361,7 @@ extension DockModel {
                 return transcriptMessageIDsByRowID[id] == nil
             }
             let restored = Self.parseMessages(fresh)
-            transcriptMessageIDsByRowID.merge(restored.rowIDs) { current, _ in current }
+            mergeTranscriptRowIDs(restored.rowIDs)
             storedMessageReferences.merge(StoredMessageReference.references(rows: fresh, rowIDs: restored.rowIDs)) {
                 current, _ in current
             }

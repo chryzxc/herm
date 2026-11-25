@@ -129,7 +129,7 @@ extension DockModel {
             role: .user, text: transcriptText, images: attachedImages.map(\.image),
             botMentions: ComposerBotMention.rebasing(botMentions, from: prompt, to: transcriptText),
             attachmentURLs: contexts.compactMap(\.attachmentURL) + attachedPDFs)
-        if isForeground { messages.append(sentMessage) }
+        if isForeground { appendChatMessage(sentMessage) }
         let sendID = UUID()
         if let queueOwner { queuedSubmissions[queueOwner] = sendID }
         pendingSessionSends.append(

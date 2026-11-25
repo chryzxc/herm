@@ -53,6 +53,22 @@ struct MessageNavigatorSearchTests {
         #expect(state.submit(request) == match)
     }
 
+    @Test func loadedMatchesAppearWhileReturnWaitsForOlderMatches() {
+        let loaded = item(2, text: "Needle")
+        let older = item(1, text: "Historical needle", storedRowID: 5)
+        let request = MessageNavigatorSearchRequest(
+            snapshot: .init(items: [loaded]), sessionID: "owner", query: "needle")
+        let changed = MessageNavigatorSearchRequest(snapshot: request.snapshot, sessionID: "owner", query: "other")
+        var state = MessageNavigatorSearchState()
+        state.showLoaded([loaded], for: request, current: changed)
+        #expect(state.results(for: request).isEmpty)
+        state.showLoaded([loaded], for: request, current: request)
+        #expect(state.results(for: request) == [loaded])
+        #expect(state.results(for: changed).isEmpty)
+        #expect(state.submit(request) == nil)
+        #expect(state.complete([older, loaded], for: request, current: request) == older)
+    }
+
     @Test func editsAndSessionChangesHideOldResultsAndRejectQueuedReturn() {
         let match = item(1, text: "Needle")
         let snapshot = MessageNavigatorSnapshot(items: [match])

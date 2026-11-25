@@ -21,7 +21,7 @@ struct MessageNavigatorItem: Equatable, Identifiable, Sendable {
     let hasImages: Bool
     /// Text search matches: the full message body, not only the preview.
     var searchText: String = ""
-    /// Set for a stored prompt that is not loaded into the transcript yet.
+    /// Set for a stored message that is not loaded into the transcript yet.
     /// Selecting it loads history through this row before jumping.
     var storedRowID: Int? = nil
 
@@ -34,9 +34,31 @@ struct MessageNavigatorItem: Equatable, Identifiable, Sendable {
 final class MessageNavigatorSnapshot: Sendable {
     static let empty = MessageNavigatorSnapshot(items: [])
     let items: [MessageNavigatorItem]
+    private let indices: [MessageNavigatorTarget: Int]
 
     init(items: [MessageNavigatorItem]) {
         self.items = items
+        indices = Dictionary(
+            items.enumerated().map { ($0.element.target, $0.offset) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    fileprivate init(items: [MessageNavigatorItem], extending previous: MessageNavigatorSnapshot) {
+        self.items = items
+        var indices = previous.indices
+        for index in previous.items.count..<items.count where indices[items[index].target] == nil {
+            indices[items[index].target] = index
+        }
+        self.indices = indices
+    }
+
+    func index(of target: MessageNavigatorTarget?) -> Int? { target.flatMap { indices[$0] } }
+
+    func item(for target: MessageNavigatorTarget?) -> MessageNavigatorItem? { index(of: target).map { items[$0] } }
+
+    func middleVisibleItem(in targets: Set<MessageNavigatorTarget>) -> MessageNavigatorItem? {
+        let visible = targets.compactMap { indices[$0] }.sorted()
+        guard !visible.isEmpty else { return nil }
+        return items[visible[visible.count / 2]]
     }
 }
 
@@ -45,7 +67,34 @@ enum MessageNavigator {
     static let minimumPreviewLimit = 2
     static let minimumMessagesToShowNavigator = 24
 
-    struct RowKey: Hashable {
+    static func updating(
+        _ previous: MessageNavigatorSnapshot, oldMessageCount: Int, messages: [ChatMessage],
+        changed: Set<Int>, sessionID: String
+    ) -> MessageNavigatorSnapshot? {
+        let offset = previous.items.count - oldMessageCount
+        guard offset >= 0, messages.count >= oldMessageCount else { return nil }
+        var items = previous.items
+        var hasChanges = false
+        for index in changed.sorted() {
+            guard messages.indices.contains(index) else { return nil }
+            let position = offset + index
+            let row = item(
+                for: messages[index], ordinal: position + 1, sessionID: sessionID, previewLimit: defaultPreviewLimit)
+            if position < items.count {
+                guard items[position].target == row.target else { return nil }
+                guard items[position] != row else { continue }
+                items[position] = row
+            } else {
+                guard position == items.count else { return nil }
+                items.append(row)
+            }
+            hasChanges = true
+        }
+        guard items.count == offset + messages.count else { return nil }
+        return hasChanges ? MessageNavigatorSnapshot(items: items, extending: previous) : previous
+    }
+
+    struct RowKey: Hashable, Sendable {
         let id: UUID
         let revision: Int
         let isUser: Bool
@@ -90,7 +139,7 @@ enum MessageNavigator {
     }
 
     static func items(
-        messages: [ChatMessage], earlierPrompts: [TranscriptTimelineEntry], sessionID: String,
+        messages: [ChatMessage], earlierItems: [MessageNavigatorItem], sessionID: String,
         reusing cache: inout [RowKey: MessageNavigatorItem]
     ) -> [MessageNavigatorItem] {
         var next: [RowKey: MessageNavigatorItem] = [:]
@@ -106,17 +155,22 @@ enum MessageNavigator {
             return row
         }
         cache = next
-        return addingEarlierPrompts(earlierPrompts, to: loaded, sessionID: sessionID, previewLimit: defaultPreviewLimit)
+        return earlierItems
+            + loaded.map {
+                var item = $0
+                item.ordinal += earlierItems.count
+                return item
+            }
     }
 
     /// A verified prepend leaves every existing loaded item valid. Keep its preview
     /// and update only its position in the combined list.
     static func items(
         prepending messages: ArraySlice<ChatMessage>, to retained: ArraySlice<MessageNavigatorItem>,
-        earlierPrompts: [TranscriptTimelineEntry], sessionID: String,
+        earlierItems: [MessageNavigatorItem], sessionID: String,
         reusing cache: inout [RowKey: MessageNavigatorItem]
     ) -> [MessageNavigatorItem] {
-        var items = earlierPromptItems(earlierPrompts, sessionID: sessionID, previewLimit: defaultPreviewLimit)
+        var items = earlierItems
         items.reserveCapacity(items.count + messages.count + retained.count)
         for message in messages {
             let row = item(
@@ -131,8 +185,8 @@ enum MessageNavigator {
         return items
     }
 
-    private static func item(
-        for message: ChatMessage, ordinal: Int, sessionID: String, previewLimit: Int
+    static func item(
+        for message: ChatMessage, ordinal: Int, sessionID: String, previewLimit: Int = defaultPreviewLimit
     ) -> MessageNavigatorItem {
         let text = GenerativeUIIntegration.readableText(message)
         return MessageNavigatorItem(
@@ -156,8 +210,8 @@ enum MessageNavigator {
             }
     }
 
-    private static func earlierPromptItems(
-        _ earlierPrompts: [TranscriptTimelineEntry], sessionID: String, previewLimit: Int
+    static func earlierPromptItems(
+        _ earlierPrompts: [TranscriptTimelineEntry], sessionID: String, previewLimit: Int = defaultPreviewLimit
     ) -> [MessageNavigatorItem] {
         let limit = max(minimumPreviewLimit, previewLimit)
         return earlierPrompts.enumerated().map { index, entry in
@@ -185,18 +239,87 @@ enum MessageNavigator {
     static func search(items: [MessageNavigatorItem], query: String) -> [MessageNavigatorItem] {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else { return items }
-        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
         var results: [MessageNavigatorItem] = []
         for item in items {
             guard !Task.isCancelled else { return [] }
             let body = item.searchText.isEmpty ? item.preview : item.searchText
-            if body.range(of: normalizedQuery, options: options) != nil
-                || item.roleLabel.range(of: normalizedQuery, options: options) != nil
-            {
+            if matches(normalizedQuery, body: body, role: item.roleLabel) {
                 results.append(item)
             }
         }
         return results
+    }
+
+    struct StoredSearchProjection: Sendable {
+        struct Row: Sendable {
+            let id: Int
+            let ordinal: Int
+            let role: String
+            let text: String
+            let contentRevision: Int
+            let hasImages: Bool
+        }
+        let rows: [Row]
+        let messageCount: Int
+        let cost: Int
+        static let maximumCachedBytes = 8 * 1024 * 1024
+    }
+
+    static func projectStoredSearch(_ stored: RestoredTranscript) throws -> StoredSearchProjection {
+        let rowIDs = Dictionary(
+            stored.rowIDs.map { ($0.value, $0.key) }, uniquingKeysWith: { min($0, $1) })
+        var rows: [StoredSearchProjection.Row] = []
+        var cost = 0
+        for (index, message) in stored.messages.enumerated() {
+            try Task.checkCancellation()
+            guard let rowID = rowIDs[message.id] else { continue }
+            let text = GenerativeUIIntegration.readableText(message)
+            cost += text.utf8.count + 128
+            rows.append(
+                .init(
+                    id: rowID, ordinal: index + 1, role: message.role == .user ? "You" : "Herm",
+                    text: text, contentRevision: message.contentRevision, hasImages: !message.images.isEmpty))
+        }
+        return StoredSearchProjection(rows: rows, messageCount: stored.messages.count, cost: cost)
+    }
+
+    static func searchStoredPage(
+        _ stored: StoredSearchProjection, input: MessageNavigatorSearchRequest, precedingNewerCount: Int
+    ) -> [MessageNavigatorItem] {
+        let query = input.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        var results: [MessageNavigatorItem] = []
+        for row in stored.rows {
+            guard !Task.isCancelled else { return [] }
+            guard matches(query, body: row.text, role: row.role) else { continue }
+            results.append(
+                MessageNavigatorItem(
+                    target: .init(sessionID: input.sessionID, messageID: placeholderMessageID(forRowID: row.id)),
+                    ordinal: row.ordinal - precedingNewerCount - stored.messageCount, roleLabel: row.role,
+                    preview: boundedPreview(row.text, limit: defaultPreviewLimit), contentRevision: row.contentRevision,
+                    hasImages: row.hasImages, storedRowID: row.id))
+        }
+        return results
+    }
+
+    static func searchLoaded(_ input: MessageNavigatorSearchRequest, olderCount: Int = 0) -> [MessageNavigatorItem] {
+        let query = input.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        var results: [MessageNavigatorItem] = []
+        var ordinal = olderCount
+        for var item in input.snapshot.items where item.storedRowID == nil {
+            guard !Task.isCancelled else { return [] }
+            ordinal += 1
+            let body = item.searchText.isEmpty ? item.preview : item.searchText
+            guard matches(query, body: body, role: item.roleLabel) else { continue }
+            item.ordinal = ordinal
+            results.append(item)
+        }
+        return results
+    }
+
+    private static func matches(_ query: String, body: String, role: String) -> Bool {
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+        return query.isEmpty || body.range(of: query, options: options) != nil
+            || role.range(of: query, options: options) != nil
     }
 
     static func searchInBackground(items: [MessageNavigatorItem], query: String) async throws -> [MessageNavigatorItem]
@@ -210,6 +333,19 @@ enum MessageNavigator {
             let results = await worker.value
             try Task.checkCancellation()
             return results
+        } onCancel: {
+            worker.cancel()
+        }
+    }
+
+    static func searchLoadedInBackground(_ input: MessageNavigatorSearchRequest, olderCount: Int = 0) async throws
+        -> [MessageNavigatorItem]
+    {
+        let worker = Task.detached(priority: .userInitiated) { searchLoaded(input, olderCount: olderCount) }
+        return try await withTaskCancellationHandler {
+            let matches = await worker.value
+            try Task.checkCancellation()
+            return matches
         } onCancel: {
             worker.cancel()
         }
@@ -338,10 +474,8 @@ struct MessageNavigatorView: View {
     @Binding var isSearchPresented: Bool
     /// The marker rail needs room beside the transcript; search does not.
     var showsMap = true
-    /// Older stored history is being read so search covers all of it.
     var isLoadingHistory = false
-    /// Called when a non-empty search starts, so older history can load.
-    var onSearch: () -> Void = {}
+    var searchHistory: ((MessageNavigatorSearchRequest) async throws -> [MessageNavigatorItem])?
     let onSelect: (MessageNavigatorItem) -> Void
 
     @State private var selectedTarget: MessageNavigatorTarget?
@@ -352,6 +486,7 @@ struct MessageNavigatorView: View {
     /// Full-text matching scans every message body, so results are computed
     /// when the query or items change instead of on every hover render.
     @State private var searchState = MessageNavigatorSearchState()
+    @State private var incompleteSearch: MessageNavigatorSearchRequest?
     @FocusState private var isSearchFocused: Bool
 
     private var hasSearchQuery: Bool {
@@ -368,9 +503,7 @@ struct MessageNavigatorView: View {
     }
 
     private var currentVisibleItem: MessageNavigatorItem? {
-        let visibleItems = items.filter { visibleTargets.contains($0.target) }
-        guard !visibleItems.isEmpty else { return nil }
-        return visibleItems[visibleItems.count / 2]
+        snapshot.middleVisibleItem(in: visibleTargets)
     }
 
     static func dispatchSelection(
@@ -432,19 +565,31 @@ struct MessageNavigatorView: View {
             clearHoverTask?.cancel()
             hoveredTarget = nil
         }
-        .onChange(of: searchQuery) { _, _ in
-            if hasSearchQuery { onSearch() }
-        }
         .onChange(of: searchInput) { _, input in searchState.invalidateSelection(for: input) }
         .task(id: searchInput) {
+            incompleteSearch = nil
             guard let input = searchInput else {
                 searchState = MessageNavigatorSearchState()
                 return
             }
             do {
                 try await Task.sleep(for: .milliseconds(120))
-                let results = try await MessageNavigator.searchInBackground(
-                    items: input.snapshot.items, query: input.query)
+                let results: [MessageNavigatorItem]
+                do {
+                    if let searchHistory {
+                        let loaded = try await MessageNavigator.searchLoadedInBackground(input)
+                        searchState.showLoaded(loaded, for: input, current: searchInput)
+                        results = try await searchHistory(input)
+                    } else {
+                        results = try await MessageNavigator.searchInBackground(
+                            items: input.snapshot.items, query: input.query)
+                    }
+                } catch {
+                    if error is CancellationError { throw error }
+                    results = try await MessageNavigator.searchInBackground(
+                        items: input.snapshot.items, query: input.query)
+                    if searchInput == input { incompleteSearch = input }
+                }
                 try Task.checkCancellation()
                 if let item = searchState.complete(results, for: input, current: searchInput) {
                     selectSearchResult(item)
@@ -457,7 +602,7 @@ struct MessageNavigatorView: View {
         }
         .onMoveCommand { direction in
             guard hoveredTarget != nil, !items.isEmpty else { return }
-            let currentIndex = items.firstIndex { $0.target == selectedTarget }
+            let currentIndex = snapshot.index(of: selectedTarget)
             guard
                 let nextIndex = Self.nextSelectionIndex(
                     direction: direction,
@@ -489,6 +634,9 @@ struct MessageNavigatorView: View {
                     Text("\(searchResults.count)")
                         .dockFont(.metadata, weight: .medium).monospacedDigit()
                         .foregroundStyle(Color.dockMetadataText)
+                    if isSearching {
+                        DockLoadingIndicator().controlSize(.mini).accessibilityLabel("Searching earlier messages")
+                    }
                 }
                 Button {
                     isSearchPresented = false
@@ -507,6 +655,13 @@ struct MessageNavigatorView: View {
 
             if hasSearchQuery {
                 Color.dockBorder.frame(height: DockLayout.hairline)
+                if incompleteSearch == searchInput {
+                    Text("Earlier messages unavailable")
+                        .dockFont(.metadata)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .dockPadding(.horizontal, 12)
+                        .dockPadding(.top, 8)
+                }
                 if searchResults.isEmpty {
                     Text(
                         isLoadingHistory
@@ -585,7 +740,7 @@ struct MessageNavigatorView: View {
         let markers = mapItems
         let activeTarget = self.activeTarget
         let activeIndex = markers.firstIndex { $0.target == hoveredTarget }
-        let previewItem = items.first { $0.target == hoveredTarget }
+        let previewItem = snapshot.item(for: hoveredTarget)
         let previewY =
             previewItem.flatMap { item in
                 markers.firstIndex(where: { $0.target == item.target }).map {

@@ -3474,17 +3474,28 @@ The canonical stream and activity continue accumulating while browsing history;
 returning to the live reply presents the current state without replaying UI updates.
 The jump-to-message rail sits on the left edge of wide conversations, with hover
 previews opening inward to its right. Find opens at the same left edge.
-The message navigator prepares previews when the rail or Find needs them. It reuses
-unchanged previews when messages are edited or older pages are loaded. Ordinary
-Markdown chunks do not restart visual-reply parsing tasks.
-Find matches full message text away from the main thread. Query edits, history
+The message navigator prepares previews when the rail or Find needs them. A visible
+wide transcript requests the stored prompt timeline for its message map. Long
+maps build in the background and keep the last map for the same session while
+updating. Unchanged previews are reused when prompts are sent, replies complete,
+or older pages load. Ordinary Markdown chunks do not restart visual-reply
+parsing tasks.
+Find matches full message text away from the main thread. It shows matches from
+the loaded conversation first and marks the result count as still searching
+while it scans older history. Query edits reuse the bounded search projection
+of recent history and scan uncached pages one at a time. Choosing an older result
+loads through it in batches without moving the reader before the target is ready.
+A newer jump cancels the older one and keeps batches already loaded.
+If earlier history is unavailable, Find labels its results as partial. Query edits, history
 changes, closing Find, and session changes cancel obsolete matching; stale results
 cannot be selected. Return reuses matching results or waits for the current query,
 and the existing result slot shows progress while matching is pending.
 
 Completed assistant replies use the section renderer at every length, including
 replies over 8 KB. Long native Markdown documents retain their full measured height while mounting
-only visible sections and one viewport of buffer. Adjacent completed pages prefetch pure
+only visible sections and one viewport of buffer. While the divider or window is
+being resized, a completed reply can keep its existing line wraps until the final
+width settles. Adjacent completed pages prefetch pure
 Markdown sections away from the main actor. Adjacent pages prepare native layout in
 small slices, and the current page stays visible until its next page is ready.
 Preparation creates native measurement views only for sections missing a cached size.

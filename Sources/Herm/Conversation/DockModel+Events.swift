@@ -1457,7 +1457,7 @@ extension DockModel {
             responseStartedAt = turnStartedAtBySession[sessionID] ?? now
             turnStartedAtBySession[sessionID] = responseStartedAt
         }
-        messages.append(ChatMessage(role: .hermes, text: "", timestamp: now, modelName: currentModelName))
+        appendChatMessage(ChatMessage(role: .hermes, text: "", timestamp: now, modelName: currentModelName))
         streamingMessageID = messages.last?.id
         streamingMessageSessionID = sessionID
         streamingResponseStartedAt = responseStartedAt
@@ -1972,7 +1972,7 @@ extension DockModel {
         } else {
             let delta = streamingMessagePendingPresentationDelta
             streamingMessagePendingPresentationDelta = ""
-            streamingText.appendPresentation(delta)
+            streamingText.enqueuePresentation(delta)
         }
         streamingMessagePublishedSuffix = String(publishedText.suffix(Self.visionUnsupportedPhrase.count - 1))
     }
@@ -1996,14 +1996,14 @@ extension DockModel {
         // Completion may arrive before the adaptive presentation timer flushes
         // its final delta. Reconcile the live projection first so the native
         // completion handoff can reuse every promoted section.
-        streamingText.reconcilePresentation(with: publishedText)
+        let preparedHandoff = streamingText.reconcileForCompletion(with: publishedText)
         let message = messages[index]
         let attribution = Self.botAttribution(from: publishedText)
         let botProfileID = attribution?.profileID ?? activeBotProfileID
         let botDisplayName = attribution?.displayName ?? activeBotDisplayName
         closeTurnThinking()
         let reactions = message.reactions
-        messages[index] = ChatMessage(
+        var completed = ChatMessage(
             id: id,
             role: .hermes,
             text: attribution?.body ?? publishedText,
@@ -2021,9 +2021,10 @@ extension DockModel {
                 return call
             }
         )
-        messages[index].reactions = reactions
+        completed.reactions = reactions
+        editChatMessage(at: index) { $0 = completed }
         streamingMessagePendingPresentationDelta = ""
-        streamingText.retainCompletionPresentation(for: id)
+        if preparedHandoff { streamingText.retainCompletionPresentation(for: id) }
         streamingText.clearLivePresentation()
         streamingResponseStartedAt = nil
     }

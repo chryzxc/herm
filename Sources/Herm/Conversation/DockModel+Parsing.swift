@@ -214,52 +214,24 @@ extension DockModel {
         guard !pending.isEmpty else { return Task<Void, Never> {} }
         let generation = sessionResumeGeneration
         return Task { @MainActor in
-            let worker = Task.detached(priority: .userInitiated) {
-                () -> [(UUID, [(data: Data, thumbnail: CGImage?)])] in
-                pending.map { entry in
-                    (
-                        entry.messageID,
-                        entry.fileURLs.compactMap { url in
-                            guard !Task.isCancelled,
-                                let data = loadData.map({ loader in loader(url) }) ?? Self.transcriptImageData(url)
-                            else { return nil }
-                            return (data, ConversationThumbnailCache.prepare(data))
-                        }
-                    )
+            var queue = TranscriptImageHydration.Queue(pending)
+            var application = TranscriptImageHydration.Application()
+            var indexedRevision: UInt64?
+            while !Task.isCancelled, generation == sessionResumeGeneration, sessionID == requestedSessionID {
+                let jobs = queue.next(prioritizing: prioritizedTranscriptImageIDs())
+                guard !jobs.isEmpty else { return }
+                let batch = await TranscriptImageHydration.Worker.shared.prepare(
+                    jobs, load: loadData ?? Self.transcriptImageData)
+                guard !Task.isCancelled, generation == sessionResumeGeneration, sessionID == requestedSessionID else {
+                    return
                 }
-            }
-            let loaded = await withTaskCancellationHandler {
-                await worker.value
-            } onCancel: {
-                worker.cancel()
-            }
-            guard !Task.isCancelled, generation == sessionResumeGeneration, sessionID == requestedSessionID else {
-                return
-            }
-            // One `messages` publication for the whole batch, not one per image.
-            var updated = messages
-            var changed = false
-            for entry in loaded where !entry.1.isEmpty {
-                let images = entry.1.compactMap { item in
-                    NSImage(data: item.data).map { (source: $0, thumbnail: item.thumbnail) }
+                var updated = messages
+                if application.apply(batch, to: &updated, reindex: indexedRevision != messagesRevision) {
+                    messages = updated
                 }
-                guard !images.isEmpty,
-                    let index = updated.firstIndex(where: { $0.id == entry.0 })
-                else { continue }
-                let message = updated[index]
-                let previousCount = message.images.count
-                let imageCount = previousCount + images.count
-                for (offset, image) in images.enumerated() {
-                    guard let thumbnail = image.thumbnail else { continue }
-                    let key = ConversationThumbnailCache.key(
-                        messageID: message.id, index: previousCount + offset,
-                        imageCount: imageCount, contentRevision: message.contentRevision)
-                    ConversationThumbnailCache.storePrepared(thumbnail, source: image.source, key: key)
-                }
-                updated[index] = message.attachingImages(images.map(\.source))
-                changed = true
+                indexedRevision = messagesRevision
+                await Task.yield()
             }
-            if changed { messages = updated }
         }
     }
 
@@ -499,7 +471,7 @@ extension DockModel {
     }
 
     nonisolated static func transcriptImageData(_ url: URL) -> Data? {
-        if url.isFileURL { return try? Data(contentsOf: url) }
+        if url.isFileURL { return try? Data(contentsOf: url, options: .mappedIfSafe) }
         let value = url.absoluteString
         guard value.lowercased().hasPrefix("data:image/"), let comma = value.firstIndex(of: ","),
             value[..<comma].lowercased().hasSuffix(";base64")

@@ -125,6 +125,18 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
 
 @MainActor
 struct SessionSwitchCacheTests {
+    @Test func cachedTailUsesStoredRowAliasesAfterLiveRemapping() {
+        let model = DockModel(loadArchives: false)
+        defer { model.shutdown() }
+        let older = ChatMessage(role: .hermes, text: "Older")
+        let tail = ChatMessage(role: .user, text: "Tail")
+        model.replaceTranscriptRowIDs([1: older.id, 2: older.id, 3: tail.id])
+        model.mergeTranscriptRowIDs([2: tail.id, 4: tail.id])
+        #expect(model.transcriptRowIDs(for: [tail]) == [3: tail.id, 4: tail.id])
+        model.setTranscriptRowID(2, message: tail.id)
+        #expect(model.transcriptRowIDs(for: [tail]) == [2: tail.id, 3: tail.id, 4: tail.id])
+        #expect(model.transcriptRowIDs(for: [older]) == [1: older.id])
+    }
     @Test func unreadReplyAfterStaleSessionRecencyStillGetsADivider() async throws {
         let rpc = SessionSwitchRPC()
         let model = makeModel(rpc)
@@ -312,6 +324,34 @@ struct SessionSwitchCacheTests {
         #expect(model.sessionTranscriptPreview == nil)
     }
 
+    @Test func openingACurrentlyWarmingSessionSharesItsFirstPage() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        let profile = UUID().uuidString
+        let saved = session("a", profile: profile)
+        var heldRead: CheckedContinuation<Void, Never>?
+        defer {
+            heldRead?.resume()
+            model.shutdown()
+        }
+        rpc.storedHistory = storedPage(
+            [["id": 1, "role": "assistant", "content": "Shared reply", "timestamp": 1]], profile: profile)
+        rpc.beforeStoredHistoryReturns = { await withCheckedContinuation { heldRead = $0 } }
+        rpc.holdHistory = true
+        model.sessions = [saved]
+        model.scheduleTranscriptPreload()
+        try await waitUntil { heldRead != nil }
+        let resume = model.startSessionResume(saved, reportFailure: true, reviewUnread: false)
+        try await waitUntil { model.sessionTranscriptCache.foregroundReads == 1 }
+        #expect(rpc.historyPaths.count == 1)
+        let waiting = heldRead
+        heldRead = nil
+        waiting?.resume()
+        #expect(await resume.value)
+        #expect(rpc.historyPaths.count == 1)
+        #expect(model.messages.map(\.text) == ["Shared reply"])
+    }
+
     enum PreloadedTail: CaseIterable {
         case read, unread, partial, newerSession, unprovenOwner
     }
@@ -338,7 +378,7 @@ struct SessionSwitchCacheTests {
         let saved = savedSession(updatedAt: updatedAt)
         var rows: [[String: Any]] = []
         if tail == .partial {
-            rows = (1..<(TranscriptHistoryPaging.pageRowLimit)).map {
+            rows = (1..<(TranscriptHistoryPaging.conversationBufferRowLimit)).map {
                 ["id": $0, "role": "tool", "content": "Earlier work", "timestamp": updatedAt.timeIntervalSince1970]
             }
         }
@@ -678,6 +718,7 @@ struct SessionSwitchCacheTests {
         #expect(proof.path == "/api/sessions/a/timeline")
         #expect(proof.queryItems?.contains(URLQueryItem(name: "limit", value: "1")) == true)
         #expect(proof.queryItems?.contains(URLQueryItem(name: "profile", value: "owner")) == true)
+        model.loadTranscriptTimelineIfNeeded()
         await model.transcriptTimelineTask?.value
         #expect(model.unloadedTranscriptPrompts.map(\.rowID) == [1])
         let timeline = try #require(rpc.historyPaths.last.flatMap { URLComponents(string: $0) })

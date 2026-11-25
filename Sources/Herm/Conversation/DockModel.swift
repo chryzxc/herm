@@ -60,16 +60,16 @@ final class DockModel: ObservableObject {
     @Published var messages: [ChatMessage] = [] {
         didSet {
             messagesRevision &+= 1
-            messageNavigatorNeedsRefresh = true
+            messageNavigatorRevision &+= 1
+            navigatorChangedRows = nil
         }
     }
     private(set) var messagesRevision: UInt64 = 0
-    var cachedMessageNavigatorItems:
-        (
-            sessionID: String, snapshot: MessageNavigatorSnapshot, messageCount: Int, messagesRevision: UInt64
-        )?
-    var cachedMessageNavigatorRows: [MessageNavigator.RowKey: MessageNavigatorItem] = [:]
-    var messageNavigatorNeedsRefresh = true
+    var cachedMessageNavigatorItems: MessageNavigatorProjection.Result?
+    var messageNavigatorRevision: UInt64 = 0
+    var messageNavigatorTimelineRevision: UInt64 = 0
+    /// Nil is a structural change. Known appends and edits restore the exact indices.
+    var navigatorChangedRows: Set<Int>?
 
     let composer = ComposerText()
     var composerDrafts: [SessionComposerDraft.Key: SessionComposerDraft] = [:]
@@ -633,6 +633,7 @@ final class DockModel: ObservableObject {
     var runtimeModelOptionsRequestKey: (sessionID: String?, profileID: String?, generation: Int)?
     var sessionPreviewImageTask: Task<Void, Never>?
     var sessionTranscriptImageTask: Task<Void, Never>?
+    var prioritizedTranscriptImageIDs: () -> [UUID] = { [] }
     var gatewayAuthenticationObserver: AnyCancellable?
     var sessionSwitchStartedAt: UInt64 = 0
     var sessionSwitchToken = ""
@@ -640,7 +641,18 @@ final class DockModel: ObservableObject {
     var sessionSwitchFreshLayoutRecorded = false
     /// Older rows of the active transcript still stored in Hermes. Nil when the
     /// whole transcript was delivered inline (legacy resume or a new session).
-    var transcriptHistoryCursor: TranscriptHistoryCursor?
+    var transcriptHistoryCursor: TranscriptHistoryCursor? {
+        didSet {
+            messageNavigatorRevision &+= 1
+            navigatorChangedRows = nil
+        }
+    }
+    var storedSearchCache: (NavigatorHistorySearchKey, NavigatorStoredSearchIndex)?
+    var storedSearchTask:
+        (
+            key: NavigatorHistorySearchKey, id: UUID, task: Task<NavigatorStoredSearchIndex, Error>
+        )?
+    var transcriptSearchHosts = Set<ObjectIdentifier>()
     var isLoadingEarlierTranscript = false
     var earlierTranscriptRetryAfter: Date?
     var transcriptPrependGeneration = 0
@@ -650,12 +662,72 @@ final class DockModel: ObservableObject {
     /// Every stored prompt of the active paged transcript, oldest first.
     var transcriptTimeline: [TranscriptTimelineEntry] = [] {
         didSet {
-            messageNavigatorNeedsRefresh = true
+            messageNavigatorRevision &+= 1
+            messageNavigatorTimelineRevision &+= 1
+            navigatorChangedRows = nil
             transcriptPresentationChanges.send()
         }
     }
-    var transcriptMessageIDsByRowID: [Int: UUID] = [:]
-    /// True while search or a jump reads older history in one step.
+    private(set) var transcriptMessageIDsByRowID: [Int: UUID] = [:]
+    private var transcriptRowsByMessageID: [UUID: (first: Int, additional: [Int])] = [:]
+
+    func replaceTranscriptRowIDs(_ rows: [Int: UUID]) {
+        transcriptMessageIDsByRowID = rows
+        transcriptRowsByMessageID = [:]
+        transcriptRowsByMessageID.reserveCapacity(rows.count)
+        for (row, message) in rows { indexTranscriptRow(row, message: message) }
+    }
+
+    func mergeTranscriptRowIDs(_ rows: [Int: UUID]) {
+        for (row, message) in rows where transcriptMessageIDsByRowID[row] == nil {
+            transcriptMessageIDsByRowID[row] = message
+            indexTranscriptRow(row, message: message)
+        }
+    }
+
+    func setTranscriptRowID(_ row: Int, message: UUID) {
+        if let previous = transcriptMessageIDsByRowID[row] {
+            guard previous != message else { return }
+            if var indexed = transcriptRowsByMessageID[previous] {
+                if indexed.first == row {
+                    if let replacement = indexed.additional.popLast() {
+                        indexed.first = replacement
+                        transcriptRowsByMessageID[previous] = indexed
+                    } else {
+                        transcriptRowsByMessageID.removeValue(forKey: previous)
+                    }
+                } else {
+                    indexed.additional.removeAll { $0 == row }
+                    transcriptRowsByMessageID[previous] = indexed
+                }
+            }
+        }
+        transcriptMessageIDsByRowID[row] = message
+        indexTranscriptRow(row, message: message)
+    }
+
+    func hasStoredTranscriptRow(for message: UUID) -> Bool {
+        transcriptRowsByMessageID[message] != nil
+    }
+
+    private func indexTranscriptRow(_ row: Int, message: UUID) {
+        if transcriptRowsByMessageID[message] == nil {
+            transcriptRowsByMessageID[message] = (row, [])
+        } else {
+            transcriptRowsByMessageID[message]?.additional.append(row)
+        }
+    }
+
+    func transcriptRowIDs(for messages: [ChatMessage]) -> [Int: UUID] {
+        var rows: [Int: UUID] = [:]
+        for message in messages {
+            guard let indexed = transcriptRowsByMessageID[message.id] else { continue }
+            rows[indexed.first] = message.id
+            for row in indexed.additional { rows[row] = message.id }
+        }
+        return rows
+    }
+    /// True while a jump or explicit history action reads older history in one step.
     @Published var isLoadingTranscriptHistory = false
     var restoreGeneration = 0
     var interruptGeneration = 0
