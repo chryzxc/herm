@@ -1,11 +1,15 @@
 import Foundation
 
-enum SessionSidebarVisibility: Int, CaseIterable {
-    case pinned, projects, automations, unread, needsYou, running, archived
+extension SessionRailSection {
+    // The order defines the persisted hidden-option bits. Recents is always visible.
+    static let filterOptions: [Self] = [.pinned, .projects, .automations, .unread, .needsYou, .running, .archived]
+    static let defaultHiddenOptions = filterOptions.filter { $0 != .pinned && $0 != .projects }
+        .reduce(0) { $1.toggled(in: $0) }
 
     var title: String {
         switch self {
         case .pinned: "Pinned"
+        case .recents: "Recents"
         case .projects: "Projects"
         case .automations: "Automations"
         case .unread: "Unread"
@@ -15,67 +19,9 @@ enum SessionSidebarVisibility: Int, CaseIterable {
         }
     }
 
-    private var bit: Int { 1 << rawValue }
+    private var bit: Int { Self.filterOptions.firstIndex(of: self).map { 1 << $0 } ?? 0 }
     func isVisible(in hidden: Int) -> Bool { hidden & bit == 0 }
     func toggled(in hidden: Int) -> Int { hidden ^ bit }
-
-    static func visibleSections(_ sections: [SessionRailSection], hidden: Int) -> [SessionRailSection] {
-        sections.filter { section in
-            switch section {
-            case .pinned: pinned.isVisible(in: hidden)
-            case .projects: projects.isVisible(in: hidden)
-            case .automations: automations.isVisible(in: hidden)
-            case .recents: true
-            }
-        }
-    }
-}
-
-enum SessionSidebarFilter: CaseIterable {
-    case all, unread, needsYou, running, archived
-
-    var visibility: SessionSidebarVisibility? {
-        switch self {
-        case .all: nil
-        case .unread: .unread
-        case .needsYou: .needsYou
-        case .running: .running
-        case .archived: .archived
-        }
-    }
-
-    var title: String { visibility?.title ?? "All" }
-
-    func enabled(in hidden: Int) -> Self {
-        visibility?.isVisible(in: hidden) == false ? .all : self
-    }
-
-    func matches(_ session: HermesSession, status: SidebarSessionStatus, isUnread: Bool) -> Bool {
-        switch self {
-        case .all: true
-        case .unread: isUnread
-        case .needsYou: status == .needsApproval
-        case .running: status == .working || (session.isWorking && status == .needsClarification)
-        // Archive membership is established by the archive-only projection.
-        case .archived: false
-        }
-    }
-
-    static func results(
-        _ sessions: [HermesSession], query: String, profileID: String?,
-        projectNames: [ProfileScopedID: String], fallbackProfileID: String? = nil
-    ) -> [HermesSession] {
-        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        var seen = Set<ProfileScopedID>()
-        return sessions.filter { session in
-            let key = ProfileScopedID(profileID: session.profileID ?? fallbackProfileID, resourceID: session.id)
-            guard profileID == nil || profileID == key.profileID, seen.insert(key).inserted else { return false }
-            return query.isEmpty
-                || session.displayTitle.localizedCaseInsensitiveContains(query)
-                || session.displayPreview?.localizedCaseInsensitiveContains(query) == true
-                || projectNames[key]?.localizedCaseInsensitiveContains(query) == true
-        }.sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
-    }
 }
 
 /// Filter membership must not reuse historical activity badges or bare session
@@ -134,6 +80,45 @@ struct SessionSidebarFilterInventory {
         ["starting", "working", "running", "busy", "streaming"].contains(row.state.lowercased())
     }
 
+    func matches(_ session: HermesSession, section: SessionRailSection) -> Bool {
+        switch section {
+        case .unread: isUnread(session)
+        case .needsYou: status(for: session) == .needsApproval
+        case .running:
+            switch status(for: session) {
+            case .working: true
+            case .needsClarification: session.isWorking
+            default: false
+            }
+        // Archived rows come from the archive-only projection.
+        case .archived: true
+        default: false
+        }
+    }
+
+    func results(
+        _ sessions: [HermesSession], section: SessionRailSection, query: String, scope: SessionSidebarSearch.Scope,
+        projectNames: [String: String]
+    ) -> [HermesSession] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let scopedProfile = inputs.profileScopeID ?? "default"
+        let profile = scope.selectedBotID ?? scopedProfile
+        let projectProfile = inputs.projectProfileID ?? scopedProfile
+        var seen = Set<ProfileScopedID>()
+        return sessions.filter { session in
+            let owner = session.profileID ?? scopedProfile
+            let key = ProfileScopedID(profileID: owner, resourceID: session.id)
+            guard scope.showsAllProfiles || owner == profile, scope.includes(session),
+                matches(session, section: section), seen.insert(key).inserted
+            else { return false }
+            return query.isEmpty
+                || session.displayTitle.localizedCaseInsensitiveContains(query)
+                || session.displayPreview?.localizedCaseInsensitiveContains(query) == true
+                || (owner == projectProfile
+                    && projectNames[session.id]?.localizedCaseInsensitiveContains(query) == true)
+        }.sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
+    }
+
     func status(for session: HermesSession) -> SidebarSessionStatus {
         let key = ProfileScopedID(profileID: session.profileID ?? inputs.profileScopeID, resourceID: session.id)
         if approvals.contains(key) { return .needsApproval }
@@ -150,7 +135,7 @@ struct SessionSidebarFilterInventory {
     }
 }
 
-struct SessionSidebarLiveStatus {
+struct SessionSidebarLiveStatus: Equatable {
     var ids: Set<ProfileScopedID> = []
     var isIncomplete = false
 }

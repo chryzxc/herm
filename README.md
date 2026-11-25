@@ -537,8 +537,8 @@ beside refresh in the **Recents** header to clear unread updates across the sele
 bot’s loaded Recents, including conversations under Show more. Badge calculations are
 cached independently of transcript updates; status polling pauses while the
 workspace is hidden or Hermes is disconnected.
-The sidebar stacks Pinned, Recents, Projects, and Automations for the selected
-bot under its bot header. Recents, Projects, and Automations use a 6pt gap between
+The sidebar stacks enabled sections for the selected bot under its bot header.
+Recents, Projects, and Automations use a 6pt gap between
 header action buttons. In the bot picker, drag a profile's handle to reorder it,
 or focus the handle and use the arrow keys. Drag it to the top or bottom edge and hold
 there to scroll through a long list's hidden profiles in the same drag. The order is saved locally across restarts without changing the
@@ -706,11 +706,12 @@ and project names in the selected bot scope. Results include pinned and project
 conversations beyond the ten recent rows. Clear the field or press Escape to restore
 the normal sections. Search runs in the background against the loaded session index.
 
-Use the status picker below search to find **Unread**, **Needs you** (approval),
-**Running**, or **Archived** conversations for the selected profile or **All profiles**.
-Search also works within the selected status. In the sidebar ellipsis, **Layout**
-switches between Bot rail and Bot menu, and **Filters** remembers which statuses
-and sections to show. Recents is always enabled.
+Use **Show sidebar sections** in the sidebar ellipsis to choose what appears. Only **Pinned** and **Projects** are enabled by default.
+The menu stays open while you change multiple sections.
+**Unread**, **Needs you** (approval), **Running**, and **Archived** open directly
+in the list and follow the selected bot scope. Open **Archived** to load it and search its
+conversations. Recents is always enabled. **Bot switcher layout** switches between
+Bot rail and Bot menu.
 
 Drag a conversation within **Pinned** to set its saved order. Recents and
 Projects list conversations by last update. Hover over a project pill to see

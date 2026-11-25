@@ -55,10 +55,15 @@ private actor ConnectionAttemptCounter {
 
 @MainActor
 struct HermesControlTransportTests {
-    @Test func sidebarApprovalUsesProfileScopedLiveEvidenceAndReportsPartialReads() async {
+    @Test func sidebarLiveSectionsShareProfileReadsAndReportFailuresIndependently() async throws {
         let client = RecordingRPCClient()
         client.responses = [
-            ["sessions": [["id": "runtime", "session_key": "same", "status": "waiting"]]],
+            [
+                "sessions": [
+                    ["id": "runtime", "session_key": "same", "status": "waiting"],
+                    ["id": "worker", "session_key": "running", "status": "working"],
+                ]
+            ],
             ["approvals": [["request_id": "approval"]]],
             ["sessions": [["id": "runtime", "session_key": "same", "status": "waiting"]]],
             ["approvals": []],
@@ -66,15 +71,18 @@ struct HermesControlTransportTests {
             [:],
         ]
         let profiles = ["work", "personal", "unavailable"]
-        let status = await HermesControlRPC(client: client).sidebarLiveStatus(for: .needsYou, profiles: profiles)
+        let statuses = await HermesControlRPC(client: client).sidebarLiveStatus(
+            for: [.needsYou, .running], profiles: profiles)
+        let status = try #require(statuses[.needsYou])
         #expect(status.ids == [.init(profileID: "work", resourceID: "same")])
         #expect(status.isIncomplete)
+        #expect(statuses[.running] == SessionSidebarLiveStatus(ids: [.init(profileID: "work", resourceID: "running")]))
         let methods = profiles.flatMap { _ in ["session.active_list", "approval.pending"] }
         #expect(client.calls.map(\.method) == methods)
         #expect(client.calls.compactMap { $0.params["profile"] as? String } == profiles.flatMap { [$0, $0] })
     }
 
-    @Test func sidebarRunningRetainsQualifiedMatchesWhenSiblingReadFails() async {
+    @Test func sidebarRunningRetainsQualifiedMatchesWhenSiblingReadFails() async throws {
         let client = RecordingRPCClient()
         client.responses = [
             [
@@ -85,10 +93,12 @@ struct HermesControlTransportTests {
             ],
             [:],
         ]
-        let status = await HermesControlRPC(client: client).sidebarLiveStatus(
-            for: .running, profiles: ["work", "personal"])
+        let statuses = await HermesControlRPC(client: client).sidebarLiveStatus(
+            for: [.running], profiles: ["work", "personal"])
+        let status = try #require(statuses[.running])
         #expect(status.ids == [.init(profileID: "work", resourceID: "saved")])
         #expect(status.isIncomplete)
+        #expect(client.calls.map(\.method) == ["session.active_list", "session.active_list"])
     }
 
     @Test func concurrentConnectionRequestsShareOneAttempt() async throws {

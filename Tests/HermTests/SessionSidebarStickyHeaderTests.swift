@@ -21,6 +21,8 @@ struct SessionSidebarStickyHeaderTests {
         let suite = "StickySidebar.\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
+        // Exercise every optional header, including the sections hidden by default.
+        defaults.set(0, forKey: "herm.sessions.hiddenSidebarOptions")
         let client = StickySidebarRPC()
         let model = DockModel(defaults: defaults, rpcClient: client)
         defer { model.shutdown() }
@@ -66,6 +68,7 @@ struct SessionSidebarStickyHeaderTests {
                     onFullscreenToggle: {}, onSelectProfile: { _ in }
                 )
                 .frame(width: width, height: 480)
+                .defaultAppStorage(defaults)
                 .environment(\.dockHostVisible, false)
                 .background(Color.dockOpaqueCanvas)
                 .dockThemedRoot()
@@ -78,6 +81,7 @@ struct SessionSidebarStickyHeaderTests {
                 defer { window.orderOut(nil) }
                 host.layoutSubtreeIfNeeded()
                 try await Task.sleep(for: .milliseconds(100))
+                #expect(!elements(host).contains { $0.accessibilityLabel?() == "Session filter" })
                 let scroll = try #require(scrollView(in: host))
                 let clip = scroll.contentView
                 let document = try #require(scroll.documentView)
@@ -99,25 +103,35 @@ struct SessionSidebarStickyHeaderTests {
                         else { continue }
                         if let previous = previousY[label], abs(previous - frame.maxY) < 1 {
                             pinned.insert(label)
-                            if let directory = ProcessInfo.processInfo.environment["SIDEBAR_SNAPSHOT_DIR"] {
-                                try FileManager.default.createDirectory(
-                                    atPath: directory, withIntermediateDirectories: true)
-                                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-                                host.cacheDisplay(in: host.bounds, to: bitmap)
-                                let data = try #require(bitmap.representation(using: .png, properties: [:]))
-                                try data.write(
-                                    to: URL(fileURLWithPath: directory).appendingPathComponent(
-                                        "\(theme.rawValue)-\(Int(width))-\(label.replacingOccurrences(of: " ", with: "-")).png"
-                                    ))
-                            }
+                            try writeSnapshot(host, name: "\(theme.rawValue)-\(Int(width))-\(label)")
                         }
                         previousY[label] = frame.maxY
                     }
                     if pinned.count == labels.count { break }
                 }
                 #expect(pinned == Set(labels), "Sticky headers at \(theme.rawValue), width \(width): \(pinned)")
+
+                clip.scroll(to: NSPoint(x: 0, y: max(0, document.bounds.height - clip.bounds.height)))
+                scroll.reflectScrolledClipView(clip)
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(40))
+                let visibleLabels = Set(elements(host).compactMap { $0.accessibilityLabel?() })
+                let sections: Set<String> = ["Expand Unread", "Expand Needs you", "Expand Running", "Expand Archived"]
+                #expect(
+                    sections.isSubset(of: visibleLabels), "Missing sections: \(sections.subtracting(visibleLabels))")
+                try writeSnapshot(host, name: "\(theme.rawValue)-\(appearance.rawValue)-\(Int(width))-Filter sections")
             }
         }
+    }
+
+    private func writeSnapshot(_ host: NSView, name: String) throws {
+        guard let directory = ProcessInfo.processInfo.environment["SIDEBAR_SNAPSHOT_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let data = try #require(bitmap.representation(using: .png, properties: [:]))
+        let filename = name.replacingOccurrences(of: " ", with: "-") + ".png"
+        try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent(filename))
     }
 
     private func scrollView(in view: NSView) -> NSScrollView? {

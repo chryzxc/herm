@@ -320,8 +320,10 @@ final class HermesControlRPC {
         return !approvals.isEmpty
     }
 
-    func sidebarLiveStatus(for filter: SessionSidebarFilter, profiles: [String]) async -> SessionSidebarLiveStatus {
-        var status = SessionSidebarLiveStatus()
+    func sidebarLiveStatus(
+        for sections: Set<SessionRailSection>, profiles: [String]
+    ) async -> [SessionRailSection: SessionSidebarLiveStatus] {
+        var statuses = Dictionary(uniqueKeysWithValues: sections.map { ($0, SessionSidebarLiveStatus()) })
         for profile in profiles {
             guard !Task.isCancelled else { break }
             do {
@@ -333,23 +335,23 @@ final class HermesControlRPC {
                 for row in rows where row.profileID == nil || row.profileID == profile {
                     guard !Task.isCancelled else { break }
                     let key = ProfileScopedID(profileID: profile, resourceID: row.storedSessionID ?? row.id)
-                    if filter == .running, SessionSidebarFilterInventory.isRunning(row) {
-                        status.ids.insert(key)
-                    } else if filter == .needsYou, row.state.lowercased() == "waiting" {
+                    if sections.contains(.running), SessionSidebarFilterInventory.isRunning(row) {
+                        statuses[.running]?.ids.insert(key)
+                    } else if sections.contains(.needsYou), row.state.lowercased() == "waiting" {
                         do {
                             if try await hasPendingSidebarApproval(runtimeID: row.id, profileID: profile) {
-                                status.ids.insert(key)
+                                statuses[.needsYou]?.ids.insert(key)
                             }
                         } catch {
-                            status.isIncomplete = true
+                            statuses[.needsYou]?.isIncomplete = true
                         }
                     }
                 }
             } catch {
-                status.isIncomplete = true
+                for section in sections { statuses[section]?.isIncomplete = true }
             }
         }
-        return status
+        return statuses
     }
 
     func archivedSidebarSessions(scope: SessionSidebarArchive.Scope) async throws -> SessionSidebarArchive {

@@ -3,13 +3,17 @@ import XCTest
 @testable import Herm
 
 final class SessionRecentsPresentationTests: XCTestCase {
-    func testNewAutomationSectionAppendsToExistingOrder() {
+    func testNewSectionsAppendToExistingOrder() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        XCTAssertEqual(SessionRailSection.stored(defaults), [.pinned, .recents, .projects, .automations])
+        let statuses: [SessionRailSection] = [.unread, .needsYou, .running, .archived]
+        XCTAssertEqual(SessionRailSection.stored(defaults), [.pinned, .recents, .projects, .automations] + statuses)
         defaults.set(["projects", "pinned", "recents"], forKey: SessionRailSection.storageKey)
-        XCTAssertEqual(SessionRailSection.stored(defaults), [.projects, .pinned, .recents, .automations])
-        defaults.set(["automations", "recents", "pinned", "projects"], forKey: SessionRailSection.storageKey)
-        XCTAssertEqual(SessionRailSection.stored(defaults), [.automations, .recents, .pinned, .projects])
+        XCTAssertEqual(SessionRailSection.stored(defaults), [.projects, .pinned, .recents, .automations] + statuses)
+        defaults.set(
+            ["archived", "automations", "recents", "pinned", "projects"], forKey: SessionRailSection.storageKey)
+        XCTAssertEqual(
+            SessionRailSection.stored(defaults),
+            [.archived, .automations, .recents, .pinned, .projects, .unread, .needsYou, .running])
     }
 
     func testMetadataPartitionsSessionsWithoutChangingOrder() {

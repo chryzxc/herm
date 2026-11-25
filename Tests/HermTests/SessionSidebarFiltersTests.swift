@@ -4,54 +4,55 @@ import Testing
 @testable import Herm
 
 struct SessionSidebarFiltersTests {
-    @Test func preferencesDefaultToVisibleAndDisabledSelectionFallsBackToAll() {
-        for option in SessionSidebarVisibility.allCases {
-            #expect(option.isVisible(in: 0))
-            let hidden = option.toggled(in: 0)
-            #expect(!option.isVisible(in: hidden))
-            #expect(option.toggled(in: hidden) == 0)
-            #expect(SessionSidebarVisibility.allCases.filter { !$0.isVisible(in: hidden) } == [option])
+    @Test func onlyPinnedAndProjectsAreEnabledByDefault() {
+        let enabled = SessionRailSection.filterOptions.filter {
+            $0.isVisible(in: SessionRailSection.defaultHiddenOptions)
         }
-        for filter in SessionSidebarFilter.allCases {
-            #expect(filter.enabled(in: 0) == filter)
-        }
-        #expect(SessionSidebarFilter.running.enabled(in: SessionSidebarVisibility.running.toggled(in: 0)) == .all)
-        #expect(!SessionSidebarVisibility.allCases.map(\.title).contains("Recents"))
-    }
-
-    @Test func usesApprovalLiveActivityAndIndependentScopedSeenState() {
-        let row = session("same", profile: "dev", time: 100)
-        #expect(SessionSidebarFilter.needsYou.matches(row, status: .needsApproval, isUnread: false))
-        #expect(!SessionSidebarFilter.needsYou.matches(row, status: .needsClarification, isUnread: false))
-        #expect(SessionSidebarFilter.running.matches(row, status: .working, isUnread: false))
-        #expect(!SessionSidebarFilter.running.matches(row, status: .unreadComplete, isUnread: true))
-        #expect(SessionSidebarFilter.unread.matches(row, status: .needsApproval, isUnread: true))
+        #expect(enabled == [.pinned, .projects])
+        #expect(SessionRailSection.recents.isVisible(in: SessionRailSection.defaultHiddenOptions))
     }
 
     @Test func sectionTogglesHideOnlyTheirOwnSectionsWithoutReordering() {
-        let order: [SessionRailSection] = [.projects, .recents, .automations, .pinned]
-        let toggles: [(SessionSidebarVisibility, SessionRailSection)] = [
-            (.pinned, .pinned), (.projects, .projects), (.automations, .automations),
+        let order: [SessionRailSection] = [
+            .projects, .recents, .archived, .automations, .unread, .pinned, .needsYou, .running,
         ]
-        #expect(SessionSidebarVisibility.visibleSections(order, hidden: 0) == order)
-        for (option, section) in toggles {
-            let visible = SessionSidebarVisibility.visibleSections(order, hidden: option.toggled(in: 0))
+        #expect(order.filter { $0.isVisible(in: 0) } == order)
+        let storedOptionOrder: [SessionRailSection] = [
+            .pinned, .projects, .automations, .unread, .needsYou, .running, .archived,
+        ]
+        #expect(SessionRailSection.filterOptions == storedOptionOrder)
+        for (bit, section) in storedOptionOrder.enumerated() {
+            let hidden = section.toggled(in: 0)
+            #expect(hidden == 1 << bit)
+            let visible = order.filter { $0.isVisible(in: hidden) }
             #expect(visible == order.filter { $0 != section })
+            #expect(section.toggled(in: hidden) == 0)
         }
-        let onlyRecents = SessionSidebarVisibility.allCases.reduce(0) { $1.toggled(in: $0) }
-        #expect(SessionSidebarVisibility.visibleSections(order, hidden: onlyRecents) == [.recents])
+        let onlyRecents = SessionRailSection.filterOptions.reduce(0) { $1.toggled(in: $0) }
+        #expect(order.filter { $0.isVisible(in: onlyRecents) } == [.recents])
     }
 
     @Test func searchesProjectNamesAndKeepsBothProfileIdentitiesInRecencyOrder() {
         let dev = session("same", profile: "dev", time: 150)
         let primary = session("same", profile: "default", time: 100)
         let other = session("other", profile: "dev", time: 200)
-        let projectNames = [dev.scopedID: "build-tools", primary.scopedID: "build-tools"]
-        let matches = SessionSidebarFilter.results(
-            [primary, dev, other, dev], query: "  BUILD ", profileID: nil, projectNames: projectNames)
-        #expect(matches == [dev, primary])
-        let scoped = SessionSidebarFilter.results([dev, primary], query: "", profileID: "default", projectNames: [:])
+        let scope = SessionSidebarSearch.Scope(
+            mainChatIDs: [], showsAllProfiles: true, selectedBotID: nil, visibleBots: [])
+        let inventory = SessionSidebarFilterInventory(inputs: inputs(profile: "dev"))
+        let candidates = [primary, dev, other, dev]
+        let matches = inventory.results(
+            candidates, section: .archived, query: "", scope: scope, projectNames: [:])
+        #expect(matches == [other, dev, primary])
+        let projectMatches = inventory.results(
+            candidates, section: .archived, query: "  BUILD ", scope: scope, projectNames: [dev.id: "build-tools"])
+        #expect(projectMatches == [dev])
+        let primaryScope = SessionSidebarSearch.Scope(
+            mainChatIDs: [], showsAllProfiles: false, selectedBotID: "default", visibleBots: [])
+        let scoped = inventory.results(
+            candidates, section: .archived, query: "", scope: primaryScope, projectNames: [:])
         #expect(scoped == [primary])
+        #expect(dev[sidebarSection: "archived"] != primary[sidebarSection: "archived"])
+        #expect(dev[sidebarSection: "unread"] != dev[sidebarSection: "running"])
     }
 
     @Test func liveAndAttentionInputsResolveByProfileAndDoNotReviveFinishedTurns() {
@@ -66,19 +67,20 @@ struct SessionSidebarFiltersTests {
         let approval = AttentionItem(
             id: "approval", reference: .init(source: .hermesApproval, sourceID: "approval", sessionID: waiting.id),
             kind: .approval, title: "Approve", detail: "", createdAt: .distantPast, state: .open, actions: [.approve])
-        var inputs = SessionNavSidebarSnapshot.Inputs(
-            activeSessionID: nil, activeStatus: nil, profileScopeID: "personal",
-            isLoadingSessions: false, isCreatingSession: false, deletingSessionID: nil, renamingSessionID: nil,
-            updatingSessionVisibilityID: nil, sessions: [other], sessionProjectionState: .ready([other]),
-            activeSessions: [active, waiting], projects: [], projectIDBySessionID: [:], projectSessionsByProjectID: [:],
-            projectProfileID: nil, isLoadingProjects: false, isRefreshingProjectNavigation: false,
-            attention: [approval], latestActivities: [], allBotSessionsState: .ready([stored, other]),
-            baselinedProfiles: ["personal", "work"])
+        var inputs = inputs(profile: "personal")
+        inputs.activeSessions = [active, waiting]
+        inputs.attention = [approval]
         let inventory = SessionSidebarFilterInventory(inputs: inputs, unreadSessions: [other.scopedID])
         #expect(inventory.status(for: stored) == .working)
         #expect(inventory.status(for: other) == .needsApproval)
         #expect(!inventory.isUnread(stored))
         #expect(inventory.isUnread(other))
+        let scope = SessionSidebarSearch.Scope(
+            mainChatIDs: [], showsAllProfiles: true, selectedBotID: nil, visibleBots: [])
+        let rows = [stored, other]
+        #expect(inventory.results(rows, section: .running, query: "", scope: scope, projectNames: [:]) == [stored])
+        #expect(inventory.results(rows, section: .needsYou, query: "", scope: scope, projectNames: [:]) == [other])
+        #expect(inventory.results(rows, section: .unread, query: "", scope: scope, projectNames: [:]) == [other])
         let refreshed = SessionSidebarFilterInventory(inputs: inputs, confirmedApprovals: [])
         #expect(refreshed.status(for: other) == .none)
 
@@ -93,6 +95,16 @@ struct SessionSidebarFiltersTests {
         #expect(finished.status(for: other) == .none)
         let confirmed = SessionSidebarFilterInventory(inputs: inputs, confirmedApprovals: [other.scopedID])
         #expect(confirmed.status(for: other) == .needsApproval)
+    }
+
+    private func inputs(profile: String) -> SessionNavSidebarSnapshot.Inputs {
+        .init(
+            activeSessionID: nil, activeStatus: nil, profileScopeID: profile,
+            isLoadingSessions: false, isCreatingSession: false, deletingSessionID: nil, renamingSessionID: nil,
+            updatingSessionVisibilityID: nil, sessions: [], sessionProjectionState: .empty,
+            activeSessions: [], projects: [], projectIDBySessionID: [:], projectSessionsByProjectID: [:],
+            projectProfileID: nil, isLoadingProjects: false, isRefreshingProjectNavigation: false,
+            attention: [], latestActivities: [])
     }
 
     private func session(_ id: String, profile: String, time: Double) -> HermesSession {

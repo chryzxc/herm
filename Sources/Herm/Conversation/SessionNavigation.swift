@@ -101,6 +101,7 @@ final class SessionNavigationState: ObservableObject {
     @Published var areConversationsExpanded = true
     @Published var areAutomationsExpanded = true
     @Published var arePinnedExpanded = true
+    @Published var expandedFilterSections: Set<SessionRailSection> = []
     /// User-chosen order of the rail's sections; a local preference.
     @Published private(set) var sectionOrder: [SessionRailSection] = SessionRailSection.stored()
     @Published private(set) var selectedGitHubSection: GitHubWorkspaceSection = .pullRequests
@@ -229,7 +230,7 @@ final class SessionNavigationState: ObservableObject {
 
 /// A rail section whose header can be dragged to swap places with another.
 enum SessionRailSection: String, CaseIterable, Codable, Transferable {
-    case pinned, recents, projects, automations
+    case pinned, recents, projects, automations, unread, needsYou, running, archived
 
     static let storageKey = "herm.sessions.sectionOrder"
     static let pasteboardType = NSPasteboard.PasteboardType("io.github.chryzxc.Herm.session-rail-section")

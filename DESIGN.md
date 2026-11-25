@@ -2157,13 +2157,15 @@ row limit. A count and no-match state describe loaded sessions; projection failu
 remain visible. Clearing search or pressing Escape restores existing disclosures.
 While the first search runs, use its results heading for the loading status.
 Search is transient presentation state and does not fetch transcript history.
-Below search, a compact status picker offers All, Unread, Needs you (approval),
-Running, and Archived for the selected profile or All profiles. A status narrows
-results together with the search text. Archived reads the archive on demand;
-loading and incomplete results are described in the results heading.
-The sidebar ellipsis groups Bot rail and Bot menu under Layout. Its Filters
-submenu remembers visibility for Pinned, Projects, Automations, and each status.
-Recents cannot be hidden; hiding the selected status returns the picker to All.
+The sidebar ellipsis groups Bot rail and Bot menu under Bot switcher layout.
+Show sidebar sections remembers each section's visibility and stays open while
+checkboxes update the list. Only Pinned and Projects are enabled by default.
+Unread, Needs you
+(approval), Running, and Archived collapse independently in the selected Bot scope.
+They start collapsed. Recents cannot be hidden. Expanded live sections share one
+active-session read per profile while visible. Opening Archived loads the archive
+on demand. Keep its disclosure available during search and match archived rows
+against the same query. Loading and incomplete notices stay inside their sections.
 Pointer and search updates reuse the sidebar’s session inventory for unread badges.
 Recents and Automations reuse sections prepared when the session inventory changes.
 Pinned rows and status marks also come from that projection. Unread-count reads
@@ -2197,8 +2199,8 @@ priority in smaller windows; dividers remain adjustable.
 The desktop conversation list keeps its 300pt minimum while resizing; the
 workspace takes the remaining width when both pane minimums cannot fit.
 Section headings stay on one line and truncate rather than wrapping vertically.
-Pinned, Recents, Projects, and Automations use native pinned section headers in the sidebar's
-single lazy stack. The current section header stays below the fixed search bar
+All sidebar sections use native pinned section headers in the sidebar's single
+lazy stack. The current section header stays below the fixed search bar
 until the next section pushes it away. Headers are transparent in the list;
 at the scroll viewport edge they use the matching canvas or native window
 material to cover scrolling rows. Retain disclosure, actions, and section reordering.
@@ -2279,10 +2281,10 @@ Messaging origins reported by Hermes use the shared compact source pill beside
 the preview. Known services use their icon; other reported sources use a generic
 message icon. Local and unspecified sources do not show a pill.
 
-The sidebar shows the bot header and the stacked Pinned, Recents, Projects, and
-Automations sections for the selected bot. Automations contains automation sessions
-separately from Recents and is last by default; its disclosure and row limit are
-independent. Recents, Projects, and Automations use a 6pt gap between their header
+The sidebar shows the bot header and the enabled sections for the selected bot.
+Automations contains automation sessions separately from Recents, with its own
+disclosure and row limit. Unread, Needs you, Running, and Archived follow the
+existing sections by default. Recents, Projects, and Automations use a 6pt gap between their header
 action buttons. Saved section ordering remains customizable. Recents read every bot's
 chats from one all-profile sidebar read merged with the selected bot's fresher
 list. Other bots' history is baselined once from that read so first use shows no

@@ -482,7 +482,12 @@ enum SidebarSessionTime {
 /// Conversations and a project at once. Lazy stacks conflate rows that share
 /// an id across sibling ForEach blocks and leave one blank until re-render.
 extension HermesSession {
-    subscript(sidebarSection section: String) -> String { "\(section):\(id)" }
+    struct SidebarRowID: Hashable {
+        let section: String
+        let session: ProfileScopedID
+    }
+
+    subscript(sidebarSection section: String) -> SidebarRowID { SidebarRowID(section: section, session: scopedID) }
 }
 
 struct SidebarProjectTarget: Identifiable, Equatable {

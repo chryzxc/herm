@@ -46,8 +46,8 @@ struct SessionNavQueue: View, Equatable {
     let showsWindowTitleRow: Bool
     @Binding var isSidebarCollapsed: Bool
     @AppStorage("herm.chats.usesBotRail") private var usesBotRail = false
-    @AppStorage("herm.sessions.hiddenSidebarOptions") private var hiddenSidebarOptions = 0
-    @State private var sidebarFilter: SessionSidebarFilter = .all
+    @AppStorage("herm.sessions.hiddenSidebarOptions") private var hiddenSidebarOptions =
+        SessionRailSection.defaultHiddenOptions
     @State private var sidebarArchive: (request: ArchiveRequest, result: SessionSidebarArchive?)?
     @State private var archiveMutationRevision: UInt64 = 0
     @State private var sidebarLiveResult: SidebarLiveResult?
@@ -283,6 +283,8 @@ struct SessionNavQueue: View, Equatable {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         let unreadRequest = hostVisible && !isSidebarCollapsed ? botUnreadRequest : nil
         let searchRequest = hostVisible && !isSidebarCollapsed ? sessionSearchRequest : nil
+        let archiveRequest = archiveRequest
+        let liveRequest = sidebarLiveRequest
         listPanel(style: style)
             .dockShellPane()
             .task(id: searchRequest) {
@@ -303,14 +305,9 @@ struct SessionNavQueue: View, Equatable {
                 guard let unreadRequest else { return }
                 await refreshBotUnreadCounts(unreadRequest)
             }
-            .task(id: archiveRequest) { [request = archiveRequest] in await loadSidebarArchive(request) }
+            .task(id: archiveRequest) { await loadSidebarArchive(archiveRequest) }
             .onReceive(model.archivedSidebarMutationUpdates) { archiveMutationRevision = $0 }
-            .task(id: sidebarLiveRequest) { [request = sidebarLiveRequest] in
-                await pollSidebarLiveStatus(request)
-            }
-            .onChange(of: hiddenSidebarOptions) { _, hidden in
-                sidebarFilter = sidebarFilter.enabled(in: hidden)
-            }
+            .task(id: liveRequest) { await pollSidebarLiveStatus(liveRequest) }
             // This queue can move between AppKit split-view hosts as the center
             // destination changes. Loading the index is an initial-popover task,
             // not a navigation side effect; otherwise selecting a project or
@@ -380,10 +377,10 @@ struct SessionNavQueue: View, Equatable {
                     DockMenuOption("Bot menu", value: false, leading: AnyView(DockIcon(.caretUpDown, size: 14)))
                 }
             } label: {
-                Text("Layout")
+                Text("Bot switcher layout")
             }
             DockMenu {
-                ForEach(SessionSidebarVisibility.allCases, id: \.self) { option in
+                ForEach(SessionRailSection.filterOptions, id: \.self) { option in
                     Toggle(
                         option.title,
                         isOn: Binding(
@@ -391,10 +388,12 @@ struct SessionNavQueue: View, Equatable {
                             set: { visible in
                                 guard visible != option.isVisible(in: hiddenSidebarOptions) else { return }
                                 hiddenSidebarOptions = option.toggled(in: hiddenSidebarOptions)
-                            }))
+                            })
+                    )
+                    .dockMenuKeepOpen()
                 }
             } label: {
-                Text("Filters")
+                Text("Show sidebar sections")
             }
         } label: {
             DockIcon(.dotsThreeVertical, size: DockLayout.toolbarIconSize, color: style.secondaryText)
@@ -466,12 +465,6 @@ struct SessionNavQueue: View, Equatable {
             }
             .animation(.easeInOut(duration: 0.25), value: botMode.activityBanner)
             .zIndex(1)
-
-            if enabledSidebarFilters.count > 1 {
-                sidebarFilterPicker
-                    .dockPadding(.horizontal, 12)
-                    .dockPadding(.vertical, 4)
-            }
 
             HoverPausingScrollView {
                 globalRailBar(style: style)
@@ -828,17 +821,17 @@ struct SessionNavQueue: View, Equatable {
 
         // Native sections keep headers visible without geometry tracking or eager row containers.
         return LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-            if effectiveSidebarFilter != .all {
-                filteredSidebarRows(style: style)
-            } else if isSearchingSessions {
+            if isSearchingSessions {
                 searchResultRows(pinned: pinned, statuses: statuses, style: style)
+                if SessionRailSection.archived.isVisible(in: hiddenSidebarOptions) {
+                    filterOutline(.archived, style: style)
+                }
             } else {
                 let recents = showsAllProfiles ? sidebarSnapshot.allBotRecents : sidebarSnapshot.scopedRecents
                 let scope = sessionSearchScope
                 let conversations = recents.conversations.filter(scope.includes)
                 let automations = recents.automations.filter(scope.includes)
-                let sections = SessionSidebarVisibility.visibleSections(
-                    navigationState.sectionOrder, hidden: hiddenSidebarOptions)
+                let sections = navigationState.sectionOrder.filter { $0.isVisible(in: hiddenSidebarOptions) }
                 ForEach(sections, id: \.self) { section in
                     switch section {
                     case .pinned:
@@ -853,6 +846,8 @@ struct SessionNavQueue: View, Equatable {
                     case .automations:
                         conversationOutline(
                             automations, type: .automation, statuses: statuses, style: style)
+                    case .unread, .needsYou, .running, .archived:
+                        filterOutline(section, style: style)
                     }
                 }
                 SessionRailEndDropZone(state: navigationState)
@@ -957,28 +952,16 @@ struct SessionNavQueue: View, Equatable {
         }
     }
 
-    private var effectiveSidebarFilter: SessionSidebarFilter { sidebarFilter.enabled(in: hiddenSidebarOptions) }
-
-    private var enabledSidebarFilters: [SessionSidebarFilter] {
-        SessionSidebarFilter.allCases.filter { $0.enabled(in: hiddenSidebarOptions) == $0 }
-    }
-
-    private var sidebarFilterPicker: some View {
-        DockMenu(outlined: true) {
-            DockMenuChoices(selection: $sidebarFilter) {
-                ForEach(enabledSidebarFilters, id: \.self) { filter in
-                    DockMenuOption(filter.title, value: filter)
+    private func filterDisclosure(_ section: SessionRailSection) -> Binding<Bool> {
+        Binding(
+            get: { navigationState.expandedFilterSections.contains(section) },
+            set: { expanded in
+                if expanded {
+                    navigationState.expandedFilterSections.insert(section)
+                } else {
+                    navigationState.expandedFilterSections.remove(section)
                 }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text(effectiveSidebarFilter.title)
-                DockIcon(.caretUpDown, size: 12)
-            }
-        }
-        .dockButtonSize(.compact)
-        .accessibilityLabel("Session filter")
-        .accessibilityValue(effectiveSidebarFilter.title)
+            })
     }
 
     private struct ArchiveRequest: Equatable {
@@ -987,7 +970,10 @@ struct SessionNavQueue: View, Equatable {
     }
 
     private var archiveRequest: ArchiveRequest? {
-        guard hostVisible, !isSidebarCollapsed, effectiveSidebarFilter == .archived else { return nil }
+        guard hostVisible, !isSidebarCollapsed,
+            SessionRailSection.archived.isVisible(in: hiddenSidebarOptions),
+            navigationState.expandedFilterSections.contains(.archived)
+        else { return nil }
         let scope: SessionSidebarArchive.Scope =
             showsAllProfiles
             ? .allProfiles : .profile(selectedBot?.id ?? sidebarSnapshot.inputs.profileScopeID ?? "default")
@@ -995,9 +981,7 @@ struct SessionNavQueue: View, Equatable {
     }
 
     private func loadSidebarArchive(_ request: ArchiveRequest?) async {
-        guard !Task.isCancelled else { return }
-        sidebarArchive = nil
-        guard let request else { return }
+        guard !Task.isCancelled, let request else { return }
         do {
             let result = try await model.interruptRPC.archivedSidebarSessions(scope: request.scope)
             guard !Task.isCancelled, model.archivedSidebarMutationRevision == request.revision else { return }
@@ -1009,100 +993,120 @@ struct SessionNavQueue: View, Equatable {
     }
 
     private struct SidebarLiveRequest: Equatable {
-        let filter: SessionSidebarFilter
+        let sections: Set<SessionRailSection>
         let profiles: [String]
     }
 
-    private struct SidebarLiveResult {
+    private struct SidebarLiveResult: Equatable {
         let request: SidebarLiveRequest
-        let status: SessionSidebarLiveStatus
+        let statuses: [SessionRailSection: SessionSidebarLiveStatus]
     }
 
     private var sidebarLiveRequest: SidebarLiveRequest? {
-        let filter = effectiveSidebarFilter
-        guard hostVisible, !isSidebarCollapsed, filter == .running || filter == .needsYou else { return nil }
+        guard hostVisible, !isSidebarCollapsed, !isSearchingSessions else { return nil }
+        let sections = navigationState.expandedFilterSections.intersection([.needsYou, .running])
+            .filter { $0.isVisible(in: hiddenSidebarOptions) }
+        guard !sections.isEmpty else { return nil }
         let current = selectedBot?.id ?? sidebarSnapshot.inputs.profileScopeID ?? "default"
-        let profiles = showsAllProfiles ? visibleBots.map(\.id).sorted() : [current]
-        return SidebarLiveRequest(filter: filter, profiles: profiles)
+        let profiles = showsAllProfiles && !visibleBots.isEmpty ? visibleBots.map(\.id).sorted() : [current]
+        return SidebarLiveRequest(sections: sections, profiles: profiles)
     }
 
     private func pollSidebarLiveStatus(_ request: SidebarLiveRequest?) async {
-        guard !Task.isCancelled else { return }
-        sidebarLiveResult = nil
-        guard let request else { return }
-        // Use the sidebar roster cadence while the live filter is on screen.
+        guard !Task.isCancelled, let request else { return }
+        // Share one active-list read per profile across both expanded live sections.
         while !Task.isCancelled {
-            await refreshSidebarLiveStatus(request)
+            let statuses = await model.interruptRPC.sidebarLiveStatus(for: request.sections, profiles: request.profiles)
+            guard !Task.isCancelled else { return }
+            let result = SidebarLiveResult(request: request, statuses: statuses)
+            if sidebarLiveResult != result { sidebarLiveResult = result }
             try? await Task.sleep(for: .seconds(10))
         }
     }
 
-    private func refreshSidebarLiveStatus(_ request: SidebarLiveRequest) async {
-        let status = await model.interruptRPC.sidebarLiveStatus(for: request.filter, profiles: request.profiles)
-        guard !Task.isCancelled else { return }
-        sidebarLiveResult = SidebarLiveResult(request: request, status: status)
+    @ViewBuilder
+    private func filterOutline(_ section: SessionRailSection, style: DockThemePalette) -> some View {
+        let expanded = filterDisclosure(section)
+        let snapshot = sidebarSnapshot
+        let live =
+            sidebarLiveResult?.request.profiles == sidebarLiveRequest?.profiles
+            ? sidebarLiveResult?.statuses[section] : nil
+        let inventory =
+            expanded.wrappedValue
+            ? SessionSidebarFilterInventory(
+                inputs: snapshot.inputs, unreadSessions: unreadSidebarSessions,
+                confirmedApprovals: section == .needsYou ? live?.ids ?? [] : nil,
+                confirmedRunning: section == .running ? live?.ids ?? [] : nil,
+                activeProfileID: model.sessionProfileID)
+            : nil
+        let archive = archiveRequest == sidebarArchive?.request ? sidebarArchive : nil
+        let scopedProfile = snapshot.inputs.profileScopeID ?? "default"
+        let projectProfile = snapshot.inputs.projectProfileID ?? scopedProfile
+        let matches =
+            inventory?.results(
+                section == .archived
+                    ? archive?.result?.sessions ?? []
+                    : (showsAllProfiles ? snapshot.allBotConversations : snapshot.conversations)
+                        + pinnedSessionPresentation.sessions,
+                section: section, query: sessionSearchQuery, scope: sessionSearchScope,
+                projectNames: snapshot.projectNameBySessionID) ?? []
+        let message = sidebarFilterStatus(section, archive: archive, live: live)
+        Section {
+            Group {
+                if let inventory {
+                    ForEach(matches, id: \.[sidebarSection: section.rawValue]) { session in
+                        plainConversationSessionRow(
+                            session, statuses: [session.id: inventory.status(for: session)], style: style,
+                            showProjectMetadata: (session.profileID ?? scopedProfile) == projectProfile)
+                    }
+                    if let message {
+                        queueEmpty(message, style: style).dockPadding(.leading, 12)
+                    } else if matches.isEmpty {
+                        queueEmpty(emptyFilterMessage(section), style: style)
+                            .dockPadding(.leading, 12)
+                    }
+                }
+            }
+            .sessionSidebarFadesUnderStickyHeader()
+        } header: {
+            DockSectionHeader(
+                title: section.title,
+                count: expanded.wrappedValue && (message == nil || !matches.isEmpty)
+                    ? matches.count : nil,
+                isExpanded: expanded, style: style
+            )
+            .sessionRailReorder(section, state: navigationState)
+            .frame(maxWidth: .infinity)
+            .dockPadding(.top, style.sectionSpacing)
+            .dockPadding(.bottom, expanded.wrappedValue ? 2 : 0)
+            .sessionSidebarStickyBackground()
+            .accessibilityAddTraits(.isHeader)
+        }
     }
 
-    @ViewBuilder
-    private func filteredSidebarRows(style: DockThemePalette) -> some View {
-        let filter = effectiveSidebarFilter
-        let snapshot = sidebarSnapshot
-        let live = sidebarLiveResult?.request == sidebarLiveRequest ? sidebarLiveResult : nil
-        let inventory = SessionSidebarFilterInventory(
-            inputs: snapshot.inputs, unreadSessions: unreadSidebarSessions,
-            confirmedApprovals: filter == .needsYou ? live?.status.ids ?? [] : nil,
-            confirmedRunning: filter == .running ? live?.status.ids ?? [] : nil,
-            activeProfileID: model.sessionProfileID)
-        let archive = archiveRequest == sidebarArchive?.request ? sidebarArchive : nil
-        let scope = sessionSearchScope
-        let scopedProfile = snapshot.inputs.profileScopeID ?? "default"
-        let conversations = showsAllProfiles ? snapshot.allBotConversations : snapshot.conversations
-        let candidates =
-            filter == .archived ? archive?.result?.sessions ?? [] : conversations + pinnedSessionPresentation.sessions
-        let eligible = candidates.filter { session in
-            guard scope.includes(session) else { return false }
-            if filter == .archived { return true }
-            let status = inventory.status(for: session)
-            return filter.matches(session, status: status, isUnread: inventory.isUnread(session))
-        }
-        let projectProfile = snapshot.inputs.projectProfileID ?? scopedProfile
-        let projectNames = Dictionary(
-            uniqueKeysWithValues: snapshot.projectNameBySessionID.map { id, name in
-                (ProfileScopedID(profileID: projectProfile, resourceID: id), name)
-            })
-        let matches = SessionSidebarFilter.results(
-            eligible, query: sessionSearchQuery, profileID: showsAllProfiles ? nil : selectedBot?.id ?? scopedProfile,
-            projectNames: projectNames, fallbackProfileID: scopedProfile)
-        let message = sidebarFilterStatus(filter, archive: archive, live: live)
-
-        Text(message ?? "\(filter.title) · \(matches.count)")
-            .dockFont(.body, weight: .semibold)
-            .foregroundStyle(style.secondaryText)
-            .dockPadding(8)
-        if message == nil, matches.isEmpty {
-            queueEmpty(
-                filter == .archived ? "No matching archived sessions" : "No matching loaded sessions", style: style)
-        }
-        ForEach(matches, id: \.scopedID) { session in
-            plainConversationSessionRow(
-                session, statuses: [session.id: inventory.status(for: session)], style: style,
-                showProjectMetadata: (session.profileID ?? scopedProfile) == projectProfile)
+    private func emptyFilterMessage(_ section: SessionRailSection) -> String {
+        switch section {
+        case .unread: "No unread sessions in loaded history"
+        case .needsYou: "No sessions need approval"
+        case .running: "No running sessions in loaded history"
+        case .archived: isSearchingSessions ? "No matching archived sessions" : "No archived sessions"
+        default: "No sessions"
         }
     }
 
     private func sidebarFilterStatus(
-        _ filter: SessionSidebarFilter, archive: (request: ArchiveRequest, result: SessionSidebarArchive?)?,
-        live: SidebarLiveResult?
+        _ section: SessionRailSection, archive: (request: ArchiveRequest, result: SessionSidebarArchive?)?,
+        live: SessionSidebarLiveStatus?
     ) -> String? {
-        if filter == .archived {
+        if section == .archived {
             if let result = archive?.result {
                 return result.isIncomplete ? "Some archived sessions are unavailable" : nil
             }
             return archive == nil ? "Loading archived sessions…" : "Archived sessions are unavailable"
         }
-        guard filter == .needsYou || filter == .running else { return nil }
+        guard section == .needsYou || section == .running else { return nil }
         guard let live else { return "Loading session status…" }
-        return live.status.isIncomplete ? "Some session statuses are unavailable" : nil
+        return live.isIncomplete ? "Some session statuses are unavailable" : nil
     }
 
     private var isSearchingSessions: Bool {
@@ -1117,7 +1121,7 @@ struct SessionNavQueue: View, Equatable {
     }
 
     private var sessionSearchRequest: SessionSidebarSearch.Request? {
-        guard effectiveSidebarFilter == .all, isSearchingSessions else { return nil }
+        guard isSearchingSessions else { return nil }
         return SessionSidebarSearch.Request(
             query: sessionSearchQuery,
             conversations: showsAllProfiles ? sidebarSnapshot.allBotConversations : sidebarSnapshot.conversations,
