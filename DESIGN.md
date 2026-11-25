@@ -2199,7 +2199,7 @@ Updates uses a leading-aligned column up to 920pt wide. A Software updates card 
 
 Settings groups destinations by purpose:
 
-- **App:** General, Gateway, Appearance, Notifications.
+- **App:** General, Gateway, Appearance, Status bar, Notifications.
 - **Agent:** Models & tools, Providers, Chat, Memory & Context, Voice, Advanced.
 - **Tools & access:** Files & terminal, Browser, Privacy & safety, Integrations.
 - **Activity & maintenance:** Active session, Diagnostics, Updates.
