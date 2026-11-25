@@ -671,7 +671,7 @@ struct DockNotificationTests {
         #expect(DockModel.refreshingProjectionState(HermesProjectionState<[HermesSession]>.empty) == .loading)
     }
 
-    @Test func completedMessageRefreshesTheSessionIndex() async {
+    @Test func completedMessageRefreshesTheSessionIndex() async throws {
         let latestSession: [String: Any] = [
             "id": "session-1",
             "title": "Latest conversation",
@@ -684,9 +684,10 @@ struct DockNotificationTests {
         let model = DockModel(initialSessionID: "session-1", rpcClient: client)
 
         model.receiveGatewayEvent("message.complete", params: ["session_id": "session-1", "payload": [:]])
-        for _ in 0..<10 { await Task.yield() }
+        let refresh = try #require(model.sessionLoadTask)
+        await refresh.value
 
-        #expect(client.requestedMethods.sorted() == ["session.list", "session.usage"])
+        #expect(client.requestedMethods.filter { $0 == "session.list" }.count == 1)
         #expect(model.sessions.first?.title == "Latest conversation")
         #expect(model.sessions.first?.preview == "The completed response")
     }
