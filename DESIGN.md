@@ -2310,7 +2310,8 @@ slot shows peak-hour sync progress or failure). Trailing actions are Refresh and
 the Quota options menu (icon buttons at their drawn size, 6pt apart, no 44pt hit
 frame), then the secondary Sync peak hours (pending "Syncing…" in place) and the
 primary Add account. The options menu starts with Show in sidebar. A Quota in chat section groups
-the Show quota beside the composer and Quota drop banner toggles. Dividers
+the Show quota beside the composer and Quota drop banner toggles. All three visibility
+options are on by default and honor saved choices. Dividers
 separate these groups from one another and from the Auto-refresh section listing Off/1/5/15 minutes as checkable
 choices (no submenu; refresh runs only while the page is open). In narrow
 windows the actions wrap below the status.
@@ -2373,27 +2374,28 @@ windows the actions wrap below the status.
   Herm does not own their logins.
 - Disconnected providers appear afterward under Available to connect with
   Connect and website actions.
-- **Sidebar rings.** Show in sidebar (Quota options, on by default) adds one
-  38pt ring button per provider below the rail's pinned destinations, after a
-  hairline, in the shared custom order. Hairline 2pt rings: the outer is the
+- **Sidebar quota.** Show in sidebar (Quota options, on by default) adds one
+  38pt provider slot pinned above Connection in the rail footer, after a
+  hairline, in the shared custom order. Long lists scroll within the footer so
+  Connection and Settings remain visible. Hairline 2pt rings: the outer is the
   first percentage window (5-hour), the inner the second (weekly), around the
   bare provider mark; tracks use a faint `dockBorder`, arcs the health colors.
-  Providers without a percentage get no ring. A short radial tick mirrors
-  the Quota page's daily budget marker when it is visible. The Hermes-active
-  pool account has a 7pt accent dot on the outer ring at 45°, with a canvas
+  Providers with a credit balance and no percentage show their bare mark. A
+  short radial tick mirrors the Quota page's daily budget marker when visible.
+  The Hermes-active pool account has a 7pt accent dot at 45°, with a canvas
   colored outline to match the card's Active pill; there is no fill or glow
   behind the mark. Hovering opens a popover with that provider's card windows
-  (shared `QuotaWindowCell` in its compact type: 13pt figure, 11pt labels) and
-  Open Quota; clicking opens Quota. Dragging a ring reorders it like the
+  (shared `QuotaWindowCell` in its compact type: 13pt figure, 11pt labels).
+  The provider mark has no press action. Dragging a mark reorders it like the
   pinned destinations (lifted 1.045×, neighbours spring aside, no popover
   while lifted), and the context menu and VoiceOver actions offer Move up /
   Move down. Both write the shared Quota order, so the page cards follow;
-  ringless providers keep their slots.
+  providers outside the rail keep their slots.
 - **Multi-day sessions.** A window labeled Session or Rolling that resets more
   than a day out (Codex's account-wide allowance) is a weekly (≤7d) or monthly
   (≤30d) cycle: it gets the budget marker, pace forecast, and daily allowance
   on the page, a tick on its ring, and its real label in the ring's VoiceOver
-  value instead of "5-hour".
+  announcement instead of "5-hour".
 - **Meter motion.** Quota meters (page cards, rail popover) grow from empty on
   first appearance over 0.6s and ease to each new reading over 0.45s; rail arcs
   sweep clockwise from 12 o'clock over 0.7s, then ease 0.45s per reading or

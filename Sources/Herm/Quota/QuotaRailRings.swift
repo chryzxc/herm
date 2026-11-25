@@ -1,9 +1,7 @@
 import Combine
 import SwiftUI
 
-/// One provider's quota as concentric rings in the primary navigation rail: the outer ring is the
-/// first reported percentage window (usually 5-hour), the inner ring the second (usually weekly).
-/// Providers that report no percentage get no ring, so the rail never draws a fabricated meter.
+/// A provider's rail mark, with rings only for reported percentage windows.
 struct QuotaRailRing: Equatable {
     struct Arc: Equatable {
         /// Short label from `EdgeQuotaPreview.compactWindows`, such as `5h` or `7d`.
@@ -18,15 +16,16 @@ struct QuotaRailRing: Equatable {
     static let defaultShown = true
 
     let snapshot: ProviderQuotaSnapshot
-    /// Outer ring first; one or two arcs.
+    /// Outer ring first, when a provider reports percentage windows.
     let arcs: [Arc]
+    private let balances: [String]
     /// Hermes picks this pooled account for the next request (the Quota page's Active pill).
     let isActive: Bool
 
     var provider: String { snapshot.provider }
     var displayName: String { snapshot.displayName }
 
-    /// Rings in the Quota page's custom order, for every provider with at least one percentage window.
+    /// Providers with percentage windows or credit balances, in the Quota page's custom order.
     static func make(
         _ snapshots: [ProviderQuotaSnapshot], activeCredentialKeys: Set<String> = [], now: Date = .now
     ) -> [Self] {
@@ -42,22 +41,30 @@ struct QuotaRailRing: Equatable {
                     label: item.label == "5h" && isMultiDay ? item.window.label : item.label, remaining: clamped,
                     threshold: ProviderQuotaWindow.threshold(forRemaining: clamped), budget: budget)
             }
-            guard !arcs.isEmpty else { return nil }
+            let balances = snapshot.windows.compactMap { window -> String? in
+                // Non-USD balances have a display value without a numeric USD amount.
+                let isBalance =
+                    window.amount?.isFinite == true || window.id == "credits"
+                    || window.id == "balance" || window.id.hasPrefix("balance-")
+                guard isBalance, let display = window.remainingDisplay, !display.isEmpty else { return nil }
+                return "\(window.label) \(display)"
+            }
+            guard !arcs.isEmpty || !balances.isEmpty else { return nil }
             let isActive = snapshot.hermesCredential.map {
                 activeCredentialKeys.contains(ControlCenterModel.hermesActiveCredentialKey($0))
             }
-            return Self(snapshot: snapshot, arcs: Array(arcs.prefix(2)), isActive: isActive ?? false)
+            return Self(
+                snapshot: snapshot, arcs: Array(arcs.prefix(2)), balances: balances, isActive: isActive ?? false)
         }
     }
 
     /// Spoken summary, such as `Active, 5-hour 72% left, weekly 40% left`.
     var summary: String {
         let windows = arcs.map { "\(Self.spokenLabel($0.label)) \(Int($0.remaining.rounded()))% left" }
-        return ((isActive ? ["Active"] : []) + windows).joined(separator: ", ")
+        return ((isActive ? ["Active"] : []) + windows + balances).joined(separator: ", ")
     }
 
-    /// The full Quota order after reordering only the providers that have rings: each ring slot in
-    /// `fullOrder` takes the next id from `ringOrder`, and ringless providers keep their slots.
+    /// Reorder the providers shown in the rail, keeping other providers in their original slots.
     static func merging(ringOrder: [String], into fullOrder: [String]) -> [String] {
         let ringIDs = Set(ringOrder)
         var next = ringOrder.makeIterator()
@@ -78,15 +85,16 @@ struct QuotaRailRing: Equatable {
 struct QuotaRailRings: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let control: ControlCenterModel
-    let onOpenQuota: () -> Void
+    var maximumListHeight: CGFloat = .infinity
     @State private var rings: [QuotaRailRing] = []
     @State private var dragOrder: [String]?
     @State private var draggingID: String?
     @State private var dragOffset: CGFloat = 0
     @State private var dragStartIndex = 0
 
-    /// One rail slot: the 38pt button plus the stack spacing, matching the pinned destinations.
-    private static let slotHeight: CGFloat = 42
+    /// One rail slot: the 38pt mark plus the stack spacing, matching the pinned destinations.
+    private static let spacing: CGFloat = 4
+    private static let slotHeight: CGFloat = 38 + spacing
 
     private var orderedRings: [QuotaRailRing] {
         guard let dragOrder else { return rings }
@@ -95,26 +103,32 @@ struct QuotaRailRings: View {
     }
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: Self.spacing) {
             if !rings.isEmpty {
                 Color.dockBorderLight
                     .frame(width: 22, height: DockLayout.hairline)
                     .dockPadding(.vertical, 4)
                     .accessibilityHidden(true)
-                let ordered = orderedRings
-                ForEach(ordered, id: \.provider) { ring in
-                    let isDragging = draggingID == ring.provider
-                    QuotaRailRingButton(
-                        ring: ring, isDragging: isDragging,
-                        canMoveUp: ordered.first?.provider != ring.provider,
-                        canMoveDown: ordered.last?.provider != ring.provider,
-                        onMove: { move(ring.provider, by: $0) }, action: onOpenQuota
-                    )
-                    .scaleEffect(isDragging && DockMotion.isEnabled(reduceMotion: reduceMotion) ? 1.045 : 1)
-                    .offset(y: isDragging ? dragOffset : 0)
-                    .zIndex(isDragging ? 1 : 0)
-                    .simultaneousGesture(reorderGesture(for: ring.provider))
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: Self.spacing) {
+                        let ordered = orderedRings
+                        ForEach(ordered, id: \.provider) { ring in
+                            let isDragging = draggingID == ring.provider
+                            QuotaRailIndicator(
+                                ring: ring, isDragging: isDragging,
+                                canMoveUp: ordered.first?.provider != ring.provider,
+                                canMoveDown: ordered.last?.provider != ring.provider,
+                                onMove: { move(ring.provider, by: $0) }
+                            )
+                            .scaleEffect(isDragging && DockMotion.isEnabled(reduceMotion: reduceMotion) ? 1.045 : 1)
+                            .offset(y: isDragging ? dragOffset : 0)
+                            .zIndex(isDragging ? 1 : 0)
+                            .simultaneousGesture(reorderGesture(for: ring.provider))
+                        }
+                    }
                 }
+                .frame(height: min(maximumListHeight, CGFloat(rings.count) * Self.slotHeight - Self.spacing))
+                .scrollBounceBehavior(.basedOnSize)
             }
         }
         .onReceive(control.$providerQuotas.combineLatest(control.$hermesActiveCredentialKeys)) { snapshots, keys in
@@ -177,14 +191,13 @@ struct QuotaRailRings: View {
     }
 }
 
-private struct QuotaRailRingButton: View {
+private struct QuotaRailIndicator: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let ring: QuotaRailRing
     let isDragging: Bool
     let canMoveUp: Bool
     let canMoveDown: Bool
     let onMove: (Int) -> Void
-    let action: () -> Void
     @State private var showsDetail = false
     @State private var isDetailHovered = false
     @State private var hoverTask: Task<Void, Never>?
@@ -197,36 +210,27 @@ private struct QuotaRailRingButton: View {
     private static let dotOffset: CGFloat = (outerDiameter / 2) * 0.7071
 
     var body: some View {
-        Button {
-            hoverTask?.cancel()
-            showsDetail = false
-            action()
-        } label: {
-            ZStack {
-                ForEach(Array(ring.arcs.enumerated()), id: \.offset) { index, arc in
-                    arcView(arc, diameter: index == 0 ? Self.outerDiameter : Self.innerDiameter)
-                }
-                ProviderMarkBadge(
-                    mark: QuotaWorkspaceView.mark(for: ring.snapshot),
-                    size: ring.arcs.count > 1 ? 16 : 20, tile: false)
-                if ring.isActive {
-                    // The Active pill's dot, seated on the outer ring at the top right.
-                    Circle()
-                        .fill(Color.dockAccent)
-                        .frame(width: Self.activeDot, height: Self.activeDot)
-                        .overlay(Circle().stroke(Color.dockCanvas, lineWidth: 1.5))
-                        .offset(x: Self.dotOffset, y: -Self.dotOffset)
-                        .transition(.scale.combined(with: .opacity))
-                }
+        ZStack {
+            ForEach(Array(ring.arcs.enumerated()), id: \.offset) { index, arc in
+                arcView(arc, diameter: index == 0 ? Self.outerDiameter : Self.innerDiameter)
             }
-            .frame(width: 38, height: 38)
-            .contentShape(Rectangle())
+            ProviderMarkBadge(
+                mark: QuotaWorkspaceView.mark(for: ring.snapshot),
+                size: ring.arcs.count > 1 ? 16 : 20, tile: false)
+            if ring.isActive {
+                // The Active pill's dot, seated at the top right.
+                Circle()
+                    .fill(Color.dockAccent)
+                    .frame(width: Self.activeDot, height: Self.activeDot)
+                    .overlay(Circle().stroke(Color.dockCanvas, lineWidth: 1.5))
+                    .offset(x: Self.dotOffset, y: -Self.dotOffset)
+                    .transition(.scale.combined(with: .opacity))
+            }
         }
-        .buttonStyle(.dockHover)
+        .frame(width: 38, height: 38)
+        .contentShape(Rectangle())
         .animation(DockMotion.animation(reduceMotion: reduceMotion, duration: 0.2), value: ring.isActive)
         .contextMenu {
-            Button("Open Quota", icon: .arrowRight) { action() }
-            Divider()
             Button("Move up", icon: .arrowUp) { onMove(-1) }.disabled(!canMoveUp)
             Button("Move down", icon: .arrowDown) { onMove(1) }.disabled(!canMoveDown)
         }
@@ -246,9 +250,8 @@ private struct QuotaRailRingButton: View {
             }
         }
         .dockPopover(isPresented: $showsDetail, arrowEdge: .trailing) { detail }
-        .accessibilityLabel("\(ring.displayName) quota")
-        .accessibilityValue(ring.summary)
-        .accessibilityHint("Opens Quota")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(ring.displayName) quota, \(ring.summary)")
         .accessibilityActions {
             if canMoveUp { Button("Move up") { onMove(-1) } }
             if canMoveDown { Button("Move down") { onMove(1) } }
@@ -298,20 +301,9 @@ private struct QuotaRailRingButton: View {
                     }
                 }
 
-                HStack {
-                    Text("Updated \(ring.snapshot.updatedAt.formatted(.dateTime.hour().minute()))")
-                        .dockFont(.metadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                    Spacer(minLength: 8)
-                    Button {
-                        showsDetail = false
-                        action()
-                    } label: {
-                        DockIconLabel("Open Quota", icon: .arrowRight)
-                    }
-                    .buttonStyle(.dockSecondary)
-                }
-                .dockButtonSize(.compact)
+                Text("Updated \(ring.snapshot.updatedAt.formatted(.dateTime.hour().minute()))")
+                    .dockFont(.metadata)
+                    .foregroundStyle(Color.dockMetadataText)
             }
             .dockPadding(14)
             .frame(width: 300, alignment: .leading)

@@ -179,6 +179,24 @@ struct SessionNavRail: View {
 
     var body: some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
+        GeometryReader { proxy in
+            railContent(style: style, quotaHeight: proxy.size.height / 2)
+        }
+        .dockPadding(.horizontal, 7)
+        .dockPadding(.top, 12)
+        .dockPadding(.bottom, 8)
+        .frame(width: 52)
+        .frame(maxHeight: .infinity)
+        .dockShellChrome()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Herm navigation")
+        .task { await desktopPlugins.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await desktopPlugins.refresh() }
+        }
+    }
+
+    private func railContent(style: DockThemePalette, quotaHeight: CGFloat) -> some View {
         VStack(spacing: 4) {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 4) {
@@ -211,14 +229,14 @@ struct SessionNavRail: View {
                     .dockPopover(isPresented: $showsDestinations, arrowEdge: .trailing) {
                         destinationMenu
                     }
-                    if showsQuotaRings {
-                        QuotaRailRings(control: controlCenter) { onOpenGlobal(.quota) }
-                    }
                 }
                 .padding(.top, 6)  // room for the chat badge above its icon
             }
             // Global window chrome: applies to the whole workspace, not one chat.
             VStack(spacing: 4) {
+                if showsQuotaRings {
+                    QuotaRailRings(control: controlCenter, maximumListHeight: quotaHeight)
+                }
                 HermesConnectionButton(
                     isConnected: isHermesConnected, issue: hermesConnectionIssue,
                     endpoint: (model.controlRPCClient as? HermesGateway)?.endpointDescription ?? "Hermes Agent",
@@ -235,18 +253,6 @@ struct SessionNavRail: View {
                 }
                 .dockPopover(isPresented: $showsViewMenu, arrowEdge: .trailing) { viewMenu }
             }
-        }
-        .dockPadding(.horizontal, 7)
-        .dockPadding(.top, 12)
-        .dockPadding(.bottom, 8)
-        .frame(width: 52)
-        .frame(maxHeight: .infinity)
-        .dockShellChrome()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Herm navigation")
-        .task { await desktopPlugins.refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await desktopPlugins.refresh() }
         }
     }
 
