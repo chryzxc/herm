@@ -3289,6 +3289,12 @@ own loading and availability state.
 
 The send arrow folds into a square in the same button when its action changes to Stop. Thinking uses a three-bead relay, and live compaction folds the outer two lines into the middle line. Both use native layers and retain static marks when motion is paused. The shared progress meter interpolates its filled path inside a fixed track.
 
+Stop uses its existing control slot to show progress and stays available during
+model setting changes. A refused or unconfirmed stop leaves the reply visible
+and puts the error in the composer’s request feedback. Stop parks local follow-ups
+across automatic refreshes and when reopening the chat. A new send or Send Now
+can explicitly resume the queue.
+
 A user-message reaction sits at the top-leading corner of the bubble, or of the image group when present. It grows from the corner touching the message content, and later emoji changes briefly compress the pill around that point. The assistant footer uses its leading corner.
 
 The composer names a conversation's reported model as soon as it is available,

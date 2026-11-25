@@ -328,9 +328,14 @@ extension DockModel {
         isPopoverVisible = false
     }
 
+    var canRequestStop: Bool {
+        sessionActionsReady && sessionID != nil && interruptState != .requesting
+    }
+
     @discardableResult
     func stop() -> Task<Void, Never>? {
-        guard sessionActionsReady, let sessionID, interruptState != .requesting else { return nil }
+        guard canRequestStop, let sessionID else { return nil }
+        sendQueuedPromptAfterInterrupt = false
         interruptGeneration &+= 1
         let requestGeneration = interruptGeneration
         let originProfileID = sessionProfileID ?? profileScopeID

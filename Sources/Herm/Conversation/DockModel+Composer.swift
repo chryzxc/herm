@@ -23,12 +23,12 @@ extension DockModel {
         guard !prompt.isEmpty || !attachedImages.isEmpty || !attachedPDFs.isEmpty || !contexts.isEmpty,
             !isForeground
                 || (!isSending && sessionActionsReady && !isUpdatingSessionModel && !isUpdatingSessionFast
-                    && !isRestoringSession
+                    && !isRestoringSession && interruptState != .requesting
                     && (sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession)))
         else { return }
 
         if queued == nil, hasQueuedOrRedirectingPrompt {
-            queueDraft()
+            queueDraft(resumePausedQueue: true)
             return
         }
 
@@ -100,6 +100,7 @@ extension DockModel {
             return
         }
         sessionStopAttempts[sendOwner] = nil
+        if isForeground, interruptState.isFailed { interruptState = .idle }
         let snapshot = SessionComposerDraft(
             text: originalText, images: attachedImages, pdfURLs: attachedPDFs, contexts: contexts,
             replyQuote: queued == nil ? replyQuote : queued?.replyQuote,
@@ -387,7 +388,7 @@ extension DockModel {
     /// slash commands, a turn parked on an approval) or a redirect Hermes
     /// refuses because the turn already ended goes to `queuedPrompts` instead.
     func steerDraft() {
-        guard sessionActionsReady else { return }
+        guard sessionActionsReady, interruptState != .requesting else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let sessionID, !sessionID.isEmpty else { return }
         guard !hasQueuedOrRedirectingPrompt,
@@ -410,7 +411,13 @@ extension DockModel {
         let steeringGeneration = sessionResumeGeneration
         let queueSessionID = queuedPromptSessionID ?? sessionID
         let queueProfile = Self.normalizedProfileID(sessionProfileID ?? profileScopeID)
+        let stopOwner = composerDraftKey
+        let previousStop = sessionStopAttempts[stopOwner]?.id
         let mentionProfiles = composerMentionProfiles
+        if interruptState == .requesting {
+            requeueRedirect(text, sessionID: queueSessionID, profileID: queueProfile, mentionProfiles: mentionProfiles)
+            return
+        }
         redirectingPrompts[queueSessionID] = RedirectingPrompt(runtimeSessionID: sessionID)
         // Redirect cancels the model request, so its completion can race the
         // RPC response: record the correction first, below what already
@@ -431,15 +438,18 @@ extension DockModel {
         let resumedRowID = hadLiveStream ? streamingMessageID : nil
 
         Task {
-            let result = try? await sessionRPCClient.request(
-                HermesFeatureIDs.ID.sessionRedirect.rawValue,
-                params: ["session_id": sessionID, "text": submittedText]
-            )
+            let result =
+                sessionStopAttempts[stopOwner]?.id == previousStop
+                ? try? await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.sessionRedirect.rawValue,
+                    params: ["session_id": sessionID, "text": submittedText])
+                : nil
             var redirectStatus = (result?["status"] as? String)?.lowercased()
             var hermesHasNoLiveTurn = false
             // Redirect is refused between model requests (or on an agent without it)
             // while the turn is still live; steer lands on the next tool result.
             if redirectStatus != "redirected", redirectStatus != "queued",
+                sessionStopAttempts[stopOwner]?.id == previousStop,
                 self.sessionResumeGeneration == steeringGeneration, self.sessionID == sessionID, self.status == .working
             {
                 let steered = try? await sessionRPCClient.request(
@@ -518,8 +528,9 @@ extension DockModel {
     /// A stopped turn keeps its queue, except a Send now held back by this redirect.
     private func drainQueuedPromptAfterRedirect(_ redirect: RedirectingPrompt) {
         guard !redirect.wasInterrupted || sendQueuedPromptAfterInterrupt, interruptState != .requesting else { return }
+        let resumePausedQueue = sendQueuedPromptAfterInterrupt
         sendQueuedPromptAfterInterrupt = false
-        drainQueuedPromptIfIdle()
+        drainQueuedPromptIfIdle(resumePausedQueue: resumePausedQueue)
     }
 
     var isRedirectInFlight: Bool {
@@ -530,6 +541,7 @@ extension DockModel {
     func canSteerQueuedPrompt(_ prompt: QueuedPrompt) -> Bool {
         let text = prompt.text.trimmingCharacters(in: .whitespacesAndNewlines)
         return sessionActionsReady && status == .working && sessionID != nil && !isRedirectInFlight
+            && interruptState != .requesting
             && !text.isEmpty
             && prompt.images.isEmpty && prompt.pdfURLs.isEmpty && prompt.contexts.isEmpty
             && prompt.replyQuote == nil && ComposerSlashCommand(text) == nil
@@ -561,7 +573,7 @@ extension DockModel {
     }
 
     /// Parks the whole composer payload until the active turn settles.
-    func queueDraft() {
+    func queueDraft(resumePausedQueue: Bool = false) {
         guard sessionActionsReady, let sessionID = queuedPromptSessionID else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !pendingImages.isEmpty || !pendingPDFURLs.isEmpty || !attachedContexts.isEmpty else {
@@ -585,7 +597,7 @@ extension DockModel {
         replyQuote = nil
         clearAttachmentErrors()
         restorePendingSendIfPossible(for: composerDraftKey)
-        drainQueuedPromptIfIdle()
+        drainQueuedPromptIfIdle(resumePausedQueue: resumePausedQueue)
     }
 
     func removeQueuedPrompt(_ id: UUID) {
@@ -593,28 +605,29 @@ extension DockModel {
         cleanupImageAttachments(queuedPrompts.remove(at: index).images)
     }
 
-    func drainQueuedPromptIfIdle() {
+    func drainQueuedPromptIfIdle(resumePausedQueue: Bool = false) {
         guard sessionActionsReady, !isSending, status == .idle, !isRestoringSession, !isUpdatingSessionModel,
             !isUpdatingSessionFast,
             pendingBotMentions.isEmpty,
             !nativeVoiceCapture.isAwaitingPlaybackDrain,
             let sessionID, let owner = queuedPromptSessionID
         else { return }
-        drainQueuedPrompt(owner: owner, runtimeID: sessionID)
+        guard resumePausedQueue || sessionStopAttempts[composerDraftKey]?.holdsQueue != true else { return }
+        drainQueuedPrompt(owner: owner, runtimeID: sessionID, resumePausedQueue: resumePausedQueue)
     }
 
     func drainBackgroundQueuedPrompt(runtimeID: String) {
         let owner = rowSessionID(runtimeID)
         guard owner != queuedPromptSessionID,
             !sessionStopAttempts.contains(where: { key, attempt in
-                key.sessionID == owner && attempt.outcome != .failed
+                key.sessionID == owner && attempt.holdsQueue
             }),
             !inFlightBotActivities.values.contains(where: { $0.originSessionID == owner })
         else { return }
         drainQueuedPrompt(owner: owner, runtimeID: runtimeID)
     }
 
-    private func drainQueuedPrompt(owner: String, runtimeID: String) {
+    private func drainQueuedPrompt(owner: String, runtimeID: String, resumePausedQueue: Bool = false) {
         guard !hasShutDown, queuedSubmissions[owner] == nil, redirectingPrompts[owner] == nil,
             let index = queuedPrompts.firstIndex(where: { $0.sessionID == owner })
         else { return }
@@ -624,6 +637,7 @@ extension DockModel {
             || (prompt.images.isEmpty && prompt.pdfURLs.isEmpty && prompt.contexts.isEmpty
                 && ComposerSlashCommand(prompt.text) != nil)
         if usesSelectedConversation, runtimeID != sessionID { return }
+        if resumePausedQueue { sessionStopAttempts[composerDraftKey]?.queueResumed = true }
         queuedPrompts.remove(at: index)
         send(prompt, queueRuntimeID: usesSelectedConversation ? nil : runtimeID)
     }
@@ -676,7 +690,7 @@ extension DockModel {
     }
 
     func submitComposerInput(mentionProfiles: [String]? = nil) {
-        guard sessionActionsReady else { return }
+        guard sessionActionsReady, interruptState != .requesting else { return }
         if let mentionProfiles { composerMentionProfiles = mentionProfiles }
         if status == .needsClarification {
             respondToClarification(draft)
@@ -685,7 +699,7 @@ extension DockModel {
         } else if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, pendingImages.isEmpty,
             pendingPDFURLs.isEmpty, attachedContexts.isEmpty
         {
-            drainQueuedPromptIfIdle()
+            drainQueuedPromptIfIdle(resumePausedQueue: true)
         } else {
             send()
         }

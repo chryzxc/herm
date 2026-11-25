@@ -156,9 +156,11 @@ enum InterruptState: Equatable {
     case requesting
     case failed(String)
 
-    var isFailed: Bool {
-        if case .failed = self { return true }
-        return false
+    var isFailed: Bool { failureMessage != nil }
+
+    var failureMessage: String? {
+        if case .failed(let message) = self { return message }
+        return nil
     }
 }
 

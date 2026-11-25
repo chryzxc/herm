@@ -1095,8 +1095,9 @@ extension DockModel {
             }
             // A stopped turn keeps its queue; Enter on an empty composer sends it.
             if !wasInterrupting || sendQueuedPromptAfterInterrupt {
+                let resumePausedQueue = sendQueuedPromptAfterInterrupt
                 if !isRedirectInFlight { sendQueuedPromptAfterInterrupt = false }
-                drainQueuedPromptIfIdle()
+                drainQueuedPromptIfIdle(resumePausedQueue: resumePausedQueue)
             }
         case "approval.request":
             let approval = ApprovalPresentation.from(payload: payload)
@@ -1207,8 +1208,9 @@ extension DockModel {
             }
             // A stopped turn keeps its queue unless Send now asked for it.
             if !wasInterrupting || sendQueuedPromptAfterInterrupt {
+                let resumePausedQueue = sendQueuedPromptAfterInterrupt
                 sendQueuedPromptAfterInterrupt = false
-                drainQueuedPromptIfIdle()
+                drainQueuedPromptIfIdle(resumePausedQueue: resumePausedQueue)
             }
             if voiceState == .listening { armNativeVoiceCapture() }
 
@@ -1847,7 +1849,7 @@ extension DockModel {
         // An in-flight redirect blocks the drain; its reply sends it instead.
         if sendQueuedPromptAfterInterrupt, !isRedirectInFlight {
             sendQueuedPromptAfterInterrupt = false
-            drainQueuedPromptIfIdle()
+            drainQueuedPromptIfIdle(resumePausedQueue: true)
         }
     }
 

@@ -14,6 +14,8 @@ private final class ComposerQueueRPCClient: HermesRPCClientProtocol {
     var pendingRedirect: CheckedContinuation<[String: Any], Never>?
     var holdImageAttachment = false
     var pendingImageAttachment: CheckedContinuation<[String: Any], Never>?
+    var holdInterrupt = false
+    var pendingInterrupt: CheckedContinuation<[String: Any], Never>?
     var submitted: [String] {
         // Queue assertions compare user material; rendering context is covered by submission tests.
         requests.filter { $0.method == "prompt.submit" }.compactMap { $0.params["text"] as? String }.map(
@@ -31,7 +33,10 @@ private final class ComposerQueueRPCClient: HermesRPCClientProtocol {
             return ["status": redirectStatus]
         }
         if method == "session.steer", let steerStatus { return ["status": steerStatus] }
-        if method == "session.interrupt" { return ["status": "interrupted"] }
+        if method == "session.interrupt" {
+            if holdInterrupt { return await withCheckedContinuation { pendingInterrupt = $0 } }
+            return ["status": "interrupted"]
+        }
         if method == "image.attach_bytes", holdImageAttachment {
             return await withCheckedContinuation { pendingImageAttachment = $0 }
         }
@@ -54,6 +59,12 @@ private final class ComposerQueueRPCClient: HermesRPCClientProtocol {
         let continuation = pendingImageAttachment
         pendingImageAttachment = nil
         continuation?.resume(returning: ["attached": true])
+    }
+
+    func finishInterrupt(status: String = "interrupted") {
+        let continuation = pendingInterrupt
+        pendingInterrupt = nil
+        continuation?.resume(returning: ["status": status])
     }
 }
 
@@ -262,6 +273,66 @@ struct ComposerQueueOrderingTests {
         complete(model)
 
         #expect(model.queuedPrompts.map(\.text) == ["Earlier message"])
+        #expect(client.submitted.isEmpty)
+    }
+
+    @Test func reopeningStoppedChatDoesNotSendItsQueueUntilRequested() async throws {
+        let client = ComposerQueueRPCClient()
+        let model = model(client)
+        defer { model.delegationMonitoringTask?.cancel() }
+        parkFirstMessage(model)
+        await model.stop()?.value
+        complete(model)
+        model.newChat()
+        let session = HermesSession(
+            id: "composer-order", title: "Chat", preview: "", startedAt: nil, messageCount: 0,
+            source: "herm")
+
+        #expect(await model.resumeSession(session, reportFailure: true))
+
+        #expect(model.currentSessionQueuedPrompts.map(\.text) == ["Earlier message"])
+        #expect(client.submitted.isEmpty)
+        model.submitComposerInput()
+        try await waitForSubmissions(1, client: client)
+        #expect(client.submitted == ["Earlier message"])
+    }
+
+    @Test func redirectRefusalDuringStopDoesNotSteerOrSendAgain() async throws {
+        let client = ComposerQueueRPCClient()
+        client.holdRedirect = true
+        client.holdInterrupt = true
+        defer {
+            client.finishRedirect(status: "rejected")
+            client.finishInterrupt()
+        }
+        let model = model(client)
+        model.status = .working
+        model.isSending = true
+        model.draft = "Earlier message"
+        model.submitComposerInput()
+        let deadline = Date().addingTimeInterval(2)
+        while client.pendingRedirect == nil, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(client.pendingRedirect != nil)
+
+        let stop = try #require(model.stop())
+        while client.pendingInterrupt == nil, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(client.pendingInterrupt != nil)
+        model.redirectTurn(with: "Later message", sessionID: "composer-order")
+        client.finishRedirect(status: "rejected")
+        while model.isRedirectInFlight, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(!model.isRedirectInFlight)
+        client.finishInterrupt()
+        await stop.value
+
+        #expect(client.requests.filter { $0.method == "session.redirect" }.count == 1)
+        #expect(!client.requests.contains { $0.method == "session.steer" })
+        #expect(model.currentSessionQueuedPrompts.map(\.text) == ["Earlier message", "Later message"])
         #expect(client.submitted.isEmpty)
     }
 

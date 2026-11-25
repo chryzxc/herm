@@ -145,6 +145,7 @@ extension DockModel {
     }
 
     func submitComposerInput(bots: [BotSummary]) {
+        guard interruptState != .requesting else { return }
         let selected = composer.selectedBots
         let roster = selected + bots.filter { bot in !selected.contains(where: { $0.id == bot.id }) }
         let recipients = selected.isEmpty ? roster : selected
@@ -170,7 +171,7 @@ extension DockModel {
             let bot = recipients.first(where: { $0.id == request.profileID })
         {
             if hasQueuedOrRedirectingPrompt {
-                queueDraft()
+                queueDraft(resumePausedQueue: true)
                 return
             }
             sendDirectBotRequest(

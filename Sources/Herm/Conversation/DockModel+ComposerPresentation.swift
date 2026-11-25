@@ -6,6 +6,7 @@ extension DockModel {
         Publishers.MergeMany(
             Self.change($sessionID), Self.change($sessionStorageID), Self.change($sessionTranscriptLoadState),
             Self.change($isRestoringSession), Self.change($status), Self.change($isSending),
+            Self.change($interruptState),
             Self.change($composerFocusRequest), Self.change($pendingImages), Self.change($pendingPDFURLs),
             Self.change($attachedContexts), Self.change($replyQuote), Self.change($extractingImageTextIDs),
             Self.change($pendingPDFError), Self.change($pendingAttachmentError), Self.change($steeringError),

@@ -234,7 +234,8 @@ struct ChatComposerView: View {
         let hasComposerContent =
             !draftIsEmpty || !model.pendingImages.isEmpty || !model.pendingPDFURLs.isEmpty
             || !model.attachedContexts.isEmpty
-        let isResponding = model.status == .working || model.isSending
+        let isStopping = model.interruptState == .requesting
+        let isResponding = model.status == .working || model.isSending || isStopping
         // Mid-turn input redirects the turn, or queues when it can't (attachments, approvals).
         let isSteeringTurn = model.isSending && model.sessionID != nil
         let queuedPrompts = model.currentSessionQueuedPrompts
@@ -250,6 +251,11 @@ struct ChatComposerView: View {
         // An idle composer with a queue left by a stopped turn sends the next one.
         let canSubmit = hasComposerContent || (!model.isSending && !queuedPrompts.isEmpty)
         let showStop = isResponding && !hasComposerContent && !speechInput.isRecording
+        let stopLabel = isStopping ? "Stopping Herm response…" : "Stop Herm response"
+        let submitDisabled =
+            isStopping || model.isRestoringSession || !model.sessionActionsReady || model.isUpdatingSessionModel
+            || (!speechInput.isRecording
+                && (!canSubmit || model.isUpdatingSessionFast || (!isSteeringTurn && model.isSending)))
         // Keep stop reachable while a steer draft is typed or Hermes waits on a
         // clarification; the submit button already shows stop when the draft is empty.
         let showsInterruptControl =
@@ -597,21 +603,28 @@ struct ChatComposerView: View {
 
                                 if showsInterruptControl {
                                     Button(action: { onStop() }) {
-                                        DockIcon(.stop, weight: .fill)
-                                            .dockFont(.compactStatus, weight: .bold)
-                                            .foregroundStyle(Color.dockDestructive)
-                                            .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
-                                            .background(Circle().fill(Color.dockDestructiveFill.opacity(0.14)))
+                                        Group {
+                                            if isStopping {
+                                                DockLoadingIndicator(size: 12)
+                                            } else {
+                                                DockIcon(.stop, weight: .fill)
+                                                    .dockFont(.compactStatus, weight: .bold)
+                                                    .foregroundStyle(Color.dockDestructive)
+                                            }
+                                        }
+                                        .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
+                                        .background(Circle().fill(Color.dockDestructiveFill.opacity(0.14)))
                                     }
                                     .buttonStyle(.dockHover)
+                                    .disabled(!model.canRequestStop)
                                     .help(
-                                        model.status == .needsClarification
+                                        !isStopping && model.status == .needsClarification
                                             ? "Dismiss the question and interrupt Hermes"
-                                            : "Stop Herm response"
+                                            : stopLabel
                                     )
                                     .accessibilityLabel(
-                                        model.status == .needsClarification
-                                            ? "Dismiss clarification" : "Stop Herm response")
+                                        !isStopping && model.status == .needsClarification
+                                            ? "Dismiss clarification" : stopLabel)
                                 }
 
                                 // Submit and stop share one action, styled by the composer role.
@@ -627,43 +640,42 @@ struct ChatComposerView: View {
                                     }
                                 }) {
                                     ComposerSubmitLabel(
-                                        isEnabled: canSubmit && !model.isRestoringSession, isFullscreen: isFullscreen
+                                        isEnabled: !isStopping && canSubmit && !model.isRestoringSession,
+                                        isFullscreen: isFullscreen
                                     ) {
-                                        ComposerSubmitMark(stop: speechInput.isRecording || showStop ? 1 : 0)
-                                            .fill(
-                                                speechInput.isRecording
-                                                    ? Color.dockPrimaryText
-                                                    : showStop
-                                                        ? Color.dockDestructive
-                                                        : canSubmit
-                                                            ? Color.dockOnAccentText
-                                                            : Color.dockSecondaryText.opacity(0.5)
-                                            )
-                                            .frame(width: 14, height: 14)
-                                            .animation(
-                                                DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18),
-                                                value: speechInput.isRecording || showStop)
+                                        if showStop && isStopping {
+                                            DockLoadingIndicator(size: 12)
+                                        } else {
+                                            ComposerSubmitMark(stop: speechInput.isRecording || showStop ? 1 : 0)
+                                                .fill(
+                                                    speechInput.isRecording
+                                                        ? Color.dockPrimaryText
+                                                        : showStop
+                                                            ? Color.dockDestructive
+                                                            : canSubmit
+                                                                ? Color.dockOnAccentText
+                                                                : Color.dockSecondaryText.opacity(0.5)
+                                                )
+                                                .frame(width: 14, height: 14)
+                                                .animation(
+                                                    DockMotion.animation(reduceMotion: reduceMotion, duration: 0.18),
+                                                    value: speechInput.isRecording || showStop)
+                                        }
                                     }
                                 }
                                 .buttonStyle(.dockHover)
                                 .frame(width: 32, height: 32)
-                                .disabled(
-                                    model.isRestoringSession || !model.sessionActionsReady
-                                        || model.isUpdatingSessionModel
-                                        || (!speechInput.isRecording && !showStop
-                                            && (!canSubmit || model.isUpdatingSessionFast
-                                                || (!isSteeringTurn && model.isSending)))
-                                )
+                                .disabled(showStop ? !model.canRequestStop : submitDisabled)
                                 .accessibilityLabel(
                                     speechInput.isRecording
-                                        ? "Send voice prompt" : showStop ? "Stop Herm response" : submitLabel
+                                        ? "Send voice prompt" : showStop ? stopLabel : submitLabel
                                 )
                                 .keyboardShortcut(.return, modifiers: [.command])
                                 .help(
                                     speechInput.isRecording
                                         ? "Send voice prompt"
                                         : (showStop
-                                            ? "Stop Herm response"
+                                            ? stopLabel
                                             : "\(submitLabel) (↩; ⇧↩ for newline)")
                                 )
                             }
@@ -693,8 +705,8 @@ struct ChatComposerView: View {
                         }
                         .dockPadding(.top, 2)
                     }
-                    if let steeringError = model.steeringError {
-                        Text(steeringError)
+                    if let requestError = model.interruptState.failureMessage ?? model.steeringError {
+                        Text(requestError)
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockWarning)
                             .dockPadding(.top, 2)
@@ -778,6 +790,7 @@ struct ChatComposerView: View {
     }
 
     private func submitComposerInput() {
+        guard model.interruptState != .requesting else { return }
         liveDictation = ComposerDictation()
         dictation.stop()
         completions.close()

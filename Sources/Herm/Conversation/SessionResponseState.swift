@@ -6,6 +6,9 @@ struct SessionStopAttempt {
     let id: UUID
     var outcome: Outcome
     var tailPending = true
+    var queueResumed = false
+
+    var holdsQueue: Bool { outcome != .failed && !queueResumed }
 }
 
 struct SessionPendingSend {
