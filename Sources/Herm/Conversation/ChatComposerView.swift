@@ -23,9 +23,14 @@ struct ChatComposerView: View {
     var projectPicker: NewChatProjectPicker? = nil
     /// The session's folder and branch, shown in the tray under the input.
     var worktreeBar: WorktreePicker? = nil
+    var returnApprovalID: UUID? = nil
+    var generateFollowUp: (String) async -> String? = OnDeviceAssist.suggestFollowUp
 
     @State private var composerHeight: CGFloat = ComposerLayout.minHeight
     @State private var presentationRevision = 0
+    @State private var followUp: ComposerFollowUp?
+    @State private var isComposerFirstResponder = false
+    @AppStorage(ComposerTypingSettings.followUpSuggestionsKey) private var followUpSuggestionsEnabled = true
     @State private var contextCaret = 0
     @State private var inspectingContext: ChatContext?
     @State private var contextPreviewOwner: String?
@@ -46,8 +51,29 @@ struct ChatComposerView: View {
     var body: some View {
         let _ = presentationRevision
         let _ = HermPerformanceRecorder.countBody("ChatComposerView")
-        composerContent
+        let request = followUpRequest
+        let suggestion = followUp?.request == request ? followUp : nil
+        composerContent(suggestion: suggestion)
             .onReceive(model.composerPresentationChanges) { _ in presentationRevision &+= 1 }
+            .onReceive(model.$messages) { messages in
+                // @Published emits before the model stores the new transcript.
+                if canSuggestFollowUp,
+                    ComposerFollowUp.prompt(in: messages) != ComposerFollowUp.prompt(in: model.messages)
+                {
+                    presentationRevision &+= 1
+                }
+            }
+            .task(id: request) {
+                guard let request, followUp?.request != request else { return }
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled, followUpRequest == request,
+                    let text = await generateFollowUp(request.prompt), !Task.isCancelled, followUpRequest == request
+                else { return }
+                followUp = ComposerFollowUp(request: request, text: text)
+            }
+            .onChange(of: followUpSuggestionsEnabled) { _, enabled in
+                if !enabled { followUp = nil }
+            }
             .onReceive(speechInput.$isRecording.removeDuplicates().dropFirst()) { _ in presentationRevision &+= 1 }
             .onReceive(speechInput.$errorMessage.removeDuplicates().dropFirst()) { _ in presentationRevision &+= 1 }
             .onReceive(botMode.$avatarImages.dropFirst()) { _ in
@@ -181,6 +207,7 @@ struct ChatComposerView: View {
             }
             .onDisappear {
                 completions.close()
+                isComposerFirstResponder = false
                 if let historyMonitor {
                     NSEvent.removeMonitor(historyMonitor)
                     self.historyMonitor = nil
@@ -188,7 +215,20 @@ struct ChatComposerView: View {
             }
     }
 
-    private var composerContent: some View {
+    private var canSuggestFollowUp: Bool {
+        followUpSuggestionsEnabled && isComposerFirstResponder && composer.text.isEmpty
+            && model.composerIsEmptyForRecovery
+            && model.sessionID != nil && model.sessionActionsReady && !model.isRestoringSession
+            && model.status == .idle && !model.isSending && model.currentSessionQueuedPrompts.isEmpty
+            && !completions.isPresented && !dictation.isRecording && !speechInput.isRecording
+    }
+
+    private var followUpRequest: ComposerFollowUp.Request? {
+        guard canSuggestFollowUp, let prompt = ComposerFollowUp.prompt(in: model.messages) else { return nil }
+        return .init(owner: model.composerDraftKey, prompt: prompt)
+    }
+
+    private func composerContent(suggestion: ComposerFollowUp?) -> some View {
         // Evaluate submission capabilities based on draft text, images, and steering state
         let draftIsEmpty = composer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasComposerContent =
@@ -290,6 +330,15 @@ struct ChatComposerView: View {
                                 isFocused: isComposerFocused,
                                 onSubmit: submitComposerInput,
                                 onCompletionKey: completions.handleKey,
+                                onEmptyReturn: {
+                                    guard requiredContext == nil, let returnApprovalID else { return false }
+                                    return model.allowOnceFromEmptyComposer(requestID: returnApprovalID)
+                                },
+                                onFollowUpSuggestion: {
+                                    guard let suggestion, suggestion.request == followUpRequest else { return nil }
+                                    return suggestion.text
+                                },
+                                onFirstResponderChanged: { isComposerFirstResponder = $0 },
                                 onDropFiles: stageAttachmentFiles,
                                 onPaste: {
                                     if !NSEvent.modifierFlags.contains(.shift), model.stageLargePaste() { return true }
@@ -333,11 +382,7 @@ struct ChatComposerView: View {
 
                             // Placeholder text shares the editor's single visual gutter.
                             if composer.text.isEmpty {
-                                Text(placeholderText)
-                                    .dockFont(
-                                        .conversation, weight: .regular, design: DockThemeStyle.current.fontDesign
-                                    )
-                                    .foregroundStyle(Color.dockSecondaryText)
+                                composerPlaceholder(suggestion: suggestion?.text)
                                     .dockPadding(.leading, textContentInset)
                                     .allowsHitTesting(false)
                             }
@@ -489,9 +534,7 @@ struct ChatComposerView: View {
                     }
 
                     if !dictation.isRecording {
-                        // Integrated Bottom Toolbar Row
-                        HStack(alignment: .center, spacing: 8) {
-                            // Left Toolbar Group: Paperclip attachment button & Model selector dropdown menu
+                        ComposerToolbarLayout {
                             HStack(alignment: .center, spacing: 6) {
                                 // Attachment popover keeps secondary actions discoverable
                                 // without changing the composer's stable footprint.
@@ -513,11 +556,7 @@ struct ChatComposerView: View {
 
                                 composerModelPicker
                             }
-                            .layoutPriority(-1)
 
-                            Spacer(minLength: 4)
-
-                            // Right Toolbar Group: Thinking depth selector menu & circular submit button
                             HStack(alignment: .center, spacing: 8) {
                                 if let controlCenter {
                                     ChatQuotaChip(
@@ -526,7 +565,9 @@ struct ChatComposerView: View {
                                 if !model.isRestoringSession && model.sessionActionsReady {
                                     SessionContextRing(model: model)
                                 }
+                            }
 
+                            HStack(alignment: .center, spacing: 8) {
                                 if !speechInput.isRecording {
                                     Button {
                                         if dictation.isRecording { dictation.stop() } else { beginDictation() }
@@ -627,7 +668,6 @@ struct ChatComposerView: View {
                                 )
                             }
                         }
-                        .dockPadding(.top, 0)
                     }
 
                     // Voice Recording & Steering Status Messages
@@ -816,6 +856,22 @@ struct ChatComposerView: View {
         return DockSkinPresentation.current.composerPlaceholder
     }
 
+    private func composerPlaceholder(suggestion: String?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(suggestion ?? placeholderText)
+                .dockFont(.conversation, weight: .regular, design: DockThemeStyle.current.fontDesign)
+                .lineLimit(suggestion == nil ? nil : 1)
+            if suggestion != nil {
+                Text("Tab to insert")
+                    .dockFont(.control)
+                    .fixedSize()
+            }
+        }
+        .foregroundStyle(Color.dockSecondaryText)
+        .dockPadding(.trailing, suggestion == nil ? 0 : 16)
+        .accessibilityHidden(suggestion != nil)
+    }
+
     private var sessionModelDisplayName: String {
         if let id = model.sessionModelOptionID,
             let option = model.runtimeModelOptions.first(where: { $0.id == id })
@@ -911,6 +967,7 @@ private struct SessionContextRing: View {
                     Text(compacting ? "Compacting" : "\(percent)%")
                         .dockFont(.metadata, weight: .medium, design: .monospaced)
                         .foregroundStyle(tint)
+                        .fixedSize()
                         .contentTransition(.numericText(value: Double(percent)))
                         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: percent)
                 }

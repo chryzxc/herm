@@ -414,7 +414,7 @@ struct ConversationRenderSnapshotTests {
                     .frame(maxWidth: metrics.readingWidth)
                     .frame(maxWidth: .infinity)
                 }
-            } composer: {
+            } composer: { _ in
                 composer
             }
         }

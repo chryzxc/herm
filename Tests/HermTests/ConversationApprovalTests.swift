@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import Herm
@@ -185,6 +187,77 @@ struct ConversationApprovalTests {
         #expect(record.approval.choices == ["once", "deny"])
         request(model, session: "current", id: "one")
         #expect(model.currentConversationApproval?.id == record.id)
+    }
+
+    @Test(arguments: [false, true])
+    func enterInEmptyComposerOnlyAnswersTheVisibleApproval(isVisible: Bool) async throws {
+        _ = NSApplication.shared
+        let rpc = ConversationApprovalRPC()
+        let model = makeModel(rpc)
+        defer {
+            rpc.response?.resume(returning: ["resolved": 1])
+            model.shutdown()
+        }
+        model.sessionProfileID = "builder"
+        request(model, session: "current", id: "one")
+        let record = try #require(model.currentConversationApproval)
+        let metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: false)
+        let layout = ConversationComposerLayout(showsWelcome: false, hermFaceID: nil) {
+            ScrollView {
+                if !isVisible { Color.clear.frame(height: 800) }
+                ConversationPromptRows(
+                    model: model, conversationMetrics: metrics, conversationApproval: record, transcriptMode: true)
+            }
+        } composer: { id in
+            ChatComposerView(
+                model: model, composer: model.composer, speechInput: SpeechInput(), botMode: BotModeModel(),
+                onStop: {}, returnApprovalID: id)
+        }
+        let size = NSRect(x: 0, y: 0, width: 540, height: 580)
+        let host = NSHostingView(rootView: layout.frame(width: size.width, height: size.height))
+        let window = NSWindow(contentRect: size, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        for _ in 0..<3 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        func editor(in view: NSView) -> ComposerInputTextView? {
+            if let text = view as? ComposerInputTextView { return text }
+            return view.subviews.lazy.compactMap { editor(in: $0) }.first
+        }
+        let text = try #require(editor(in: host))
+        try #require(window.makeFirstResponder(text))
+        let enter = try #require(
+            NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, characters: "\r",
+                charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        text.keyDown(with: enter)
+        if isVisible {
+            try await waitUntil { rpc.response != nil }
+            #expect(rpc.requests.last { $0.0 == "approval.respond" }?.1["request_id"] as? String == "one")
+            #expect(rpc.requests.last { $0.0 == "approval.respond" }?.1["choice"] as? String == "once")
+        } else {
+            await Task.yield()
+            #expect(!rpc.requests.contains { $0.0 == "approval.respond" })
+        }
+    }
+
+    @Test func emptyComposerApprovalDoesNotReplaceDraftOrAnswerAStaleCard() throws {
+        let rpc = ConversationApprovalRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        model.sessionProfileID = "builder"
+        request(model, session: "current", id: "one")
+        let first = try #require(model.currentConversationApproval?.id)
+        request(model, session: "current", id: "two")
+        let current = try #require(model.currentConversationApproval?.id)
+        #expect(!model.allowOnceFromEmptyComposer(requestID: first))
+        model.draft = "Keep this draft"
+        #expect(!model.allowOnceFromEmptyComposer(requestID: current))
+        #expect(model.draft == "Keep this draft")
     }
 
     @Test func replacementAndCancellationKeepExactIdentity() throws {

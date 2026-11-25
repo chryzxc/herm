@@ -1,13 +1,22 @@
 import SwiftUI
 
+struct VisibleApprovalShortcutKey: PreferenceKey {
+    static let defaultValue: UUID? = nil
+
+    static func reduce(value: inout UUID?, nextValue: () -> UUID?) {
+        value = nextValue() ?? value
+    }
+}
+
 /// Keeps the same composer mounted as an empty chat becomes a conversation.
 struct ConversationComposerLayout<Transcript: View, Composer: View>: View {
     let showsWelcome: Bool
     let hermFaceID: String?
     var trailingContentInset: CGFloat = 0
     @ViewBuilder var transcript: Transcript
-    @ViewBuilder var composer: Composer
+    @ViewBuilder var composer: (UUID?) -> Composer
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var visibleApprovalID: UUID?
 
     var body: some View {
         ConversationComposerPlacement(progress: showsWelcome ? 0 : 1) {
@@ -23,8 +32,9 @@ struct ConversationComposerLayout<Transcript: View, Composer: View>: View {
                 .opacity(showsWelcome ? 0 : 1)
                 .accessibilityHidden(showsWelcome)
                 .allowsHitTesting(!showsWelcome)
-            composer
+            composer(showsWelcome ? nil : visibleApprovalID)
         }
+        .onPreferenceChange(VisibleApprovalShortcutKey.self) { visibleApprovalID = $0 }
         .animation(
             reduceMotion || !DockThemeStyle.current.animates
                 ? nil : .timingCurve(0.22, 1, 0.36, 1, duration: 0.48),

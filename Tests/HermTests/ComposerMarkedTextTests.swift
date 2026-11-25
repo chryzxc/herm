@@ -32,12 +32,15 @@ struct ComposerMarkedTextTests {
         return (text, window, spy)
     }
 
-    private func key(_ keyCode: UInt16, _ characters: String, in window: NSWindow) throws -> NSEvent {
+    private func key(
+        _ keyCode: UInt16, _ characters: String, in window: NSWindow,
+        modifiers: NSEvent.ModifierFlags = [], isRepeat: Bool = false
+    ) throws -> NSEvent {
         try #require(
             NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
                 windowNumber: window.windowNumber, context: nil, characters: characters,
-                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode))
+                charactersIgnoringModifiers: characters, isARepeat: isRepeat, keyCode: keyCode))
     }
 
     private func compose(_ text: ComposerInputTextView) {
@@ -77,5 +80,56 @@ struct ComposerMarkedTextTests {
         text.keyDown(with: try key(36, "\r", in: window))
 
         #expect(spy.submits == 1)
+    }
+
+    @Test(arguments: [UInt16(36), UInt16(76)])
+    func returnShortcutRunsOnlyForAnEmptyEditorAndAFreshKeyPress(keyCode: UInt16) throws {
+        let (text, window, spy) = makeComposer()
+        var shortcuts = 0
+        text.onEmptyReturn = {
+            shortcuts += 1
+            return true
+        }
+
+        text.keyDown(with: try key(keyCode, "\r", in: window))
+        #expect(shortcuts == 1)
+        #expect(spy.submits == 0)
+
+        text.keyDown(with: try key(keyCode, "\r", in: window, isRepeat: true))
+        text.string = "A draft"
+        text.keyDown(with: try key(keyCode, "\r", in: window))
+        #expect(shortcuts == 1)
+        #expect(spy.submits == 2)
+    }
+
+    @Test func followUpDoesNotInterceptCompletionOrModifiedTab() throws {
+        let (text, window, spy) = makeComposer()
+        var requests = 0
+        text.onFollowUpSuggestion = {
+            requests += 1
+            return "Follow up"
+        }
+        requests = 0
+        text.onCompletionKey = { $0 == .tab }
+        text.keyDown(with: try key(48, "\t", in: window))
+        text.keyDown(with: try key(48, "\t", in: window, modifiers: .shift))
+        #expect(requests == 0)
+        #expect(spy.submits == 0)
+        #expect(text.string != "Follow up")
+    }
+
+    @Test func followUpDoesNotInterceptMarkedText() throws {
+        let (text, window, _) = makeComposer()
+        var requests = 0
+        text.onFollowUpSuggestion = {
+            requests += 1
+            return "Follow up"
+        }
+        requests = 0
+        compose(text)
+        try #require(text.hasMarkedText())
+        text.keyDown(with: try key(48, "\t", in: window))
+        #expect(requests == 0)
+        #expect(text.string != "Follow up")
     }
 }

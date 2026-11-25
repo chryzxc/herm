@@ -784,12 +784,13 @@ extension DockPopover {
     func chatConversationContent(railWidth: CGFloat) -> some View {
         ConversationComposerLayout(
             showsWelcome: model.displayedTranscriptMessages.isEmpty
+                && model.currentConversationApproval?.resolved != false
                 && (model.sessionTranscriptPreview != nil || model.status != .working) && !speechInput.isRecording,
             hermFaceID: conversationHermFaceID,
             trailingContentInset: railWidth
         ) {
             conversation(trailingContentInset: railWidth)
-        } composer: {
+        } composer: { visibleApprovalID in
             ChatComposerView(
                 model: model,
                 composer: model.composer,
@@ -816,7 +817,8 @@ extension DockPopover {
                         canMoveChat: model.canMoveSessionWorkspace,
                         newTask: { await startWorktreeTask(from: scope.repositoryPath) }
                     )
-                }
+                },
+                returnApprovalID: speechInput.isRecording ? nil : visibleApprovalID
             )
             .padding(.trailing, railWidth)
         }

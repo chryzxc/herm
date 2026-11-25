@@ -103,6 +103,7 @@ struct ConversationPromptRows: View {
             default: resolved ? "Resolved" : isPending ? "Sending…" : "Needs approval"
             }
         let alwaysAllowCaption = ApprovalPresentation.alwaysAllowCaption(for: approval)
+        let enterHint = "Return or Enter allows once when this card is focused or visible above an empty composer."
         return DockCallout(
             tone: .warning, icon: .shieldWarning, title: "Approval required", message: approval.title,
             badge: resolved ? "Resolved" : badge
@@ -138,11 +139,28 @@ struct ConversationPromptRows: View {
                                         title: "Allow once", pendingTitle: "Allowing…", isPending: isPending,
                                         tint: .dockPrimaryText
                                     )
-                                    Spacer(minLength: 4)
-                                    approvalKeyHint("Return")
+                                    DockIcon(.arrowElbowDownLeft, size: 16, weight: .fill)
+                                        .dockPill(compact: true, outline: .dockBorderLight)
+                                        .accessibilityHidden(true)
                                 }
                             }
                             .buttonStyle(DockPrimaryButtonStyle())
+                            .help(enterHint)
+                            .accessibilityHint(enterHint)
+                            .background {
+                                if let id = conversationApproval?.id, canAnswerApproval, !isPending {
+                                    GeometryReader { geometry in
+                                        let button = CGRect(origin: .zero, size: geometry.size)
+                                        let viewport = geometry.bounds(of: .scrollView(axis: .vertical))
+                                        Color.clear.preference(
+                                            key: VisibleApprovalShortcutKey.self,
+                                            value: viewport?.contains(button) == true ? id : nil
+                                        )
+                                    }
+                                    .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
+                                }
+                            }
                         }
                         if choices.contains(ApprovalChoice.session) {
                             Button {
@@ -220,8 +238,9 @@ struct ConversationPromptRows: View {
         .onChange(of: approvalCardIsFocused) { _, focused in
             approvalKeyboardFocus = focused && NSApp.currentEvent?.type == .keyDown
         }
-        .onKeyPress(keys: [.return, .delete]) { press in
-            let key: ApprovalCardKey = press.key == .return ? .returnKey : .deleteKey
+        .onKeyPress(keys: [.return, "\u{3}", .delete], phases: .down) { press in
+            guard press.modifiers.intersection([.shift, .command, .option, .control]).isEmpty else { return .ignored }
+            let key: ApprovalCardKey = press.key == .delete ? .deleteKey : .returnKey
             guard
                 let choice = ApprovalCardKeyAction.choice(
                     for: key, isFocused: approvalCardIsFocused, isPending: isPending || resolved),

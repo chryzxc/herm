@@ -9,6 +9,9 @@ struct ComposerInputEditor: NSViewRepresentable {
     let isFocused: Bool
     let onSubmit: () -> Void
     let onCompletionKey: (ComposerCompletionKey) -> Bool
+    var onEmptyReturn: (() -> Bool)? = nil
+    var onFollowUpSuggestion: (() -> String?)? = nil
+    var onFirstResponderChanged: ((Bool) -> Void)? = nil
     var onDropFiles: (([URL]) -> Void)? = nil
     var onPaste: (() -> Bool)? = nil
     let onFocusChanged: (Bool) -> Void
@@ -39,6 +42,9 @@ struct ComposerInputEditor: NSViewRepresentable {
         }
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
+        textView.onEmptyReturn = onEmptyReturn
+        textView.onFollowUpSuggestion = onFollowUpSuggestion
+        textView.onFirstResponderChanged = onFirstResponderChanged
         textView.animatesFileDrop = DockMotion.isEnabled(reduceMotion: context.environment.accessibilityReduceMotion)
         textView.onDropFiles = onDropFiles
         textView.onPaste = onPaste
@@ -84,6 +90,9 @@ struct ComposerInputEditor: NSViewRepresentable {
         context.coordinator.parent = self
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
+        textView.onEmptyReturn = onEmptyReturn
+        textView.onFollowUpSuggestion = onFollowUpSuggestion
+        textView.onFirstResponderChanged = onFirstResponderChanged
         textView.animatesFileDrop = DockMotion.isEnabled(reduceMotion: context.environment.accessibilityReduceMotion)
         textView.onDropFiles = onDropFiles
         textView.onPaste = onPaste
