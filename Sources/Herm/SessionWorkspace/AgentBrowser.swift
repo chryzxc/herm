@@ -3,6 +3,7 @@ import Combine
 import ImageIO
 import SwiftUI
 import WebKit
+import os
 
 /// A headless Chromium shared with Hermes: Herm launches it, points Hermes' browser
 /// tools at it (`browser.manage connect`, same as `/browser connect`) and mirrors the
@@ -115,7 +116,7 @@ final class AgentBrowser: ObservableObject {
     @Published private(set) var state = State.off
     @Published private(set) var pages: [Page] = []
     @Published private(set) var activeTargetID: String?
-    @Published private(set) var consoleErrors: [String] = []
+    let console = BrowserConsoleBuffer()
     @Published private(set) var navigation = BrowserNavigationState()
     /// A page's alert/confirm/prompt/beforeunload; the page is frozen until it's answered.
     @Published private(set) var dialog: Dialog?
@@ -200,7 +201,12 @@ final class AgentBrowser: ObservableObject {
     }
     /// Canvases on screen. The screencast only runs while someone is watching, so a
     /// hidden Browser tab costs nothing; Hermes' own CDP use is unaffected.
-    var viewers = 0 { didSet { if (viewers > 0) != (oldValue > 0) { scheduleViewport() } } }
+    var viewers = 0 {
+        didSet {
+            guard (viewers > 0) != (oldValue > 0) else { return }
+            if viewers > 0 { scheduleViewport() } else { stopScreencast() }
+        }
+    }
 
     var activePage: Page? { pages.first { $0.id == activeTargetID } }
     var isOn: Bool { state != .off }
@@ -211,6 +217,10 @@ final class AgentBrowser: ObservableObject {
     /// New tabs' cookies per host as last copied or received, the baseline for `receiveSignIns`.
     private var webKitSignIns: [String: BrowserCookieJar] = [:]
     private var cdpURL: String?
+    private weak var turnClient: (any HermesRPCClientProtocol)?
+    private var turnPreparation: (connection: UUID, task: Task<Void, Never>)?
+    private var preparedConnection: UUID?
+    private var turnRetryAfter: ContinuousClock.Instant?
     private var lifecycleGeneration = UUID()
     @Published private(set) var handoffFailed = false
 
@@ -218,21 +228,33 @@ final class AgentBrowser: ObservableObject {
     @discardableResult
     func reconnectHermes() -> Task<Void, Never>? {
         // The CDP address is this Mac's loopback; a remote backend would dial its own host.
-        guard state == .running, GatewayConnectionStore.isLocalBackend, let cdpURL, let model else { return nil }
+        guard state == .running, let cdpURL else { return nil }
+        let model = model
+        let client = turnClient
+        // A turn client is bound only after the browser store verifies the gateway is local.
+        guard client != nil || (GatewayConnectionStore.isLocalBackend && owns(model)) else { return nil }
         let generation = lifecycleGeneration
         let previous = Self.connectionTask
         Self.connectionTask = Task { [weak self] in
             await previous?.value
-            guard let self, lifecycleGeneration == generation, owns(model), state == .running,
+            guard let self, lifecycleGeneration == generation, client != nil || owns(model), state == .running,
                 self.cdpURL == cdpURL
             else { return }
             do {
-                try await model.setHermesBrowser(cdpURL: cdpURL)
-                if lifecycleGeneration == generation, owns(model), state == .running, self.cdpURL == cdpURL {
+                if let client {
+                    try await HermesControlRPC(client: client).setBrowser(cdpURL: cdpURL, profile: profileID)
+                } else {
+                    try await model?.setHermesBrowser(cdpURL: cdpURL)
+                }
+                if lifecycleGeneration == generation, client != nil || owns(model), state == .running,
+                    self.cdpURL == cdpURL
+                {
                     handoffFailed = false
                 }
             } catch {
-                if lifecycleGeneration == generation, owns(model), state == .running, self.cdpURL == cdpURL {
+                if lifecycleGeneration == generation, client != nil || owns(model), state == .running,
+                    self.cdpURL == cdpURL
+                {
                     handoffFailed = true
                 }
             }
@@ -293,6 +315,36 @@ final class AgentBrowser: ObservableObject {
 
     // MARK: Lifecycle
 
+    func prepareForTurn(client: HermesRPCClientProtocol, connection: UUID) async {
+        guard !Task.isCancelled else { return }
+        if preparedConnection == connection, state == .running, !handoffFailed { return }
+        if let turnRetryAfter, .now < turnRetryAfter { return }
+        if let turnPreparation, turnPreparation.connection == connection {
+            await turnPreparation.task.value
+            return
+        }
+        turnClient = client
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            if !isActive { start() }
+            if state == .starting {
+                await startupTask?.value
+            } else {
+                await reconnectHermes()?.value
+            }
+            guard turnPreparation?.connection == connection else { return }
+            turnPreparation = nil
+            if state == .running, !handoffFailed {
+                preparedConnection = connection
+                turnRetryAfter = nil
+            } else {
+                turnRetryAfter = .now.advanced(by: .seconds(15))
+            }
+        }
+        turnPreparation = (connection, task)
+        await task.value
+    }
+
     func start() {
         switch state {
         case .starting, .running: return
@@ -301,7 +353,7 @@ final class AgentBrowser: ObservableObject {
         state = .starting
         startupTask = Task {
             do {
-                guard model != nil else { throw Self.error("No Hermes session is available.") }
+                guard model != nil || turnClient != nil else { throw Self.error("No Hermes session is available.") }
                 let endpoint = try await launch()
                 try Task.checkCancellation()
                 let cdp = CDPConnection(url: endpoint.ws)
@@ -334,11 +386,12 @@ final class AgentBrowser: ObservableObject {
                     try await attach(id)
                 }
                 try Task.checkCancellation()
-                browserDidStart(endpoint: "http://127.0.0.1:\(endpoint.port)")
+                let handoff = browserDidStart(endpoint: "http://127.0.0.1:\(endpoint.port)")
                 if let url = pendingURL {
                     pendingURL = nil
                     navigate(url)
                 }
+                await handoff?.value
             } catch {
                 if !Task.isCancelled { fail(error.localizedDescription) }
             }
@@ -347,13 +400,21 @@ final class AgentBrowser: ObservableObject {
 
     func stop() {
         let model = model
+        let client = turnClient
         let previous = Self.connectionTask
         let profileID = profileID
-        Self.connectionTask = Task {
-            await previous?.value
-            guard model.map({ $0.profileScopeID == profileID }) == true else { return }
-            try? await model?.setHermesBrowser(cdpURL: nil)
+        if isActive {
+            Self.connectionTask = Task {
+                await previous?.value
+                if let client {
+                    try? await HermesControlRPC(client: client).setBrowser(cdpURL: nil, profile: profileID)
+                } else if model?.profileScopeID == profileID {
+                    try? await model?.setHermesBrowser(cdpURL: nil)
+                }
+            }
         }
+        turnPreparation = nil
+        turnClient = nil
         teardown()
         state = .off
     }
@@ -383,6 +444,8 @@ final class AgentBrowser: ObservableObject {
 
     private func teardown() {
         lifecycleGeneration = UUID()
+        preparedConnection = nil
+        turnRetryAfter = nil
         pointerTracker?.stop()
         pointerTracker = nil
         handoffFailed = false
@@ -411,7 +474,7 @@ final class AgentBrowser: ObservableObject {
         navigation = BrowserNavigationState()
         activeTargetID = nil
         pages = []
-        consoleErrors = []
+        console.clear()
         dialog = nil
         annotating = false
     }
@@ -570,7 +633,7 @@ final class AgentBrowser: ObservableObject {
         if let shownSession { tabs[shownSession] = targetID }
         navigationRequestID = UUID()
         navigation = BrowserNavigationState()
-        consoleErrors = []
+        console.clear()
         dialog = nil
         annotateContextID = nil
         updatePointer(nil)
@@ -681,11 +744,7 @@ final class AgentBrowser: ObservableObject {
                 "mobile": viewport.isMobile,
             ], session: sid)
         guard sessionID == sid, viewport == screencastViewport else { return }
-        guard viewers > 0 else {
-            if screencast != nil { cdp.fire("Page.stopScreencast", session: sid) }
-            screencast = nil
-            return
-        }
+        guard viewers > 0 else { return }
         guard screencast?.sessionID != sid || screencast?.viewport != viewport else { return }
         // Flush the new layout before capture. A frame can still arrive from the old compositor surface.
         _ = try? await cdp.send("Page.getLayoutMetrics", session: sid)
@@ -695,6 +754,12 @@ final class AgentBrowser: ObservableObject {
         let next = BrowserScreencast(sessionID: sid, viewport: viewport)
         screencast = next
         restartScreencast(next, on: cdp)
+    }
+
+    private func stopScreencast() {
+        guard let stream = screencast else { return }
+        screencast = nil
+        cdp?.fire("Page.stopScreencast", session: stream.sessionID)
     }
 
     private func restartScreencast(_ stream: BrowserScreencast, on cdp: CDPConnection) {
@@ -708,7 +773,7 @@ final class AgentBrowser: ObservableObject {
     /// echo until the next damage (~500ms) and always dropped the same caret blink phase.
     static func screencastParameters(pixelSize: CGSize) -> [String: Any] {
         [
-            "format": "jpeg", "quality": 95, "everyNthFrame": 1,
+            "format": "jpeg", "quality": 85, "everyNthFrame": 1,
             "maxWidth": Int(pixelSize.width), "maxHeight": Int(pixelSize.height),
         ]
     }
@@ -768,7 +833,7 @@ final class AgentBrowser: ObservableObject {
         case "Page.frameNavigated":
             guard let frame = params["frame"] as? [String: Any], frame["parentId"] == nil else { return }
             mainFrameID = frame["id"] as? String
-            if !consoleErrors.isEmpty { consoleErrors = [] }
+            console.clear()
             if let url = frame["url"] as? String {
                 setActivePageURL(frame["unreachableUrl"] as? String ?? (url + (frame["urlFragment"] as? String ?? "")))
             }
@@ -859,7 +924,7 @@ final class AgentBrowser: ObservableObject {
     }
 
     private func appendConsole(_ line: String) {
-        consoleErrors = Array((consoleErrors + [String(line.prefix(2000))]).suffix(50))
+        console.append(line)
     }
 
     // MARK: Profile sign-ins
@@ -1221,6 +1286,7 @@ final class CDPConnection {
     struct Frame: Sendable { let image: CGImage }
 
     private let task: URLSessionWebSocketTask
+    private let frameSession = OSAllocatedUnfairLock<String?>(initialState: nil)
     private var nextID = 0
     /// CDP results are plain JSON values, only touched on the main actor.
     private struct Reply: @unchecked Sendable { let value: [String: Any] }
@@ -1247,6 +1313,7 @@ final class CDPConnection {
     }
 
     func close() {
+        frameSession.withLock { $0 = nil }
         onEvent = nil
         onClose = nil
         task.cancel(with: .goingAway, reason: nil)
@@ -1255,6 +1322,11 @@ final class CDPConnection {
 
     @discardableResult
     private func write(_ method: String, _ params: [String: Any], session: String?) -> Int {
+        if method == "Page.startScreencast" {
+            frameSession.withLock { $0 = session }
+        } else if method == "Page.stopScreencast" {
+            frameSession.withLock { if $0 == session { $0 = nil } }
+        }
         nextID += 1
         let id = nextID
         var message: [String: Any] = ["id": id, "method": method, "params": params]
@@ -1270,7 +1342,7 @@ final class CDPConnection {
     }
 
     private func receiveNext() {
-        task.receive { [weak self] result in
+        task.receive { [weak self, frameSession] result in
             switch result {
             case .failure:
                 Task { @MainActor in
@@ -1279,7 +1351,7 @@ final class CDPConnection {
                     self.onClose?()
                 }
             case .success(let message):
-                let object = Self.decode(message)
+                let object = Self.decode(message) { session in frameSession.withLock { $0 == session } }
                 // Ack before the main-actor hop: Chrome encodes the next frame while this one is
                 // drawn. Still one frame in flight, since the next receive waits for the dispatch.
                 if object?["method"] as? String == "Page.screencastFrame",
@@ -1297,7 +1369,9 @@ final class CDPConnection {
         }
     }
 
-    nonisolated private static func decode(_ message: URLSessionWebSocketTask.Message) -> [String: Any]? {
+    nonisolated static func decode(
+        _ message: URLSessionWebSocketTask.Message, wantsFrame: (String) -> Bool
+    ) -> [String: Any]? {
         let data: Data? =
             switch message {
             case .string(let text): text.data(using: .utf8)
@@ -1311,8 +1385,9 @@ final class CDPConnection {
             var params = object["params"] as? [String: Any]
         {
             // Decode on the socket callback, before handing the frame to the main actor.
-            params["decodedFrame"] = (params.removeValue(forKey: "data") as? String).flatMap(decodeFrame).map {
-                Frame(image: $0)
+            let payload = params.removeValue(forKey: "data") as? String
+            if let session = object["sessionId"] as? String, wantsFrame(session) {
+                params["decodedFrame"] = payload.flatMap(decodeFrame).map { Frame(image: $0) }
             }
             object["params"] = params
         }

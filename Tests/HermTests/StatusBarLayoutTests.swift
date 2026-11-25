@@ -42,6 +42,7 @@ struct StatusBarLayoutTests {
         let defaults = try #require(UserDefaults(suiteName: domain))
         defer { defaults.removePersistentDomain(forName: domain) }
         let preferences = StatusBarPreferences(defaults: defaults)
+        preferences.isEnabled = true
         preferences.set(.stalled, on: true)
         preferences.set(.nextMeeting, on: false)
         let status = WorkspaceStatusModel(preferences: preferences)
@@ -66,6 +67,7 @@ struct StatusBarLayoutTests {
         let defaults = try #require(UserDefaults(suiteName: domain))
         defer { defaults.removePersistentDomain(forName: domain) }
         let preferences = StatusBarPreferences(defaults: defaults)
+        preferences.isEnabled = true
         preferences.set(.nextMeeting, on: false)
         var now = Date.now
         let status = WorkspaceStatusModel(preferences: preferences, now: { now })
@@ -95,6 +97,7 @@ struct StatusBarLayoutTests {
         let defaults = try #require(UserDefaults(suiteName: domain))
         defer { defaults.removePersistentDomain(forName: domain) }
         let preferences = StatusBarPreferences(defaults: defaults)
+        preferences.isEnabled = true
         preferences.set(.nextMeeting, on: false)
         let now = Date(timeIntervalSinceReferenceDate: 100)
         let status = WorkspaceStatusModel(preferences: preferences, now: { now })
@@ -232,6 +235,7 @@ struct StatusBarLayoutTests {
         let defaults = try #require(UserDefaults(suiteName: domain))
         defer { defaults.removePersistentDomain(forName: domain) }
         let preferences = StatusBarPreferences(defaults: defaults)
+        preferences.isEnabled = true
         preferences.set(.nextMeeting, on: false)
         preferences.set(.agentActivity, on: true)
         let status = WorkspaceStatusModel(preferences: preferences)
@@ -394,6 +398,22 @@ struct StatusBarLayoutTests {
         #expect(
             WorkspaceStatusModel.failedTest(
                 in: [failed, (run(0, at: now.addingTimeInterval(1)), nil, UUID())], scope: scope) == nil)
+    }
+
+    @Test func gitRevisionDoesNotChangeTerminalDiscoveryScope() {
+        let model = WorkspaceStatusModel()
+        let initial = WorkspaceStatusModel.TerminalScope(
+            identity: "session", directory: "/work", repositoryID: "repo", fingerprint: "first")
+        let current = WorkspaceStatusModel.TerminalScope(
+            identity: "session", directory: "/work", repositoryID: "repo", fingerprint: "second")
+        #expect(initial != current)
+        #expect(initial.processes == current.processes)
+        model.updateTerminalScope(initial, tests: true)
+        model.updateTerminalScope(current, tests: true)
+        #expect(model.terminalScope?.fingerprint == "second")
+        model.updateTerminalScope(current, tests: false)
+        #expect(model.terminalScope?.fingerprint == nil)
+        #expect(model.terminalScope?.processes == initial.processes)
     }
 
     @Test func durationsReadShort() {

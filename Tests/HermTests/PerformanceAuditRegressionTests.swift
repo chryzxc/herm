@@ -397,6 +397,26 @@ struct PerformanceAuditRegressionTests {
         #expect(store.workspace(for: otherKey) === retained)
         #expect(store.workspace(for: key) !== deleted)
     }
+
+    @Test func browserTabUpdatesReachOnlyTheirOwningInspector() {
+        let store = SessionBrowserStore()
+        let selected = SessionBrowserKey(profileID: "profile", sessionID: "selected")
+        let background = SessionBrowserKey(profileID: "profile", sessionID: "background")
+        let selectedWorkspace = store.workspace(for: selected)
+        let backgroundWorkspace = store.workspace(for: background)
+        var globalUpdates = 0
+        var selectedUpdates = 0
+        let global = store.objectWillChange.sink { globalUpdates += 1 }
+        let scoped = store.presentationChanges(for: selected).sink { selectedUpdates += 1 }
+
+        _ = backgroundWorkspace.addTab()
+        #expect(selectedUpdates == 0 && globalUpdates == 0)
+        _ = selectedWorkspace.addTab()
+        #expect(selectedUpdates > 0 && globalUpdates == 0)
+        store.presentation = selected
+        #expect(globalUpdates == 1)
+        withExtendedLifetime((scoped, global)) {}
+    }
 }
 
 @MainActor

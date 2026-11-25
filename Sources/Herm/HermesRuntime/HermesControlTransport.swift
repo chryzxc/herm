@@ -145,6 +145,25 @@ final class HermesControlRPC {
         self.client = client
     }
 
+    func setBrowser(cdpURL: String?, profile: String?) async throws {
+        var scope: [String: Any] = [:]
+        if let profile, !profile.isEmpty { scope["profile"] = profile }
+        if let cdpURL {
+            var statusParams = scope
+            statusParams["action"] = "status"
+            let status = try await client.request(HermesFeatureIDs.ID.browserManage.rawValue, params: statusParams)
+            if status["connected"] as? Bool == true, status["url"] as? String == cdpURL { return }
+        }
+        var params = scope
+        params["action"] = cdpURL == nil ? "disconnect" : "connect"
+        if let cdpURL { params["url"] = cdpURL }
+        let result = try await client.request(HermesFeatureIDs.ID.browserManage.rawValue, params: params)
+        if cdpURL != nil, result["connected"] as? Bool != true {
+            let detail = (result["messages"] as? [String])?.last ?? "Hermes could not connect to the browser."
+            throw NSError(domain: "Herm.AgentBrowser", code: 1, userInfo: [NSLocalizedDescriptionKey: detail])
+        }
+    }
+
     func sessionControl(sessionID: String, profileID: String?) async throws -> [String: Any] {
         try await client.request(
             HermesFeatureIDs.ID.sessionControlRead.rawValue,

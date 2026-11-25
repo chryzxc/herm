@@ -55,11 +55,14 @@ struct SessionInspector: View {
     @State private var closingTerminal = false
     @State private var recentClosed: [String] = []
     @State private var restoringPresentation = false
-    /// Extra Terminal/Browser instances opened from +. They stay mounted while
-    /// another tab is selected so their shells and pages keep running.
-    @State private var terminalExtras: [ExtraTab] = []
+    @State private var restoredWorkspace: String?
+    @State private var terminalExtrasByWorkspace: [String: [ExtraTab]] = [:]
+    private var terminalExtras: [ExtraTab] {
+        get { terminalExtrasByWorkspace[WorkspaceIdentity.session(model)] ?? [] }
+        nonmutating set { terminalExtrasByWorkspace[WorkspaceIdentity.session(model)] = newValue }
+    }
     private let messageTabs = SessionMessageTabs.shared
-    @ObservedObject private var browsers = SessionBrowserStore.shared
+    private let browsers = SessionBrowserStore.shared
     @ObservedObject private var filePreview = FilePreviewCenter.shared
     @State private var attachmentDiffID = UUID()
     @State private var selectedExtraID: UUID?
@@ -74,8 +77,6 @@ struct SessionInspector: View {
         let id: UUID
         let kind: Section
         let number: Int
-        /// Extra surfaces belong to the session where they were opened.
-        var sessionID: String?
     }
 
     private var matchingTerminalRecipes: [VerificationRecipe] {
@@ -116,7 +117,7 @@ struct SessionInspector: View {
     private var extras: [ExtraTab] {
         terminalExtras
             + (browserWorkspace?.extras.enumerated().map {
-                ExtraTab(id: $0.element.id, kind: .browser, number: $0.offset + 2, sessionID: model.navigationSessionID)
+                ExtraTab(id: $0.element.id, kind: .browser, number: $0.offset + 2)
             } ?? [])
     }
 
@@ -174,13 +175,12 @@ struct SessionInspector: View {
                 }
                 ForEach(extras) { extra in
                     extraContent(extra)
-                        .opacity(isVisible(extra) && selectedPreview == nil ? 1 : 0)
                         .environment(
                             \.dockHostVisible,
-                            hostVisible && isVisible(extra) && selectedExtraID == extra.id && selectedPreview == nil
+                            hostVisible && selectedExtraID == extra.id && selectedPreview == nil
                         )
                         .dockPadding(.horizontal, extra.kind == .browser ? 0 : DockSpacing.inspectorInset)
-                        .opacity(selectedExtraID == extra.id ? 1 : 0)
+                        .opacity(selectedExtraID == extra.id && selectedPreview == nil ? 1 : 0)
                         .allowsHitTesting(selectedExtraID == extra.id && selectedPreview == nil)
                 }
             }
@@ -228,8 +228,15 @@ struct SessionInspector: View {
         }
         .onReceive(model.inspectorPresentationChanges) { _ in modelRevision &+= 1 }
         .onReceive(control.$projectFacts.dropFirst()) { _ in modelRevision &+= 1 }
+        .onReceive(browsers.presentationChanges(for: hostVisible ? model.browserSessionKey : nil)) { _ in
+            modelRevision &+= 1
+        }
         .task(id: WorkspaceIdentity.session(model)) {
+            let workspace = WorkspaceIdentity.session(model)
             restoringPresentation = true
+            closingExtra = nil
+            closingTerminal = false
+            selectedExtraID = nil
             let messageSelection = messageTabs.workspace(WorkspaceIdentity.session(model)).selection
             if let legacy = UserDefaults.standard.string(forKey: "sessionInspector.selectedSection"),
                 legacy == "Activity"
@@ -249,20 +256,11 @@ struct SessionInspector: View {
                 for id in (saved.terminalTabs ?? []).prefix(16) where !terminalExtras.contains(where: { $0.id == id }) {
                     terminalExtras.append(
                         ExtraTab(
-                            id: id, kind: .terminal, number: terminalExtras.filter(isVisible).count + 2,
-                            sessionID: model.navigationSessionID))
+                            id: id, kind: .terminal, number: terminalExtras.count + 2))
                 }
-                if let workspace = browserWorkspace, workspace.extras.isEmpty {
-                    for address in (saved.browserTabs ?? []).prefix(16) {
-                        if let safe = WorkspacePresentationStore.restorableBrowserURL(address),
-                            let url = URL(string: safe)
-                        {
-                            workspace.addTab().open(url)
-                        }
-                    }
-                }
+                browserWorkspace?.restoreExtraTabs(saved.browserTabs ?? [])
                 selectedExtraID = saved.selectedExtra.flatMap { id in
-                    extras.contains(where: { $0.id == id && isVisible($0) }) ? id : nil
+                    extras.contains(where: { $0.id == id }) ? id : nil
                 }
                 if let index = saved.selectedBrowser, let workspace = browserWorkspace,
                     workspace.extras.indices.contains(index)
@@ -298,13 +296,16 @@ struct SessionInspector: View {
                 migrateNestedShells()
             }
             messageTabs.select(messageSelection, in: WorkspaceIdentity.session(model))
+            restoredWorkspace = workspace
             restoringPresentation = false
             savePresentation()
             consumeTabRequest()
         }
         .onChange(of: shownWorkspaceSection, initial: true) { _, section in onWorkspaceSection(section) }
         .onChange(of: sessionRepositoryPath) { _, _ in
-            if !restoringPresentation, model.navigationSessionID != nil, !sessionFolderUnavailable {
+            if !restoringPresentation, restoredWorkspace == WorkspaceIdentity.session(model),
+                model.navigationSessionID != nil, !sessionFolderUnavailable
+            {
                 migrateNestedShells()
                 savePresentation()
             }
@@ -377,21 +378,24 @@ struct SessionInspector: View {
 
     @ViewBuilder
     private func extraContent(_ extra: ExtraTab) -> some View {
+        let active = hostVisible && selectedExtraID == extra.id && selectedPreview == nil
         if extra.kind == .browser {
-            if let workspace = browserWorkspace, let browser = workspace.extras.first(where: { $0.id == extra.id }) {
+            if let workspace = browserWorkspace, let browser = workspace.extras.first(where: { $0.id == extra.id }),
+                active || browser.hasWebView
+            {
                 SessionBrowserView(model: model, workspace: workspace, browser: browser)
                     .id(browser.id)
             }
         } else if sessionFolderUnavailable {
             unavailableSessionFolder
-        } else {
+        } else if active || TerminalWorkspaceStore.shared.existingWorkspace(key: extraTerminalKey(extra)) != nil {
             SessionTerminalView(
                 projectPath: sessionTerminalPath ?? sessionRepositoryPath,
                 recipes: matchingTerminalRecipes,
                 repositoryID: matchingRepositoryID,
                 repositoryFingerprint: matchingRepositoryID == nil ? nil : workflow.repositoryFingerprint,
                 workspaceKey: WorkspaceIdentity.session(model) + ":extra:" + extra.id.uuidString,
-                discoveryActive: selectedExtraID == extra.id && isVisible(extra) && selectedPreview == nil
+                discoveryActive: active
             )
         }
     }
@@ -404,8 +408,7 @@ struct SessionInspector: View {
             selectedExtraID = browserWorkspace?.addTab().id
         } else {
             let extra = ExtraTab(
-                id: UUID(), kind: kind, number: terminalExtras.filter(isVisible).count + 2,
-                sessionID: model.navigationSessionID)
+                id: UUID(), kind: kind, number: terminalExtras.count + 2)
             terminalExtras.append(extra)
             selectedExtraID = extra.id
         }
@@ -422,7 +425,7 @@ struct SessionInspector: View {
     private func migrateNestedShells() {
         let identity = WorkspaceIdentity.session(model)
         let path = sessionTerminalPath ?? sessionRepositoryPath ?? "home"
-        let keys = [baseTerminalKey] + terminalExtras.filter(isVisible).map(extraTerminalKey)
+        let keys = [baseTerminalKey] + terminalExtras.map(extraTerminalKey)
         for key in keys {
             let ids = TerminalWorkspaceStore.shared.separateShells(key: key) {
                 identity + ":extra:" + $0.uuidString + ":" + path
@@ -430,15 +433,14 @@ struct SessionInspector: View {
             for id in ids {
                 terminalExtras.append(
                     ExtraTab(
-                        id: id, kind: .terminal, number: terminalExtras.filter(isVisible).count + 2,
-                        sessionID: model.navigationSessionID))
+                        id: id, kind: .terminal, number: terminalExtras.count + 2))
             }
         }
     }
     private func hasRunningCommand(_ key: String) -> Bool {
-        TerminalWorkspaceStore.shared.workspace(key: key).sessions.contains {
+        TerminalWorkspaceStore.shared.existingWorkspace(key: key)?.sessions.contains {
             $0.hasForegroundJob
-        }
+        } == true
     }
     private func closeExtra(_ extra: ExtraTab) {
         if extra.kind == .terminal, hasRunningCommand(extraTerminalKey(extra)) {
@@ -478,8 +480,7 @@ struct SessionInspector: View {
             if kind == .terminal, let id = reference.id {
                 terminalExtras.append(
                     ExtraTab(
-                        id: id, kind: .terminal, number: terminalExtras.filter(isVisible).count + 2,
-                        sessionID: model.navigationSessionID))
+                        id: id, kind: .terminal, number: terminalExtras.count + 2))
                 selectedExtraID = id
             } else if kind == .browser, let workspace = browserWorkspace {
                 let tab = workspace.addTab()
@@ -522,10 +523,6 @@ struct SessionInspector: View {
         browserSessionsRaw = ids.suffix(50).joined(separator: "|")  // ponytail: drops the oldest past 50 sessions
     }
 
-    private func isVisible(_ extra: ExtraTab) -> Bool {
-        extra.sessionID == nil || extra.sessionID == model.navigationSessionID
-    }
-
     /// Tabs the user hasn't closed; closed ones come back through the + menu.
     /// Browser follows this session's own open state instead of the shared list.
     private var openSections: [Section] {
@@ -535,18 +532,21 @@ struct SessionInspector: View {
     }
 
     private func savePresentation() {
-        guard !restoringPresentation, model.navigationSessionID != nil else { return }
+        guard !restoringPresentation, restoredWorkspace == WorkspaceIdentity.session(model),
+            model.navigationSessionID != nil
+        else { return }
+        let browserTabs = browserWorkspace?.extras.compactMap { tab in
+            WorkspacePresentationStore.restorableBrowserURL(tab.currentURL ?? tab.address).map { (tab.id, $0) }
+        }
         WorkspacePresentationStore.shared.save(
             InspectorPresentation(
                 selected: selectedSection.rawValue, closed: closedRaw,
                 recentClosed: Array(recentClosed.suffix(20)),
                 browserURL: WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))?.browserURL,
-                terminalTabs: terminalExtras.filter(isVisible).map(\.id),
-                browserTabs: browserWorkspace?.extras.compactMap {
-                    WorkspacePresentationStore.restorableBrowserURL($0.currentURL ?? $0.address)
-                },
+                terminalTabs: terminalExtras.map(\.id),
+                browserTabs: browserTabs?.map { $0.1 },
                 selectedExtra: selectedExtraID,
-                selectedBrowser: browserWorkspace?.extras.firstIndex(where: { $0.id == selectedExtraID }),
+                selectedBrowser: browserTabs?.firstIndex(where: { $0.0 == selectedExtraID }),
                 simulatorSections: simulatorSections.filter { $0 != Section.talk.rawValue }),
             identity: WorkspaceIdentity.session(model))
     }
@@ -581,7 +581,7 @@ struct SessionInspector: View {
     private func selectRemainingTab() {
         if let next = openSections.first {
             selectedSection = next
-        } else if let extra = extras.first(where: isVisible) {
+        } else if let extra = extras.first {
             selectedExtraID = extra.id
         } else if selectedPreview == nil {
             let workspace = WorkspaceIdentity.session(model)
@@ -601,15 +601,16 @@ struct SessionInspector: View {
     }
 
     private func consumeTabRequest() {
-        guard let request = tabRequest, request.session == WorkspaceIdentity.session(model) else { return }
+        guard let request = tabRequest, request.session == restoredWorkspace,
+            request.session == WorkspaceIdentity.session(model)
+        else { return }
         tabRequest = nil
         reopen(request.section)
         if request.section == .terminal, let id = request.terminalTabID {
             if !terminalExtras.contains(where: { $0.id == id }) {
                 terminalExtras.append(
                     ExtraTab(
-                        id: id, kind: .terminal, number: terminalExtras.filter(isVisible).count + 2,
-                        sessionID: model.navigationSessionID))
+                        id: id, kind: .terminal, number: terminalExtras.count + 2))
             }
             selectedExtraID = id
             savePresentation()
@@ -744,7 +745,7 @@ struct SessionInspector: View {
     private var orderedTabs: [SessionInspectorTabItem] {
         let workspace = WorkspaceIdentity.session(model)
         let tabs =
-            openSections.map(sectionTab) + extras.filter(isVisible).map(extraTab)
+            openSections.map(sectionTab) + extras.map(extraTab)
             + messageTabs.workspace(workspace).tabs.map(messageTab)
         return tabOrder.ordered(tabs.map(\.id), in: workspace).compactMap { id in
             tabs.first { $0.id == id }
@@ -903,20 +904,23 @@ struct SessionInspector: View {
                 )
             }
         case .terminal:
+            let active = hostVisible && selectedExtraID == nil && selectedPreview == nil
             if sessionFolderUnavailable {
                 unavailableSessionFolder
-            } else {
+            } else if active || TerminalWorkspaceStore.shared.existingWorkspace(key: baseTerminalKey) != nil {
                 SessionTerminalView(
                     projectPath: sessionTerminalPath ?? sessionRepositoryPath,
                     recipes: matchingTerminalRecipes,
                     repositoryID: matchingRepositoryID,
                     repositoryFingerprint: matchingRepositoryID == nil ? nil : workflow.repositoryFingerprint,
                     workspaceKey: WorkspaceIdentity.session(model),
-                    discoveryActive: selectedExtraID == nil && selectedPreview == nil
+                    discoveryActive: active
                 )
             }
         case .browser:
-            if let workspace = browserWorkspace {
+            if let workspace = browserWorkspace,
+                (hostVisible && selectedExtraID == nil && selectedPreview == nil) || workspace.primary.hasWebView
+            {
                 SessionBrowserView(model: model, workspace: workspace)
                     .id(workspace.primary.id)
             }

@@ -1,9 +1,36 @@
+import Combine
 import Testing
 import WebKit
 
 @testable import Herm
 
 struct BrowserNavigationTests {
+    @MainActor @Test func consolePublishesOnlyVisibleCountsAndRetainsLatestLines() async throws {
+        let console = BrowserConsoleBuffer()
+        let firstWindow = UUID()
+        let secondWindow = UUID()
+        var updates: [Int] = []
+        let observation = console.$count.dropFirst().sink { updates.append($0) }
+        defer { observation.cancel() }
+        for index in 0..<55 { console.append("Error \(index)") }
+        #expect(updates.isEmpty)
+        #expect(console.lines.first == "Error 5")
+        #expect(console.lines.last == "Error 54")
+
+        console.setVisible(firstWindow, true)
+        console.setVisible(secondWindow, true)
+        console.setVisible(firstWindow, false)
+        console.clear()
+        console.append("New page error")
+        for _ in 0..<40 where updates.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(updates == [50, 1])
+
+        console.setVisible(secondWindow, false)
+        console.append("Hidden error")
+        try await Task.sleep(for: .milliseconds(70))
+        #expect(updates == [50, 1])
+        #expect(console.lines.last == "Hidden error")
+    }
     @Test func addressEntryRecognizesLocalServersAndPreservesDestinations() {
         for address in [
             "localhost:5173/preview", "127.0.0.1:8080", "[::1]:3000/path", "demo.localhost:4000",

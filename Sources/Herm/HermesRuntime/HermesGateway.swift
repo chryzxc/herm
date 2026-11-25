@@ -60,7 +60,13 @@ final class HermesGateway: NSObject {
     private var sshBridge: GatewaySSHBridge?
     private var backend: Process?
     private var urlSession: URLSession?
-    private var socket: URLSessionWebSocketTask?
+    private var socket: URLSessionWebSocketTask? {
+        didSet {
+            if oldValue !== socket { connectionIdentity = UUID() }
+        }
+    }
+    private var connectionIdentity = UUID()
+    var prepareBrowserForPrompt: ((String?, UUID) async -> Void)?
     private var port: Int?
     private var token = ""
     private var nextID = 0
@@ -233,9 +239,22 @@ final class HermesGateway: NSObject {
         try Task.checkCancellation()
         DebugLog.write("request: \(method)")
         if socket == nil { try await connect() }
+        if Self.shouldPrepareBrowser(for: method) {
+            await prepareBrowserForPrompt?(params["profile"] as? String, connectionIdentity)
+        }
         let response = try await send(
             method: method, params: HermesSimulatorPreference.applying(to: params, method: method))
         return response.object
+    }
+
+    static func shouldPrepareBrowser(for method: String) -> Bool {
+        switch method {
+        case HermesFeatureIDs.ID.promptSubmit.rawValue, HermesFeatureIDs.ID.promptBackground.rawValue,
+            HermesFeatureIDs.ID.promptBtw.rawValue:
+            true
+        default:
+            false
+        }
     }
 
     func close() {

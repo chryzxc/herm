@@ -135,6 +135,19 @@ Workspace project attachment merges a returned session inventory into local
 metadata in one pass. The store publishes the merged tasks and references once
 and does not save an unchanged refresh.
 Each composer shares one in-flight process read and queues one follow-up as needed.
+The optional status bar keeps terminal discovery scoped to the session and directory.
+Git fingerprint changes recheck test evidence without restarting server discovery.
+Terminal tabs share a bounded main-thread output queue with per-PTY backpressure.
+The inspector reads only the current workspace's tabs. The terminal store keeps
+owning inactive shells and their scrollback.
+WebKit and the agent browser retain recent console lines and publish counts
+when a host displays them. The inspector reads tab changes from its own browser
+workspace. The browser store only broadcasts explicit presentation requests.
+Saved inspector tabs restore addresses and shell layouts without opening hidden
+pages or starting unused shells. Live tabs retain their mounted state.
+Chat navigation never starts Chromium. Explicit Browser use or the first
+local turn prepares the profile's browser through the shared gateway. Readiness
+is reused for the same connection and concurrent submissions share the handoff.
 Local Review prepares a diff once per loaded patch. A cancellable projection
 owns comparison search and file filtering by query and patch revision.
 Cancelling a WebSocket RPC waiter releases the local continuation and deadline

@@ -7,7 +7,7 @@ extension DockPopover {
             WorkspaceStatusBar(
                 status: statusModel, edgeState: status, interruptions: status.interruptions,
                 isFloating: !usesWindowChrome, isCompact: isNarrowLayout,
-                terminalScope: statusTerminalScope,
+                terminalScope: statusTerminalScope, workflow: developerWorkflow,
                 performAction: performStatusAction, openSettings: openStatusBarSettings
             )
             .onAppear {

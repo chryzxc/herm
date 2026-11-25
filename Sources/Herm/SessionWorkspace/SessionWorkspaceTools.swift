@@ -10,6 +10,7 @@ struct SessionTerminalView: View {
     let repositoryFingerprint: String?
     @ObservedObject private var terminalTabs: TerminalTabStore
     @Environment(\.chatContextRouter) private var contextRouter
+    @Environment(\.dockHostVisible) private var hostVisible
 
     init(
         projectPath: String?, recipes: [VerificationRecipe], repositoryID: String?, repositoryFingerprint: String?,
@@ -46,7 +47,8 @@ struct SessionTerminalView: View {
 
         }
         .background(Color.dockCanvas)
-        .task(id: terminal.id) {
+        .task(id: hostVisible ? terminal.id : nil) {
+            guard hostVisible, !Task.isCancelled else { return }
             if terminal.workingDirectory == nil { terminal.start(directory: directory) }
         }
     }

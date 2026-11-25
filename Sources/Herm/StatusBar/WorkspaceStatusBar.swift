@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// The 32pt bar along the bottom of the workspace card. Left: live work and
@@ -14,13 +15,13 @@ struct WorkspaceStatusBar: View {
     var isFloating = false
     var isCompact = false
     var terminalScope: WorkspaceStatusModel.TerminalScope?
+    var workflow: DeveloperWorkflowModel?
     let performAction: (StatusBarEntry.Action) -> Void
     let openSettings: () -> Void
 
     private struct TerminalMonitor: Equatable {
-        let scope: WorkspaceStatusModel.TerminalScope?
+        let scope: WorkspaceStatusModel.TerminalProcessScope?
         let servers: Bool
-        let tests: Bool
     }
 
     private var isVisible: Bool { preferences.isVisible(inFloatingPanel: isFloating) }
@@ -29,8 +30,8 @@ struct WorkspaceStatusBar: View {
         Group {
             if isVisible {
                 let layout = status.layout
-                let monitor = TerminalMonitor(
-                    scope: terminalScope, servers: preferences.isOn(.processes), tests: preferences.isOn(.verification))
+                let monitor = TerminalMonitor(scope: terminalScope?.processes, servers: preferences.isOn(.processes))
+                let tests = preferences.isOn(.verification)
                 content(layout)
                     .buttonStyle(.dockHover)
                     .dockButtonSize(.compact)
@@ -49,8 +50,14 @@ struct WorkspaceStatusBar: View {
                             pinnedItem = nil
                         }
                     }
+                    .onChange(of: terminalScope, initial: true) { _, scope in
+                        status.updateTerminalScope(currentVerificationScope(scope), tests: tests)
+                    }
+                    .onChange(of: tests) { _, tests in
+                        status.updateTerminalScope(currentVerificationScope(terminalScope), tests: tests)
+                    }
                     .task(id: monitor) {
-                        await status.monitorTerminals(in: monitor.scope, servers: monitor.servers, tests: monitor.tests)
+                        await status.monitorTerminals(in: monitor.scope, servers: monitor.servers)
                     }
             }
         }
@@ -59,7 +66,27 @@ struct WorkspaceStatusBar: View {
             hoveredPreview = nil
             pinnedItem = nil
             status.isTrayPresented = false
+            status.updateTerminalScope(nil, tests: false)
         }
+        .onReceive(
+            workflow?.$changeRevision.map { $0?.fingerprint }.removeDuplicates()
+                .receive(on: DispatchQueue.main).eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()
+        ) { _ in
+            guard isVisible, preferences.isOn(.verification) else { return }
+            status.updateTerminalScope(currentVerificationScope(terminalScope), tests: true)
+        }
+    }
+
+    private func currentVerificationScope(_ scope: WorkspaceStatusModel.TerminalScope?)
+        -> WorkspaceStatusModel.TerminalScope?
+    {
+        guard let scope, let workflow else { return scope }
+        let repository = workflow.repository
+        let matches =
+            scope.repositoryID == repository.repositoryID && !repository.isStale && repository.statusError == nil
+        return .init(
+            identity: scope.identity, directory: scope.directory, repositoryID: matches ? scope.repositoryID : nil,
+            fingerprint: matches ? workflow.repositoryFingerprint : nil)
     }
 
     @ViewBuilder private func content(_ layout: StatusBarLayout) -> some View {
@@ -70,7 +97,10 @@ struct WorkspaceStatusBar: View {
         } else {
             let trailing = layout.trailing.filter { entry in
                 switch entry.item {
-                case .processes, .verification: status.terminalScope == terminalScope && terminalScope != nil
+                case .processes:
+                    terminalScope != nil && status.terminalScope?.processes == terminalScope?.processes
+                case .verification:
+                    terminalScope != nil && status.terminalScope == currentVerificationScope(terminalScope)
                 default: true
                 }
             }

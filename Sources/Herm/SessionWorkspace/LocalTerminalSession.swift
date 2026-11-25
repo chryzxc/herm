@@ -1,6 +1,7 @@
 import Darwin
 @preconcurrency import Dispatch
 import Foundation
+import os
 
 @MainActor
 final class LocalTerminalSession: ObservableObject, Identifiable {
@@ -24,9 +25,10 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
     struct OutputBuffer: Equatable {
         let maxBytes: Int
         let maxLines: Int
-        private(set) var text = ""
-        private var byteCount = 0
+        private var bytes = Data()
+        private var head = 0
         private var newlineCount = 0
+        var text: String { String(decoding: bytes[head...], as: UTF8.self) }
 
         init(maxBytes: Int = LocalTerminalSession.maxOutputBytes, maxLines: Int = LocalTerminalSession.maxOutputLines) {
             self.maxBytes = max(1, maxBytes)
@@ -34,40 +36,37 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         }
 
         mutating func append(_ addition: String) {
-            text.append(addition)
-            byteCount += addition.utf8.count
+            bytes.append(contentsOf: addition.utf8)
             newlineCount += addition.utf8.count { $0 == 10 }
             trim()
         }
 
         mutating func removeAll() {
-            text.removeAll(keepingCapacity: true)
-            byteCount = 0
+            bytes.removeAll(keepingCapacity: true)
+            head = bytes.startIndex
             newlineCount = 0
         }
 
         private mutating func trim() {
-            let partialLine = text.isEmpty || text.hasSuffix("\n") ? 0 : 1
-            guard byteCount > maxBytes || newlineCount + partialLine > maxLines else { return }
-            let bytes = text.utf8
-            var start = bytes.startIndex
-            while byteCount > maxBytes || newlineCount + partialLine > maxLines {
-                if let newline = bytes[start...].firstIndex(of: 10) {
-                    let next = bytes.index(after: newline)
-                    byteCount -= bytes.distance(from: start, to: next)
+            let partialLine = head == bytes.endIndex || bytes.last == 10 ? 0 : 1
+            while bytes.endIndex - head > maxBytes || newlineCount + partialLine > maxLines {
+                if let newline = bytes[head...].firstIndex(of: 10) {
+                    head = bytes.index(after: newline)
                     newlineCount -= 1
-                    start = next
                 } else {
                     // A single oversized line keeps its newest valid UTF-8 suffix.
-                    start = bytes.index(bytes.endIndex, offsetBy: -maxBytes)
-                    while start < bytes.endIndex, bytes[start] & 0xC0 == 0x80 {
-                        start = bytes.index(after: start)
+                    head = bytes.index(bytes.endIndex, offsetBy: -maxBytes)
+                    while head < bytes.endIndex, bytes[head] & 0xC0 == 0x80 {
+                        head = bytes.index(after: head)
                     }
-                    byteCount = bytes.distance(from: start, to: bytes.endIndex)
                     break
                 }
             }
-            text = String(decoding: bytes[start...], as: UTF8.self)
+            // Amortize copying the retained bytes when the buffer is already full.
+            if head - bytes.startIndex >= maxBytes {
+                bytes.removeSubrange(bytes.startIndex..<head)
+                head = bytes.startIndex
+            }
         }
     }
 
@@ -182,14 +181,13 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         source.setEventHandler { @Sendable [weak self] in
             guard let data = Self.readOutput(readFD) else { return }
             let text = Self.cleanTerminalText(decoder.decode(data))
+            let bytes = Array(data)
             // Keep just one delivery outstanding and give AppKit a turn between batches.
             source.suspend()
-            DispatchQueue.main.async {
-                defer {
-                    outputQueue.asyncAfter(deadline: .now() + .milliseconds(4)) { source.resume() }
-                }
+            TerminalOutputDelivery.shared.enqueue { [weak self] in
+                defer { outputQueue.async { source.resume() } }
                 guard let self, self.lifecycleID == lifecycleID, self.masterFD >= 0 else { return }
-                if data.isEmpty {
+                if bytes.isEmpty {
                     if !text.isEmpty { self.consume(text) }
                     self.reader?.cancel()
                     self.reader = nil
@@ -200,7 +198,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
                     self.processID = 0
                     self.state = .exited
                 } else {
-                    self.emulator.view.receiveOutput(Array(data)[...])
+                    self.emulator.view.receiveOutput(bytes[...])
                     self.consume(text)
                     if self.state == .starting { self.state = .ready }
                 }
@@ -495,5 +493,52 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         writer?.cancel()
         if masterFD >= 0 { Darwin.close(masterFD) }
         if processID > 0 { kill(processID, SIGTERM) }
+    }
+}
+
+/// One queue for all PTYs. Each reader holds at most one delivery while suspended.
+private final class TerminalOutputDelivery: Sendable {
+    typealias Work = @MainActor @Sendable () -> Void
+
+    static let shared = TerminalOutputDelivery()
+    private struct State {
+        var queued: [Work] = []
+        var scheduled = false
+    }
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    func enqueue(_ work: @escaping Work) {
+        let shouldSchedule = state.withLock { state in
+            state.queued.append(work)
+            guard !state.scheduled else { return false }
+            state.scheduled = true
+            return true
+        }
+        if shouldSchedule { schedule() }
+    }
+
+    private func schedule() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(4)) { self.drain() }
+    }
+
+    @MainActor private func drain() {
+        let start = DispatchTime.now().uptimeNanoseconds
+        for _ in 0..<4 {
+            let work = state.withLock { state -> Work? in
+                guard !state.queued.isEmpty else {
+                    state.scheduled = false
+                    return nil
+                }
+                return state.queued.removeFirst()
+            }
+            guard let work else { return }
+            work()
+            if DispatchTime.now().uptimeNanoseconds - start >= 2_000_000 { break }
+        }
+        let hasPendingWork = state.withLock { state in
+            if state.queued.isEmpty { state.scheduled = false }
+            return state.scheduled
+        }
+        if hasPendingWork { schedule() }
     }
 }

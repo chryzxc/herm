@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 import Testing
@@ -8,6 +9,68 @@ import WebKit
 
 @MainActor
 struct SessionBrowserTests {
+    @Test func selectingChatsDoesNotStartChromium() {
+        let store = SessionBrowserStore()
+        let model = DockModel(initialSessionID: "chat-a", loadArchives: false, rpcClient: BrowserHandoffRPCClient())
+        let first = SessionBrowserKey(profileID: model.profileScopeID, sessionID: "chat-a")
+        store.activate(model: model)
+        #expect(store.workspace(for: first).agent.state == .off)
+        model.sessionStorageID = "chat-b"
+        store.activate(model: model, reconnect: true)
+        let second = SessionBrowserKey(profileID: model.profileScopeID, sessionID: "chat-b")
+        #expect(store.workspace(for: second).agent.state == .off)
+        #expect(!store.workspace(for: second).primary.hasWebView)
+    }
+
+    @Test func onlyTurnMethodsPrepareTheBrowser() {
+        #expect(HermesGateway.shouldPrepareBrowser(for: HermesFeatureIDs.ID.promptSubmit.rawValue))
+        #expect(HermesGateway.shouldPrepareBrowser(for: HermesFeatureIDs.ID.promptBackground.rawValue))
+        #expect(HermesGateway.shouldPrepareBrowser(for: HermesFeatureIDs.ID.promptBtw.rawValue))
+        #expect(!HermesGateway.shouldPrepareBrowser(for: HermesFeatureIDs.ID.sessionResume.rawValue))
+        #expect(!HermesGateway.shouldPrepareBrowser(for: HermesFeatureIDs.ID.browserManage.rawValue))
+    }
+
+    @Test func concurrentTurnsShareAProfileHandoffAndReconnectOnANewGateway() async {
+        let client = BrowserHandoffRPCClient()
+        let browser = AgentBrowser(profileID: "cold-profile")
+        _ = browser.browserDidStart(endpoint: client.endpoint)
+        client.holdStatus = true
+        let connection = UUID()
+        let first = Task { await browser.prepareForTurn(client: client, connection: connection) }
+        await client.waitForStatus()
+        let second = Task { await browser.prepareForTurn(client: client, connection: connection) }
+        client.releaseStatus()
+        await first.value
+        await second.value
+        #expect(client.requests.compactMap { $0["action"] as? String } == ["status", "connect"])
+        #expect(client.requests.allSatisfy { $0["profile"] as? String == "cold-profile" })
+        await browser.prepareForTurn(client: client, connection: UUID())
+        #expect(client.requests.compactMap { $0["action"] as? String } == ["status", "connect", "status"])
+    }
+
+    @Test func restoredTabsStayDormantUntilMaterialized() throws {
+        let workspace = SessionBrowserWorkspace(key: .init(profileID: "restore-\(UUID())", sessionID: "restore-tabs"))
+        var publications = 0
+        let subscription = workspace.$extras.dropFirst().sink { _ in publications += 1 }
+        defer { subscription.cancel() }
+        workspace.restoreExtraTabs(["https://example.com/a", "file:///tmp/local", "https://example.com/b"])
+        #expect(workspace.extras.map(\.address) == ["https://example.com/a", "https://example.com/b"])
+        #expect(!workspace.primary.hasWebView)
+        #expect(workspace.extras.allSatisfy { !$0.hasWebView })
+        #expect(workspace.isInUse)
+        workspace.restoreExtraTabs(["https://example.com/duplicate"])
+        #expect(workspace.extras.count == 2)
+        #expect(publications == 1)
+        let selected = try #require(workspace.extras.first)
+        let untouched = try #require(workspace.extras.last)
+        _ = selected.web
+        #expect(selected.hasWebView)
+        #expect(!untouched.hasWebView)
+        workspace.closeTab(untouched.id)
+        #expect(!untouched.hasWebView)
+        #expect(workspace.extras.map(\.id) == [selected.id])
+    }
+
     @Test func agentDisplayUsesAPointerForTheHorsePrefix() {
         for title in ["🐴 Compliance", "🐎 Compliance", "🎠\u{FE0F} Compliance"] {
             let label = SessionBrowserWorkspace.agentTabLabel(title)

@@ -904,6 +904,7 @@ the rail gear menu’s Status bar submenu. `WorkspaceStatusModel` gathers its in
 publishers (Edge tasks, routines, repository, plan, queue, pull requests,
 Calendar), so it adds no whole-model observers. Optional local previews and test failures
 use the active session's existing terminal workspaces.
+New Git revisions and terminal verification events recheck test evidence without clearing the current local server. Turning the bar off stops its idle clock.
 `StatusBarLayout.make` is the pure rule for what shows, in which order and tone (`StatusBarLayoutTests`).
 
 - With default item settings, the visible bar shows the attention count (a `.dockWarning` pill)
@@ -1206,6 +1207,8 @@ is preserved. GitHub overview links retain their native inspector routing.
 Primary and additional Browser tabs show the live webpage title, updating when
 the page name changes. Empty, untitled, and URL-only titles retain the generic
 Browser label (with the existing number for additional tabs).
+Tab changes update the inspector for that conversation without changing the
+visible inspector for another session.
 
 The model chip shows the current thinking effort beside the model name and a lightning icon when Fast is enabled. The speed switch moves immediately and indicates a pending change; the chip reflects the confirmed setting, and a failed change restores the switch. The picker stays open for model selection and catalog refresh, with vertical insets around its contents. The model picker keeps provider marks beside a search field and compact model list. Matching leading circles mark model choices, with a check identifying the active model; available thinking effort choices wrap into a compact grid below the choices, with a check and contour identifying the selected effort, with fast and catalog actions separated by a divider.
 
@@ -2483,6 +2486,8 @@ Dropping onto a tab moves to its position without changing selection or restarti
 content. The tab context menu offers Move tab left/right as a non-drag alternative.
 Order is presentation state scoped to the backend/profile/session workspace for the
 current app run. New tabs append, and closed tabs disappear without leaving gaps.
+Only tabs belonging to the active workspace enter the inspector layout. A
+session switch does not close a live terminal or clear its scrollback.
 
 
 Bot and activity previews share the message reading tab strip and its workspace
@@ -3976,7 +3981,8 @@ events, and main-agent tool activity.
   Each Terminal inspector tab owns one shell; use the inspector's new-tab control
   for another. Clear, interrupt, and restart are in the options menu immediately
   after Previews. Its grid resizes with the panel; failed and closed shells offer recovery.
-  Covered terminals continue processing output and update their canvas when shown again.
+  Covered terminals continue processing output in shared batches and update their
+  canvas when shown again.
   PTY input is queued in order and written in bounded, nonblocking chunks.
   Interrupt discards a blocked paste and signals the foreground job. Verification
   waits for a complete exit receipt before reporting a result.
@@ -4447,7 +4453,7 @@ and WebKit stores; sessions of that profile share them. No cross-profile sharing
 controls or browser Keychain unlock appear. Sign Out of All Sites is disabled
 while its reset is pending. The agent canvas mirrors the page's cursor shape and opens
 `<select>` dropdowns as a native menu anchored on the field, since headless
-Chrome paints them where the screencast can't see. When Hermes starts browsing or
+Chrome paints them where the screencast can't see. Frame capture follows the visibility of its canvas, not app activation. Hiding the canvas does not close the page or interrupt browser tools. When Hermes starts browsing or
 shows a page, the inspector expands to the Browser tab; Settings → Browser →
 Use Herm's browser (a switch, on by default) turns that off and sends shown
 pages to the default browser.
