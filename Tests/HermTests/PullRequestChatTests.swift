@@ -66,6 +66,45 @@ struct PullRequestChatTests {
             rpcClient: rpc)
     }
 
+    @Test func idleChatEvictionReleasesProjectionsAndKeepsUnsentDrafts() async throws {
+        let suite = "PullRequestChatTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let runtime = runtime(PullRequestChatRPC(), defaults: defaults)
+        defer {
+            runtime.shutdown()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let store = PullRequestChatStore()
+        let host = UUID()
+        let draftRecord = try record(501)
+        let draft = store.chat(for: draftRecord)
+        defer { draft.shutdown() }
+        store.setVisible(draftRecord.id, host: host, visible: true)
+        await draft.prepareConversation(for: draftRecord, runtime: runtime)
+        draft.conversation?.draft = "Keep my draft"
+        store.setVisible(draftRecord.id, host: host, visible: false)
+
+        let idleRecord = try record(502)
+        let idle = store.chat(for: idleRecord)
+        defer { idle.shutdown() }
+        store.setVisible(idleRecord.id, host: host, visible: true)
+        await idle.prepareConversation(for: idleRecord, runtime: runtime)
+        #expect(idle.conversation != nil)
+        store.setVisible(idleRecord.id, host: host, visible: false)
+
+        for number in 503...506 {
+            let next = try record(number)
+            _ = store.chat(for: next)
+            store.setVisible(next.id, host: host, visible: true)
+            store.setVisible(next.id, host: host, visible: false)
+        }
+
+        #expect(idle.conversation == nil)
+        #expect(store.chat(for: idleRecord) !== idle)
+        #expect(store.chat(for: draftRecord) === draft)
+        #expect(draft.conversation?.draft == "Keep my draft")
+    }
+
     @Test func attachPRToCurrentChatPreservesSessionAndDraft() throws {
         let suite = "PullRequestChatTests." + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))

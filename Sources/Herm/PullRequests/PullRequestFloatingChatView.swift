@@ -2,9 +2,11 @@ import SwiftUI
 
 struct PullRequestFloatingChatView: View {
     @ObservedObject var chat: PullRequestChatModel
+    var store: PullRequestChatStore? = nil
     @ObservedObject var runtime: DockModel
     let record: PullRequestRecord
     @Binding var expanded: Bool
+    @State private var hostID = UUID()
 
     var body: some View {
         Group {
@@ -15,6 +17,8 @@ struct PullRequestFloatingChatView: View {
             }
         }
         .frame(idealWidth: expanded ? 520 : nil, maxWidth: expanded ? 620 : 200)
+        .onAppear { store?.setVisible(record.id, host: hostID, visible: true) }
+        .onDisappear { store?.setVisible(record.id, host: hostID, visible: false) }
         .task { await chat.prepareConversation(for: record, runtime: runtime) }
     }
 }

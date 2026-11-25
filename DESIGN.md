@@ -4090,6 +4090,9 @@ events, and main-agent tool activity.
 
 ### Pull requests and Issues metadata
 
+When a pull request chat closes, Herm keeps the most recent idle chats ready to
+reopen. Open chats, running turns, and unsent drafts stay available.
+
 The pull request detail header is one toolbar row: tabs lead and actions trail, stacking only when narrow. In Changes, the branch line and diff tools share a single 38pt row so the diff keeps the space.
 
 Wide PR Summary layouts place a `dockBorderLight` vertical hairline midway through

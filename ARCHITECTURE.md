@@ -124,7 +124,8 @@ off the main actor.
 Sidebar search uses the same navigation snapshot and matches it off the main actor.
 The right-hand session rail runs discovery and refresh only while visible.
 Restoring a split layout loads the focused column first and queues the remaining
-columns in order.
+columns in order. Pull request chat keeps four idle projections for quick
+reopening and protects open chats, running turns, and unsent work from eviction.
 Session Kanban polls share a short-lived archive index. Each consumer matches
 session aliases and observed task IDs against the same parsed card summaries.
 Board inventory refresh failures stay in the board projection.
