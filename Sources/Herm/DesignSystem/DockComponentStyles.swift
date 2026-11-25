@@ -1133,6 +1133,9 @@ struct DockPrimaryButtonStyle: ButtonStyle {
 /// The outlined companion to the primary action (Cancel, Remove, Copy). A
 /// destructive role tints the label instead of filling the control.
 struct DockSecondaryButtonStyle: ButtonStyle {
+    /// Keep the button face and edge separate from the fill of an inset well.
+    var onWell = false
+
     @Environment(\.isFocused) private var isFocused
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
@@ -1141,6 +1144,7 @@ struct DockSecondaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let shape = DockThemeShape(theme: theme)
+        let palette = DockThemePalette(theme: theme)
         configuration.label
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .dockButtonMetrics()
@@ -1157,10 +1161,14 @@ struct DockSecondaryButtonStyle: ButtonStyle {
                     shape.fill(
                         configuration.isPressed
                             ? Color.dockSurface6
-                            : isHovering && isEnabled ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6)
+                            : isHovering && isEnabled
+                                ? (onWell ? palette.surface : Color.dockSurface4)
+                                : (onWell ? palette.surface2 : Color.dockControlSurface.opacity(0.6))
                     )
                     .overlay(
-                        shape.stroke(Color.dockBorder, lineWidth: max(DockLayout.hairline, theme.style.outlineWidth)))
+                        shape.stroke(
+                            onWell ? palette.metadataText : Color.dockBorder,
+                            lineWidth: max(DockLayout.hairline, theme.style.outlineWidth)))
                 }
             }
             .dockStickerShadow(shape, pressed: configuration.isPressed)

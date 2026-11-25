@@ -6,26 +6,38 @@ import Testing
 
 @MainActor
 struct SoftwareUpdateControlsTests {
-    @Test func quickUpdatesShowTheAgentVersionsAndUpdateAction() async throws {
+    @Test(arguments: [true, false]) func bothSurfacesShowTheBuildChoiceAndAgentVersions(compact: Bool) async throws {
         let application = NSApplication.shared
         let accessibility = application.value(forKey: "accessibilityEnhancedUserInterface")
         application.setValue(true, forKey: "accessibilityEnhancedUserInterface")
         defer { application.setValue(accessibility, forKey: "accessibilityEnhancedUserInterface") }
 
         let agent = HermesUpdateService(
-            readVersion: { (true, "Hermes Agent v0.20.0") },
+            readVersion: { (true, "Hermes Agent v0.20.0 (2026.11.22)") },
             readRelease: {
                 .success(
                     HermesLatestRelease(
-                        tag: "v0.21.0", marketing: "0.21.0", name: nil, publishedAt: nil, pageURL: nil))
+                        tag: "v0.21.0", marketing: "0.21.0", name: nil, publishedAt: nil,
+                        pageURL: "https://github.com/NousResearch/hermes-agent/releases/tag/v0.21.0"))
             },
             launchUpdate: { _ in Issue.record("Showing the controls must not launch an update.") }
         )
+        let latest = HermRelease(
+            version: "nightly bbbbbbbb", pageURL: nil,
+            assetURL: URL(string: "https://api.github.com/repos/chryzxc/herm/releases/assets/1")!, digest: nil,
+            commit: String(repeating: "b", count: 40), updatedAt: ISO8601Parsing.date("2026-11-22T03:00:00Z"))
+        let app = HermAppUpdater(
+            build: HermBuildInfo(channel: "dev", commit: nil, isDebug: true), currentVersion: "1.0.0",
+            fetchAlternate: { _ in latest },
+            saveAlternate: { _, _ in
+                Issue.record("Showing the controls must not download a disk image.")
+                throw CocoaError(.userCancelled)
+            })
         let host = NSHostingView(
-            rootView: SoftwareUpdateControls(appUpdater: HermAppUpdater(), agentUpdateService: agent, compact: true)
+            rootView: SoftwareUpdateControls(appUpdater: app, agentUpdateService: agent, compact: compact)
                 .dockPresentationSurface())
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: compact ? 360 : 640, height: 480),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         window.orderFrontRegardless()
@@ -35,14 +47,28 @@ struct SoftwareUpdateControlsTests {
         for _ in 0..<100 {
             host.layoutSubtreeIfNeeded()
             labels = accessibilityText(in: host)
-            if labels.contains("v0.21.0") { break }
+            if labels.contains("v0.21.0") && labels.contains("Build bbbbbbbb") { break }
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(agent.phase == .updateAvailable)
         let appTitle = try #require(labels.firstIndex(of: "Herm"))
         let agentTitle = try #require(labels.firstIndex(of: "Hermes Agent"))
         #expect(appTitle < agentTitle)
-        #expect(labels.contains("v0.20.0"))
+        #expect(labels.contains("Herm Dev build") || labels.contains("Dev"))
+        #expect(labels.contains("1.0.0"))
+        #expect(labels.contains("Nightly from main"))
+        #expect(labels.contains("Build bbbbbbbb"))
+        #expect(labels.contains { $0.hasPrefix("Updated ") })
+        #expect(labels.contains("Download Nightly from main"))
+        if compact {
+            let notes = try #require(labels.firstIndex(of: "Hermes Agent release notes"))
+            let installed = try #require(labels.firstIndex(of: "Installed"))
+            #expect(notes < installed)
+            #expect(labels.contains("v0.20.0"))
+            #expect(labels.contains("Build 2026.11.22"))
+        } else {
+            #expect(labels.contains("v0.20.0 (2026.11.22)"))
+        }
         #expect(labels.contains("v0.21.0"))
         #expect(labels.contains("Update Hermes Agent"))
     }

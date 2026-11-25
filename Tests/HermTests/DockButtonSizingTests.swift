@@ -6,9 +6,13 @@ import Testing
 
 @MainActor
 struct DockButtonSizingTests {
-    @Test func inlineTextActionsAreSmallerThanCompact() {
+    @Test(arguments: [false, true]) func inlineTextActionsAreSmallerThanCompact(onWell: Bool) {
         let host = NSHostingView(
-            rootView: Button("Open") {}.buttonStyle(.dockSecondary).dockButtonSize(.inline).fixedSize())
+            rootView: HStack {
+                Button("Open") {}.buttonStyle(DockSecondaryButtonStyle(onWell: onWell))
+            }
+            .dockButtonSize(.inline)
+            .fixedSize())
         #expect(abs(host.fittingSize.height - 24) <= 1)
         #expect(host.fittingSize.height < DockControlMetrics.compactHeight)
     }

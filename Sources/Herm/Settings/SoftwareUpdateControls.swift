@@ -9,8 +9,8 @@ struct SoftwareUpdateControls: View {
 
     var body: some View {
         if compact {
-            VStack(alignment: .leading, spacing: 10) { sections }
-                .dockPadding(12)
+            VStack(alignment: .leading, spacing: DockSpacing.group) { sections }
+                .dockPadding(DockSpacing.group)
                 .frame(width: 360)
         } else {
             sections
@@ -31,7 +31,11 @@ private struct HermAppUpdateControls: View {
     var body: some View {
         let (status, color): (String, Color) =
             switch appUpdater.phase {
-            case .idle: ("Updates are checked automatically every hour.", .dockMetadataText)
+            case .idle:
+                (
+                    compact ? "Checks automatically every hour." : "Updates are checked automatically every hour.",
+                    .dockMetadataText
+                )
             case .unavailable(let reason): (reason, .dockMetadataText)
             case .checking: ("Checking \(HermAppUpdater.repository)…", .dockSecondaryText)
             case .upToDate: ("Up to date", .dockSecondaryText)
@@ -48,17 +52,17 @@ private struct HermAppUpdateControls: View {
             case .installing: ("Installing and restarting…", .dockWarning)
             case .failed(let reason): (reason, .dockWarning)
             }
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        return VStack(alignment: .leading, spacing: compact ? DockSpacing.tight : DockSpacing.control) {
+            HStack(spacing: DockSpacing.control) {
                 Text("Herm").dockFont(.navigation, weight: .semibold)
                 if let version = appUpdater.currentVersion {
                     Text(version).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1)
                 }
+                DockBuildBadge(build: appUpdater.build, includesCommit: !compact)
                 if compact {
                     Spacer(minLength: 0)
-                    appUpdateAction
-                } else {
-                    DockBuildBadge(build: .current, includesCommit: true)
+                    if showsReleasesInHeader { releasesLink } else { appUpdateAction }
                 }
             }
             .frame(minHeight: compact ? DockControlMetrics.compactHeight : nil)
@@ -69,10 +73,10 @@ private struct HermAppUpdateControls: View {
                     DockStatusDot(tone: .working, size: 7, pulses: true)
                 } else if appUpdater.phase == .checking {
                     DockLoadingIndicator().controlSize(.small)
-                } else {
+                } else if !compact {
                     Circle().fill(color).frame(width: 7, height: 7)
                 }
-                Text(status)
+                Text(compact && appUpdater.phase == .checking ? "Checking for updates…" : status)
                     .dockFont(.body)
                     .foregroundStyle(color)
                     .fixedSize(horizontal: false, vertical: true)
@@ -86,37 +90,57 @@ private struct HermAppUpdateControls: View {
                         .foregroundStyle(Color.dockSecondaryText)
                         .contentTransition(.numericText())
                 }
-                if !compact { appUpdateAction }
+                if !compact {
+                    appUpdateAction
+                } else if !showsReleasesInHeader {
+                    releasesLink.fixedSize()
+                }
             }
-            Color.clear.frame(height: 4)
-                .overlay {
-                    if appUpdater.phase == .downloading {
-                        if appUpdater.downloadStage == "Downloading", let fraction = appUpdater.downloadFraction {
-                            DockProgressBar(fraction: fraction)
-                        } else {
-                            DockShimmerTrack(tone: .working)
+            if !showsReleasesInHeader {
+                Color.clear.frame(height: 4)
+                    .overlay {
+                        if appUpdater.phase == .downloading {
+                            if appUpdater.downloadStage == "Downloading", let fraction = appUpdater.downloadFraction {
+                                DockProgressBar(fraction: fraction)
+                            } else {
+                                DockShimmerTrack(tone: .working)
+                            }
                         }
                     }
-                }
-            HStack {
-                if !compact {
+            }
+            if !compact {
+                HStack {
                     Text(
                         "Source  ·  \(HermAppUpdater.repository)"
                             + (appUpdater.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? "")
                     )
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
+                    releasesLink
                 }
-                Button("Releases on GitHub") {
-                    let fallback = "https://github.com/\(HermAppUpdater.repository)/releases"
-                    if let url = appUpdater.latest?.pageURL ?? URL(string: fallback) {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-                .buttonStyle(.dockLink)
             }
+            HermAlternateReleaseRow(appUpdater: appUpdater, compact: compact)
+                .dockPadding(.top, DockSpacing.micro)
         }
         .onAppear { appUpdater.checkIfStale() }
+    }
+
+    private var showsReleasesInHeader: Bool {
+        if compact, case .unavailable = appUpdater.phase { return true }
+        return false
+    }
+
+    private var releasesLink: some View {
+        Button {
+            let fallback = "https://github.com/\(HermAppUpdater.repository)/releases"
+            if let url = appUpdater.latest?.pageURL ?? URL(string: fallback) {
+                NSWorkspace.shared.open(url)
+            }
+        } label: {
+            releaseLinkLabel(compact ? "Releases" : "Releases on GitHub", externalMark: compact)
+        }
+        .buttonStyle(.dockLink)
+        .accessibilityLabel("Herm releases on GitHub")
     }
 
     @ViewBuilder private var appUpdateAction: some View {
@@ -142,6 +166,98 @@ private struct HermAppUpdateControls: View {
     }
 }
 
+private struct HermAlternateReleaseRow: View {
+    @ObservedObject var appUpdater: HermAppUpdater
+    let compact: Bool
+
+    var body: some View {
+        let state = appUpdater.alternateReleaseState
+        VStack(alignment: .leading, spacing: DockSpacing.tight) {
+            HStack(spacing: DockSpacing.control) {
+                VStack(alignment: .leading, spacing: DockSpacing.micro) {
+                    Text(appUpdater.alternateChannel.title)
+                        .dockFont(.body, weight: .semibold)
+                    if let release = state.release {
+                        Text(release.downloadVersionLabel)
+                            .dockFont(.body)
+                            .foregroundStyle(Color.dockSecondaryText)
+                        if let date = release.updatedAt {
+                            let fullTimestamp = "Updated \(HumanDateFormatting.dateAndTime(date))"
+                            let shortTimestamp = date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+                            Text(compact ? "Updated \(shortTimestamp)" : fullTimestamp)
+                                .dockFont(compact ? .compactStatus : .metadata, weight: .regular)
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .accessibilityLabel(fullTimestamp)
+                                .help(fullTimestamp)
+                        }
+                    } else if state == .checking || state == .idle {
+                        Text("Checking for the latest build…")
+                            .dockFont(.body)
+                            .foregroundStyle(Color.dockSecondaryText)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                action(for: state)
+                    .fixedSize()
+            }
+            .buttonStyle(DockSecondaryButtonStyle(onWell: true))
+            switch state {
+            case .downloading(_, let fraction, let stage):
+                HStack {
+                    Text("\(stage)…")
+                    Spacer()
+                    if stage == "Downloading", let fraction {
+                        Text(fraction, format: .percent.precision(.fractionLength(0))).monospacedDigit()
+                    }
+                }
+                .dockFont(.body)
+                .foregroundStyle(Color.dockSecondaryText)
+                if stage == "Downloading", let fraction {
+                    DockProgressBar(fraction: fraction)
+                } else {
+                    DockShimmerTrack(tone: .working)
+                }
+            case .downloaded:
+                Text("Saved to Downloads")
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockSecondaryText)
+            case .failed(let reason), .downloadFailed(_, let reason):
+                Text(reason)
+                    .dockFont(.body)
+                    .foregroundStyle(Color.dockWarning)
+                    .fixedSize(horizontal: false, vertical: true)
+            default: EmptyView()
+            }
+        }
+        .dockPadding(DockSpacing.control)
+        .dockWell(.sunken)
+        .task { appUpdater.checkAlternateIfStale() }
+    }
+
+    @ViewBuilder private func action(for state: HermAlternateReleaseState) -> some View {
+        switch state {
+        case .idle, .checking:
+            DockLoadingIndicator(size: 12)
+        case .available(let release), .downloading(let release, _, _):
+            Button("Download") { appUpdater.downloadAlternateRelease() }
+                .accessibilityLabel("Download \(appUpdater.alternateChannel.title)")
+                .disabled(state != .available(release))
+        case .downloaded(_, let url):
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        case .failed, .downloadFailed:
+            Button("Check again") { appUpdater.checkAlternateRelease() }
+        }
+    }
+}
+
+@MainActor private func releaseLinkLabel(_ title: String, externalMark: Bool) -> some View {
+    HStack(spacing: DockSpacing.micro) {
+        Text(title)
+        if externalMark { DockIcon(.arrowUpRight, size: 11) }
+    }
+}
+
 private struct HermesAgentUpdateControls: View {
     @ObservedObject var agentUpdateService: HermesUpdateService
     let compact: Bool
@@ -149,7 +265,7 @@ private struct HermesAgentUpdateControls: View {
     @State private var isAgentUpdateOutputExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: compact ? DockSpacing.tight : DockSpacing.group) {
             HStack(spacing: 8) {
                 Text("Hermes Agent")
                     .dockFont(.navigation, weight: .semibold)
@@ -224,46 +340,26 @@ private struct HermesAgentUpdateControls: View {
 
     private func agentUpdateCheckedContent(statusText: String, statusColor: Color, showsUpdateButton: Bool) -> some View
     {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Circle().fill(statusColor).frame(width: 7, height: 7)
+        VStack(alignment: .leading, spacing: compact ? DockSpacing.control : 8) {
+            HStack(spacing: DockSpacing.tight) {
+                if !compact || showsUpdateButton {
+                    Circle().fill(statusColor).frame(width: 6, height: 6).accessibilityHidden(true)
+                }
                 Text(statusText)
                     .dockFont(.body, weight: .semibold)
                     .foregroundStyle(statusColor)
-                if showsUpdateButton && !compact { agentUpdateButton }
+                if compact {
+                    Spacer(minLength: 0)
+                    agentReleaseNotes.fixedSize()
+                } else if showsUpdateButton {
+                    agentUpdateButton
+                }
             }
             .dockButtonSize(.inline)
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                if let installed = agentUpdateService.installed {
-                    GridRow {
-                        Text("Installed")
-                        Text(
-                            [installed.displayVersion, compact ? nil : agentUpdateService.installMethod].compactMap {
-                                $0
-                            }
-                            .joined(separator: "  ·  "))
-                    }
-                }
-                if let latest = agentUpdateService.latest {
-                    GridRow {
-                        Text("Latest release")
-                        Text(
-                            latest.displayVersion
-                                + (compact
-                                    ? ""
-                                    : latest.publishedAt.map { "  ·  " + HumanDateFormatting.dateAndTime($0) } ?? ""))
-                    }
-                    if let page = latest.pageURL, let url = URL(string: page) {
-                        GridRow {
-                            Color.clear.frame(width: 0, height: 0)
-                            Button("Release notes") { ExternalOpen.open(url) }.buttonStyle(.dockLink)
-                        }
-                    }
-                }
-            }
-            .dockFont(.body)
-            .foregroundStyle(Color.dockSecondaryText)
-            if !compact {
+            if compact {
+                compactAgentVersions
+            } else {
+                fullAgentVersions
                 Text(
                     "Source  ·  NousResearch/hermes-agent"
                         + (agentUpdateService.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) }
@@ -273,6 +369,78 @@ private struct HermesAgentUpdateControls: View {
                 .foregroundStyle(Color.dockMetadataText)
             }
         }
+    }
+
+    private var compactAgentVersions: some View {
+        HStack(alignment: .top, spacing: DockSpacing.group) {
+            if let installed = agentUpdateService.installed {
+                let version = installed.marketing.map { "v\($0)" }
+                versionColumn(
+                    "Installed", version: version ?? installed.displayVersion,
+                    detail: version == nil ? nil : installed.calendar.map { "Build \($0)" })
+            }
+            if let latest = agentUpdateService.latest {
+                let version = latest.marketing.map { "v\($0)" }
+                let tag = latest.tag == version || latest.tag == latest.marketing ? nil : latest.tag
+                versionColumn(
+                    "Latest release", version: version ?? latest.displayVersion, detail: version == nil ? nil : tag)
+            }
+        }
+    }
+
+    private func versionColumn(_ label: String, version: String, detail: String?) -> some View {
+        VStack(alignment: .leading, spacing: DockSpacing.micro) {
+            Text(label).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+            Text(version).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+            if let detail {
+                Text(detail).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private var agentReleaseNotes: some View {
+        if let page = agentUpdateService.latest?.pageURL, let url = URL(string: page) {
+            Button {
+                ExternalOpen.open(url)
+            } label: {
+                releaseLinkLabel("Release notes", externalMark: compact)
+            }
+            .buttonStyle(.dockLink)
+            .accessibilityLabel("Hermes Agent release notes")
+        }
+    }
+
+    private var fullAgentVersions: some View {
+        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+            if let installed = agentUpdateService.installed {
+                GridRow {
+                    Text("Installed")
+                    Text(
+                        [installed.displayVersion, agentUpdateService.installMethod].compactMap {
+                            $0
+                        }
+                        .joined(separator: "  ·  "))
+                }
+            }
+            if let latest = agentUpdateService.latest {
+                GridRow {
+                    Text("Latest release")
+                    Text(
+                        latest.displayVersion
+                            + (latest.publishedAt.map { "  ·  " + HumanDateFormatting.dateAndTime($0) } ?? ""))
+                }
+                if latest.pageURL != nil {
+                    GridRow {
+                        Color.clear.frame(width: 0, height: 0)
+                        agentReleaseNotes
+                    }
+                }
+            }
+        }
+        .dockFont(.body)
+        .foregroundStyle(Color.dockSecondaryText)
     }
 
     private func agentUpdateCheckFailedContent(_ reason: String) -> some View {

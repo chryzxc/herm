@@ -83,16 +83,92 @@ import Testing
     }
 
     @Test func nightlyReleaseIsIdentifiedByCommit() throws {
-        let nightly = try #require(HermUpdateParsing.release(from: payload(tag: "nightly", prerelease: true)))
+        var value = payload(tag: "nightly", prerelease: true)
+        value["name"] = "Nightly 1.2.3-dev (bbbbbbbb)"
+        let nightly = try #require(HermUpdateParsing.release(from: value))
         #expect(nightly.commit == String(repeating: "b", count: 40))
+        #expect(nightly.downloadVersionLabel == "1.2.3-dev · bbbbbbbb")
         #expect(HermUpdateParsing.isNewerNightly(nightly, currentCommit: String(repeating: "a", count: 40)))
         #expect(!HermUpdateParsing.isNewerNightly(nightly, currentCommit: "bbbbbbbb"))
         #expect(!HermUpdateParsing.isNewerNightly(nightly, currentCommit: nil))
+        value["name"] = "Nightly 1.2.3-dev (aaaaaaaa)"
+        #expect(HermUpdateParsing.release(from: value)?.downloadVersionLabel == "Build bbbbbbbb")
     }
 
     @Test func otherPrereleasesAreIgnored() {
         #expect(HermUpdateParsing.release(from: payload(tag: "v0.3.0-rc.1", prerelease: true)) == nil)
         #expect(HermUpdateParsing.release(from: payload(tag: "v0.3.0", prerelease: false))?.commit == nil)
+    }
+
+    @Test func alternateOffersNightlyToDevAndStableAndStableToNightly() {
+        for current in [HermBuildInfo.Channel.dev, .stable] {
+            let channel = HermAlternateReleaseChannel(current: current)
+            #expect(channel == .nightly)
+            #expect(channel.releasePath == "tags/nightly")
+        }
+        let channel = HermAlternateReleaseChannel(current: .nightly)
+        #expect(channel == .stable)
+        #expect(channel.releasePath == "latest")
+    }
+
+    @Test func releaseDatePrefersTheDmgUpdateAndFallsBackToPublication() throws {
+        var value = payload(tag: "nightly", prerelease: true)
+        value["published_at"] = "2026-11-21T03:00:00Z"
+        #expect(HermUpdateParsing.release(from: value)?.updatedAt == ISO8601Parsing.date("2026-11-21T03:00:00Z"))
+        var assets = try #require(value["assets"] as? [[String: String]])
+        assets[0]["updated_at"] = "2026-11-22T03:00:00Z"
+        value["assets"] = assets
+        #expect(HermUpdateParsing.release(from: value)?.updatedAt == ISO8601Parsing.date("2026-11-22T03:00:00Z"))
+    }
+
+    @Test func archiveNameCannotContainPathComponents() {
+        #expect(release("nightly abcdef12").archiveFilename == "Herm-nightly-abcdef12.dmg")
+        #expect(!release("../weird/build").archiveFilename.contains("/"))
+    }
+
+    @MainActor @Test func alternateDownloadDoesNotStageAnInAppUpdate() async throws {
+        let latest = release("nightly bbbbbbbb", commit: String(repeating: "b", count: 40))
+        let saved = URL(fileURLWithPath: "/tmp/Herm-nightly-bbbbbbbb.dmg")
+        let app = HermAppUpdater(
+            build: HermBuildInfo(channel: "dev", commit: nil, isDebug: true),
+            fetchAlternate: { channel in
+                #expect(channel == .nightly)
+                return latest
+            },
+            saveAlternate: { requested, progress in
+                #expect(requested == latest)
+                progress(0.5, "Downloading")
+                return saved
+            })
+        app.checkAlternateIfStale()
+        for _ in 0..<100 where app.alternateReleaseState == .checking {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(app.alternateReleaseState == .available(latest))
+        app.downloadAlternateRelease()
+        #expect(app.alternateReleaseState == .downloading(latest, fraction: nil, stage: "Downloading"))
+        for _ in 0..<100 where app.alternateReleaseState != .downloaded(latest, saved) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        await Task.yield()
+        #expect(app.alternateReleaseState == .downloaded(latest, saved))
+        #expect(app.phase == .idle)
+        #expect(!app.hasUpdate)
+    }
+
+    @MainActor @Test func alternateLookupRejectsAReleaseFromTheWrongChannel() async throws {
+        let stable = release("1.0.0")
+        let app = HermAppUpdater(
+            build: HermBuildInfo(channel: "stable", commit: nil, isDebug: false),
+            fetchAlternate: { _ in stable })
+        app.checkAlternateRelease()
+        for _ in 0..<100 where app.alternateReleaseState == .checking {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        guard case .failed = app.alternateReleaseState else {
+            Issue.record("A stable release must not be shown as the alternate Nightly build.")
+            return
+        }
     }
 
     @Test func staleCheckThrottlesRepeatChecks() {

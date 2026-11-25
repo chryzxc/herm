@@ -1431,6 +1431,9 @@ visible through More. Connection and window-switch actions stay directly accessi
 
 - **Updates** groups Herm and Hermes Agent under Software updates, followed by Agent compatibility.
 - **Quick updates:** Open **Updates** from the rail’s gear menu to see installed and available versions, download and install Herm, or confirm a Hermes Agent update without opening Settings.
+  The Hermes Agent section aligns installed and latest versions side by side, with release notes beside the update status.
+- **Other Herm builds:** Quick Updates and Settings → Updates both show the current build and offer **Download** for the other channel. Dev and Stable offer the latest Nightly from `main`, and Nightly offers the latest Stable. Each option shows its version or commit and last update date when available. The verified DMG goes to Downloads without installing or changing your current build.
+  In Quick Updates, hover over the shortened timestamp for the full date and time.
 - **Updates → Herm changelog** shows offline release highlights. Choose a version to read what changed or open its full release notes on GitHub.
 - **General:** startup, global keyboard shortcuts, keep-awake behavior, and app restart.
 - **Gateway:** backend connections and the local messaging gateway service.

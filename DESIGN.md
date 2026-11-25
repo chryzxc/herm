@@ -2413,7 +2413,19 @@ opens at the top when the category changes.
   rail icon and Updates in both the gear menu and the full Settings page. The gear
   menu’s Updates submenu places Herm first and Hermes Agent second in a compact
   popover. Both use the same update controls and show installed and available
-  versions, progress, and failures. Hermes Agent keeps its explicit confirmation.
+  versions, progress, and failures. Herm's heading uses the shared Dev or Nightly
+  pill where applicable. The popover puts the Hermes Agent status and release
+  notes on one row. Installed and latest versions are in aligned columns below,
+  with build dates or differing release tags on a quieter line.
+  Under Herm, both surfaces show a quieter download row for the other channel.
+  Dev and Stable offer Nightly from main, and Nightly offers Stable. The row
+  shows the release version or nightly commit and the disk image's update date.
+  The download row uses a secondary button with a theme-aware face and outline
+  that stand apart from its well. The button uses the usual 28pt action size.
+  The popover shows a shorter 10pt timestamp with the full date and time in
+  its tooltip and accessible label.
+  Download saves a verified archive in Downloads and offers Show in Finder.
+  It does not stage or install a channel switch. Hermes Agent keeps its explicit confirmation.
   Compatibility and the changelog stay in the full Settings page.
   Supported builds offer Download, then Install and
   restart; a requested restart waits for the current turn. Builds that cannot

@@ -13,6 +13,52 @@ struct HermRelease: Equatable, Sendable {
     /// Source commit of a nightly; nightlies share a version, so the commit identifies the build.
     var commit: String? = nil
     var signatureURL: URL? = nil
+    var updatedAt: Date? = nil
+    var nightlyVersion: String? = nil
+
+    var downloadVersionLabel: String {
+        guard let commit else { return "Version \(version)" }
+        let shortCommit = commit.prefix(8)
+        return nightlyVersion.map { "\($0) · \(shortCommit)" } ?? "Build \(shortCommit)"
+    }
+
+    var archiveFilename: String {
+        let label = version.prefix(80).map { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == ".") ? $0 : "-" }
+        return "Herm-\(String(label)).dmg"
+    }
+}
+
+enum HermAlternateReleaseChannel: String, Sendable {
+    case stable, nightly
+
+    init(current: HermBuildInfo.Channel) {
+        self = current == .nightly ? .stable : .nightly
+    }
+
+    var releasePath: String { self == .nightly ? "tags/\(HermUpdateParsing.nightlyTag)" : "latest" }
+    var title: String { self == .nightly ? "Nightly from main" : "Stable release" }
+
+    func matches(_ release: HermRelease) -> Bool {
+        (self == .nightly) == (release.commit != nil)
+    }
+}
+
+enum HermAlternateReleaseState: Equatable {
+    case idle, checking
+    case available(HermRelease)
+    case downloading(HermRelease, fraction: Double?, stage: String)
+    case downloaded(HermRelease, URL)
+    case downloadFailed(HermRelease, String)
+    case failed(String)
+
+    var release: HermRelease? {
+        switch self {
+        case .available(let release), .downloading(let release, _, _), .downloaded(let release, _),
+            .downloadFailed(let release, _):
+            release
+        default: nil
+        }
+    }
 }
 
 enum HermAppUpdatePhase: Equatable {
@@ -51,16 +97,29 @@ enum HermUpdateParsing {
         let signatureURL = assets.first(where: { $0["name"] as? String == assetName + ".sig" })
             .flatMap { ($0["url"] as? String).flatMap(URL.init(string:)) }
             .flatMap { $0.scheme == "https" && $0.host == "api.github.com" ? $0 : nil }
+        let updatedAt =
+            (asset["updated_at"] as? String).flatMap(ISO8601Parsing.date)
+            ?? (payload["published_at"] as? String).flatMap(ISO8601Parsing.date)
         if tag == nightlyTag {
             // The workflow targets the release at the full source SHA.
             guard let commit = payload["target_commitish"] as? String, commit.count == 40 else { return nil }
+            // The rolling tag identifies a commit. Its release title also carries the app version.
+            let title = (payload["name"] as? String)?.split(separator: " ", maxSplits: 2).map(String.init) ?? []
+            let nightlyVersion =
+                if title.count == 3, title[0] == "Nightly", title[2] == "(\(commit.prefix(8)))",
+                    title[1].range(of: #"^\d+\.\d+\.\d+-dev$"#, options: .regularExpression) != nil
+                {
+                    title[1]
+                } else {
+                    nil as String?
+                }
             return HermRelease(
                 version: "nightly \(commit.prefix(8))", pageURL: pageURL, assetURL: assetURL, digest: digest,
-                commit: commit, signatureURL: signatureURL)
+                commit: commit, signatureURL: signatureURL, updatedAt: updatedAt, nightlyVersion: nightlyVersion)
         }
         return HermRelease(
             version: tag.hasPrefix("v") ? String(tag.dropFirst()) : tag,
-            pageURL: pageURL, assetURL: assetURL, digest: digest, signatureURL: signatureURL)
+            pageURL: pageURL, assetURL: assetURL, digest: digest, signatureURL: signatureURL, updatedAt: updatedAt)
     }
 
     /// A nightly build moves to a newer nightly whenever main has a different commit.
@@ -91,6 +150,8 @@ enum HermUpdateParsing {
 /// the swap or the relaunch fails.
 @MainActor
 final class HermAppUpdater: ObservableObject {
+    typealias ArchiveProgress = @Sendable (Double?, String) -> Void
+
     static let shared = HermAppUpdater()
     nonisolated static let repository = "chryzxc/herm"
     nonisolated static let updatePublicKey = Bundle.main.infoDictionary?["HermUpdatePublicKey"] as? String
@@ -107,6 +168,7 @@ final class HermAppUpdater: ObservableObject {
     @Published private(set) var downloadFraction: Double?
     @Published private(set) var downloadStage = "Downloading"
     @Published private(set) var installUnavailableReason: String?
+    @Published private(set) var alternateReleaseState: HermAlternateReleaseState = .idle
 
     /// Set by the app delegate; an update never restarts Herm mid-turn.
     var isBusy: () -> Bool = { false }
@@ -114,9 +176,74 @@ final class HermAppUpdater: ObservableObject {
     private var timer: Timer?
     private var activationObserver: NSObjectProtocol?
     private var stagedAppURL: URL?
+    private var alternateLastChecked: Date?
+    private let fetchAlternate: @Sendable (HermAlternateReleaseChannel) async throws -> HermRelease
+    private let saveAlternate: @Sendable (HermRelease, @escaping ArchiveProgress) async throws -> URL
 
-    let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-    let isNightly = HermBuildInfo.current.channel == .nightly
+    let currentVersion: String?
+    let build: HermBuildInfo
+    let alternateChannel: HermAlternateReleaseChannel
+
+    init(
+        build: HermBuildInfo = .current,
+        currentVersion: String? = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+        fetchAlternate: @escaping @Sendable (HermAlternateReleaseChannel) async throws -> HermRelease =
+            HermAppUpdater.fetchAlternateRelease,
+        saveAlternate: @escaping @Sendable (HermRelease, @escaping ArchiveProgress) async throws -> URL =
+            HermAppUpdater.saveAlternateArchive
+    ) {
+        self.build = build
+        self.currentVersion = currentVersion
+        alternateChannel = HermAlternateReleaseChannel(current: build.channel)
+        self.fetchAlternate = fetchAlternate
+        self.saveAlternate = saveAlternate
+    }
+
+    func checkAlternateIfStale() {
+        guard Self.isStale(alternateLastChecked, now: Date(), maxAge: Self.staleInterval) else { return }
+        checkAlternateRelease()
+    }
+
+    func checkAlternateRelease() {
+        switch alternateReleaseState {
+        case .checking, .downloading: return
+        default: break
+        }
+        alternateLastChecked = Date()
+        alternateReleaseState = .checking
+        Task {
+            do {
+                let release = try await fetchAlternate(alternateChannel)
+                guard alternateChannel.matches(release) else {
+                    throw UpdateError("GitHub returned a release from a different channel.")
+                }
+                alternateReleaseState = .available(release)
+            } catch {
+                alternateReleaseState = .failed(HermesDiagnosticsService.safeSummary(error.localizedDescription))
+            }
+        }
+    }
+
+    func downloadAlternateRelease() {
+        guard case .available(let release) = alternateReleaseState else { return }
+        alternateReleaseState = .downloading(release, fraction: nil, stage: "Downloading")
+        Task { [self] in
+            do {
+                let file = try await saveAlternate(release) { [weak self] fraction, stage in
+                    Task { @MainActor in
+                        guard let self, case .downloading(let active, _, _) = self.alternateReleaseState,
+                            active == release
+                        else { return }
+                        self.alternateReleaseState = .downloading(release, fraction: fraction, stage: stage)
+                    }
+                }
+                alternateReleaseState = .downloaded(release, file)
+            } catch {
+                alternateReleaseState = .downloadFailed(
+                    release, HermesDiagnosticsService.safeSummary(error.localizedDescription))
+            }
+        }
+    }
 
     var canCheck: Bool {
         switch phase {
@@ -189,7 +316,7 @@ final class HermAppUpdater: ObservableObject {
             do {
                 let token = await GitHubCodeHostService.localGitHubToken()
                 let result = try await Self.findUpdate(
-                    currentVersion: currentVersion, isNightly: isNightly, currentCommit: HermBuildInfo.current.commit
+                    currentVersion: currentVersion, isNightly: build.channel == .nightly, currentCommit: build.commit
                 ) { path in
                     try await Self.fetchRelease(path, token: token)
                 }
@@ -317,6 +444,13 @@ final class HermAppUpdater: ObservableObject {
         return release
     }
 
+    nonisolated private static func fetchAlternateRelease(_ channel: HermAlternateReleaseChannel) async throws
+        -> HermRelease
+    {
+        let token = await GitHubCodeHostService.localGitHubToken()
+        return try await fetchRelease(channel.releasePath, token: token)
+    }
+
     /// Strips the GitHub token when the asset redirects to its storage host.
     private final class RedirectAuthStripper: NSObject, URLSessionDownloadDelegate {
         let progress: @Sendable (Double?, String) -> Void
@@ -352,48 +486,12 @@ final class HermAppUpdater: ObservableObject {
         _ release: HermRelease, token: String?, progress: @escaping @Sendable (Double?, String) -> Void
     ) async throws -> URL {
         let publisher = try HermUpdateTrust.updatePublisher(of: Bundle.main.bundleURL)
-        guard let expectedDigest = HermUpdateTrust.expectedDigest(release.digest) else {
-            throw UpdateError("The release has no valid SHA-256 checksum. The update was not installed.")
-        }
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("herm-update-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: work) }
-
-        let (downloaded, response) = try await URLSession.shared.download(
-            for: request(release.assetURL, token: token, accept: "application/octet-stream"),
-            delegate: RedirectAuthStripper(progress: progress)
-        )
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw UpdateError("The update download failed (status \((response as? HTTPURLResponse)?.statusCode ?? 0)).")
-        }
         let dmg = work.appendingPathComponent(HermUpdateParsing.assetName)
-        try FileManager.default.moveItem(at: downloaded, to: dmg)
-
-        progress(1, "Verifying")
-        let archive = try Data(contentsOf: dmg, options: .mappedIfSafe)
-        let actual = SHA256.hash(data: archive).map {
-            String(format: "%02x", $0)
-        }.joined()
-        guard actual == expectedDigest else {
-            throw UpdateError("The downloaded update failed its checksum.")
-        }
-        if publisher == nil {
-            guard let signatureURL = release.signatureURL, let publicKey = updatePublicKey else {
-                throw UpdateError("The release has no update signature. Install it from the release page.")
-            }
-            let (bytes, response) = try await URLSession.shared.bytes(
-                for: request(signatureURL, token: token, accept: "application/octet-stream"),
-                delegate: RedirectAuthStripper())
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                throw UpdateError("The update signature could not be downloaded.")
-            }
-            var signature = Data()
-            for try await byte in bytes {
-                guard signature.count < 128 else { throw UpdateError("The update signature is invalid.") }
-                signature.append(byte)
-            }
-            try HermUpdateTrust.verifyArchive(archive, signature: signature, publicKey: publicKey)
-        }
+        try await downloadVerifiedArchive(
+            release, to: dmg, token: token, requiresArchiveSignature: publisher == nil, progress: progress)
 
         let mount = work.appendingPathComponent("mnt")
         try run(
@@ -428,6 +526,72 @@ final class HermAppUpdater: ObservableObject {
         } catch {
             try? FileManager.default.removeItem(at: staged)
             throw error
+        }
+    }
+
+    nonisolated private static func saveAlternateArchive(
+        _ release: HermRelease, progress: @escaping ArchiveProgress
+    ) async throws -> URL {
+        let files = FileManager.default
+        let work = files.temporaryDirectory.appendingPathComponent("herm-download-\(UUID().uuidString)")
+        try files.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: work) }
+        let dmg = work.appendingPathComponent(HermUpdateParsing.assetName)
+        let token = await GitHubCodeHostService.localGitHubToken()
+        // A standalone DMG has no staged bundle to check for an Apple publisher.
+        try await downloadVerifiedArchive(
+            release, to: dmg, token: token, requiresArchiveSignature: true, progress: progress)
+        let downloads = try files.url(for: .downloadsDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        var destination = downloads.appendingPathComponent(release.archiveFilename)
+        if files.fileExists(atPath: destination.path) {
+            destination = destination.deletingPathExtension()
+                .appendingPathExtension("\(UUID().uuidString.prefix(8)).dmg")
+        }
+        try files.moveItem(at: dmg, to: destination)
+        return destination
+    }
+
+    nonisolated private static func downloadVerifiedArchive(
+        _ release: HermRelease, to dmg: URL, token: String?, requiresArchiveSignature: Bool,
+        progress: @escaping ArchiveProgress
+    ) async throws {
+        guard let expectedDigest = HermUpdateTrust.expectedDigest(release.digest) else {
+            throw UpdateError("The release has no valid SHA-256 checksum.")
+        }
+        let (downloaded, response) = try await URLSession.shared.download(
+            for: request(release.assetURL, token: token, accept: "application/octet-stream"),
+            delegate: RedirectAuthStripper(progress: progress)
+        )
+        defer { try? FileManager.default.removeItem(at: downloaded) }
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw UpdateError("The update download failed (status \((response as? HTTPURLResponse)?.statusCode ?? 0)).")
+        }
+        try FileManager.default.moveItem(at: downloaded, to: dmg)
+
+        progress(1, "Verifying")
+        let archive = try Data(contentsOf: dmg, options: .mappedIfSafe)
+        let actual = SHA256.hash(data: archive).map {
+            String(format: "%02x", $0)
+        }.joined()
+        guard actual == expectedDigest else {
+            throw UpdateError("The downloaded update failed its checksum.")
+        }
+        if requiresArchiveSignature {
+            guard let signatureURL = release.signatureURL, let publicKey = updatePublicKey else {
+                throw UpdateError("The release has no update signature. Install it from the release page.")
+            }
+            let (bytes, response) = try await URLSession.shared.bytes(
+                for: request(signatureURL, token: token, accept: "application/octet-stream"),
+                delegate: RedirectAuthStripper())
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                throw UpdateError("The update signature could not be downloaded.")
+            }
+            var signature = Data()
+            for try await byte in bytes {
+                guard signature.count < 128 else { throw UpdateError("The update signature is invalid.") }
+                signature.append(byte)
+            }
+            try HermUpdateTrust.verifyArchive(archive, signature: signature, publicKey: publicKey)
         }
     }
 
