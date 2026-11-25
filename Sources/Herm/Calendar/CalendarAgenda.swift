@@ -3,8 +3,8 @@ import SwiftUI
 
 /// One thing on the Calendar page. Mac events and reminders are read live from
 /// EventKit and never stored; automation runs and in-progress tasks are Hermes'.
-struct CalendarItem: Identifiable, Equatable {
-    enum Kind: Equatable {
+struct CalendarItem: Identifiable, Equatable, Sendable {
+    enum Kind: Equatable, Sendable {
         case event(calendar: String, location: String?, attendees: [String], url: URL?)
         case reminder(list: String)
         case automation(cronID: String)
@@ -60,7 +60,6 @@ struct CalendarItem: Identifiable, Equatable {
     }
 }
 
-@MainActor
 enum CalendarAgenda {
     enum Filter: String, CaseIterable {
         case all = "All items"
@@ -68,6 +67,63 @@ enum CalendarAgenda {
         case reminders = "Reminders"
         case automations = "Agent runs"
         case tasks = "Kanban"
+    }
+
+    struct Inputs: Equatable, Sendable {
+        let events: [CalendarItem]
+        let jobs: [CronSummary]
+        let tasks: [KanbanTaskSummary]
+        let hiddenSources: String
+        let today: Date
+        let range: DateInterval
+        let calendar: Calendar
+    }
+
+    struct Request: Equatable, Sendable {
+        let inputs: Inputs
+        let query: String
+        let filter: Filter
+    }
+
+    struct Projection: Sendable {
+        let request: Request
+        let full: [Date: [CalendarItem]]
+        let visible: [Date: [CalendarItem]]
+        let conflicts: [Date: Set<String>]
+    }
+
+    static func project(_ request: Request, reusing previous: Projection?) throws -> Projection {
+        try Task.checkCancellation()
+        let full: [Date: [CalendarItem]]
+        let conflicts: [Date: Set<String>]
+        let inputs = request.inputs
+        if let previous, previous.request.inputs == inputs {
+            full = previous.full
+            conflicts = previous.conflicts
+        } else {
+            let excluded = Set(inputs.hiddenSources.split(separator: "\n").map(String.init))
+            let items =
+                inputs.events.filter { $0.sourceID.map { !excluded.contains($0) } ?? true }
+                + automationItems(inputs.jobs)
+                + taskItems(inputs.tasks, now: inputs.today, calendar: inputs.calendar)
+            try Task.checkCancellation()
+            full = build(items, in: inputs.range, calendar: inputs.calendar)
+            conflicts = try full.mapValues {
+                try Task.checkCancellation()
+                return overlappingEventIDs($0)
+            }
+        }
+
+        var visible = full
+        if !request.query.isEmpty || request.filter != .all {
+            visible = [:]
+            for (day, items) in full {
+                try Task.checkCancellation()
+                let matches = filtered(items, query: request.query, kind: request.filter)
+                if !matches.isEmpty { visible[day] = matches }
+            }
+        }
+        return Projection(request: request, full: full, visible: visible, conflicts: conflicts)
     }
 
     static func filtered(_ items: [CalendarItem], query: String, kind: Filter) -> [CalendarItem] {
@@ -79,6 +135,8 @@ enum CalendarAgenda {
                 matchesKind = true
             default: matchesKind = false
             }
+            guard matchesKind else { return false }
+            guard !query.isEmpty else { return true }
             let source: String
             switch item.kind {
             case .event(let name, let location, _, _): source = name + " " + (location ?? "")
@@ -86,7 +144,7 @@ enum CalendarAgenda {
             case .automation: source = "Automation"
             case .task: source = "Kanban"
             }
-            return matchesKind && (query.isEmpty || (item.title + " " + source).localizedStandardContains(query))
+            return (item.title + " " + source).localizedStandardContains(query)
         }
     }
 
@@ -134,7 +192,11 @@ enum CalendarAgenda {
     /// as a timestamp is dropped rather than guessed.
     static func automationItems(_ jobs: [CronSummary]) -> [CalendarItem] {
         jobs.compactMap { job in
-            guard job.enabled, let next = job.nextRun.flatMap(HumanDateFormatting.date) else { return nil }
+            guard job.enabled,
+                let next = job.nextRun.flatMap({
+                    ISO8601Parsing.fractionalDate($0) ?? ISO8601Parsing.date($0)
+                })
+            else { return nil }
             return CalendarItem(
                 id: "cron:\(job.id)", kind: .automation(cronID: job.id), title: job.name, start: next, notes: job.prompt
             )

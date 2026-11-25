@@ -4496,7 +4496,9 @@ Week and Month share a search row with Agenda, a weekly list grouped by date.
 Search matches titles, source names, and locations within the displayed range;
 a type menu narrows the projection and Clear resets both filters. The month heading
 opens a date picker. Agenda rows select the day and expand the item in the inspector.
-Search and type changes reuse the full date index for the same range and sources.
+Calendar prepares the date index in the background. Search and type changes
+reuse it for the same range and sources. The current range stays visible while a
+filter updates. A new range shows loading in the agenda until its index is ready.
 The inspector separates all-day items from the schedule and labels overlapping timed
 events using all enabled sources before search/type filtering. Touching event boundaries
 do not conflict. Plan in chat includes the complete selected day from enabled sources.
@@ -4515,7 +4517,9 @@ Date navigation keeps Today in a fixed slot, disabled on today. The toolbar
 wraps into two rows when needed. Narrow windows stack the grid and agenda in a
 scrollable workspace. Very narrow grids show category icons and item counts
 instead of truncated event titles; full titles remain in the daily agenda. Agenda headers show the selected date and actual item
-count; the read-only Mac connection prompt follows the schedule.
+count; the read-only Mac connection prompt follows the schedule. Agenda and
+selected-day lists mount individual rows on demand, keeping their existing day
+headers and selection. Apply the day selection treatment once to its header.
 
 ### Activity usage heatmap
 
