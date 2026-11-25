@@ -10,10 +10,12 @@ struct GroupMemberFace: View {
     var size: CGFloat = 24
     /// nil keeps the avatar's own idle/hover behavior.
     var mood: BotMood?
+    var statusMotion = true
 
     var body: some View {
         if let bot {
-            BotAvatarView(bot: bot, imageData: imageData, size: size, mood: mood, orbits: false)
+            BotAvatarView(
+                bot: bot, imageData: imageData, size: size, mood: mood, orbits: false, statusMotion: statusMotion)
         } else {
             Text(member.displayName.prefix(1).uppercased())
                 .dockFont(size >= 24 ? .body : .metadata, weight: .semibold)
@@ -240,15 +242,21 @@ struct GroupHeaderFace: View {
                 showingCard.toggle()
             }
         } label: {
-            GroupMemberFace(member: member, bot: bot, imageData: imageData, size: 24, mood: mood)
-                .frame(width: 26, height: 26)
-                .keyframeAnimator(initialValue: CGFloat(0), trigger: motion ? bounce : 0) { content, lift in
-                    content.offset(y: -lift).scaleEffect(x: 1 + lift * 0.012, y: 1 - lift * 0.008, anchor: .bottom)
-                } keyframes: { _ in
-                    SpringKeyframe(7, duration: 0.16, spring: .snappy)
-                    SpringKeyframe(-1, duration: 0.18, spring: .bouncy)
-                    SpringKeyframe(0, duration: 0.3, spring: .smooth)
-                }
+            // Live expressions stay in the slot rather than mounting a moving avatar layer.
+            GroupMemberFace(
+                member: member, bot: bot, imageData: imageData, size: 24, mood: mood, statusMotion: false
+            )
+            .frame(width: 26, height: 26)
+            .keyframeAnimator(initialValue: CGFloat(0), trigger: motion ? bounce : 0) { content, lift in
+                content.offset(y: -lift).scaleEffect(x: 1 + lift * 0.012, y: 1 - lift * 0.008, anchor: .bottom)
+            } keyframes: { _ in
+                SpringKeyframe(7, duration: 0.16, spring: .snappy)
+                SpringKeyframe(-1, duration: 0.18, spring: .bouncy)
+                SpringKeyframe(0, duration: 0.3, spring: .smooth)
+            }
+            // Leave clearance around the animated face without changing the toolbar height.
+            .frame(width: 28, height: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
         .onHover { inside in

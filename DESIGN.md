@@ -3218,8 +3218,11 @@ lives in an `Equatable` caption so frames never re-lay it out. There is no elaps
 timer or live tool rows. Who is replying comes from `groups.state` `driver_status.member_activity`,
 falling back to open `turn.started` log rows on gateways that don't report it.
 Header faces (`GroupHeaderFace`) show each member's live mood anywhere in the room: approval,
-sleepy (stalled), tool or thinking, queued, offline (RoomLink `peer_routes` not ready). They hop
-when that member's reply lands, turn attentive (listening) when the draft would reach them (`@handle`,
+sleepy (stalled), tool or thinking, queued, offline (RoomLink `peer_routes` not ready). Live
+expressions keep the faces centered on the same row while members reply. Faces use
+28×44pt slots with 4pt gaps so each animation is visible without enlarging the toolbar.
+Narrow toolbars shorten or hide the activity subtitle before compressing the room name.
+Faces hop when that member's reply lands and turn attentive (listening) when the draft would reach them (`@handle`,
 `@all`, or no mention: everyone, or the lead in lead routing), and doze after 15 minutes of quiet.
 Clicking a face jumps to its last reply (thread switch, scroll, brief accent highlight); hovering
 450ms opens a member popover with identity, description, model and live state.
