@@ -533,7 +533,8 @@ extension DockPopover {
     func toolbarIdentity(style: DockThemePalette) -> some View {
         if fullscreenSurface == .bots, let bot = botMode.botsByID[model.activeBotProfileID ?? ""] {
             HStack(spacing: 8) {
-                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 30)
+                // Like group headers, animate the expression without moving the toolbar avatar.
+                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 30, statusMotion: false)
                 Text(bot.name)
                     .dockFont(.navigation, weight: .semibold)
                     .foregroundStyle(style.primaryText)

@@ -3144,7 +3144,8 @@ profile after saving. The editor fills the available tab height, with its form
 scrolling above the compact footer; the modal retains its bounded form height.
 
 In conversations, the author header beside a bot reply uses a 32pt avatar (group
-rooms too) and the Bots toolbar identity a 30pt one; mention avatars inside
+rooms too) and the Bots toolbar identity a 30pt one. Main bot chat toolbar avatars
+animate their expressions without moving out of the title row. Mention avatars inside
 bubbles stay 16pt. A bot's name never appears without its avatar: rows, drag
 cards, and bot choices in menus and pickers (18pt) all show it.
 
