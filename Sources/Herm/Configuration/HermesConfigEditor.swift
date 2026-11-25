@@ -40,16 +40,6 @@ enum HermesConfigCatalog {
                     )
                 ]),
         ],
-        .providers: [
-            Page(
-                title: "Account pooling",
-                fields: [
-                    .init(
-                        "credential_pool_strategies.openai-codex", "Codex Account Rotation",
-                        "How Hermes picks between pooled Codex accounts. round_robin cycles accounts evenly after each selection; fill_first (default) uses the first healthy account until it runs out. Applies from the next request."
-                    )
-                ])
-        ],
         .chat: [
             Page(
                 title: "Behavior",
@@ -315,7 +305,6 @@ enum HermesConfigCatalog {
         "agent.image_input_mode": ["auto", "native", "text"],
         "approvals.mode": ["manual", "smart", "off"],
         "code_execution.mode": ["project", "strict"],
-        "credential_pool_strategies.openai-codex": ["fill_first", "round_robin", "least_used", "random"],
         "context.engine": ["compressor", "default", "custom"],
         "delegation.reasoning_effort": ["", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
         "terminal.backend": ["local", "docker", "singularity", "modal", "daytona", "ssh"],

@@ -193,6 +193,17 @@ final class ControlCenterModel: ObservableObject {
     /// Desktop-parity editor for Hermes `config.yaml`, over the same backend.
     lazy var configEditor = HermesConfigEditor(
         profile: { [weak self] in self?.dockModel?.profileScopeID }, rpc: { [weak self] in self?.rpc })
+    lazy var poolRotation = HermesPoolRotationModel(
+        service: { [weak self] in
+            guard let self, let rpc else { return nil }
+            let profile = dockModel?.profileScopeID
+            if !GatewayConnectionStore.isLocalBackend {
+                return HermesPoolRotationService(rpc: rpc, profile: HermesRemoteProviderService.profileName(profile))
+            }
+            return HermesPoolRotationService(rpc: rpc, profile: profile)
+        },
+        onSaved: { [weak self] in Task { await self?.configEditor.load(forceSchema: false) } }
+    )
     var cli: HermesCLIAdapter?
     var refreshTask: Task<Void, Never>?
     var sidebarCapabilityTask: Task<Void, Never>?

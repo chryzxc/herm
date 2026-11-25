@@ -92,10 +92,8 @@ struct SettingsWorkspaceTests {
         #expect(SettingsCategoryBadge(kind: .count(2), isWarning: true).kind == .count(2))
     }
 
-    @Test("provider and file limits live with the controls they configure")
+    @Test("file limits live with the controls they configure")
     func configCategories() {
-        let providerKeys = HermesConfigCatalog.pages[.providers, default: []].flatMap(\.fields).map(\.key)
-        #expect(providerKeys.contains("credential_pool_strategies.openai-codex"))
         let workspaceKeys = HermesConfigCatalog.pages[.workspace, default: []].flatMap(\.fields).map(\.key)
         #expect(workspaceKeys.contains("tool_output.max_bytes"))
         #expect(workspaceKeys.contains("tool_output.max_lines"))

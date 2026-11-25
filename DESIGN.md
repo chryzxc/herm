@@ -2315,6 +2315,13 @@ separate these groups from one another and from the Auto-refresh section listing
 choices (no submenu; refresh runs only while the page is open). In narrow
 windows the actions wrap below the status.
 
+- **Account rotation.** Quota options opens the same per-provider rotation
+  controls as Account pooling in Settings → Providers. Show the pools reported
+  by Hermes, independent of quota availability. The strategy picker’s tooltip
+  and VoiceOver hint explain the four choices. Confirm the affected provider
+  before saving. Keep the current choice visible until Hermes acknowledges
+  the change. Hermes uses the new strategy the next time it loads that pool.
+
 - **Remote backend.** Display Hermes-reported backend quota and supported
   OpenRouter credit balance without substituting this Mac's backend credentials.
   Claude Code and Antigravity remain local. Backend device sign-in requires an
