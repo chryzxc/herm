@@ -32,7 +32,7 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
-    @ObservedObject var model: DockModel
+    let model: DockModel
     @ObservedObject var botMode: BotModeModel
     @ObservedObject var store: WorkspaceStore
     @ObservedObject var control: ControlCenterModel
@@ -222,7 +222,7 @@ struct WorkspaceActivitySidebar: View {
     var body: some View {
         let _ = activityRevision
         observedSidebar
-            .onReceive(model.activityPresentation.$revision.dropFirst().receive(on: RunLoop.main)) { _ in
+            .onReceive(pageModelChanges) { _ in
                 guard hostVisible else { return }
                 activityRevision &+= 1
             }
@@ -510,6 +510,42 @@ struct WorkspaceActivitySidebar: View {
                     "Hermes will interrupt the selected native subagent. Synthesized placeholders are not interruptible."
                 )
             }
+    }
+
+    private var pageModelChanges: AnyPublisher<Void, Never> {
+        var sources = [
+            DockModel.change(model.$sessionID), DockModel.change(model.$sessionStorageID),
+            DockModel.change(model.$profileScopeID), DockModel.change(model.$status),
+            DockModel.change(model.$approvalText),
+        ]
+        switch selectedMode {
+        case .core:
+            sources += [
+                DockModel.change(model.$runtimeConfiguration), DockModel.change(model.$isLoadingRuntimeConfiguration),
+                DockModel.change(model.$runtimeConfigurationError), DockModel.change(model.$defaultReasoningVariant),
+                DockModel.change(model.$runtimeModelOptions), DockModel.change(model.$completionNotificationsEnabled),
+            ]
+            if selectedSettingsCategory == .session {
+                sources.append(DockModel.change(model.activityPresentation.$revision))
+            }
+        case .changes:
+            sources.append(DockModel.change(model.activityPresentation.$revision))
+        case .projects:
+            sources += [DockModel.change(model.$isRestoringSession), DockModel.change(model.$isCreatingSession)]
+        case .kanban:
+            sources.append(DockModel.change(model.$observedKanbanTaskRevision))
+        case .officePreview:
+            sources += [
+                DockModel.change(model.$observedKanbanTaskRevision), DockModel.change(model.$sessionProfileID),
+                model.selectedSessionPresentationChanges(id: model.sessionID, profileID: model.sessionProfileID),
+            ]
+        case .quota:
+            sources.append(DockModel.change(model.$runtimeConfiguration))
+        default:
+            break
+        }
+        return Publishers.MergeMany(sources)
+            .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main).eraseToAnyPublisher()
     }
 
     static let kanbanCardActionPrefixes: [String] =

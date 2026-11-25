@@ -1526,7 +1526,7 @@ extension ControlCenterModel {
         return nil
     }
 
-    static func parseProjectSessions(_ result: [String: Any]) -> [SessionSummary] {
+    nonisolated static func parseProjectSessions(_ result: [String: Any]) -> [SessionSummary] {
         var rows: [[String: Any]] = []
 
         func walk(_ value: Any) {

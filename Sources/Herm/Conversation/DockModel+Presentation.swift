@@ -54,8 +54,6 @@ extension DockModel {
             ("renamingSessionID", Self.change($renamingSessionID)),
             ("updatingSessionVisibilityID", Self.change($updatingSessionVisibilityID)),
             ("pinningSessionID", Self.change($pinningSessionID)),
-            ("pinnedSessions", Self.change($pinnedSessions)),
-            ("sidebarPinChanges", sidebarPinChanges.eraseToAnyPublisher()),
             ("isRestoringSession", Self.change($isRestoringSession)),
             ("currentSessionTitle", Self.change($currentSessionTitle)),
             ("isShowingReasoning", Self.change($isShowingReasoning)),
@@ -82,7 +80,6 @@ extension DockModel {
             ("activeBotDisplayName", Self.change($activeBotDisplayName)),
             ("defaultBotName", Self.change($defaultBotName)),
             ("browserActivityID", Self.change($browserActivityID)),
-            ("sessions", Self.change($sessions)),
             (
                 "unloadedNavigator",
                 transcriptPresentationChanges.map { [weak self] in
@@ -91,6 +88,45 @@ extension DockModel {
                     .map { _ in () }.eraseToAnyPublisher()
             ),
         ]
+    }
+
+    /// The session action menu reads display metadata for one row. Recency,
+    /// working state and unread markers belong to the sidebar.
+    func selectedSessionPresentationChanges(id: String?, profileID: String?) -> AnyPublisher<Void, Never> {
+        guard let id else { return Empty().eraseToAnyPublisher() }
+        let scope = profileScopeID
+        let key = ProfileScopedID(profileID: profileID ?? scope, resourceID: id)
+        func row(in rows: [HermesSession], index: Int?) -> HermesSession? {
+            func matches(_ row: HermesSession) -> Bool {
+                row.id == id && ProfileScopedID(profileID: row.profileID ?? scope, resourceID: row.id) == key
+            }
+            if let index, rows.indices.contains(index), matches(rows[index]) { return rows[index] }
+            return rows.first(where: matches)
+        }
+        let selected = $sessions.combineLatest($allBotSessionsState).map { [weak self] recent, all in
+            let scanned: [HermesSession]
+            switch all {
+            case .ready(let rows), .stale(let rows, _): scanned = rows
+            default: scanned = []
+            }
+            let value =
+                row(in: recent, index: self?.recentIndexByID[id])
+                ?? row(in: scanned, index: self?.allBotIndexByID[id])
+            return value.map { SelectedSessionMenuRow(title: $0.title, hidden: $0.isHidden) }
+        }.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher()
+        let pinned = $pinnedSessions.combineLatest(sidebarPinChanges.prepend(())).map { [weak self] pins, _ in
+            guard let self else { return false }
+            if key.profileID == Self.normalizedProfileID(scope), !awaitingScopedPinsAfterSwitch {
+                return row(in: pins, index: pinnedIndexByID[id]) != nil
+            }
+            return knownProfilePins[key] != nil
+        }.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher()
+        return selected.merge(with: pinned).eraseToAnyPublisher()
+    }
+
+    private struct SelectedSessionMenuRow: Equatable {
+        let title: String
+        let hidden: Bool
     }
 
     /// What the session inspector itself reads; its tabs observe their own inputs.

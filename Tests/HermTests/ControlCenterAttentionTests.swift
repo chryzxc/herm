@@ -131,9 +131,34 @@ struct ControlCenterAttentionTests {
     @Test func refreshEventsCoalesceWithoutLosingTheirKinds() {
         let model = ControlCenterModel()
         model.ingestEvent("process.changed", params: ["session_id": "session-a"])
+        model.ingestEvent("process.changed", params: ["session_id": "session-b"])
         model.ingestEvent("cron.changed", params: ["session_id": "session-a"])
-        #expect(model.pendingEventRefreshes == ["process.changed", "cron.changed"])
+        #expect(Set(model.pendingEventRefreshes.map(\.kind)) == ["process.changed", "cron.changed"])
+        #expect(
+            Set(model.pendingEventRefreshes.filter { $0.kind == "process.changed" }.compactMap(\.sessionID))
+                == ["session-a", "session-b"])
         model.eventRefreshTask?.cancel()
+    }
+
+    @Test func visibleSessionDoesNotReadFocusedDetailsForForeignEvents() async throws {
+        let client = ClarificationResponseRPCClient()
+        let rpc = HermesControlRPC(client: client)
+        let model = ControlCenterModel(rpc: rpc, capabilities: [])
+        let dock = DockModel(initialSessionID: "front", loadArchives: false, rpcClient: client)
+        defer { dock.shutdown() }
+        dock.sessionProfileID = "front-profile"
+        dock.presentationDemand.update(UUID(), visible: true)
+        model.dockModel = dock
+        model.cli = HermesCLIAdapter(rpc: rpc)
+        model.processSessionID = "front"
+        model.developmentContext = .init(
+            path: "/work/repo", branch: "main", changedFiles: 0, latestCommit: "", isGitRepository: true)
+        model.ingestEvent("process.changed", params: ["session_id": "other"])
+        model.ingestEvent("message.complete", params: ["session_id": "front", "profile": "other-profile"])
+        model.ingestEvent("message.complete", params: [:])
+        let refresh = try #require(model.eventRefreshTask)
+        await refresh.value
+        #expect(client.calls.map(\.method) == ["session.active_list"])
     }
 
     @Test func toolProgressDoesNotRebuildAttention() {
@@ -188,7 +213,9 @@ struct ControlCenterAttentionTests {
     @Test func boundEventsPublishChangedSessionsAgentsAndPromptBudget() async throws {
         let client = ClarificationResponseRPCClient()
         let model = ControlCenterModel()
-        let dock = DockModel(rpcClient: client)
+        let dock = DockModel(initialSessionID: "runtime-a", loadArchives: false, rpcClient: client)
+        defer { dock.shutdown() }
+        dock.sessionStorageID = "session-a"
         model.bind(to: dock)
         model.visibleSidebarTabs[UUID()] = .core
         dock.presentationDemand.update(UUID(), visible: true)

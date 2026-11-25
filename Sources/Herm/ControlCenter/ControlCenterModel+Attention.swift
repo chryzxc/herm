@@ -2,6 +2,18 @@ import Combine
 import Foundation
 
 extension ControlCenterModel {
+    struct EventRefresh: Hashable {
+        let kind: String
+        let sessionID: String?
+        let profileID: String?
+
+        func matches(_ sessionIDs: Set<String>, profileID selectedProfile: String?) -> Bool {
+            guard let sessionID, sessionIDs.contains(sessionID) else { return false }
+            return profileID == nil
+                || DockModel.normalizedProfileID(profileID) == DockModel.normalizedProfileID(selectedProfile)
+        }
+    }
+
     func respond(to item: AttentionItem, action: AttentionAction, response: String? = nil) {
         guard dockModel != nil || rpc != nil else { return }
         let reference = item.reference
@@ -156,10 +168,14 @@ extension ControlCenterModel {
             break
         }
         let payload = params["payload"] as? [String: Any] ?? [:]
-        let sessionID =
-            (params["session_id"] as? String)
-            ?? (payload["session_id"] as? String)
-            ?? dockModel?.sessionID
+        let eventSessionID = (params["session_id"] as? String) ?? (payload["session_id"] as? String)
+        if ["message.complete", "sessions.changed", "cron.changed", "process.changed"].contains(type) {
+            let profile =
+                (params["profile"] as? String) ?? (payload["profile"] as? String)
+                ?? (params["profile_id"] as? String) ?? (payload["profile_id"] as? String)
+            scheduleEventRefresh(.init(kind: type, sessionID: eventSessionID, profileID: profile))
+        }
+        let sessionID = eventSessionID ?? dockModel?.sessionID
         guard let sessionID, !sessionID.isEmpty else { return }
 
         let detail =
@@ -240,16 +256,46 @@ extension ControlCenterModel {
         default:
             break
         }
-        if ["message.complete", "sessions.changed", "cron.changed", "process.changed"].contains(type) {
-            scheduleEventRefresh(type)
-        }
         rebuildAttention()
+    }
+
+    private func matchesFocusedSession(_ event: EventRefresh) -> Bool {
+        guard let focused = conversationModel, let owner = event.sessionID else { return false }
+        let profile = focused.sessionProfileID ?? focused.profileScopeID
+        let aliases = focused.currentSessionIDs
+        if event.matches(aliases, profileID: profile) { return true }
+        let stored = dockModel?.rowSessionID(owner) ?? owner
+        return aliases.contains(stored) && event.matches([owner], profileID: profile)
+    }
+
+    private func needsFocusedDetails(_ events: Set<EventRefresh>) -> Bool {
+        guard conversationModel?.presentationDemand.hasVisibleHost == true else { return false }
+        return events.contains { event in
+            (event.kind == "message.complete" || event.kind == "sessions.changed") && matchesFocusedSession(event)
+        }
+    }
+
+    private func refreshFocusedEventDetails(_ events: Set<EventRefresh>) async {
+        guard !Task.isCancelled else { return }
+        if needsFocusedDetails(events), let sessionID = conversationModel?.sessionID {
+            refreshSessionCockpit(for: sessionID, quiet: true)
+            refreshPromptBudget(quiet: true)
+            refreshVerification(for: sessionID)
+        }
+        guard let sessionID = processSessionID,
+            events.contains(where: {
+                $0.kind == "process.changed"
+                    && (conversationModel?.sessionID == sessionID
+                        ? matchesFocusedSession($0) : $0.matches([sessionID], profileID: dockModel?.profileScopeID))
+            })
+        else { return }
+        await refreshFocusedProcesses(for: sessionID, generation: sessionProcessesGeneration)?.value
     }
 
     /// Gateway event bursts collapse into one refresh. A refresh already in
     /// flight would otherwise drop the event and leave projects stale.
-    func scheduleEventRefresh(_ type: String) {
-        pendingEventRefreshes.insert(type)
+    func scheduleEventRefresh(_ event: EventRefresh) {
+        pendingEventRefreshes.insert(event)
         guard eventRefreshTask == nil else { return }
         eventRefreshTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -260,18 +306,20 @@ extension ControlCenterModel {
                 guard let self, !Task.isCancelled else { return }
                 let events = self.pendingEventRefreshes
                 self.pendingEventRefreshes.removeAll()
+                let kinds = Set(events.map(\.kind))
                 let needsOverview = self.visibleSidebarTabs.values.contains(.core)
                 let needsProjects = self.visibleSidebarTabs.values.contains(.projects)
-                if events.contains("sessions.changed"), needsOverview || needsProjects {
-                    self.refresh()
+                if kinds.contains("sessions.changed"), needsOverview || needsProjects {
+                    self.refresh(includeFocusedDetails: false)
                     while self.isRefreshing, !Task.isCancelled {
                         try? await Task.sleep(for: .milliseconds(250))
                     }
+                    await self.refreshFocusedEventDetails(events)
                 } else {
                     self.inFlightEventRefreshes = events
                     let generation = self.refreshGeneration
-                    if events.contains("message.complete") || events.contains("process.changed")
-                        || events.contains("sessions.changed")
+                    if kinds.contains("message.complete") || kinds.contains("process.changed")
+                        || kinds.contains("sessions.changed")
                     {
                         await self.refreshEventSessions()
                     }
@@ -279,7 +327,7 @@ extension ControlCenterModel {
                         self.inFlightEventRefreshes.removeAll()
                         continue
                     }
-                    if events.contains("sessions.changed") || (events.contains("message.complete") && needsProjects) {
+                    if kinds.contains("sessions.changed") || (kinds.contains("message.complete") && needsProjects) {
                         await self.refreshEventActivity()
                     }
                     if generation != self.refreshGeneration {
@@ -287,7 +335,7 @@ extension ControlCenterModel {
                         continue
                     }
                     guard !Task.isCancelled else { return }
-                    if events.contains("message.complete"), self.isLatestActivityRequested {
+                    if kinds.contains("message.complete"), self.isLatestActivityRequested {
                         self.refreshLatestActivityProjection()
                     }
                     if needsOverview {
@@ -297,16 +345,8 @@ extension ControlCenterModel {
                         self.inFlightEventRefreshes.removeAll()
                         continue
                     }
-                    if let dock = self.dockModel, dock.presentationDemand.hasVisibleHost {
-                        self.refreshSessionCockpit(for: dock.sessionID, quiet: true)
-                        self.refreshPromptBudget(quiet: true)
-                        self.refreshVerification()
-                    }
-                    if events.contains("process.changed"), let sessionID = self.processSessionID {
-                        await self.refreshFocusedProcesses(for: sessionID, generation: self.sessionProcessesGeneration)?
-                            .value
-                    }
-                    if events.contains("cron.changed") {
+                    await self.refreshFocusedEventDetails(events)
+                    if kinds.contains("cron.changed") {
                         await self.refreshRoutineInventory(
                             profileID: self.dockModel?.profileScopeID, includeSessions: true)
                         self.refreshCronRuns()
@@ -382,16 +422,15 @@ extension ControlCenterModel {
                 else { return }
                 let refreshed = Self.reconcileProjectRefresh(current: projects, incoming: Self.parseProjects(tree))
                 if refreshed != projects {
-                    refresh()
+                    refresh(includeFocusedDetails: false)
                     return
                 }
                 if profile != nil {
                     for project in refreshed where projectSessionsByProjectID[project.id] != nil {
-                        let result = try await rpc.projectSessions(projectID: project.id, profileID: profile)
+                        let rows = try await readProjectSessions(project.id, profileID: profile)
                         guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: identity),
                             projectProfileID == profile
                         else { return }
-                        let rows = Self.parseProjectSessions(result)
                         if projectSessionsByProjectID[project.id] != rows {
                             projectSessionsByProjectID[project.id] = rows
                             if selectedProjectID == project.id { projectSessions = rows }
@@ -605,8 +644,8 @@ extension ControlCenterModel {
     /// projection so session UI can always display its real owner.
     func resolveProjectMembership(for sessionID: String?) {
         guard let sessionID, !sessionID.isEmpty,
-            project(forSessionID: sessionID) == nil,
-            let rpc, !projects.isEmpty
+            project(forSessionID: sessionID) == nil, !projectProfileScopeUnavailable,
+            rpc != nil, !projects.isEmpty
         else { return }
         if let path = dockModel?.createdSessionProjectPaths[sessionID],
             let project = projects.first(where: { $0.isRenderableProject && $0.name == path })
@@ -615,11 +654,19 @@ extension ControlCenterModel {
             resolvedProjectIDBySessionID[sessionID] = project.id
             return
         }
+        if let project = projects.first(where: {
+            $0.isRenderableProject && projectSessionsByProjectID[$0.id]?.contains(where: { $0.id == sessionID }) == true
+        }) {
+            projectIDBySessionID[sessionID] = project.id
+            resolvedProjectIDBySessionID[sessionID] = project.id
+            return
+        }
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         projectMembershipGeneration = generation
-        let candidates = projects
+        let candidates = projects.filter(\.isRenderableProject)
+        let profile = projectProfileID
         Task { @MainActor [weak self] in
             guard let self else { return }
             for project in candidates {
@@ -627,12 +674,12 @@ extension ControlCenterModel {
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
                 guard
-                    let result = try? await rpc.projectSessions(projectID: project.id, profileID: self.projectProfileID)
+                    let rows = try? await self.readProjectSessions(project.id, profileID: profile)
                 else { continue }
                 guard generation == projectMembershipGeneration,
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
-                if Self.parseProjectSessions(result).contains(where: { $0.id == sessionID }) {
+                if rows.contains(where: { $0.id == sessionID }) {
                     projectIDBySessionID[sessionID] = project.id
                     resolvedProjectIDBySessionID[sessionID] = project.id
                     return

@@ -66,6 +66,50 @@ struct PerformanceAuditRegressionTests {
         withExtendedLifetime((modelSubscription, controlSubscription)) {}
     }
 
+    @Test func backgroundSessionRowsSkipTheShellAndSelectedMetadataStillPublishes() async throws {
+        let model = DockModel(initialSessionID: "selected", loadArchives: false)
+        defer { model.shutdown() }
+        func row(_ id: String, title: String, hidden: Bool = false) -> HermesSession {
+            HermesSession(
+                id: id, title: title, preview: "", startedAt: nil, messageCount: 0, source: "test", isHidden: hidden)
+        }
+        model.sessions = [row("selected", title: "Selected"), row("other", title: "Other")]
+        var rootUpdates = 0
+        var selectionUpdates = 0
+        let root = model.workspacePresentationChanges.sink { rootUpdates += 1 }
+        let selection = model.selectedSessionPresentationChanges(id: "selected", profileID: nil)
+            .sink { selectionUpdates += 1 }
+        model.updateSessionActivity(sessionID: "other", isWorking: true)
+        model.touchSession(sessionID: "selected", at: .now)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(rootUpdates == 0)
+        #expect(selectionUpdates == 0)
+        model.sessions[0] = row("selected", title: "New title", hidden: true)
+        #expect(selectionUpdates == 1)
+        withExtendedLifetime((root, selection)) {}
+    }
+
+    @Test func controlSessionRowsOnlyNotifyTheShellAboutTheSelectedMetadata() async throws {
+        let control = ControlCenterModel()
+        func row(_ id: String, title: String) -> SessionSummary {
+            .init(id: id, title: title, state: "active", preview: nil)
+        }
+        control.activeSessions = [row("selected", title: "Selected"), row("other", title: "Other")]
+        var rootUpdates = 0
+        var titles: [String?] = []
+        let root = control.workspacePresentationChanges.sink { rootUpdates += 1 }
+        let selected = control.workspaceSessionMetadataChanges(for: "selected").sink { titles.append($0.title) }
+        control.activeSessions[1] = row("other", title: "Background title")
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(rootUpdates == 0)
+        #expect(titles.isEmpty)
+        control.activeSessions[0] = row("selected", title: "New title")
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(rootUpdates == 0)
+        #expect(titles == ["New title"])
+        withExtendedLifetime((root, selected)) {}
+    }
+
     @Test func historyRefillsPublishMessagesWithoutRefreshingChatChrome() async throws {
         let model = DockModel(
             initialSessionID: "chat", rpcClient: ArchiveConcurrencyClient())

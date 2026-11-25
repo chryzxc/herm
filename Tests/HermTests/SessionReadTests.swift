@@ -34,12 +34,41 @@ struct SessionReadTests {
         #expect(model.pinnedSessions[0].hasUnreadUpdate == false)
         #expect(model.pinnedSessions[1] == otherProfile)
         #expect(defaults.stringArray(forKey: model.unreadSessionIDsKey) == ["unlisted"])
+        seenStore.flushPersistence()
         let restored = SidebarSessionSeenStore(defaults: defaults)
         for session in recents {
             #expect(restored.seenAt(profileID: "bot", sessionID: session.id) == session.lastUpdatedAt)
             #expect(restored.seenAt(profileID: "other", sessionID: session.id) == nil)
         }
         #expect(model.applyPersistedUnreadState(model.sessions).prefix(12).allSatisfy { !$0.hasUnreadUpdate })
+    }
+
+    @Test func seenChangesReachTheirOwnRowsAndPersistTheLatestValue() async throws {
+        let suite = "SessionReadTests.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let seen = SidebarSessionSeenStore(defaults: defaults)
+        var hits = [0, 0, 0]
+        let first = seen.changes(profileID: "bot", sessionID: "first").sink { hits[0] += 1 }
+        let second = seen.changes(profileID: "bot", sessionID: "second").sink { hits[1] += 1 }
+        let other = seen.changes(profileID: "other", sessionID: "first").sink { hits[2] += 1 }
+        defer {
+            first.cancel()
+            second.cancel()
+            other.cancel()
+        }
+        seen.baseline(profileID: "bot", sessions: [])
+        #expect(hits == [1, 1, 0])
+        let newest = Date(timeIntervalSince1970: 120)
+        seen.markSeen(profileID: "bot", sessionID: "first", at: newest.addingTimeInterval(-1))
+        seen.markSeen(profileID: "bot", sessionID: "first", at: newest)
+        #expect(hits == [3, 1, 0])
+        for _ in 0..<40 {
+            let restored = SidebarSessionSeenStore(defaults: defaults)
+            if restored.seenAt(profileID: "bot", sessionID: "first") == newest { return }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        Issue.record("The coalesced write did not persist the latest seen timestamp")
     }
 
     @Test func preservesWorkingAndAttentionAndAllowsLaterUpdatesToBecomeUnread() {

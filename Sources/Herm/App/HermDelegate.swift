@@ -510,6 +510,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         HermesSimulatorBridge.shutdownOwned()
         QuickDraftStore.shared.flush()
         FilePreviewCenter.shared.flushSaves()
+        SidebarSessionSeenStore.shared.flushPersistence()
         // This is deliberately explicit: a menu-bar app can terminate without
         // releasing its delegate/model graph, so deinit is not a process-life
         // cycle hook for the local Hermes backend.

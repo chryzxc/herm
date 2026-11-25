@@ -152,6 +152,7 @@ final class ControlCenterModel: ObservableObject {
     @Published var projectSessionsByProjectID: [String: [SessionSummary]] = [:]
     @Published var isRefreshingProjectNavigation = false
     var projectNavigationReads: [String: UUID] = [:]
+    var projectSessionReads: [ProfileScopedID: (UUID, Task<[SessionSummary], Error>)] = [:]
     @Published var selectedProjectID: String?
     /// Profile scope used exclusively by the Projects projection and its
     /// mutations. Other Control tabs remain gateway-global by design.
@@ -205,8 +206,8 @@ final class ControlCenterModel: ObservableObject {
     }
     var latestActivityCache: [String: LatestActivityCacheEntry] = [:]
     var eventRefreshTask: Task<Void, Never>?
-    var pendingEventRefreshes: Set<String> = []
-    var inFlightEventRefreshes: Set<String> = []
+    var pendingEventRefreshes: Set<EventRefresh> = []
+    var inFlightEventRefreshes: Set<EventRefresh> = []
     var refreshGeneration: UInt64 = 0
     var clientBindingGeneration: UInt64 = 0
     var searchTask: Task<Void, Never>?

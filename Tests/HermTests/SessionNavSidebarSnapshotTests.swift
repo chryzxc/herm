@@ -68,8 +68,28 @@ struct SessionNavSidebarSnapshotTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         try await Task.sleep(for: .milliseconds(300))
-        #expect(snapshots.map(\.inputs.activeSessionID) == ["first", "second"])
+        #expect(snapshots.count >= 2)
+        #expect(snapshots.dropFirst().allSatisfy { $0.inputs.activeSessionID == "second" })
         #expect(sidebar.snapshot.conversations.map(\.id) == ["second"])
+    }
+
+    @Test func selectionUpdatesTheTwoMarksUsingTheExistingInventory() {
+        let model = DockModel(initialSessionID: "first", loadArchives: false)
+        defer { model.shutdown() }
+        model.sessions = [session("first"), session("second"), session("third")]
+        model.sessionProjectionState = .ready(model.sessions)
+        model.status = .working
+        let inputs = SessionNavSidebarSnapshot.inputs(model: model, control: ControlCenterModel())
+        let old = SessionNavSidebarSnapshot(inputs: inputs)
+
+        let selected = old.selecting("second", status: .working)
+
+        #expect(old.sessionStatuses["first"] == .working)
+        #expect(selected.sessionStatuses["first"] == SidebarSessionStatus.none)
+        #expect(selected.sessionStatuses["second"] == .working)
+        #expect(selected.sessionStatuses["third"] == old.sessionStatuses["third"])
+        #expect(selected.conversations == old.conversations)
+        #expect(selected.unreadInventory == old.unreadInventory)
     }
 
     private func session(

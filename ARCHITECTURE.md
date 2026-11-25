@@ -78,6 +78,14 @@ and looks up viewport targets by row ID. Find's
 `MessageNavigatorSearchState` scopes results and queued Return selection to the
 query, session, and snapshot identity; views never rescan history on submission.
 
+The workspace's unread projection shares one timer and three background read slots
+across visible badges and bot counts. An opening unread review reads independently.
+Plan rails and file previews share a bounded, revision-keyed memory cache. Rail
+discovery reuses a short-lived folder inventory, and each rail keeps its own
+transcript mention index. The gateway router indexes conversation subscribers by
+their current runtime, storage, and dispatch IDs. Global observers still receive the
+full stream, and worker events can match through subagent ownership.
+
 `SessionTraceModel` owns Timeline’s focused execution subscriptions and coalesced
 projection, caching completed request inputs by `DockModel.messagesRevision`.
 Within the same history revision, Timeline updates the live turn and any
@@ -90,8 +98,22 @@ grid/ruler drawing keep time ticks independent of history length.
 
 `SessionNavSidebarModel` publishes one navigation snapshot for the Chats list,
 board, and split tabs. Coalesced activity projects immutable inputs on a utility
-task. Session and profile navigation can replace a pending projection immediately.
+task. Session selection updates the affected status marks using the existing
+inventory. Profile changes can replace a pending projection immediately.
+Seen timestamps publish to their owning rows and coalesce local persistence
+off the UI thread.
+Bot activity indexes session contributions by owner and updates the affected
+Bot on live events. Inventory changes reconcile against the shared roster.
 The snapshot includes the Chats list's resolved status marks and pin presentations.
+The workspace shell observes only the selected session's menu, title, and
+project path fields. The rail and session picker observe the navigation snapshot
+for inventory and activity. Control pages opt in to the live chat fields they
+display instead of observing the entire conversation model.
+Workspace navigation receives only the request, restore flag, and alert values
+that it acts on.
+Control Center keeps session and profile ownership when batching gateway events.
+Global inventory can refresh independently of focused cockpit, budget, verification,
+and process reads. Delegation uses the fast poll only for live workers.
 The Talk stage owns microphone observations and its orb observes audio levels.
 
 Chats Tiles prepares large board snapshots and search results on a worker and
@@ -101,6 +123,14 @@ session's newest candidates by its Hermes revision and merges the global feed
 off the main actor.
 Sidebar search uses the same navigation snapshot and matches it off the main actor.
 The right-hand session rail runs discovery and refresh only while visible.
+Restoring a split layout loads the focused column first and queues the remaining
+columns in order.
+Project detail, navigation, and membership share in-flight reads by profile and
+project. A batch navigation refresh runs up to four project reads at once and
+publishes one snapshot.
+Workspace project attachment merges a returned session inventory into local
+metadata in one pass. The store publishes the merged tasks and references once
+and does not save an unchanged refresh.
 Each composer shares one in-flight process read and queues one follow-up as needed.
 Cancelling a WebSocket RPC waiter releases the local continuation and deadline
 without interrupting Hermes or the shared connection.

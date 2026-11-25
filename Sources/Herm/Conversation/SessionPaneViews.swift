@@ -276,14 +276,14 @@ struct SessionPaneSplitReader<Content: View>: View {
 /// once the column holds more than one session.
 struct SessionPaneActiveTabs<Fallback: View>: View {
     @ObservedObject var store: SessionPaneStore
-    @ObservedObject var runtime: DockModel
+    let liveTitle: String?
     @ViewBuilder let fallback: Fallback
 
     var body: some View {
         // While split, the active column keeps its tab strip too, so its close button is always reachable.
         if let panel = store.activePanel, !panel.tabs.isEmpty, panel.tabs.count > 1 || store.panels.count > 1 {
             SessionPaneTabStrip(
-                tabs: SessionPaneTabStrip.items(panel: panel, store: store, liveTitle: runtime.currentSessionTitle))
+                tabs: SessionPaneTabStrip.items(panel: panel, store: store, liveTitle: liveTitle))
         } else {
             fallback
         }

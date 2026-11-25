@@ -101,23 +101,29 @@ enum SidebarSessionStatusResolver {
     ) -> [String: SidebarSessionStatus] {
         let summaries = Dictionary(
             inputs.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let profileID = inputs.profileScopeID ?? fallbackProfileID
-        let activeID = inputs.activeSessionID
         return Dictionary(
             sessions.map { session in
-                let sessionProfileID = session.profileID ?? profileID
-                let status = resolve(
-                    session: session,
-                    summary: summaries[session.id],
-                    activeSessionID: activeID,
-                    activeStatus: session.id == activeID ? inputs.activeStatus : nil,
-                    attention: attention[session.id],
-                    seenAt: seenAtByKey[
-                        SidebarSessionSeenStore.key(profileID: sessionProfileID, sessionID: session.id)],
-                    isProfileBaselined: baselinedProfiles.contains(sessionProfileID ?? "")
+                (
+                    session.id,
+                    status(
+                        for: session, summary: summaries[session.id], inputs: inputs, attention: attention[session.id],
+                        seenAtByKey: seenAtByKey, baselinedProfiles: baselinedProfiles,
+                        fallbackProfileID: fallbackProfileID)
                 )
-                return (session.id, status)
             }, uniquingKeysWith: { first, _ in first })
+    }
+
+    static func status(
+        for session: HermesSession, summary: SessionSummary?, inputs: SessionNavSidebarSnapshot.Inputs,
+        attention: SessionAttentionDot?, seenAtByKey: [String: Date], baselinedProfiles: Set<String>,
+        fallbackProfileID: String? = nil
+    ) -> SidebarSessionStatus {
+        let profileID = session.profileID ?? inputs.profileScopeID ?? fallbackProfileID
+        return resolve(
+            session: session, summary: summary, activeSessionID: inputs.activeSessionID,
+            activeStatus: inputs.activeStatus, attention: attention,
+            seenAt: seenAtByKey[SidebarSessionSeenStore.key(profileID: profileID, sessionID: session.id)],
+            isProfileBaselined: baselinedProfiles.contains(profileID ?? ""))
     }
 }
 
@@ -129,7 +135,7 @@ final class SidebarSessionSeenStore: ObservableObject {
     /// The rail and the session picker mark and read the same seen state.
     static let shared = SidebarSessionSeenStore()
 
-    private struct Payload: Codable {
+    private struct Payload: Codable, Sendable {
         var seenAt: [String: Date]
         var baselinedProfiles: Set<String>
     }
@@ -138,6 +144,13 @@ final class SidebarSessionSeenStore: ObservableObject {
     private let storageKey = "hermes.sidebar.session-seen.v1"
     @Published private(set) var seenAtByKey: [String: Date]
     private(set) var baselinedProfiles: Set<String>
+    private enum Change {
+        case sessions(Set<String>)
+        case profile(String)
+    }
+    private let changes = PassthroughSubject<Change, Never>()
+    private var persistence: Task<Void, Never>?
+    private var needsPersistence = false
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -164,6 +177,16 @@ final class SidebarSessionSeenStore: ObservableObject {
         baselinedProfiles.contains(profileID ?? "")
     }
 
+    func changes(profileID: String?, sessionID: String) -> AnyPublisher<Void, Never> {
+        let key = Self.key(profileID: profileID, sessionID: sessionID)
+        return changes.filter { change in
+            switch change {
+            case .sessions(let keys): keys.contains(key)
+            case .profile(let profile): profile == (profileID ?? "")
+            }
+        }.map { _ in () }.eraseToAnyPublisher()
+    }
+
     func baseline(profileID: String?, sessions: [HermesSession]) {
         let profileKey = profileID ?? ""
         guard !baselinedProfiles.contains(profileKey) else { return }
@@ -176,18 +199,23 @@ final class SidebarSessionSeenStore: ObservableObject {
         baselinedProfiles.insert(profileKey)
         // Baseline membership also drives the unread projection.
         seenAtByKey = next
+        changes.send(.profile(profileKey))
         persist()
     }
 
     func markSeen(_ sessions: [HermesSession], fallbackProfileID: String?, at date: Date?) {
         var next = seenAtByKey
+        var touched = Set<String>()
         let now = Date()
         for session in sessions {
-            next[Self.key(profileID: session.profileID ?? fallbackProfileID, sessionID: session.id)] =
-                date ?? session.lastUpdatedAt ?? now
+            let key = Self.key(profileID: session.profileID ?? fallbackProfileID, sessionID: session.id)
+            next[key] = date ?? session.lastUpdatedAt ?? now
+            touched.insert(key)
         }
-        guard next != seenAtByKey else { return }
+        let changed = touched.filter { next[$0] != seenAtByKey[$0] }
+        guard !changed.isEmpty else { return }
         seenAtByKey = next
+        changes.send(.sessions(changed))
         persist()
     }
 
@@ -196,23 +224,54 @@ final class SidebarSessionSeenStore: ObservableObject {
         let value = date ?? Date()
         guard seenAtByKey[storageKey] != value else { return }
         seenAtByKey[storageKey] = value
+        changes.send(.sessions([storageKey]))
         persist()
     }
 
     func reconcile(profileID: String?, availableSessionIDs: Set<String>) {
         let prefix = "\(profileID ?? "")|"
-        let retained = seenAtByKey.filter { key, _ in
-            guard key.hasPrefix(prefix) else { return true }
-            return availableSessionIDs.contains(String(key.dropFirst(prefix.count)))
+        let removed = Set(
+            seenAtByKey.keys.filter { key in
+                key.hasPrefix(prefix) && !availableSessionIDs.contains(String(key.dropFirst(prefix.count)))
+            })
+        guard !removed.isEmpty else { return }
+        var retained = seenAtByKey
+        for key in removed {
+            retained.removeValue(forKey: key)
         }
-        guard retained.count != seenAtByKey.count else { return }
         seenAtByKey = retained
+        changes.send(.sessions(removed))
         persist()
     }
 
     private func persist() {
+        needsPersistence = true
+        guard persistence == nil else { return }
+        persistence = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+            await self?.persistPendingChanges()
+        }
+    }
+
+    private func persistPendingChanges() async {
+        while needsPersistence && !Task.isCancelled {
+            needsPersistence = false
+            let payload = Payload(seenAt: seenAtByKey, baselinedProfiles: baselinedProfiles)
+            let data = await Task.detached(priority: .utility) { try? JSONEncoder().encode(payload) }.value
+            guard !Task.isCancelled else { return }
+            if let data { defaults.set(data, forKey: storageKey) }
+        }
+        persistence = nil
+    }
+
+    func flushPersistence() {
+        guard let persistence else { return }
+        persistence.cancel()
+        self.persistence = nil
+        needsPersistence = false
         let payload = Payload(seenAt: seenAtByKey, baselinedProfiles: baselinedProfiles)
-        guard let data = try? JSONEncoder().encode(payload) else { return }
-        defaults.set(data, forKey: storageKey)
+        if let data = try? JSONEncoder().encode(payload) {
+            defaults.set(data, forKey: storageKey)
+        }
     }
 }

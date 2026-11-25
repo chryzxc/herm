@@ -5018,6 +5018,8 @@ A failed or incomplete history read shows `?` with an unavailable description, n
 a guessed number. Read sessions show no completion marker.
 
 The sidebar counts Hermes history after the existing profile/session seen timestamp.
+Marking a conversation as seen updates its visible badge immediately and writes
+the local timestamps in the background.
 The floating latest-message control counts replies arriving while away from the tail.
 Both use `ConversationUnreadMessagePolicy`: only nonempty AI replies (including
 image replies) count, excluding user prompts, steering, tool/activity-only rows,

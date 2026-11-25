@@ -135,6 +135,7 @@ extension ControlCenterModel {
             isRefreshingProjectNavigation = false
             projectNavigationRefreshGeneration = nil
             projectNavigationReads.removeAll()
+            invalidateProjectSessionReads()
             pendingProjectNavigationSessions = [:]
             completedProjectNavigationIDs = []
             projectNavigationRefreshIDs = []
@@ -151,8 +152,6 @@ extension ControlCenterModel {
             journeyGeneration = UUID()
             projectFactsGeneration = UUID()
             verificationGeneration = UUID()
-            projectSessionsGeneration = UUID()
-            projectMembershipGeneration = UUID()
             cronRunsGeneration = UUID()
             mcpInventoryGeneration = UUID()
             promptBudgetGeneration = UUID()
@@ -222,11 +221,10 @@ extension ControlCenterModel {
         projectProfileScopeUnavailable = nextUnavailable
         projectNavigationRefreshGeneration = nil
         projectNavigationReads.removeAll()
+        invalidateProjectSessionReads()
         projectNavigationRefreshIDs = []
         pendingProjectNavigationSessions = [:]
         completedProjectNavigationIDs = []
-        projectSessionsGeneration = UUID()
-        projectMembershipGeneration = UUID()
         projects = []
         projectIDBySessionID = [:]
         resolvedProjectIDBySessionID = [:]
@@ -279,12 +277,12 @@ extension ControlCenterModel {
         }
     }
 
-    func refresh(forceCapabilities: Bool = false) {
+    func refresh(forceCapabilities: Bool = false, includeFocusedDetails: Bool = true) {
         guard !isRefreshing else { return }
         sidebarCapabilityTask?.cancel()
         refreshGeneration &+= 1
         pendingEventRefreshes.formUnion(inFlightEventRefreshes)
-        if eventRefreshTask != nil {
+        if eventRefreshTask != nil, includeFocusedDetails {
             sessionCockpitGeneration = UUID()
             checkpointsGeneration = UUID()
             promptBudgetGeneration = UUID()
@@ -307,7 +305,8 @@ extension ControlCenterModel {
         var unavailable: [String] = []
         if remindersAdapter != nil { refreshing.append("reminders") }
         if rpc != nil {
-            refreshing += ["cron.jobs", "sessions", "agents", "processes", "projects"]
+            refreshing += ["cron.jobs", "sessions", "agents", "projects"]
+            if includeFocusedDetails { refreshing.append("processes") }
         } else {
             unavailable += ["cron.jobs", "sessions", "latest.activity", "agents", "projects"]
         }
@@ -363,7 +362,7 @@ extension ControlCenterModel {
                     // Refresh here, at the ownership boundary, so a successful Kanban
                     // probe immediately hydrates the focused session projection rather
                     // than leaving the renderer to wait for its next polling interval.
-                    if capabilityAvailable("kanban"), let sessionID = dockModel.kanbanSessionID {
+                    if includeFocusedDetails, capabilityAvailable("kanban"), let sessionID = dockModel.kanbanSessionID {
                         refreshSessionKanban(for: sessionID)
                     }
                     if forceCapabilities || diagnostics.isEmpty {
@@ -376,12 +375,15 @@ extension ControlCenterModel {
                     if forceCapabilities || sessionStoreStatus == nil || memoryHealthStatus == nil {
                         refreshReadOnlyHealth()
                     }
-                    refreshSessionCockpit(for: dockModel.sessionID)
                     // Provider quota is refreshed when the Quota tab is opened. Antigravity
                     // quota scans for a running language server, so it stays lazy instead
                     // of adding subprocess churn to every startup.
-                    refreshPromptBudget()
-                    refreshVerification()
+                    if includeFocusedDetails {
+                        let sessionID = conversationModel?.sessionID
+                        refreshSessionCockpit(for: sessionID)
+                        refreshPromptBudget()
+                        refreshVerification(for: sessionID)
+                    }
                     recordProjectionSuccess("core")
                 }
             }
@@ -438,7 +440,7 @@ extension ControlCenterModel {
                     guard !Task.isCancelled, isCurrentRefresh(generation, clientIdentity: clientIdentity) else {
                         return
                     }
-                    if !sessionID.isEmpty {
+                    if includeFocusedDetails, !sessionID.isEmpty {
                         do {
                             let result = try await rpc.processes(sessionID: sessionID)
                             guard !Task.isCancelled, self.isCurrentRefresh(generation, clientIdentity: clientIdentity)

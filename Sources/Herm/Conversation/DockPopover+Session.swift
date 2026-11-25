@@ -594,20 +594,28 @@ extension DockPopover {
     }
 
     var sessionList: some View {
+        SessionPickerSnapshotReader(
+            sidebar: .shared(model: workspaceModel, control: controlCenter, store: workspaceStore)
+        ) { snapshot in
+            sessionList(snapshot: snapshot)
+        }
+    }
+
+    private func sessionList(snapshot: SessionNavSidebarSnapshot) -> some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
-        let sessions = filteredPickerSessions
+        let recent = snapshot.inputs.sessions
+        let sessions = filteredPickerSessions(recent)
         // Same resolver and seen state as the rail, so both show the same marks.
         let statuses = SidebarSessionStatusResolver.statuses(
             for: sessions,
-            snapshot: SessionNavSidebarSnapshot(
-                inputs: SessionNavSidebarSnapshot.inputs(model: workspaceModel, control: controlCenter)),
+            snapshot: snapshot,
             seenStore: sidebarSessionSeenStore,
             fallbackProfileID: workspaceModel.profileScopeID
         )
         return VStack(alignment: .leading, spacing: 4) {
             DockSectionHeader(
                 title: "Recents",
-                count: workspaceModel.sessions.isEmpty ? nil : workspaceModel.sessions.count,
+                count: recent.isEmpty ? nil : recent.count,
                 style: style
             ) {
                 DockIconButton(
@@ -621,17 +629,17 @@ extension DockPopover {
             .dockPadding(.horizontal, 6)
             .dockPadding(.top, 8)
 
-            if !workspaceModel.sessions.isEmpty {
+            if !recent.isEmpty {
                 sessionSearchField(style: style)
                     .dockPadding(.horizontal, 12)
                     .dockPadding(.bottom, 4)
             }
 
-            if workspaceModel.sessions.isEmpty && workspaceModel.isLoadingSessions {
+            if recent.isEmpty && snapshot.inputs.isLoadingSessions {
                 DockLoadingState(title: "Loading conversations…", minHeight: 80)
             } else if sessions.isEmpty {
                 Text(
-                    workspaceModel.sessions.isEmpty
+                    recent.isEmpty
                         ? "No saved conversations" : "No conversations match “\(sessionPickerQuery)”"
                 )
                 .dockFont(.body)
@@ -713,10 +721,10 @@ extension DockPopover {
         }
     }
 
-    var filteredPickerSessions: [HermesSession] {
+    private func filteredPickerSessions(_ recent: [HermesSession]) -> [HermesSession] {
         let query = sessionPickerQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return workspaceModel.sessions }
-        return workspaceModel.sessions.filter { session in
+        guard !query.isEmpty else { return recent }
+        return recent.filter { session in
             [session.displayTitle, session.displayPreview, conversationProjectName(for: session)]
                 .contains { $0?.localizedCaseInsensitiveContains(query) == true }
         }
@@ -773,4 +781,11 @@ extension DockPopover {
             chatScroll(trailingContentInset: trailingContentInset)
         }
     }
+}
+
+private struct SessionPickerSnapshotReader<Content: View>: View {
+    @ObservedObject var sidebar: SessionNavSidebarModel
+    @ViewBuilder let content: (SessionNavSidebarSnapshot) -> Content
+
+    var body: some View { content(sidebar.snapshot) }
 }
