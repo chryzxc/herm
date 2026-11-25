@@ -163,12 +163,12 @@ struct BotChatsPage: View, Equatable {
         }
         .task(id: hostVisible) {
             // ponytail: 10s roster poll while the page is on screen, as on the Sessions rail; Hermes has
-            // no roster push event. Unchanged rosters do not republish, so a quiet poll costs one RPC.
+            // no roster push event. Share recent inventory with the other Bot surfaces.
             guard hostVisible else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled else { return }
-                await bots.refreshNow()
+                await bots.refreshNow(minimumInterval: 10)
             }
         }
         // Coming back from another client (e.g. Hermes Agent Desktop) shows its changes at once.

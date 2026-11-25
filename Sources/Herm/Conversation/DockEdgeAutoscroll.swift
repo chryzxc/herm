@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Vertical edge autoscroll shared by Herm's dragged reorder lists: a pointer held inside a
-/// viewport's edge band keeps the list moving, so a row can travel through rows that were
+/// Vertical edge autoscroll shared by Herm's dragged reorder lists: a pointer held near or past
+/// a viewport's top or bottom edge keeps the list moving, so a row can travel through rows that were
 /// offscreen when the drag started.
 enum DockEdgeAutoscroll {
     /// How close to a viewport edge a held pointer must stay to keep scrolling.
@@ -15,10 +15,11 @@ enum DockEdgeAutoscroll {
         case towardEnd
     }
 
-    /// The scroll a pointer asks for, or nil outside the viewport or between the bands.
+    /// The scroll a pointer asks for, or nil beside the viewport or between the bands.
     /// A viewport too short for two bands never scrolls on its own.
     static func direction(pointer: CGPoint, viewport: CGRect) -> Direction? {
-        guard viewport.height > band * 2, viewport.contains(pointer) else { return nil }
+        guard viewport.height > band * 2, pointer.x >= viewport.minX, pointer.x < viewport.maxX
+        else { return nil }
         if pointer.y < viewport.minY + band { return .towardStart }
         if pointer.y > viewport.maxY - band { return .towardEnd }
         return nil

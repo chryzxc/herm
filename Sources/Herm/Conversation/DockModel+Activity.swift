@@ -74,11 +74,15 @@ extension DockModel {
         }
         let recentIndex = recentIndexByID[sessionID]
         let pinnedIndex = pinnedIndexByID[sessionID]
+        var changed = false
+        var scannedSession: HermesSession?
         if let recentIndex, let row = updated(sessions[recentIndex]) {
             updateSessionMetadata { sessions[recentIndex] = row }
+            changed = true
         }
         if let pinnedIndex, let row = updated(pinnedSessions[pinnedIndex]) {
             updateSessionMetadata { pinnedSessions[pinnedIndex] = row }
+            changed = true
         }
         // Other Bots' rows live in the all-Bot scan; patch them too so the Bot
         // activity board flips at the event, not at the next scan. Mid-turn
@@ -92,7 +96,9 @@ extension DockModel {
                 if let row = updated(rows[index]) {
                     rows[index] = row
                     updateSessionMetadata { allBotSessionsState = .ready(rows) }
+                    changed = true
                 }
+                scannedSession = rows[index]
             }
         case .stale(var rows, let message):
             if let index = allBotIndexByID[sessionID] {
@@ -100,9 +106,16 @@ extension DockModel {
                 if let row = updated(rows[index]) {
                     rows[index] = row
                     updateSessionMetadata { allBotSessionsState = .stale(rows, safeMessage: message) }
+                    changed = true
                 }
+                scannedSession = rows[index]
             }
         case .loading, .empty, .unavailable, .failed: break
+        }
+        if changed, isBotModeLoaded, !botActivitySyncPending,
+            let row = recentIndex.map({ sessions[$0] }) ?? pinnedIndex.map({ pinnedSessions[$0] }) ?? scannedSession
+        {
+            botMode.updateActivitySession(BotSessionSignal(row))
         }
         // A session no list holds yet (another Bot's new chat): ask the roster
         // now rather than at the next 10s poll, at most every 3s.
@@ -139,9 +152,14 @@ extension DockModel {
         }
         let nextSessions = sessions.map(clearingUnread)
         let nextPins = pinnedSessions.map(clearingUnread)
-        updateSessionMetadata {
-            if nextSessions != sessions { sessions = nextSessions }
-            if nextPins != pinnedSessions { pinnedSessions = nextPins }
+        let changedSessions = nextSessions != sessions
+        let changedPins = nextPins != pinnedSessions
+        if changedSessions || changedPins {
+            updateSessionMetadata {
+                if changedSessions { sessions = nextSessions }
+                if changedPins { pinnedSessions = nextPins }
+            }
+            syncBotActivitySignals()
         }
         var unreadIDs = Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? [])
         let unreadCount = unreadIDs.count

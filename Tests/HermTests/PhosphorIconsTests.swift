@@ -21,6 +21,14 @@ struct PhosphorIconsTests {
         #expect(!Ph.dotsThree.appKitMenuImage(size: 13).isTemplate)
     }
 
+    @Test func horizontalAndVerticalMenuDotsMatchInBoldWeight() {
+        let horizontal = Ph.dotsThree.cgPath().boundingBoxOfPath
+        let vertical = Ph.dotsThreeVertical.cgPath().boundingBoxOfPath
+        #expect(horizontal.height.rounded() == 32)
+        #expect(vertical.width.rounded() == 32)
+        #expect(horizontal.width.rounded() == vertical.height.rounded())
+    }
+
     @Test func nativeMenuImageInkTracksMenuTextAppearance() throws {
         let lightInk = try meanInkBrightness(in: .aqua)
         let darkInk = try meanInkBrightness(in: .darkAqua)

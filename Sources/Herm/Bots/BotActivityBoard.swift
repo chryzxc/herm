@@ -76,45 +76,100 @@ struct BotActivityBoard: Equatable, Sendable {
     static func resolve(
         roster: [BotSummary], live: [String: BotLiveSessionStatus], signals: BotActivitySignals
     ) -> BotActivityBoard {
-        let visible = roster.filter { !$0.isHidden }
-        let visibleIDs = Set(visible.map(\.id))
-        // Session → owning Bot. Roster pointers are exact; session rows fill in
-        // every other session, so a Bot running more than its latest chat counts.
-        var owner: [String: String] = [:]
-        for session in signals.sessions {
-            if let profile = session.profileID ?? signals.scopeProfileID { owner[session.id] = profile }
-        }
-        for bot in visible {
-            for id in [bot.chat?.sessionID, bot.recentSession?.sessionID, bot.worker?.sessionID].compactMap({ $0 }) {
-                owner[id] = bot.id
+        var projection = Projection()
+        projection.setRoster(roster, live: live)
+        projection.replace(signals)
+        return projection.board
+    }
+
+    /// Roster and wholesale inventory changes rebuild this index. A live
+    /// session update replaces only that session's contribution to its owners.
+    struct Projection {
+        private var sessions: [String: BotSessionSignal] = [:]
+        private var attention: [String: String?] = [:]
+        private var scope: String?
+        private var live: [String: BotLiveSessionStatus] = [:]
+        private var rosterOwners: [String: String] = [:]
+        private var visibleBots = Set<String>()
+        private var workingBots = Set<String>()
+        private var contributions: [String: [String: BotActivityStatus]] = [:]
+        private var botSessions: [String: [String: BotActivityStatus]] = [:]
+        private(set) var board = BotActivityBoard()
+
+        mutating func setRoster(_ roster: [BotSummary], live: [String: BotLiveSessionStatus]) {
+            self.live = live
+            let visible = roster.filter { !$0.isHidden }
+            board.order = visible.map(\.id)
+            visibleBots = Set(board.order)
+            workingBots = Set(visible.filter { $0.isSessionWorking || $0.isMainChatWorking }.map(\.id))
+            rosterOwners = [:]
+            for bot in visible {
+                for id in [bot.chat?.sessionID, bot.recentSession?.sessionID, bot.worker?.sessionID].compactMap({ $0 })
+                {
+                    rosterOwners[id] = bot.id
+                }
             }
+            rebuild()
         }
-        var statuses: [String: BotActivityStatus] = [:]
-        func raise(_ id: String?, _ status: BotActivityStatus) {
-            guard let id, visibleIDs.contains(id), status > (statuses[id] ?? .idle) else { return }
-            statuses[id] = status
+
+        mutating func replace(_ signals: BotActivitySignals) {
+            let next = Dictionary(signals.sessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            guard next != sessions || signals.attention != attention || signals.scopeProfileID != scope else { return }
+            sessions = next
+            attention = signals.attention
+            scope = signals.scopeProfileID
+            rebuild()
         }
-        for bot in visible where bot.isSessionWorking || bot.isMainChatWorking {
-            raise(bot.id, .working)
-        }
-        for (sessionID, status) in live {
-            switch status {
-            case .waiting: raise(owner[sessionID], .blocked)
-            case .working: raise(owner[sessionID], .working)
-            case .idle: break
+
+        mutating func update(_ signal: BotSessionSignal) {
+            guard sessions[signal.id] != signal else { return }
+            sessions[signal.id] = signal
+            let previous = contributions.removeValue(forKey: signal.id) ?? [:]
+            for bot in previous.keys {
+                botSessions[bot]?[signal.id] = nil
+                if botSessions[bot]?.isEmpty == true { botSessions[bot] = nil }
             }
+            let next = addContribution(for: signal.id)
+            for bot in Set(previous.keys).union(next.keys) { resolve(bot) }
         }
-        for session in signals.sessions {
-            if session.isWorking {
-                raise(owner[session.id], .working)
-            } else if session.hasUnreadUpdate {
-                raise(owner[session.id], .finished)
+
+        private mutating func rebuild() {
+            contributions = [:]
+            botSessions = [:]
+            board.statuses = [:]
+            for session in Set(sessions.keys).union(live.keys).union(attention.keys) { addContribution(for: session) }
+            for bot in board.order { resolve(bot) }
+        }
+
+        @discardableResult
+        private mutating func addContribution(for id: String) -> [String: BotActivityStatus] {
+            let signal = sessions[id]
+            let owner = rosterOwners[id] ?? signal.flatMap { $0.profileID ?? scope }
+            var statuses: [String: BotActivityStatus] = [:]
+            if let owner, visibleBots.contains(owner) {
+                if live[id] == .waiting {
+                    statuses[owner] = .blocked
+                } else if live[id] == .working || signal?.isWorking == true {
+                    statuses[owner] = .working
+                } else if signal?.hasUnreadUpdate == true {
+                    statuses[owner] = .finished
+                }
             }
+            if let target = attention[id], let bot = target ?? owner ?? scope, visibleBots.contains(bot) {
+                statuses[bot] = .blocked
+            }
+            if !statuses.isEmpty {
+                contributions[id] = statuses
+                for (bot, status) in statuses { botSessions[bot, default: [:]][id] = status }
+            }
+            return statuses
         }
-        for (sessionID, profile) in signals.attention {
-            raise(profile ?? owner[sessionID] ?? signals.scopeProfileID, .blocked)
+
+        private mutating func resolve(_ bot: String) {
+            let rosterStatus: BotActivityStatus = workingBots.contains(bot) ? .working : .idle
+            let status = max(rosterStatus, botSessions[bot]?.values.max() ?? .idle)
+            board.statuses[bot] = status == .idle ? nil : status
         }
-        return BotActivityBoard(statuses: statuses, order: visible.map(\.id))
     }
 }
 

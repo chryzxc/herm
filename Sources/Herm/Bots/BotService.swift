@@ -756,7 +756,7 @@ final class BotModeModel: ObservableObject {
     /// Who is working, blocked or done: the one source the Bot picker and
     /// the notch read. Republishes only when a Bot's status changes.
     @Published private(set) var activity = BotActivityBoard()
-    private var activitySignals = BotActivitySignals()
+    private var activityProjection = BotActivityBoard.Projection()
     @Published private(set) var isRefreshing = false
     private var isPolling = false
     private var lastInventoryAttempt: Date?
@@ -962,15 +962,23 @@ final class BotModeModel: ObservableObject {
     /// Session events (turn started, finished, waiting on you) land here the
     /// moment Herm sees them, ahead of the next roster poll.
     func updateActivitySignals(_ signals: BotActivitySignals) {
-        guard signals != activitySignals else { return }
-        activitySignals = signals
-        resolveActivity()
+        activityProjection.replace(signals)
+        publishActivity()
+    }
+
+    func updateActivitySession(_ signal: BotSessionSignal) {
+        activityProjection.update(signal)
+        publishActivity()
     }
 
     private func resolveActivity() {
-        let board = BotActivityBoard.resolve(
-            roster: inventory.availability == .ready ? inventory.bots : [], live: inventory.liveSessions,
-            signals: activitySignals)
+        activityProjection.setRoster(
+            inventory.availability == .ready ? inventory.bots : [], live: inventory.liveSessions)
+        publishActivity()
+    }
+
+    private func publishActivity() {
+        let board = activityProjection.board
         if board != activity { activity = board }
     }
 

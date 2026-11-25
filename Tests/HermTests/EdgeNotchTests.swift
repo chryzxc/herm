@@ -672,6 +672,20 @@ struct BotActivityBoardTests {
                 != BotSessionSignal(row(preview: "a", at: 1, working: false)))
     }
 
+    @Test func updatingOneSessionKeepsOtherBotsAndOtherSessionsWorking() {
+        var projection = BotActivityBoard.Projection()
+        projection.setRoster([Self.bot("nexus"), Self.bot("coder")], live: [:])
+        projection.update(Self.session("a", profile: "nexus", working: true))
+        projection.update(Self.session("b", profile: "nexus", working: true))
+        projection.update(Self.session("c", profile: "coder", working: true))
+
+        projection.update(Self.session("a", profile: "nexus", unread: true))
+        #expect(projection.board.working == ["nexus", "coder"])
+        projection.update(Self.session("b", profile: "nexus"))
+        #expect(projection.board.working == ["coder"])
+        #expect(projection.board.finished == ["nexus"])
+    }
+
     @Test func blockedOutranksWorkingAndHiddenBotsStayOut() {
         let board = BotActivityBoard.resolve(
             roster: [Self.bot("nexus", sessions: true), Self.bot("ghost", sessions: true, hidden: true)],

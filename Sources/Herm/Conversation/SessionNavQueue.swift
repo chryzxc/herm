@@ -448,11 +448,10 @@ struct SessionNavQueue: View, Equatable {
     private var canCreateBot: Bool { botMode.canCreateBots && onCreateBot != nil }
 
     private func botRail(style: DockThemePalette) -> some View {
-        let avatarSize: CGFloat = 32
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             if visibleBots.count > 1 {
                 botRailButton("All", isSelected: showsAllProfiles, style: style, action: selectAllProfiles) {
-                    let size = DockWorkspaceScale.points(avatarSize, scale: workspaceScale)
+                    let size = DockWorkspaceScale.points(DockBotRailMetrics.avatarSize, scale: workspaceScale)
                     Text("All")
                         .dockFont(.body, weight: .semibold)
                         .foregroundStyle(style.primaryText)
@@ -475,7 +474,8 @@ struct SessionNavQueue: View, Equatable {
                     if botMode.isAvatarPending(bot) {
                         DockLoadingIndicator().controlSize(.small)
                     } else {
-                        BotAvatarView(bot: bot, imageData: imageData, size: avatarSize, animated: false)
+                        BotAvatarView(
+                            bot: bot, imageData: imageData, size: DockBotRailMetrics.avatarSize, animated: false)
                     }
                 }
                 .overlay(alignment: .trailing) {
@@ -496,7 +496,7 @@ struct SessionNavQueue: View, Equatable {
                     .dockPadding(.bottom, 6)
             }
         }
-        .frame(width: 60)
+        .frame(width: DockBotRailMetrics.width)
         .dockShellChrome()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Bot rail")
@@ -509,7 +509,7 @@ struct SessionNavQueue: View, Equatable {
     ) -> some View {
         Button(action: action) {
             avatar()
-                .frame(width: DockControlMetrics.hitTarget, height: DockControlMetrics.hitTarget)
+                .frame(width: DockBotRailMetrics.rowSize, height: DockBotRailMetrics.rowSize)
                 .dockSelectionBackground(
                     DockThemeShape(cornerRadius: DockControlMetrics.cornerRadius), active: isSelected,
                     fill: style.selectedFill, allowsInvert: false, theme: style.theme
@@ -823,7 +823,7 @@ struct SessionNavQueue: View, Equatable {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled else { return }
-                await botMode.refreshNow()
+                await botMode.refreshNow(minimumInterval: 10)
                 if visibleBots.count > 1, !model.isLoadingSessions, !model.isPollingSessions,
                     !model.sessionIndexReadRecently(within: 10)
                 {

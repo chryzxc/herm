@@ -195,8 +195,10 @@ final class DockModel: ObservableObject {
     @Published var sessions: [HermesSession] = [] {
         didSet {
             sessionIndexRevision &+= 1
-            if !updatingSessionMetadata { recentIndexByID = Self.indices(sessions) }
-            syncBotActivitySignals()
+            if !updatingSessionMetadata {
+                recentIndexByID = Self.indices(sessions)
+                syncBotActivitySignals()
+            }
         }
     }
     /// What each session is doing right now (its latest tool), read from the
@@ -287,8 +289,10 @@ final class DockModel: ObservableObject {
     @Published var pinnedSessions: [HermesSession] = [] {
         didSet {
             sessionIndexRevision &+= 1
-            if !updatingSessionMetadata { pinnedIndexByID = Self.indices(pinnedSessions) }
-            syncBotActivitySignals()
+            if !updatingSessionMetadata {
+                pinnedIndexByID = Self.indices(pinnedSessions)
+                syncBotActivitySignals()
+            }
         }
     }
     @Published var pinningSessionID: String?
@@ -305,8 +309,8 @@ final class DockModel: ObservableObject {
                 case .stale(let rows, _): allBotIndexByID = Self.indices(rows)
                 default: allBotIndexByID = [:]
                 }
+                syncBotActivitySignals()
             }
-            syncBotActivitySignals()
         }
     }
     var allBotSessionsTask: Task<Void, Never>? {

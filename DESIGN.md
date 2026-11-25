@@ -483,6 +483,10 @@ and `DockComponentStyles.swift`.
 | Buttons | `.dockCompact`, `.dockPress`, `.dockSecondary`, `.dockPrimary`, `.dockLink`, `DockActionLabel` | Compatibility alias, icon controls, outlined actions, the local primary action, inline navigation, pending state; text-action size is inherited |
 | Inputs | `.dockGlass`, `.dockSwitch`, `DockTabBar` / `DockTabButton` | Text fields, toggles, local scopes (never native `.segmented`) |
 
+Horizontal and vertical three-dot menu icons use Phosphor's bold paths at the
+existing control size in both SwiftUI and native menus. They inherit the
+control's themed ink and retain its orientation.
+
 **Signage card anatomy.** Row 1 has the status dot, a one-line 12pt semibold
 title, and trailing monospaced metadata such as relative time or "Current".
 Row 2 is indented to the title and has the status label in the tone hue plus
@@ -3216,14 +3220,17 @@ Group chat action errors use toast notifications without an inline error row abo
 In the Sessions title strip, a vertical ellipsis beside the Chat tiles button
 opens the themed Bot picker layout menu. Mark the active choice in the
 popover. **Bot menu** shows the inline picker. **Bot rail** replaces it with a
-scrollable avatar column between the main navigation rail and the session list.
+scrollable 72pt avatar column between the main navigation rail and the session list.
 Keep **All** above the scroll area when several bots are visible. Center the
-label on a neutral avatar tile the same size as the bot avatars. The avatar
-list scrolls within the available height with the scrollbar hidden. Hovering
+label on a neutral avatar tile the same size as the bot avatars. Both use a
+38pt base size inside the 52pt row target. The avatar list scrolls within the
+available height with the scrollbar hidden. Hovering
 over a bot shows a profile preview beside the rail. The bot's avatar, name,
 and role form its header. A hairline separates the description when one is
 set. Activity and unread badges use separate corners within each avatar
 slot. Drag an avatar to reorder it using the same saved order as the picker.
+Both layouts use the same edge scrolling. Hold the pointer near or past the top
+or bottom of the avatar list during a drag to reach offscreen bots.
 New Bot appears when creation is available. The layout choice persists locally.
 
 ### Conversation workspace
