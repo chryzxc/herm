@@ -602,7 +602,7 @@ PR membership comes from explicit links in the selected chat or targeted PR tool
 repository listings, searches, and other sessions' history do not add their results.
 Live results must belong to the selected response. Switching sessions or profiles resets
 rail state and its cached workspace folder; tasks, plans, outputs, attention, and pins use that session's data.
-The Plan section lists the `.hermes/plans/` files the chat names and any plan you added with **Add to rail**, with progress from their checkboxes or else the session's task list, and a Track progress action when neither has any; selecting one opens it in Plan view.
+The Plan section lists the `.hermes/plans/` files the chat names and any plan you added with **Add to rail**, with progress from their checkboxes or else the session's task list, and a Track progress action when neither has any; selecting one opens it in Plan view. Visible rails and document previews share file updates when a plan changes.
 The rail picks up file edits while it is visible and reuses the parsed plan between edits.
 Workspace uses a colored folder icon, a project name and path, and labelled branch
 and latest-commit details.
@@ -1251,7 +1251,7 @@ limited to two concurrent requests.
 - **Today**: your current focus, approvals, failures, due Apple Reminders, active work, and scheduled jobs.
 - **Inbox**: approvals, clarifications, failures, and completed work. You can dismiss or snooze items.
 - **Activity**: delegated agents that are running, an animated map of handoffs between agents, and background tasks. Session Kanban activity spans all active boards and refreshes every five seconds while visible, with immediate refresh requests when session tools reference a card.
-- **Artifacts**: images, files, and links across Hermes profiles and saved, unarchived sessions, including terminal outputs and pre-compaction history. The browser starts with recent sessions and messages, shows outputs as they are found, and continues through the full archive. Parsing runs off the UI thread, and results are published in batches. Sidebar activity does not restart the scan. Unreadable profiles or incomplete pagination retain readable results with a warning. Refresh reuses unchanged sessions and caches only artifact records.
+- **Artifacts**: images, files, and links across Hermes profiles and saved, unarchived sessions, including terminal outputs and pre-compaction history. The browser starts with recent sessions and messages, shows outputs as they are found, and continues through the full archive. Parsing runs off the UI thread, and results are published in batches. Search runs in the background and reuses the archive counts. Sidebar activity does not restart the scan. Unreadable profiles or incomplete pagination retain readable results with a warning. Refresh reuses unchanged sessions and caches only artifact records.
 - **Core**: token usage, context breakdown, rollback checkpoints, skills, MCP servers, plugins, and Hermes health.
 
 **Memory correction** loads editable entries from the active Hermes profile. Inspect an entry, prepare a correction or deletion, and confirm before saving. Hermes validates the captured entry fingerprint before changing it; unsupported runtimes keep the action unavailable.

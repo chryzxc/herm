@@ -145,6 +145,30 @@ struct SessionPlansTests {
         #expect(loader.load(workspace: root.path, newTexts: nil, linked: [], tasks: []).isEmpty)
     }
 
+    @Test func previewAndRailRefreshTheSameAtomicReplacement() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("linked.md")
+        let cache = PlanFileCache.shared
+        try "# Plan\n## Work\n- [ ] Build".write(to: file, atomically: true, encoding: .utf8)
+        let first = try #require(cache.preview(at: file, markdown: true, after: nil))
+        #expect(first.map?.progress?.done == 0)
+        #expect(cache.preview(at: file, markdown: true, after: first.revision) == nil)
+        #expect(SessionPlans.load(workspace: nil, texts: [], linked: [file.path], tasks: []).first?.done == 0)
+
+        try "# Plan\n## Work\n- [x] Build".write(to: file, atomically: true, encoding: .utf8)
+        let originalDate = try #require(first.revision?.modifiedAt)
+        try FileManager.default.setAttributes([.modificationDate: originalDate], ofItemAtPath: file.path)
+        #expect(SessionPlans.load(workspace: nil, texts: [], linked: [file.path], tasks: []).first?.done == 1)
+        let replacement = try #require(cache.preview(at: file, markdown: true, after: first.revision))
+        #expect(replacement.map?.progress?.done == 1)
+
+        try FileManager.default.removeItem(at: file)
+        #expect(cache.preview(at: file, markdown: true, after: replacement.revision)?.content == .missing)
+        #expect(SessionPlans.load(workspace: nil, texts: [], linked: [file.path], tasks: []).first?.isMissing == true)
+    }
+
     @Test func trackProgressAsksForAMatchingTaskList() {
         let context = SessionPlans.trackProgressContext(path: "/w/.hermes/plans/a.md", title: "Add export")
         #expect(context.title == "Track progress · Add export")

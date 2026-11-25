@@ -188,12 +188,22 @@ enum SpecMapParser {
     /// Tries the strictest reading first and loosens only while the map would be too thin to show.
     /// A checklist plan is taken as written; a reading without stated status must cover every section.
     static func parse(_ text: String, fallbackTitle: String) -> SpecMap {
-        let maps = [Mode.strict, .loose, .outline].map { parse(text, fallbackTitle: fallbackTitle, mode: $0) }
-        return maps.first { $0.isUseful && ($0.hasStatus || $0.droppedSections == 0) }
-            ?? maps.first(where: \.isUseful) ?? maps[0]
+        parseWithTitleSource(text, fallbackTitle: fallbackTitle).map
     }
 
-    private static func parse(_ text: String, fallbackTitle: String, mode: Mode) -> SpecMap {
+    static func parseWithTitleSource(_ text: String, fallbackTitle: String) -> (map: SpecMap, usesFallbackTitle: Bool) {
+        let strict = parse(text, fallbackTitle: fallbackTitle, mode: .strict)
+        if strict.map.isUseful && (strict.map.hasStatus || strict.map.droppedSections == 0) { return strict }
+        let loose = parse(text, fallbackTitle: fallbackTitle, mode: .loose)
+        if loose.map.isUseful && (loose.map.hasStatus || loose.map.droppedSections == 0) { return loose }
+        let outline = parse(text, fallbackTitle: fallbackTitle, mode: .outline)
+        if outline.map.isUseful && (outline.map.hasStatus || outline.map.droppedSections == 0) { return outline }
+        return [strict, loose, outline].first { $0.map.isUseful } ?? strict
+    }
+
+    private static func parse(_ text: String, fallbackTitle: String, mode: Mode)
+        -> (map: SpecMap, usesFallbackTitle: Bool)
+    {
         // Character-wise, so a CRLF break is one separator, not two with an empty line between.
         let lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
         var inFence = false
@@ -212,7 +222,8 @@ enum SpecMapParser {
         let repeated = counts.filter { $0.value >= 2 }.keys.min()
         // An outline promotes the repeated headings one level, from phases to steps.
         let laneLevel = mode == .outline ? repeated.map { $0 - 1 } : repeated
-        let title = headings.first(where: { $0.level == 1 })?.title ?? headings.first?.title ?? fallbackTitle
+        let headingTitle = headings.first(where: { $0.level == 1 })?.title ?? headings.first?.title
+        let title = headingTitle ?? fallbackTitle
 
         // Nodes are kept flat per lane while parsing (parent ids link the tree), then grouped.
         var drafts: [(id: String, title: String, nodes: [SpecMapNode])] = []
@@ -420,7 +431,7 @@ enum SpecMapParser {
         }
         var map = SpecMap(title: title, lanes: lanes, edges: edges)
         map.droppedSections = dropped
-        return map
+        return (map, headingTitle == nil)
     }
 
     // MARK: Lines

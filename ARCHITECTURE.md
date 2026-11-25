@@ -193,7 +193,8 @@ readers/resolvers in RichHostActionRouter; it never creates a second capability 
 
 `Plans/ArtifactService` extracts validated surfaces from assistant text through the
 same RichDocument decoder as chat. Artifact records use typed content, original source,
-and canonical message references, not fabricated paths. ArtifactIndexStore coalesces
+and canonical message references, not fabricated paths. Artifact search builds a cancellable projection from a frozen index and reuses
+the counts, labels, and day metadata for query-only changes. ArtifactIndexStore coalesces
 reads per model/profile/session and keeps a bounded disposable cache shared by global
 and session browsers. Source history remains in Hermes. WorkspacePresentationStore
 holds only references and bounded user input/selection preferences; exports are

@@ -562,6 +562,8 @@ attaches a context chip asking Hermes to name its task list after the plan's ste
 Herm never edits the plan or ticks steps. A linked file that is gone or unreadable
 shows "File not found." in the warning color with Remove from rail, never old numbers.
 Selecting a row opens the file tab in Plan view.
+The rail and document preview refresh from the same local file revision. Visible
+previews pick up external edits and atomic saves during reading and review.
 Tasks and the composer reuse `TodoPlanTaskList`: in-progress tasks first, pending
 tasks next, and completed/cancelled tasks last, preserving original order within each
 group and original slots for identity. The active task has a progress indicator,

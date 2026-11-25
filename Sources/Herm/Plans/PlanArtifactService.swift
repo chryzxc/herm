@@ -69,9 +69,8 @@ struct PlanArtifactService {
         return PlanArtifactDocument(summary: summary, contents: contents)
     }
 
-    func railText(at source: URL) throws -> (text: String, title: String) {
-        let (_, text) = try readSource(at: source)
-        return (text, title(for: relativePath(for: source), contents: text))
+    func railTitle(at source: URL, contents: String) -> String {
+        title(for: relativePath(for: source), contents: contents)
     }
 
     private func readSource(at url: URL) throws -> (Data, String) {

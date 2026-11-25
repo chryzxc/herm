@@ -72,6 +72,8 @@ struct ArtifactsInspectorView: View {
         nonmutating set { recordIndex = RichArtifactIndex.Snapshot(newValue) }
     }
     @State private var presentationCache = ArtifactBrowserProjectionCache()
+    @State private var projection = ArtifactBrowserProjectionCache.Projection()
+    @State private var hasProjection = false
     @State private var indexedSessions: [ProfileScopedID: HermesSession] = [:]
     @State private var artifactCache: [ProfileScopedID: ArtifactIndexLoader.CachedSession] = [:]
     @State private var artifactProgress: [ProfileScopedID: [ArtifactRecord]] = [:]
@@ -119,7 +121,7 @@ struct ArtifactsInspectorView: View {
         var showsIcon: Bool { self != .all }
     }
 
-    private var projection: ArtifactBrowserProjectionCache.Projection {
+    private var projectionRequest: ArtifactBrowserProjectionCache.Request {
         let kind: ArtifactKind? =
             switch filter {
             case .all, .saved: nil
@@ -128,20 +130,21 @@ struct ArtifactsInspectorView: View {
             case .link: .link
             case .interactive: .interactive
             }
-        return presentationCache.project(
+        return ArtifactBrowserProjectionCache.Request(
             index: recordIndex, query: query, kind: kind, savedOnly: filter == .saved,
             bookmarks: savedTools.bookmarks, resources: savedTools.resourceBookmarks,
-            isSaved: savedTools.isSaved)
+            day: Calendar.current.startOfDay(for: .now))
     }
 
     private var visibleRecords: [ArtifactRecord] { projection.visible }
+    private var waitingForInitialResults: Bool { !hasProjection || (isLoading && records.isEmpty) }
 
     private var visibleImages: [ArtifactRecord] {
-        visibleRecords.filter { $0.kind == .image }
+        projection.imageRecords
     }
 
     private var visibleFiles: [ArtifactRecord] {
-        visibleRecords.filter { $0.kind != .image && (presentation == .page || $0.kind != .interactive) }
+        presentation == .page ? projection.fileRecords : projection.inspectorFileRecords
     }
 
     private var imagePageCount: Int {
@@ -165,7 +168,8 @@ struct ArtifactsInspectorView: View {
     }
 
     var body: some View {
-        Group {
+        let request = projectionRequest
+        return Group {
             if presentation == .page {
                 pageBody
             } else {
@@ -181,7 +185,14 @@ struct ArtifactsInspectorView: View {
         .onChange(of: model.isSending) { _, sending in if !sending { automaticRefreshID += 1 } }
         .onChange(of: query) { resetPages() }
         .onChange(of: filter) { resetPages() }
-        .onChange(of: visibleRecords.map(\.id)) { _, _ in reconcileSelection() }
+        .task(id: request) {
+            guard request == projectionRequest, let next = await presentationCache.project(request),
+                !Task.isCancelled, request == projectionRequest
+            else { return }
+            projection = next
+            hasProjection = true
+            reconcileSelection()
+        }
         .onChange(of: selectedArtifactID) { _, _ in selectedVersionID = nil }
         .dockSheet(isPresented: $comparingVersions) {
             if let current = selectedRecord, let generated = current.generated,
@@ -321,7 +332,7 @@ struct ArtifactsInspectorView: View {
             pageState(title: "Artifacts unavailable", detail: errorMessage, icon: .warning, actionTitle: "Retry") {
                 refreshID += 1
             }
-        } else if records.isEmpty && isLoading {
+        } else if visibleRecords.isEmpty && waitingForInitialResults {
             pageState(
                 title: "Indexing artifacts", detail: "Reading generated outputs from Hermes sessions…",
                 icon: .hourglass, actionTitle: nil, action: nil)
@@ -439,7 +450,7 @@ struct ArtifactsInspectorView: View {
     }
 
     private func moveSelection(by offset: Int) {
-        let ids = visibleRecords.map(\.id)
+        let ids = projection.visibleIDs
         guard !ids.isEmpty else { return }
         let current = selectedArtifactID.flatMap { ids.firstIndex(of: $0) } ?? -offset
         selectedArtifactID = ids[min(max(current + offset, 0), ids.count - 1)]
@@ -807,13 +818,13 @@ struct ArtifactsInspectorView: View {
     private var pageSummaryText: String {
         if let errorMessage { return errorMessage }
         if failedSessionCount > 0 { return "\(failedSessionCount) sessions could not be read. Refresh to retry." }
-        if isLoading && records.isEmpty { return "Indexing Hermes sessions…" }
-        let count = records.count
+        if waitingForInitialResults && visibleRecords.isEmpty { return "Indexing Hermes sessions…" }
+        let count = projection.counts.archiveTotal
         if sessionScope != nil {
             let summary = "\(count) \(count == 1 ? "output" : "outputs")"
             return isLoading ? "Indexing… · \(summary)" : summary
         }
-        let sessions = Set(records.map(\.scopedSessionID)).count
+        let sessions = projection.counts.sessions
         let summary =
             "\(count) \(count == 1 ? "output" : "outputs") across \(sessions) session\(sessions == 1 ? "" : "s")"
         return isLoading ? "Indexing… · \(summary)" : summary
@@ -839,7 +850,7 @@ struct ArtifactsInspectorView: View {
     private var summaryText: String {
         if let errorMessage { return errorMessage }
         if failedSessionCount > 0 { return "\(failedSessionCount) sessions could not be read. Refresh to retry." }
-        if isLoading && records.isEmpty { return "Indexing Hermes sessions…" }
+        if waitingForInitialResults && visibleRecords.isEmpty { return "Indexing Hermes sessions…" }
         let count = visibleRecords.count
         let summary = "\(count) \(count == 1 ? "output" : "outputs") from Hermes sessions"
         return isLoading ? "Indexing… · \(summary)" : summary
@@ -849,7 +860,7 @@ struct ArtifactsInspectorView: View {
         Group {
             if let errorMessage, records.isEmpty, !isLoading {
                 state(title: "Artifacts unavailable", detail: errorMessage, icon: .warning)
-            } else if records.isEmpty && isLoading {
+            } else if visibleRecords.isEmpty && waitingForInitialResults {
                 state(
                     title: "Indexing artifacts", detail: "Reading generated outputs from Hermes sessions…",
                     icon: .hourglass)
@@ -878,12 +889,12 @@ struct ArtifactsInspectorView: View {
                     pagination(current: min(imagePage, imagePageCount), total: imagePageCount) { imagePage = $0 }
                 }
 
-                ForEach(visibleRecords.filter { $0.generated != nil }) { record in
+                ForEach(projection.generatedRecords) { record in
                     if let generated = record.generated {
                         RichArtifactPreview(model: model, generated: generated)
                     }
                 }
-                ForEach(visibleRecords.filter { $0.unavailableBookmark != nil }) { record in
+                ForEach(projection.unavailableRecords) { record in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(record.label).fontWeight(.semibold)
                         Text("Source unavailable. Refresh to retry.").foregroundStyle(Color.dockSecondaryText)
@@ -991,7 +1002,7 @@ struct ArtifactsInspectorView: View {
     }
 
     private func count(for item: ArtifactFilter) -> Int {
-        let value = projection
+        let value = projection.counts
         return switch item {
         case .all: value.total
         case .image: value.images
@@ -1202,7 +1213,7 @@ struct ArtifactsInspectorView: View {
         guard presentation == .page else { return }
         selectedArtifactID = ArtifactSelectionPresentation.reconciledID(
             current: selectedArtifactID,
-            visibleIDs: visibleRecords.map(\.id)
+            visibleIDs: projection.visibleIDs
         )
     }
 
@@ -1223,7 +1234,6 @@ struct ArtifactsInspectorView: View {
             }
             guard merged.count != records.count || !records.allSatisfy({ merged[$0.id] == $0 }) else { return }
             records = merged.values.sorted(by: Self.newestFirst)
-            reconcileSelection()
         }
     }
 
@@ -1376,30 +1386,33 @@ struct ArtifactsInspectorView: View {
         completedManualRefreshID = manualRefreshID
         completedAutomaticRefreshID = automaticID
         resetPages()
-        reconcileSelection()
     }
 }
 
-struct ArtifactDaySection: Identifiable {
+struct ArtifactDaySection: Identifiable, Sendable {
     let title: String
     let records: [ArtifactRecord]
     var id: String { title }
+
+    static func title(for date: Date, now: Date, calendar: Calendar) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return "Today" }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+            calendar.isDate(date, inSameDayAs: yesterday)
+        {
+            return "Yesterday"
+        }
+        if let days = calendar.dateComponents([.day], from: date, to: now).day, days < 7 {
+            return date.formatted(.dateTime.weekday(.wide))
+        }
+        return date.formatted(.dateTime.month(.wide).year())
+    }
 
     /// Groups already time-sorted records into Today / Yesterday / weekday / month buckets.
     static func group(_ records: [ArtifactRecord], now: Date = .now, calendar: Calendar = .current) -> [Self] {
         var order: [String] = []
         var buckets: [String: [ArtifactRecord]] = [:]
         for record in records {
-            let title: String
-            if calendar.isDate(record.timestamp, inSameDayAs: now) {
-                title = "Today"
-            } else if calendar.isDateInYesterday(record.timestamp) {
-                title = "Yesterday"
-            } else if let days = calendar.dateComponents([.day], from: record.timestamp, to: now).day, days < 7 {
-                title = record.timestamp.formatted(.dateTime.weekday(.wide))
-            } else {
-                title = record.timestamp.formatted(.dateTime.month(.wide).year())
-            }
+            let title = title(for: record.timestamp, now: now, calendar: calendar)
             if buckets[title] == nil { order.append(title) }
             buckets[title, default: []].append(record)
         }
@@ -1408,17 +1421,21 @@ struct ArtifactDaySection: Identifiable {
 }
 
 struct ArtifactTextPreview: Equatable {
-    enum Content: Equatable {
+    enum Content: Equatable, Sendable {
         case text(String, truncated: Bool)
         case binary
         case missing
 
-        private static let limit = 48_000
+        static let limit = 48_000
 
         static func load(_ url: URL) -> Self {
             guard let handle = try? FileHandle(forReadingFrom: url) else { return .missing }
             defer { try? handle.close() }
             let data = (try? handle.read(upToCount: limit + 1)) ?? Data()
+            return decode(data)
+        }
+
+        static func decode(_ data: Data) -> Self {
             let slice = data.prefix(limit)
             guard !slice.contains(0),
                 let text = String(data: slice, encoding: .utf8) ?? String(data: slice.dropLast(3), encoding: .utf8)
