@@ -2926,6 +2926,10 @@ device privileges for them.
 
 ### Kanban
 
+The session Activity panel and conversation handoffs use the same archived
+card read. Each shows cards attributed to its session and includes completed
+cards in Recent.
+
 The fullscreen Kanban page uses a compact native board. Its header subtitle
 names the selected board and reports filtered results as “shown of total”. A
 single persistent toolbar keeps board selection, Status, Assignee, Mine, Sort,

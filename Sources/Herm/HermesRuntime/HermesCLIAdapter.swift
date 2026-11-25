@@ -59,7 +59,9 @@ final class HermesCLIAdapter {
     /// five pollers ask for it. Background polls join any read of the board
     /// started this recently; explicit refreshes always read fresh.
     var backgroundBoardReadReuse: TimeInterval = 10
+    private var boardInventories: [Bool: (startedAt: Date, task: Task<[String], Error>)] = [:]
     private var boardReads: [String: (startedAt: Date, task: Task<KanbanBoardRows, Error>)] = [:]
+    private var sessionKanbanRead: (startedAt: Date, task: Task<SessionKanbanInventory, Error>)?
 
     init(rpc: HermesControlRPC) {
         self.rpc = rpc
@@ -82,31 +84,86 @@ final class HermesCLIAdapter {
     func kanbanListAggregate(filter: KanbanListFilter = .init(), background: Bool = false) async throws
         -> HermesCLIResult
     {
-        let inventoryPath =
-            filter.includeArchived
-            ? "/api/plugins/kanban/boards?include_archived=true" : "/api/plugins/kanban/boards"
-        let inventory = try await rpc.fetchHTTP(inventoryPath)
-        let boards = inventory["boards"] as? [[String: Any]] ?? []
-        let boardSlugs: [String] = boards.compactMap { board in
-            guard filter.includeArchived || !(board["archived"] as? Bool ?? false),
-                let slug = board["slug"] as? String,
-                !slug.isEmpty
-            else { return nil }
-            return slug
-        }
+        let slugs = try await kanbanBoardSlugs(includeArchived: filter.includeArchived, background: background)
+        return try await kanbanList(forBoardSlugs: slugs, filter: filter, background: background)
+    }
 
-        return try await kanbanList(forBoardSlugs: boardSlugs, filter: filter, background: background)
+    /// The workspace and session Activity share one indexed read of the archive.
+    func sessionKanbanInventory(background: Bool) async throws -> SessionKanbanInventory {
+        if background, let read = sessionKanbanRead,
+            Date().timeIntervalSince(read.startedAt) < backgroundBoardReadReuse
+        {
+            return try await read.task.value
+        }
+        let task = Task { [weak self] in
+            guard let self else { throw CancellationError() }
+            let slugs = try await kanbanBoardSlugs(includeArchived: true, background: background)
+            let boards = try await fetchKanbanBoards(slugs, includeArchived: true, background: background)
+            return await Task.detached(priority: .utility) {
+                let rows = Self.sorted(boards.flatMap(\.rows), by: "updated")
+                let tasks = rows.compactMap { ControlCenterModel.parseKanbanTaskSummary($0, boardSlug: nil) }
+                return SessionKanbanInventory(tasks)
+            }.value
+        }
+        sessionKanbanRead = (Date(), task)
+        do {
+            return try await task.value
+        } catch {
+            if sessionKanbanRead?.task == task { sessionKanbanRead = nil }
+            throw error
+        }
+    }
+
+    private func kanbanBoardSlugs(includeArchived: Bool, background: Bool) async throws -> [String] {
+        if background, let read = boardInventories[includeArchived],
+            Date().timeIntervalSince(read.startedAt) < backgroundBoardReadReuse
+        {
+            return try await read.task.value
+        }
+        let inventoryPath =
+            includeArchived
+            ? "/api/plugins/kanban/boards?include_archived=true" : "/api/plugins/kanban/boards"
+        let task = Task { [rpc] in
+            let inventory = try await rpc.fetchHTTP(inventoryPath)
+            let boards = inventory["boards"] as? [[String: Any]] ?? []
+            return boards.compactMap { board -> String? in
+                guard includeArchived || !(board["archived"] as? Bool ?? false),
+                    let slug = board["slug"] as? String, !slug.isEmpty
+                else { return nil }
+                return slug
+            }
+        }
+        boardInventories[includeArchived] = (Date(), task)
+        do {
+            return try await task.value
+        } catch {
+            if boardInventories[includeArchived]?.task == task { boardInventories[includeArchived] = nil }
+            throw error
+        }
     }
 
     private func kanbanList(forBoardSlugs boardSlugs: [String], filter: KanbanListFilter, background: Bool) async throws
         -> HermesCLIResult
     {
-        let fetchedBoards = try await withThrowingTaskGroup(of: KanbanBoardRows.self, returning: [KanbanBoardRows].self)
-        { group in
-            for (index, boardSlug) in boardSlugs.enumerated() {
+        let fetchedBoards = try await fetchKanbanBoards(
+            boardSlugs, includeArchived: filter.includeArchived, background: background)
+        return try await Task.detached(priority: .utility) {
+            var rows = fetchedBoards.flatMap(\.rows)
+            rows = rows.filter { Self.matches($0, filter: filter) }
+            if let sort = filter.sort { rows = Self.sorted(rows, by: sort) }
+            let data = try JSONSerialization.data(withJSONObject: rows)
+            return HermesCLIResult(stdout: String(decoding: data, as: UTF8.self), stderr: "", succeeded: true)
+        }.value
+    }
+
+    private func fetchKanbanBoards(_ slugs: [String], includeArchived: Bool, background: Bool) async throws
+        -> [KanbanBoardRows]
+    {
+        try await withThrowingTaskGroup(of: KanbanBoardRows.self, returning: [KanbanBoardRows].self) { group in
+            for (index, boardSlug) in slugs.enumerated() {
                 group.addTask {
                     try await self.fetchKanbanBoardRows(
-                        index: index, boardSlug: boardSlug, includeArchived: filter.includeArchived,
+                        index: index, boardSlug: boardSlug, includeArchived: includeArchived,
                         background: background)
                 }
             }
@@ -117,13 +174,12 @@ final class HermesCLIAdapter {
             return results.sorted { $0.index < $1.index }
         }
 
-        return try await Task.detached(priority: .utility) {
-            var rows = fetchedBoards.flatMap(\.rows)
-            rows = rows.filter { Self.matches($0, filter: filter) }
-            if let sort = filter.sort { rows = Self.sorted(rows, by: sort) }
-            let data = try JSONSerialization.data(withJSONObject: rows)
-            return HermesCLIResult(stdout: String(decoding: data, as: UTF8.self), stderr: "", succeeded: true)
-        }.value
+    }
+
+    private func invalidateKanbanReads() {
+        boardInventories.removeAll()
+        boardReads.removeAll()
+        sessionKanbanRead = nil
     }
 
     private func fetchKanbanBoardRows(
@@ -316,7 +372,7 @@ final class HermesCLIAdapter {
         return try await run(words)
     }
     func kanbanAttributeSession(taskID: String, sessionID: String) async throws -> HermesCLIResult {
-        defer { boardReads.removeAll() }
+        defer { invalidateKanbanReads() }
         return try await run([
             "bash", "\(NSHomeDirectory())/.hermes/scripts/kanban-attribute-session.sh", taskID, sessionID,
         ])
@@ -369,7 +425,7 @@ final class HermesCLIAdapter {
             }
             path += "?board=\(encodedBoard)"
         }
-        defer { boardReads.removeAll() }
+        defer { invalidateKanbanReads() }
         _ = try await rpc.sendHTTP("PATCH", path: path, body: ["status": status])
         return HermesCLIResult(stdout: "", stderr: "", succeeded: true)
     }
@@ -495,7 +551,7 @@ final class HermesCLIAdapter {
 
     private func run(_ words: [String]) async throws -> HermesCLIResult {
         // A card change must not be hidden behind the shared board read.
-        defer { if Self.isKanbanMutation(words) { boardReads.removeAll() } }
+        defer { if Self.isKanbanMutation(words) { invalidateKanbanReads() } }
         let raw = try await rpc.runCommand(HermesCLICommand(words))
         let stdout = raw["stdout"] as? String ?? ""
         let stderr = HermesDiagnosticsService.safeSummary(raw["stderr"] as? String ?? "")

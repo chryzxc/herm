@@ -125,6 +125,9 @@ Sidebar search uses the same navigation snapshot and matches it off the main act
 The right-hand session rail runs discovery and refresh only while visible.
 Restoring a split layout loads the focused column first and queues the remaining
 columns in order.
+Session Kanban polls share a short-lived archive index. Each consumer matches
+session aliases and observed task IDs against the same parsed card summaries.
+Board inventory refresh failures stay in the board projection.
 Project detail, navigation, and membership share in-flight reads by profile and
 project. A batch navigation refresh runs up to four project reads at once and
 publishes one snapshot.

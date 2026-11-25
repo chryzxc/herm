@@ -925,6 +925,35 @@ struct KanbanLaneExpansionState: Equatable {
 /// Identifies the authoritative scope of an in-flight session Kanban query.
 /// Multiple workspace surfaces can observe the same session; identical reads
 /// must share one request rather than canceling one another.
+/// Stable archive order with lookups for session aliases and tool-observed cards.
+struct SessionKanbanInventory: Sendable {
+    private let tasks: [KanbanTaskSummary]
+    private let bySession: [String: [Int]]
+    private let byID: [String: [Int]]
+
+    init(_ tasks: [KanbanTaskSummary]) {
+        self.tasks = tasks
+        var bySession: [String: [Int]] = [:]
+        var byID: [String: [Int]] = [:]
+        for (index, task) in tasks.enumerated() {
+            if let session = task.sessionID { bySession[session, default: []].append(index) }
+            byID[task.id, default: []].append(index)
+        }
+        self.bySession = bySession
+        self.byID = byID
+    }
+
+    func contains(_ id: String) -> Bool { byID[id] != nil }
+
+    func matching(aliases: Set<String>, observedIDs: [String]) -> [KanbanTaskSummary] {
+        var indices = Set(aliases.flatMap { bySession[$0] ?? [] })
+        for id in observedIDs {
+            for index in byID[id] ?? [] where tasks[index].sessionID == nil { indices.insert(index) }
+        }
+        return indices.sorted().map { tasks[$0] }
+    }
+}
+
 struct SessionKanbanProjectionRequest: Hashable {
     let sessionID: String?
     let boardSlug: String?
