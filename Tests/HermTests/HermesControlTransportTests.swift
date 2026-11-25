@@ -12,12 +12,13 @@ private final class RecordingRPCClient: HermesRPCClientProtocol {
 
     var onEvent: ((String, [String: Any]) -> Void)?
     var calls: [Call] = []
+    var responses: [[String: Any]] = []
 
     func connect() async throws {}
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         calls.append(Call(method: method, params: params))
-        return [:]
+        return responses.isEmpty ? [:] : responses.removeFirst()
     }
 
     func close() {}
@@ -54,6 +55,42 @@ private actor ConnectionAttemptCounter {
 
 @MainActor
 struct HermesControlTransportTests {
+    @Test func sidebarApprovalUsesProfileScopedLiveEvidenceAndReportsPartialReads() async {
+        let client = RecordingRPCClient()
+        client.responses = [
+            ["sessions": [["id": "runtime", "session_key": "same", "status": "waiting"]]],
+            ["approvals": [["request_id": "approval"]]],
+            ["sessions": [["id": "runtime", "session_key": "same", "status": "waiting"]]],
+            ["approvals": []],
+            ["sessions": [["id": "runtime", "session_key": "same", "status": "waiting"]]],
+            [:],
+        ]
+        let profiles = ["work", "personal", "unavailable"]
+        let status = await HermesControlRPC(client: client).sidebarLiveStatus(for: .needsYou, profiles: profiles)
+        #expect(status.ids == [.init(profileID: "work", resourceID: "same")])
+        #expect(status.isIncomplete)
+        let methods = profiles.flatMap { _ in ["session.active_list", "approval.pending"] }
+        #expect(client.calls.map(\.method) == methods)
+        #expect(client.calls.compactMap { $0.params["profile"] as? String } == profiles.flatMap { [$0, $0] })
+    }
+
+    @Test func sidebarRunningRetainsQualifiedMatchesWhenSiblingReadFails() async {
+        let client = RecordingRPCClient()
+        client.responses = [
+            [
+                "sessions": [
+                    ["id": "live", "session_key": "saved", "status": "working"],
+                    ["id": "idle", "status": "idle"],
+                ]
+            ],
+            [:],
+        ]
+        let status = await HermesControlRPC(client: client).sidebarLiveStatus(
+            for: .running, profiles: ["work", "personal"])
+        #expect(status.ids == [.init(profileID: "work", resourceID: "saved")])
+        #expect(status.isIncomplete)
+    }
+
     @Test func concurrentConnectionRequestsShareOneAttempt() async throws {
         let gate = HermesConnectionGate()
         let counter = ConnectionAttemptCounter()
@@ -433,6 +470,69 @@ extension HermesControlTransportTests {
             client.requestedPaths == [
                 "/api/sessions/s/messages?limit=100&order=latest&profile=work&offset=500&include_compacted=true"
             ])
+    }
+
+    @Test func archivedSessionsPageByServerWindowAndKeepProfileIdentity() async throws {
+        let firstPage: [[String: Any]] = (0..<100).map {
+            ["id": "session-\($0)", "profile": "work", "archived": true]
+        }
+        let livePin: [String: Any] = ["id": "live-pin", "profile": "work", "pinned": true, "archived": false]
+        let client = HTTPEnvelopeRPCClient(responses: [
+            ["sessions": firstPage + [livePin], "total": 101],
+            ["sessions": [["id": "session-0", "profile": "personal", "archived": true]], "total": 101],
+        ])
+        let archive = try await HermesControlRPC(client: client).archivedSidebarSessions(scope: .allProfiles)
+        #expect(
+            client.requestedPaths == [
+                "/api/profiles/sessions?profile=all&archived=only&order=recent&limit=100&offset=0",
+                "/api/profiles/sessions?profile=all&archived=only&order=recent&limit=100&offset=100",
+            ])
+        #expect(!archive.isIncomplete)
+        #expect(archive.sessions.count == 101)
+        #expect(!archive.sessions.contains { $0.id == "live-pin" })
+        #expect(archive.sessions.filter { $0.id == "session-0" }.compactMap(\.profileID) == ["work", "personal"])
+    }
+
+    @Test func archivedSessionsRequireExplicitMembershipAndStayInRequestedProfile() async throws {
+        let rows: [[String: Any]] = [
+            ["id": "saved", "profile": "work", "archived": true],
+            ["id": "hidden", "profile": "work", "hidden": true],
+            ["id": "other", "profile": "personal", "archived": true],
+            ["id": "untagged", "archived": true],
+        ]
+        let client = HTTPEnvelopeRPCClient(responses: [["sessions": rows, "total": 4]])
+        let archive = try await HermesControlRPC(client: client).archivedSidebarSessions(scope: .profile("work"))
+        let path = "/api/profiles/sessions?profile=work&archived=only&order=recent&limit=100&offset=0"
+        #expect(client.requestedPaths == [path])
+        #expect(archive.isIncomplete)
+        #expect(archive.sessions.map(\.id) == ["saved"])
+        #expect(archive.sessions.first?.profileID == "work")
+    }
+
+    @Test func archivedSessionsDistinguishEmptyPartialAndUnavailableReads() async throws {
+        let empty = HTTPEnvelopeRPCClient(responses: [["sessions": [], "total": 0]])
+        let partial = HTTPEnvelopeRPCClient(responses: [
+            ["sessions": [["id": "saved", "profile": "work", "archived": true]], "total": 2]
+        ])
+        let unavailable = HTTPEnvelopeRPCClient(responses: [])
+        let result = try await HermesControlRPC(client: empty).archivedSidebarSessions(scope: .allProfiles)
+        #expect(result == SessionSidebarArchive(sessions: [], isIncomplete: false))
+        let retained = try await HermesControlRPC(client: partial).archivedSidebarSessions(scope: .allProfiles)
+        #expect(retained.isIncomplete)
+        #expect(retained.sessions.map(\.id) == ["saved"])
+        await #expect(throws: NSError.self) {
+            try await HermesControlRPC(client: unavailable).archivedSidebarSessions(scope: .allProfiles)
+        }
+    }
+
+    @Test func archivedSessionsDoNotCountLivePinsTowardsTheArchiveTotal() async throws {
+        let livePin: [String: Any] = ["id": "live-pin", "profile": "work", "pinned": true, "archived": false]
+        let client = HTTPEnvelopeRPCClient(responses: [["sessions": [livePin], "total": 1]])
+        let archive = try await HermesControlRPC(client: client).archivedSidebarSessions(scope: .allProfiles)
+
+        #expect(archive.sessions.isEmpty)
+        #expect(archive.isIncomplete)
+        #expect(client.requestedPaths.count == 1)
     }
 
     @Test func incompleteProfileIndexKeepsReadableSessionsWithWarning() async throws {

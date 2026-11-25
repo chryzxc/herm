@@ -344,6 +344,7 @@ struct SessionUnreadRepliesTests {
         let result = try await service.botCounts(
             sessions: [first, first, second, other, automation], scopeProfileID: nil, seenStore: seen, incomplete: true)
         #expect(result.counts == ["a": 2, "b": 1])
+        #expect(result.unreadSessions == [first.scopedID, second.scopedID, other.scopedID])
         #expect(result.incomplete)
         #expect(client.paths.count == 3)
         let count = try await service.count(

@@ -693,6 +693,12 @@ and project names in the selected bot scope. Results include pinned and project
 conversations beyond the ten recent rows. Clear the field or press Escape to restore
 the normal sections. Search runs in the background against the loaded session index.
 
+Use the status picker below search to find **Unread**, **Needs you** (approval),
+**Running**, or **Archived** conversations for the selected profile or **All profiles**.
+Search also works within the selected status. In the sidebar ellipsis, **Layout**
+switches between Bot rail and Bot menu, and **Filters** remembers which statuses
+and sections to show. Recents is always enabled.
+
 Drag a conversation within **Pinned** to set its saved order. Recents and
 Projects list conversations by last update. Hover over a project pill to see
 its repository path.

@@ -189,6 +189,16 @@ final class DockModel: ObservableObject {
     private(set) var pinnedIndexByID: [String: Int] = [:]
     private(set) var allBotIndexByID: [String: Int] = [:]
     private(set) var sessionIndexRevision: UInt64 = 0
+    private let archivedSidebarMutations = CurrentValueSubject<UInt64, Never>(0)
+    var archivedSidebarMutationRevision: UInt64 { archivedSidebarMutations.value }
+    var archivedSidebarMutationUpdates: AnyPublisher<UInt64, Never> {
+        archivedSidebarMutations.eraseToAnyPublisher()
+    }
+
+    func invalidateArchivedSidebar() {
+        archivedSidebarMutations.send(archivedSidebarMutationRevision &+ 1)
+    }
+
     private static func indices(_ rows: [HermesSession]) -> [String: Int] {
         Dictionary(rows.indices.lazy.map { (rows[$0].id, $0) }, uniquingKeysWith: { first, _ in first })
     }

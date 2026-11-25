@@ -56,16 +56,19 @@ struct DockMenu<Label: View, Content: View>: View {
                 .onTapGesture { if isEnabled { isOpen.toggle() } }
                 .accessibilityAddTraits(.isButton)
         } else if depth > 0 {
-            DockMenuRowChrome(isHovered: (isHovered || isOpen) && isEnabled, tint: nil) {
-                HStack(spacing: 8) {
-                    label
-                    Spacer(minLength: 12)
-                    DockIcon(.caretRight, size: 10, color: Color.dockMetadataText)
+            Button {
+                isOpen.toggle()
+            } label: {
+                DockMenuRowChrome(isHovered: (isHovered || isOpen) && isEnabled, tint: nil) {
+                    HStack(spacing: 8) {
+                        label
+                        Spacer(minLength: 12)
+                        DockIcon(.caretRight, size: 10, color: Color.dockMetadataText)
+                    }
                 }
             }
+            .buttonStyle(.plain)
             .onHover { isHovered = $0 }
-            .onTapGesture { if isEnabled { isOpen.toggle() } }
-            .accessibilityAddTraits(.isButton)
         } else if outlined {
             actionButton.buttonStyle(.dockSecondary)
         } else {
