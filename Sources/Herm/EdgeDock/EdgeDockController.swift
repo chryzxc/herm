@@ -2112,6 +2112,9 @@ final class EdgeNotchState: ObservableObject {
 struct EdgeNotchView: View {
     @ObservedObject var state: EdgeNotchState
     let controlCenter: ControlCenterModel
+    #if DEBUG
+        var onPreviewEvaluation: (() -> Void)?
+    #endif
     @State private var controlPresentationRevision = 0
     var onQuotaRequested: () -> Void = {}
     var onTasksRefresh: () -> Void = {}
@@ -2299,6 +2302,13 @@ struct EdgeNotchView: View {
     }
 
     private var preview: some View {
+        #if DEBUG
+            let _ = onPreviewEvaluation?()
+        #endif
+        return previewContent
+    }
+
+    private var previewContent: some View {
         VStack(spacing: isIsland ? 6 : 0) {
             // A glimpse is just the update: no tabs or toolbar until the user hovers.
             if !state.glimpsing && !showsQuickMessage {
