@@ -12,18 +12,23 @@ extension DockModel {
         delegationMonitoringTask = Task { @MainActor [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                let hasLiveWorkers =
-                    self.activeSubagents.contains { AgentActivityPresentation.isActiveStatus($0.status) }
-                    || self.sessionAgents.contains { AgentActivityPresentation.isActiveStatus($0.status) }
-                    || self.status == .working
-                let interval: Duration =
-                    hasLiveWorkers
-                    ? .seconds(3) : (self.presentationDemand.hasVisibleHost ? .seconds(60) : .seconds(300))
+                let hasLiveWorkers = self.activeSubagents.contains {
+                    AgentActivityPresentation.isActiveStatus($0.status)
+                }
+                let interval = Self.delegationPollInterval(
+                    hasLiveWorkers: hasLiveWorkers, working: self.status == .working,
+                    visible: self.presentationDemand.hasVisibleHost)
                 try? await Task.sleep(for: interval)
                 guard !Task.isCancelled, self.sessionID != nil else { return }
                 self.refreshDelegationStatus()
             }
         }
+    }
+
+    static func delegationPollInterval(hasLiveWorkers: Bool, working: Bool, visible: Bool) -> Duration {
+        if hasLiveWorkers { return .seconds(3) }
+        if working { return .seconds(visible ? 15 : 60) }
+        return .seconds(visible ? 60 : 300)
     }
 
     func refreshDelegationStatus() {

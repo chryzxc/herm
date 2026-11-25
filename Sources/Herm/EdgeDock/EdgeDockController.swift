@@ -310,7 +310,13 @@ final class EdgeDockController: NSObject {
         // The workspace only polls quota while its Quota page is open; keep
         // reading it (Dock open or closed) so drops surface. Quota is spent
         // by other apps too, so this runs whether or not Hermes is working.
-        Timer.publish(every: 30, tolerance: 6, on: .main, in: .common).autoconnect()
+        model.presentationDemand.$hasVisibleHost.combineLatest(state.$expanded)
+            .map { EdgeNotchPolling.quotaInterval(workspaceVisible: $0, previewExpanded: $1) }
+            .removeDuplicates()
+            .map { interval in
+                Timer.publish(every: interval, tolerance: interval / 5, on: .main, in: .common).autoconnect()
+            }
+            .switchToLatest()
             .sink { [weak self] _ in self?.pollQuota() }
             .store(in: &subscriptions)
         model.presentationDemand.$hasVisibleHost.removeDuplicates()
@@ -373,6 +379,11 @@ final class EdgeDockController: NSObject {
         guard !runtimeStarted else { return }
         runtimeStarted = true
         controlCenter.bind(to: model)
+        Just(()).delay(for: .seconds(30), scheduler: RunLoop.main)
+            .sink { [weak self] in
+                guard let self, self.lastQuotaPoll == nil else { return }
+                self.pollQuota()
+            }.store(in: &subscriptions)
         // Delivery questions are files in this Mac's Hermes home. A remote backend writes its own.
         if GatewayConnectionStore.isLocalBackend {
             deliveryQuestionWatch = EdgeDeliveryQuestionWatch(directory: EdgeDeliveryQuestion.directory) {
@@ -887,7 +898,8 @@ final class EdgeDockController: NSObject {
         // Keeps reading while the workspace is open: the chat header shows it too.
         guard runtimeStarted, controlCenter.refreshState(for: "provider.quota")?.isRefreshing != true else { return }
         let now = Date()
-        let interval: TimeInterval = model.presentationDemand.hasVisibleHost || state.expanded ? 30 : 300
+        let interval = EdgeNotchPolling.quotaInterval(
+            workspaceVisible: model.presentationDemand.hasVisibleHost, previewExpanded: state.expanded)
         guard force || afterWork || (lastQuotaPoll.map { now.timeIntervalSince($0) >= interval } ?? true) else {
             return
         }

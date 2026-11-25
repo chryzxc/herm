@@ -5,6 +5,10 @@ enum EdgeNotchPolling {
     static let idleInventoryInterval: TimeInterval = 60
     static let deliveryQuestionRecoveryInterval: TimeInterval = 60
 
+    static func quotaInterval(workspaceVisible: Bool, previewExpanded: Bool) -> TimeInterval {
+        workspaceVisible || previewExpanded ? 30 : 300
+    }
+
     static func shouldPollKanban(
         now: Date, lastPoll: Date?, isWorking: Bool, isOffline: Bool, force: Bool
     ) -> Bool {

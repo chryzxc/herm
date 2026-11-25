@@ -162,6 +162,14 @@ struct ConversationTranscriptSourceTests {
         #expect(source.snapshot.navigatorItems.allSatisfy { $0.sessionID == "another-owner" })
     }
 
+    @Test func delegatedWorkerPollingKeepsFastCadenceOnlyWithWorkers() {
+        #expect(DockModel.delegationPollInterval(hasLiveWorkers: true, working: true, visible: false) == .seconds(3))
+        #expect(DockModel.delegationPollInterval(hasLiveWorkers: false, working: true, visible: true) == .seconds(15))
+        #expect(DockModel.delegationPollInterval(hasLiveWorkers: false, working: true, visible: false) == .seconds(60))
+        #expect(
+            DockModel.delegationPollInterval(hasLiveWorkers: false, working: false, visible: false) == .seconds(300))
+    }
+
     @Test func navigatorInvalidatesForStoredPromptsAndHistoryPrepend() {
         let model = DockModel(initialSessionID: "navigator-history")
         model.sessionStorageID = "stored-history"
