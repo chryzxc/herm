@@ -3786,8 +3786,11 @@ In-chat approvals, clarification requests, input prompts, and errors use the sha
 neutral callout surface with a tone-colored icon and status. Decision actions use
 compact button sizing. The approval footer groups session and permanent permissions
 apart from the immediate decisions. Deny and the primary Allow once sit at the
-trailing edge with matching icon-only Delete and Enter keycaps. The groups use
-separate lines when space is tight, and buttons wrap within their group as needed.
+trailing edge with matching icon-only Delete and Enter keycaps on wide panes. When
+the full row does not fit, the ellipsis menu holds longer-lasting permissions and
+their scope note. The compact row keeps Deny and Allow once visible with an Enter
+keycap, and can wrap at the smallest widths without clipping. "Approval required"
+is sufficient for a fresh request, while badges report sending and recovery states.
 With only immediate choices, the repeat-request note leads the same footer and
 moves above the decisions when the pane is narrow.
 Unmodified Return or Enter applies Allow once when

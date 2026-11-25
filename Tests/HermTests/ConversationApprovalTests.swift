@@ -42,14 +42,17 @@ struct ConversationApprovalTests {
         Issue.record("Timed out waiting for approval state")
     }
 
-    private func request(_ model: DockModel, session: String, id: String, profile: String = "builder") {
+    private func request(
+        _ model: DockModel, session: String, id: String, profile: String = "builder",
+        choices: [String] = ["once", "deny"]
+    ) {
         model.receiveGatewayEvent(
             "approval.request",
             params: [
                 "session_id": session,
                 "payload": [
                     "profile": profile, "request_id": id, "server_request_id": "server-\(id)",
-                    "command": "git status", "reason": "Review command", "choices": ["once", "deny"],
+                    "command": "git status", "reason": "Review command", "choices": choices,
                 ],
             ])
     }
@@ -189,8 +192,8 @@ struct ConversationApprovalTests {
         #expect(model.currentConversationApproval?.id == record.id)
     }
 
-    @Test(arguments: [false, true])
-    func enterInEmptyComposerOnlyAnswersTheVisibleApproval(isVisible: Bool) async throws {
+    @Test(arguments: [false, true], [CGFloat(320), 640])
+    func enterInEmptyComposerOnlyAnswersTheVisibleApproval(isVisible: Bool, width: CGFloat) async throws {
         _ = NSApplication.shared
         let rpc = ConversationApprovalRPC()
         let model = makeModel(rpc)
@@ -199,7 +202,7 @@ struct ConversationApprovalTests {
             model.shutdown()
         }
         model.sessionProfileID = "builder"
-        request(model, session: "current", id: "one")
+        request(model, session: "current", id: "one", choices: ApprovalChoice.all)
         let record = try #require(model.currentConversationApproval)
         let metrics = ConversationWorkspaceMetrics.resolve(isFullscreen: false)
         let layout = ConversationComposerLayout(showsWelcome: false, hermFaceID: nil) {
@@ -213,7 +216,7 @@ struct ConversationApprovalTests {
                 model: model, composer: model.composer, speechInput: SpeechInput(), botMode: BotModeModel(),
                 onStop: {}, returnApprovalID: id)
         }
-        let size = NSRect(x: 0, y: 0, width: 540, height: 580)
+        let size = NSRect(x: 0, y: 0, width: width, height: 580)
         let host = NSHostingView(rootView: layout.frame(width: size.width, height: size.height))
         let window = NSWindow(contentRect: size, styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host

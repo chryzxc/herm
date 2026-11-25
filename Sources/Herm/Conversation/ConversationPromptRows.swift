@@ -96,20 +96,14 @@ struct ConversationPromptRows: View {
         let resolved = conversationApproval?.resolved == true
         let isPending = state.approvalPending || approvalAnswer?.blocksSubmission == true
         let choices = approval.choices
-        let badge: String =
+        let badge: String? =
             switch approvalAnswer {
             case .uncertain: "Delivery uncertain"
             case .checking: "Checking…"
             case .failed: "Not sent"
-            default: resolved ? "Resolved" : isPending ? "Sending…" : "Needs approval"
+            default: isPending ? "Sending…" : nil
             }
         let alwaysAllowCaption = ApprovalPresentation.alwaysAllowCaption(for: approval)
-        let scopeWarning =
-            approval.smartDenied
-            ? "Hermes' safety check blocked this. You can override it once."
-            : choices.contains(ApprovalChoice.always) ? alwaysAllowCaption : nil
-        let repeatNote = "Herm asks again next time."
-        let footerNote = scopeWarning == nil && !choices.contains(ApprovalChoice.session) ? repeatNote : nil
         return DockCallout(
             tone: .warning, icon: .shieldWarning, title: "Approval required", message: approval.title,
             badge: resolved ? "Resolved" : badge
@@ -136,7 +130,8 @@ struct ConversationPromptRows: View {
 
                 if !resolved {
                     approvalActions(
-                        choices, alwaysAllowCaption: alwaysAllowCaption, isPending: isPending, note: footerNote)
+                        choices, alwaysAllowCaption: alwaysAllowCaption, isPending: isPending,
+                        note: approval.smartDenied ? nil : "Herm asks again next time.")
 
                     if let answer = approvalAnswer {
                         Text(answer.message)
@@ -155,11 +150,8 @@ struct ConversationPromptRows: View {
                         }
                     }
 
-                    if footerNote == nil {
-                        Text(scopeWarning ?? repeatNote)
-                            .dockFont(.body)
-                            .foregroundStyle(Color.dockMetadataText)
-                            .fixedSize(horizontal: false, vertical: true)
+                    if approval.smartDenied {
+                        approvalNote("Hermes' safety check blocked this. You can override it once.")
                     }
                 }
             }
@@ -203,44 +195,38 @@ struct ConversationPromptRows: View {
     private func approvalActions(_ choices: [String], alwaysAllowCaption: String, isPending: Bool, note: String?)
         -> some View
     {
-        DockCalloutActions(alignment: .trailing, spacing: DockSpacing.section, note: note) {
+        Group {
             if choices.contains(ApprovalChoice.session) || choices.contains(ApprovalChoice.always) {
-                DockChipFlow(spacing: DockSpacing.control, hugsContent: true) {
-                    if choices.contains(ApprovalChoice.session) {
-                        Button("Allow this session") {
-                            if canAnswerApproval { model.respondToApproval(ApprovalChoice.session) }
+                let scopeNote =
+                    choices.contains(ApprovalChoice.always)
+                    ? alwaysAllowCaption : "Herm asks again after this session."
+                ViewThatFits(in: .horizontal) {
+                    VStack(alignment: .leading, spacing: DockSpacing.control) {
+                        DockCalloutActions(alignment: .trailing) {
+                            HStack(spacing: DockSpacing.section) {
+                                HStack(spacing: DockSpacing.control) {
+                                    approvalScopeButtons(choices, alwaysAllowCaption: alwaysAllowCaption)
+                                }
+                                .buttonStyle(.dockSecondary)
+                                HStack(spacing: DockSpacing.control) {
+                                    approvalDecisionButtons(choices, isPending: isPending, compact: false)
+                                }
+                            }
+                            .fixedSize(horizontal: true, vertical: false)
                         }
-                        .buttonStyle(.dockSecondary)
-                        .help("Don't ask again for this command until the session ends.")
+                        approvalNote(scopeNote)
                     }
-                    if choices.contains(ApprovalChoice.always) {
-                        Button("Always allow") {
-                            if canAnswerApproval { model.respondToApproval(ApprovalChoice.always) }
+                    DockCalloutActions(alignment: .trailing) {
+                        DockChipFlow(spacing: DockSpacing.control, hugsContent: true) {
+                            approvalScopeMenu(choices, alwaysAllowCaption: alwaysAllowCaption, note: scopeNote)
+                            approvalDecisionButtons(choices, isPending: isPending, compact: true)
                         }
-                        .buttonStyle(.dockSecondary)
-                        .help(alwaysAllowCaption)
                     }
                 }
-            }
-
-            if choices.contains(ApprovalChoice.deny) || choices.contains(ApprovalChoice.once) {
-                DockChipFlow(spacing: DockSpacing.control, hugsContent: true) {
-                    if choices.contains(ApprovalChoice.deny) {
-                        let denyHint = "Press Delete to deny while the approval card is focused."
-                        Button(role: .destructive) {
-                            if canAnswerApproval { model.respondToApproval(ApprovalChoice.deny) }
-                        } label: {
-                            HStack(spacing: DockSpacing.control) {
-                                Text("Deny")
-                                approvalKeyHint(.backspace, ink: .dockSecondaryText)
-                            }
-                        }
-                        .buttonStyle(.dockSecondary)
-                        .help(denyHint)
-                        .accessibilityHint(denyHint)
-                    }
-                    if choices.contains(ApprovalChoice.once) {
-                        allowOnceButton(isPending: isPending)
+            } else {
+                DockCalloutActions(alignment: .trailing, note: note) {
+                    DockChipFlow(spacing: DockSpacing.control, hugsContent: true) {
+                        approvalDecisionButtons(choices, isPending: isPending, compact: false)
                     }
                 }
             }
@@ -248,7 +234,67 @@ struct ConversationPromptRows: View {
         .disabled(isPending || !canAnswerApproval)
     }
 
-    private func allowOnceButton(isPending: Bool) -> some View {
+    @ViewBuilder
+    private func approvalScopeButtons(_ choices: [String], alwaysAllowCaption: String) -> some View {
+        if choices.contains(ApprovalChoice.session) {
+            Button("Allow this session") {
+                if canAnswerApproval { model.respondToApproval(ApprovalChoice.session) }
+            }
+            .help("Don't ask again for this command until the session ends.")
+        }
+        if choices.contains(ApprovalChoice.always) {
+            Button("Always allow") {
+                if canAnswerApproval { model.respondToApproval(ApprovalChoice.always) }
+            }
+            .help(alwaysAllowCaption)
+        }
+    }
+
+    private func approvalScopeMenu(_ choices: [String], alwaysAllowCaption: String, note: String) -> some View {
+        DockMenu(outlined: true) {
+            DockMenuSection("Approval duration") {
+                approvalScopeButtons(choices, alwaysAllowCaption: alwaysAllowCaption)
+                approvalNote(note)
+                    .frame(width: 220, alignment: .leading)
+                    .dockPadding(.horizontal, DockSpacing.control)
+                    .dockPadding(.vertical, DockSpacing.micro)
+            }
+        } label: {
+            DockIcon(.dotsThreeOutline, size: 16, weight: .fill)
+        }
+        .help("More approval options")
+        .accessibilityLabel("More approval options")
+    }
+
+    @ViewBuilder
+    private func approvalDecisionButtons(_ choices: [String], isPending: Bool, compact: Bool) -> some View {
+        if choices.contains(ApprovalChoice.deny) {
+            let denyHint = "Press Delete to deny while the approval card is focused."
+            Button(role: .destructive) {
+                if canAnswerApproval { model.respondToApproval(ApprovalChoice.deny) }
+            } label: {
+                HStack(spacing: DockSpacing.control) {
+                    Text("Deny")
+                    if !compact { approvalKeyHint(.backspace, ink: .dockSecondaryText) }
+                }
+            }
+            .buttonStyle(.dockSecondary)
+            .help(denyHint)
+            .accessibilityHint(denyHint)
+        }
+        if choices.contains(ApprovalChoice.once) {
+            allowOnceButton(isPending: isPending, compact: compact)
+        }
+    }
+
+    private func approvalNote(_ note: String) -> some View {
+        Text(note)
+            .dockFont(.body)
+            .foregroundStyle(Color.dockMetadataText)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func allowOnceButton(isPending: Bool, compact: Bool) -> some View {
         let hint = "Press Return or Enter to allow once when the card is focused or visible above an empty composer."
         let ink = DockPrimaryButtonStyle.foregroundColor(theme)
         let isAllowing =
@@ -259,7 +305,8 @@ struct ConversationPromptRows: View {
         } label: {
             HStack(spacing: DockSpacing.control) {
                 DockActionLabel(
-                    title: "Allow once", pendingTitle: "Allowing…", isPending: isAllowing, tint: ink, icon: .check)
+                    title: "Allow once", pendingTitle: "Allowing…", isPending: isAllowing, tint: ink,
+                    icon: compact ? nil : .check)
                 approvalKeyHint(.arrowElbowDownLeft, ink: ink)
             }
         }
