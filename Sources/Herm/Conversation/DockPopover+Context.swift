@@ -240,7 +240,7 @@ extension DockPopover {
         case .stop:
             model.stop()
         case .voice:
-            model.startVoiceConversation()
+            workspaceModel.voiceCapture.onStartNotchVoice?()
         case .refresh:
             controlCenter.refresh(forceCapabilities: true)
             Task {
@@ -710,29 +710,7 @@ extension DockPopover {
                                 client: model.controlRPCClient, store: workspaceStore)
                         )
                     case .session:
-                        SessionInspector(
-                            model: model,
-                            botMode: botMode,
-                            control: controlCenter,
-                            workflow: developerWorkflow,
-                            gitHub: gitHubInspector,
-                            onOpenPullRequestChat: openPullRequestChat,
-                            onOpenIssueChat: openIssueChat,
-                            sessionRepositoryPath: activeSessionRepositoryScope?.repositoryPath
-                                ?? activeSessionRepositoryPath,
-                            sessionProjectIsBound: activeSessionRepositoryPath != nil,
-                            sessionTerminalPath: model.sessionWorkspace?.cwd,
-                            showsHeader: false,
-                            onToggle: toggleInspectorPanel,
-                            headerHeight: usesWindowChrome
-                                ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight,
-                            usesWindowChrome: usesWindowChrome,
-                            tabRequest: $sessionInspectorTabRequest,
-                            workspaceSections: [.talk] + (sessionGitHubTabsAvailable ? [.pullRequests, .issues] : []),
-                            workspaceContent: inspectorWorkspaceTab,
-                            onWorkspaceSection: showInspectorWorkspaceSection,
-                            keepsTalkOpen: sessionWorkspaceMode == .voice
-                        )
+                        sessionInspector()
                     case .artifacts:
                         ArtifactsInspectorView(model: model, presentation: .inspector)
                     }
@@ -1137,5 +1115,40 @@ extension DockPopover {
         .background(usesWindowChrome ? Color.dockSidebar : Color.dockCanvas)
         .overlay(alignment: .bottom) { if usesWindowChrome { DockWindowChrome.titleRowSeparator } }
         .environment(\.dockNavigationHistory, navigationHistoryControls)
+    }
+}
+
+extension DockPopover {
+    /// The session inspector; `talkPanel` is its copy beside full voice mode, which keeps voice
+    /// running (no Talk tab, no sidebar toggle) and is closed by the voice preview's own ✕.
+    func sessionInspector(talkPanel: Bool = false) -> some View {
+        let onToggle: (() -> Void)? = talkPanel ? nil : { toggleInspectorPanel() }
+        let onWorkspaceSection: (SessionInspector.Section?) -> Void =
+            talkPanel ? { _ in } : { showInspectorWorkspaceSection($0) }
+        let workspaceSections: [SessionInspector.Section] =
+            talkPanel ? [] : [.talk] + (sessionGitHubTabsAvailable ? [.pullRequests, .issues] : [])
+        return SessionInspector(
+            model: model,
+            botMode: botMode,
+            control: controlCenter,
+            workflow: developerWorkflow,
+            gitHub: gitHubInspector,
+            onOpenPullRequestChat: openPullRequestChat,
+            onOpenIssueChat: openIssueChat,
+            sessionRepositoryPath: activeSessionRepositoryScope?.repositoryPath
+                ?? activeSessionRepositoryPath,
+            sessionProjectIsBound: activeSessionRepositoryPath != nil,
+            sessionTerminalPath: model.sessionWorkspace?.cwd,
+            showsHeader: false,
+            onToggle: onToggle,
+            headerHeight: usesWindowChrome
+                ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight,
+            usesWindowChrome: usesWindowChrome,
+            tabRequest: $sessionInspectorTabRequest,
+            workspaceSections: workspaceSections,
+            workspaceContent: inspectorWorkspaceTab,
+            onWorkspaceSection: onWorkspaceSection,
+            keepsTalkOpen: !talkPanel && sessionWorkspaceMode == .voice
+        )
     }
 }

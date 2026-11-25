@@ -179,6 +179,7 @@ enum RichBlockPayload: Equatable, Sendable {
     case facts(RichFacts)
     case faq(RichFacts)
     case breakdown(RichBreakdown)
+    case map(RichMap)
     case findings(RichFindings)
     case workflow(RichWorkflow)
     case section(RichSection)
@@ -201,6 +202,7 @@ enum RichBlockPayload: Equatable, Sendable {
         case .callout: return .callout(try value.decode(RichCallout.self))
         case .facts: return .facts(try value.decode(RichFacts.self))
         case .faq: return .faq(try value.decode(RichFacts.self))
+        case .map: return .map(try value.decode(RichMap.self))
         case .breakdown: return .breakdown(try value.decode(RichBreakdown.self))
         case .findings: return .findings(try value.decode(RichFindings.self))
         case .workflow: return .workflow(try value.decode(RichWorkflow.self))
@@ -229,6 +231,7 @@ enum RichBlockPayload: Equatable, Sendable {
         case .facts(let value): try value.encode(to: encoder)
         case .faq(let value): try value.encode(to: encoder)
         case .breakdown(let value): try value.encode(to: encoder)
+        case .map(let value): try value.encode(to: encoder)
         case .findings(let value): try value.encode(to: encoder)
         case .workflow(let value): try value.encode(to: encoder)
         case .section(let value): try value.encode(to: encoder)
@@ -252,6 +255,7 @@ enum RichBlockPayload: Equatable, Sendable {
         case .facts(let value): return value.validate()
         case .faq(let value): return value.validate()
         case .breakdown(let value): return value.validate()
+        case .map(let value): return value.validate()
         case .findings(let value): return value.validate()
         case .workflow(let value): return value.validate()
         case .section(let value):
@@ -309,6 +313,7 @@ enum RichBlockPayload: Equatable, Sendable {
         case .facts(let value): return value.plainText
         case .faq(let value): return value.plainText
         case .breakdown(let value): return value.plainText
+        case .map(let value): return value.title
         case .findings(let value): return value.items.map(\.plainText).joined(separator: "\n\n")
         case .workflow(let value): return value.items.map(\.plainText).joined(separator: "\n\n")
         case .section(let value): return value.title

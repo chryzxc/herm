@@ -92,13 +92,17 @@ struct GenerativeUIVisualReviewTests {
             .environment(\.richReplyState, replyState)
             .environment(\.richReplyContext, RichReplyContext(model: model, message: message, state: replyState))
         }
-        func capture<V: View>(_ view: V, name: String, width: CGFloat, height: CGFloat) async throws {
+        func capture<V: View>(
+            _ view: V, name: String, width: CGFloat, height: CGFloat, scheme: ColorScheme = .dark
+        ) async throws {
+            DockThemeRuntime.current = scheme == .dark ? .island : .warmLight
+            DockThemeRuntime.revision &+= 1
             let content = view.frame(width: width, height: height, alignment: .topLeading)
-                .background(Color.dockCanvas).environment(\.colorScheme, .dark).dockThemedRoot()
+                .background(Color.dockCanvas).environment(\.colorScheme, scheme).dockThemedRoot()
             let host = NSHostingView(rootView: content)
             host.frame = NSRect(x: 0, y: 0, width: width, height: height)
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-            window.appearance = NSAppearance(named: .darkAqua)
+            window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
             window.contentView = host
             window.orderFrontRegardless()
             defer { window.orderOut(nil) }
@@ -116,6 +120,9 @@ struct GenerativeUIVisualReviewTests {
             try await capture(
                 RichDocumentView(document: sales).padding(20),
                 name: "numeric-sales-\(Int(width))", width: width, height: 700)
+            try await capture(
+                RichDocumentView(document: sales).padding(20),
+                name: "numeric-sales-light-\(Int(width))", width: width, height: 700, scheme: .light)
         }
         let unavailable = RichDocument("```herm-ui\n{\"version\":9,\"fallback\":\"Readable result\"}\n```")
         try await capture(

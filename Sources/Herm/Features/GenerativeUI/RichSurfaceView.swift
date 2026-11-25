@@ -5,36 +5,67 @@ import SwiftUI
 struct RichDocumentView: View {
     let document: RichDocument
     var enhancesMarkdown = true
+    /// Drops the prose so only the visuals render (the voice widget's side preview).
+    var visualsOnly = false
+    var readOnlySurfaces = false
+    @Environment(\.richGlance) private var glance
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(document.segments.enumerated()), id: \.offset) { _, segment in
-                switch segment {
-                case .markdown(let text):
-                    if enhancesMarkdown {
-                        GenerativeUIIntegration.renderMarkdown(text)
-                    } else {
-                        MarkdownMessageView(markdown: text).equatable()
-                    }
-                case .surface(let surface, let source): RichSurfaceView(surface: surface, source: source)
-                case .unavailable(let text, let source):
-                    Text("Visual reply unavailable").dockFont(.body, weight: .semibold).foregroundStyle(
-                        Color.dockPrimaryText)
-                    Text(text).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
-                    Text(RichDocument.validationReason(source)).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                    RichSourceDisclosure(source: source)
-                case .diagram(let source): MermaidDiagramView(source: source)
-                case .preview(let file): HermesInlinePreviewView(file: file)
-                case .pending:
-                    HStack(spacing: 8) {
-                        DockLoadingIndicator().controlSize(.small).frame(width: 16, height: 16)
-                        Text("Preparing interactive view…").foregroundStyle(Color.dockSecondaryText)
-                    }.dockFont(.body)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .transaction { $0.animation = nil }
-                }
+                segmentView(segment)
             }
         }
     }
+
+    @ViewBuilder private func segmentView(_ segment: RichDocument.Segment) -> some View {
+        if !glance || segment.showsInVoiceGlance {
+            switch segment {
+            case .markdown(let text):
+                if visualsOnly {
+                    EmptyView()
+                } else if enhancesMarkdown {
+                    GenerativeUIIntegration.renderMarkdown(text)
+                } else {
+                    MarkdownMessageView(markdown: text).equatable()
+                }
+            case .surface(let surface, let source):
+                RichSurfaceView(surface: surface, source: source)
+                    .environment(\.richGlance, glance || readOnlySurfaces)
+                    .environment(\.richDefersRemoteMedia, readOnlySurfaces)
+            // The chat keeps the honest failure; a visuals-only preview has nothing to show for it.
+            case .unavailable where visualsOnly: EmptyView()
+            case .unavailable(let text, let source):
+                Text("Visual reply unavailable").dockFont(.body, weight: .semibold).foregroundStyle(
+                    Color.dockPrimaryText)
+                Text(text).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+                Text(RichDocument.validationReason(source)).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                RichSourceDisclosure(source: source)
+            case .diagram(let source):
+                MermaidDiagramView(source: source).environment(\.richGlance, glance || readOnlySurfaces)
+            case .preview(let file): HermesInlinePreviewView(file: file)
+            case .pending:
+                HStack(spacing: 8) {
+                    DockLoadingIndicator().controlSize(.small).frame(width: 16, height: 16)
+                    Text("Preparing interactive view…").foregroundStyle(Color.dockSecondaryText)
+                }.dockFont(.body)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .transaction { $0.animation = nil }
+            }
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// Hands-free voice preview: surfaces render read-only (see `RichSurfaceView.glanceBody`).
+    @Entry var richGlance = false
+    @Entry var richDefersRemoteMedia = false
+    @Entry var richVoiceContext: RichVoiceContext? = nil
+    @Entry var richVoicePosition = RichVoicePreview.Position()
+}
+
+struct RichVoiceContext {
+    let preview: RichVoicePreview
+    let position: RichVoicePreview.Position
 }
 
 struct RichSurfaceView: View {
@@ -58,82 +89,117 @@ struct RichSurfaceView: View {
         providedReference ?? context?.artifactReference(surface: surface, source: source)
     }
     private var presentation: RichArtifactPresentationState { saved.state(for: key) }
+    @Environment(\.richGlance) private var glance
+
+    @Environment(\.richVoiceContext) private var voiceContext
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
-                Text(surface.title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                if !expanded {
-                    Button {
-                        expand()
-                    } label: {
-                        DockIconLabel("Expand", icon: .arrowsOut)
-                    }.buttonStyle(.dockSecondary)
+        if glance { glanceBody } else { fullBody }
+    }
+
+    /// Read-only: the title and the visuals, no actions, inputs, prose or card of its own.
+    private var glanceBody: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            heading.allowsHitTesting(false)
+            nativeBlocks
+        }
+        .dockFont(.body)
+        .foregroundStyle(Color.dockPrimaryText)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .allowsHitTesting(voiceContext != nil)
+    }
+
+    /// Title with supplied provenance as one quiet line beneath; assumptions wrap below it.
+    private var heading: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(surface.title).dockFont(.rowTitle, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            if let metadata = surface.metadata {
+                let facts = [metadata.source, metadata.observedAt.map { "Observed " + $0 }].compactMap { $0 }
+                if metadata.fictional == true || !facts.isEmpty {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        if metadata.fictional == true {
+                            Text("Fictional data").dockFont(.metadata, weight: .semibold).foregroundStyle(
+                                Color.dockWarning
+                            ).dockPill(tint: .dockWarning, compact: true)
+                        }
+                        if !facts.isEmpty {
+                            Text(facts.joined(separator: " · ")).foregroundStyle(Color.dockMetadataText)
+                        }
+                    }.dockFont(.metadata)
                 }
-                DockMenu {
-                    Button("View source") { showingSource = true }
-                    Button("Copy readable result") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(surface.plainText, forType: .string)
-                    }
-                    Button("Export…") { export() }
-                    if surface.kind == .html { Button("Export HTML…") { export(html: true) } }
-                    if let reference, reference.isStored {
-                        if let hostRouter {
-                            Button("Open source message") {
-                                Task {
-                                    do { try await hostRouter.openSource(reference) } catch {
-                                        exportError = HermesDiagnosticsService.safeSummary(error.localizedDescription)
-                                    }
-                                }
+                if let assumptions = metadata.assumptions {
+                    Text("Assumes " + assumptions).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .textSelection(.enabled)
+    }
+
+    private var actionsMenu: some View {
+        DockMenu {
+            Button("View source") { showingSource = true }
+            Button("Copy readable result") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(surface.plainText, forType: .string)
+            }
+            Button("Export…") { export() }
+            if surface.kind == .html { Button("Export HTML…") { export(html: true) } }
+            if let reference, reference.isStored {
+                if let hostRouter {
+                    Button("Open source message") {
+                        Task {
+                            do { try await hostRouter.openSource(reference) } catch {
+                                exportError = HermesDiagnosticsService.safeSummary(error.localizedDescription)
                             }
                         }
-                        Button(saved.bookmarks.contains { $0.reference.matches(reference) } ? "Unsave" : "Save tool") {
-                            saved.toggle(
-                                RichArtifactBookmark(
-                                    reference: reference, title: surface.title,
-                                    sessionTitle: context?.model?.currentSessionTitle ?? "Session"))
-                        }
                     }
-                    if chatRouter != nil {
-                        Button("Use in current chat") { attach(revise: false) }
-                        Button("Ask about selection") { attach(revise: false, selectionOnly: true) }
-                        Button("Revise…") { attach(revise: true) }
-                    }
-                    if surface.kind == .native {
-                        Button("Reset inputs") {
-                            presentation.reset()
-                            saved.resetForms(prefix: key)
-                        }
-                    }
-                } label: {
-                    DockIcon(.dotsThree, size: 14, color: .dockSecondaryText)
                 }
-                .buttonStyle(.dockHover).accessibilityLabel("Visual reply actions")
+                Button(saved.bookmarks.contains { $0.reference.matches(reference) } ? "Unsave" : "Save tool") {
+                    saved.toggle(
+                        RichArtifactBookmark(
+                            reference: reference, title: surface.title,
+                            sessionTitle: context?.model?.currentSessionTitle ?? "Session"))
+                }
             }
-            .dockButtonSize(.compact)
+            if chatRouter != nil {
+                Button("Use in current chat") { attach(revise: false) }
+                Button("Ask about selection") { attach(revise: false, selectionOnly: true) }
+                Button("Revise…") { attach(revise: true) }
+            }
+            if surface.kind == .native {
+                Button("Reset inputs") {
+                    presentation.reset()
+                    saved.resetForms(prefix: key)
+                }
+            }
+        } label: {
+            DockIcon(.dotsThree, size: 20, color: .dockSecondaryText)
+                .dockButtonMetrics()
+                .dockIconOnlyAction()
+        }
+        .help("Visual reply actions")
+        .accessibilityLabel("Visual reply actions")
+    }
+
+    private var fullBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                heading
+                Spacer(minLength: 8)
+                HStack(spacing: DockSpacing.tight) {
+                    if !expanded {
+                        DockIconAction(icon: .arrowsOut, label: "Expand visual reply", iconSize: 16, action: expand)
+                    }
+                    actionsMenu
+                }
+                .dockButtonSize(.compact)
+            }
             .dockPadding(.horizontal, 16)
-            .dockPadding(.vertical, 12)
-            .background(DockThemeStyle.current.chrome == .open ? Color.clear : Color.dockSurface2)
-            Divider().overlay(Color.dockBorderLight)
-            if let metadata = surface.metadata {
-                VStack(alignment: .leading, spacing: 4) {
-                    if metadata.fictional == true { Text("Fictional data").fontWeight(.semibold) }
-                    if let assumptions = metadata.assumptions { Text("Assumptions: " + assumptions) }
-                    if let source = metadata.source { Text("Source: " + source) }
-                    if let date = metadata.observedAt { Text("Observed: " + date) }
-                }
-                .dockFont(.body)
-                .foregroundStyle(Color.dockSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .dockPadding(.horizontal, 16)
-                .dockPadding(.vertical, 12)
-                .background(DockThemeStyle.current.chrome == .open ? Color.clear : Color.dockSurface2)
-                Divider().overlay(Color.dockBorderLight)
-            }
+            .dockPadding(.top, 14)
+            .dockPadding(.bottom, 4)
             VStack(alignment: .leading, spacing: 16) {
                 if surface.kind == .html {
                     Text(surface.fallback).foregroundStyle(Color.dockSecondaryText).fixedSize(
@@ -148,7 +214,9 @@ struct RichSurfaceView: View {
                 }
                 if let exportError { Text(exportError).foregroundStyle(Color.dockWarning) }
             }
-            .dockPadding(16)
+            .dockPadding(.horizontal, 16)
+            .dockPadding(.top, 12)
+            .dockPadding(.bottom, 16)
         }
         .dockFont(.body)
         .foregroundStyle(Color.dockPrimaryText)
@@ -192,18 +260,24 @@ struct RichSurfaceView: View {
                 if case .section(let section) = block.payload { return section.blocks }
                 return nil
             }.flatMap { $0 })
-        return VStack(alignment: .leading, spacing: 16) {
+        return VStack(alignment: .leading, spacing: 20) {
             ForEach(Array((surface.blocks ?? []).enumerated()), id: \.offset) { index, block in
                 if case .section(let section) = block.payload {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(section.title).dockFont(.body, weight: .semibold)
-                            .accessibilityAddTraits(.isHeader)
-                        Divider().overlay(Color.dockBorderLight)
-                        ViewThatFits(in: .horizontal) {
-                            if section.paired == true {
-                                HStack(alignment: .top, spacing: 16) { sectionBlocks(section) }.frame(minWidth: 608)
+                    if !glance
+                        || section.blocks.contains(where: { id in
+                            surface.blocks?.contains { $0.id == id && $0.type.isVisual } == true
+                        })
+                    {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(section.title).dockFont(.body, weight: .semibold)
+                                .accessibilityAddTraits(.isHeader)
+                            Divider().overlay(Color.dockBorderLight)
+                            ViewThatFits(in: .horizontal) {
+                                if section.paired == true {
+                                    HStack(alignment: .top, spacing: 16) { sectionBlocks(section) }.frame(minWidth: 608)
+                                }
+                                VStack(alignment: .leading, spacing: 12) { sectionBlocks(section) }
                             }
-                            VStack(alignment: .leading, spacing: 12) { sectionBlocks(section) }
                         }
                     }
                 } else if block.id.map({ !grouped.contains($0) }) ?? true {
@@ -214,7 +288,9 @@ struct RichSurfaceView: View {
     }
     @ViewBuilder private func sectionBlocks(_ section: RichSection) -> some View {
         ForEach(section.blocks, id: \.self) { id in
-            if let index = surface.blocks?.firstIndex(where: { $0.id == id }), let block = surface.blocks?[index] {
+            if let index = surface.blocks?.firstIndex(where: { $0.id == id }), let block = surface.blocks?[index],
+                !glance || block.type.isVisual
+            {
                 blockView(block, index: index).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -256,9 +332,20 @@ struct RichSurfaceView: View {
         chatRouter?.attachToCurrentChat(ChatContext(id: "rich:" + key, title: surface.title, body: body))
     }
 
-    @ViewBuilder
     private func blockView(_ block: RichBlock, index: Int) -> some View {
-        if block.payload != nil {
+        let key = RichVoicePreview.BlockKey(surface: surface.id, index: index)
+        let position = voiceContext.map { $0.preview.position($0.position, for: key) } ?? .init()
+        return blockContent(block, index: index)
+            .environment(\.richVoicePosition, position)
+            // The voice card scrolls, but its generated content stays read-only.
+            .allowsHitTesting(!glance || block.type == .code || block.type == .table)
+    }
+
+    @ViewBuilder
+    private func blockContent(_ block: RichBlock, index: Int) -> some View {
+        if glance, !block.type.isVisual {
+            EmptyView()
+        } else if block.payload != nil {
             RichNativeBlockView(block: block, surface: surface, state: presentation)
                 .environment(\.richArtifactReference, reference)
         } else {
@@ -274,11 +361,17 @@ struct RichSurfaceView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array((block.items ?? []).enumerated()), id: \.offset) { _, item in
                         if let url = RichResourcePolicy.url(item.url) {
-                            Button {
-                                InAppBrowser.open(url)
-                            } label: {
-                                DockIconLabel(item.title, icon: .arrowSquareOut)
-                            }.buttonStyle(.dockLink)
+                            if glance {
+                                // Not a link in a look-only preview, so it must not look like one.
+                                Text(item.title + (url.host().map { " · " + $0 } ?? ""))
+                                    .foregroundStyle(Color.dockSecondaryText)
+                            } else {
+                                Button {
+                                    InAppBrowser.open(url)
+                                } label: {
+                                    DockIconLabel(item.title, icon: .arrowSquareOut)
+                                }.buttonStyle(.dockLink)
+                            }
                         }
                     }
                 }
@@ -289,19 +382,7 @@ struct RichSurfaceView: View {
                     ForEach(Array((block.items ?? []).enumerated()), id: \.offset) { _, item in
                         VStack(alignment: .leading, spacing: 6) {
                             if let url = RichResourcePolicy.url(item.url, image: true) {
-                                if url.scheme == "data" {
-                                    AttachmentThumbnailView(url: url).frame(height: 160)
-                                } else {
-                                    // Remote assets use the established session browser; no background fetch from generated URLs.
-                                    Button {
-                                        InAppBrowser.open(url)
-                                    } label: {
-                                        VStack(spacing: 8) {
-                                            DockIcon(.image, size: 24, color: .dockSecondaryText)
-                                            DockIconLabel("Open image", icon: .arrowSquareOut)
-                                        }.frame(maxWidth: .infinity, minHeight: 120)
-                                    }.buttonStyle(.dockHover)
-                                }
+                                RichGalleryImage(url: url, title: item.title).id(url)
                                 Text(item.title).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
                             }
                         }
@@ -310,7 +391,7 @@ struct RichSurfaceView: View {
             case .chart:
                 RichLegacyChartView(block: block, blockID: "legacy-chart:\(index)", state: presentation)
             case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record,
-                .code, .findings, .workflow, .command, .callout, .facts, .faq, .breakdown:
+                .code, .findings, .workflow, .command, .callout, .facts, .faq, .breakdown, .map:
                 EmptyView()
             case .form:
                 if let state, let context {

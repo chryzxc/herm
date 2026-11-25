@@ -71,6 +71,8 @@ extension DockModel {
             ("voiceSpokenCaption", Self.change($voiceSpokenCaption)),
             ("voiceRepliesEnabled", Self.change($voiceRepliesEnabled)),
             ("isVoiceMicMuted", Self.change($isVoiceMicMuted)),
+            ("dismissedVoicePreviewTurn", Self.change(voiceStage.$dismissedVoicePreviewTurn)),
+            ("voiceRevealedTab", Self.change(voiceStage.$voiceRevealedTab)),
             ("sessionID", Self.change($sessionID)),
             ("sessionStorageID", Self.change($sessionStorageID)),
             ("profileScopeID", Self.change($profileScopeID)),
@@ -316,7 +318,7 @@ extension DockModel {
         if requests != sessionAttention { sessionAttention = requests }
     }
 
-    var agentDisplayName: String {
+    var agentRecognitionName: String {
         if let name = defaultBotName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
             return name
         }

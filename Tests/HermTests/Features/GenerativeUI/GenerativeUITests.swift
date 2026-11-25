@@ -85,7 +85,7 @@ struct GenerativeUITests {
         #expect(!doc.plainText.contains("```herm-ui"))
         #expect(GenerativeUIIntegration.readableText(ChatMessage(role: .hermes, text: text)) == doc.plainText)
         #expect(GenerativeUIIntegration.readableText(ChatMessage(role: .user, text: text)) == text)
-        #expect(RichDocument(text, streaming: true).segments == [.pending])
+        #expect(RichDocument(text, streaming: true) == doc)
         #expect(RichDocument("````swift\n" + text + "\n````").plainText.contains("```herm-ui"))
         #expect(GenerativeUIIntegration.displayUserText(GenerativeUIIntegration.preparePrompt("Hello")) == "Hello")
         #expect(
@@ -115,7 +115,7 @@ struct GenerativeUITests {
     @Test func numericSalesDashboardRetainsTableAndChart() async throws {
         let source = Self.monthlySalesSource
         let text = "```herm-ui\n" + source + "\n```"
-        let document = await RichDocumentCache.shared.document(text, identity: UUID().uuidString, streaming: false)
+        let document = await RichDocumentCache.shared.document(text, streaming: false)
         let surface = try #require(
             document.segments.compactMap { segment -> RichSurface? in
                 if case .surface(let surface, _) = segment { return surface }
@@ -131,7 +131,7 @@ struct GenerativeUITests {
         #expect(document.segments == [.surface(surface, source: source)])
         #expect(document.plainText.contains("January | 12"))
         #expect(document.plainText.contains("Illustrative figures only — this is fictional data, not actual sales."))
-        #expect(RichDocument(text, streaming: true).segments == [.pending])
+        #expect(RichDocument(text, streaming: true) == document)
     }
 
     @Test(arguments: ["{}", "[]", "true", "null"])

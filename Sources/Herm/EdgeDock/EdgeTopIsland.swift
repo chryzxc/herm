@@ -8,6 +8,10 @@ struct EdgeIslandRail: View {
     let notchWidth: CGFloat
     let ears: (left: CGFloat, right: CGFloat)
     let height: CGFloat
+    /// The wake-word microphone sits after the faces, in its own slot.
+    var wakeStatus: EdgeWakeIndicator.Status?
+    /// A reminder due within the hour, counting down beside the primary mark.
+    var countdown: VoiceTimer?
     let action: () -> Void
 
     var body: some View {
@@ -18,12 +22,47 @@ struct EdgeIslandRail: View {
                     .dockPadding(.leading, EdgeNotchState.islandBadgeInset)
                     .frame(width: ears.left, height: height)
                 Color.clear.frame(width: notchWidth, height: height)
-                EdgeNotchStatusIndicator(activity: activity, style: displayStyle, axis: .horizontal, part: .primary)
-                    .frame(width: ears.right, height: height)
+                HStack(spacing: 0) {
+                    EdgeNotchStatusIndicator(
+                        activity: activity, style: displayStyle, axis: .horizontal, part: .primary
+                    )
+                    .frame(maxWidth: .infinity)
+                    if let countdown {
+                        VoiceTimerCountdown(timer: countdown)
+                            .frame(width: EdgeNotchState.countdownSlot, height: height, alignment: .leading)
+                            .transition(.opacity)
+                    }
+                    if let wakeStatus {
+                        EdgeWakeIndicator(status: wakeStatus)
+                            .frame(width: EdgeNotchState.wakeSlot, height: height)
+                            .dockPadding(.trailing, EdgeNotchState.wakeEdgeInset)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: ears.right, height: height)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
+    }
+}
+
+/// The two toolbar groups must both fit beside the centered camera housing.
+struct EdgeIslandToolbarLayout: Layout {
+    let cameraWidth: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let leading = subviews[0].sizeThatFits(.unspecified)
+        let trailing = subviews[1].sizeThatFits(.unspecified)
+        let minimumWidth = cameraWidth + 2 * (DockSpacing.micro + max(leading.width, trailing.width))
+        return CGSize(
+            width: max(proposal.width ?? 0, minimumWidth),
+            height: max(leading.height, trailing.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+        subviews[1].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: .unspecified)
     }
 }
 
@@ -177,5 +216,40 @@ struct EdgeIslandStatusStrip: View {
             .dockPadding(.horizontal, 6)
             .contentShape(Rectangle())
         }
+    }
+}
+
+/// The collapsed notch's cue that on-device wake listening is active.
+struct EdgeWakeIndicator: View {
+    static let accessibilityStatus = "Listening for the wake word"
+
+    enum Status {
+        case standby, listening, unavailable
+
+        var icon: Ph { self == .unavailable ? .microphoneSlash : .microphone }
+    }
+
+    let status: Status
+    @DockChromeTheme private var theme
+
+    var body: some View {
+        let palette = DockThemePalette(theme: theme)
+        let listening = status == .listening
+        let microphone = PhosphorShape(icon: status.icon, weight: .fill)
+        microphone.fill(listening ? palette.primaryText : palette.secondaryText)
+            .background {
+                if theme.usesNativeMaterial {
+                    microphone.stroke(palette.onAccent, lineWidth: DockLayout.hairline * 2)
+                }
+            }
+            .frame(width: EdgeNotchState.wakeGlyphSize, height: EdgeNotchState.wakeGlyphSize)
+            .frame(width: EdgeNotchState.wakeSlot, height: EdgeNotchState.wakeSlot)
+            .background {
+                if listening {
+                    DockLayerMotion(kind: .breathe(period: 2.4), color: palette.primaryText.opacity(0.24))
+                }
+            }
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
     }
 }

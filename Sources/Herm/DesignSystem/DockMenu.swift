@@ -172,16 +172,18 @@ struct DockMenuPicker<Value: Hashable, Content: View>: View {
     var label: String?
     let title: String
     let leading: AnyView?
+    let maxTitleWidth: CGFloat?
     @Binding var selection: Value
     let content: Content
 
     init(
         _ label: String? = nil, title: String, selection: Binding<Value>, leading: AnyView? = nil,
-        @ViewBuilder content: () -> Content
+        maxTitleWidth: CGFloat? = nil, @ViewBuilder content: () -> Content
     ) {
         self.label = label
         self.title = title
         self.leading = leading
+        self.maxTitleWidth = maxTitleWidth
         self._selection = selection
         self.content = content()
     }
@@ -195,6 +197,7 @@ struct DockMenuPicker<Value: Hashable, Content: View>: View {
                 Text(title)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
+                    .frame(maxWidth: maxTitleWidth, alignment: .leading)
                 DockIcon(.caretUpDown, size: 11, color: Color.dockMetadataText)
             }
         }
@@ -210,10 +213,12 @@ struct DockOptionPicker<Value: Hashable>: View {
     var placeholder = "Choose…"
     @Binding var selection: Value
     let options: [(value: Value, title: String)]
+    var maxTitleWidth: CGFloat? = nil
 
     var body: some View {
         DockMenuPicker(
-            label, title: options.first { $0.value == selection }?.title ?? placeholder, selection: $selection
+            label, title: options.first { $0.value == selection }?.title ?? placeholder, selection: $selection,
+            maxTitleWidth: maxTitleWidth
         ) {
             ForEach(options.indices, id: \.self) { DockMenuOption(options[$0].title, value: options[$0].value) }
         }

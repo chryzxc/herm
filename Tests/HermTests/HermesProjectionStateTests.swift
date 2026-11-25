@@ -154,7 +154,8 @@ struct HermesProjectionStateTests {
         ]
 
         for row in malformedRows {
-            #expect(ControlCenterModel.parseActivityStepsEnvelope(["data": [row]]) == nil)
+            let identified = ["id": "activity-1"].merging(row) { _, field in field }
+            #expect(ControlCenterModel.parseActivityStepsEnvelope(["data": [identified]]) == nil)
         }
     }
 

@@ -1,4 +1,6 @@
 import AVFoundation
+import AppKit
+import Combine
 import Speech
 import SwiftUI
 
@@ -321,6 +323,7 @@ enum VoiceRecognitionCompletion: Equatable {
 final class MicLevelMeter: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var isStarting = false
+    @Published private(set) var isPreparingSpeech = false
     @Published private(set) var isRunning = false
     let reading = VoiceMeterReading()
     private(set) var level: CGFloat {
@@ -329,6 +332,15 @@ final class MicLevelMeter: ObservableObject {
     }
     /// Live on-device transcript of the current utterance.
     @Published private(set) var transcript = ""
+
+    #if DEBUG
+        /// Snapshot tests drive the voice widget's captions without a microphone.
+        func showForSnapshot(transcript: String, level: CGFloat, errorMessage: String?) {
+            self.transcript = transcript
+            self.level = level
+            self.errorMessage = errorMessage
+        }
+    #endif
     private(set) var turnProgress: Double {
         get { reading.turnProgress }
         set { reading.turnProgress = newValue }
@@ -336,6 +348,9 @@ final class MicLevelMeter: ObservableObject {
     /// Called once per utterance when `isEndpointing` and the speaker stops,
     /// with the transcript, or nil once on-device recognition has failed.
     var onUtteranceEnd: ((String?) -> Void)?
+    /// The listener stays available, but an unfinished transcript must not run a request.
+    var onUnfinishedUtterance: (() -> Void)?
+    let recognitionStatus = VoiceRecognitionStatus()
     /// Called while endpointing once nobody has spoken for `idleLimit`.
     var onIdle: (() -> Void)?
     /// A quiet gap with no partial words, safe for a pending result announcement.
@@ -350,20 +365,48 @@ final class MicLevelMeter: ObservableObject {
     private(set) var isWatchingForBarge = false
     var onBargeSpeech: ((String) -> Bool)?
     private var acceptedBargeIn = false
+    private var requiresOnDevice = false
+    private var wakeOnly = false
+    private var smoothedLevel: CGFloat = 0
+    private var nextOutputCheck: TimeInterval = 0
+    private var nextQuietCheck: TimeInterval = 0
+    private let outputIsRunning: () -> Bool?
 
     /// Starts a fresh transcript for the next voice state.
-    func listen(endpointing: Bool, watchingForBarge: Bool) {
-        let preserveUtterance = acceptedBargeIn && isWatchingForBarge && endpointing
+    func listen(
+        endpointing: Bool, watchingForBarge: Bool, requiresOnDevice: Bool = false, wakeOnly: Bool = false,
+        preservingUtterance: Bool = false, preservingPlaybackOnBargeIn: Bool = false
+    ) {
+        if preservingUtterance, isEndpointing, endpointing,
+            self.requiresOnDevice == requiresOnDevice, self.wakeOnly == wakeOnly,
+            !transcript.isEmpty || endpoint.isHearingSpeech || drainingRequest != nil
+        {
+            return
+        }
+        let preserveUtterance =
+            acceptedBargeIn && isWatchingForBarge && endpointing
+            && self.requiresOnDevice == requiresOnDevice && self.wakeOnly == wakeOnly
+        self.requiresOnDevice = requiresOnDevice
+        self.wakeOnly = wakeOnly
+        turnAudio.isEnabled = !wakeOnly && (endpointing || watchingForBarge) && TurnModelStore.shared.predictor != nil
+        nextOutputCheck = 0
+        nextQuietCheck = 0
+        if wakeOnly {
+            smoothedLevel = 0
+            if level != 0 { level = 0 }
+        }
         acceptedBargeIn = false
         isEndpointing = endpointing
         isWatchingForBarge = watchingForBarge && !endpointing
         endpoint.beginTurn()
+        endpoint.margin = wakeOnly ? 0.11 : 0.18
+        endpoint.minSpeech = wakeOnly ? 0.18 : 0.3
         pendingEndSince = nil
         turnProgress = 0
         // The words that stopped playback belong to the next request. Keep
         // the same recognition task so its later partials extend those words.
         if preserveUtterance {
-            heardPlayback = false
+            heardPlayback = preservingPlaybackOnBargeIn
         } else {
             restartRecognition()
         }
@@ -373,9 +416,42 @@ final class MicLevelMeter: ObservableObject {
 
     /// Whether Herm can transcribe voice turns itself.
     static var canTranscribe: Bool {
+        guard speechAuthorized else { return false }
+        let preference = VoiceRecognitionPreference.read()
+        return modernSpeechSupported(preference) || recognizerAvailable(for: preference.locale)
+    }
+
+    private static var speechAuthorized: Bool {
         Bundle.main.bundleURL.pathExtension == "app"
             && SFSpeechRecognizer.authorizationStatus() == .authorized
-            && SFSpeechRecognizer(locale: .current)?.isAvailable == true
+    }
+
+    private static func modernSpeechSupported(_ preference: VoiceRecognitionPreference) -> Bool {
+        if #available(macOS 26, *), preference.engine == .automatic {
+            return VoiceTranscriber.shared.isSupported(for: preference.locale)
+        }
+        return false
+    }
+
+    /// Views read availability every render, so it is re-checked at most every 2 s.
+    /// A long-lived recognizer's `isAvailable` can stay stale, so each check is fresh.
+    private static var availabilityCheck: (locale: Locale, at: Date, available: Bool)?
+    private static func recognizerAvailable(for locale: Locale) -> Bool {
+        if let check = availabilityCheck, check.locale == locale, Date().timeIntervalSince(check.at) < 2 {
+            return check.available
+        }
+        let available = SFSpeechRecognizer(locale: locale)?.isAvailable == true
+        availabilityCheck = (locale, Date(), available)
+        return available
+    }
+
+    /// A successful offline support query is cached by locale.
+    private static var onDeviceLocale: Locale?
+    private static func supportsOnDevice(_ locale: Locale) -> Bool {
+        if onDeviceLocale == locale { return true }
+        let supported = SFSpeechRecognizer(locale: locale)?.supportsOnDeviceRecognition == true
+        if supported { onDeviceLocale = locale }
+        return supported
     }
 
     /// Asks once, so the first voice turn can already transcribe on-device.
@@ -388,19 +464,36 @@ final class MicLevelMeter: ObservableObject {
 
     /// Listening for the wake phrase while asleep stays on this Mac.
     static var canDetectWakePhrase: Bool {
-        canTranscribe && SFSpeechRecognizer(locale: .current)?.supportsOnDeviceRecognition == true
+        guard speechAuthorized else { return false }
+        let preference = VoiceRecognitionPreference.read()
+        return modernSpeechSupported(preference)
+            || (recognizerAvailable(for: preference.locale) && supportsOnDevice(preference.locale))
     }
 
     private var endpoint = VoiceEndpointDetector()
     private var engine: AVAudioEngine?
+    private var levelUpdates: Task<Void, Never>?
+    private var routeChanges: AnyCancellable?
+    private var sleepChanges: AnyCancellable?
+    private var routeRestart: Task<Void, Never>?
+    private var isSuspended = false
+    private var restartingRoute = false
     private var generation = 0
-    private let recognizer = SFSpeechRecognizer(locale: .current)
+    private var preference = VoiceRecognitionPreference.read()
+    private var classicRecognizer: (locale: Locale, recognizer: SFSpeechRecognizer?)?
     private let feed: RecognitionFeed
     private let cancelRecognition: (SFSpeechRecognitionTask?) -> Void
     private var drainingRequest: ObjectIdentifier?
     private var drainDeadline: Task<Void, Never>?
     private var recognitionEpoch = 0
     private var recognitionTask: SFSpeechRecognitionTask?
+    private var recognitionRetry: Task<Void, Never>?
+    private var speechPreparation: Task<Void, Never>?
+    /// The macOS 26 analyzer session, when it replaced `recognitionTask`.
+    private var transcriberSession: (any VoiceTranscriberSession)?
+    /// Names the recognizer should expect (bot, projects, agents), so they aren't misheard.
+    var vocabulary: [String] = []
+    var wakeNames: [String] = []
     /// Text from earlier recognition requests in this utterance; the
     /// recognizer ends a request on long pauses and errors.
     private var committedTranscript = ""
@@ -424,14 +517,16 @@ final class MicLevelMeter: ObservableObject {
 
     init(
         feed: RecognitionFeed = RecognitionFeed(),
-        cancelRecognition: @escaping (SFSpeechRecognitionTask?) -> Void = { $0?.cancel() }
+        cancelRecognition: @escaping (SFSpeechRecognitionTask?) -> Void = { $0?.cancel() },
+        outputIsRunning: @escaping () -> Bool? = VoiceAudioOutput.isOutputRunning
     ) {
         self.feed = feed
         self.cancelRecognition = cancelRecognition
+        self.outputIsRunning = outputIsRunning
     }
 
     func start() {
-        guard engine == nil, !isStarting else { return }
+        guard engine == nil, !isStarting, !isSuspended else { return }
         guard Bundle.main.bundleURL.pathExtension == "app" else {
             errorMessage = "Voice input requires the packaged Herm app."
             return
@@ -456,29 +551,55 @@ final class MicLevelMeter: ObservableObject {
                 _ = await SpeechInput.requestSpeechAuthorization()
             }
             guard self.generation == expected, self.engine == nil else { return }
-            self.isStarting = false
+            if #available(macOS 26, *), Self.speechAuthorized, preference.engine == .automatic {
+                VoiceTranscriber.shared.prepare(locale: preference.locale)
+            }
+            self.observeSleepChanges()
             self.startEngine()
         }
     }
 
     func stop() {
-        generation &+= 1
+        sleepChanges = nil
+        isSuspended = false
+        restartingRoute = false
+        tearDownEngine()
         listen(endpointing: false, watchingForBarge: false)
+    }
+
+    private func tearDownEngine() {
+        generation &+= 1
+        feed.acceptAudio(from: generation)
+        routeChanges = nil
+        routeRestart?.cancel()
+        routeRestart = nil
+        levelUpdates?.cancel()
+        levelUpdates = nil
         engine?.stop()
         engine?.inputNode.removeTap(onBus: 0)
         engine = nil
         isStarting = false
         isRunning = false
-        level = 0
+        smoothedLevel = 0
+        if level != 0 { level = 0 }
+    }
+
+    func stopAfterRecognitionFailure(_ message: String) {
+        stop()
+        errorMessage = message
     }
 
     private func restartRecognition() {
         recognitionEpoch &+= 1
+        speechPreparation?.cancel()
+        speechPreparation = nil
+        if isPreparingSpeech { isPreparingSpeech = false }
+        recognitionRetry?.cancel()
+        recognitionRetry = nil
         drainDeadline?.cancel()
         drainDeadline = nil
         drainingRequest = nil
-        cancelRecognition(recognitionTask)
-        recognitionTask = nil
+        cancelActiveRecognition()
         feed.endAudio()
         feed.request = nil
         committedTranscript = ""
@@ -490,70 +611,200 @@ final class MicLevelMeter: ObservableObject {
         lastWordAt = ProcessInfo.processInfo.systemUptime
         lastLoudAt = lastWordAt
         heardPlayback = false
+        preference = VoiceRecognitionPreference.read()
         beginRecognitionRequest()
     }
 
+    private func cancelActiveRecognition() {
+        cancelRecognition(recognitionTask)
+        recognitionTask = nil
+        transcriberSession?.cancel()
+        transcriberSession = nil
+    }
+
     private func beginRecognitionRequest() {
-        guard isEndpointing || isWatchingForBarge, recognitionFailures <= 2, Self.canTranscribe, let recognizer else {
+        guard engine != nil, isEndpointing || isWatchingForBarge, recognitionRetry == nil,
+            speechPreparation == nil, recognitionFailures <= 2
+        else { return }
+        guard Self.speechAuthorized else {
+            reportUnavailableSpeech()
+            return
+        }
+        requestText = ""
+        requestHeardSpeech = false
+        requestStartedAt = ProcessInfo.processInfo.systemUptime
+        let vocabulary = Self.recognizerVocabulary(vocabulary)
+        let wakeNames = wakeOnly ? wakeNames : []
+        if #available(macOS 26, *), preference.engine == .automatic {
+            let modern = VoiceTranscriber.shared
+            modern.select(preference.locale)
+            if let session = modern.makeSession(vocabulary: vocabulary, wakeNames: wakeNames),
+                let locale = modern.preparedLocale
+            {
+                useTranscriberSession(session, locale: locale)
+                return
+            }
+        }
+        let classic = classicRecognizerForTurn()
+        if #available(macOS 26, *), preference.engine == .automatic {
+            let modern = VoiceTranscriber.shared
+            if classic == nil,
+                let session = modern.makeSession(vocabulary: vocabulary, wakeNames: wakeNames, ignoreCooldown: true),
+                let locale = modern.preparedLocale
+            {
+                useTranscriberSession(session, locale: locale)
+                return
+            }
+            if let preparation = modern.prepare(locale: preference.locale), classic == nil {
+                waitForSpeechModel(preparation)
+                return
+            }
+        }
+        guard let recognizer = classic else {
+            reportUnavailableSpeech()
             return
         }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         request.taskHint = .dictation
-        if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
+        request.contextualStrings = vocabulary
+        request.requiresOnDeviceRecognition = requiresOnDevice || recognizer.supportsOnDeviceRecognition
         feed.request = request
-        requestText = ""
-        requestHeardSpeech = false
-        requestStartedAt = ProcessInfo.processInfo.systemUptime
+        recognitionStatus.started(.classic, locale: recognizer.locale)
         let requestID = ObjectIdentifier(request)
-        recognitionTask = Self.recognize(request, with: recognizer) { [weak self] text, ended, error in
+        recognitionTask = Self.recognize(request, with: recognizer, wakeNames: wakeNames) {
+            [weak self] text, ended, error in
             Task { @MainActor [weak self] in
                 self?.receiveRecognitionResult(text, ended: ended, requestID: requestID, error: error)
             }
         }
     }
 
+    private func classicRecognizerForTurn() -> SFSpeechRecognizer? {
+        let locale = preference.locale
+        guard Self.recognizerAvailable(for: locale) else { return nil }
+        if classicRecognizer?.locale != locale {
+            classicRecognizer = (locale, SFSpeechRecognizer(locale: locale))
+        }
+        guard let recognizer = classicRecognizer?.recognizer,
+            !requiresOnDevice || recognizer.supportsOnDeviceRecognition
+        else { return nil }
+        return recognizer
+    }
+
+    private func useTranscriberSession(_ session: any VoiceTranscriberSession, locale: Locale) {
+        recognitionStatus.started(.modern, locale: locale)
+        let requestID = ObjectIdentifier(session)
+        session.onResult = { [weak self] text, ended, error in
+            self?.receiveRecognitionResult(text, ended: ended, requestID: requestID, error: error, cumulative: true)
+        }
+        feed.request = session
+        transcriberSession = session
+    }
+
+    private func waitForSpeechModel(_ preparation: Task<Bool, Never>) {
+        let epoch = recognitionEpoch
+        isPreparingSpeech = true
+        speechPreparation = Task { [weak self] in
+            let ready = await preparation.value
+            guard let self, !Task.isCancelled, recognitionEpoch == epoch else { return }
+            speechPreparation = nil
+            isPreparingSpeech = false
+            if ready || classicRecognizerForTurn() != nil {
+                beginRecognitionRequest()
+            } else {
+                reportUnavailableSpeech()
+            }
+        }
+    }
+
+    private func reportUnavailableSpeech() {
+        recognitionFailures = 3
+        if requiresOnDevice {
+            tearDownEngine()
+            errorMessage = "On-device speech recognition is unavailable. Try again or check Speech Recognition access."
+        } else if isEndpointing {
+            onUtteranceEnd?(nil)
+        }
+    }
+
+    /// Distinct, non-empty names, capped at the 100 phrases Apple recommends.
+    nonisolated static func recognizerVocabulary(_ names: [String]) -> [String] {
+        var seen = Set<String>()
+        let names = names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && $0.count <= 60 && seen.insert($0.lowercased()).inserted }
+        return Array(names.prefix(100))
+    }
+
     func receiveRecognitionResult(
-        _ text: String?, ended: Bool, requestID: ObjectIdentifier, error: (any Error)? = nil
+        _ text: String?, ended: Bool, requestID: ObjectIdentifier, error: (any Error)? = nil,
+        cumulative: Bool = false
     ) {
         guard feed.request.map(ObjectIdentifier.init) == requestID else { return }
-        if let text, !text.isEmpty { receiveRecognizedText(text) }
+        if let text, cumulative || !text.isEmpty {
+            // After the mic closes, results revise this request's words rather than
+            // starting a segment, even when a rescored first word differs.
+            if drainingRequest == requestID {
+                receiveFinalText(text)
+            } else {
+                receiveRecognizedText(text, cumulative: cumulative || ended)
+            }
+        }
         guard feed.request.map(ObjectIdentifier.init) == requestID, ended else { return }
         if drainingRequest == requestID {
-            finishRecognitionDrain(requestID: requestID)
+            finishRecognitionDrain(requestID: requestID, finalized: error == nil)
+            return
+        }
+        if error != nil, !transcript.isEmpty {
+            onUnfinishedUtterance?()
+            restartRecognition()
             return
         }
         // Quiet-room errors are normal; only instant failures count.
         let lived = ProcessInfo.processInfo.systemUptime - requestStartedAt
-        if VoiceEndpointDetector.isRecognizerFailure(
+        let failed = VoiceEndpointDetector.isRecognizerFailure(
             heardSpeech: requestHeardSpeech, failed: error != nil, lived: lived)
-        {
-            recognitionFailures += 1
-        }
         committedTranscript = transcript
         feed.request = nil
-        if recognitionFailures > 2, isEndpointing {
-            onUtteranceEnd?(nil)
+        if failed {
+            recognitionFailures += 1
+            if recognitionFailures > 2 {
+                reportUnavailableSpeech()
+                return
+            }
+            // Speech services can be briefly unavailable after a request closes.
+            let delay: Duration = recognitionFailures == 1 ? .milliseconds(250) : .milliseconds(750)
+            recognitionRetry = Task { [weak self] in
+                try? await Task.sleep(for: delay)
+                guard let self, !Task.isCancelled else { return }
+                recognitionRetry = nil
+                beginRecognitionRequest()
+            }
         } else {
+            recognitionFailures = 0
             beginRecognitionRequest()
         }
     }
 
-    func setRecognitionRequestForTesting(_ request: SFSpeechAudioBufferRecognitionRequest) {
+    func setRecognitionRequestForTesting(_ request: any VoiceRecognitionRequest) {
+        requestStartedAt = ProcessInfo.processInfo.systemUptime
         feed.request = request
     }
 
     func finishDetectedUtterance() {
-        guard drainingRequest == nil else { return }
+        guard drainingRequest == nil, recognitionRetry == nil else { return }
         pendingEndSince = nil
-        if utteranceTranscript == "", let request = feed.request {
+        // Partials are the recognizer's running guess; the final result rescores
+        // the whole utterance with its ending, so wait briefly for it.
+        if let heard = utteranceTranscript, let request = feed.request {
             let requestID = ObjectIdentifier(request)
             drainingRequest = requestID
             feed.endAudio()
+            let wait = Self.finalResultWait(hasPartial: !heard.isEmpty)
             drainDeadline = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(3))
+                try? await Task.sleep(for: .seconds(wait))
                 guard !Task.isCancelled else { return }
-                self?.finishRecognitionDrain(requestID: requestID)
+                self?.finishRecognitionDrain(requestID: requestID, finalized: false)
             }
             return
         }
@@ -561,105 +812,265 @@ final class MicLevelMeter: ObservableObject {
         if isEndpointing { restartRecognition() }
     }
 
-    func finishRecognitionDrain(requestID: ObjectIdentifier) {
+    /// The normal path returns when the final arrives, not when this deadline expires.
+    nonisolated static func finalResultWait(hasPartial: Bool) -> TimeInterval { hasPartial ? 1.8 : 3 }
+
+    func finishRecognitionDrain(requestID: ObjectIdentifier, finalized: Bool = true) {
         guard drainingRequest == requestID, feed.request.map(ObjectIdentifier.init) == requestID else { return }
-        let result: String? = transcript.isEmpty ? nil : transcript
+        let result = finalized ? utteranceTranscript : ""
+        let needsRepeat = !finalized && !transcript.isEmpty
         drainDeadline?.cancel()
         drainDeadline = nil
         drainingRequest = nil
         feed.request = nil
-        cancelRecognition(recognitionTask)
-        recognitionTask = nil
+        cancelActiveRecognition()
         let epoch = recognitionEpoch
+        if needsRepeat { onUnfinishedUtterance?() }
         onUtteranceEnd?(result)
         if isEndpointing, recognitionEpoch == epoch { restartRecognition() }
     }
 
-    func receiveRecognizedText(_ text: String) {
-        guard isEndpointing || isWatchingForBarge else { return }
-        requestHeardSpeech = true
+    /// Gives on-device recognition a fresh start after Herm fell back to Hermes' recorder.
+    func resetRecognitionFailures() {
         recognitionFailures = 0
+    }
+
+    func receiveFinalText(_ text: String) {
+        if !text.isEmpty { requestHeardSpeech = true }
+        requestText = text
+        transcript = VoiceTranscriptText.join(committedTranscript, text)
+    }
+
+    func receiveRecognizedText(_ text: String, cumulative: Bool = false) {
+        guard isEndpointing || isWatchingForBarge else { return }
+        if !text.isEmpty {
+            requestHeardSpeech = true
+            recognitionFailures = 0
+        }
         // On-device recognition can restart its partial text after a pause
         // without ending the request; keep the words said before the pause.
-        if VoiceEndpointDetector.startsNewSegment(
-            previous: requestText, next: text, pause: ProcessInfo.processInfo.systemUptime - lastWordAt)
+        if !cumulative,
+            VoiceEndpointDetector.startsNewSegment(
+                previous: requestText, next: text, pause: ProcessInfo.processInfo.systemUptime - lastWordAt)
         {
             committedTranscript = transcript
         }
         requestText = text
-        let updated = [committedTranscript, text].filter { !$0.isEmpty }.joined(separator: " ")
+        let updated = VoiceTranscriptText.join(committedTranscript, text)
         if updated != transcript {
             lastWordAt = ProcessInfo.processInfo.systemUptime
             turnVerdict = nil
         }
         transcript = updated
-        if isWatchingForBarge, !acceptedBargeIn { acceptedBargeIn = onBargeSpeech?(transcript) == true }
+        if isWatchingForBarge, !acceptedBargeIn {
+            // The callback can synchronously change capture mode. Let that
+            // transition keep this partial before it switches to endpointing.
+            acceptedBargeIn = true
+            if onBargeSpeech?(transcript) != true { acceptedBargeIn = false }
+        }
     }
 
-    private func startEngine(cancellingEcho: Bool = true) {
-        let engine = AVAudioEngine()
-        let input = engine.inputNode
-        if cancellingEcho { Self.cancelEcho(on: engine) }
-        let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else {
-            errorMessage = "No microphone input is available. Connect a microphone and retry."
-            return
+    private func observeSleepChanges() {
+        guard sleepChanges == nil else { return }
+        let center = NSWorkspace.shared.notificationCenter
+        sleepChanges = center.publisher(for: NSWorkspace.willSleepNotification).map { @Sendable _ in true }
+            .merge(with: center.publisher(for: NSWorkspace.didWakeNotification).map { @Sendable _ in false })
+            .sink { @Sendable [weak self] sleeping in
+                Task { @MainActor [weak self] in self?.handleSleepChange(sleeping) }
+            }
+    }
+
+    private func handleSleepChange(_ sleeping: Bool) {
+        guard sleepChanges != nil, sleeping != isSuspended else { return }
+        isSuspended = sleeping
+        if sleeping {
+            restartingRoute = false
+            tearDownEngine()
+            resetCaptureForRouteChange()
+        } else {
+            scheduleEngineRestart()
         }
+    }
+
+    private func recoverAudioRoute(generation expected: Int) {
+        guard generation == expected, engine != nil, !isSuspended else { return }
+        tearDownEngine()
+        resetCaptureForRouteChange()
+        if restartingRoute {
+            errorMessage = "The audio device changed again. Check your microphone and try again."
+        } else {
+            restartingRoute = true
+            scheduleEngineRestart()
+        }
+    }
+
+    private func resetCaptureForRouteChange() {
+        endpoint = VoiceEndpointDetector()
+        endpoint.margin = wakeOnly ? 0.11 : 0.18
+        endpoint.minSpeech = wakeOnly ? 0.18 : 0.3
+        pendingEndSince = nil
+        turnProgress = 0
+        acceptedBargeIn = false
+        recognitionFailures = 0
+        restartRecognition()
+    }
+
+    private func scheduleEngineRestart() {
         let expected = generation
-        Self.installTap(on: input, feed: feed, turnAudio: turnAudio) { [weak self] value in
-            Task { @MainActor [weak self] in
+        errorMessage = nil
+        isStarting = true
+        routeRestart = Task { [weak self] in
+            // Give Core Audio a moment to settle on its new default input.
+            try? await Task.sleep(for: .milliseconds(200))
+            guard let self, !Task.isCancelled, generation == expected else { return }
+            routeRestart = nil
+            startEngine()
+        }
+    }
+
+    /// Enabling voice processing blocks for about a second, so the engine starts
+    /// off the main thread; the notch opens while it does.
+    private func startEngine() {
+        let expected = generation
+        let feed = feed
+        feed.acceptAudio(from: expected)
+        let turnAudio = turnAudio
+        let (levels, input) = AsyncStream<VoiceLevelSample>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        levelUpdates = Task { [weak self] in
+            for await sample in levels {
                 guard let self, self.generation == expected else { return }
-                self.ingestAudioLevel(value, at: ProcessInfo.processInfo.systemUptime)
+                guard engine != nil else { continue }
+                restartingRoute = false
+                guard errorMessage == nil, !isPreparingSpeech else { continue }
+                if !isRunning {
+                    guard !requiresOnDevice || sample.fedRecognizer else { continue }
+                    isStarting = false
+                    isRunning = true
+                }
+                self.ingestAudioLevel(sample.level, at: sample.time)
             }
         }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let launch = Self.launchEngine(feed: feed, turnAudio: turnAudio, generation: expected) { sample in
+                input.yield(sample)
+            }
+            switch launch {
+            case .started: break
+            case .noInput, .failed: input.finish()
+            }
+            await self?.engineLaunched(launch, generation: expected)
+        }
+    }
+
+    private func engineLaunched(_ launch: EngineLaunch, generation expected: Int) {
+        switch launch {
+        case .started(let box):
+            guard generation == expected, engine == nil else {
+                box.engine.stop()
+                box.engine.inputNode.removeTap(onBus: 0)
+                return
+            }
+            if !box.engine.inputNode.isVoiceProcessingEnabled {
+                DebugLog.write("voice: listening without echo cancellation")
+            }
+            engine = box.engine
+            routeChanges = NotificationCenter.default.publisher(
+                for: .AVAudioEngineConfigurationChange, object: box.engine
+            ).sink { @Sendable [weak self] _ in
+                // Core Audio notifies from an internal queue. Rebuild away from it.
+                Task { @MainActor [weak self] in self?.recoverAudioRoute(generation: expected) }
+            }
+            guard box.engine.isRunning else { return recoverAudioRoute(generation: expected) }
+            beginRecognitionRequest()
+        case .noInput:
+            guard generation == expected else { return }
+            isStarting = false
+            errorMessage = "No microphone input is available. Connect a microphone and retry."
+        case .failed(let message):
+            guard generation == expected else { return }
+            isStarting = false
+            errorMessage = "Couldn’t start the microphone: " + HermesDiagnosticsService.safeSummary(message)
+        }
+    }
+
+    enum EngineLaunch: Sendable {
+        final class Box: @unchecked Sendable {
+            let engine: AVAudioEngine
+            init(_ engine: AVAudioEngine) { self.engine = engine }
+        }
+        case started(Box)
+        case noInput
+        case failed(String)
+    }
+
+    private nonisolated static func launchEngine(
+        feed: RecognitionFeed, turnAudio: TurnAudio, generation: Int,
+        onLevel: @escaping @Sendable (VoiceLevelSample) -> Void,
+        cancellingEcho: Bool = true
+    ) -> EngineLaunch {
+        let engine = AVAudioEngine()
+        let input = engine.inputNode
+        if cancellingEcho { cancelEcho(on: engine) }
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { return .noInput }
+        installTap(on: input, feed: feed, turnAudio: turnAudio, generation: generation, onLevel: onLevel)
         do {
             try engine.start()
-            self.engine = engine
-            isRunning = true
-            // Speech permission may have arrived after `listen` was called.
-            if feed.request == nil { beginRecognitionRequest() }
+            return .started(EngineLaunch.Box(engine))
         } catch {
             input.removeTap(onBus: 0)
             // Some input devices refuse voice processing: listen without it rather than not at all.
-            if input.isVoiceProcessingEnabled {
-                DebugLog.write("voice: echo cancellation failed to start; using the plain microphone")
-                startEngine(cancellingEcho: false)
-            } else {
-                errorMessage =
-                    "Couldn’t start the microphone: " + HermesDiagnosticsService.safeSummary(error.localizedDescription)
-            }
+            guard input.isVoiceProcessingEnabled else { return .failed(error.localizedDescription) }
+            return launchEngine(
+                feed: feed, turnAudio: turnAudio, generation: generation, onLevel: onLevel, cancellingEcho: false)
         }
     }
 
     func ingestAudioLevel(_ value: CGFloat, at now: TimeInterval, outputPlaying: Bool? = nil) {
-        let smoothing: CGFloat = value > level ? 0.5 : 0.12
-        level += (value - level) * smoothing
-        guard isEndpointing else { return }
-        if !heardPlayback, outputPlaying ?? (VoiceAudioOutput.isOutputRunning() == true) { heardPlayback = true }
-        guard drainingRequest == nil else { return }
+        if !wakeOnly {
+            let smoothing: CGFloat = value > smoothedLevel ? 0.5 : 0.12
+            smoothedLevel += (value - smoothedLevel) * smoothing
+            let nextLevel = (smoothedLevel * 100).rounded() / 100
+            if level != nextLevel { level = nextLevel }
+        }
+        guard isEndpointing, drainingRequest == nil else { return }
         if endpoint.ingest(level: Double(value), at: now) { pendingEndSince = pendingEndSince ?? now }
         if endpoint.isHearingSpeech {
             lastLoudAt = now
+            pendingEndSince = nil
             turnVerdict = nil
         }
-        askTurnModel(at: now)
-        let progress =
-            endpoint.isHearingSpeech || (utteranceTranscript ?? "").isEmpty
-            ? 0
-            : min(
-                1,
-                (now - lastWordAt)
-                    / VoiceEndpointDetector.turnHold(
-                        utteranceTranscript ?? "", quietSince: pendingEndSince, finished: turnVerdict))
-        if abs(progress - turnProgress) > 0.03 || (progress == 0) != (turnProgress == 0) {
-            turnProgress = progress
+        let utterance = utteranceTranscript
+        if !wakeOnly {
+            if !heardPlayback {
+                if let outputPlaying {
+                    heardPlayback = outputPlaying
+                } else if endpoint.isHearingSpeech || utterance?.isEmpty == false, now >= nextOutputCheck {
+                    nextOutputCheck = now + 0.1
+                    heardPlayback = outputIsRunning() == true
+                }
+            }
+            askTurnModel(at: now)
+            let progress =
+                endpoint.isHearingSpeech || (utterance ?? "").isEmpty
+                ? 0
+                : min(
+                    1,
+                    max(0, now - max(lastWordAt, lastLoudAt))
+                        / VoiceEndpointDetector.turnHold(
+                            utterance ?? "", quietSince: pendingEndSince, finished: turnVerdict, wakeOnly: wakeOnly))
+            if abs(progress - turnProgress) > 0.03 || (progress == 0) != (turnProgress == 0) {
+                turnProgress = progress
+            }
         }
         if VoiceEndpointDetector.shouldEndTurn(
-            utteranceTranscript, lastWordAt: lastWordAt, quietSince: pendingEndSince, now: now,
-            finished: turnVerdict, isHearingSpeech: endpoint.isHearingSpeech
+            utterance, lastWordAt: lastWordAt, quietSince: pendingEndSince, now: now,
+            finished: turnVerdict, isHearingSpeech: endpoint.isHearingSpeech, lastLoudAt: lastLoudAt,
+            wakeOnly: wakeOnly
         ) {
             finishDetectedUtterance()
-        } else if pendingEndSince == nil, transcript.isEmpty {
+        } else if !wakeOnly, pendingEndSince == nil, transcript.isEmpty, now >= nextQuietCheck {
+            nextQuietCheck = now + 0.25
             if endpoint.heardNothing(for: idleLimit, at: now) {
                 onIdle?()
             } else if endpoint.heardNothing(for: 1.5, at: now) {
@@ -682,8 +1093,8 @@ final class MicLevelMeter: ObservableObject {
     /// speaker sounds done; a few ms, so the verdict lands before any hold expires.
     private func askTurnModel(at now: TimeInterval) {
         let pause = max(lastLoudAt, lastWordAt)
-        guard let predictor = TurnModelStore.shared.predictor, !transcript.isEmpty, !endpoint.isHearingSpeech,
-            now - pause >= 0.25, checkedPause != pause
+        guard !transcript.isEmpty, !endpoint.isHearingSpeech, now - pause >= 0.25, checkedPause != pause,
+            turnAudio.isEnabled, let predictor = TurnModelStore.shared.predictor
         else { return }
         checkedPause = pause
         predictor.isComplete(turnAudio.snapshot()) { complete in
@@ -697,27 +1108,65 @@ final class MicLevelMeter: ObservableObject {
     /// Speech calls back on its own queue, so the handler must not be main-actor isolated.
     private nonisolated static func recognize(
         _ request: SFSpeechAudioBufferRecognitionRequest,
-        with recognizer: SFSpeechRecognizer,
+        with recognizer: SFSpeechRecognizer, wakeNames: [String],
         onResult: @escaping @Sendable (String?, Bool, (any Error)?) -> Void
     ) -> SFSpeechRecognitionTask {
         recognizer.recognitionTask(with: request) { result, error in
-            onResult(result?.bestTranscription.formattedString, error != nil || result?.isFinal == true, error)
+            let text = result.map { result in
+                let best = result.bestTranscription.formattedString
+                guard !wakeNames.isEmpty, VoicePrompts.afterWakePhrase(best, names: wakeNames) == nil else {
+                    return best
+                }
+                return VoiceTranscriptText.wakeAlternative(
+                    result.transcriptions.prefix(4).map(\.formattedString), matching: best, names: wakeNames) ?? best
+            }
+            onResult(text, error != nil || result?.isFinal == true, error)
         }
     }
 
     private nonisolated static func installTap(
-        on input: AVAudioInputNode, feed: RecognitionFeed, turnAudio: TurnAudio,
-        onLevel: @escaping @Sendable (CGFloat) -> Void
+        on input: AVAudioInputNode, feed: RecognitionFeed, turnAudio: TurnAudio, generation: Int,
+        onLevel: @escaping @Sendable (VoiceLevelSample) -> Void
     ) {
         // Voice processing hands the tap extra channels (3 on most Macs); only
         // channel 0 is the cleaned voice, the rest would mix the echo back in.
         let normalizer = MicBufferNormalizer(firstChannelOnly: input.isVoiceProcessingEnabled)
+        nonisolated(unsafe) var sampler = VoiceLevelSampler()
         input.installTap(onBus: 0, bufferSize: 1_024, format: nil) { buffer, _ in
             guard let buffer = normalizer.normalize(buffer) else { return }
-            feed.append(buffer)
-            turnAudio.append(buffer)
-            onLevel(SpeechInput.normalizedAudioLevel(buffer))
+            let fedRecognizer = feed.append(buffer, generation: generation)
+            if fedRecognizer { turnAudio.append(buffer) }
+            if let sample = sampler.sample(
+                SpeechInput.normalizedAudioLevel(buffer), at: ProcessInfo.processInfo.systemUptime,
+                fedRecognizer: fedRecognizer)
+            {
+                onLevel(sample)
+            }
         }
+    }
+}
+
+struct VoiceLevelSample: Sendable {
+    let level: CGFloat
+    let time: TimeInterval
+    let fedRecognizer: Bool
+}
+
+/// The tap still feeds every speech frame. Only meter and endpoint updates are sampled.
+struct VoiceLevelSampler {
+    private let interval: TimeInterval = 1.0 / 30
+    private var nextDelivery: TimeInterval?
+    private var peak: CGFloat = 0
+
+    mutating func sample(_ level: CGFloat, at time: TimeInterval, fedRecognizer: Bool = false) -> VoiceLevelSample? {
+        peak = max(peak, level)
+        let deadline = nextDelivery ?? time
+        guard time >= deadline else { return nil }
+        let sample = VoiceLevelSample(level: peak, time: time, fedRecognizer: fedRecognizer)
+        let next = deadline + interval
+        nextDelivery = next > time ? next : time + interval
+        peak = 0
+        return sample
     }
 }
 
@@ -789,17 +1238,27 @@ final class MicBufferNormalizer: @unchecked Sendable {
 }
 
 /// The recognition request the audio thread feeds, swapped from the main actor.
+/// One utterance's recognizer input: Apple's classic request or, on macOS 26,
+/// a `SpeechAnalyzer` session. Called only under `RecognitionFeed`'s lock.
+protocol VoiceRecognitionRequest: AnyObject {
+    func append(_ buffer: AVAudioPCMBuffer)
+    func endAudio()
+}
+
+extension SFSpeechAudioBufferRecognitionRequest: VoiceRecognitionRequest {}
+
 final class RecognitionFeed: @unchecked Sendable {
     private let lock = NSLock()
-    private let endRequest: (SFSpeechAudioBufferRecognitionRequest) -> Void
-    private var current: SFSpeechAudioBufferRecognitionRequest?
+    private let endRequest: (any VoiceRecognitionRequest) -> Void
+    private var current: (any VoiceRecognitionRequest)?
     private var ended = false
+    private var generation = 0
 
-    init(endRequest: @escaping (SFSpeechAudioBufferRecognitionRequest) -> Void = { $0.endAudio() }) {
+    init(endRequest: @escaping (any VoiceRecognitionRequest) -> Void = { $0.endAudio() }) {
         self.endRequest = endRequest
     }
 
-    var request: SFSpeechAudioBufferRecognitionRequest? {
+    var request: (any VoiceRecognitionRequest)? {
         get { lock.withLock { current } }
         set {
             lock.withLock {
@@ -809,9 +1268,13 @@ final class RecognitionFeed: @unchecked Sendable {
         }
     }
 
-    @discardableResult func append(_ buffer: AVAudioPCMBuffer) -> Bool {
+    func acceptAudio(from generation: Int) {
+        lock.withLock { self.generation = generation }
+    }
+
+    @discardableResult func append(_ buffer: AVAudioPCMBuffer, generation: Int = 0) -> Bool {
         lock.withLock {
-            guard !ended, let current else { return false }
+            guard generation == self.generation, !ended, let current else { return false }
             current.append(buffer)
             return true
         }
@@ -884,11 +1347,11 @@ struct VoiceEndpointDetector {
     /// words, the wait after the last one depends on how the sentence ends:
     /// short when it sounds finished, long when it trails off ("and…", "um…").
     /// Without words, 3s of quiet ends it as noise. A nil transcript means no recognizer.
-    /// `finished` is the smart-turn model's verdict when installed; it replaces
-    /// the trailing-word guess and leaves 0.5s for the last words to transcribe.
+    /// A model verdict can shorten a settled pause, but doesn't override renewed
+    /// speech or a trailing word that still sounds like part of a sentence.
     static func shouldEndTurn(
         _ transcript: String?, lastWordAt: TimeInterval, quietSince: TimeInterval?, now: TimeInterval,
-        finished: Bool? = nil, isHearingSpeech: Bool = false
+        finished: Bool? = nil, isHearingSpeech: Bool = false, lastLoudAt: TimeInterval? = nil, wakeOnly: Bool = false
     ) -> Bool {
         // New words extend a turn; steady background noise cannot hold it forever.
         if isHearingSpeech {
@@ -897,12 +1360,22 @@ struct VoiceEndpointDetector {
         }
         guard let transcript else { return quietSince != nil }
         if transcript.isEmpty { return quietSince.map { now - $0 >= 3 } ?? false }
-        return now - lastWordAt >= turnHold(transcript, quietSince: quietSince, finished: finished)
+        let pauseStart = max(lastWordAt, lastLoudAt ?? lastWordAt)
+        return now - pauseStart >= turnHold(transcript, quietSince: quietSince, finished: finished, wakeOnly: wakeOnly)
     }
 
-    /// How long after the last word a turn ends.
-    static func turnHold(_ transcript: String, quietSince: TimeInterval?, finished: Bool?) -> TimeInterval {
-        let hold: TimeInterval = finished.map { $0 ? 0.5 : 3 } ?? (trailsOff(transcript) ? 3 : 0.8)
+    /// A smart-turn verdict is a hint, not permission to cut someone off at their first pause.
+    static func turnHold(
+        _ transcript: String, quietSince: TimeInterval?, finished: Bool?, wakeOnly: Bool
+    ) -> TimeInterval {
+        let hold: TimeInterval
+        if finished == false || trailsOff(transcript) {
+            hold = 3
+        } else if wakeOnly {
+            hold = 1.25
+        } else {
+            hold = finished == true ? 1.8 : 2
+        }
         // Under the level threshold the meter can't confirm the pause; wait a bit more.
         return hold + (quietSince == nil ? 0.4 : 0)
     }

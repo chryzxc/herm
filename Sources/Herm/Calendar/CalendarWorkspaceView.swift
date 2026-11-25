@@ -637,10 +637,12 @@ struct CalendarWorkspaceView: View {
                 Text("Calendar: \(accessLabel(system.eventAccess)) · Reminders: \(accessLabel(system.reminderAccess))")
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockMetadataText)
-                Text("See your events and reminders beside agent runs. Read-only; nothing is changed.")
-                    .dockFont(.body)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    "See your events and reminders beside agent runs. Notch voice asks before adding a calendar block or reminder."
+                )
+                .dockFont(.body)
+                .foregroundStyle(Color.dockSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
                 if let error = system.requestError {
                     Text(error)
                         .dockFont(.metadata)

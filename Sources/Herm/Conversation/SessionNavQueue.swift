@@ -587,7 +587,7 @@ struct SessionNavQueue: View, Equatable {
     private func profileHeader(style: DockThemePalette) -> some View {
         let allProfiles = showsAllProfiles
         let bot = allProfiles ? nil : selectedBot
-        let name = allProfiles ? "All" : bot?.name ?? sidebarSnapshot.inputs.agentDisplayName
+        let name = allProfiles ? "All" : bot?.name ?? "Herm"
         let subtitle = allProfiles ? "\(visibleBots.count) bots" : bot?.title
         let label = subtitle.map { "\(name) — \($0)" } ?? name
         let isSwitchable = visibleBots.count > 1

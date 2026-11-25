@@ -47,7 +47,7 @@ struct HermNotice: Codable, Identifiable, Equatable, Sendable {
 /// One app-boundary policy; only origin references enter its persisted digest.
 @MainActor
 final class HermInterruptionCoordinator: ObservableObject {
-    enum Channel: String { case record, notch, system }
+    enum Channel: String { case record, notch, system, voice }
     private struct Saved: Codable {
         let quiet: Bool
         let expiry: Date?

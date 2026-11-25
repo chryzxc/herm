@@ -120,6 +120,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     private var actionErrorPresenter: DockActionErrorPresenter?
     private var quickCaptureHotKey: QuickCaptureHotKey?
     private var windowCaptureHotKey: QuickCaptureHotKey?
+    private var voiceHotKey: QuickCaptureHotKey?
     private var spotlightIndex: SessionSpotlightIndex?
     static let keepAwakeKey = "herm.keepAwakeWhileWorking.v1"
     /// The running delegate, for App Intents, which have no other route to the models.
@@ -324,9 +325,16 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         windowCaptureHotKey = QuickCaptureHotKey(
             identifier: 2, preference: { DesktopCaptureShortcut.stored },
             onPress: { [weak self] in self?.edgeDock?.captureWindow() })
+        voiceHotKey = QuickCaptureHotKey(
+            identifier: 3, preference: { VoiceWakeShortcut.stored },
+            onPress: { [weak edge] in edge?.toggleVoice() })
         writeStatusItemDiagnosticIfRequested()
         HermAppUpdater.shared.isBusy = { [model] in model.isSending || model.status == .working }
         HermAppUpdater.shared.start()
+        Task(priority: .utility) {
+            TurnModelStore.prepareOnLaunch()
+            VoiceRecognitionSetup.shared.prepareSelected()
+        }
         if !UserDefaults.standard.bool(forKey: DockOnboardingModel.completedKey),
             !ScrollPerformanceFixture.isRequested
         {
@@ -686,7 +694,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private func configureStatusItem() {
         guard let button = statusItem.button else { return }
         button.image = robotStatusImage()
-        button.title = model.agentDisplayName
+        button.title = "Herm"
         button.font = .systemFont(ofSize: 12, weight: .semibold)
         button.imagePosition = .imageLeading
         button.target = self
@@ -775,14 +783,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
                 self?.updateStatusIcon(hasUnreadResponse: hasUnreadResponse)
             }
             .store(in: &cancellables)
-
-        model.$runtimeConfiguration.map { _ in () }
-            .merge(with: model.$defaultBotName.map { _ in () })
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.updateStatusItemIdentity()
-            }
-            .store(in: &cancellables)
     }
 
     private func installOutsideClickMonitors() {
@@ -827,18 +827,10 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     private func updateStatusIcon(hasUnreadResponse: Bool) {
         statusItem.button?.image = robotStatusImage()
-        updateStatusItemIdentity(hasUnreadResponse: hasUnreadResponse)
+        statusItem.button?.image?.accessibilityDescription = hasUnreadResponse ? "Herm, unread update" : "Herm"
+        statusItem.button?.toolTip = hasUnreadResponse ? "Herm — unread update" : "Herm"
         unreadBadge.isHidden = !hasUnreadResponse
         DebugLog.write("status item: unread badge \(hasUnreadResponse ? "shown" : "hidden")")
-    }
-
-    private func updateStatusItemIdentity(hasUnreadResponse: Bool? = nil) {
-        let name = model.agentDisplayName
-        let unread = hasUnreadResponse ?? model.hasUnreadResponse
-        statusItem.button?.title = name
-        statusItem.button?.image?.accessibilityDescription =
-            unread ? "\(name) AI agent, unread update" : "\(name) AI agent"
-        statusItem.button?.toolTip = unread ? "\(name) AI agent — unread update" : "\(name) AI agent"
     }
 
     private func robotStatusImage() -> NSImage {

@@ -44,6 +44,9 @@ private struct RichTableGrid: View {
     var selection: Binding<String>?
     var markdown: RichMarkdownTable?
     @Environment(\.markdownOpenURL) private var openLink
+    /// Voice previews are read-only: no filter, sorting, selection or nested scrolling.
+    @Environment(\.richGlance) private var glance
+    @Environment(\.richVoicePosition) private var voicePosition
     @State private var projection = RowProjection()
 
     @MainActor private final class RowProjection {
@@ -67,13 +70,22 @@ private struct RichTableGrid: View {
     }
 
     var body: some View {
-        let rows = projection.rows(for: dataset, query: query, sortColumn: sortColumn, descending: descending)
+        // Spoken row numbers always follow source order, independent of chat sorting and filters.
+        let rows =
+            glance
+            ? dataset.rows
+            : projection.rows(
+                for: dataset, query: query, sortColumn: sortColumn, descending: descending)
+        let page = RichVoicePreview.rows(on: voicePosition.page, total: rows.count)
         VStack(alignment: .leading, spacing: DockSpacing.control) {
-            if dataset.rows.count > 10 {
+            if dataset.rows.count > 10, !glance {
                 DockSearchField(placeholder: "Filter rows", text: $query)
             }
             Group {
-                if dataset.rows.count > 10 {
+                if glance {
+                    // The preview panel scrolls the whole reply, so the table never scrolls on its own.
+                    table(Array(rows[page]), rowOffset: page.lowerBound)
+                } else if dataset.rows.count > 10 {
                     largeTable(rows)
                 } else {
                     ViewThatFits(in: .vertical) {
@@ -87,13 +99,15 @@ private struct RichTableGrid: View {
             .dockWell(.sunken, role: .pane)
             HStack(spacing: DockSpacing.control) {
                 Text(
-                    query.isEmpty
-                        ? "\(rows.count) \(rows.count == 1 ? "row" : "rows")"
-                        : "\(rows.count) of \(dataset.rows.count) rows"
+                    glance && rows.count > RichVoicePreview.rowsPerPage
+                        ? "Rows \(page.lowerBound + 1)–\(page.upperBound) of \(rows.count)"
+                        : query.isEmpty || glance
+                            ? "\(rows.count) \(rows.count == 1 ? "row" : "rows")"
+                            : "\(rows.count) of \(dataset.rows.count) rows"
                 )
                 .dockFont(.metadata).monospacedDigit().foregroundStyle(Color.dockSecondaryText)
                 Spacer(minLength: DockSpacing.control)
-                if sortColumn != nil {
+                if sortColumn != nil, !glance {
                     Button("Restore source order") {
                         sortColumn = nil
                         descending = false
@@ -151,34 +165,50 @@ private struct RichTableGrid: View {
         .frame(height: 320)
     }
 
-    private func table(_ rows: [RichDataset.Row]) -> some View {
+    private func table(_ rows: [RichDataset.Row], rowOffset: Int? = nil) -> some View {
         // Give each column room for a short header before requiring horizontal scrolling.
         let count = CGFloat(dataset.columns.count)
-        let minimumWidth = count * 68 + (count - 1) * DockSpacing.section + 2 * DockSpacing.group + DockSpacing.control
+        let ordinalWidth: CGFloat = rowOffset == nil ? 0 : 30
+        let minimumWidth =
+            count * 68 + (count - 1) * DockSpacing.section + 2 * DockSpacing.group + DockSpacing.control
+            + ordinalWidth
         return ViewThatFits(in: .horizontal) {
-            grid(rows).frame(minWidth: minimumWidth, idealWidth: minimumWidth, maxWidth: .infinity)
-            ScrollView(.horizontal) { grid(rows).frame(width: minimumWidth) }
+            grid(rows, rowOffset: rowOffset).frame(
+                minWidth: minimumWidth, idealWidth: minimumWidth, maxWidth: .infinity)
+            ScrollView(.horizontal) { grid(rows, rowOffset: rowOffset).frame(width: minimumWidth) }
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func grid(_ rows: [RichDataset.Row]) -> some View {
+    private func grid(_ rows: [RichDataset.Row], rowOffset: Int?) -> some View {
         Grid(
             alignment: .leadingFirstTextBaseline, horizontalSpacing: DockSpacing.section,
             verticalSpacing: DockSpacing.control
         ) {
             GridRow {
+                if rowOffset != nil { Text("#").dockFont(.metadata).foregroundStyle(Color.dockSecondaryText) }
                 ForEach(Array(dataset.columns.enumerated()), id: \.element.id) { index, column in
                     header(column, index: index)
                         .gridColumnAlignment(alignment(column, index: index).horizontal)
                 }
             }
             Divider().gridCellUnsizedAxes(.horizontal)
-            ForEach(rows) { row in
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                let number = rowOffset.map { $0 + index }
+                let focused = number != nil && number == voicePosition.row
                 GridRow {
+                    if let number {
+                        Text("\(number + 1)")
+                            .dockFont(.metadata, weight: focused ? .semibold : .regular)
+                            .monospacedDigit()
+                            .foregroundStyle(focused ? Color.dockAccent : Color.dockSecondaryText)
+                            .accessibilityLabel("Row \(number + 1)")
+                            .accessibilityAddTraits(focused ? .isSelected : [])
+                    }
                     ForEach(Array(dataset.columns.enumerated()), id: \.element.id) { index, column in
                         cell(row, column: column, index: index)
+                            .fontWeight(focused ? .semibold : nil)
                     }
                 }
             }
@@ -202,10 +232,20 @@ private struct RichTableGrid: View {
         }
     }
 
-    private func header(_ column: RichDataset.Column, index: Int) -> some View {
+    @ViewBuilder private func header(_ column: RichDataset.Column, index: Int) -> some View {
         let sorted = sortColumn == index
         let label = column.title + (column.unit.map { " (\($0))" } ?? "")
-        return Button {
+        if glance {
+            Text(label).dockFont(.body, weight: .semibold).multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: index == expandingColumn ? .infinity : nil, alignment: alignment(column, index: index))
+        } else {
+            sortButton(column, index: index, label: label, sorted: sorted)
+        }
+    }
+
+    private func sortButton(_ column: RichDataset.Column, index: Int, label: String, sorted: Bool) -> some View {
+        Button {
             descending = sorted && !descending
             sortColumn = index
         } label: {
@@ -225,7 +265,7 @@ private struct RichTableGrid: View {
 
     @ViewBuilder private func cell(_ row: RichDataset.Row, column: RichDataset.Column, index: Int) -> some View {
         let value = row.values[index]
-        if let selection {
+        if let selection, !glance {
             let selected = selection.wrappedValue == row.id
             Button {
                 selection.wrappedValue = row.id
@@ -253,6 +293,11 @@ private struct RichTableGrid: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: index == expandingColumn ? .infinity : nil, alignment: alignment(column, index: index))
                 .accessibilityLabel("\(column.title): \(value)")
+        } else {
+            Text(value).monospacedDigit()
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: index == expandingColumn ? .infinity : nil, alignment: alignment(column, index: index))
         }
     }
 }

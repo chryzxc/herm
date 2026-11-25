@@ -80,8 +80,16 @@ extension WorkspaceActivitySidebar {
                 approvalPreferencesSection
             }
             if selectedSettingsCategory == .voice {
+                SettingsSection(title: "On-device speech input", subtitle: "", tint: .dockAccent) {
+                    VoiceRecognitionSettings(status: (model.notchVoiceNoticeTarget ?? model).voiceMic.recognitionStatus)
+                        .dockPadding(.vertical, -8)
+                }
                 SettingsSection(title: "Turn detection", subtitle: "When to reply", tint: .dockAccent) {
                     TurnModelSettingsView(store: .shared)
+                }
+                SettingsSection(title: "Wake word", subtitle: "Start talking from any app", tint: .dockAccent) {
+                    VoiceWakeWordSettings(bots: botMode)
+                        .dockPadding(.vertical, -8)
                 }
                 SettingsSection(title: "Voice stage", subtitle: "", tint: .dockAccent) {
                     VoiceStageSettings()
@@ -532,7 +540,8 @@ extension WorkspaceActivitySidebar {
             guard let matching else { return }
             selectedModelID = matching.id
         }
-        return AnyView(content)
+        let rowInset = selectedSettingsCategory == .voice ? DockSpacing.tight : 0
+        return AnyView(content.environment(\.settingsPreferenceRowVerticalInset, rowInset))
     }
 
     var runtimeSettingsSection: some View {
@@ -916,8 +925,7 @@ extension WorkspaceActivitySidebar {
                     ) {
                         DockOptionPicker(
                             selection: $captureChord,
-                            options: QuickCaptureChord.allCases.filter { $0 == .off || $0 != windowCaptureChord }
-                                .map { ($0, $0.title) }
+                            options: chordOptions(excluding: windowCaptureChord, voiceChord)
                         ).accessibilityLabel("Quick capture")
                     }
                     Divider().overlay(Color.dockBorderLight)
@@ -927,14 +935,28 @@ extension WorkspaceActivitySidebar {
                     ) {
                         DockOptionPicker(
                             selection: $windowCaptureChord,
-                            options: QuickCaptureChord.allCases.filter { $0 == .off || $0 != captureChord }
-                                .map { ($0, $0.title) }
+                            options: chordOptions(excluding: captureChord, voiceChord)
                         ).accessibilityLabel("Capture window")
+                    }
+                    Divider().overlay(Color.dockBorderLight)
+                    SettingsPreferenceRow(
+                        title: "Talk to Herm",
+                        detail: "Start or end a voice conversation in the notch from any app."
+                    ) {
+                        DockOptionPicker(
+                            selection: $voiceChord,
+                            options: chordOptions(excluding: captureChord, windowCaptureChord)
+                        ).accessibilityLabel("Talk to Herm")
                     }
                 }
                 .dockPadding(.vertical, -8)
             }
         }
+    }
+
+    /// One chord per action; Off is always offered.
+    func chordOptions(excluding taken: QuickCaptureChord...) -> [(QuickCaptureChord, String)] {
+        QuickCaptureChord.allCases.filter { $0 == .off || !taken.contains($0) }.map { ($0, $0.title) }
     }
 
     var notificationPreferencesSection: some View {
@@ -1004,7 +1026,7 @@ extension WorkspaceActivitySidebar {
                 SettingsPreferenceRow(
                     title: "Explain approvals with Apple Intelligence",
                     detail: OnDeviceAssist.isAvailable
-                        ? "Apple Intelligence is available on this Mac. When an approval arrives, its title and details go to Apple's on-device model, which adds a one-line explanation to the banner, labeled as Apple Intelligence. It runs locally and nothing is sent to Apple or Hermes."
+                        ? "Apple Intelligence is available on this Mac. When an approval arrives, its title and details go to Apple's on-device model, which explains the action in the banner and in voice when needed. It runs locally and nothing is sent to Apple or Hermes."
                         : "Unavailable. Needs macOS 26 or later on a Mac with Apple Intelligence turned on in System Settings."
                 ) {
                     settingsSwitch(isOn: $explainsApprovalsOnDevice)

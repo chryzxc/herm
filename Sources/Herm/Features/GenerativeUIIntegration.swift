@@ -23,13 +23,14 @@ enum GenerativeUIIntegration {
             reference: RichFeatureRegistry.sessionReference(context: context))
     }
 
-    /// The `herm` plugin serves the rules and this chat's records; without it the prompt carries them.
+    /// Remind the model on each chat turn. The plugin still serves the full catalog and loaded records.
     static func preparePrompt(
         _ text: String, enabled: Bool = isEnabled, context: RichGenerationContext = RichGenerationContext(),
         servedByPlugin: Bool = HermPlugin.isLoaded
     ) -> String {
-        guard enabled, !servedByPlugin else { return text }
-        return displayUserText(text) + "\n\n" + RichFeatureRegistry.instructions(context: context)
+        let request = displayUserText(text)
+        guard enabled else { return request }
+        return request + "\n\n" + RichFeatureRegistry.instructions(context: context, servedByPlugin: servedByPlugin)
     }
 
     /// Text projections remain readable even when visual rendering is disabled.
@@ -72,10 +73,11 @@ enum GenerativeUIIntegration {
 
     @MainActor @ViewBuilder
     static func renderReply<Content: View>(
-        _ text: String, streaming: Bool = false, enabled: Bool? = nil,
+        _ text: String, streaming: Bool = false, enabled: Bool? = nil, visualsOnly: Bool = false,
         @ViewBuilder fallback: () -> Content
     ) -> some View {
-        GenerativeReply(text: text, streaming: streaming, override: enabled, fallback: fallback())
+        GenerativeReply(
+            text: text, streaming: streaming, override: enabled, visualsOnly: visualsOnly, fallback: fallback())
     }
 }
 
@@ -114,6 +116,7 @@ private struct GenerativeReply<Content: View>: View {
     let text: String
     let streaming: Bool
     let override: Bool?
+    let visualsOnly: Bool
     let fallback: Content
     @AppStorage(GenerativeUIIntegration.preferenceKey) private var enabled = true
     @State private var parsed: RichDocument?
@@ -126,7 +129,9 @@ private struct GenerativeReply<Content: View>: View {
             if let request {
                 let document = parsedRequest?.canPresent(whileParsing: request) == true ? parsed : nil
                 if override ?? enabled {
-                    RichDocumentView(document: document ?? .preparing, enhancesMarkdown: !streaming)
+                    RichDocumentView(
+                        document: document ?? .preparing, enhancesMarkdown: !streaming, visualsOnly: visualsOnly,
+                        readOnlySurfaces: streaming || (document != nil && parsedRequest?.streaming == true))
                 } else {
                     MarkdownMessageView(markdown: document?.plainText ?? GenerativeUIIntegration.plainText(text))
                 }
@@ -141,7 +146,7 @@ private struct GenerativeReply<Content: View>: View {
                 return
             }
             let value = await RichDocumentCache.shared.document(
-                request.source, identity: request.identity, streaming: request.streaming)
+                request.source, streaming: request.streaming)
             guard !Task.isCancelled else { return }
             parsed = value
             parsedRequest = request

@@ -74,9 +74,11 @@
         </dict>
     </array>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>Herm shows your events beside Hermes' scheduled runs and can attach them to a chat. It never changes your calendar.</string>
+    <string>Herm shows your events beside Hermes' scheduled runs and can create calendar blocks you confirm by voice.</string>
     <key>NSRemindersFullAccessUsageDescription</key>
-    <string>Herm shows reminders with due dates on its Calendar page and can turn them into Kanban tasks. It never changes your reminders.</string>
+    <string>Herm shows reminders on its Calendar page and creates reminders you confirm by voice.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>Herm matches a spoken name to an email address or phone number for a voice draft.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Herm uses the microphone to transcribe your spoken prompts.</string>
     <key>NSAudioCaptureUsageDescription</key>

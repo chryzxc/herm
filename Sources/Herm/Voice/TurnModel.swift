@@ -6,7 +6,7 @@ import SwiftUI
 /// Smart Turn v3.2 (pipecat-ai, BSD-2-Clause) as a Core ML build: from the
 /// last 8s of speech it tells whether the speaker finished their thought or
 /// is pausing mid-sentence, using intonation rather than silence alone.
-/// Downloaded on request from Settings and verified against pinned hashes.
+/// Downloaded on launch unless the user opts out, and verified against pinned hashes.
 @MainActor
 final class TurnModelStore: ObservableObject {
     static let shared = TurnModelStore()
@@ -20,6 +20,8 @@ final class TurnModelStore: ObservableObject {
 
     @Published private(set) var phase: Phase = .notInstalled
     private(set) var predictor: TurnPredictor?
+    private let defaults: UserDefaults
+    private let directory: URL
     private var download: Task<Void, Never>?
     private var transfer: URLSessionDownloadTask?
 
@@ -37,34 +39,59 @@ final class TurnModelStore: ObservableObject {
         (Double(completedBytes) + min(max(fraction, 0), 1) * Double(fileBytes)) / Double(downloadSize)
     }
 
-    private static var directory: URL {
+    private static let automaticInstallOptOutKey = "herm.voice.turnModel.autoInstallOptOut"
+
+    private static var modelDirectory: URL {
         (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
                 "Library/Application Support", isDirectory: true))
             .appendingPathComponent("Herm/Models/smart_turn.mlmodelc", isDirectory: true)
     }
 
-    private init() {
-        guard FileManager.default.fileExists(atPath: Self.directory.path) else { return }
-        load()
+    init(defaults: UserDefaults = .standard, directory: URL? = nil) {
+        self.defaults = defaults
+        self.directory = directory ?? Self.modelDirectory
+        if FileManager.default.fileExists(atPath: self.directory.path) { load() }
+    }
+
+    static func prepareOnLaunch() {
+        // Leave loading an existing Core ML model to the first voice or Settings access.
+        guard !FileManager.default.fileExists(atPath: modelDirectory.path), shared.shouldInstallAutomatically else {
+            return
+        }
+        shared.install()
+    }
+
+    var shouldInstallAutomatically: Bool {
+        phase == .notInstalled && !defaults.bool(forKey: Self.automaticInstallOptOutKey)
     }
 
     func install() {
-        guard download == nil else { return }
+        guard download == nil, phase != .installed else { return }
+        defaults.removeObject(forKey: Self.automaticInstallOptOutKey)
         phase = .downloading(0)
-        download = Task { [weak self] in
+        download = Task { [self] in
             let staging = FileManager.default.temporaryDirectory.appendingPathComponent(
                 "herm-smart-turn-\(UUID().uuidString)", isDirectory: true)
-            defer { try? FileManager.default.removeItem(at: staging) }
+            defer {
+                download = nil
+                transfer = nil
+                try? FileManager.default.removeItem(at: staging)
+            }
             do {
                 var done = 0
                 for file in Self.files {
+                    try Task.checkCancellation()
                     let base = done
-                    let fetched = try await self?.fetch(Self.repository + file.path) { fraction in
-                        self?.phase = .downloading(
-                            Self.downloadProgress(completedBytes: base, fileBytes: file.size, fraction: fraction))
+                    let fetched = try await fetch(Self.repository + file.path) { [weak self] fraction in
+                        guard let self, self.download?.isCancelled == false,
+                            case .downloading(let previous) = self.phase
+                        else { return }
+                        let progress = Self.downloadProgress(
+                            completedBytes: base, fileBytes: file.size, fraction: fraction)
+                        self.phase = .downloading(max(previous, progress))
                     }
-                    guard let fetched else { return }
+                    defer { try? FileManager.default.removeItem(at: fetched) }
                     try Task.checkCancellation()
                     let digest = SHA256.hash(data: try Data(contentsOf: fetched)).map { String(format: "%02x", $0) }
                         .joined()
@@ -76,24 +103,24 @@ final class TurnModelStore: ObservableObject {
                     done += file.size
                 }
                 try FileManager.default.createDirectory(
-                    at: Self.directory.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try? FileManager.default.removeItem(at: Self.directory)
-                try FileManager.default.moveItem(at: staging, to: Self.directory)
-                self?.download = nil
-                self?.load()
+                    at: directory.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? FileManager.default.removeItem(at: directory)
+                try FileManager.default.moveItem(at: staging, to: directory)
+                load()
             } catch {
-                self?.download = nil
-                self?.phase =
+                phase =
                     error is CancellationError || (error as? URLError)?.code == .cancelled
                     ? .notInstalled
                     : .failed(
                         error is TurnModelError
-                            ? "The download didn't match the expected model." : error.localizedDescription)
+                            ? "The download didn't match the expected model."
+                            : HermesDiagnosticsService.safeSummary(error.localizedDescription))
             }
         }
     }
 
     func cancel() {
+        defaults.set(true, forKey: Self.automaticInstallOptOutKey)
         download?.cancel()
         transfer?.cancel()
     }
@@ -101,7 +128,7 @@ final class TurnModelStore: ObservableObject {
     func remove() {
         cancel()
         predictor = nil
-        try? FileManager.default.removeItem(at: Self.directory)
+        try? FileManager.default.removeItem(at: directory)
         phase = .notInstalled
     }
 
@@ -109,7 +136,7 @@ final class TurnModelStore: ObservableObject {
         do {
             let configuration = MLModelConfiguration()
             configuration.computeUnits = .all
-            predictor = TurnPredictor(model: try MLModel(contentsOf: Self.directory, configuration: configuration))
+            predictor = TurnPredictor(model: try MLModel(contentsOf: directory, configuration: configuration))
             phase = .installed
         } catch {
             predictor = nil
@@ -182,30 +209,52 @@ final class TurnAudio: @unchecked Sendable {
     private let lock = NSLock()
     private var samples: [Float] = []
     private var converter: AVAudioConverter?
+    private var conversionBuffer: AVAudioPCMBuffer?
+    private var enabled = false
     private let format = AVAudioFormat(
         commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
 
-    /// Called on the audio thread only.
-    func append(_ buffer: AVAudioPCMBuffer) {
-        if converter?.inputFormat != buffer.format { converter = AVAudioConverter(from: buffer.format, to: format) }
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * format.sampleRate / buffer.format.sampleRate) + 32
-        guard let converter, let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return }
-        nonisolated(unsafe) var supplied = false
-        nonisolated(unsafe) let source = buffer
-        var error: NSError?
-        converter.convert(to: output, error: &error) { _, status in
-            if supplied {
-                status.pointee = .noDataNow
-                return nil
+    var isEnabled: Bool {
+        get { lock.withLock { enabled } }
+        set {
+            lock.withLock {
+                guard enabled != newValue else { return }
+                enabled = newValue
+                if !enabled {
+                    samples.removeAll()
+                    converter = nil
+                    conversionBuffer = nil
+                }
             }
-            supplied = true
-            status.pointee = .haveData
-            return source
         }
-        guard error == nil, let channel = output.floatChannelData?[0] else { return }
-        let converted = UnsafeBufferPointer(start: channel, count: Int(output.frameLength))
+    }
+
+    /// Called on the audio thread. Wake-only listening never resamples for Smart Turn.
+    func append(_ buffer: AVAudioPCMBuffer) {
         lock.withLock {
-            samples.append(contentsOf: converted)
+            guard enabled else { return }
+            if converter?.inputFormat != buffer.format { converter = AVAudioConverter(from: buffer.format, to: format) }
+            let capacity =
+                AVAudioFrameCount(
+                    Double(buffer.frameLength) * format.sampleRate / buffer.format.sampleRate) + 32
+            if (conversionBuffer?.frameCapacity ?? 0) < capacity {
+                conversionBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity)
+            }
+            guard let converter, let output = conversionBuffer else { return }
+            nonisolated(unsafe) var supplied = false
+            nonisolated(unsafe) let source = buffer
+            var error: NSError?
+            converter.convert(to: output, error: &error) { _, status in
+                if supplied {
+                    status.pointee = .noDataNow
+                    return nil
+                }
+                supplied = true
+                status.pointee = .haveData
+                return source
+            }
+            guard error == nil, let channel = output.floatChannelData?[0] else { return }
+            samples.append(contentsOf: UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
             if samples.count > 2 * TurnPredictor.windowSamples {
                 samples.removeFirst(samples.count - TurnPredictor.windowSamples)
             }

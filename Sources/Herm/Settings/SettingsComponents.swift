@@ -176,7 +176,12 @@ struct SettingsSection<Content: View>: View {
     }
 }
 
+extension EnvironmentValues {
+    @Entry var settingsPreferenceRowVerticalInset: CGFloat = 0
+}
+
 struct SettingsPreferenceRow<Control: View>: View {
+    @Environment(\.settingsPreferenceRowVerticalInset) private var verticalInset
     let title: String
     let detail: String
     @ViewBuilder let control: () -> Control
@@ -188,6 +193,7 @@ struct SettingsPreferenceRow<Control: View>: View {
             HStack(spacing: DockSpacing.control) { control() }
         }
         .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+        .dockPadding(.vertical, verticalInset)
     }
 
     private var summary: some View {

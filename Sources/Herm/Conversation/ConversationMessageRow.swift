@@ -445,49 +445,18 @@ struct ConversationMessageRow: View, Equatable {
         return "Steering · \(status)"
     }
 
-    private enum AssistantBlock {
-        case markdown(String)
-        case image(String)
-        case files([String])
-    }
-
-    /// Merges consecutive non-image attachments into one block so they render as a single card.
-    private static func groupFiles(_ segments: [ChatMediaSegment]) -> [AssistantBlock] {
-        var blocks: [AssistantBlock] = []
-        for segment in segments {
-            switch segment {
-            case .markdown(let text): blocks.append(.markdown(text))
-            case .media(let path)
-            where ArtifactService.kind(for: path) == .image
-                || (ArtifactOpener.url(path).map { ChatVideoPreview.supports($0) } ?? false):
-                blocks.append(.image(path))
-            case .media(let path):
-                if case .files(let paths)? = blocks.last {
-                    blocks[blocks.count - 1] = .files(paths + [path])
-                } else {
-                    blocks.append(.files([path]))
-                }
-            }
-        }
-        return blocks
+    private static func inlineAttachment(_ path: String) -> Bool {
+        ArtifactService.kind(for: path) == .image
+            || (ArtifactOpener.url(path).map { ChatVideoPreview.supports($0) } ?? false)
     }
 
     @ViewBuilder
     private var assistantBody: some View {
-        GenerativeUIIntegration.renderReply(message.text) { standardAssistantBody }
-        if RichDocument.mentionsSurface(message.text), !changes.isEmpty {
-            ConversationChangesCard(files: ConversationChangeSummary.merge(files: changes, delivered: []))
-        }
-    }
-
-    @ViewBuilder
-    private var standardAssistantBody: some View {
+        // Split deliveries before rich rendering, so a rich block cannot hide sibling attachments.
         let segments = ChatMediaSegment.split(
             message.text, delivered: ArtifactService.deliveredFiles(in: message.activity))
         let delivered = segments.compactMap { segment -> String? in
-            guard case .media(let path) = segment, ArtifactService.kind(for: path) != .image,
-                !(ArtifactOpener.url(path).map { ChatVideoPreview.supports($0) } ?? false)
-            else { return nil }
+            guard case .media(let path) = segment, !Self.inlineAttachment(path) else { return nil }
             return path
         }
         let files = ConversationChangeSummary.merge(files: changes, delivered: delivered)
@@ -495,13 +464,13 @@ struct ConversationMessageRow: View, Equatable {
             messageMarkdownView(message.text)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(Self.groupFiles(segments).enumerated()), id: \.offset) { _, block in
-                    switch block {
+                ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                    switch segment {
                     case .markdown(let text):
                         messageMarkdownView(text)
-                    case .image(let path):
+                    case .media(let path) where Self.inlineAttachment(path):
                         ChatMediaAttachmentCard(path: path)
-                    case .files:
+                    case .media:
                         EmptyView()
                     }
                 }
@@ -511,8 +480,10 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     private func messageMarkdownView(_ markdown: String) -> some View {
-        GenerativeUIIntegration.renderMarkdown(markdown.trimmingCharacters(in: .newlines))
-            .fixedSize(horizontal: false, vertical: true)
+        let text = markdown.trimmingCharacters(in: .newlines)
+        return GenerativeUIIntegration.renderReply(text) {
+            GenerativeUIIntegration.renderMarkdown(text).fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var userMessageReaction: some View {

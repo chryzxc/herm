@@ -30,7 +30,8 @@ struct HermesLocalProcessOutput {
 
 enum HermesLocalProcess {
     static func capture(
-        _ executable: String, arguments: [String], timeout: TimeInterval
+        _ executable: String, arguments: [String], timeout: TimeInterval,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) async throws -> HermesLocalProcessOutput {
         let cancellation = HermesLocalProcessCancellation()
         let deadline = Date.now.addingTimeInterval(timeout)
@@ -42,7 +43,7 @@ enum HermesLocalProcess {
                     at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
                 defer { try? FileManager.default.removeItem(at: root) }
                 return try run(
-                    executable, arguments: arguments, environment: ProcessInfo.processInfo.environment,
+                    executable, arguments: arguments, environment: environment,
                     root: root, deadline: deadline, maxBytes: 4 * 1_024 * 1_024, cancellation: cancellation)
             }.value
         } onCancel: {

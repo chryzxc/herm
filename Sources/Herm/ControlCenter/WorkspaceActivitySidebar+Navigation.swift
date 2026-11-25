@@ -860,7 +860,7 @@ extension WorkspaceActivitySidebar {
             model.requestComposerFocus()
         case .focusComposer: model.requestComposerFocus()
         case .stop: model.stop()
-        case .voice: model.startVoiceConversation()
+        case .voice: model.voiceCapture.onStartNotchVoice?()
         case .refresh:
             control.refresh(forceCapabilities: true)
             Task { await refreshRepository() }

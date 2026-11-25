@@ -82,6 +82,8 @@ struct EdgeDockPlacement: Equatable {
 enum EdgeNotchMetrics {
     static let fallbackWidth: CGFloat = 190
 
+    static func hasCameraHousing(_ screen: NSScreen) -> Bool { screen.safeAreaInsets.top > 0 }
+
     static func notchSize(for screen: NSScreen) -> CGSize {
         let top = screen.safeAreaInsets.top
         if top > 0, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {

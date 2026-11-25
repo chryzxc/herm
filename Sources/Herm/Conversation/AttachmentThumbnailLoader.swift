@@ -43,6 +43,64 @@ actor AttachmentThumbnailLoader {
         return image
     }
 
+    private static let maximumRemoteBytes = 6 * 1_048_576
+    private static let remoteSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 15
+        return URLSession(configuration: configuration, delegate: ImageRedirectBlocker(), delegateQueue: nil)
+    }()
+
+    private final class ImageRedirectBlocker: NSObject, URLSessionTaskDelegate {
+        func urlSession(
+            _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+        ) {
+            completionHandler(nil)
+        }
+    }
+
+    func galleryImage(at url: URL, loadRequested: Bool) async -> CGImage? {
+        guard RichResourcePolicy.url(url.absoluteString, image: true) == url else { return nil }
+        if url.scheme == "data" { return image(at: url) }
+        guard loadRequested || RichResourcePolicy.previewsGalleryImageAutomatically(url) else { return nil }
+        let key = "gallery|\(url.absoluteString)" as NSString
+        if let entry = cache.object(forKey: key) { return entry.image }
+        do {
+            let (bytes, response) = try await Self.remoteSession.bytes(from: url)
+            guard let response = response as? HTTPURLResponse, Self.acceptsGalleryImage(response) else {
+                bytes.task.cancel()
+                return nil
+            }
+            var data = Data()
+            if response.expectedContentLength > 0 { data.reserveCapacity(Int(response.expectedContentLength)) }
+            for try await byte in bytes {
+                guard data.count < Self.maximumRemoteBytes else {
+                    bytes.task.cancel()
+                    return nil
+                }
+                data.append(byte)
+            }
+            try Task.checkCancellation()
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                let image = Self.thumbnail(from: source, maximumPixelSize: Self.maximumPixelSize)
+            else { return nil }
+            cache.setObject(Entry(image), forKey: key, cost: image.bytesPerRow * image.height)
+            return image
+        } catch {
+            return nil
+        }
+    }
+
+    static func acceptsGalleryImage(_ response: HTTPURLResponse) -> Bool {
+        (200..<300).contains(response.statusCode)
+            && response.expectedContentLength <= Int64(maximumRemoteBytes)
+            && ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"].contains(response.mimeType)
+    }
+
     static func thumbnail(from source: CGImageSource, maximumPixelSize: Int) -> CGImage? {
         CGImageSourceCreateThumbnailAtIndex(
             source, 0,

@@ -374,7 +374,7 @@ extension ControlCenterModel {
         }
     }
 
-    func removeCron(_ job: CronSummary) {
+    func removeCron(_ job: CronSummary, expectedTimerDeadline: Date? = nil) {
         guard cronControlAvailable, let rpc else {
             reportActionError(
                 "Could not delete automation", message: "Automation control is unavailable through this Hermes gateway."
@@ -391,6 +391,14 @@ extension ControlCenterModel {
             guard clientBindingGeneration == bindingGeneration else { return }
             defer { if clientBindingGeneration == bindingGeneration { finishAction(actionID) } }
             do {
+                if let expectedTimerDeadline {
+                    let current = try await rpc.cronJob(job, profileID: profile)
+                    guard clientBindingGeneration == bindingGeneration else { return }
+                    guard AssistantTimers.due(current) == expectedTimerDeadline else {
+                        throw QuickDraftError.message(
+                            "This timer changed. Open Automations to check its current details.")
+                    }
+                }
                 _ = try await rpc.removeCron(jobID: job.id, profileID: profile)
                 guard clientBindingGeneration == bindingGeneration else { return }
                 refresh()

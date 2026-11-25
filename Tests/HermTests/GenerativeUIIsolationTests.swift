@@ -23,11 +23,33 @@ struct GenerativeUIIsolationTests {
         let context = RichGenerationContext(
             profileID: "p", sessionID: "s", availableRecords: [.trace],
             recordReferences: [.init(kind: .trace, id: "s")])
-        let prompt = GenerativeUIIntegration.preparePrompt("Explain this", enabled: true, context: context)
+        let prompt = GenerativeUIIntegration.preparePrompt(
+            "Explain this", enabled: true, context: context, servedByPlugin: false)
         #expect(prompt.contains("Envelope:"))
         #expect(prompt.contains("record.trace (v2)"))
         #expect(!prompt.contains("call herm_reference"))
         #expect(GenerativeUIIntegration.displayUserText(prompt) == "Explain this")
+    }
+
+    @Test func enabledChatStillRequestsVisualsWhenThePluginServesTheCatalog() throws {
+        let request = "What changed in the release?"
+        let prepared = GenerativeUIIntegration.preparePrompt(request, enabled: true, servedByPlugin: true)
+        #expect(prepared.contains("For written chat: use a fenced `herm-ui` JSON surface by default for every answer."))
+        #expect(prepared.contains("Honor explicit requests for plain text, raw code, or another exact format."))
+        #expect(prepared.contains("herm_reference"))
+        #expect(!prepared.contains("Available blocks:"))
+        let examples = prepared.split(separator: "\n").filter {
+            $0.hasPrefix("Short answer: ") || $0.hasPrefix("Native table: ")
+        }
+        #expect(examples.count == 2)
+        for line in examples {
+            let example = try #require(line.split(separator: ":", maxSplits: 1).last)
+            let surface = try JSONDecoder().decode(RichSurface.self, from: Data(example.utf8))
+            #expect(surface.validate())
+        }
+        #expect(GenerativeUIIntegration.displayUserText(prepared) == request)
+        #expect(GenerativeUIIntegration.preparePrompt(prepared, enabled: true, servedByPlugin: true) == prepared)
+        #expect(GenerativeUIIntegration.preparePrompt(prepared, enabled: false, servedByPlugin: true) == request)
     }
 
     @Test func preferenceDefaultsOnAndChangesImmediately() {
@@ -41,10 +63,10 @@ struct GenerativeUIIsolationTests {
         #expect(GenerativeUIIntegration.isEnabled)
         let prepared = GenerativeUIIntegration.preparePrompt(request)
         #expect(prepared.hasPrefix(request))
-        #expect(prepared.contains("When an interactive or structured view helps, use a fenced `herm-ui` JSON object."))
+        #expect(prepared.contains("For written chat: use a fenced `herm-ui` JSON surface by default for every answer."))
         #expect(prepared.contains("return a working self-contained HTML surface"))
         #expect(prepared.contains("Wire inputs to update results immediately."))
-        #expect(prepared.contains("Respect explicit requests for plain text, code listings, or project/file changes"))
+        #expect(prepared.contains("Honor explicit requests for plain text, raw code, or another exact format."))
         #expect(GenerativeUIIntegration.displayUserText(prepared) == request)
         #expect(GenerativeUIIntegration.preparePrompt(prepared) == prepared)
         UserDefaults.standard.set(false, forKey: key)
@@ -137,6 +159,35 @@ struct GenerativeUIIsolationTests {
         #expect(RichDocument.preparing.segments == [.pending])
     }
 
+    @Test func closedVisualsDoNotWaitForProseButInteractiveContentStillDoes() async throws {
+        let diagram = "```mermaid\ngraph TD; A-->B\n```"
+        let chart = """
+            ```herm-ui
+            {"version":1,"id":"chart","title":"Comparison","fallback":"One and two","kind":"native",
+            "blocks":[{"type":"chart","style":"bar","points":[{"label":"A","value":1},{"label":"B","value":2}]}]}
+            ```
+            """
+        let prose = "The rest of the explanation is still streaming."
+        let open = String(chart.dropLast(3))
+        #expect(RichDocument(open, streaming: true).segments == [.pending])
+        let liveText = chart + "\n" + surface + "\n" + diagram + "\n" + prose
+        let cache = RichDocumentCache()
+        let live = await cache.document(liveText, streaming: true)
+        #expect(live.segments.count == 4)
+        #expect(live.segments[0].showsInVoiceGlance)
+        #expect(live.segments[1] == .pending)
+        #expect(live.segments[2] == .diagram("graph TD; A-->B"))
+        #expect(live.segments[3] == .markdown(prose))
+
+        let final = await cache.document(liveText, streaming: false)
+        #expect(final.segments[0] == live.segments[0])
+        guard case .surface(let artifact, _) = final.segments[1] else {
+            Issue.record("Closed HTML did not become available after the reply completed.")
+            return
+        }
+        #expect(artifact.kind == .html)
+    }
+
     @Test func pendingReplyKeepsItsHeightBetweenStreamingChunks() async throws {
         func reply(_ text: String) -> some View {
             GenerativeUIIntegration.renderReply(text, streaming: true, enabled: true) {
@@ -151,8 +202,11 @@ struct GenerativeUIIsolationTests {
         window.contentView = host
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
-        try await Task.sleep(for: .milliseconds(100))
-        host.layoutSubtreeIfNeeded()
+        // The prose appears after an async parse; under parallel test load that outlasts a fixed sleep.
+        for _ in 0..<100 where host.fittingSize.height <= 44 {
+            try await Task.sleep(for: .milliseconds(20))
+            host.layoutSubtreeIfNeeded()
+        }
         let height = host.fittingSize.height
         #expect(height > 44)
         for chunk in ["\"version\":1,", "\"title\":\"Interactive", " view\",", "\"html\":\"<main>"] {

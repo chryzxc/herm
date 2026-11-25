@@ -2,29 +2,57 @@ import SwiftUI
 
 struct RichCodeView: View {
     let code: RichCode
+    @Environment(\.richGlance) private var glance
+    @Environment(\.richVoiceContext) private var voiceContext
+
+    private var inVoicePreview: Bool { glance && voiceContext != nil }
+    private var lineCount: Int { code.code.split(separator: "\n", omittingEmptySubsequences: false).count }
+
+    private var codeText: some View {
+        Text(code.code).dockFont(.code, design: .monospaced).textSelection(.enabled)
+            .fixedSize(horizontal: true, vertical: true).dockPadding(12)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    if let filename = code.filename { Text(filename).fontWeight(.semibold).textSelection(.enabled) }
-                    if let language = code.language { Text(language).foregroundStyle(Color.dockSecondaryText) }
+        VStack(alignment: .leading, spacing: 0) {
+            if code.filename != nil || code.language != nil || !glance {
+                HStack(spacing: 8) {
+                    if let filename = code.filename {
+                        Text(filename).dockFont(.metadata, weight: .semibold, design: .monospaced)
+                            .foregroundStyle(Color.dockSecondaryText).lineLimit(1).truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+                    if let language = code.language {
+                        Text(language).dockPill(tint: .dockSecondaryText, compact: true)
+                    }
+                    Spacer(minLength: 0)
+                    if !glance {
+                        DockCopyButton(
+                            code.code, label: "Copy code", accessibilityLabel: "Copy generated code",
+                            presentation: .icon)
+                    }
                 }
-                Spacer(minLength: 0)
-                DockCopyButton(code.code, label: "Copy code", accessibilityLabel: "Copy generated code")
+                .dockPadding(.horizontal, 12).dockPadding(.vertical, 6)
+                Divider().overlay(Color.dockBorderLight)
             }
-            ScrollView([.horizontal, .vertical]) {
-                Text(code.code).dockFont(.code, design: .monospaced).textSelection(.enabled)
-                    .fixedSize(horizontal: true, vertical: true).dockPadding(12)
-                    .dockPadding([.bottom, .trailing], 8)
+            if inVoicePreview {
+                // Let the voice card scroll the whole file vertically instead of nesting a second viewport.
+                horizontalCode
+            } else {
+                ScrollView(.vertical) { horizontalCode }
+                    .scrollIndicators(.never)
+                    .frame(height: min(glance ? 220 : 320, max(44, CGFloat(lineCount) * 17 + 24)))
             }
-            .frame(
-                height: min(
-                    320,
-                    max(64, CGFloat(code.code.split(separator: "\n", omittingEmptySubsequences: false).count) * 17 + 44)
-                )
-            )
-            .dockWell(.raised, role: .pane)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .dockWell(.sunken, role: .pane)
+    }
+
+    private var horizontalCode: some View {
+        ViewThatFits(in: .horizontal) {
+            codeText.frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView(.horizontal) { codeText }
+                .scrollIndicators(inVoicePreview ? .visible : .never)
         }
     }
 }
@@ -33,37 +61,44 @@ struct RichFindingsView: View {
     let findings: RichFindings
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(findings.items) { item in
-                VStack(alignment: .leading, spacing: 6) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .firstTextBaseline, spacing: DockSpacing.group) {
-                            Text(item.title).fontWeight(.semibold)
-                            Spacer(minLength: DockSpacing.control)
-                            severityLabel(item.severity)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    DockIcon(icon(item.severity), size: 13, weight: .fill, color: color(item.severity))
+                        .accessibilityLabel(item.severity.rawValue.capitalized)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.title).fontWeight(.semibold)
+                        if let location = item.location {
+                            Text(location).dockFont(.metadata, design: .monospaced)
+                                .foregroundStyle(Color.dockMetadataText)
                         }
-                        VStack(alignment: .leading, spacing: DockSpacing.micro) {
-                            Text(item.title).fontWeight(.semibold)
-                            severityLabel(item.severity)
+                        Text(item.detail).foregroundStyle(Color.dockSecondaryText)
+                        if let recommendation = item.recommendation {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                DockIcon(.arrowBendDownRight, size: 11, color: .dockMetadataText)
+                                Text(recommendation)
+                            }
+                            .dockPadding(.top, 2)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("Recommendation: " + recommendation)
                         }
                     }
-                    if let location = item.location {
-                        Text(location).dockFont(.code, design: .monospaced)
-                            .foregroundStyle(Color.dockSecondaryText)
-                    }
-                    Text(item.detail)
-                    if let recommendation = item.recommendation {
-                        Text("Recommendation: " + recommendation).foregroundStyle(Color.dockSecondaryText)
-                    }
-                }.textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                if item.id != findings.items.last?.id { Divider().overlay(Color.dockBorder) }
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .dockPadding(.vertical, 10)
+                if item.id != findings.items.last?.id { Divider().overlay(Color.dockBorderLight) }
             }
         }
     }
 
-    private func severityLabel(_ severity: RichFindings.Item.Severity) -> some View {
-        Text(severity.rawValue.capitalized).dockFont(.metadata, weight: .medium)
-            .foregroundStyle(color(severity)).dockPill(tint: color(severity), compact: true)
+    private func icon(_ severity: RichFindings.Item.Severity) -> Ph {
+        switch severity {
+        case .info: .info
+        case .warning: .warning
+        case .critical: .warningOctagon
+        }
     }
 
     private func color(_ severity: RichFindings.Item.Severity) -> Color {
@@ -79,37 +114,43 @@ struct RichWorkflowView: View {
     let workflow: RichWorkflow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Reported snapshot").foregroundStyle(Color.dockSecondaryText)
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(workflow.items.enumerated()), id: \.element.id) { index, item in
-                HStack(alignment: .top, spacing: 12) {
-                    Text(String(index + 1)).monospacedDigit().foregroundStyle(Color.dockMetadataText)
-                        .frame(width: 24, alignment: .trailing)
-                    VStack(alignment: .leading, spacing: 6) {
-                        ViewThatFits(in: .horizontal) {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text(item.title).fontWeight(.semibold)
-                                Spacer(minLength: 12)
-                                status(item.status)
-                            }
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.title).fontWeight(.semibold)
-                                status(item.status)
-                            }
+                let last = index == workflow.items.count - 1
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(spacing: 4) {
+                        DockIcon(
+                            item.status.icon, size: 14, weight: item.status.outlined ? .regular : .fill,
+                            color: item.status.color
+                        )
+                        .frame(height: 16)
+                        if !last {
+                            Rectangle().fill(Color.dockBorder).frame(width: 1.5).frame(maxHeight: .infinity)
                         }
-                        if let detail = item.detail { Text(detail) }
+                    }
+                    .frame(width: 16)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(item.title).fontWeight(.semibold)
+                            Spacer(minLength: 8)
+                            Text(item.status.rawValue.capitalized)
+                                .dockPill(tint: item.status.color, compact: true).fixedSize()
+                        }
+                        if let detail = item.detail { Text(detail).foregroundStyle(Color.dockSecondaryText) }
                         if let evidence = item.evidence {
-                            Text("Evidence: " + evidence).foregroundStyle(Color.dockSecondaryText)
+                            Text(evidence).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                         }
-                    }.textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .dockPadding(.bottom, last ? 0 : 14)
+                    .textSelection(.enabled)
                 }
-                if item.id != workflow.items.last?.id { Divider().overlay(Color.dockBorder) }
+                .accessibilityElement(children: .combine)
             }
+            Text("Reported snapshot").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                .dockPadding(.top, 10)
         }
-    }
-
-    private func status(_ status: RichWorkflow.Item.Status) -> some View {
-        Text(status.rawValue.capitalized).foregroundStyle(status.color).fixedSize()
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -119,7 +160,22 @@ extension RichWorkflow.Item.Status {
         case .passed: .dockSuccess
         case .failed: .dockDestructive
         case .blocked: .dockWarning
-        case .proposed, .running, .skipped: .dockSecondaryText
+        case .running: .dockInfo
+        case .proposed, .skipped: .dockSecondaryText
+        }
+    }
+
+    /// Open statuses read as outlines; settled ones as solid marks.
+    var outlined: Bool { self == .proposed || self == .skipped || self == .running }
+
+    var icon: Ph {
+        switch self {
+        case .passed: .checkCircle
+        case .failed: .xCircle
+        case .blocked: .warningCircle
+        case .running: .circleNotch
+        case .proposed: .circleDashed
+        case .skipped: .minusCircle
         }
     }
 }

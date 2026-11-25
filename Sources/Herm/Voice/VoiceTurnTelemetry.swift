@@ -9,6 +9,7 @@ struct VoiceTurnTelemetry: Equatable {
     private(set) var requestSubmittedAt: Date?
     private(set) var firstResponseAt: Date?
     private(set) var completedAt: Date?
+    private(set) var firstAudioAt: Date?
     private(set) var wasInterrupted = false
 
     mutating func beginListening(at date: Date = .now) {
@@ -17,6 +18,7 @@ struct VoiceTurnTelemetry: Equatable {
         requestSubmittedAt = nil
         firstResponseAt = nil
         completedAt = nil
+        firstAudioAt = nil
         wasInterrupted = false
     }
 
@@ -38,6 +40,11 @@ struct VoiceTurnTelemetry: Equatable {
         completedAt = date
     }
 
+    /// The first spoken sentence of the reply started playing.
+    mutating func startedSpeaking(at date: Date = .now) {
+        if firstAudioAt == nil, requestSubmittedAt != nil { firstAudioAt = date }
+    }
+
     mutating func markInterrupted() {
         wasInterrupted = true
     }
@@ -53,6 +60,30 @@ struct VoiceTurnTelemetry: Equatable {
             parts.append("DONE \(duration(completedAt.timeIntervalSince(requestSubmittedAt)))")
         }
         return parts.isEmpty ? "REQUEST SENT" : parts.joined(separator: " · ")
+    }
+
+    /// One log line of stage timings for tuning latency. Durations only: no
+    /// words from the turn, so it is safe for the debug log.
+    var timings: String? {
+        guard let requestSubmittedAt else { return nil }
+        var parts: [String] = []
+        if let listeningStartedAt, let transcriptReceivedAt {
+            parts.append("listen \(duration(transcriptReceivedAt.timeIntervalSince(listeningStartedAt)))")
+        }
+        if let transcriptReceivedAt {
+            parts.append("submit \(duration(requestSubmittedAt.timeIntervalSince(transcriptReceivedAt)))")
+        }
+        if let firstResponseAt {
+            parts.append("first token \(duration(firstResponseAt.timeIntervalSince(requestSubmittedAt)))")
+        }
+        if let firstAudioAt {
+            parts.append("first audio \(duration(firstAudioAt.timeIntervalSince(requestSubmittedAt)))")
+        }
+        if let completedAt {
+            parts.append("done \(duration(completedAt.timeIntervalSince(requestSubmittedAt)))")
+        }
+        if wasInterrupted { parts.append("interrupted") }
+        return "voice turn: " + parts.joined(separator: " · ")
     }
 
     private func duration(_ value: TimeInterval) -> String {

@@ -67,7 +67,7 @@ struct SessionSidebarFiltersTests {
             id: "approval", reference: .init(source: .hermesApproval, sourceID: "approval", sessionID: waiting.id),
             kind: .approval, title: "Approve", detail: "", createdAt: .distantPast, state: .open, actions: [.approve])
         var inputs = SessionNavSidebarSnapshot.Inputs(
-            activeSessionID: nil, activeStatus: nil, profileScopeID: "personal", agentDisplayName: "Herm",
+            activeSessionID: nil, activeStatus: nil, profileScopeID: "personal",
             isLoadingSessions: false, isCreatingSession: false, deletingSessionID: nil, renamingSessionID: nil,
             updatingSessionVisibilityID: nil, sessions: [other], sessionProjectionState: .ready([other]),
             activeSessions: [active, waiting], projects: [], projectIDBySessionID: [:], projectSessionsByProjectID: [:],

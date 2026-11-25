@@ -9,6 +9,8 @@ struct RichNativeBlockView: View {
     private var blockID: String { block.id ?? block.type.rawValue }
     private var selectionID: String { RichSelectionIdentity.block(blockID) }
     private var selected: String { state.snapshot.selected[selectionID] ?? "" }
+    @Environment(\.richGlance) private var glance
+    @Environment(\.richVoicePosition) private var voicePosition
 
     var body: some View {
         Group {
@@ -16,6 +18,7 @@ struct RichNativeBlockView: View {
             case .command(let command): RichCommandView(command: command)
             case .callout(let callout): RichCalloutView(callout: callout)
             case .breakdown(let breakdown): RichBreakdownView(breakdown: breakdown)
+            case .map(let map): RichMapView(place: map, interactive: !glance)
             case .faq(let questions):
                 VStack(alignment: .leading, spacing: DockSpacing.control) {
                     ForEach(questions.items) { item in
@@ -59,109 +62,224 @@ struct RichNativeBlockView: View {
         .foregroundStyle(Color.dockPrimaryText)
     }
 
+    /// One quiet inset holding every value; tiles are separated by space, not boxes.
     private func metricsView(_ metrics: RichMetrics) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), alignment: .leading)], alignment: .leading, spacing: 12) {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 128), spacing: 20, alignment: .topLeading)],
+            alignment: .leading, spacing: 16
+        ) {
             ForEach(metrics.items) { metric in
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Circle().fill(DockAccentColor.identity(for: metric.id).fill).frame(width: 6, height: 6)
-                        Text(metric.label).foregroundStyle(Color.dockSecondaryText)
+                            .accessibilityHidden(true)
+                        Text(metric.label).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                            .lineLimit(2)
                     }
-                    Text([metric.value, metric.unit].compactMap { $0 }.joined(separator: " "))
-                        .dockFont(.metric, weight: .semibold, design: .rounded).monospacedDigit()
-                        .textSelection(.enabled)
-                    if let comparison = metric.comparison { Text(comparison).foregroundStyle(Color.dockSecondaryText) }
+                    HStack(alignment: .firstTextBaseline, spacing: 3) {
+                        Text(metric.value).dockFont(.metric, weight: .semibold, design: .rounded)
+                        if let unit = metric.unit {
+                            Text(unit).dockFont(.rowTitle, weight: .medium).foregroundStyle(Color.dockSecondaryText)
+                        }
+                    }
+                    .monospacedDigit()
+                    .textSelection(.enabled)
+                    if let comparison = metric.comparison {
+                        Text(comparison).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                    }
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                .dockPadding(DockSpacing.group)
-                .dockWell(role: .pane)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .dockPadding(14)
+        .dockWell(role: .pane)
+    }
+
+    /// Options as columns against shared criteria rows; the chosen column is tinted.
+    private func comparisonView(_ comparison: RichComparison) -> some View {
+        let selected =
+            glance
+            ? voicePosition.option.flatMap { index in
+                comparison.options.indices.contains(index) ? comparison.options[index].id : nil
+            } : self.selected
+        let grid = Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+            GridRow {
+                Color.clear.frame(width: 1, height: 1).gridCellUnsizedAxes(.vertical)
+                ForEach(Array(comparison.options.enumerated()), id: \.element.id) { index, option in
+                    comparisonHeader(option, number: index + 1, isSelected: selected == option.id)
+                        .background(selected == option.id ? Color.dockAccent.opacity(0.08) : .clear)
+                }
+            }
+            ForEach(Array(comparison.criteria.enumerated()), id: \.offset) { row, criterion in
+                Divider().overlay(Color.dockBorderLight).gridCellUnsizedAxes(.horizontal)
+                GridRow {
+                    Text(criterion).foregroundStyle(Color.dockSecondaryText)
+                        .dockPadding(.vertical, 8).dockPadding(.trailing, 12)
+                    ForEach(comparison.options) { option in
+                        Text(option.values.indices.contains(row) ? option.values[row] : "—")
+                            .monospacedDigit()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .dockPadding(.vertical, 8).dockPadding(.horizontal, 10)
+                            .background(selected == option.id ? Color.dockAccent.opacity(0.08) : .clear)
+                    }
+                }
+            }
+        }
+        .textSelection(.enabled)
+        return VStack(alignment: .leading, spacing: 10) {
+            ViewThatFits(in: .horizontal) {
+                grid.frame(maxWidth: .infinity, alignment: .leading)
+                if glance {
+                    compactComparison(comparison, selected: selected)
+                } else {
+                    ScrollView(.horizontal) { grid.fixedSize().dockPadding(.bottom, 12) }
+                }
+            }
+            if let option = comparison.options.first(where: { $0.id == selected }), let detail = option.detail {
+                Text(detail).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
             }
         }
     }
 
-    private func comparisonView(_ comparison: RichComparison) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), alignment: .top)], alignment: .leading, spacing: 12) {
-            ForEach(comparison.options) { option in
-                VStack(alignment: .leading, spacing: 6) {
-                    Button {
-                        state.snapshot.selected[selectionID] = option.id
-                    } label: {
-                        HStack {
-                            Text(option.title).multilineTextAlignment(.leading)
-                            Spacer(minLength: 8)
-                            DockIcon(
-                                selected == option.id ? .checkCircle : .circle, size: 14,
-                                weight: selected == option.id ? .fill : .regular,
-                                color: selected == option.id ? .dockAccent : .dockMetadataText)
+    private func compactComparison(_ comparison: RichComparison, selected: String?) -> some View {
+        let key = RichVoicePreview.BlockKey(
+            surface: surface.id, index: surface.blocks?.firstIndex { $0.id == block.id } ?? 0)
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(comparison.options.enumerated()), id: \.element.id) { index, option in
+                let isSelected = option.id == selected
+                let anchor = RichVoicePreview.OptionAnchor(block: key, index: index)
+                VStack(alignment: .leading, spacing: DockSpacing.micro) {
+                    comparisonLabel(option, number: index + 1, isSelected: isSelected)
+                    ForEach(Array(comparison.criteria.enumerated()), id: \.offset) { row, criterion in
+                        HStack(alignment: .firstTextBaseline, spacing: DockSpacing.section) {
+                            Text(criterion).foregroundStyle(Color.dockSecondaryText)
+                            Spacer(minLength: DockSpacing.control)
+                            Text(option.values.indices.contains(row) ? option.values[row] : "—")
+                                .monospacedDigit().multilineTextAlignment(.trailing)
                         }
-                    }.buttonStyle(
-                        .dockSecondary)
-                    ForEach(Array(zip(comparison.criteria, option.values).enumerated()), id: \.offset) { _, pair in
-                        HStack(alignment: .top) {
-                            Text(pair.0).foregroundStyle(Color.dockSecondaryText)
-                            Spacer(minLength: 12)
-                            Text(pair.1).multilineTextAlignment(.trailing)
-                        }
+                        .accessibilityElement(children: .combine)
                     }
-                    if selected == option.id, let detail = option.detail { Text(detail).textSelection(.enabled) }
-                }.dockPadding(DockSpacing.group)
-                    .dockWell(role: .pane, stroke: selected == option.id ? Color.dockAccent : nil)
-                    .accessibilityAddTraits(selected == option.id ? .isSelected : [])
+                }
+                .dockPadding(.horizontal, DockSpacing.group)
+                .dockPadding(.vertical, DockSpacing.control)
+                .id(anchor)
+                if option.id != comparison.options.last?.id {
+                    Divider().overlay(Color.dockBorderLight).dockPadding(.horizontal, DockSpacing.group)
+                }
             }
+        }
+        .dockWell(.sunken, role: .pane)
+    }
+
+    private func comparisonLabel(_ option: RichComparison.Option, number: Int, isSelected: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
+            if glance {
+                Text("\(number)").dockFont(.metadata, weight: .semibold).monospacedDigit()
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .accessibilityLabel("Option \(number)")
+            }
+            Text(option.title).fontWeight(.semibold).multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            if isSelected {
+                DockIcon(.checkCircle, size: 13, weight: .fill, color: .dockAccent).accessibilityHidden(true)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder private func comparisonHeader(
+        _ option: RichComparison.Option, number: Int, isSelected: Bool
+    ) -> some View {
+        let label = comparisonLabel(option, number: number, isSelected: isSelected)
+            .dockPadding(.horizontal, 10).dockPadding(.vertical, 8)
+        if glance {
+            label
+        } else {
+            Button {
+                state.snapshot.selected[selectionID] = isSelected ? nil : option.id
+            } label: {
+                label.contentShape(Rectangle())
+            }
+            .buttonStyle(.dockHover)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
         }
     }
 
     private func checklistView(_ list: RichChoiceList) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             let checked = list.items.filter { state.snapshot.checked.contains(blockID + ":" + $0.id) }.count
-            HStack {
-                Text("Selected").foregroundStyle(Color.dockSecondaryText)
-                Spacer()
-                Text("\(checked) of \(list.items.count)").monospacedDigit()
+            HStack(spacing: 10) {
+                DockProgressBar(fraction: list.items.isEmpty ? 0 : Double(checked) / Double(list.items.count))
+                    .accessibilityLabel("Selected items")
+                Text("\(checked) of \(list.items.count) selected").dockFont(.metadata).monospacedDigit()
+                    .foregroundStyle(Color.dockSecondaryText).fixedSize()
             }
-            DockProgressBar(fraction: Double(checked) / Double(max(1, list.items.count)))
             ForEach(list.items) { item in
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Toggle(item.title, isOn: state.checked(blockID + ":" + item.id)).toggleStyle(.dockCheckbox)
                     if let detail = item.detail {
-                        Text(detail).foregroundStyle(Color.dockSecondaryText).dockPadding(.leading, 20)
-                            .textSelection(.enabled)
+                        Text(detail).dockFont(.metadata).foregroundStyle(Color.dockSecondaryText)
+                            .dockPadding(.leading, 22).textSelection(.enabled)
                     }
                 }
             }
         }
     }
 
+    /// A continuous rail of dated steps; details stay visible, selection only tints the marker.
     private func timelineView(_ list: RichChoiceList) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(list.items.enumerated()), id: \.element.id) { index, item in
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(spacing: 4) {
-                        Circle().fill(selected == item.id ? Color.dockAccent : DockAccentColor.teal.fill)
-                            .frame(width: 8, height: 8)
-                        if index < list.items.count - 1 {
-                            Rectangle().fill(Color.dockBorderLight).frame(width: 1, height: 20)
-                        }
-                    }.frame(width: 8).accessibilityHidden(true)
-                    Text(item.date ?? String(index + 1)).foregroundStyle(Color.dockMetadataText)
-                        .monospacedDigit().frame(width: 76, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Button(item.title) { state.snapshot.selected[selectionID] = item.id }.buttonStyle(.dockLink)
-                        if selected == item.id {
-                            if let detail = item.detail { Text(detail).textSelection(.enabled) }
-                            if let dependencies = item.dependencies, !dependencies.isEmpty {
-                                Text(
-                                    "After: "
-                                        + dependencies.compactMap { id in list.items.first { $0.id == id }?.title }
-                                        .joined(separator: ", ")
-                                )
-                                .foregroundStyle(Color.dockSecondaryText)
-                            }
+                let last = index == list.items.count - 1
+                let row = HStack(alignment: .top, spacing: 12) {
+                    VStack(spacing: 0) {
+                        Circle()
+                            .fill(selected == item.id ? Color.dockAccent : DockAccentColor.teal.fill)
+                            .frame(width: 9, height: 9)
+                            .dockPadding(.top, 4)
+                        if !last {
+                            Rectangle().fill(Color.dockBorder).frame(width: 1.5).frame(maxHeight: .infinity)
+                                .dockPadding(.top, 3)
                         }
                     }
-                }.dockPadding(.vertical, 8)
-                Divider().overlay(Color.dockBorderLight)
+                    .frame(width: 10)
+                    .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(item.title).fontWeight(.semibold).multilineTextAlignment(.leading)
+                            Spacer(minLength: 8)
+                            Text(item.date ?? "Step \(index + 1)").dockFont(.metadata).monospacedDigit()
+                                .foregroundStyle(Color.dockMetadataText).fixedSize()
+                        }
+                        if let detail = item.detail {
+                            Text(detail).foregroundStyle(Color.dockSecondaryText).multilineTextAlignment(.leading)
+                        }
+                        if let dependencies = item.dependencies, !dependencies.isEmpty {
+                            Text(
+                                "After "
+                                    + dependencies.compactMap { id in list.items.first { $0.id == id }?.title }
+                                    .joined(separator: ", ")
+                            )
+                            .dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
+                        }
+                    }
+                    .dockPadding(.bottom, last ? 0 : 14)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                if glance {
+                    row
+                } else {
+                    Button {
+                        state.snapshot.selected[selectionID] = selected == item.id ? nil : item.id
+                    } label: {
+                        row.contentShape(Rectangle())
+                    }
+                    .buttonStyle(.dockHover)
+                    .accessibilityAddTraits(selected == item.id ? .isSelected : [])
+                }
             }
         }
     }
@@ -171,6 +289,7 @@ private struct RichGraphView: View {
     let graph: RichGraph
     @Binding var selection: String
     @Binding var edgeSelection: String
+    @Environment(\.richGlance) private var glance
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ScrollView([.horizontal, .vertical]) {
@@ -204,11 +323,7 @@ private struct RichGraphView: View {
                         }
                     }
                     ForEach(graph.nodes) { node in
-                        Button(node.title) {
-                            selection = node.id
-                            edgeSelection = ""
-                        }.buttonStyle(.dockSecondary)
-                            .lineLimit(2).frame(width: 140, height: 44)
+                        nodeLabel(node).lineLimit(2).frame(width: 140, height: 44)
                             .overlay {
                                 if let status = node.status {
                                     RoundedRectangle(cornerRadius: 8).strokeBorder(status.color, lineWidth: 1.5)
@@ -238,14 +353,28 @@ private struct RichGraphView: View {
                 Text("\(title(edge.source)) → \(title(edge.target))\(edge.label.map { " · " + $0 } ?? "")")
                     .textSelection(.enabled)
             }
-            DisclosureGroup("Connections (\(graph.edges.count))") {
-                ForEach(Array(graph.edges.enumerated()), id: \.offset) { index, edge in
-                    Button("\(title(edge.source)) → \(title(edge.target))\(edge.label.map { " · " + $0 } ?? "")") {
-                        selection = ""
-                        edgeSelection = String(index)
-                    }.buttonStyle(.dockLink)
-                        .accessibilityAddTraits(edgeSelection == String(index) ? .isSelected : [])
-                }
+            if !glance, !graph.edges.isEmpty { connections }
+        }
+    }
+    @ViewBuilder private func nodeLabel(_ node: RichGraph.Node) -> some View {
+        if glance {
+            Text(node.title).dockFont(.body, weight: .medium).multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, maxHeight: .infinity).dockWell(.raised, role: .pane)
+        } else {
+            Button(node.title) {
+                selection = node.id
+                edgeSelection = ""
+            }.buttonStyle(.dockSecondary)
+        }
+    }
+    private var connections: some View {
+        DisclosureGroup("Connections (\(graph.edges.count))") {
+            ForEach(Array(graph.edges.enumerated()), id: \.offset) { index, edge in
+                Button("\(title(edge.source)) → \(title(edge.target))\(edge.label.map { " · " + $0 } ?? "")") {
+                    selection = ""
+                    edgeSelection = String(index)
+                }.buttonStyle(.dockLink)
+                    .accessibilityAddTraits(edgeSelection == String(index) ? .isSelected : [])
             }
         }
     }
@@ -256,12 +385,18 @@ private struct RichTreeView: View {
     let tree: RichTree
     let blockID: String
     @ObservedObject var state: RichArtifactPresentationState
+    @Environment(\.richGlance) private var glance
     var body: some View { children(nil) }
     private func children(_ parent: String?) -> AnyView {
         AnyView(
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(tree.items.filter { $0.parent == parent }) { item in
-                    if tree.items.contains(where: { $0.parent == item.id }) {
+                    if glance, tree.items.contains(where: { $0.parent == item.id }) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(item.title + (item.value.map { ": " + $0 } ?? "")).fontWeight(.semibold)
+                            children(item.id).dockPadding(.leading, 12)
+                        }
+                    } else if tree.items.contains(where: { $0.parent == item.id }) {
                         DisclosureGroup(
                             item.title + (item.value.map { ": " + $0 } ?? ""),
                             isExpanded: state.expanded(blockID + ":" + item.id)
@@ -283,6 +418,7 @@ private struct RichImageComparisonView: View {
     @ObservedObject var state: RichArtifactPresentationState
     private var fraction: Double { min(1, max(0, state.snapshot.numbers[blockID + ":fraction"] ?? 0.5)) }
     private var zoom: Double { min(4, max(1, state.snapshot.numbers[blockID + ":zoom"] ?? 1)) }
+    @Environment(\.richGlance) private var glance
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ScrollView([.horizontal, .vertical]) {
@@ -295,9 +431,11 @@ private struct RichImageComparisonView: View {
             }.frame(height: 340)
                 .dockPadding(.bottom, 4)
             Text("\(images.before.title) / \(images.after.title)").foregroundStyle(Color.dockSecondaryText)
-            DockSlider(value: state.number(blockID + ":fraction", default: 0.5), range: 0...1)
-                .accessibilityLabel("Comparison position")
-            DockSlider(value: state.number(blockID + ":zoom", default: 1), range: 1...4).accessibilityLabel("Zoom")
+            if !glance {
+                DockSlider(value: state.number(blockID + ":fraction", default: 0.5), range: 0...1)
+                    .accessibilityLabel("Comparison position")
+                DockSlider(value: state.number(blockID + ":zoom", default: 1), range: 1...4).accessibilityLabel("Zoom")
+            }
         }
     }
     @ViewBuilder private func image(_ item: RichItem) -> some View {

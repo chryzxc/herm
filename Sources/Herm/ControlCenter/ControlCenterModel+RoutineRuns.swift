@@ -74,6 +74,7 @@ extension ControlCenterModel {
             }
             if routineProfileID != profileID { routineProfileID = profileID }
             if cronJobs != jobs { cronJobs = jobs }
+            dockModel?.voiceTimers.applyConfirmedJobs(jobs, profileID: profileID)
             triggeredRoutineIDs = triggeredRoutineIDs.filter { id in
                 guard let job = jobs.first(where: { "routine/\(profileID ?? "")/\($0.id)" == id }) else {
                     return true

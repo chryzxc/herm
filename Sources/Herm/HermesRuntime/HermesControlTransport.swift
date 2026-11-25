@@ -207,9 +207,28 @@ final class HermesControlRPC {
             HermesFeatureIDs.ID.sessionList.rawValue, params: Self.profileParams(["limit": limit], profileID: profileID)
         )
     }
-    func sessionPages(limit: Int = 100, offset: Int = 0, order: String? = nil) async throws -> [String: Any] {
-        let result = try await client.fetchHTTP(
-            "/api/sessions?limit=\(limit)&offset=\(offset)" + (order.map { "&order=\($0)" } ?? ""))
+    /// Resolve the canonical chat even when it is hidden or has a newer conversation segment.
+    func existingBotChat(profileID: String) async throws -> HermesSession? {
+        let title = BotService.canonicalBotChatTitle
+        let result = try await client.request(
+            HermesFeatureIDs.ID.sessionList.rawValue, params: ["title": title, "profile": profileID])
+        guard let rows = result["sessions"] as? [[String: Any]] else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        guard rows.count == 1, let row = rows.first,
+            row["title"] as? String == title || row["root_title"] as? String == title,
+            let id = row["resolved_id"] as? String ?? row["session_id"] as? String ?? row["id"] as? String,
+            !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, id != title
+        else { return nil }
+        return HermesSession(
+            id: id, profileID: profileID, title: title, preview: "", startedAt: nil,
+            messageCount: row["message_count"] as? Int ?? 0, source: row["source"] as? String ?? "hermes-bot")
+    }
+    func sessionPages(limit: Int = 100, offset: Int = 0, order: String? = nil, timeout: TimeInterval? = nil)
+        async throws -> [String: Any]
+    {
+        let path = "/api/sessions?limit=\(limit)&offset=\(offset)" + (order.map { "&order=\($0)" } ?? "")
+        let result = try await fetchSessionHistory(path, timeout: timeout)
         // Hermes Agent's REST endpoint uses `sessions`/`total`; the Dock's
         // activity projection predates that endpoint and uses `data`/`has_more`.
         // Adapt at the transport boundary so both forms remain supported.
@@ -227,7 +246,7 @@ final class HermesControlRPC {
     }
     func sessionMessages(
         sessionID: String, profileID: String? = nil, latest: Bool = false, limit: Int = 500, offset: Int = 0,
-        includeCompacted: Bool = false
+        includeCompacted: Bool = false, inlineImages: Bool = true, timeout: TimeInterval? = nil
     ) async throws -> [String: Any] {
         let disallowed = CharacterSet(charactersIn: "/")
         let allowed = CharacterSet.urlPathAllowed.subtracting(disallowed)
@@ -243,7 +262,8 @@ final class HermesControlRPC {
             if !latest { path += "&order=oldest" }
             path += "&include_compacted=true"
         }
-        let result = try await client.fetchHTTP(path)
+        if !inlineImages { path += "&inline_images=false" }
+        let result = try await fetchSessionHistory(path, timeout: timeout)
         // The REST endpoint returns `messages`; normalize it to the envelope
         // consumed by the activity projection without relaxing its validation.
         guard result["data"] == nil, let messages = result["messages"] as? [[String: Any]] else {
@@ -254,6 +274,11 @@ final class HermesControlRPC {
         canonical["data"] = messages
         return canonical
     }
+    private func fetchSessionHistory(_ path: String, timeout: TimeInterval?) async throws -> [String: Any] {
+        if let timeout { return try await client.fetchHTTP(path, timeout: timeout) }
+        return try await client.fetchHTTP(path)
+    }
+
     /// Artifacts use the archive, independently of the sidebar's recent-session window.
     /// Returns whether any part of the archive was unavailable.
     func artifactSessions(onPage: @MainActor ([[String: Any]]) async -> Void) async throws -> Bool {
@@ -717,6 +742,16 @@ final class HermesControlRPC {
         body["name"] = name
         body["schedule"] = schedule
         body["prompt"] = prompt
+        let result = try await client.sendHTTP("POST", path: Self.cronPath(profileID: profileID), body: body)
+        guard let id = result["id"] as? String else { throw HermesGateway.GatewayError.malformedResponse }
+        return try Self.parseCronJobDetail(result, expectedID: id, profileID: profileID)
+    }
+
+    func createAssistantTimer(name: String, schedule: String, profileID: String) async throws -> CronSummary {
+        let body: [String: Any] = [
+            "name": name, "schedule": schedule, "prompt": "", "deliver": "local",
+            "repeat": 1, "no_agent": true, "script": AssistantTimers.scriptName,
+        ]
         let result = try await client.sendHTTP("POST", path: Self.cronPath(profileID: profileID), body: body)
         guard let id = result["id"] as? String else { throw HermesGateway.GatewayError.malformedResponse }
         return try Self.parseCronJobDetail(result, expectedID: id, profileID: profileID)

@@ -239,7 +239,7 @@ struct EdgeQuickMessageView: View {
         let profile = state.captureRecord().destination.profileID
         return state.bots.first { $0.id == profile }
     }
-    private var destinationName: String { destinationBot?.name ?? model.agentDisplayName }
+    private var destinationName: String { destinationBot?.name ?? "Herm" }
 
     @ViewBuilder private func destinationArt(size: CGFloat) -> some View {
         if let bot = destinationBot {

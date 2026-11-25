@@ -334,6 +334,7 @@ extension DockModel {
 
     @discardableResult
     func stop() -> Task<Void, Never>? {
+        if interruptPreparingVoiceSubmission() { return nil }
         guard canRequestStop, let sessionID else { return nil }
         sendQueuedPromptAfterInterrupt = false
         interruptGeneration &+= 1
@@ -462,6 +463,12 @@ extension DockModel {
         let notice = interruptionNotice(kind, owner: owner)
         guard HermNotificationPreferences.allows(notice, defaults: defaults) else { return }
         if interruptionCoordinator?.admit(notice, channel: .system) == false { return }
+        // Spoken only where a banner would show, so an open Herm isn't talked over.
+        if HermNotificationAction.showsBanner(
+            kind, popoverVisible: isPopoverVisible, appActive: NSApp?.isActive ?? false)
+        {
+            announceNoticeAloud(notice)
+        }
         guard HermesAppRuntime.supportsUserNotifications,
             HermNotificationAction.showsBanner(
                 kind, popoverVisible: isPopoverVisible, appActive: NSApp?.isActive ?? false)

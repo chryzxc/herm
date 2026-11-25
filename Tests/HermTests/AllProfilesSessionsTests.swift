@@ -76,7 +76,7 @@ final class AllProfilesSessionsTests: XCTestCase {
     func testSnapshotRefreshesMergedPinsWhenOnlyPinsChange() {
         let scan = [session("b", profile: "coder", at: 30, pinned: true)]
         var inputs = SessionNavSidebarSnapshot.Inputs(
-            activeSessionID: nil, activeStatus: .idle, profileScopeID: "default", agentDisplayName: "Herm",
+            activeSessionID: nil, activeStatus: .idle, profileScopeID: "default",
             isLoadingSessions: false, isCreatingSession: false, deletingSessionID: nil, renamingSessionID: nil,
             updatingSessionVisibilityID: nil, sessions: [], sessionProjectionState: .ready([]),
             activeSessions: [], projects: [], projectIDBySessionID: [:], projectSessionsByProjectID: [:],

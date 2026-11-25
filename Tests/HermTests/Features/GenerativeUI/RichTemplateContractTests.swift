@@ -95,7 +95,9 @@ struct RichTemplateContractTests {
             #expect(
                 RichDocument(fenced).segments == [.surface(surface, source: sample.source)],
                 "Template rejected: \(sample.id)")
-            #expect(RichDocument(fenced, streaming: true).segments == [.pending])
+            let live = RichDocument(fenced, streaming: true)
+            let expected = RichDocument.Segment.surface(surface, source: sample.source)
+            #expect(live.segments == (expected.showsInVoiceGlance ? [expected] : [.pending]))
             #expect(GenerativeUIIntegration.readableText(ChatMessage(role: .hermes, text: fenced)) == surface.plainText)
             #expect(try RichArtifactExport.document(source: sample.source) == Data(sample.source.utf8))
             let previousHTML = GeneratedHTMLCoordinator.shared.activeKey

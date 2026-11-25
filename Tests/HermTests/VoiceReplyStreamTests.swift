@@ -27,6 +27,40 @@ struct VoiceReplyStreamTests {
         #expect(stream.emitted.isEmpty)
     }
 
+    @Test func proseBeforeStructuredOutputIsSpokenImmediately() {
+        var stream = VoiceReplyStream()
+        #expect(
+            stream.append("Here is the chart. It covers March.\n\n```herm-ui\n{")?
+                .trimmingCharacters(in: .whitespacesAndNewlines) == "Here is the chart. It covers March.")
+        #expect(stream.append(" \"version\": 1 } Done. Next") == nil)
+        let final = "Here is the chart. It covers March.\n\n```herm-ui\n{ \"version\": 1 }\n```"
+        #expect(
+            stream.finish(final).trimmingCharacters(in: .whitespacesAndNewlines)
+                == "```herm-ui\n{ \"version\": 1 }\n```")
+    }
+
+    @Test func mediaDeliveryIsNeverReadAloud() {
+        let delivery = "MEDIA:/tmp/my photo.png"
+        let final = "Here’s the photo.\n" + delivery + "\nI found it in the album."
+        var stream = VoiceReplyStream()
+        #expect(stream.append("Here’s the photo.\nMED") == "Here’s the photo.\n")
+        #expect(stream.append("IA:/tmp/my photo.png\nI found it in the album.") == nil)
+        #expect(VoiceSpeechText.prepare(stream.finish(final)) == "I found it in the album.")
+        #expect(VoiceSpeechText.prepare(delivery).isEmpty)
+    }
+
+    @Test func unfinishedSentenceBeforeAMarkerWaitsForTheCompletedReply() {
+        var stream = VoiceReplyStream()
+        #expect(stream.append("Open [the docs](https://example.com) now.") == nil)
+        #expect(
+            stream.finish("Open [the docs](https://example.com) now.") == "Open [the docs](https://example.com) now.")
+
+        var approximate = VoiceReplyStream()
+        #expect(
+            approximate.append("It takes ~5 minutes. Then")?.trimmingCharacters(in: .whitespaces)
+                == "It takes ~5 minutes.")
+    }
+
     @Test func correctedFinalAnswerIsNotSilentlyDropped() {
         var stream = VoiceReplyStream()
         _ = stream.append("The result is ten. More")

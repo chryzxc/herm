@@ -18,6 +18,7 @@ struct RichCommandView: View {
     @Environment(\.richReplyContext) private var context
     @Environment(\.richHostActionRouter) private var router
     @Environment(\.richCommandCompletion) private var completion
+    @Environment(\.richGlance) private var glance
     @State private var error: String?
 
     var body: some View {
@@ -26,27 +27,31 @@ struct RichCommandView: View {
                 .textSelection(.enabled).dockPadding(12).dockPadding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .dockWell(.raised, role: .pane)
-            HStack(spacing: 8) {
-                Button {
-                    do {
-                        guard let router else { return }
-                        try router.run(command, context: context)
-                        error = nil
-                        completion?()
-                    } catch {
-                        self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
-                    }
-                } label: {
-                    Label("Run in Terminal", systemImage: "play")
-                }
-                .buttonStyle(.dockPrimary)
-                .disabled(router?.canRunCommand(context: context) != true)
-                DockCopyButton(command.command, label: "Copy", accessibilityLabel: "Copy command")
-            }.dockButtonSize(.compact)
-            Text(error ?? directoryLabel).dockFont(.body)
-                .foregroundStyle(error == nil ? Color.dockSecondaryText : Color.dockDestructive)
-                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            if !glance { actions }
         }
+    }
+
+    @ViewBuilder private var actions: some View {
+        HStack(spacing: 8) {
+            Button {
+                do {
+                    guard let router else { return }
+                    try router.run(command, context: context)
+                    error = nil
+                    completion?()
+                } catch {
+                    self.error = HermesDiagnosticsService.safeSummary(error.localizedDescription)
+                }
+            } label: {
+                Label("Run in Terminal", systemImage: "play")
+            }
+            .buttonStyle(.dockPrimary)
+            .disabled(router?.canRunCommand(context: context) != true)
+            DockCopyButton(command.command, label: "Copy", accessibilityLabel: "Copy command")
+        }.dockButtonSize(.compact)
+        Text(error ?? directoryLabel).dockFont(.body)
+            .foregroundStyle(error == nil ? Color.dockSecondaryText : Color.dockDestructive)
+            .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
     }
 
     private var directoryLabel: String {

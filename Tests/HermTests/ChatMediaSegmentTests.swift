@@ -4,6 +4,30 @@ import Testing
 @testable import Herm
 
 struct ChatMediaSegmentTests {
+    @Test func mixedReplyKeepsTheSurfaceAndEachDeliveryOnce() {
+        let surface = """
+            ~~~herm-ui
+            {"version":1,"id":"summary","title":"Summary","fallback":"Finished","kind":"native","blocks":[{"type":"text","text":"Finished"}]}
+            ~~~
+            """
+        let text = surface + "\n![Dog](/tmp/dog.jpg)\n::preview{file=\"/tmp/clip.mp4\"}"
+        let segments = ChatMediaSegment.split(
+            text, delivered: ["file:///tmp/dog.jpg", "/tmp/clip.mp4", "/tmp/report.pdf", "/tmp/report.pdf"])
+        #expect(
+            segments == [
+                .markdown(surface), .media("/tmp/dog.jpg"), .media("/tmp/clip.mp4"), .media("/tmp/report.pdf"),
+            ])
+        guard case .markdown(let source)? = segments.first else { return }
+        #expect(RichDocument(source).hasSurfaces)
+    }
+
+    @Test func anInlineWidgetIsNotAlsoShownAsAnAttachment() {
+        let widget = "::preview{file=\"/tmp/widget.html\"}"
+        #expect(
+            ChatMediaSegment.split(widget, delivered: ["file:///tmp/widget.html", "/tmp/report.txt"])
+                == [.markdown(widget), .media("/tmp/report.txt")])
+    }
+
     @Test func userAttachmentsShowNamesAndPreserveMessageText() {
         let pending = UserMessageAttachments.split("[PDF: A report.pdf]\nCheck this")
         #expect(pending.names == ["A report.pdf"])
@@ -129,6 +153,13 @@ struct ChatMediaSegmentTests {
         let text = "Use a `MEDIA:` tag like MEDIA:/tmp/x.png to deliver files."
         #expect(ChatMediaSegment.split(text) == [.markdown(text)])
         #expect(ChatMediaSegment.split("hello") == [.markdown("hello")])
+    }
+
+    @Test func keepsMediaExamplesInsideCodeFences() {
+        let example = "~~~markdown\nMEDIA:/tmp/example.mp4\n![dog](/tmp/example.png)\n~~~"
+        #expect(
+            ChatMediaSegment.split(example + "\nMEDIA:/tmp/delivered.png")
+                == [.markdown(example), .media("/tmp/delivered.png")])
     }
 
     @Test func stripsQuotesAroundPaths() {

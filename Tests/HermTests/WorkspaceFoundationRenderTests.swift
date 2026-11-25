@@ -318,23 +318,31 @@ struct WorkspaceFoundationRenderTests {
     @Test func preferenceRowsSupportEmptyConditionalAndMultipleControls() {
         for width: CGFloat in [300, 700] {
             for visible in [false, true] {
-                let host = NSHostingView(
-                    rootView: VStack {
-                        SettingsPreferenceRow(title: "Status display", detail: "Choose a display below.") {
-                            EmptyView()
-                        }
-                        SettingsPreferenceRow(title: "Conditional", detail: "Optional controls") {
-                            if visible { Text("Available") }
-                        }
-                        SettingsPreferenceRow(title: "Multiple", detail: "Keep both controls visible") {
-                            Text("First")
-                            Text("Second")
-                        }
-                    }.frame(width: width))
+                let rows = VStack(spacing: 0) {
+                    SettingsPreferenceRow(title: "Status display", detail: "Choose a display below.") {
+                        EmptyView()
+                    }
+                    SettingsPreferenceRow(title: "Conditional", detail: "Optional controls") {
+                        if visible { Text("Available") }
+                    }
+                    SettingsPreferenceRow(
+                        title: "Multiple",
+                        detail: "Keep both controls visible while the description wraps on narrow windows."
+                    ) {
+                        Text("First")
+                        Text("Second")
+                    }
+                }.frame(width: width)
+                let host = NSHostingView(rootView: rows)
                 host.frame = CGRect(origin: .zero, size: host.fittingSize)
                 host.layoutSubtreeIfNeeded()
                 #expect(host.fittingSize.height.isFinite)
                 #expect(host.fittingSize.height >= 156)
+
+                let padded = NSHostingView(
+                    rootView: rows.environment(\.settingsPreferenceRowVerticalInset, DockSpacing.tight)
+                )
+                #expect(abs(padded.fittingSize.height - host.fittingSize.height - 6 * DockSpacing.tight) < 1)
             }
         }
     }

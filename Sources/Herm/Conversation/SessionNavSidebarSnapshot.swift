@@ -52,7 +52,6 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
         var activeSessionID: String?
         var activeStatus: HermesStatus?
         var profileScopeID: String?
-        var agentDisplayName: String
         var isLoadingSessions: Bool
         var isCreatingSession: Bool
         var deletingSessionID: String?
@@ -289,7 +288,6 @@ struct SessionNavSidebarSnapshot: Equatable, Sendable {
             activeSessionID: model.navigationSessionID,
             activeStatus: model.isSending && model.status == .idle ? .working : model.status,
             profileScopeID: model.profileScopeID,
-            agentDisplayName: model.agentDisplayName,
             isLoadingSessions: model.isLoadingSessions,
             isCreatingSession: model.isCreatingSession,
             deletingSessionID: model.deletingSessionID,

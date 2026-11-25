@@ -153,6 +153,7 @@ struct WorkspaceActivitySidebar: View {
     @AppStorage(DoubleTapShortcut.notchKey) var notchShortcut = DoubleTapShortcut.option
     @AppStorage(DesktopCaptureShortcut.key) var windowCaptureChord = QuickCaptureChord.off
     @AppStorage(QuickCaptureChord.key) var captureChord = QuickCaptureChord.optionSpace
+    @AppStorage(VoiceWakeShortcut.key) var voiceChord = VoiceWakeShortcut.defaultChord
     @AppStorage("hermes.notch.side") var notchSide: EdgeDockSide = .right
     @ObservedObject var agentUpdateService: HermesUpdateService
 
