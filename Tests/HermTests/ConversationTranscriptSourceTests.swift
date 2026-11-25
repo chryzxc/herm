@@ -256,7 +256,8 @@ struct ConversationTranscriptSourceTests {
         coordinator.jump(to: 250)
         let source = ConversationTranscriptSource(
             model: model, bots: BotModeModel(),
-            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: coordinator)
+            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: coordinator,
+            needsNavigator: false)
         for batch in 0..<5 {
             model.streamingTurnActivity.append(
                 ActiveToolCall(
@@ -287,7 +288,8 @@ struct ConversationTranscriptSourceTests {
         coordinator.reset(sessionID: model.transcriptPresentationID, totalCount: 500, bubbleCount: 500)
         let source = ConversationTranscriptSource(
             model: model, bots: BotModeModel(),
-            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: coordinator)
+            actions: ConversationMessageActionState(), voice: VoiceOutput(), coordinator: coordinator,
+            needsNavigator: false)
         #expect(source.snapshot.rows.count == 12)
         model.sessions = []
         model.isLoadingSessions = true

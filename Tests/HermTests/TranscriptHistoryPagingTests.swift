@@ -290,9 +290,11 @@ struct TranscriptHistoryPagingTests {
         let rpc = PagedTranscriptRPCClient()
         rpc.storedRows = storedTranscript(turns: 240)
         let model = DockModel(rpcClient: rpc)
-        model.resumeSession(
-            HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 720, source: "test"))
-        try await waitUntil { !model.isRestoringSession && !model.messages.isEmpty }
+        let loaded = await model.startSessionResume(
+            HermesSession(id: "long", title: "Long", preview: "", startedAt: nil, messageCount: 720, source: "test"),
+            reportFailure: false, reviewUnread: false
+        ).value
+        try #require(loaded)
 
         let resume = try #require(rpc.requests.first { $0.method == "session.resume" })
         #expect(resume.params["defer_history"] as? Bool == true)

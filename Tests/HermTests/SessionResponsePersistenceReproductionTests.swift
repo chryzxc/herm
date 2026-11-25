@@ -529,7 +529,7 @@ struct SessionResponsePersistenceReproductionTests {
         let rpc = ResponsePersistenceRPCClient()
         let model = DockModel(rpcClient: rpc)
         defer { model.delegationMonitoringTask?.cancel() }
-        #expect(await model.resumeSession(session("origin"), reportFailure: true))
+        #expect(await model.resumeSession(session("origin"), reportFailure: true, reviewUnread: false))
         let snapshot = SessionComposerDraft(
             text: "check me", images: [], pdfURLs: [], contexts: [], replyQuote: nil,
             attachmentError: nil, pdfError: nil)

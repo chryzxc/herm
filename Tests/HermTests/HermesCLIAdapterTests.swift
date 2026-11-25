@@ -234,11 +234,11 @@ struct HermesCLIAdapterTests {
 
         let result = try await adapter.kanbanList(filter: KanbanListFilter(includeArchived: true))
 
+        #expect(client.httpPaths.first == "/api/plugins/kanban/boards?include_archived=true")
         #expect(
-            client.httpPaths == [
-                "/api/plugins/kanban/boards?include_archived=true",
-                "/api/plugins/kanban/board?board=default&include_archived=true",
+            client.httpPaths.dropFirst().sorted() == [
                 "/api/plugins/kanban/board?board=archived-board&include_archived=true",
+                "/api/plugins/kanban/board?board=default&include_archived=true",
             ])
         #expect(result.stdout.contains("archived-task"))
     }

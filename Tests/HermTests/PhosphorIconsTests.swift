@@ -29,7 +29,11 @@ struct PhosphorIconsTests {
         #expect(horizontal.width.rounded() == vertical.height.rounded())
     }
 
+    @MainActor
     @Test func nativeMenuImageInkTracksMenuTextAppearance() throws {
+        let previous = DockThemeRuntime.current
+        DockThemeRuntime.current = .glass
+        defer { DockThemeRuntime.current = previous }
         let lightInk = try meanInkBrightness(in: .aqua)
         let darkInk = try meanInkBrightness(in: .darkAqua)
 
@@ -72,6 +76,7 @@ struct PhosphorIconsTests {
                 count += 1
             }
         }
-        return total / max(count, 1)
+        try #require(count > 0)
+        return total / count
     }
 }
