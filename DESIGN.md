@@ -411,7 +411,7 @@ Core Animation lifts and brightens each tile in clockwise order. Reduce Motion
 and motion-free skins show all four tiles at rest. Native layer loops
 centrally honor Reduce Motion, motion-free skins, and host visibility, and release
 animations on dismantle. No extra continuous animation clock is introduced.
-Visible animations keep their cadence during direct scrolling and momentum.
+Visible animations keep their cadence during direct scrolling, momentum, and when another app has focus. App activation does not gate motion. Hidden surfaces may stop scheduling presentation work without changing the underlying agent state.
 Reduce Motion and motion-free skins suppress shared motion, including press
 scaling and inherited explicit animation transactions at themed roots. Disabled
 controls do not compress. Existing skin-specific feedback curves remain in use.
@@ -1332,7 +1332,7 @@ The notch is visible during startup while Herm reads local workspace preferences
 and activity archives. Clicks and shortcut requests can open the workspace as soon
 as those reads finish. The normal notch preview becomes available at that point.
 
-Visible notch Bot status animations continue during workspace scrolling.
+Visible notch Bot status animations continue during workspace scrolling and when Herm is not the active app.
 The native notch window fits the opening or closing shell in a single resize.
 The shell animates inside that frame, and task rows update as their sources change.
 Clearing a completion updates its status immediately. The task list refreshes

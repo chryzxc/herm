@@ -12,8 +12,14 @@ final class HermesPetWindow {
     private let pet: HermesPetModel
     private let defaults: UserDefaults
     private let motion = PetRoamPresentation()
-    private var timer: AnyCancellable?
-    private var tickInterval: TimeInterval = 0
+    private enum Tick: Equatable, Sendable {
+        case walk
+        case trip(Date)
+    }
+    private var timer: Timer?
+    private var scheduledTick: Tick?
+    private var observations: Set<AnyCancellable> = []
+    private var screensAwake = true
     private var home = NSPoint.zero
     private var homeAnchor = NSPoint.zero
     private var side: EdgeDockSide = .right
@@ -55,7 +61,10 @@ final class HermesPetWindow {
         panel.contentView = NSHostingView(
             rootView: PetWindowContent(
                 pet: pet, motion: motion,
-                hover: { [weak self] in self?.hovering = $0 },
+                hover: { [weak self] hovering in
+                    self?.hovering = hovering
+                    self?.tick()
+                },
                 recall: { [weak self] in self?.recall() }))
         motion.attached = attached
         // AppKit-level drag: the SwiftUI Button swallows the mouse-down before a DragGesture sees it.
@@ -64,21 +73,63 @@ final class HermesPetWindow {
         panel.onHold = { [weak self] in
             self?.holding = $0
             self?.motion.held = $0
+            self?.tick()
         }
         panel.onClick = { [weak self] in self?.pet.pet() }
-        scheduleTicks()
+        let artworkChanges = pet.$revision.map { _ in () }
+            .merge(with: pet.$sheet.map { $0 != nil }.removeDuplicates().map { _ in () })
+        Publishers.CombineLatest4(artworkChanges, pet.$pose, pet.$online, pet.$stale)
+            .dropFirst().receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.tick() }.store(in: &observations)
+        NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification, object: panel)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.tick() }.store(in: &observations)
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspace.publisher(for: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.tick() }.store(in: &observations)
+        workspace.publisher(for: NSWorkspace.screensDidSleepNotification).map { _ in false }
+            .merge(with: workspace.publisher(for: NSWorkspace.screensDidWakeNotification).map { _ in true })
+            .receive(on: RunLoop.main)
+            .sink { [weak self] awake in
+                self?.screensAwake = awake
+                self?.tick()
+            }.store(in: &observations)
     }
 
-    /// 20Hz only while walking somewhere; parked, attached or hidden pets
-    /// still notice profile, visibility and trip changes once a second.
+    private var canRoam: Bool {
+        allowed && screensAwake && pet.visible && panel.occlusionState.contains(.visible)
+            && !attached && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && pet.online && !pet.stale
+    }
+
+    private var readyToWalk: Bool { canRoam && !hovering && !holding && dragOrigin == nil && pet.pose == "idle" }
+
+    /// Walk at the original 20 Hz. A parked pet needs only its next departure.
     private func scheduleTicks() {
-        let interval: TimeInterval = allowed && destination != nil ? 0.05 : 1
-        guard interval != tickInterval else { return }
-        tickInterval = interval
-        // A parked pet's check can drift; coalesced wakeups cost less than an exact second.
-        timer = Timer.publish(every: interval, tolerance: interval >= 1 ? 0.3 : nil, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in self?.tick() }
+        let next: Tick? = readyToWalk ? (destination == nil ? .trip(nextTrip) : .walk) : nil
+        guard next != scheduledTick else { return }
+        scheduledTick = next
+        timer?.invalidate()
+        timer = nil
+        guard let next else { return }
+        let fire: Date
+        switch next {
+        case .walk: fire = .now.addingTimeInterval(0.05)
+        case .trip(let date): fire = max(.now.addingTimeInterval(0.01), date)
+        }
+        let timer = Timer(fire: fire, interval: 0.05, repeats: next == .walk) { [weak self] timer in
+            guard let self else {
+                timer.invalidate()
+                return
+            }
+            MainActor.assumeIsolated {
+                if next != .walk { self.scheduledTick = nil }
+                self.tick()
+            }
+        }
+        timer.tolerance = next == .walk ? 0.005 : 0.3
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     static func clamped(_ origin: NSPoint, to screen: NSRect, size: CGSize = CGSize(width: 44, height: 44)) -> NSPoint {
@@ -130,6 +181,7 @@ final class HermesPetWindow {
     func hide() {
         allowed = false
         panel.orderOut(nil)
+        scheduleTicks()
     }
 
     /// Reattaches the pet to the notch (also the "Call pet home" action).
@@ -141,6 +193,7 @@ final class HermesPetWindow {
         nextTrip = .now.addingTimeInterval(30)
         let wasFree = !attached
         attached = true
+        scheduleTicks()
         motion.nearNotch = false
         let frame = NSRect(origin: home, size: windowSize)
         guard wasFree, panel.isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
@@ -153,7 +206,10 @@ final class HermesPetWindow {
                 context.duration = 0.32
                 context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
                 panel.animator().setFrame(frame, display: true)
-            }, completionHandler: { [weak self] in self?.snapping = false })
+            },
+            completionHandler: { [weak self] in
+                MainActor.assumeIsolated { self?.snapping = false }
+            })
     }
 
     private func endDrag() {
@@ -170,6 +226,7 @@ final class HermesPetWindow {
             attached = false
             nextTrip = .now.addingTimeInterval(4)
         }
+        scheduleTicks()
     }
 
     /// Hysteresis: leaving an attached notch takes a short pull, joining one takes a closer approach.
@@ -232,15 +289,13 @@ final class HermesPetWindow {
             if attached { recall() }
         }
         if !panel.isVisible { panel.orderFrontRegardless() }
-        let roaming =
-            !attached && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && pet.online && !pet.stale
-        if !roaming {
+        if !canRoam {
             if motion.direction != 0 { motion.direction = 0 }
             if attached, !snapping, dragOrigin == nil, panel.frame.origin != home { panel.setFrameOrigin(home) }
             return
         }
         // Like Desktop, live activity and direct interactions pause wandering.
-        guard !hovering, !holding, dragOrigin == nil, pet.pose == "idle" else {
+        guard readyToWalk else {
             if motion.direction != 0 { motion.direction = 0 }
             return
         }

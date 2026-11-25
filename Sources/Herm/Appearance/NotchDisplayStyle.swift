@@ -353,7 +353,7 @@ struct EdgeNotchStatusIndicator: View {
             case .idle: .sleepy
             }
         let face = BotNotchFaceMotion(
-            face: BotFaceMark(id: id, size: size, animated: !reduceMotion, mood: mood, live: true),
+            face: BotFaceMark(id: id, size: size, animated: !reduceMotion, mood: mood),
             cue: activity.finishedCount
         )
         .frame(width: size * 1.4, height: size * 1.4)

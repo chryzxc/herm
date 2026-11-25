@@ -559,6 +559,7 @@ final class OfficePreviewARView: ARView {
 
 @MainActor
 struct OfficePreviewSceneView: NSViewRepresentable {
+    @Environment(\.dockHostVisible) private var hostVisible
     let agents: [OfficePreviewAgentPresentation]
     var avatarImages: [String: Data] = [:]
     let reduceMotion: Bool
@@ -598,6 +599,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         let magnify = NSMagnificationGestureRecognizer(
             target: context.coordinator, action: #selector(Coordinator.handleMagnification(_:)))
         view.addGestureRecognizer(magnify)
+        context.coordinator.hostVisible = hostVisible
         context.coordinator.showsAgents = showsAgents
         context.coordinator.isDataCurrent = isDataCurrent
         context.coordinator.avatarImages = avatarImages
@@ -606,6 +608,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: OfficePreviewARView, context: Context) {
+        context.coordinator.hostVisible = hostVisible
         context.coordinator.onSelectAgent = onSelectAgent
         context.coordinator.showsAgents = showsAgents
         context.coordinator.isDataCurrent = isDataCurrent
@@ -636,6 +639,10 @@ struct OfficePreviewSceneView: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject {
+        var hostVisible = true
+        private var surfaceVisible: Bool {
+            hostVisible && view?.window?.occlusionState.contains(.visible) == true
+        }
         var showsAgents = false
         var isDataCurrent = true
         var avatarImages: [String: Data] = [:]
@@ -758,6 +765,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             savePlacements()
             actionSubscription = view.scene.subscribe(to: SceneEvents.Update.self) { [weak self] event in
                 MainActor.assumeIsolated {
+                    guard self?.surfaceVisible == true else { return }
                     self?.advanceCamera(delta: event.deltaTime)
                     self?.advanceSky(delta: event.deltaTime)
                     if HermPerformanceRecorder.active {
@@ -1338,9 +1346,13 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     let slot = self.roomLayout.slots[id]
                 {
                     guard !Task.isCancelled else { return }
-                    if (!self.dataCurrent(for: agent) && !agent.canWander)
-                        || self.view?.window?.occlusionState.contains(.visible) != true
-                    {
+                    if !self.surfaceVisible {
+                        self.walkingNow.remove(id)
+                        speed = 0
+                        await self.nextFrame()
+                        continue
+                    }
+                    if !self.dataCurrent(for: agent) && !agent.canWander {
                         self.walkingNow.remove(id)
                         speed = 0
                         do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
@@ -1419,10 +1431,12 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                         let now = clock.now
                         let elapsed = lastTick.duration(to: now)
                         lastTick = now
-                        let visible =
-                            (self.dataCurrent(for: agent) || agent.canWander)
-                            && self.view?.window?.occlusionState.contains(.visible) == true
-                        if !visible {
+                        if !self.surfaceVisible {
+                            await self.nextFrame()
+                            lastTick = clock.now
+                            continue
+                        }
+                        if !self.dataCurrent(for: agent), !agent.canWander {
                             do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
                             continue
                         }

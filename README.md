@@ -167,7 +167,7 @@ The Tasks preview opens on **Activity** by default. Its list/grid toggle switche
 
 The Activity preview separates **Needs your attention**, **In progress**, and **Finished, not opened**. **In progress** shows the same working Bot count as the Bot picker. Working Bots without session rows appear by name and avatar above the session list. Approval requests and clarification questions show their own status and a short summary, including requests from other sessions. New requests open the preview; select the row to review and respond in the workspace.
 
-Working and waiting Bots in the notch keep animating while you scroll the workspace. Core Animation handles their whole-face movement. Reduce Motion and motion-free skins keep them still.
+Working and waiting Bots and other visible indicators keep animating while you scroll or switch to another app. Core Animation handles whole-face movement. Reduce Motion and motion-free skins still turn decorative motion off.
 
 Activity rows in the side notch and top island have no background fill at rest, including the current session. Both previews offer a labelled **Quick message** entry. Reply controls reserve their space so activity titles stay still on hover.
 

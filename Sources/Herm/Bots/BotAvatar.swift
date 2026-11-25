@@ -1,37 +1,5 @@
 import SwiftUI
 
-/// Whether the user is engaged with Herm: the app is active, or one of its
-/// non-activating panels is key. Decorative Bot motion pauses otherwise, since
-/// every animated frame re-renders and re-lays out the whole hosting window.
-/// Spinners, the notch indicator and a running turn's activity row
-/// (`dockBotIndicatorLive`) keep running; they carry real status.
-@MainActor
-final class HermFocus: ObservableObject {
-    static let shared = HermFocus()
-    @Published private(set) var engaged = true
-    private var observers: [NSObjectProtocol] = []
-
-    private init() {
-        let names: [Notification.Name] = [
-            NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
-            NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
-        ]
-        observers = names.map { name in
-            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                // Key changes hand off through a nil key window; read the settled state next turn.
-                DispatchQueue.main.async { MainActor.assumeIsolated { self?.refresh() } }
-            }
-        }
-        refresh()
-    }
-
-    private func refresh() {
-        // NSApp is nil in unit tests that render a Bot before any app exists.
-        let next = NSApp?.isActive == true || NSApp?.keyWindow != nil
-        if engaged != next { engaged = next }
-    }
-}
-
 /// Deterministic visual identity for built-in Bot roles. Stored Hermes assets
 /// still take precedence; this only improves the local fallback avatar.
 enum BotAvatarPresentation {
@@ -114,11 +82,11 @@ struct BotAvatarView: View {
 
     @ViewBuilder private func standalone(herm: Bool, mood: BotMood) -> some View {
         if !herm, let imageData, let image = Self.decoded(imageData) {
-            BotLiveImage(image: image, id: bot.id, size: points, busy: mood.moves, animated: animated, live: live)
+            BotLiveImage(image: image, id: bot.id, size: points, busy: mood.moves, animated: animated)
                 .frame(width: points, height: points)
                 .clipShape(RoundedRectangle(cornerRadius: points * 0.28, style: .continuous))
         } else {
-            BotFaceMark(id: bot.id, size: points, animated: animated, mood: mood, live: live)
+            BotFaceMark(id: bot.id, size: points, animated: animated, mood: mood)
         }
     }
 
@@ -268,13 +236,11 @@ struct BotWorkingAvatarView: View {
     @Environment(\.dockHostVisible) private var hostVisible
     @Environment(\.dockHostResizing) private var hostResizing
     @Environment(\.dockWorkspaceScale) private var workspaceScale
-    @Environment(\.dockBotIndicatorLive) private var live
-    @ObservedObject private var focus = HermFocus.shared
     @State private var reaction: UUID?
     @State private var showsActivity = false
 
     private var moves: Bool {
-        hostVisible && !hostResizing && (live || focus.engaged) && DockMotion.isEnabled(reduceMotion: reduceMotion)
+        hostVisible && !hostResizing && DockMotion.isEnabled(reduceMotion: reduceMotion)
     }
 
     var body: some View {
@@ -356,18 +322,14 @@ private struct BotMotion<Content: View>: View {
     let id: String
     let animated: Bool
     let busy: Bool
-    var live = false
     @ViewBuilder let content: (BotFacePose) -> Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ObservedObject private var focus = HermFocus.shared
 
     @Environment(\.dockHostVisible) private var hostVisible
     @Environment(\.dockHostResizing) private var hostResizing
 
     var body: some View {
-        if animated && busy && hostVisible && !hostResizing && DockMotion.isEnabled(reduceMotion: reduceMotion)
-            && (live || focus.engaged)
-        {
+        if animated && busy && hostVisible && !hostResizing && DockMotion.isEnabled(reduceMotion: reduceMotion) {
             let phase = Double(BotAvatarPresentation.seed(for: id) % 1000) / 100
             TimelineView(.dockMotion(rate: 15)) { context in
                 content(.at(context.date.timeIntervalSinceReferenceDate + phase, busy: true))
@@ -386,10 +348,9 @@ private struct BotLiveImage: View {
     let size: CGFloat
     let busy: Bool
     let animated: Bool
-    let live: Bool
 
     var body: some View {
-        BotMotion(id: id, animated: animated, busy: busy, live: live) { pose in
+        BotMotion(id: id, animated: animated, busy: busy) { pose in
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
@@ -417,8 +378,6 @@ struct BotHuddle: View {
     var leadSignature: [String]? = nil
     var leadIcon: Ph = .brain
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ObservedObject private var focus = HermFocus.shared
-    @Environment(\.dockBotIndicatorLive) private var live
 
     /// What each Bot is doing, keyed by Bot id, shown in its thought bubble.
     var lines: [String: String] = [:]
@@ -435,7 +394,7 @@ struct BotHuddle: View {
     static let leadInset: CGFloat = (SignalTrace.size - 40) / 2
 
     var body: some View {
-        let moves = !reduceMotion && DockThemeStyle.current.animates && (live || focus.engaged)
+        let moves = !reduceMotion && DockThemeStyle.current.animates
         let layout = DockBotHuddleLayout(
             partnerCount: partners.count, leadDone: leadDone, leadSize: leadSize, partnerSize: size)
         let members = members(layout: layout)
@@ -634,8 +593,6 @@ struct BotFaceMark: View {
     var mood: BotMood?
     /// Live faces follow the app skin; previews pass the skin they show.
     var theme: DockThemeID?
-    /// A status carrier (the notch) keeps moving while Herm is in the background.
-    var live = false
     @ObservedObject private var themeStore = DockThemeStore.shared
     @DockChromeTheme private var chrome
 
@@ -644,7 +601,7 @@ struct BotFaceMark: View {
         let ink = theme ?? chrome
         let theme = theme ?? themeStore.selectedThemeID
         let mood = self.mood ?? (busy ? .tool : .idle)
-        BotMotion(id: id, animated: animated, busy: mood.moves, live: live) { pose in
+        BotMotion(id: id, animated: animated, busy: mood.moves) { pose in
             Canvas { ctx, _ in
                 ctx.translateBy(x: size * 0.2, y: size * 0.2)
                 Self.draw(in: &ctx, id: id, size: size, mood: mood, pose: pose, theme: theme, ink: ink)
