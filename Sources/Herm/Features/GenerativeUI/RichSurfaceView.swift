@@ -100,7 +100,11 @@ struct RichSurfaceView: View {
     /// Read-only: the title and the visuals, no actions, inputs, prose or card of its own.
     private var glanceBody: some View {
         VStack(alignment: .leading, spacing: 14) {
-            heading.allowsHitTesting(false)
+            VStack(alignment: .leading, spacing: 3) {
+                title
+                provenance
+            }
+            .allowsHitTesting(false)
             nativeBlocks
         }
         .dockFont(.body)
@@ -109,13 +113,16 @@ struct RichSurfaceView: View {
         .allowsHitTesting(voiceContext != nil)
     }
 
-    /// Title with supplied provenance as one quiet line beneath; assumptions wrap below it.
-    private var heading: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(surface.title).dockFont(.rowTitle, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-            if let metadata = surface.metadata {
+    private var title: some View {
+        Text(surface.title).dockFont(.rowTitle, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder private var provenance: some View {
+        if let metadata = surface.metadata {
+            VStack(alignment: .leading, spacing: 3) {
                 let facts = [metadata.source, metadata.observedAt.map { "Observed " + $0 }].compactMap { $0 }
                 if metadata.fictional == true || !facts.isEmpty {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -133,9 +140,9 @@ struct RichSurfaceView: View {
                     Text("Assumes " + assumptions).dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .textSelection(.enabled)
     }
 
     private var actionsMenu: some View {
@@ -186,23 +193,26 @@ struct RichSurfaceView: View {
 
     private var fullBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
-                heading
-                Spacer(minLength: 8)
-                HStack(spacing: DockSpacing.tight) {
-                    if !expanded {
-                        DockIconAction(icon: .arrowsOut, label: "Expand visual reply", iconSize: 16, action: expand)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 12) {
+                    title
+                    Spacer(minLength: 8)
+                    HStack(spacing: DockSpacing.tight) {
+                        if !expanded {
+                            DockIconAction(icon: .arrowsOut, label: "Expand visual reply", iconSize: 16, action: expand)
+                        }
+                        actionsMenu
                     }
-                    actionsMenu
+                    .dockButtonSize(.compact)
                 }
-                .dockButtonSize(.compact)
+                provenance
             }
             .dockPadding(.horizontal, 16)
             .dockPadding(.top, 14)
             .dockPadding(.bottom, 4)
             VStack(alignment: .leading, spacing: 16) {
                 if surface.kind == .html {
-                    Text(surface.fallback).foregroundStyle(Color.dockSecondaryText).fixedSize(
+                    Text(surface.fallback).dockFont(.conversation).foregroundStyle(Color.dockSecondaryText).fixedSize(
                         horizontal: false, vertical: true)
                     if htmlCoordinator.activeKey == htmlKey, let html = surface.html {
                         GeneratedHTMLPreview(html: html, identity: htmlKey, expanded: expanded)
@@ -351,8 +361,10 @@ struct RichSurfaceView: View {
         } else {
             switch block.type {
             case .text:
-                Text(block.text ?? "").textSelection(.enabled).foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+                Text(block.text ?? "").dockFont(.conversation).textSelection(.enabled).foregroundStyle(
+                    Color.dockPrimaryText
+                )
+                .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
             case .table:
                 RichTableView(
                     columns: block.columns ?? [], rows: block.rows ?? [], blockID: "legacy:\(index)",

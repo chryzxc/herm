@@ -287,9 +287,9 @@ and suppress repeat submission. See [the loading-state audit](docs/loading-state
 
 Generated replies can show category breakdowns with labelled horizontal bars and expandable Q&A with Markdown answers.
 
-Generated replies use a macOS-style document surface: a title with its source on one
-quiet line, a visible Expand action, metrics grouped in one inset, comparison matrices,
-timeline rails, and status icons for workflows and findings.
+Generated replies use the chat text size for prose. The title sits alongside Expand,
+with source details below it. Structured replies include metrics grouped in one inset,
+comparison matrices, timeline rails, and status icons for workflows and findings.
 The treatment follows your current Herm theme, including Glass and Monochrome.
 Tables, metric tiles, comparison options, code blocks, and command previews use the
 theme’s panel corners, including in skins with pill-shaped controls. Native charts, tables, and

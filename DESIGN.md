@@ -5313,10 +5313,13 @@ hairline rows; numbers align trailing. Single-series bar charts with up to 12 ba
 label values on the bars and hide the redundant legend. All colors follow Herm's
 shared palette across all skins.
 
-The surface header is the title, then one metadata line (fictional-data pill, source,
-observed time) and any assumptions. Expand and the quieter overflow menu share a
-trailing row of centered 28pt icon targets. The larger ellipsis stays legible without
-a second border. Both controls have a tooltip and spoken label. There is no tinted
+Native text blocks and the HTML preview's plain-text fallback use the same conversation
+text size as chat replies. Structured blocks and metadata keep their own type roles.
+
+The surface title is vertically centered alongside the trailing Expand and overflow
+buttons, which use centered 28pt icon targets. The metadata line (fictional-data pill,
+source, observed time) and any assumptions go below the title row. The larger ellipsis
+stays legible without a second border. Both controls have a tooltip and spoken label. There is no tinted
 toolbar or separate provenance band.
 
 **Glance (voice previews).** `EnvironmentValues.richGlance` renders a generated
