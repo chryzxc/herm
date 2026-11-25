@@ -49,10 +49,9 @@ final class PullRequestChatModel: ObservableObject {
         reasoningLink = runtime.$defaultReasoningVariant.sink { [weak model] in model?.defaultReasoningVariant = $0 }
         conversation = model
         eventOwner = runtime
-        eventSubscription = runtime.eventRouter.subscribe { [weak model] type, params in
-            model?.receiveGatewayEvent(type, params: params)
-        }
         let linked = linkedDestination(for: pr)
+        eventSubscription = model.subscribeSessionEvents(
+            from: runtime.eventRouter, requestedSessionID: linked?.sessionID)
         sessionLink = model.$sessionStorageID.compactMap { $0 }.sink { [weak self, weak model] sessionID in
             guard let self, let model else { return }
             let destination = QuickDestination(

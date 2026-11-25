@@ -44,7 +44,9 @@ final class DockModel: ObservableObject {
     lazy var inspectorPresentationChanges = makeInspectorPresentationChanges()
     var interruptionCoordinator: HermInterruptionCoordinator?
     var completionNoticeIDs: [String: String] = [:]
-    var quickSessionOwners: [String: QuickDestination] = [:]
+    var quickSessionOwners: [String: QuickDestination] = [:] {
+        didSet { sessionEventOwnersChanged?() }
+    }
     /// Set on the main model only: returns true when a detached window took the session,
     /// so no opener (Spotlight, notch, history, task rows) shows it in two places.
     var focusDetachedSession: ((String) -> Bool)?
@@ -335,7 +337,9 @@ final class DockModel: ObservableObject {
     let sessionPinService = HermesSessionPinService()
     var actionErrors = DockActionErrorCenter.shared
     @Published var renamingSessionID: String?
-    @Published var isRestoringSession = false
+    @Published var isRestoringSession = false {
+        didSet { sessionEventOwnersChanged?() }
+    }
     @Published var isCreatingSession = false
     @Published var currentSessionTitle: String?
     var autoTitleAttempts: Set<String> = []
@@ -459,8 +463,10 @@ final class DockModel: ObservableObject {
     var quickWorkflowClient: HermesRPCClientProtocol { sessionRPCClient }
     let interruptRPC: HermesControlRPC
     let eventRouter = HermesEventRouter()
+    var sessionEventOwnersChanged: (() -> Void)?
     @Published var sessionID: String? {
         didSet {
+            sessionEventOwnersChanged?()
             if let voiceSessionID, voiceSessionID != sessionID { stopVoiceConversation() }
         }
     }
@@ -504,17 +510,23 @@ final class DockModel: ObservableObject {
     @Published var botActivityRevision = 0
     /// The latest step each working Bot DM is on, keyed by record id.
     @Published var botLiveSteps: [String: String] = [:]
-    var inFlightBotActivities: [String: InFlightBotActivity] = [:]
+    var inFlightBotActivities: [String: InFlightBotActivity] = [:] {
+        didSet { sessionEventOwnersChanged?() }
+    }
     let botActivityStore: BotActivityStore
     let botActivityWriter: BotActivityWriter
-    @Published var sessionStorageID: String?
+    @Published var sessionStorageID: String? {
+        didSet { sessionEventOwnersChanged?() }
+    }
     /// The id session.list rows carry for the open chat. Hermes streams under
     /// a runtime alias (`session_id`) that differs from the stored key.
     var navigationSessionID: String? { sessionStorageID ?? sessionID }
     /// The durable identifier selected by the user for session-scoped durable
     /// projections. Gateway resume may return a transient alias for streaming,
     /// which must not replace the Kanban attribution boundary.
-    var kanbanAttributionSessionID: String?
+    var kanbanAttributionSessionID: String? {
+        didSet { sessionEventOwnersChanged?() }
+    }
     /// A Kanban task may legitimately have no `session_id` in Hermes' durable
     /// store. Keep only exact task IDs seen in a tool command/result for the
     /// owning chat session; do not infer ownership from titles or assignees.

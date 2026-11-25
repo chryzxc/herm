@@ -51,31 +51,85 @@ extension HermesGateway: HermesRPCClientProtocol {}
 final class HermesEventRouter {
     typealias Handler = @MainActor (String, [String: Any]) -> Void
 
-    private struct Subscription {
+    struct Event {
+        let type: String
+        let params: [String: Any]
+        let payload: [String: Any]
+        let envelopeSessionID: String?
         let sessionID: String?
-        let handler: Handler
+
+        init(type: String, params: [String: Any]) {
+            self.type = type
+            self.params = params
+            payload = params["payload"] as? [String: Any] ?? [:]
+            envelopeSessionID = params["session_id"] as? String
+            sessionID = envelopeSessionID ?? (payload["session_id"] as? String)
+        }
     }
 
-    private var handlers: [UUID: Subscription] = [:]
+    private struct Subscription {
+        let handler: Handler
+        let matchesWorker: ((Event) -> Bool)?
+        var sessionIDs: Set<String>
+    }
+
+    private var global: [UUID: Handler] = [:]
+    private var scoped: [UUID: Subscription] = [:]
+    private var sessions: [String: Set<UUID>] = [:]
+    private var workerObservers: Set<UUID> = []
 
     @discardableResult
     func subscribe(sessionID: String? = nil, _ handler: @escaping Handler) -> UUID {
+        if let sessionID { return subscribeConversation(sessionIDs: [sessionID], handler: handler) }
         let id = UUID()
-        handlers[id] = Subscription(sessionID: sessionID, handler: handler)
+        global[id] = handler
         return id
     }
 
+    func subscribeConversation(
+        sessionIDs: Set<String>, matchesWorker: ((Event) -> Bool)? = nil, handler: @escaping Handler
+    ) -> UUID {
+        let id = UUID()
+        scoped[id] = Subscription(handler: handler, matchesWorker: matchesWorker, sessionIDs: [])
+        if matchesWorker != nil { workerObservers.insert(id) }
+        updateSessionIDs(sessionIDs, for: id)
+        return id
+    }
+
+    func updateSessionIDs(_ sessionIDs: Set<String>, for id: UUID) {
+        guard let previous = scoped[id]?.sessionIDs, previous != sessionIDs else { return }
+        for removed in previous.subtracting(sessionIDs) {
+            sessions[removed]?.remove(id)
+            if sessions[removed]?.isEmpty == true { sessions[removed] = nil }
+        }
+        for added in sessionIDs.subtracting(previous) { sessions[added, default: []].insert(id) }
+        scoped[id]?.sessionIDs = sessionIDs
+    }
+
     func unsubscribe(_ id: UUID) {
-        handlers.removeValue(forKey: id)
+        global[id] = nil
+        updateSessionIDs([], for: id)
+        scoped[id] = nil
+        workerObservers.remove(id)
     }
 
     func route(type: String, params: [String: Any]) {
-        let payload = params["payload"] as? [String: Any] ?? [:]
-        let eventSessionID = (params["session_id"] as? String) ?? (payload["session_id"] as? String)
-        for subscription in handlers.values {
-            guard subscription.sessionID == nil || subscription.sessionID == eventSessionID else { continue }
-            subscription.handler(type, params)
+        route(Event(type: type, params: params))
+    }
+
+    func route(_ event: Event) {
+        var recipients = event.sessionID.flatMap { sessions[$0] } ?? []
+        if event.type == "gateway.ready" || event.sessionID?.isEmpty != false {
+            recipients.formUnion(workerObservers)
+        } else if event.type.hasPrefix("subagent.") {
+            for id in workerObservers where !recipients.contains(id) && scoped[id]?.matchesWorker?(event) == true {
+                recipients.insert(id)
+            }
         }
+        let matching = recipients.compactMap { scoped[$0]?.handler }
+        let broadcast = global.values
+        for handler in broadcast { handler(event.type, event.params) }
+        for handler in matching { handler(event.type, event.params) }
     }
 }
 
