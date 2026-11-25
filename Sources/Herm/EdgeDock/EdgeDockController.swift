@@ -30,6 +30,14 @@ final class EdgeDockController: NSObject {
     private var suppressClickUntil = Date.distantPast
     private var workspacePresented = false
     private var runtimeStarted = false
+    private let voiceConversation = EdgeQuickConversationModel()
+    private lazy var notchVoiceModel: DockModel = {
+        let voice = voiceConversation.prepareVoice(runtime: model)
+        voice.voiceAssistant.control = controlCenter
+        return voice
+    }()
+    private lazy var voiceIsland = EdgeVoiceIsland(model: model)
+    private lazy var notchVoiceIsland = EdgeVoiceIsland(model: notchVoiceModel)
     private var quickProfileID: String?
     private var completedTaskIDs: Set<String>?
     private var finishedBots = EdgeFinishedBotAcknowledgements()
@@ -112,7 +120,9 @@ final class EdgeDockController: NSObject {
                 onQuotaRequested: { [weak self] in self?.loadQuota() },
                 onTasksRefresh: { [weak self] in self?.refreshSelectedTasks() },
                 onOpenQuota: { [weak self] in self?.openQuota() },
-                quickMessageModel: model,
+                quickMessageModel: model, notchVoiceModel: notchVoiceModel,
+                onToggleVoice: { [weak self] in self?.toggleVoiceFromPreview() },
+                onMinimizeVoice: { [weak self] in self?.minimizeVoiceStage() },
                 onQuickMessageFocus: { [weak self] active in self?.setQuickMessageFocus(active) },
                 onQuickReply: { [weak self] task in self?.beginQuickReply(task) },
                 onResultPeek: { [weak self] task in self?.peekResult(task) },
@@ -142,6 +152,35 @@ final class EdgeDockController: NSObject {
             .store(in: &subscriptions)
         panel.onCancel = { [weak self] in self?.escapePreview() }
         installInteractionMonitors()
+        model.notchVoiceNoticeTarget = notchVoiceModel
+        model.voiceCapture.standby = notchVoiceModel
+        Publishers.CombineLatest4(
+            model.$voiceState.map(\.isNativeConversationActive).removeDuplicates(),
+            notchVoiceModel.$voiceState.map(\.isNativeConversationActive).removeDuplicates(),
+            model.voiceStage.$mountedTalkStages.map { $0 > 0 }.removeDuplicates(), state.$side.removeDuplicates()
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _ in self?.updateVoiceStage() }
+        .store(in: &subscriptions)
+        // The collapsed dot follows actual microphone startup and shutdown.
+        notchVoiceModel.$voiceState.map { _ in () }
+            .merge(with: notchVoiceModel.voiceMic.$isRunning.removeDuplicates().map { _ in () })
+            .merge(with: notchVoiceModel.voiceMic.$isPreparingSpeech.removeDuplicates().map { _ in () })
+            .merge(with: notchVoiceModel.voiceMic.$errorMessage.removeDuplicates().map { _ in () })
+            .merge(with: model.botMode.$inventory.map { _ in () })
+            .merge(with: NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).map { _ in () })
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refreshVoiceWake() }
+            .store(in: &subscriptions)
+        model.voiceTimers.$soonest
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] soonest in
+                guard let self, self.state.countdown != soonest else { return }
+                self.state.countdown = soonest
+                self.position(animated: true)
+            }
+            .store(in: &subscriptions)
         controlCenter.pet.$info.combineLatest(controlCenter.pet.$sheet)
             .map { $0.enabled && $1 != nil }
             .removeDuplicates()
@@ -225,7 +264,13 @@ final class EdgeDockController: NSObject {
             }.store(in: &subscriptions)
         state.preferences.objectWillChange.receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.rebuildTasks() }.store(in: &subscriptions)
-        state.$showingAnnouncement.combineLatest(state.$glimpseHeight).removeDuplicates { $0 == $1 }
+        // The widget's unfold changes its height every frame; resize the window once it settles,
+        // not per frame (each resize re-lays out the whole notch and drops frames).
+        state.$voiceHeight.removeDuplicates().debounce(for: .milliseconds(90), scheduler: RunLoop.main)
+            .sink { [weak self] _ in if self?.state.voiceLive == true { self?.position(animated: true) } }
+            .store(in: &subscriptions)
+        state.$showingAnnouncement.combineLatest(state.$glimpseHeight)
+            .removeDuplicates { $0 == $1 }
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in if self?.state.expanded == true { self?.position(animated: true) } }
             .store(in: &subscriptions)
@@ -324,13 +369,10 @@ final class EdgeDockController: NSObject {
             .sink { [weak self] visible in
                 if visible { self?.pollQuota(force: true) }
             }.store(in: &subscriptions)
-        model.$currentSessionTitle.combineLatest(model.$runtimeConfiguration, model.$defaultBotName)
+        model.$currentSessionTitle
             .receive(on: RunLoop.main)
-            .sink { [weak self] _, _, _ in
-                guard let self else { return }
-                self.state.name = self.model.agentDisplayName
-                self.updateDetail()
-            }.store(in: &subscriptions)
+            .sink { [weak self] _ in self?.updateDetail() }
+            .store(in: &subscriptions)
         model.$messages
             .map { $0.last(where: { $0.role == .hermes }) }
             .removeDuplicates { $0?.id == $1?.id && $0?.contentRevision == $1?.contentRevision }
@@ -371,6 +413,7 @@ final class EdgeDockController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.ensureNotchVisible() }
             .store(in: &subscriptions)
+        model.voiceCapture.onStartNotchVoice = { [weak self] in self?.startVoice() }
         ensureNotchVisible()
         if startsRuntime { startRuntime() }
     }
@@ -379,6 +422,7 @@ final class EdgeDockController: NSObject {
         guard !runtimeStarted else { return }
         runtimeStarted = true
         controlCenter.bind(to: model)
+        refreshVoiceWake()
         Just(()).delay(for: .seconds(30), scheduler: RunLoop.main)
             .sink { [weak self] in
                 guard let self, self.lastQuotaPoll == nil else { return }
@@ -445,6 +489,7 @@ final class EdgeDockController: NSObject {
         panel.orderOut(nil)
         petWindow?.hide()
         workspacePresented = true
+        updateVoiceStage()
     }
 
     func restoreNotch() {
@@ -453,6 +498,88 @@ final class EdgeDockController: NSObject {
         state.activity.responseCompleted = false
         ensureNotchVisible()
         surfaceDigestIfPossible()
+        updateVoiceStage()
+    }
+
+    private func startVoice() {
+        if let owner = model.voiceCapture.owner, owner.voiceState.isNativeConversationActive {
+            if owner.voiceState == .paused { owner.resumeVoiceListening(force: true) }
+            return
+        }
+        model.stopVoiceAnnouncement()
+        notchVoiceModel.startLocalVoiceAssistant()
+    }
+
+    func toggleVoice() {
+        let target = model.voiceCapture.owner ?? notchVoiceModel
+        if target === notchVoiceModel { model.stopVoiceAnnouncement() }
+        target.toggleVoiceFromShortcut()
+    }
+
+    func minimizeVoiceStage() {
+        guard let visible = state.voicePreviewModel else { return }
+        state.minimizedVoiceModel = visible
+        hovering = false
+        notchHost?.resetNotchHover()
+        updateVoiceStage()
+    }
+
+    func toggleVoiceFromPreview() {
+        if state.minimizedVoiceModel != nil {
+            state.minimizedVoiceModel = nil
+            updateVoiceStage()
+        } else {
+            toggleVoice()
+        }
+    }
+
+    private func refreshVoiceWake() {
+        guard runtimeStarted else { return }
+        notchVoiceModel.refreshIdleWake()
+        let mic = notchVoiceModel.voiceMic
+        let enabled = VoiceWakeShortcut.wakeWordEnabled
+        let paused =
+            notchVoiceModel.voiceState == .paused
+            && !notchVoiceModel.isVoiceMicMuted && notchVoiceModel.voiceWakesByVoice
+        let listening =
+            (notchVoiceModel.listensForIdleWake || paused) && mic.isRunning && mic.errorMessage == nil
+            && !mic.isPreparingSpeech && mic.utteranceTranscript != nil
+        let error = enabled ? mic.errorMessage : nil
+        if state.wakeError != error { state.wakeError = error }
+        let hadIndicator = state.showsWakeIndicator
+        if state.wakeEnabled != enabled { state.wakeEnabled = enabled }
+        if state.wakeListening != listening { state.wakeListening = listening }
+        if state.showsWakeIndicator != hadIndicator { position(animated: true) }
+    }
+
+    /// Shows a live voice conversation, unless a Talk tab already does: inside Herm's own
+    /// notch (top or side) when it is on screen, else in the standalone voice widget.
+    private func updateVoiceStage() {
+        let notchVoiceActive = notchVoiceModel.voiceState.isNativeConversationActive
+        let workspaceVoice = EdgeVoiceStagePlacement.resolve(
+            voiceActive: model.voiceState.isNativeConversationActive, talkTabShowing: model.mountedTalkStages > 0)
+        let active = notchVoiceActive ? notchVoiceModel : model.voiceState.isNativeConversationActive ? model : nil
+        if let minimized = state.minimizedVoiceModel, minimized !== active { state.minimizedVoiceModel = nil }
+        let showVoice = state.minimizedVoiceModel == nil
+        let inNotch =
+            showVoice && (notchVoiceActive || workspaceVoice == .island) && notchEnabled && !workspacePresented
+        let visibleModel = inNotch ? (notchVoiceActive ? notchVoiceModel : model) : nil
+        let wasInNotch = state.voiceLive
+        if state.voicePreviewModel !== visibleModel { state.voicePreviewModel = visibleModel }
+        if wasInNotch != inNotch {
+            collapseTask?.cancel()
+            expandTask?.cancel()
+            if inNotch {
+                state.clearPreviewDetails()
+                state.composing = false
+                state.showingAnnouncement = false
+                setExpanded(true)
+            } else {
+                setExpanded(hovering)
+            }
+        }
+        voiceIsland.show(showVoice && workspaceVoice == .island && !notchVoiceActive && !inNotch)
+        notchVoiceIsland.show(showVoice && notchVoiceActive && !inNotch)
     }
 
     private func peekResult(_ task: EdgeNotchTask) {
@@ -1113,7 +1240,7 @@ final class EdgeDockController: NSObject {
         }
         guard state.interruptions.admit(reference, channel: .notch) else { return }
         guard !workspacePresented, !dragging, !petDragging, !state.composing, !state.isReadingDetail,
-            state.previewInteraction.mode == .passive
+            !state.voiceLive, state.previewInteraction.mode == .passive
         else { return }
         // Every notch announcement, including future sources, reaches the pet here.
         controlCenter.pet.react(.announcement(activity: state.sessionRailActivity, quota: quota))
@@ -1139,6 +1266,11 @@ final class EdgeDockController: NSObject {
 
     private func hoverChanged(_ value: Bool) {
         guard runtimeStarted, !workspacePresented, !dragging, !petDragging else { return }
+        // Voice holds the notch open; hovering neither swaps nor collapses it.
+        if state.voiceLive {
+            hovering = value
+            return
+        }
         hovering = value
         collapseTask?.cancel()
         expandTask?.cancel()
@@ -1165,7 +1297,7 @@ final class EdgeDockController: NSObject {
         collapseTask?.cancel()
         let task = DispatchWorkItem { [weak self] in
             guard let self, !self.hovering, !self.dragging, !self.workspacePresented, !self.state.composing,
-                self.state.previewInteraction.mode == .passive,
+                !self.state.voiceLive, self.state.previewInteraction.mode == .passive,
                 !self.panel.frame.contains(NSEvent.mouseLocation)
             else { return }
             guard self.panel.attachedSheet == nil, !self.panel.dockHasInteractiveChildWindow else {
@@ -1270,7 +1402,11 @@ final class EdgeDockController: NSObject {
         let previous = previousApplication
         let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
         previousApplication = nil
-        setExpanded(false)
+        if state.voiceLive {
+            minimizeVoiceStage()
+        } else {
+            setExpanded(false)
+        }
         if returnFocus, let previous, !previous.isTerminated,
             frontmost == ProcessInfo.processInfo.processIdentifier || frontmost == previous.processIdentifier
         {
@@ -1317,6 +1453,9 @@ final class EdgeDockController: NSObject {
     }
 
     func shutdown() {
+        runtimeStarted = false
+        notchVoiceModel.refreshIdleWake(suspended: true)
+        voiceConversation.shutdown()
         deferredCompletionDetail?.cancel()
         deliveryQuestionWatch = nil
         deliveryQuestionPoll?.cancel()
@@ -1362,6 +1501,7 @@ final class EdgeDockController: NSObject {
         }
         if ended {
             suppressClickUntil = Date().addingTimeInterval(0.4)
+            if state.voiceLive { setExpanded(true) }
             persistPlacement()
             surfaceDigestIfPossible()
         }
@@ -1968,7 +2108,6 @@ final class EdgeNotchState: ObservableObject {
         }
     }
     @Published var agentUpdatePhase: HermesUpdatePhase = .idle
-    @Published var name = "Herm"
     @Published var sessionTitle = "Herm"
     @Published var updateTitle = "No activity yet"
     @Published var showsQuota = false
@@ -1987,6 +2126,34 @@ final class EdgeNotchState: ObservableObject {
     @Published var glimpseIDs: [String] = []
     /// The glimpse's measured content height, which sizes the shell around it.
     @Published var glimpseHeight: CGFloat = 64
+    /// The visible stage owns the open notch. A minimized call releases the preview until restored.
+    @Published var voicePreviewModel: DockModel?
+    @Published var minimizedVoiceModel: DockModel?
+    var voiceLive: Bool { voicePreviewModel != nil }
+    /// Listening for "Hey <name>" with no call open (Settings → Voice → Wake word, or the notch's ear).
+    @Published var wakeEnabled = false
+    @Published var wakeListening = false
+    var wakeIndicatorStatus: EdgeWakeIndicator.Status? {
+        if wakeListening { return .listening }
+        guard wakeEnabled else { return nil }
+        return wakeError == nil ? .standby : .unavailable
+    }
+    var showsWakeIndicator: Bool { wakeIndicatorStatus != nil }
+    var wakeAccessibilityValue: String {
+        switch wakeIndicatorStatus {
+        case .listening: EdgeWakeIndicator.accessibilityStatus
+        case .standby: "Wake word on, microphone not listening"
+        case .unavailable: wakeError ?? "Wake microphone unavailable"
+        case nil: ""
+        }
+    }
+    @Published var wakeError: String?
+    /// The soonest voice reminder within the hour, counting down in the island's right ear.
+    @Published var countdown: VoiceTimer?
+    /// The voice widget's measured height, which sizes the shell around it.
+    @Published var voiceHeight: CGFloat = 96
+    /// Voice is wider than the task preview on an edge so the spoken line has room.
+    static let voiceSideWidth: CGFloat = 420
     var glimpseTasks: [EdgeNotchTask] {
         guard announcesTasks else { return [] }
         let ids = Set(glimpseIDs)
@@ -2046,8 +2213,13 @@ final class EdgeNotchState: ObservableObject {
     var railHeight: CGFloat { expanded ? 136 : collapsedRailHeight }
     var collapsedRailHeight: CGFloat {
         let slots = railActivity.slots(for: .stored)
-        return max(96, CGFloat(slots.primary + slots.extras) * 30 + 56)
+        let height = max(96, CGFloat(slots.primary + slots.extras) * 30 + 56)
+        // The faces are centered. Reserve the bottom inset on both sides of
+        // that center so extra space below the mic doesn't crowd the stack.
+        let wakeFooter = Self.sideWakeClearance * 2 + sideWakeTopMargin + Self.wakeSlot - Self.wakeGlyphSize
+        return height + (showsWakeIndicator ? wakeFooter : 0)
     }
+    var sideWakeTopMargin: CGFloat { showsWakeIndicator ? DockSpacing.section : 0 }
     var panelHeight: CGFloat { (expanded ? openSize.height : railHeight) + petReserve }
     /// The camera housing the top island wraps (drawn when the screen has none).
     @Published var notchSize = CGSize(width: EdgeNotchMetrics.fallbackWidth, height: 32)
@@ -2056,8 +2228,20 @@ final class EdgeNotchState: ObservableObject {
     var islandEars: (left: CGFloat, right: CGFloat) {
         let slots = railActivity.slots(for: .stored)
         func ear(_ count: Int) -> CGFloat { CGFloat(max(1, count)) * 30 + 20 }
-        return (ear(slots.extras) + Self.islandBadgeInset, ear(slots.primary))
+        return (
+            ear(slots.extras) + Self.islandBadgeInset,
+            ear(slots.primary) + (countdown == nil ? 0 : Self.countdownSlot)
+                + (showsWakeIndicator ? Self.wakeSlot + Self.wakeEdgeInset : 0)
+        )
     }
+    /// Room for a timer glyph and "59:59" beside the primary mark.
+    static let countdownSlot: CGFloat = 52
+    /// The listening indicator's slot after the faces, so it never touches a badge.
+    static let wakeSlot: CGFloat = 20
+    static let wakeGlyphSize: CGFloat = 14
+    static let sideWakeClearance = DockSpacing.section
+    /// Clears the island's rounded end, which curves in well before its frame edge.
+    static let wakeEdgeInset: CGFloat = 16
     /// Badged faces sit bottom-leading in their box, so the left ear pads its
     /// outer edge to keep them off the shell's shoulder.
     static let islandBadgeInset: CGFloat = 6
@@ -2075,6 +2259,12 @@ final class EdgeNotchState: ObservableObject {
             : CGSize(width: railWidth, height: collapsedRailHeight)
     }
     var openSize: CGSize {
+        if voiceLive {
+            // Matches the preview padding: 8 + 16 under the notch, 26 + 26 on an edge.
+            return side == .top
+                ? CGSize(width: EdgeVoiceIsland.width, height: notchSize.height + voiceHeight + 24)
+                : CGSize(width: Self.voiceSideWidth, height: voiceHeight + 52)
+        }
         if isComposingQuickMessage {
             let verticalInsets: CGFloat = side == .top ? 24 : 52
             let height = startsNewQuickSession ? quickDraftHeight + verticalInsets : Self.quickMessageHeight
@@ -2116,10 +2306,15 @@ struct EdgeNotchView: View {
         var onPreviewEvaluation: (() -> Void)?
     #endif
     @State private var controlPresentationRevision = 0
+    @AppStorage(VoiceWakeShortcut.wakeWordKey) private var wakeWordEnabled = false
+    @ObservedObject private var wakeActivation = VoiceWakeActivation.shared
     var onQuotaRequested: () -> Void = {}
     var onTasksRefresh: () -> Void = {}
     var onOpenQuota: () -> Void = {}
     var quickMessageModel: DockModel? = nil
+    var notchVoiceModel: DockModel? = nil
+    var onToggleVoice: () -> Void = {}
+    var onMinimizeVoice: () -> Void = {}
     var onQuickMessageFocus: (Bool) -> Void = { _ in }
     var onQuickReply: (EdgeNotchTask) -> Void = { _ in }
     var onResultPeek: (EdgeNotchTask) -> Void = { _ in }
@@ -2154,7 +2349,7 @@ struct EdgeNotchView: View {
                     // in the middle of the expanded notch.
                     preview.frame(maxWidth: .infinity, maxHeight: .infinity)
                         .dockPadding(.horizontal, state.side == .top ? 34 : 8)
-                        .dockPadding(.top, state.side == .top ? 8 : 26)
+                        .dockPadding(.top, previewTopInset)
                         .dockPadding(.bottom, state.side == .top ? 16 : 26)
                         .transition(
                             reduceMotion
@@ -2166,10 +2361,12 @@ struct EdgeNotchView: View {
                 } else if state.side == .top {
                     EdgeIslandRail(
                         activity: state.railActivity, notchWidth: state.notchSize.width, ears: state.islandEars,
-                        height: state.notchSize.height, action: openDock
+                        height: state.notchSize.height, wakeStatus: state.wakeIndicatorStatus,
+                        countdown: state.countdown, action: openDock
                     )
                     .contextMenu { railMenu }
-                    .accessibilityLabel("\(state.name), \(state.railActivity.title). Open Herm")
+                    .accessibilityLabel("Herm, \(state.railActivity.title). Open Herm")
+                    .accessibilityValue(state.wakeAccessibilityValue)
                     .accessibilityHint("Drag to a screen edge to dock it there")
                     .transition(.opacity.animation(.easeOut(duration: 0.16)))
                 } else {
@@ -2192,8 +2389,10 @@ struct EdgeNotchView: View {
             // One persistent shell: the rail bar itself stretches into the preview
             // panel and back, so the two states read as a single growing notch.
             .background {
-                // The top island is always black to match the camera housing.
-                if state.side == .top {
+                if open && state.voiceLive {
+                    shell(EdgeVoiceGlass(shape: AnyShape(outline), housing: isIsland ? state.notchSize.height : 0))
+                } else if isIsland {
+                    // The quick island stays black to match the camera housing.
                     shell(EdgeNotchShape(side: .top).fill(.black))
                 } else {
                     // Side previews retain a contour even when Glass blends into the desktop.
@@ -2275,15 +2474,28 @@ struct EdgeNotchView: View {
         Button(action: openDock) {
             EdgePetRail(
                 activity: state.railActivity, side: state.side, width: state.barWidth,
-                height: state.collapsedRailHeight, glow: state.barGlow, dockingReach: dockingReach,
+                height: state.collapsedRailHeight, statusBottomInset: state.sideWakeTopMargin,
+                glow: state.barGlow, dockingReach: dockingReach,
                 tracking: state.petDragging, docked: state.petAttached && state.hasPet
             )
             .frame(width: state.railWidth, height: state.collapsedRailHeight)
+            // The mic sits at the bar's foot, centered on the bar (which hugs the screen
+            // edge inside the wider rail frame); the top island lays it out beside its faces.
+            .overlay(alignment: state.side == .left ? .bottomLeading : .bottomTrailing) {
+                if let status = state.wakeIndicatorStatus {
+                    EdgeWakeIndicator(status: status)
+                        .frame(width: state.barWidth)
+                        .dockPadding(.bottom, 10)
+                        .padding(.bottom, EdgeNotchState.sideWakeClearance)
+                        .transition(.opacity)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
         .contextMenu { railMenu }
-        .accessibilityLabel("\(state.name), \(state.railActivity.title). Open Herm")
+        .accessibilityLabel("Herm, \(state.railActivity.title). Open Herm")
+        .accessibilityValue(state.wakeAccessibilityValue)
         .accessibilityHint("Drag to move along either screen edge")
     }
 
@@ -2301,6 +2513,13 @@ struct EdgeNotchView: View {
         state.isComposingQuickMessage && quickMessageModel != nil
     }
 
+    private var showsPreviewToolbar: Bool { !state.glimpsing && !showsQuickMessage }
+
+    private var previewTopInset: CGFloat {
+        if !isIsland { return 26 }
+        return state.voiceLive || !showsPreviewToolbar ? DockSpacing.control : 0
+    }
+
     private var preview: some View {
         #if DEBUG
             let _ = onPreviewEvaluation?()
@@ -2308,50 +2527,33 @@ struct EdgeNotchView: View {
         return previewContent
     }
 
-    private var previewContent: some View {
-        VStack(spacing: isIsland ? 6 : 0) {
-            // A glimpse is just the update: no tabs or toolbar until the user hovers.
-            if !state.glimpsing && !showsQuickMessage {
-                HStack(spacing: 4) {
-                    HStack(spacing: 2) {
-                        tabButton("Tasks", isSelected: !state.displaysQuota && !state.displaysStatus) {
-                            state.clearPreviewDetails()
-                            onQuickMessageFocus(false)
-                            state.showingAnnouncement = false
-                            state.showsQuota = false
-                        }
-                        tabButton("Quota", isSelected: state.displaysQuota) {
-                            state.clearPreviewDetails()
-                            onQuickMessageFocus(false)
-                            state.showingAnnouncement = false
-                            state.showsQuota = true
-                            onQuotaRequested()
-                        }
-                    }
-                    .dockPadding(2)
-                    .dockWell(.sunken, radius: 14)
-                    if isIsland {
-                        // Leave the camera housing clear; the controls sit in the ears either side.
-                        Spacer(minLength: state.notchSize.width + 12)
-                    } else {
-                        Spacer()
-                    }
-                    if state.displaysQuota {
-                        EdgeQuotaToolbar(control: controlCenter)
-                    } else {
-                        HStack(spacing: 8) {
-                            EdgeQuietMenu(coordinator: state.interruptions) {
-                                onQuickMessageFocus(false)
-                                state.showingDigest = true
-                            }
-                            taskToolbar
-                        }
-                    }
-                }
-                .frame(height: isIsland ? max(state.notchSize.height, 34) : 40)
-                .dockPadding(.horizontal, isIsland ? 0 : 6)
-                if !isIsland { Divider().overlay(Color.dockBorderLight) }
+    @ViewBuilder private var previewContent: some View {
+        if state.voiceLive, let model = state.voicePreviewModel {
+            EdgeVoiceWidget(
+                model: model, mic: model.voiceMic, bots: model.botMode, shown: open, inNotch: true,
+                // Notch width less the preview's and the widget's own horizontal padding.
+                visualWidth: isIsland ? EdgeVoiceIsland.width - 100 : EdgeNotchState.voiceSideWidth - 48,
+                onMinimize: onMinimizeVoice
+            )
+            .id(ObjectIdentifier(model))
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) {
+                $0.size.height
+            } action: { height in
+                // 8pt steps: caption reflows of a line or less don't move the window.
+                let stepped = (height / 8).rounded(.up) * 8
+                if state.voiceHeight != stepped { state.voiceHeight = stepped }
             }
+            .dockPadding(.top, isIsland ? state.notchSize.height : 0)
+            .frame(maxHeight: .infinity, alignment: .top)
+        } else {
+            dockPreview
+        }
+    }
+
+    private var dockPreview: some View {
+        VStack(spacing: isIsland ? 6 : 0) {
+            if showsPreviewToolbar { previewToolbar }
             if let target = state.steeringTarget, let model = quickMessageModel {
                 EdgeSubagentSteering(
                     origin: target,
@@ -2456,8 +2658,82 @@ struct EdgeNotchView: View {
                     openDock: openDock, openTask: onOpenTask)
             }
         }
-        // Presentations without the tab row still leave the camera housing clear.
-        .dockPadding(.top, (state.glimpsing || showsQuickMessage) && isIsland ? state.notchSize.height : 0)
+        // Camera housing is measured in screen points and does not scale with density.
+        .padding(.top, isIsland && !showsPreviewToolbar ? state.notchSize.height : 0)
+    }
+
+    @ViewBuilder private var previewToolbar: some View {
+        if isIsland {
+            ViewThatFits(in: .horizontal) {
+                EdgeIslandToolbarLayout(cameraWidth: state.notchSize.width) {
+                    HStack(spacing: DockSpacing.micro) {
+                        previewTabs
+                        talkButton
+                    }
+                    HStack(spacing: DockSpacing.micro) {
+                        wakeWordButton
+                        previewToolbarActions
+                    }
+                }
+                .frame(height: max(state.notchSize.height, DockControlMetrics.compactHeight))
+                // The controls can use the shoulder inset while the scrolling body keeps its gutter.
+                .dockPadding(.horizontal, -DockSpacing.control)
+
+                previewToolbarRow
+                    .frame(height: max(state.notchSize.height, 34))
+                    .padding(.top, state.notchSize.height)
+                    .dockPadding(.top, DockSpacing.control)
+            }
+        } else {
+            previewToolbarRow
+                .frame(height: 40)
+                .dockPadding(.horizontal, DockSpacing.tight)
+            Divider().overlay(Color.dockBorderLight)
+        }
+    }
+
+    private var previewToolbarRow: some View {
+        HStack(spacing: DockSpacing.micro) {
+            previewTabs
+            talkButton
+            wakeWordButton
+            Spacer()
+            previewToolbarActions
+        }
+    }
+
+    private var previewTabs: some View {
+        HStack(spacing: 2) {
+            tabButton("Tasks", isSelected: !state.displaysQuota && !state.displaysStatus) {
+                state.clearPreviewDetails()
+                onQuickMessageFocus(false)
+                state.showingAnnouncement = false
+                state.showsQuota = false
+            }
+            tabButton("Quota", isSelected: state.displaysQuota) {
+                state.clearPreviewDetails()
+                onQuickMessageFocus(false)
+                state.showingAnnouncement = false
+                state.showsQuota = true
+                onQuotaRequested()
+            }
+        }
+        .dockPadding(2)
+        .dockWell(.sunken, radius: 14)
+    }
+
+    @ViewBuilder private var previewToolbarActions: some View {
+        if state.displaysQuota {
+            EdgeQuotaToolbar(control: controlCenter)
+        } else {
+            HStack(spacing: DockSpacing.control) {
+                EdgeQuietMenu(coordinator: state.interruptions) {
+                    onQuickMessageFocus(false)
+                    state.showingDigest = true
+                }
+                taskToolbar
+            }
+        }
     }
 
     private func resultPreview(_ target: EdgeResultTarget, model quickMessageModel: DockModel) -> some View {
@@ -2537,6 +2813,64 @@ struct EdgeNotchView: View {
         .accessibilityLabel(unavailable ? "Status unavailable. Refresh tasks" : "Refresh tasks")
     }
 
+    /// Voice is an action, not a view: its own mic, beside the toolbar, whichever tab is open.
+    @ViewBuilder private var talkButton: some View {
+        if let model = notchVoiceModel ?? quickMessageModel {
+            let minimized = state.minimizedVoiceModel != nil
+            let live = minimized || model.voiceState != .inactive
+            let actionLabel = minimized ? "Show voice" : live ? "End voice" : "Talk"
+            let label =
+                live
+                ? actionLabel
+                : VoiceWakeShortcut.talkHelp(
+                    chord: VoiceWakeShortcut.stored,
+                    wakeName: VoiceWakeShortcut.wakeWordEnabled && MicLevelMeter.canDetectWakePhrase
+                        ? model.voiceWakeName : nil)
+            Button {
+                state.clearPreviewDetails()
+                onQuickMessageFocus(false)
+                onToggleVoice()
+            } label: {
+                DockIcon(.microphone, size: 13, color: live ? .dockAccent : .dockSecondaryText)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.dockHover)
+            .help(label)
+            .accessibilityLabel(actionLabel)
+            .accessibilityHint(live ? "" : label)
+        }
+    }
+
+    /// Always-on wake word: the same preference as Settings → Voice → Wake word.
+    @ViewBuilder private var wakeWordButton: some View {
+        if let model = notchVoiceModel ?? quickMessageModel {
+            let on = wakeWordEnabled
+            let available = MicLevelMeter.canDetectWakePhrase
+            let error = wakeActivation.error ?? state.wakeError
+            let help =
+                error ?? VoiceWakeShortcut.wakeWordHelp(on: on, available: available, wakeName: model.voiceWakeName)
+            let active = on && available && error == nil
+            let tint: Color = error != nil ? .dockWarning : active ? .dockAccent : .dockSecondaryText
+            Button {
+                Task { await wakeActivation.setEnabled(!on) }
+            } label: {
+                DockIcon(active ? .ear : .earSlash, size: 13, color: tint)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.dockHover)
+            .disabled(wakeActivation.isRequesting)
+            .help(help)
+            .accessibilityLabel("Always listen for wake word")
+            .accessibilityValue(
+                wakeActivation.isRequesting
+                    ? "Requesting permission" : error != nil ? "Unavailable" : active ? "On" : "Off"
+            )
+            .accessibilityHint(help)
+        }
+    }
+
     private func tabButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         DockTabButton(title: title, isSelected: isSelected, height: 24, action: action)
     }
@@ -2551,6 +2885,7 @@ private struct EdgePetRail: View {
     let side: EdgeDockSide
     var width: CGFloat = 28
     var height: CGFloat = 60
+    var statusBottomInset: CGFloat = 0
     var glow = 0.0
     var dockingReach: CGFloat = 0
     var tracking = false
@@ -2564,6 +2899,7 @@ private struct EdgePetRail: View {
             HStack(spacing: 0) {
                 if side == .right { Spacer(minLength: 0) }
                 EdgeNotchStatusIndicator(activity: activity, style: displayStyle)
+                    .padding(.bottom, statusBottomInset)
                     .frame(width: width, height: height)
                     // The shell fill lives in EdgeNotchView so it can grow into the preview.
                     .overlay {
@@ -2667,6 +3003,7 @@ final class EdgeDockHostingView<Content: View>: NSHostingView<Content> {
     var onHoverChanged: ((Bool) -> Void)?
     var bottomHoverExclusion: CGFloat = 0
     private var lastNotchHover: Bool?
+    func resetNotchHover() { lastNotchHover = nil }
     private var hoverArea: NSTrackingArea?
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -2706,7 +3043,7 @@ final class EdgeDockHostingView<Content: View>: NSHostingView<Content> {
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         // Leaving via the pet must still schedule collapse after leaving the panel.
-        lastNotchHover = nil
+        resetNotchHover()
         onHoverChanged?(false)
     }
 }

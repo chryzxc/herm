@@ -1,4 +1,5 @@
 import Combine
+import CoreFoundation
 import Foundation
 
 extension ControlCenterModel {
@@ -281,7 +282,7 @@ extension ControlCenterModel {
             let id: String
             if let stringID = row["id"] as? String {
                 id = stringID
-            } else if let numericID = row["id"] as? NSNumber, !(row["id"] is Bool) {
+            } else if let numericID = row["id"] as? NSNumber, CFGetTypeID(numericID) != CFBooleanGetTypeID() {
                 id = numericID.stringValue
             } else {
                 return nil
@@ -292,10 +293,10 @@ extension ControlCenterModel {
             if let role = row["role"], !(role is String) { return nil }
             let timestamp = activityDate(row["timestamp"])
             if row["timestamp"] != nil, timestamp == nil { return nil }
-            if let toolName = row["tool_name"], !(toolName is String) { return nil }
+            guard isOptionalString(row["tool_name"]), isOptionalString(row["display_kind"]) else { return nil }
 
             var names: [String] = []
-            if let rawToolCalls = row["tool_calls"] {
+            if let rawToolCalls = row["tool_calls"], !(rawToolCalls is NSNull) {
                 guard let toolCalls = rawToolCalls as? [[String: Any]] else { return nil }
                 for call in toolCalls {
                     if let function = call["function"] {
@@ -312,13 +313,24 @@ extension ControlCenterModel {
             if let toolName = row["tool_name"] as? String, !toolName.isEmpty {
                 names.append(toolName)
             }
+            let displayKind = row["display_kind"] as? String
+            if displayKind == "hidden" || row["_compressed_summary"] as? Bool == true { continue }
+
+            var isCompletedReply = false
             if names.isEmpty, (row["role"] as? String) == "assistant" {
-                names = ["Response"]
+                if let event = SystemEvent.classify(role: "assistant", text: "", displayKind: displayKind) {
+                    names = [event.label]
+                } else {
+                    names = ["Response"]
+                    isCompletedReply = true
+                }
             }
 
             steps.append(
                 contentsOf: names.enumerated().map { nameIndex, name in
-                    SessionActivityStep(id: "\(id)-\(nameIndex)", name: name, timestamp: timestamp ?? .distantPast)
+                    SessionActivityStep(
+                        id: "\(id)-\(nameIndex)", name: name, timestamp: timestamp ?? .distantPast,
+                        isCompletedReply: isCompletedReply)
                 })
         }
         return steps
@@ -356,7 +368,7 @@ extension ControlCenterModel {
     }
 
     nonisolated static func activityDate(_ value: Any?) -> Date? {
-        if let value, !(value is Bool), let number = value as? NSNumber {
+        if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite {
             return Date(timeIntervalSince1970: number.doubleValue)
         }
         if let string = value as? String {
@@ -411,7 +423,7 @@ extension ControlCenterModel {
     }
 
     nonisolated static func isOptionalString(_ value: Any?) -> Bool {
-        value == nil || value is String
+        value == nil || value is NSNull || value is String
     }
 
     static func parseProcesses(_ result: [String: Any]) -> [ProcessSummary] {

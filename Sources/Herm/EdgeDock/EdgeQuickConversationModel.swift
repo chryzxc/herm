@@ -25,7 +25,19 @@ final class EdgeQuickConversationModel: ObservableObject {
 
     var paneLoadFailed: Bool { loadFailed || conversation?.sessionTranscriptLoadState.failureMessage != nil }
 
-    private func prepare(_ destination: QuickDestination, session: HermesSession, runtime: DockModel) -> DockModel {
+    /// Owns the hands-free call separately from the workspace's selected chat.
+    func prepareVoice(runtime: DockModel) -> DockModel {
+        let model = prepare(QuickDestination(), runtime: runtime, voiceTimers: runtime.voiceTimers)
+        model.isNotchVoiceConversation = true
+        model.voiceAssistant.preferenceDefaults = runtime.defaults
+        model.botMode = runtime.botMode
+        model.briefingFacts = { [weak runtime] in await runtime?.briefingFacts?() ?? VoiceBriefing.Facts() }
+        return model
+    }
+
+    private func prepare(
+        _ destination: QuickDestination, runtime: DockModel, voiceTimers: VoiceTimerBoard? = nil
+    ) -> DockModel {
         if destinationKey == destination.sessionKey, let conversation { return conversation }
         shutdown()
         destinationKey = destination.sessionKey
@@ -39,7 +51,8 @@ final class EdgeQuickConversationModel: ObservableObject {
             sessionAgentStateFileURL: cache.appendingPathComponent("agents.json"), defaults: defaults,
             botActivityFileURL: cache.appendingPathComponent("bots.json"), loadArchives: false,
             rpcClient: runtime.controlRPCClient, refreshesSessionIndexFromEvents: false,
-            sessionTranscriptCache: runtime.sessionTranscriptCache)
+            sessionTranscriptCache: runtime.sessionTranscriptCache, voiceTimers: voiceTimers,
+            voiceCapture: runtime.voiceCapture)
         model.defaultBotName = runtime.defaultBotName
         conversation = model
         connectionLink = runtime.$isHermesConnected.sink { [weak model] in model?.isHermesConnected = $0 }
@@ -57,7 +70,8 @@ final class EdgeQuickConversationModel: ObservableObject {
                 }
         }
         eventOwner = runtime
-        eventSubscription = model.subscribeSessionEvents(from: runtime.eventRouter, requestedSessionID: session.id)
+        eventSubscription = model.subscribeSessionEvents(
+            from: runtime.eventRouter, requestedSessionID: destination.sessionID)
         return model
     }
 
@@ -76,7 +90,7 @@ final class EdgeQuickConversationModel: ObservableObject {
             shutdown()
             return nil
         }
-        let model = prepare(destination, session: session, runtime: runtime)
+        let model = prepare(destination, runtime: runtime)
         let request = UUID()
         generation = request
         isLoading = true

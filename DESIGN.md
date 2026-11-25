@@ -1466,7 +1466,27 @@ with content, so arriving tasks and refreshes do not resize it. The preview
 has three parts:
 
 - A 40pt tab row with a Tasks / Quota segmented pill (selected segment on
-  `surface`, track on `surface4`), and a trailing fixed slot.
+  `surface`, track on `surface4`), and a trailing fixed slot led by a 28pt mic icon
+  button and an ear toggle. The top island places the tabs and mic left of the camera
+  housing, and the ear and tab actions on the right. Both groups fit within equally
+  wide spaces. A wide camera housing moves the full row below it when either group needs more room.
+  Voice is an action, not a tab: the mic (or ⌥⇧ Space) starts
+  it and the notch voice stage replaces the panel. Minimizing voice keeps the call running
+  and restores hover for the quick preview. Its mic button reopens the minimized stage.
+  The mic's tooltip lists the configured shortcut and wake phrase when starting a call. The ear is the always-on wake word (the same preference as
+  Settings → Voice → Wake word): filled and accent-tinted while on. Either control can
+  request Speech Recognition and Microphone access when enabled. Denied permissions or
+  unavailable on-device recognition keep it off and put the reason in the existing control. Once capture starts, a filled
+  microphone appears in the collapsed notch while it listens for the wake word.
+  Native materials add a contrasting outline so the mic reads over changing backdrops.
+  The 14pt glyph sits inside a fixed 20pt slot. While listening, a soft backdrop
+  breathes behind the glyph using shared Core Animation motion. The mic itself
+  stays sharp and in place. A steady, unslashed mic means wake is on but not
+  listening yet. A slash indicates a recognition error. Reduce Motion keeps it still.
+  On the top island the slot sits after the faces and is inset 16pt from the rounded
+  end. On the side rail it gets an extra 16pt bottom inset with its separation from
+  the faces preserved. The rail's accessibility value announces
+  wake listening, and a reminder due within the hour counts down before the mic.
 - A scrolling body.
 - A fixed footer with a labelled Quick message entry and compact Search and
   Open Herm actions. The top island uses the same labelled entry so its primary
@@ -1568,6 +1588,151 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   resume/history path; workspace selection and drafts remain separate. Changing
   destinations or closing detaches the projection. Failed history reads show the
   existing chat error and a Reload conversation action without resending.
+- **Voice stage.** A live voice conversation outside the Talk tab uses the
+  voice widget. It expands inside the top or side notch when visible. The minimized
+  widget leaves the quick notch available. When the notch is hidden, the floating
+  `EdgeVoiceIsland` is a 580pt panel centered at the top of the screen, sized to its
+  content. The top and floating variants use the notch's dark chrome, and the side
+  version follows the selected skin. All three share one native Liquid Glass
+  backdrop (`EdgeVoiceGlass`, using the system glass on macOS 26 and a HUD blur
+  before), with a restrained rim and a tint for readable captions. Reduce Transparency
+  uses the same shape and solid theme canvas. The embedded top shape keeps the glossy
+  body below the solid black housing band, which fades into the glass over 28pt.
+  The floating panel uses the same geometry with a camera housing, and otherwise has a 28pt rounded glass card just below the menu bar. It is hands-free, so it is one row, not the Talk stage: a 56pt
+  orb that is the bot you're talking to (`BotModeModel.voiceBot`, which needs no bot
+  plugin; before the roster loads it shows the last bot voice used, remembered under
+  `DockModel.voiceBotFaceKey`; an uploaded avatar shows as a 44pt round picture), its `BotFaceMark` (38pt, `.glass` face so it
+  reads on black) wearing the voice mood (`VoiceOrbView.faceMood`) on a faint white disc
+  (6% idle, 10% live), scaling up to 8% with your voice. No ring or gradient. When the
+  bot roster isn't ready (`orbHermFaceID` is nil) the orb is a sphere of the same light
+  instead; tapping either is the orb action. Interrupting before submission discards the
+  unsent request and returns to listening. Then a 13pt semibold sentence-case status
+  in the status tint (`widgetStatus`: Listening, the current step, the agent's name while
+  speaking, Mic off), followed by up to four still 13pt faces of running helper bots
+  (`HermesSubagent.isRunning`, goal on hover, then "+N"), and a 20pt medium line (`widgetCaption`: your live words, then the
+  request, then the spoken caption; "Go ahead, I'm listening" in secondary text only
+  while listening). The paused wake prompt is the primary line. One inset capsule
+  groups the 30pt microphone, minimize, and end controls. When the stage is
+  embedded in the notch, Minimize voice collapses it to the quick-preview rail.
+  Approvals and open-ended clarifications use the existing status and caption. Caption-only
+  prompts fit within the 160pt compact header at the side notch's default width and scale.
+  A clarification with options uses the preview slot for a scrollable, numbered read-only
+  list in the same order as the spoken choices. An active question replaces the previous
+  preview; no buttons or new answer path are added. Approval
+  speech describes known actions without reading commands, tool names, or coordinates.
+  Optional Apple Intelligence explanations play locally for less obvious actions.
+  The exact action, scope, and typed-input controls stay in chat. Apart from clarification
+  choices, only generative results use the preview. The detached reply visual floats in
+  its own 640pt dark-glass panel (`EdgeVoicePreviewView`, 26pt corners, up to 460pt tall)
+  12pt below the widget's visible body, showing only the visuals (`RichDocumentView`
+  `visualsOnly`: charts, tables, previews; never the prose, which is spoken and captioned)
+  on the glass without a second card. Voice previews read-only blocks from a reply
+  even if it also contains a form, checklist, command, record target, HTML surface,
+  or inline widget. Those parts stay in the chat. Selection and rendering share
+  `RichDocument.Segment.showsInVoiceGlance`, and empty groups are hidden. The preview drops
+  out of the widget (scale 0.4 from the top, lifted 36pt, fading in) on the liquid spring
+  and draws back up the same way, then leaves
+  the screen. All light stays inside the body:
+  a thin accent band along the bottom edge that widens with your voice and flows while
+  thinking, never an outer glow. The caption trades lines with a 4pt upward settle
+  and cross-fade confined to its own bounds. Live transcript revisions update in the
+  same line without an animation, and the previous spoken line holds through a
+  synthesis gap in the same playback. Reduce Motion keeps the caption fade-only.
+  The glass body still uses `EdgeVoiceWidget.liquid` for shell transitions
+  (response 0.5, damping 0.74). Each panel jumps once to room for the whole spring (160pt height
+  headroom, `EdgeVoicePanelSizer`) so the body animates inside it, then trims once it settles. Opening is one moment: the body springs open from the
+  camera housing's width while the content fades and lifts 6pt just after (no blur:
+  animated blur over the content and a live-blurred band both dropped frames, so the
+  band's glow is a vertical gradient fade and the panel lays out once when it's made;
+  the panel height rounds up to 40pt steps, grows at once and shrinks only 0.45s after the
+  content settles, so a springing height never resizes the window per frame; the orb and
+  band timelines pause while folded, and the band flows only while thinking), and folds
+  back the same way; visuals unfold from the top. Reduce Motion fades and
+  holds the light still. Call state labels derive from `VoiceStagePresentation`.
+  The same status slot shows microphone startup or speech preparation instead of
+  advertising listening before capture is ready. During confirmed compaction it names
+  the work and uses the caption to explain that earlier messages are being summarized.
+  Live speech and pending decisions still take priority. Route recovery does not reopen a muted call.
+  Speaking over narration keeps the current visual and work intact.
+  It floats over the real desktop, where the browser or terminal is already in view, so
+  it never shows Herm's tabs or the agent screen: only the reply's generative UI, in the
+  captions slot (260pt tall at most), until "close" or the next request (see Talk).
+  An explicit place-map request resolves through Apple Maps and shows a read-only native map
+  in the same preview. A completed Markdown table can populate a read-only preview without
+  replacing its chat message. A Calendar agenda uses the same preview to show a paged list
+  from the selected calendars without adding their details to chat. Say "close the map",
+  "close the chart", "close the table", or "close the calendar" to dismiss it.
+  Recent activity and open approvals use the same read-only preview without adding
+  any approval actions. “Open Browser” still opens the inspector. Explicit voice
+  requests for Chrome or the default browser launch the separate Mac app without
+  changing the agent’s Browser preference or opening a page.
+- **Voice assistant layer.** Everything it says or shows comes from real state.
+  - *Local commands.* The notch mic, keyboard shortcut, Command Palette’s Start Voice action,
+    and wake word open a local listening stage without selecting a workspace chat. Herm speaks
+    direct results in the selected local voice. Readbacks and speech setup errors use the existing
+    caption area. App status and accessibility labels use Herm. General requests resume the
+    default bot's existing main chat across calls. An unavailable main chat uses the caption
+    to ask the user to open it in Herm and try again. After a quiet pause, the wake prompt
+    uses the current bot's display name or the user's custom wake name. Show the prompt
+    while the on-device recognizer is listening. A wake phrase alone gets the optional
+    spoken “I’m listening.” A request in the same breath goes straight to the
+    request. During a running Hermes turn, recognized private commands stay local and the caption asks the user to
+    repeat the request after the reply or after answering a pending approval or clarification.
+    Spoken approvals reach the current call’s pending card, including a short “yes”
+    for Allow once during readout. The readout does not say its own yes or no.
+    Clarification uses the current question's labels and numbered choices, with
+    joined choices only for multi-select. A selection can be said plainly after
+    readout. An explicit “option two” or “choose …” can cut in without letting
+    the options' own audio answer the question. Ambiguous choices leave it open.
+    Sending and retry feedback stay in the caption, and a rejected batch answer
+    keeps listening to that same question.
+    A separate chat request joins the same conversation’s queue and leaves the current
+    approval untouched. Time and arithmetic can be answered locally while it waits.
+    The voice gate removes only the current approval's exact spoken readout from
+    the edges of a transcript, even if recognition arrives after playback. Unclear
+    speech leaves the card open and shows a short “Heard” excerpt and guidance
+    in the existing caption without repeating the question. Denial also needs an explicit decision. When the
+    user asks to retry a denied action, the assistant uses the normal approval flow
+    for a fresh attempt instead of trying to reopen the previous request.
+    Activity summaries use a bounded
+    recent history read and disclose partial coverage. Completed replies exclude typed failure
+    notices and hidden transcript rows.
+  - *Decisions.* Only one clarification or confirmation is active per call. Its caption
+    names the action and its destination. “Cancel” clears it, and sensitive follow-ups
+    expire after 45 seconds. Mail and Messages enable “send it” after the full literal readback
+    plays successfully. An incomplete readback shows recovery guidance in the existing caption.
+    Hermes approval prompts take precedence in an agent turn.
+  - *Acknowledgment.* When enabled, acknowledgments use the same voice route as
+    the reply. Apple Intelligence writes a spoken line on-device based on the current
+    request. It can be a phrase or a full sentence. Herm uses a neutral receipt when
+    no usable line is ready or during approval,
+    and “I’m listening” when the wake phrase has no request, even in an active call.
+    A ready answer skips
+    a receipt that has not started playing. Mute replies also stops receipts.
+    Echo protection stays active throughout a receipt and briefly after it ends.
+    The receipt stays separate from the approval decision. Tool activity stays on screen.
+  - *Spoken text.* Generated replies lose Markdown markers, fenced code, and visual
+    directives before synthesis. Chat keeps the original formatting, and confirmation
+    readbacks preserve the literal text.
+  - *Screen chip.* When "Let voice see the front app" is on, an explicit screen or selection
+    request shows a "Seeing <app · window>" chip inside the voice header. A screenshot requires
+    an explicit request and existing Screen Recording permission. The chip uses an
+    11pt eye icon in `.dockPill`, and its tooltip lists exactly what was shared
+    (`VoiceScreenContext.sharedSummary`). It lasts for that turn. Copied screen and
+    briefing text stays literal, so it cannot add runtime references. The screenshot
+    reference comes only from the file Herm staged for that request.
+  - *Reminders.* Voice lists and cancels timers on request. Timer cards do not occupy
+    the preview. Herm schedules confirmed reminders with macOS and reconciles on
+    launch and wake. Alerts use macOS notification settings.
+  - *Countdown ear.* The closed top island shows the soonest reminder within an hour
+    as an 11pt monospaced countdown in its own 52pt slot in the right ear, before
+    the listening microphone. The ear widens by that slot.
+  - *Spoken notices.* With "Announce aloud" on and the wake word on, a notice that
+    would show a banner is said through the Mac voice after the `Glass` earcon.
+    Notices are approval, question, failure, completion, and a reminder coming due.
+    This happens only with no call open, outside Herm's Quiet mode, and while the
+    screen is unlocked. Completions are at least 20 s apart. Message text is never
+    read aloud.
 - Quick message and inline reply reuse the session composer's native growing
   editor, attachment control, and send button. In the standalone notch, a divider
   separates the header or conversation from one borderless input row. The editor
@@ -2251,6 +2416,21 @@ opens at the top when the category changes.
   uses the shared components’ static treatment, and the meter has a fixed layout slot.
   Checkpoint limits live beside the checkpoint switch in Privacy & safety.
   Preference rows keep the 52pt minimum with a small switch trailing.
+- **Voice settings.** Preference rows add 6pt above and below so wrapped descriptions
+  have space around dividers.
+- **Voice acknowledgment.** On by default. The existing row explains that
+  Apple Intelligence can vary the wording and the receipt follows the reply’s
+  voice. The row’s Play sample action demonstrates your local voice.
+- **Voice output.** Voice uses the shared preference rows for the conversation engine,
+  local voice picker, Preview, and speaking speed. The preview plays the selected voice
+  at the saved speed and can be stopped in place. Kokoro setup appears when it is selected
+  and needs installation. Its status stays in that row while Apple Speech remains available.
+  When Hermes Agent speaks chat replies, the Apple picker still applies to local answers
+  and notices.
+  The rail gear menu’s Voice submenu shares those preferences in three compact rows for
+  conversation voice, local voice with Preview, and speaking speed, with speech input
+  status below. With Apple Speech selected, the menu stays under 200pt tall in Light and
+  Dark. It offers Kokoro once installed and leaves wake and other advanced options in Settings.
 - **Gateway service.** Gateway shows the default-profile messaging gateway's
   running, stopped, or unavailable status with a dot and text. Refresh every
   15 seconds while visible and on demand. Keep progress and failures in fixed
@@ -2814,12 +2994,12 @@ Protocol-owned answers and runtime-owned voice keep their existing contracts.
 Generated forms use existing destination-validated submission handling without
 adding rendering context or replacing the workspace composer.
 
-Generated surfaces use a themed macOS-style document container: a tonal toolbar
-with a wrapping 12pt semibold title, visible icon-labelled Expand, and an actions
-menu. A hairline separates the toolbar from the 16pt-inset working content.
-Supplied provenance occupies a quiet full-width band below the toolbar. Explicit
-sections use spacing and heading dividers without another card boundary; metric tiles use the shared rounded
-metric typography and quiet surfaces. Shared card materials follow the current skin,
+Generated surfaces use a themed macOS-style document container: a header with a
+wrapping 12pt semibold title over one metadata line of supplied provenance, with
+visible icon-labelled Expand and an actions menu trailing. Working content is inset
+16pt with 20pt between blocks. Explicit sections use spacing and heading dividers
+without another card boundary; metrics share one inset well with the shared rounded
+metric typography. Shared card materials follow the current skin,
 including Glass; the surface introduces no custom palette or window traffic lights. A compact actions menu owns
 source inspection, readable copying, Export, Save/Unsave, Reset inputs, Revise, and
 composer-context actions. Source opens expanded within its existing padded panel.
@@ -3149,7 +3329,7 @@ animate their expressions without moving out of the title row. Mention avatars i
 bubbles stay 16pt. A bot's name never appears without its avatar: rows, drag
 cards, and bot choices in menus and pickers (18pt) all show it.
 
-The composer’s bot picker shows display names, such as Nexus, while retaining
+The composer’s bot picker shows display names while retaining
 canonical profile IDs for selection and delivery.
 
 Recognized bot mentions show their pill and body inside the sent bubble on the
@@ -3678,7 +3858,20 @@ model chip's lightning icon while Fast is active and the window is visible.
 Reduce Motion and motion-free skins keep the Fast label and lightning icon static.
 Streaming, approvals, clarifications, voice state, and errors may use semantic
 surfaces when they represent an active decision or recovery path.
-Smart turn detection downloads show byte-weighted progress from 0–100%. Keep the
+On-device speech input is separate from Hermes Agent's speech-to-text settings.
+Its Settings → Voice card shows the last recognizer and effective language, lets
+the user choose the speech language or Classic Apple Speech, and keeps model
+readiness and download recovery on the speech language row. Automatic downloads
+the Apple-managed model on launch without starting the microphone. The sidebar
+quick Voice menu reuses the same status and recovery action. Changes apply on the
+next utterance. Renewed microphone activity restarts the pause even before new
+words appear; brief pauses do not finalize a request. The notch shows partial captions but never dispatches an
+unfinished request, including a spoken approval. A timed-out partial asks for a
+repeat in the existing caption. A wake alternative may correct the wake address
+but cannot change the command that follows it.
+Smart turn detection downloads automatically on launch when missing. Cancel and Remove
+keep automatic downloads off until the user chooses Download. Downloads show
+byte-weighted progress from 0–100%. Keep the
 percentage on one line in a stable trailing slot beside the bar and Cancel action.
 
 Voice speaks complete prose sentences during generation through one session-owned
@@ -3694,31 +3887,96 @@ Authoritative background-task and subagent terminal transitions enqueue one spok
 notice for the owning voice session. Notices wait for current playback or a quiet
 microphone gap with no recognized words; approvals and clarifications take priority.
 Leaving voice clears pending notices. Spoken approval requires an explicit affirmative
-phrase; questions and ambiguous replies are re-prompted without authorizing work.
+phrase. Questions and ambiguous replies keep the request pending without authorizing work.
 Voice submissions use the active session's profile. Pending replies and playback
 retain ownership of the voice state until completion or interruption; late
-recorder transcripts cannot reopen capture. A failed request pauses voice
+recorder transcripts cannot reopen capture. The workspace and notch share one capture owner.
+Ending voice discards a request still gathering context. A screenshot file reference
+belongs only to the request that asked for it, never the session's next turn.
+Voice and chat image attachments use the same bounded bitmap loader as gallery
+images. Unknown remote hosts require Load image before a preview connects.
+A conversation turn leaves about two seconds for a pause before closing the recognizer,
+even when smart turn detection suggests the speaker is done. A trailing thought gets longer.
+A failed request pauses voice
 with a transcript error and the existing tap-to-resume action.
-Voice activation is bound to one session and ends on conversation changes or
-leaving the voice stage. Local recognition starts after permission without
+Voice activation is bound to one session. Talk ends when its conversation changes
+or its voice stage closes. Hands-free voice has its own conversation projection. The ⌥⇧ Space shortcut (configurable) and the
+opt-in idle wake word (Settings → Voice → Wake word: a toggle plus an optional wake name
+that defaults to Herm) start voice from any app; the notch or the
+voice widget then shows it. The notch mic, shortcut, and wake word use the default
+bot's main chat in the hands-free projection, preserving the workspace window or
+floating panel's selected view, conversation, and draft. With no bots, the projection
+can create a chat. The command palette's Voice action opens the default bot's chat in
+the workspace. Local recognition starts after permission without
 backend recorder checks. Hermes synthesizes the owning profile's reply audio;
 Herm plays it locally and cancels pending synthesis/playback on exit. Backend
 recording uses session-scoped controls. Process-wide speech toggles are never
 used. Recognized words cannot be held indefinitely by background noise.
 Voice keeps captions and labeled controls in a centered column, without floating
 activity cards overlapping the conversation or a worktree chip above it. Activity card shadows extend beyond
-their scroll columns without being clipped. When the pane is too narrow for side
+their scroll columns without being clipped. The icon and text block share a vertical
+center, including when a pill has only a title. When the pane is too narrow for side
 columns, the newest card sits in a fixed slot below the controls; the orb shrinks
 to the available height, the stage scrolls rather than clipping, End voice wraps
 to its own row (controls otherwise sit in one call-style row: mic and reply
 toggles, the turn action, full-screen, then End voice; muted toggles show a
 slashed icon), and a generative panel takes the reply caption's slot instead of
 squeezing the stage. Every tool step gets an activity card; running cards stay
-until their step completes or the turn ends. Leaving full voice mode keeps the
+until their step completes or the turn ends. Once the agent uses a tool, the
+agent screen (`VoiceAgentScreen`) slides in on the right like a generative panel
+and pushes the stage left; a generative reply replaces it. It is a read-only,
+hands-free preview with no links. While the agent works it shows every step,
+and a new view replaces the current one only after 1.5 seconds on screen
+(`VoiceAgentScreen.minimumDwell`; steps in between are skipped, never flashed).
+After the turn it keeps the turn's last real view (while the agent speaks and after)
+until the next request; a turn with only title-only steps (a skill, memory) leaves nothing. Saying "close" or "hide that", or the ✕ in its header, dismisses it
+(and a generative reply) for the turn. `VoiceStagePresentation.preview(on:)` is the one rule for every surface: full voice
+mode shows a revealed tab, then the generative reply, then the agent screen; the
+inspector's Talk tab, the notch and the island show only the generative reply (the
+tab is too small; the notch and island float over the desktop itself). The
+browser view shows the tool's screenshot; scripted steps report "Used the browser"
+once done. An inspector tab asked for this turn outranks both panels: saying "open
+the browser" (or terminal, files, changes, diff, timeline, artifacts), Hermes'
+`herm_inspector`/`focus_pane`, or the agent starting to browse all go through
+`DockModel.revealInspector`, which in full voice mode shows the real
+`SessionInspector` tab beside the orb (title and ✕ header, no Talk tab, voice keeps
+running) until "close", the ✕ or the next request. Voice turns ask Hermes for one
+compact `herm-ui` surface whenever the answer has something to see, and for
+`herm_inspector` when the user asks for a tab, when the `herm` plugin is loaded. One `.dockFloatingSurface` holds the newest tool's own view over a
+step log of the turn's last five steps (running step highlighted), and the
+activity cards hide while it shows. The screen speaks plainly: no commands, line
+numbers, exit codes or timings. Views: terminal (the output's last lines in a well,
+tests), file search (up to eight files, one per file, with their folder), file
+read, write or edit (up to twelve real lines, added and removed lines tinted
+`.dockSuccess`/`.dockDestructive`), browser (page title, screenshot, trail), web
+results and generated images; other tools show as their step. With Apple
+Intelligence, the three newest steps' titles are rewritten on device from their
+real args and results into one plain sentence ("Found 24 projects in your Projects
+folder") with no sparkle badge; the screen and the activity cards both use it, and
+a card updates in place when its sentence arrives, dropping its detail line. Without
+it, or with Settings → Voice → Describe steps with Apple Intelligence off, Herm's own
+step wording shows; cards never show a tool's raw input. While the agent works, the status hint under the orb names
+the current step. Hermes reports only a tool's start and result, so a running view shows its
+args under an ambient `HUDScan` sweep (off with Reduce Motion) and never invented
+progress. Each new view enters out of a blur; paths open only when they exist on
+this Mac. Too narrow for a side panel, the screen takes the reply caption's slot
+without its log, as on the notch and island stages. Leaving full voice mode keeps the
 Talk tab open and the conversation live; only entering full voice mode fades,
 leaving it restores the workspace without an animated relayout. Words before a pause stay in the
 utterance when on-device recognition restarts its partial text, and a final
-answer that differs from the streamed text only in whitespace is not spoken twice. Microphone startup and permission
+answer that differs from the streamed text only in whitespace is not spoken twice.
+On macOS 26 recognition uses `SpeechTranscriber` once its language model is
+installed (the classic recognizer otherwise, or after a failed session), primed
+with the wake, agent and helper names; an utterance is sent only after the
+recognizer's final result (at most 0.6 s after the pause when words were heard), and a
+rescored final replaces the partial instead of repeating it. Speech starts with the
+finished sentences before a code, link or `herm-ui` marker; the rest waits for the
+completed reply. Settings → Voice → Conversation voice selects Hermes Agent, Apple Speech,
+or Kokoro. The selected local engine also speaks direct results and notices. With Apple
+Intelligence, a short utterance that mentions a panel or hiding but misses the
+keyword commands is classified on device into close or one tab; anything else, or
+no answer within 1.2 s, goes to the agent unchanged. Each completed turn logs its
+stage durations (never its words). Microphone startup and permission
 errors occupy the existing status slot with Retry microphone. Muting releases
 capture in every phase and rejects late speech callbacks. Speech that interrupts
 local playback retains the same recognition request so opening words are kept;
@@ -4544,7 +4802,8 @@ Date navigation keeps Today in a fixed slot, disabled on today. The toolbar
 wraps into two rows when needed. Narrow windows stack the grid and agenda in a
 scrollable workspace. Very narrow grids show category icons and item counts
 instead of truncated event titles; full titles remain in the daily agenda. Agenda headers show the selected date and actual item
-count; the read-only Mac connection prompt follows the schedule. Agenda and
+count. The Mac connection prompt follows the schedule and describes confirmed notch voice writes.
+Agenda and
 selected-day lists mount individual rows on demand, keeping their existing day
 headers and selection. Apply the day selection treatment once to its header.
 
@@ -4994,20 +5253,67 @@ and does not carry into the page.
 
 ### Generative visualization refinements
 
+When Generative UI is enabled, chat requests one surface on each turn. Short
+answers can use a native text block. Structured results use their matching
+blocks, and explicit output formats are preserved. The plugin keeps the full
+catalog available on demand without removing the per-turn request.
+
+A native `map` block shows a verified place pin with a spoken-friendly title. Voice
+previews disable map interaction and fit the map in the existing glance slot.
+
 Native generated charts use the shared categorical palette, unit-aware legends,
 and distinct line/point symbols. A row picker supports keyboard inspection and
 shares selection with the dataset table. Version-2 chart payloads now accept
 `area` (one series) and `point` alongside `bar` and `line`; categories retain
 supplied row order. Area charts do not imply a forecast or combine unrelated series.
-Metrics emphasize values with small identity-colored markers. Comparisons retain
-a visible selection outline, timelines use connected markers, and checklists show
-the count of local selections, never an execution/completion claim. Tree branches
-retain their supplied values when expandable. All colors follow Herm's shared
-palette across all skins.
+Metrics sit together in one inset well (an adaptive grid with identity dots, a
+`.metric` value and its unit), never as separate cards. Comparisons are a criteria ×
+option matrix; choosing an option header tints its column and marks it with a check.
+Timelines draw one continuous rail with dates trailing. Checklists show a progress
+bar and the count of local selections, never an execution/completion claim. Tree branches
+retain their supplied values when expandable. Workflows show a status icon (outlined
+when open, solid when settled) and a status pill. Findings lead with a severity icon
+and put the recommendation behind a return arrow. Code is left-aligned in a sunken
+well with a filename/language header. Tables span the column with quiet headers and
+hairline rows; numbers align trailing. Single-series bar charts with up to 12 bars
+label values on the bars and hide the redundant legend. All colors follow Herm's
+shared palette across all skins.
 
-Streaming visual replies keep their pending content mounted while appended chunks
-are parsed. One leading-aligned loading row reserves the spinner's size; parsing
-does not alternate labels or remove preceding prose. Replaced content and different
+The surface header is the title, then one metadata line (fictional-data pill, source,
+observed time) and any assumptions. Expand and the quieter overflow menu share a
+trailing row of centered 28pt icon targets. The larger ellipsis stays legible without
+a second border. Both controls have a tooltip and spoken label. There is no tinted
+toolbar or separate provenance band.
+
+**Glance (voice previews).** `EnvironmentValues.richGlance` renders a generated
+surface read-only for the notch preview and the Talk tab: no Expand, menu, filters,
+pickers, sliders, Run/Copy, disclosures, or tappable rows, and no text blocks (they
+are spoken). Sources and gallery items render as plain text, not links, and a failed
+visual is left out of the preview (the chat keeps its unavailable state). Tables
+show six numbered rows at a time in source order, independent of chat sorting or
+filters. The row range follows the page. The preview scrolls vertically as one surface
+when the reply exceeds its height. Wide code and tables can scroll horizontally without
+unlocking generated actions. "Next results" and "previous results"
+page the first table. "Read row seven" goes to that row, highlights it, and reads
+its fields. Comparisons number options and stack them when columns won't fit;
+"read the second option" highlights the same option it reads. "Zoom in" and
+"zoom out" move the first map's camera without moving its pin. A quiet footer
+suggests commands supported by the preview. These controls only change temporary
+preview state, never the chat or its saved selection. Charts fit the preview
+width and thin crowded category labels to about eight. A generated surface does not
+replace its sibling image, video, or file deliveries. The completed voice reply shows
+those same images and videos, with a read-only filename row for local files. Chat
+keeps the file actions. Images fit the preview bounds and videos use the native
+player without autoplay. Local videos show a still frame with Play video.
+A remote video connects only after Load video. Native galleries render embedded raster data and direct Wikimedia Commons images
+inline. Other public links have a Load image action in chat. Loading and failure
+stay within the image slot. The full, interactive surface stays in the chat list.
+
+A closed, validated native visual or diagram can appear in chat and voice while
+the rest of the reply is still streaming. Streaming visuals are read-only, and
+forms and HTML wait for the final reply. One leading-aligned loading row reserves
+space for an unfinished block without removing preceding prose. Chat and voice
+reuse validated blocks as later prose arrives. Replaced content and different
 message/session identities invalidate the retained presentation.
 
 Generated charts reserve space for horizontal scrollbars and separate the plot,

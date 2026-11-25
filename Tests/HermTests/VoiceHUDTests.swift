@@ -19,6 +19,14 @@ struct VoiceHUDTests {
             completedAt: result == nil ? nil : start.addingTimeInterval(1), args: args)
     }
 
+    @Test func scriptedBrowserStepsKeepThePageTheyReport() throws {
+        let calls = [call("browser_exec", ["code": "open"], result: ["url": "https://example.com/"], at: 0)]
+        let browser = try #require(BrowserSession(calls: calls))
+        #expect(browser.url == "https://example.com/")
+        #expect(browser.trail == ["Used the browser"])
+        #expect(ToolStep.describe(name: "browser_exec", args: [:]).title == "Working in the browser")
+    }
+
     @Test func browserTrailNamesElementsFromTheSnapshot() throws {
         let calls = [
             call(
@@ -203,5 +211,112 @@ struct VoiceHUDTests {
         #expect(small.orbSide < 320 * 0.65)
         #expect(small.orbSide >= 120)
         #expect(small.columnWidth <= 600 - 32)
+    }
+
+    @Test func fileSearchReadsDenseMatchesOncePerFile() throws {
+        let dense =
+            "Sources/App.swift\n  12: let model = DockModel()\n  40: model.start()\nREADME.md\n  3: DockModel docs"
+        let calls = [
+            call(
+                "search_files", ["pattern": "DockModel", "path": "Sources"],
+                result: ["total_count": 3, "matches_text": dense], at: 0)
+        ]
+        let search = try #require(FileSearchScan(calls: calls))
+        #expect(search.pattern == "DockModel")
+        #expect(search.scope == "Sources")
+        #expect(!search.isBusy)
+        #expect(search.total == 3)
+        #expect(
+            search.hits == [
+                .init(path: "Sources/App.swift", line: 12, text: "let model = DockModel()"),
+                .init(path: "README.md", line: 3, text: "DockModel docs"),
+            ])
+    }
+
+    @Test func fileSearchReadsJSONMatchesAndFileNames() throws {
+        let content = try #require(
+            FileSearchScan(calls: [
+                call(
+                    "search_files", ["pattern": "x"],
+                    result: ["total_count": 1, "matches": [["path": "a.swift", "line": 4, "content": "  x()"]]], at: 0)
+            ]))
+        #expect(content.hits == [.init(path: "a.swift", line: 4, text: "x()")])
+        let names = try #require(
+            FileSearchScan(calls: [
+                call(
+                    "search_files", ["pattern": "*.md", "target": "files"], result: ["files": ["a.md", "b.md"]], at: 0)
+            ]))
+        #expect(names.byName)
+        #expect(names.hits.map(\.path) == ["a.md", "b.md"])
+        let running = try #require(FileSearchScan(calls: [call("search_files", ["pattern": "x"], at: 0)]))
+        #expect(running.isBusy && running.hits.isEmpty)
+    }
+
+    @Test func fileGlimpseShowsRealLines() throws {
+        let read = try #require(
+            FileGlimpse(calls: [
+                call("read_file", ["path": "/tmp/a.swift"], result: ["content": "1|import X\n2|\n3|let y = 1"], at: 0)
+            ]))
+        #expect(read.action == .read)
+        #expect(
+            read.lines == [
+                .init(number: 1, text: "import X", mark: nil), .init(number: 3, text: "let y = 1", mark: nil),
+            ])
+
+        let write = try #require(
+            FileGlimpse(calls: [call("write_file", ["path": "b.txt", "content": "one\n\nthree"], at: 0)]))
+        #expect(write.isBusy)
+        #expect(write.lines.map(\.number) == [1, 3])
+
+        var patch = call("patch", ["path": "c.swift"], result: ["success": true], at: 0)
+        patch.diffPreview = "--- a/c.swift\n+++ b/c.swift\n@@ -1 +1 @@\n-old\n+new"
+        let edit = try #require(FileGlimpse(calls: [patch]))
+        #expect(edit.lines == [.init(number: nil, text: "old", mark: "-"), .init(number: nil, text: "new", mark: "+")])
+        #expect(VoiceHUDState(calls: [patch]).cards.first?.id == "file")
+    }
+
+    @Test func glimpseCoveredToolsSkipActivityCards() {
+        #expect(VoiceHUDState.covers("search_files"))
+        #expect(VoiceHUDState.covers("browser_click"))
+        #expect(!VoiceHUDState.covers("web_extract"))
+        #expect(!VoiceHUDState.covers("delegate_task"))
+    }
+
+    @Test func onlyAStepWithItsOwnViewIsWorthKeepingAfterTheTurn() {
+        let read = call("read_file", ["path": "/tmp/a.swift"], result: ["content": "let a = 1"], at: 0)
+        let skill = call("skill_view", ["name": "hermes"], result: ["content": "…"], at: 2)
+        #expect(VoiceAgentScreen.hasVisual([read]))
+        #expect(!VoiceAgentScreen.hasVisual([skill]))
+        #expect(VoiceAgentScreen.hasSteps([skill]))
+        // While working the title-only step shows as itself; once done, the last real view stays.
+        #expect(VoiceAgentScreen.scene([read, skill], working: true).card == nil)
+        let done = VoiceAgentScreen.scene([read, skill], working: false)
+        #expect(done.step?.id == read.id && done.card?.id == "file")
+    }
+
+    @Test func aNewViewWaitsForTheCurrentOnesMinimumTime() {
+        let shown = Date(timeIntervalSince1970: 0)
+        #expect(VoiceAgentScreen.wait(shownAt: shown, now: shown.addingTimeInterval(0.5), replacesView: true) == 1)
+        #expect(VoiceAgentScreen.wait(shownAt: shown, now: shown.addingTimeInterval(2), replacesView: true) == 0)
+        #expect(VoiceAgentScreen.wait(shownAt: shown, now: shown, replacesView: false) == 0)
+        #expect(VoiceAgentScreen.wait(shownAt: nil, now: shown, replacesView: true) == 0)
+    }
+
+    @Test func onlyABareCloseCommandClosesThePreview() {
+        for spoken in ["Close.", "close it", "Hide the preview", "dismiss that please"] {
+            #expect(VoicePrompts.isClosePreview(spoken), "\(spoken)")
+        }
+        for spoken in ["close the pull request", "hide my api keys from the logs", "preview", ""] {
+            #expect(!VoicePrompts.isClosePreview(spoken), "\(spoken)")
+        }
+    }
+
+    @Test func onlyABareTabRequestOpensATab() {
+        #expect(VoicePrompts.revealedTab("Please open the browser") == .browser)
+        #expect(VoicePrompts.revealedTab("show me the terminal tab") == .terminal)
+        #expect(VoicePrompts.revealedTab("open explorer") == .files)
+        for spoken in ["open google.com in the browser", "open the door", "browser", "close the browser"] {
+            #expect(VoicePrompts.revealedTab(spoken) == nil, "\(spoken)")
+        }
     }
 }

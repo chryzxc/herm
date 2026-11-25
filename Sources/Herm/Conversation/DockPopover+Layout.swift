@@ -58,9 +58,8 @@ extension DockPopover {
                 SessionBrowserStore.shared.activate(model: model)
             }
             .onChange(of: model.activeBrowserCall != nil) { _, browsing in
-                if browsing, AgentBrowser.opensInHerm() {
-                    NotificationCenter.default.post(name: .hermOpenInBrowser, object: nil)
-                }
+                // The agent started browsing: show its Browser tab (beside the orb in Talk).
+                if browsing, AgentBrowser.opensInHerm() { model.revealInspector(.browser) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .hermOpenInBrowser)) { notification in
                 let browserTabID: UUID?
@@ -127,9 +126,6 @@ extension DockPopover {
             }
             .onChange(of: model.voiceState) { _, state in
                 handleVoiceStateChange(state)
-            }
-            .onChange(of: model.isVoiceMicMuted) { _, _ in
-                handleVoiceStateChange(model.voiceState)
             }
             .onChange(of: model.voicePromptSpeech) { _, speech in
                 handleVoicePromptChange(speech)

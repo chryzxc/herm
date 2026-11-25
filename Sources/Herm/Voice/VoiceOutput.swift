@@ -10,7 +10,8 @@ final class VoiceOutput: ObservableObject {
     private var speechGeneration = 0
 
     func speak(messageID: UUID, text: String) {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let spoken = VoiceSpeechText.prepare(text)
+        guard !spoken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard !(messageID == lastSpokenMessageID && isSpeaking) else { return }
         lastSpokenMessageID = messageID
         speechGeneration &+= 1
@@ -18,7 +19,7 @@ final class VoiceOutput: ObservableObject {
         synthesizer.stopSpeaking(at: .immediate)
         isSpeaking = true
         speakingMessageID = messageID
-        let utterance = AVSpeechUtterance(string: cleaned(text))
+        let utterance = AVSpeechUtterance(string: spoken)
         synthesizer.speak(utterance)
         observeCompletion(generation: generation)
     }
@@ -40,14 +41,14 @@ final class VoiceOutput: ObservableObject {
     }
 
     func preview(text: String) {
-        let snippet = String(text.prefix(120))
+        let snippet = String(VoiceSpeechText.prepare(text).prefix(120))
         guard !snippet.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         speechGeneration &+= 1
         let generation = speechGeneration
         synthesizer.stopSpeaking(at: .immediate)
         isSpeaking = true
         speakingMessageID = nil
-        let utterance = AVSpeechUtterance(string: cleaned(snippet))
+        let utterance = AVSpeechUtterance(string: snippet)
         utterance.rate = 0.5
         synthesizer.speak(utterance)
         observeCompletion(generation: generation)
@@ -64,13 +65,5 @@ final class VoiceOutput: ObservableObject {
                 self?.speakingMessageID = nil
             }
         }
-    }
-
-    private func cleaned(_ text: String) -> String {
-        GenerativeUIIntegration.plainText(text)
-            .replacingOccurrences(of: "```", with: "")
-            .replacingOccurrences(of: "#", with: "")
-            .replacingOccurrences(of: "*", with: "")
-            .replacingOccurrences(of: "`", with: "")
     }
 }

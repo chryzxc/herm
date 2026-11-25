@@ -177,6 +177,7 @@ extension ControlCenterModel {
                 capabilityService.invalidate()
             }
         }
+        bindVoiceAssistant(to: model)
         dockModel = model
         rpc = HermesControlRPC(client: model.controlRPCClient)
         cli = HermesCLIAdapter(rpc: HermesControlRPC(client: model.controlRPCClient))

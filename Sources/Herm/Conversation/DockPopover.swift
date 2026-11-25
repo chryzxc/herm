@@ -123,7 +123,7 @@ struct DockPopover: View {
     @ObservedObject var filePreview = FilePreviewCenter.shared
     @StateObject var speechInput = SpeechInput()
     @StateObject var voiceOutput = VoiceOutput()
-    @State var micLevelMeter = MicLevelMeter()
+    var micLevelMeter: MicLevelMeter { model.voiceMic }
     /// Not observed here: the transcript source subscribes to its pending
     /// actions, so a copy or reaction click no longer rebuilds every pane.
     @State var messageActionState = ConversationMessageActionState()

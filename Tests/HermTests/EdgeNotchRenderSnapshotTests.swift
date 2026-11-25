@@ -33,9 +33,13 @@ struct EdgeNotchRenderSnapshotTests {
                 updatedAt: nil, isCurrent: false, isStatusCurrent: true, session: nil, profileID: "Nexus")
         }
         let size = state.panelSize
-        let content = EdgeNotchView(state: state, controlCenter: ControlCenterModel(), openDock: {})
-            .frame(width: size.width, height: size.height)
-            .environment(\.colorScheme, .dark)
+        let model = DockModel(defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "snapshot")
+        defer { model.shutdown() }
+        let content = EdgeNotchView(
+            state: state, controlCenter: ControlCenterModel(), notchVoiceModel: model, openDock: {}
+        )
+        .frame(width: size.width, height: size.height)
+        .environment(\.colorScheme, .dark)
         let host = NSHostingView(rootView: content)
         host.frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -43,14 +47,23 @@ struct EdgeNotchRenderSnapshotTests {
         window.contentView = host
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
-        for _ in 0..<3 {
-            host.layoutSubtreeIfNeeded()
-            try await Task.sleep(for: .milliseconds(100))
+        let cases: [(name: String, showsQuota: Bool, cameraWidth: CGFloat)] = [
+            ("working-bots", false, EdgeNotchMetrics.fallbackWidth),
+            ("quota-toolbar", true, EdgeNotchMetrics.fallbackWidth),
+            ("wide-camera-toolbar", false, 280),
+        ]
+        for item in cases {
+            state.showsQuota = item.showsQuota
+            state.notchSize.width = item.cameraWidth
+            for _ in 0..<3 {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: rep)
+            let data = try #require(rep.representation(using: .png, properties: [:]))
+            try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent(item.name + ".png"))
         }
-        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: rep)
-        let data = try #require(rep.representation(using: .png, properties: [:]))
-        try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("working-bots.png"))
     }
 
     @Test func renderQuickReplyStates() async throws {
@@ -354,9 +367,13 @@ struct EdgeNotchRenderSnapshotTests {
         for name in [
             "tasks-light", "tasks-left-light", "tasks-dark", "tasks-left-dark",
             "tasks", "tasks-top", "tasks-top-empty", "tasks-many", "tasks-empty", "kanban-unavailable",
-            "quick-message", "quick-reply",
+            "quick-message", "quick-reply", "wake-top-dark", "wake-right-dark", "wake-left-light",
+            "wake-standby-top-dark", "wake-standby-right-dark",
         ] {
             let dark = !name.hasSuffix("light")
+            state.wakeEnabled = name.hasPrefix("wake-")
+            state.wakeListening = state.wakeEnabled && !name.contains("standby")
+            state.expanded = !state.wakeEnabled
             DockThemeRuntime.current = name.contains("top") ? .island : .glass
             DockThemeRuntime.revision &+= 1
             NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)

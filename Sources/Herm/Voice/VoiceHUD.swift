@@ -31,8 +31,8 @@ enum ToolStep {
         func quoted(_ text: String?) -> String? { text.map { "“\($0.prefix(80))”" } }
         let lower = name.lowercased()
         switch lower {
-        case "browser_exec": return (.globe, "Working in the browser", nil)
-        case "browser_cdp": return (.globe, "Working in the browser", nil)
+        case "browser_exec", "browser_cdp":
+            return (.globe, isComplete ? "Used the browser" : "Working in the browser", nil)
         case "browser_navigate":
             let url = argument("url")
             return (.globe, "Browsing \(host(url) ?? "the web")", url)
@@ -173,6 +173,9 @@ struct BrowserSession: Equatable {
             case "browser_snapshot":
                 trail.append("Read the page")
             default:
+                // Scripted steps (browser_exec/cdp) may still report where the page is.
+                url = ToolText.field("url", in: step.result) ?? url
+                title = ToolText.field("title", in: step.result) ?? title
                 trail.append(ToolStep.describe(step).title)
             }
             // Refs name elements of the latest snapshot; later steps use them.
@@ -224,7 +227,9 @@ struct SearchFan: Equatable {
 
 struct TerminalTicker: Equatable {
     let command: String
-    let lastLine: String?
+    /// The output's last few non-empty lines.
+    let tail: [String]
+    var lastLine: String? { tail.last }
     let exitCode: Int?
     let duration: TimeInterval?
     let tests: TestSummary?
@@ -235,9 +240,9 @@ struct TerminalTicker: Equatable {
         guard let call = calls.last(where: { $0.name.lowercased() == "terminal" }) else { return nil }
         command = call.args?["command"] ?? call.input
         let output = ToolText.field("output", in: call.result) ?? call.result ?? ""
-        lastLine = output.split(whereSeparator: \.isNewline)
-            .last { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-            .map { String($0.trimmingCharacters(in: .whitespaces).prefix(120)) }
+        tail = output.split(whereSeparator: \.isNewline)
+            .map { String($0.trimmingCharacters(in: .whitespaces).prefix(160)) }
+            .filter { !$0.isEmpty }.suffix(8)
         exitCode = ToolText.number("exit_code", in: call.result)
         duration = call.completedAt.map { $0.timeIntervalSince(call.startedAt) }
         tests = TestSummary(output)
@@ -305,6 +310,143 @@ struct GeneratedMedia: Equatable {
     }
 }
 
+/// A file search: the pattern and folder the moment it starts, then the
+/// real hits Hermes returned, one per file.
+struct FileSearchScan: Equatable {
+    struct Hit: Equatable {
+        let path: String
+        let line: Int?
+        let text: String?
+    }
+
+    let pattern: String
+    let scope: String
+    let byName: Bool
+    let hits: [Hit]
+    let total: Int?
+    let isBusy: Bool
+    let updatedAt: Date
+
+    static let hitLimit = 8
+
+    init?(calls: [ActiveToolCall]) {
+        guard let call = calls.last(where: { $0.name.lowercased() == "search_files" }) else { return nil }
+        let args = call.args ?? [:]
+        pattern = args["pattern"] ?? ""
+        scope = args["path"] ?? "."
+        byName = ["files", "find"].contains(args["target"]?.lowercased() ?? "")
+        hits = call.isComplete ? Self.hits(in: call.result) : []
+        total = ToolText.number("total_count", in: call.result)
+        isBusy = !call.isComplete
+        updatedAt = call.completedAt ?? call.startedAt
+    }
+
+    /// `search_files` returns `matches` (or a path-grouped `matches_text`
+    /// past a few hits) for content searches and `files` for name searches.
+    static func hits(in result: String?) -> [Hit] {
+        guard let result else { return [] }
+        var hits: [Hit] = []
+        func add(_ hit: Hit) {
+            if hits.count < hitLimit, !hits.contains(where: { $0.path == hit.path }) { hits.append(hit) }
+        }
+        if let dense = ToolText.field("matches_text", in: result) {
+            var path: String?
+            for row in dense.split(separator: "\n") {
+                guard row.hasPrefix("  ") else {
+                    path = String(row)
+                    continue
+                }
+                let parts = row.trimmingCharacters(in: .whitespaces).split(separator: ":", maxSplits: 1)
+                if let path {
+                    add(
+                        Hit(
+                            path: path, line: parts.first.flatMap { Int($0) },
+                            text: parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : nil))
+                }
+            }
+            return hits
+        }
+        let json = (try? JSONSerialization.jsonObject(with: Data(result.utf8))) as? [String: Any]
+        if let matches = json?["matches"] as? [[String: Any]] {
+            for match in matches {
+                guard let path = match["path"] as? String else { continue }
+                let text = (match["content"] as? String)?.trimmingCharacters(in: .whitespaces)
+                add(Hit(path: path, line: (match["line"] as? NSNumber)?.intValue, text: text))
+            }
+        } else if let files = json?["files"] as? [String] {
+            for file in files { add(Hit(path: file, line: nil, text: nil)) }
+        } else {
+            // Persistence may truncate the JSON; its paths still read.
+            for path in ToolText.fields("path", in: result) { add(Hit(path: path, line: nil, text: nil)) }
+        }
+        return hits
+    }
+}
+
+/// A file being read, written or edited, with a few of its real lines.
+struct FileGlimpse: Equatable {
+    enum Action: Equatable { case read, write, edit }
+
+    struct Line: Equatable {
+        let number: Int?
+        let text: String
+        /// `+` or `-` on an edit.
+        let mark: Character?
+    }
+
+    let path: String?
+    let action: Action
+    let lines: [Line]
+    let isBusy: Bool
+    let updatedAt: Date
+
+    static let lineLimit = 12
+
+    init?(calls: [ActiveToolCall]) {
+        let names = ["read_file": Action.read, "write_file": .write, "patch": .edit]
+        guard let call = calls.last(where: { names[$0.name.lowercased()] != nil }),
+            let action = names[call.name.lowercased()]
+        else { return nil }
+        self.action = action
+        path = call.args?["path"] ?? ToolText.field("path", in: call.result)
+        isBusy = !call.isComplete
+        updatedAt = call.completedAt ?? call.startedAt
+        switch action {
+        case .read: lines = call.isComplete ? Self.numbered(ToolText.field("content", in: call.result)) : []
+        case .write: lines = Self.plain(call.args?["content"])
+        case .edit: lines = Self.diff(call.diffPreview)
+        }
+    }
+
+    /// `read_file` content is `<n>|<text>` rows.
+    static func numbered(_ content: String?) -> [Line] {
+        guard let content else { return [] }
+        return content.split(separator: "\n").lazy.compactMap { row -> Line? in
+            let parts = row.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2, let number = Int(parts[0].trimmingCharacters(in: .whitespaces)) else {
+                return nil
+            }
+            let text = String(parts[1])
+            return text.trimmingCharacters(in: .whitespaces).isEmpty ? nil : Line(number: number, text: text, mark: nil)
+        }.prefix(lineLimit).map { $0 }
+    }
+
+    static func plain(_ content: String?) -> [Line] {
+        guard let content else { return [] }
+        return content.split(separator: "\n", omittingEmptySubsequences: false).enumerated()
+            .filter { !$0.element.trimmingCharacters(in: .whitespaces).isEmpty }
+            .prefix(lineLimit).map { Line(number: $0.offset + 1, text: String($0.element), mark: nil) }
+    }
+
+    /// Changed lines of a unified diff, without its headers.
+    static func diff(_ preview: String?) -> [Line] {
+        guard let preview else { return [] }
+        return preview.split(separator: "\n").lazy
+            .filter { ($0.hasPrefix("+") && !$0.hasPrefix("+++")) || ($0.hasPrefix("-") && !$0.hasPrefix("---")) }
+            .prefix(lineLimit).map { Line(number: nil, text: String($0.dropFirst()), mark: $0.first) }
+    }
+}
+
 /// The large cards beside the orb, newest first.
 struct VoiceHUDState: Equatable {
     enum Card: Equatable, Identifiable {
@@ -312,6 +454,8 @@ struct VoiceHUDState: Equatable {
         case search(SearchFan)
         case terminal(TerminalTicker)
         case media(GeneratedMedia)
+        case fileSearch(FileSearchScan)
+        case file(FileGlimpse)
 
         var id: String {
             switch self {
@@ -319,6 +463,8 @@ struct VoiceHUDState: Equatable {
             case .search: "search"
             case .terminal: "terminal"
             case .media: "media"
+            case .fileSearch: "fileSearch"
+            case .file: "file"
             }
         }
 
@@ -328,6 +474,8 @@ struct VoiceHUDState: Equatable {
             case .search(let card): card.updatedAt
             case .terminal(let card): card.updatedAt
             case .media(let card): card.updatedAt
+            case .fileSearch(let card): card.updatedAt
+            case .file(let card): card.updatedAt
             }
         }
 
@@ -336,14 +484,12 @@ struct VoiceHUDState: Equatable {
             case .browser(let card): card.isBusy
             case .search(let card): card.isBusy
             case .terminal(let card): card.isBusy
+            case .fileSearch(let card): card.isBusy
+            case .file(let card): card.isBusy
             case .media: false
             }
         }
     }
-
-    static let limit = 2
-    /// Finished cards fade this long after their last update.
-    static let lingering: TimeInterval = 90
 
     var cards: [Card] = []
 
@@ -353,20 +499,75 @@ struct VoiceHUDState: Equatable {
             SearchFan(calls: calls).map(Card.search),
             TerminalTicker(calls: calls).map(Card.terminal),
             GeneratedMedia(calls: calls).map(Card.media),
+            FileSearchScan(calls: calls).map(Card.fileSearch),
+            FileGlimpse(calls: calls).map(Card.file),
         ]
-        cards = Array(all.compactMap { $0 }.sorted { $0.updatedAt > $1.updatedAt }.prefix(Self.limit))
+        cards = all.compactMap { $0 }.sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    func visible(at now: Date) -> [Card] {
-        cards.filter { $0.isBusy || now.timeIntervalSince($0.updatedAt) < Self.lingering }
+    /// Tools these cards show, so the small activity cards don't repeat them.
+    static func covers(_ toolName: String) -> Bool {
+        let name = toolName.lowercased()
+        return name.hasPrefix("browser_")
+            || ["web_search", "terminal", "image_generate", "search_files", "read_file", "write_file", "patch"]
+                .contains(name)
     }
 }
 
 // MARK: - Views
 
+extension EnvironmentValues {
+    /// Inside the agent screen, which draws the surface and the scan for its view.
+    @Entry fileprivate var hudInScreen = false
+}
+
 extension View {
-    fileprivate func hudCard(tint: Color = .dockAccent) -> some View {
-        padding(12).dockHUDSurface(tint: tint)
+    /// A HUD panel; `scanning` sweeps light across it while its tool runs.
+    fileprivate func hudCard(tint: Color = .dockAccent, scanning: Bool = false) -> some View {
+        modifier(HUDCardChrome(tint: tint, scanning: scanning))
+    }
+}
+
+private struct HUDCardChrome: ViewModifier {
+    let tint: Color
+    let scanning: Bool
+    @Environment(\.hudInScreen) private var inScreen
+
+    func body(content: Content) -> some View {
+        if inScreen {
+            content
+        } else {
+            content.padding(12).dockHUDSurface(tint: tint).modifier(HUDScan(active: scanning, tint: tint))
+        }
+    }
+}
+
+/// A band of light sweeping across a busy panel, like a scanner. Ambient
+/// only: Hermes reports a tool's start and result, nothing in between.
+private struct HUDScan: ViewModifier {
+    let active: Bool
+    let tint: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if active, !reduceMotion {
+                TimelineView(.dockMotion(paused: false)) { context in
+                    let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.8) / 1.8
+                    GeometryReader { geometry in
+                        let band = geometry.size.width * 0.45
+                        LinearGradient(
+                            colors: [.clear, tint.opacity(0.2), .clear], startPoint: .leading, endPoint: .trailing
+                        )
+                        .frame(width: band)
+                        .offset(x: (geometry.size.width + band) * phase - band)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous))
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
+        }
     }
 }
 
@@ -377,8 +578,13 @@ private struct HUDHeader: View {
     var isBusy = false
     var opens = false
     var tint: Color = .dockAccent
+    @Environment(\.hudInScreen) private var inScreen
 
     var body: some View {
+        if !inScreen { row }
+    }
+
+    private var row: some View {
         HStack(spacing: 8) {
             DockIcon(icon, size: 14, weight: .fill)
                 .foregroundStyle(tint)
@@ -403,54 +609,218 @@ private struct HUDHeader: View {
     }
 }
 
-/// Browser, search, terminal and image cards beside the orb.
-struct VoiceHUDDeck: View {
-    let state: VoiceHUDState
-    var width: CGFloat = 300
+/// The agent's screen: the newest tool's own view (terminal, editor, file
+/// results, browser, web results, image) over a log of the turn's steps. It
+/// slides in beside the voice stage the way a generative panel does.
+struct VoiceAgentScreen: View {
+    let model: DockModel
+    /// Redraws on voice changes only; the body still reads the model.
+    @ObservedObject private var stage: VoiceStageState
+    /// The notch and island are too short for the step log.
+    var showsLog = true
+
+    init(model: DockModel, showsLog: Bool = true) {
+        self.model = model
+        _stage = ObservedObject(wrappedValue: model.voiceStage)
+        self.showsLog = showsLog
+    }
+    @State private var state = VoiceHUDState()
+    @State private var steps: [ActiveToolCall] = []
+    @State private var working = true
+    @State private var shownAt: Date?
+    @State private var pending: Task<Void, Never>?
+    /// The shortest time a view stays before the next one replaces it, so bursts don't flash.
+    nonisolated static let minimumDwell: TimeInterval = 1.5
+    private let shape = RoundedRectangle(cornerRadius: DockLayout.paneRadius + 8, style: .continuous)
+
+    /// Whether the turn has any tool step to show.
+    nonisolated static func hasSteps(_ calls: [ActiveToolCall]) -> Bool { calls.contains { !$0.name.hasPrefix("__") } }
+
+    /// Whether a step this turn has its own view (page, terminal, files, edit, results, image),
+    /// not just a title; only that is worth keeping on screen once the turn ends.
+    nonisolated static func hasVisual(_ calls: [ActiveToolCall]) -> Bool {
+        calls.contains { VoiceHUDState.covers($0.name) } && !VoiceHUDState(calls: calls).cards.isEmpty
+    }
+
+    /// The step the screen is about and its view. While working, a tool without its own view
+    /// (memory, tool lookup) shows as its step; once done, the screen keeps the last real view.
+    nonisolated static func scene(_ calls: [ActiveToolCall], working: Bool) -> (
+        step: ActiveToolCall?, card: VoiceHUDState.Card?
+    ) {
+        scene(steps: calls.filter { !$0.name.hasPrefix("__") }, state: VoiceHUDState(calls: calls), working: working)
+    }
+
+    nonisolated static func scene(steps: [ActiveToolCall], state: VoiceHUDState, working: Bool) -> (
+        step: ActiveToolCall?, card: VoiceHUDState.Card?
+    ) {
+        let card = state.cards.first
+        if let latest = steps.last, VoiceHUDState.covers(latest.name) { return (latest, card) }
+        if !working, card != nil, let viewed = steps.last(where: { VoiceHUDState.covers($0.name) }) {
+            return (viewed, card)
+        }
+        return (steps.last, nil)
+    }
+
+    /// How long to wait before replacing the view shown at `shownAt`; updates to the same view apply at once.
+    nonisolated static func wait(shownAt: Date?, now: Date, replacesView: Bool) -> TimeInterval {
+        guard replacesView, let shownAt else { return 0 }
+        return max(0, minimumDwell - now.timeIntervalSince(shownAt))
+    }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 5)) { context in
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(state.visible(at: context.date)) { card in
+        let scene = Self.scene(steps: steps, state: state, working: working)
+        let latest = scene.step
+        let card = scene.card
+        let viewID: String? = card?.id ?? latest?.id
+        let isBusy: Bool = card.map(\.isBusy) ?? latest.map { !$0.isComplete } ?? false
+        VStack(alignment: .leading, spacing: 0) {
+            current(card: card, latest: latest)
+                .id(viewID)
+                // Each new view comes into focus out of a blur.
+                .transition(.blurReplace)
+                .dockPadding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if showsLog, steps.count > 1 {
+                Divider()
+                VoiceStepLog(steps: steps, title: model.toolStepTitle).dockPadding(18)
+            }
+        }
+        .modifier(HUDScan(active: isBusy, tint: .dockAccent))
+        .environment(\.hudInScreen, true)
+        .multilineTextAlignment(.leading)
+        .clipShape(shape)
+        .dockFloatingSurface(shape, stroke: Color.dockBorderLight)
+        .shadow(color: .black.opacity(0.22), radius: 28, y: 12)
+        .animation(.spring(response: 0.45, dampingFraction: 0.86), value: viewID)
+        .onChange(of: model.voiceTurnToolCalls, initial: true) { _, _ in show() }
+        .onChange(of: model.status == .working) { _, _ in show() }
+        .onDisappear { pending?.cancel() }
+    }
+
+    /// Applies the newest calls, holding a new view until the current one has had its minimum time.
+    private func show() {
+        pending?.cancel()
+        let calls = model.voiceTurnToolCalls
+        let isWorking = model.status == .working
+        let nextState = VoiceHUDState(calls: calls)
+        let nextSteps = calls.filter { !$0.name.hasPrefix("__") }
+        let shown = Self.scene(steps: steps, state: state, working: working)
+        let next = Self.scene(steps: nextSteps, state: nextState, working: isWorking)
+        let replaces = (next.card?.id ?? next.step?.id) != (shown.card?.id ?? shown.step?.id)
+        let wait = Self.wait(shownAt: shownAt, now: .now, replacesView: replaces)
+        guard wait > 0 else {
+            if replaces { shownAt = .now }
+            steps = nextSteps
+            state = nextState
+            working = isWorking
+            return
+        }
+        pending = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled else { return }
+            shownAt = nil
+            show()
+        }
+    }
+
+    @ViewBuilder private func current(card: VoiceHUDState.Card?, latest: ActiveToolCall?) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let latest { header(latest) }
+            cardBody(card)
+        }
+    }
+
+    /// The step in plain words (Apple Intelligence's when on), not the tool's terms.
+    private func header(_ latest: ActiveToolCall) -> some View {
+        HStack(spacing: 10) {
+            DockIcon(ToolStep.describe(latest).icon, size: 16, weight: .fill)
+                .foregroundStyle(Color.dockAccent)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(Color.dockAccent.opacity(0.14)))
+            Text(model.toolStepTitle(latest))
+                .dockFont(.navigation, weight: .semibold)
+                .foregroundStyle(Color.dockPrimaryText)
+                .lineLimit(2)
+                .contentTransition(.opacity)
+            Spacer(minLength: 4)
+            if !latest.isComplete { ThinkingDots() }
+            DockIconButton(
+                icon: .x, label: "Close preview", style: DockThemePalette(theme: DockThemeRuntime.current),
+                action: model.dismissVoicePreview)
+        }
+        .animation(.dockEase(duration: 0.25), value: model.toolStepTitle(latest))
+    }
+
+    @ViewBuilder private func cardBody(_ card: VoiceHUDState.Card?) -> some View {
+        switch card {
+        case .browser(let browser): BrowserCard(browser: browser)
+        case .search(let search): SearchCard(search: search)
+        case .terminal(let terminal): TerminalCard(terminal: terminal)
+        case .media(let media): MediaCard(media: media)
+        case .fileSearch(let search): FileSearchCard(search: search)
+        case .file(let file): FileGlimpseCard(file: file)
+        case nil: EmptyView()
+        }
+    }
+}
+
+/// The turn's most recent steps, oldest first, the running one highlighted.
+private struct VoiceStepLog: View {
+    let steps: [ActiveToolCall]
+    let title: (ActiveToolCall) -> String
+    static let limit = 5
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Steps · \(steps.count)")
+                .dockFont(.compactStatus, weight: .semibold)
+                .foregroundStyle(Color.dockMetadataText)
+            ForEach(steps.suffix(Self.limit)) { call in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Group {
-                        switch card {
-                        case .browser(let browser): BrowserCard(browser: browser)
-                        case .search(let search): SearchCard(search: search)
-                        case .terminal(let terminal): TerminalCard(terminal: terminal)
-                        case .media(let media): MediaCard(media: media)
+                        if call.isComplete {
+                            DockIcon(.check, size: 11).foregroundStyle(Color.dockSuccess)
+                        } else {
+                            ThinkingDots()
                         }
                     }
-                    .frame(width: width)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .frame(width: 18)
+                    Text(title(call))
+                        .dockFont(.metadata, weight: call.isComplete ? .regular : .semibold)
+                        .foregroundStyle(call.isComplete ? Color.dockSecondaryText : Color.dockPrimaryText)
+                        .layoutPriority(1)
                 }
+                .lineLimit(1)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .animation(.spring(response: 0.42, dampingFraction: 0.82), value: state.visible(at: context.date).map(\.id))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: steps.suffix(Self.limit).map(\.id))
     }
 }
 
 private struct BrowserCard: View {
     let browser: BrowserSession
     @State private var image: CGImage?
+    @Environment(\.hudInScreen) private var inScreen
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Button {
-                browser.url.map(ArtifactOpener.open)
-            } label: {
-                HUDHeader(
-                    icon: .globe, title: browser.title ?? "Browser", detail: ToolStep.host(browser.url),
-                    isBusy: browser.isBusy, opens: browser.url != nil)
+            if !inScreen {
+                Button {
+                    browser.url.map(ArtifactOpener.open)
+                } label: {
+                    HUDHeader(
+                        icon: .globe, title: browser.title ?? "Browser", detail: ToolStep.host(browser.url),
+                        isBusy: browser.isBusy, opens: browser.url != nil)
+                }
+                .buttonStyle(.dockHover)
+                .help(browser.url ?? "")
+            } else if let title = browser.title {
+                Text(title).dockFont(.body, weight: .medium).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
             }
-            .buttonStyle(.dockHover)
-            .help(browser.url ?? "")
             if let image {
-                Image(decorative: image, scale: 2)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(height: 130)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                page(Image(decorative: image, scale: 2))
             }
             if browser.hosts.count > 1 {
                 HStack(spacing: 4) {
@@ -481,7 +851,7 @@ private struct BrowserCard: View {
                 }
             }
         }
-        .hudCard()
+        .hudCard(scanning: browser.isBusy)
         .task(id: browser.screenshot) {
             image = nil
             guard let path = browser.screenshot else { return }
@@ -490,6 +860,17 @@ private struct BrowserCard: View {
             guard !Task.isCancelled else { return }
             image = thumbnail
         }
+    }
+}
+
+extension BrowserCard {
+    fileprivate func page(_ image: Image) -> some View {
+        image
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(height: inScreen ? 240 : 130)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -526,12 +907,13 @@ private struct SearchCard: View {
                 .animation(.spring(response: 0.4, dampingFraction: 0.8).delay(Double(index) * 0.08), value: search.hits)
             }
         }
-        .hudCard()
+        .hudCard(scanning: search.isBusy)
     }
 }
 
 private struct TerminalCard: View {
     let terminal: TerminalTicker
+    @Environment(\.hudInScreen) private var inScreen
 
     private var tint: Color {
         guard !terminal.isBusy else { return .dockAccent }
@@ -552,11 +934,23 @@ private struct TerminalCard: View {
             HUDHeader(
                 icon: .terminalWindow, title: terminal.isBusy ? "Running" : "Command finished",
                 detail: status, isBusy: terminal.isBusy, tint: tint)
-            Text("$ " + terminal.command)
-                .dockFont(.metadata, weight: .regular, design: .monospaced)
-                .foregroundStyle(Color.dockPrimaryText)
-                .lineLimit(2)
-            if let line = terminal.lastLine {
+            if !inScreen {
+                Text("$ " + terminal.command)
+                    .dockFont(.metadata, weight: .regular, design: .monospaced)
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(2)
+            }
+            if inScreen, !terminal.tail.isEmpty {
+                // The output as the terminal printed it.
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(terminal.tail.enumerated()), id: \.offset) { _, line in
+                        Text(line).dockFont(.code).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                    }
+                }
+                .dockPadding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .dockWell()
+            } else if let line = terminal.lastLine {
                 Text(line)
                     .dockFont(.code)
                     .foregroundStyle(Color.dockSecondaryText)
@@ -574,21 +968,24 @@ private struct TerminalCard: View {
                 .dockFont(.metadata, weight: .semibold)
             }
         }
-        .hudCard(tint: tint)
+        .hudCard(tint: tint, scanning: terminal.isBusy)
     }
 }
 
 private struct MediaCard: View {
     let media: GeneratedMedia
+    @Environment(\.hudInScreen) private var inScreen
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button {
-                ArtifactOpener.open(media.source)
-            } label: {
-                HUDHeader(icon: .image, title: "Image ready", detail: media.prompt, opens: true, tint: .dockSuccess)
+            if !inScreen {
+                Button {
+                    ArtifactOpener.open(media.source)
+                } label: {
+                    HUDHeader(icon: .image, title: "Image ready", detail: media.prompt, opens: true, tint: .dockSuccess)
+                }
+                .buttonStyle(.dockHover)
             }
-            .buttonStyle(.dockHover)
             Group {
                 if let url = media.fileURL {
                     AttachmentThumbnailView(url: url)
@@ -600,7 +997,7 @@ private struct MediaCard: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: 180)
+            .frame(maxWidth: .infinity, maxHeight: inScreen ? 320 : 180)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             // Drag the image straight into another app.
             .onDrag {
@@ -609,6 +1006,153 @@ private struct MediaCard: View {
             }
         }
         .hudCard(tint: .dockSuccess)
+    }
+}
+
+/// Where a path sits, for a quiet second line: the last two folders.
+private func hudFolder(_ path: String) -> String? {
+    let folder = (path as NSString).deletingLastPathComponent
+    let parts = folder.split(separator: "/").suffix(2)
+    return parts.isEmpty ? nil : parts.joined(separator: "/")
+}
+
+/// A path opens only when it exists on this Mac; remote gateways' paths don't.
+private func hudLocalFile(_ path: String) -> Bool {
+    FileManager.default.fileExists(atPath: (path as NSString).expandingTildeInPath)
+}
+
+private struct FileSearchCard: View {
+    let search: FileSearchScan
+    @Environment(\.hudInScreen) private var inScreen
+
+    private var title: String {
+        if search.isBusy { return search.byName ? "Looking for files" : "Searching files" }
+        let count = search.total ?? search.hits.count
+        return count == 0 ? "No matches" : "\(count) match\(count == 1 ? "" : "es")"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HUDHeader(
+                icon: .magnifyingGlass, title: title,
+                detail: "“\(search.pattern.prefix(60))” in \(hudFolder(search.scope + "/x") ?? search.scope)",
+                isBusy: search.isBusy)
+            ForEach(Array(search.hits.enumerated()), id: \.offset) { index, hit in
+                let row = HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    DockIcon(.fileText, size: 12).foregroundStyle(Color.dockAccent)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 4) {
+                            Text((hit.path as NSString).lastPathComponent)
+                                .dockFont(.rowTitle)
+                                .foregroundStyle(Color.dockPrimaryText)
+                            if let line = hit.line, !inScreen {
+                                Text(":\(line)").dockFont(.compactStatus, weight: .regular)
+                                    .foregroundStyle(Color.dockMetadataText)
+                            }
+                        }
+                        .lineLimit(1)
+                        // The screen names files and folders, not matched code.
+                        if let text = hit.text, !text.isEmpty, !inScreen {
+                            Text(text)
+                                .dockFont(.code)
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .lineLimit(1)
+                        } else if let folder = hudFolder(hit.path) {
+                            Text(folder).dockFont(.compactStatus, weight: .regular)
+                                .foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Group {
+                    if hudLocalFile(hit.path) {
+                        Button {
+                            ArtifactOpener.open(hit.path)
+                        } label: {
+                            row.contentShape(Rectangle())
+                        }
+                        .buttonStyle(.dockHover)
+                        .help(hit.path)
+                    } else {
+                        row
+                    }
+                }
+                // Hits land one after another, as if found in turn.
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .animation(.spring(response: 0.4, dampingFraction: 0.8).delay(Double(index) * 0.08), value: search.hits)
+            }
+        }
+        .hudCard(scanning: search.isBusy)
+    }
+}
+
+private struct FileGlimpseCard: View {
+    let file: FileGlimpse
+    @Environment(\.hudInScreen) private var inScreen
+
+    private var name: String { file.path.map { ($0 as NSString).lastPathComponent } ?? "a file" }
+
+    private var title: String {
+        switch (file.action, file.isBusy) {
+        case (.read, true): "Reading \(name)"
+        case (.read, false): "Read \(name)"
+        case (.write, true): "Writing \(name)"
+        case (.write, false): "Wrote \(name)"
+        case (.edit, true): "Editing \(name)"
+        case (.edit, false): "Edited \(name)"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            let opens = file.path.map(hudLocalFile) ?? false
+            if !inScreen {
+                Button {
+                    file.path.map(ArtifactOpener.open)
+                } label: {
+                    HUDHeader(
+                        icon: file.action == .read ? .fileText : .pencilSimple, title: title,
+                        detail: file.path.flatMap(hudFolder), isBusy: file.isBusy, opens: opens,
+                        tint: file.action == .read || file.isBusy ? .dockAccent : .dockSuccess)
+                }
+                .buttonStyle(.dockHover)
+                .disabled(!opens)
+                .help(file.path ?? "")
+            }
+            if !file.lines.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(file.lines.enumerated()), id: \.offset) { _, line in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            if !inScreen {
+                                Text(line.mark.map(String.init) ?? line.number.map(String.init) ?? "")
+                                    .foregroundStyle(
+                                        line.mark == "+"
+                                            ? Color.dockSuccess
+                                            : line.mark == "-" ? Color.dockDestructive : .dockMetadataText
+                                    )
+                                    .frame(minWidth: 18, alignment: .trailing)
+                            }
+                            Text(line.text)
+                                .foregroundStyle(
+                                    inScreen && line.mark == "+"
+                                        ? Color.dockSuccess
+                                        : inScreen && line.mark == "-"
+                                            ? Color.dockDestructive
+                                            : line.mark == nil ? Color.dockSecondaryText : Color.dockPrimaryText
+                                )
+                                .lineLimit(1)
+                        }
+                        .dockFont(.code)
+                    }
+                }
+                .dockPadding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .dockWell()
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .hudCard(tint: file.action == .read || file.isBusy ? .dockAccent : .dockSuccess, scanning: file.isBusy)
+        .animation(.dockEase(duration: 0.25), value: file.lines)
     }
 }
 
@@ -623,7 +1167,7 @@ struct VoiceStatusStrip: View {
             if model.status == .working, let start = turnStart {
                 TimelineView(.dockMotion(rate: 1)) { context in
                     let elapsed = Int(context.date.timeIntervalSince(start))
-                    let steps = model.activeToolCalls.filter { !$0.name.hasPrefix("__") }.count
+                    let steps = model.voiceTurnToolCalls.filter { !$0.name.hasPrefix("__") }.count
                     chip(
                         icon: .timer,
                         text: String(format: "%d:%02d", elapsed / 60, elapsed % 60)
@@ -694,8 +1238,7 @@ struct VoiceSubagentOrbs: View {
         let animates = DockMotion.isEnabled(reduceMotion: reduceMotion)
         HStack(spacing: 14) {
             ForEach(agents.prefix(6), id: \.id) { agent in
-                let running = !["completed", "complete", "done", "failed", "error", "cancelled"].contains(
-                    agent.status.lowercased())
+                let running = agent.isRunning
                 let tint: Color =
                     agent.status.lowercased().contains("fail") || agent.status == "error"
                     ? .dockDestructive
@@ -718,12 +1261,27 @@ struct VoiceSubagentOrbs: View {
                         .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                         .frame(maxWidth: 70)
+                    if let role = Self.roleLabel(agent) {
+                        Text(role)
+                            .dockFont(.metadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                            .lineLimit(1)
+                            .frame(maxWidth: 70)
+                    }
                 }
                 .help(agent.latestActivity ?? agent.goal)
                 .transition(.scale.combined(with: .opacity))
             }
         }
         .animation(.spring(response: 0.4), value: agents.map(\.id))
+    }
+
+    /// The Hermes role under the name, unless it only repeats the name.
+    static func roleLabel(_ agent: HermesSubagent) -> String? {
+        guard let role = agent.role?.trimmingCharacters(in: .whitespacesAndNewlines), !role.isEmpty,
+            role.caseInsensitiveCompare(agent.name ?? "") != .orderedSame
+        else { return nil }
+        return role
     }
 }
 

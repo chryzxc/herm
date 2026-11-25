@@ -7,14 +7,20 @@ import UserNotifications
 
 extension DockModel {
     func resumeBotChat(_ bot: BotSummary) {
-        // Every Bot has a canonical, persistent Bot Chat. When the roster row
-        // has no canonical session pointer yet, Hermes resolves (and lazily
-        // creates) the chat by its exact title during profile-scoped resume.
+        let target = botChatSession(bot)
+        resumeSession(target.session, profileID: target.profileID)
+    }
+
+    /// A bot's canonical, persistent chat. When the roster row has no canonical
+    /// session pointer yet, Hermes resolves (and lazily creates) the chat by its
+    /// exact title during profile-scoped resume.
+    func botChatSession(_ bot: BotSummary) -> (session: HermesSession, profileID: String) {
         let chat = bot.chat ?? BotChatReference(sessionID: BotService.canonicalBotChatTitle, profileID: bot.id)
-        resumeSession(
+        return (
             HermesSession(
                 id: chat.sessionID, title: bot.name, preview: chat.preview ?? "", startedAt: chat.lastActive,
-                messageCount: 0, source: "hermes-bot"), profileID: chat.profileID)
+                messageCount: 0, source: "hermes-bot"), chat.profileID
+        )
     }
 
     /// Routes an explicit, unambiguous Bot mention to its profile-scoped Bot Chat.

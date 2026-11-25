@@ -11,6 +11,7 @@ private final class QuickConversationRPC: HermesRPCClientProtocol {
     var calls: [(String, [String: Any])] = []
     var rows: [[String: Any]] = []
     var running = false
+    var botProfiles: [[String: Any]] = []
     var prompt = ""
     var rejectSubmit = false
     var rejectResume = false
@@ -22,6 +23,7 @@ private final class QuickConversationRPC: HermesRPCClientProtocol {
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         calls.append((method, params))
         switch method {
+        case "profiles.list": return ["profiles": botProfiles]
         case "session.create": return ["session_id": "runtime-quick", "stored_session_id": "quick"]
         case "session.resume":
             if rejectResume { throw HermesGateway.GatewayError.disconnected }
@@ -57,6 +59,45 @@ struct EdgeQuickConversationTests {
             sessionAgentStateFileURL: root.appendingPathComponent("agents.json"),
             defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "workspace",
             botActivityFileURL: root.appendingPathComponent("bots.json"), rpcClient: client)
+    }
+
+    @Test func coldNotchRequestReachesDefaultBotOnceWithoutChangingWorkspaceSelection() async throws {
+        let rpc = QuickConversationRPC()
+        rpc.botProfiles = [
+            ["id": "helper", "is_default": true, "chat": ["id": "helper-main"]]
+        ]
+        let workspace = runtime(rpc)
+        workspace.isHermesConnected = true
+        workspace.currentSessionTitle = "Open workspace chat"
+        workspace.draft = "Keep this draft"
+        let projection = EdgeQuickConversationModel()
+        let voice = projection.prepareVoice(runtime: workspace)
+        voice.voiceAssistant.hasRecognition = { true }
+        defer {
+            projection.shutdown()
+            workspace.shutdown()
+        }
+
+        let firstRequest = "Explain why the build is stuck."
+        voice.pendingWakeRequest = firstRequest
+        voice.toggleVoiceFromShortcut()
+        for _ in 0..<100 where !rpc.calls.contains(where: { $0.0 == "prompt.submit" }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let prompts = rpc.calls.filter { $0.0 == "prompt.submit" }
+        #expect(prompts.count == 1)
+        #expect(rpc.prompt == firstRequest)
+        #expect(rpc.calls.contains { $0.0 == "session.resume" && $0.1["session_id"] as? String == "helper-main" })
+        #expect(voice.voiceSessionID == "runtime-helper-main")
+        #expect(voice.voiceProfileID == "helper")
+        #expect(workspace.sessionID == "workspace")
+        #expect(workspace.currentSessionTitle == "Open workspace chat")
+        #expect(workspace.draft == "Keep this draft")
+        #expect(workspace.voiceState == .inactive)
+
+        workspace.receiveGatewayEvent("message.start", params: ["session_id": "runtime-helper-main"])
+        #expect(voice.status == .working)
+        #expect(workspace.status != .working)
     }
 
     @Test func closingAProjectionPreservesAnotherSessionsRepositoryTracking() async throws {

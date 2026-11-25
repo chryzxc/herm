@@ -57,7 +57,6 @@ struct HermesSimulatorPreferenceTests {
         let served = HermesSimulatorPreference.applying(
             to: params, method: HermesFeatureIDs.ID.promptSubmit.rawValue, servedByPlugin: true)
         #expect(served["text"] as? String == "Launch Android")
-        #expect(GenerativeUIIntegration.preparePrompt("Request", enabled: true, servedByPlugin: true) == "Request")
         #expect(HermPlugin.isEnabled(in: ["plugins": [["name": "herm", "enabled": true]]]))
         #expect(!HermPlugin.isEnabled(in: ["plugins": [["name": "herm", "enabled": false]]]))
         #expect(!HermPlugin.isEnabled(in: ["plugins": [["name": "herm-simulator", "enabled": true]]]))

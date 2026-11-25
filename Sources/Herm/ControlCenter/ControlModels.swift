@@ -507,6 +507,7 @@ struct SessionActivityStep: Equatable, Sendable {
     let id: String
     let name: String
     let timestamp: Date
+    var isCompletedReply = false
 }
 
 struct LatestActivityItem: Identifiable, Equatable, Sendable {

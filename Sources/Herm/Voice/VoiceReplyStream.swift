@@ -10,29 +10,51 @@ struct VoiceReplyStream {
     mutating func append(_ delta: String) -> String? {
         guard !defersUntilComplete else { return nil }
         pending += delta
-        guard pending.utf8.count <= 4_096,
-            !pending.contains("`"), !pending.contains("<"), !pending.contains("{"),
-            !pending.contains("~~~"), !pending.contains("[")
-        else {
+        guard pending.utf8.count <= 4_096 else {
             defersUntilComplete = true
             pending = ""
             return nil
         }
-        let buffered = pending
+        // Structured output (code, a link, a herm-ui block) waits for the completed
+        // reply, but the finished prose before it is spoken now rather than held
+        // back with it. Whatever begins at the marker starts a new sentence.
+        if let marker = Self.firstMarker(in: pending) {
+            defersUntilComplete = true
+            let head = String(pending[..<marker])
+            pending = ""
+            guard let boundary = Self.lastSentenceEnd(in: head, includingTrailing: true) else { return nil }
+            let text = String(head[..<boundary])
+            emitted += text
+            return text
+        }
+        guard let boundary = Self.lastSentenceEnd(in: pending, includingTrailing: false) else { return nil }
+        let text = String(pending[..<boundary])
+        emitted += text
+        pending = String(pending[boundary...])
+        return text
+    }
+
+    private static func firstMarker(in text: String) -> String.Index? {
+        let symbol = text.firstIndex { "`<{[".contains($0) }
+        let fence = text.range(of: "~~~")?.lowerBound
+        let delivery = text.range(of: "MEDIA:")?.lowerBound
+        return [symbol, fence, delivery].compactMap(\.self).min()
+    }
+
+    /// The end of the last complete sentence. A sentence counts as complete once
+    /// the next one has started, or at the end when `includingTrailing` and it
+    /// ends in terminal punctuation.
+    private static func lastSentenceEnd(in text: String, includingTrailing: Bool) -> String.Index? {
         var boundary: String.Index?
-        buffered.enumerateSubstrings(in: buffered.startIndex..., options: .bySentences) { _, range, _, _ in
-            let sentence = buffered[range].trimmingCharacters(in: .whitespacesAndNewlines)
-            if range.upperBound < buffered.endIndex,
+        text.enumerateSubstrings(in: text.startIndex..., options: .bySentences) { _, range, _, _ in
+            let sentence = text[range].trimmingCharacters(in: .whitespacesAndNewlines)
+            if includingTrailing || range.upperBound < text.endIndex,
                 sentence.last.map({ ".!?。！？".contains($0) }) == true
             {
                 boundary = range.upperBound
             }
         }
-        guard let boundary else { return nil }
-        let text = String(pending[..<boundary])
-        emitted += text
-        pending = String(pending[boundary...])
-        return text
+        return boundary
     }
 
     /// A tool boundary proves the model has finished its preceding narration,

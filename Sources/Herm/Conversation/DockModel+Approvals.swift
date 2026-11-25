@@ -176,26 +176,63 @@ extension DockModel {
         }
     }
 
-    func respondToClarification(_ response: String, displayText: String? = nil) {
-        guard sessionActionsReady else { return }
+    @discardableResult
+    func respondToClarification(
+        _ response: String, displayText: String? = nil, fromVoice: Bool = false
+    ) -> Bool {
+        guard sessionActionsReady else { return false }
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
-        let images = pendingImages
-        guard !trimmed.isEmpty || !images.isEmpty, !isRespondingToClarification else { return }
-        guard let responseSessionID = sessionID, !responseSessionID.isEmpty else { return }
+        let images = fromVoice ? [] : pendingImages
+        guard !trimmed.isEmpty || !images.isEmpty, !isRespondingToClarification else { return false }
+        guard let responseSessionID = sessionID, !responseSessionID.isEmpty else { return false }
         if let request = sessionAttention[responseSessionID]?.responseTarget,
             attentionAnswers[request]?.blocksSubmission == true
         {
-            return
+            return false
         }
         let responseGeneration = sessionResumeGeneration
         guard let requestID = clarificationRequestID, !requestID.isEmpty else {
             clarificationResponseError = "Hermes did not provide an ID for this question. Please ask it again."
-            return
+            return false
         }
         let batchQuestion = activeClarification?.requestID == requestID ? activeClarification?.current : nil
-        draft = ""
-        pendingImages = []
-        messages.append(ChatMessage(role: .user, text: displayText ?? trimmed, images: images.map(\.image)))
+        let call = voiceConversationGeneration
+        let answerIsCurrent = { [self] in
+            sessionResumeGeneration == responseGeneration && sessionID == responseSessionID
+                && clarificationRequestID == requestID && activeClarification?.current?.id == batchQuestion?.id
+        }
+        if !fromVoice {
+            draft = ""
+            pendingImages = []
+        }
+        let submittedAnswer = ChatMessage(role: .user, text: displayText ?? trimmed, images: images.map(\.image))
+        messages.append(submittedAnswer)
+        let showVoiceFailure = { [self] in
+            guard fromVoice else { return }
+            messages.removeAll { $0.id == submittedAnswer.id }
+            guard voiceConversationGeneration == call, isVoicePromptActive else { return }
+            voiceSpokenCaption =
+                "Couldn’t send that answer. "
+                + VoicePrompts.clarificationHint(choices: clarificationChoices, multiSelect: clarificationMultiSelect)
+        }
+        let closeExpiredVoiceQuestion = { [self] (result: [String: Any]) -> Bool in
+            guard fromVoice, result["status"] as? String == "expired", answerIsCurrent() else { return false }
+            messages.removeAll { $0.id == submittedAnswer.id }
+            removePendingClarificationResumeMessage()
+            markClarificationResolved(requestID)
+            _ = removePendingClarification(for: responseSessionID, requestID: requestID)
+            showClarification(nil)
+            status = .idle
+            isSending = false
+            conversationActivityPhase = .idle
+            let message = "This question expired. Ask Herm to ask it again."
+            clarificationResponseError = message
+            if voiceConversationGeneration == call, isVoicePromptActive {
+                presentVoicePrompt(nil)
+                voiceSpokenCaption = message
+            }
+            return true
+        }
         if let batchQuestion, var batch = activeClarification, batch.remainingCount > 1 {
             // Earlier batch answers are locked one by one; the last lock resumes the turn.
             isRespondingToClarification = true
@@ -216,6 +253,7 @@ extension DockModel {
                         params: [
                             "request_id": requestID, "question_id": batchQuestion.id, "answer": answerText,
                         ])
+                    if closeExpiredVoiceQuestion(result) { return }
                     if result["status"] as? String == "expired" {
                         throw NSError(
                             domain: "Hermes", code: 410,
@@ -223,28 +261,28 @@ extension DockModel {
                                 NSLocalizedDescriptionKey: "This question expired before Hermes received an answer."
                             ])
                     }
+                    if fromVoice, result["status"] as? String != "ok" {
+                        throw HermesGateway.GatewayError.malformedResponse
+                    }
                     cleanupImageAttachments(images)
                     batch.lockedAnswers[batchQuestion.id] = answerText
                     for alias in pendingClarificationAliasesBySessionID[responseSessionID] ?? [responseSessionID]
                     where pendingClarificationsBySessionID[alias]?.requestID == requestID {
                         pendingClarificationsBySessionID[alias] = batch
                     }
-                    guard self.sessionResumeGeneration == responseGeneration,
-                        self.sessionID == responseSessionID
-                    else { return }
+                    guard answerIsCurrent() else { return }
                     showClarification(batch)
                     messages.append(ChatMessage(role: .hermes, text: batch.transcriptText, modelName: currentModelName))
                 } catch {
-                    guard self.sessionResumeGeneration == responseGeneration,
-                        self.sessionID == responseSessionID
-                    else { return }
+                    guard answerIsCurrent() else { return }
                     pendingImages.insert(contentsOf: images, at: 0)
+                    showVoiceFailure()
                     let diagnostic = Self.safeUserDiagnostic(error.localizedDescription)
                     clarificationResponseError = diagnostic
                     DebugLog.write("model: clarification lock failed: \(diagnostic)")
                 }
             }
-            return
+            return true
         }
         beginStreamingMessage()
         isAwaitingClarificationResume = true
@@ -279,24 +317,24 @@ extension DockModel {
                             "result": ["answer": answerText],
                         ])
                 }
+                if closeExpiredVoiceQuestion(answer) { return }
                 if answer["status"] as? String == "expired" {
                     throw NSError(
                         domain: "Hermes", code: 410,
                         userInfo: [NSLocalizedDescriptionKey: "This question expired before Hermes received an answer."]
                     )
                 }
+                if fromVoice, answer["status"] as? String != "ok" {
+                    throw HermesGateway.GatewayError.malformedResponse
+                }
                 cleanupImageAttachments(images)
                 markClarificationResolved(requestID)
                 _ = removePendingClarification(for: responseSessionID, requestID: requestID)
-                guard self.sessionResumeGeneration == responseGeneration,
-                    self.sessionID == responseSessionID
-                else { return }
+                guard answerIsCurrent() else { return }
                 showClarification(nil)
                 setInFlightBotActivityWorking(for: responseSessionID)
             } catch {
-                guard self.sessionResumeGeneration == responseGeneration,
-                    self.sessionID == responseSessionID
-                else { return }
+                guard answerIsCurrent() else { return }
                 removePendingClarificationResumeMessage()
                 pendingImages.insert(contentsOf: images, at: 0)
                 status = .needsClarification
@@ -304,9 +342,11 @@ extension DockModel {
                 conversationActivityPhase = .idle
                 let diagnostic = Self.safeUserDiagnostic(error.localizedDescription)
                 clarificationResponseError = diagnostic
+                showVoiceFailure()
                 DebugLog.write("model: clarification response failed: \(diagnostic)")
             }
         }
+        return true
     }
 
     /// A clarify answer is text only, so staged images are stored in Hermes'
@@ -401,6 +441,8 @@ extension DockModel {
             setInFlightBotActivityWorking(for: resolvedSessionID)
             setInFlightBotActivityWorking(for: sessionID)
         }
+        // Release the gate before a follow-up can be mistaken for another decision.
+        if isVoicePromptActive, voicePromptSpeech == nil { presentVoicePrompt(nil) }
     }
 }
 

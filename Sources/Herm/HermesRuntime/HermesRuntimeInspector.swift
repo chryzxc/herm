@@ -130,17 +130,14 @@ enum HermesRuntimeInspector {
     }
 
     /// Hermes stores the primary agent identity in SOUL.md beside config.yaml.
-    /// Keep this parser deliberately narrow: only a level-one Markdown heading
-    /// in the first part of the file becomes UI identity text.
+    /// Read the first level-one Markdown heading as the profile's identity.
     static func parseAgentName(_ soul: String) -> String? {
         for line in soul.split(whereSeparator: \.isNewline).prefix(32) {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.hasPrefix("# ") else { continue }
             let heading = String(trimmed.dropFirst(2))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            // SOUL.md headings can add a role after an em dash, for example
-            // `# Nexus — Coordinator`. The menu bar should show the agent's
-            // identity, not its descriptive role.
+            // A role after an em dash is descriptive metadata.
             let name =
                 heading
                 .split(separator: "—", maxSplits: 1)

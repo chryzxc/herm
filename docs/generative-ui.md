@@ -113,9 +113,15 @@ Supported block fields:
 | text | `text` |
 | table | `columns: [String]`, `rows: [[String]]` |
 | sources | `items: [{title, url}]` with public HTTPS URLs |
-| gallery | `items: [{title, url}]` with HTTPS links or inline PNG/JPEG/WebP data URLs |
+| gallery | `items: [{title, url}]` with direct HTTPS image URLs or inline PNG/JPEG/WebP data URLs |
 | chart | `style: "bar"` or `"line"`, `points: [{label, value}]` |
 | form | `fields: [{id, label, type, required?, options?}]`, optional `submitLabel` |
+
+Inline image data and direct Wikimedia Commons gallery images render automatically.
+Other public image links offer a Load image action in chat. Gallery fetches are
+bounded raster downloads, not webpages. A reply can include explicit MEDIA: deliveries
+outside a fence alongside a surface. Images, native videos, and file rows are kept
+separate from the generated content rather than replaced by it.
 
 Table rows are arrays of string or number cells matching the columns. Numbers
 become display text during decoding; the saved source remains unchanged. Objects,

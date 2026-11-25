@@ -52,7 +52,7 @@ struct RichBlock: Codable, Equatable, Sendable {
     enum Kind: String, Codable, CaseIterable, Sendable {
         case text, table, sources, gallery, chart, form
         case section, metrics, comparison, checklist, timeline, graph, tree, imageComparison, record, code, findings,
-            workflow, command, callout, facts, faq, breakdown
+            workflow, command, callout, facts, faq, breakdown, map
     }
     let type: Kind
     var text: String?
@@ -85,7 +85,7 @@ struct RichBlock: Codable, Equatable, Sendable {
             else { return false }
             return points.allSatisfy { !$0.label.isEmpty && $0.value.isFinite }
         case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record, .code,
-            .findings, .workflow, .command, .callout, .facts, .faq, .breakdown:
+            .findings, .workflow, .command, .callout, .facts, .faq, .breakdown, .map:
             return false
         case .form:
             guard let fields, !fields.isEmpty, fields.count <= 64,
@@ -108,7 +108,7 @@ struct RichBlock: Codable, Equatable, Sendable {
         if let payload { return payload.plainText }
         return switch type {
         case .section, .metrics, .comparison, .checklist, .timeline, .graph, .tree, .imageComparison, .record, .code,
-            .findings, .workflow, .command, .callout, .facts, .faq, .breakdown:
+            .findings, .workflow, .command, .callout, .facts, .faq, .breakdown, .map:
             ""
         case .text: text ?? ""
         case .table:
@@ -190,6 +190,14 @@ struct RichField: Codable, Equatable, Identifiable, Sendable {
 }
 
 enum RichResourcePolicy {
+    /// An origin dedicated to public static media. Unrelated generated URLs still need a click.
+    static func previewsGalleryImageAutomatically(_ url: URL) -> Bool {
+        url.scheme == "data"
+            || (url.scheme == "https" && url.host?.lowercased() == "upload.wikimedia.org"
+                && url.user == nil && url.password == nil && (url.port == nil || url.port == 443)
+                && url.path.hasPrefix("/wikipedia/") && url.query == nil)
+    }
+
     static func url(_ value: String, image: Bool = false) -> URL? {
         guard value.count <= RichDocument.maximumBytes, let url = URL(string: value),
             url.user == nil, url.password == nil
@@ -224,12 +232,20 @@ struct RichDocument: Equatable, Sendable {
                 || memmem($0.baseAddress, $0.count, "::preview{", 10) != nil
         }
     }
+    static func containsFenceMarker(_ text: String) -> Bool {
+        var text = text
+        return text.withUTF8 {
+            memmem($0.baseAddress, $0.count, "```", 3) != nil
+                || memmem($0.baseAddress, $0.count, "~~~", 3) != nil
+        }
+    }
+
     enum Segment: Equatable, Sendable {
         case markdown(String)
         case surface(RichSurface, source: String)
         case unavailable(String, source: String)
         case pending
-        /// A finished ```mermaid fence; while streaming it stays Markdown code.
+        /// A closed Mermaid fence, even when the rest of the reply is still streaming.
         case diagram(String)
         /// Hermes' inline widget directive, `::preview{file="path"}` alone on a line; finished replies only.
         case preview(String)
@@ -254,7 +270,10 @@ struct RichDocument: Equatable, Sendable {
         }.joined(separator: "\n\n")
     }
 
-    init(_ text: String, streaming: Bool = false) {
+    init(
+        _ text: String, streaming: Bool = false,
+        decodeClosedSurface: ((String) -> Segment)? = nil
+    ) {
         guard Self.mentionsSurface(text) else {
             segments = [.markdown(text)]
             return
@@ -278,17 +297,19 @@ struct RichDocument: Equatable, Sendable {
             if let current = fence {
                 if current.isClosed(by: line) {
                     if rich {
-                        if streaming {
-                            result.append(.pending)
+                        let segment: Segment
+                        if overLimit {
+                            segment = Self.decode("", overLimit: true)
                         } else {
-                            let segment = Self.decode(code.joined(separator: "\n"), overLimit: overLimit)
-                            if case .surface(let surface, let source) = segment,
-                                !surfaceIDs.insert(surface.id).inserted
-                            {
-                                result.append(.unavailable(surface.fallback, source: source))
-                            } else {
-                                result.append(segment)
-                            }
+                            let source = code.joined(separator: "\n")
+                            segment = decodeClosedSurface?(source) ?? Self.decode(source)
+                        }
+                        if case .surface(let surface, let source) = segment,
+                            !surfaceIDs.insert(surface.id).inserted
+                        {
+                            result.append(streaming ? .pending : .unavailable(surface.fallback, source: source))
+                        } else {
+                            result.append(streaming && !segment.showsInVoiceGlance ? .pending : segment)
                         }
                     } else if diagram != nil {
                         result.append(.diagram(code.joined(separator: "\n")))
@@ -315,7 +336,7 @@ struct RichDocument: Equatable, Sendable {
             } else if let opening = MarkdownFence(opening: line) {
                 fence = opening
                 rich = opening.language == "herm-ui"
-                diagram = !streaming && opening.language?.lowercased() == "mermaid" ? line : nil
+                diagram = opening.language?.lowercased() == "mermaid" ? line : nil
                 if rich || diagram != nil { flush() } else { markdown.append(line) }
             } else {
                 markdown.append(line)
@@ -371,7 +392,7 @@ struct RichDocument: Equatable, Sendable {
         return path.isEmpty ? "reply" : String(path.prefix(256))
     }
 
-    private static func decode(_ source: String, overLimit: Bool) -> Segment {
+    static func decode(_ source: String, overLimit: Bool = false) -> Segment {
         guard !overLimit, source.utf8.count <= maximumBytes else {
             return .unavailable("Interactive content exceeded the display limit.", source: "")
         }

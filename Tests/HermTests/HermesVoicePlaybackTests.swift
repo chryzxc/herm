@@ -8,11 +8,13 @@ private final class VoiceAudioClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     var continuation: CheckedContinuation<[String: Any], Never>?
     var path: String?
+    var requests = 0
     func connect() async throws {}
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
     func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {
         self.path = path
+        requests += 1
         return await withCheckedContinuation { continuation = $0 }
     }
 }
@@ -34,6 +36,49 @@ struct HermesVoicePlaybackTests {
         #expect(!segments.isEmpty)
         #expect(segments.allSatisfy { !$0.contains("**") && !$0.hasPrefix("- ") })
         #expect(segments.joined(separator: " ").contains("Code: build features and fix bugs."))
+    }
+
+    @Test func generatedSpeechStripsMarkdownAndKeepsTheWords() {
+        let reply = #"""
+            # What changed
+            > **It’s ready.**
+            * Open [the notes](https://example.test/docs).
+            * Use `app_config` to start.
+
+            | Check | Result |
+            | --- | --- |
+            | Build | Passed |
+            """#
+        #expect(
+            VoiceSpeechText.prepare(reply)
+                == "What changed. It’s ready. Open the notes. Use app_config to start. Check, Result. Build, Passed.")
+    }
+
+    @Test func generatedSpeechSkipsVisualsAndCodeWithoutLosingTheProse() {
+        let reply = """
+            First. Then this:
+            ~~~swift
+            let internalCode = 1 * 2
+            ~~~
+            ```herm-ui
+            {"version":2,"id":"hidden"}
+            ```
+            ::preview{file="internal.html"}
+            <em>Done.</em>
+            """
+        #expect(HermesVoicePlayback.cues(reply).joined(separator: " ") == "First. Then this: Done.")
+        #expect(HermesVoicePlayback.cues("```swift\nlet unfinished = true").isEmpty)
+        #expect(HermesVoicePlayback.cues(#"::preview{file="internal.html"}"#).isEmpty)
+    }
+
+    @Test func unmatchedAndEscapedAsterisksAreNotSynthesized() {
+        let reply = #"**Here is the \* result. 2 * 3 is 6."#
+        let speech = HermesVoicePlayback.cues(reply).joined(separator: " ")
+        #expect(!speech.contains("*"))
+        #expect(speech.contains("Here is the"))
+        #expect(speech.contains("2 times 3 is 6."))
+        #expect(VoiceSpeechText.prepare("2*3*4") == "2 times 3 times 4")
+        #expect(HermesVoicePlayback.cues("Keep *this* exactly.", literal: true) == ["Keep *this* exactly."])
     }
 
     @Test func synthesisAcceptsOnlyNonemptyAudioData() throws {
@@ -118,5 +163,22 @@ struct HermesVoicePlaybackTests {
             #expect(error is CancellationError)
         }
         #expect(captions.isEmpty)
+    }
+
+    @Test func aQueuedSentenceIsSynthesizedWhileThePreviousOnePlays() async throws {
+        let client = VoiceAudioClient()
+        let playback = HermesVoicePlayback()
+        playback.prefetch("Next sentence.", profileID: nil, client: client)
+        for _ in 0..<100 where client.continuation == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let task = Task {
+            try await playback.speak("Next sentence.", profileID: nil, client: client, onCaption: { _ in })
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        // Invalid audio ends playback before a speaker opens; one request proves reuse.
+        client.continuation?.resume(returning: [:])
+        await #expect(throws: (any Error).self) { try await task.value }
+        #expect(client.requests == 1)
     }
 }

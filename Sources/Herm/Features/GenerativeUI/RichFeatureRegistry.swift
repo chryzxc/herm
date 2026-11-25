@@ -22,7 +22,20 @@ struct RichFeatureDescriptor: Identifiable, Sendable {
 
 /// Every advertised example is decoded through the production format and rendered by its typed block view.
 enum RichFeatureRegistry {
+    private static let textBlock = RichFeatureDescriptor(
+        id: "text", version: 1, guidance: "Readable text", example: #"{"type":"text","text":"Explanation"}"#)
+    private static let tableBlock = RichFeatureDescriptor(
+        id: "table", version: 1, guidance: "String or number cells, matching columns",
+        example: #"{"type":"table","columns":["Month","Sales"],"rows":[["January",12]]}"#)
+
     static let local: [RichFeatureDescriptor] = [
+        .init(
+            id: "map", version: 2,
+            guidance:
+                "A native map with a named pin from verified place coordinates. Use title, latitude and longitude. Never invent coordinates.",
+            example:
+                #"{"id":"place","type":"map","payload":{"title":"Greenwich Observatory","latitude":51.4778,"longitude":-0.0014}}"#
+        ),
         .init(
             id: "faq", version: 2,
             guidance:
@@ -73,10 +86,8 @@ enum RichFeatureRegistry {
             example:
                 #"{"id":"checks","type":"workflow","payload":{"items":[{"id":"build","title":"Build","status":"passed","evidence":"Supplied build log: exit 0"},{"id":"review","title":"Review changes","status":"proposed","detail":"Inspect the diff before publishing."}]}}"#
         ),
-        .init(id: "text", version: 1, guidance: "Readable text", example: #"{"type":"text","text":"Explanation"}"#),
-        .init(
-            id: "table", version: 1, guidance: "String or number cells, matching columns",
-            example: #"{"type":"table","columns":["Month","Sales"],"rows":[["January",12]]}"#),
+        textBlock,
+        tableBlock,
         .init(
             id: "chart", version: 1, guidance: "Bar or line with numeric values",
             example: #"{"type":"chart","style":"bar","points":[{"label":"January","value":12}]}"#),
@@ -106,7 +117,8 @@ enum RichFeatureRegistry {
             id: "sources", version: 1, guidance: "Public HTTPS source links",
             example: #"{"type":"sources","items":[{"title":"Reference","url":"https://example.com"}]}"#),
         .init(
-            id: "gallery", version: 1, guidance: "Inline image data or explicit public HTTPS image links",
+            id: "gallery", version: 1,
+            guidance: "Inline image data or direct HTTPS image URLs. Use MEDIA: for delivered files and videos",
             example: #"{"type":"gallery","items":[{"title":"Reference","url":"https://example.com/image.png"}]}"#),
         .init(
             id: "form", version: 1,
@@ -183,15 +195,29 @@ enum RichFeatureRegistry {
     private static let markdownGuidance =
         "Ordinary Markdown pipe tables are sortable in Herm. Use a GitHub-style alert such as > [!NOTE] followed by a quoted paragraph for an important aside. For specs, two or more bullets like - **Format:** CSV form a label–value list. These formats work directly in Markdown."
 
-    /// Session rules; the full catalog is served on demand so the rules fit Hermes' prompt-section budget.
-    static let rules = """
-        Generative UI: Herm renders fenced `herm-ui` JSON surfaces in replies. When an interactive or structured view helps, use one; the user does not need to ask for Herm UI or HTML. For calculators, simulations, interactive graphics and tools whose results change with inputs, return a working self-contained HTML surface whose inputs update results immediately. Respect explicit requests for plain text, code listings, or project/file changes, and use Markdown when a visual adds no value. Never invent data, verified status, actions, or execution outcomes. \(markdownGuidance) Before writing a fenced surface, call herm_reference with surface "herm.generative-ui" for the envelope, block catalog, limits and records loaded in this chat.
+    static let mediaGuidance =
+        "For a real image, video, or file, deliver the verified local path or direct public HTTPS media URL on its own MEDIA: line outside code fences. Prefer a file already produced or downloaded by your tools. An image or video delivery counts as the visual. Use source links for web pages, and don't repeat the same asset in a gallery and as a delivery."
+
+    private static let replyGuidance = """
+        Generative UI is enabled in Herm. For written chat: use a fenced `herm-ui` JSON surface by default for every answer. Use a native text block for a short answer and the matching structured blocks for data, comparisons, plans, or findings. Keep one useful surface and don't repeat its contents as prose.
+        For calculators, simulations, interactive graphics and tools whose results change with inputs, return a working self-contained HTML surface. Wire inputs to update results immediately.
+        Honor explicit requests for plain text, raw code, or another exact format. Carry out project and file work normally. A verified media delivery can stand on its own. Never invent data, actions, status, or execution outcomes.
         """
+
+    private static let referenceGuidance = """
+        For specialized blocks, call herm_reference with surface "herm.generative-ui" if available. If no reference is available, use the basic native formats or a Markdown table.
+        """
+
+    /// Session rules and per-turn instructions share the same reply default; only the catalog is deferred.
+    static let rules =
+        replyGuidance + "\nFor spoken turns, follow that turn's instructions for the spoken summary and visual preview."
+        + "\n" + referenceGuidance
 
     /// Envelope, composition rules and the local block catalog. Session records come from `sessionReference`.
     static func reference() -> String {
         """
         \(markdownGuidance)
+        \(mediaGuidance)
         Example HTML tool: a savings calculator needs editable balance, contribution, rate and years with a recalculating result.
         Envelope: {"version":1,"id":"stable-short-id","title":"Title","fallback":"Readable explanation","kind":"native","blocks":[...]}. Use version 2 for new components, datasets or revisionOf. Native surfaces omit html. HTML uses kind "html", complete inline HTML/CSS/JS in html, and omits blocks. Include a useful fallback. HTML is offline and has no host bridge, credentials, storage, files, tools, downloads, popups or device access. Never request secrets.
         V2 blocks have stable id, type and typed payload. Legacy blocks still work. V2 datasets: [{"id":"sales","columns":[{"id":"month","title":"Month","type":"text"},{"id":"sales","title":"Sales","type":"number","unit":"units"}],"rows":[{"id":"jan","values":["January","12"]}]}]. Table payload: {"dataset":"sales"}; chart payload: {"dataset":"sales","label":"month","series":["sales"],"style":"bar"}. Columns use text, number or ISO8601 date; dataset cells, metric values, comparison values and tree values are strings. Share datasets to link selection. Optional metadata example: \(metadataExample). assumptions accepts a string or an array of strings; source and observedAt are strings, fictional is a boolean. Supply only known metadata. Only use revisionOf when the user supplies an exact artifact reference; copy it unchanged.
@@ -201,16 +227,20 @@ enum RichFeatureRegistry {
         """
     }
 
-    /// Record blocks for the records loaded in one chat; nil when none are.
-    static func instructions(context: RichGenerationContext = RichGenerationContext()) -> String {
-        let guidance = """
-            Generative UI is enabled in Herm. When an interactive or structured view helps, use a fenced `herm-ui` JSON object. Do not require the user to mention Herm UI or HTML.
-            For calculators, simulations, interactive graphics and tools whose results change with inputs, return a working self-contained HTML surface. Wire inputs to update results immediately.
-            Respect explicit requests for plain text, code listings, or project/file changes. Use Markdown when a visual adds no value. Never invent data, verified status, actions, or execution outcomes.
+    static func instructions(
+        context: RichGenerationContext = RichGenerationContext(), servedByPlugin: Bool = false
+    ) -> String {
+        let catalog =
+            servedByPlugin
+            ? """
+            Use one JSON object inside a herm-ui fence. Replace the example content with the actual answer.
+            Short answer: \(exampleSurface(textBlock))
+            Native table: \(exampleSurface(tableBlock))
+            \(mediaGuidance)
+            \(referenceGuidance)
             """
-        return "[Herm rendering context v1]\n" + guidance + "\n" + reference()
-            + (sessionReference(context: context).map { "\n" + $0 } ?? "")
-            + "\n[/Herm rendering context]"
+            : reference() + (sessionReference(context: context).map { "\n" + $0 } ?? "")
+        return "[Herm rendering context v1]\n" + replyGuidance + "\n" + catalog + "\n[/Herm rendering context]"
     }
 
     static func sessionReference(context: RichGenerationContext) -> String? {

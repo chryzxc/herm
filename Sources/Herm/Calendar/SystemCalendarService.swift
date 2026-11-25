@@ -7,8 +7,8 @@ import SwiftUI
 /// the visible range is re-read whenever EventKit reports a change.
 @MainActor
 final class SystemCalendarService: ObservableObject {
-    static let enabledKey = "dock.calendar.system"
-    static let hiddenSourcesKey = "dock.calendar.hidden"
+    nonisolated static let enabledKey = "dock.calendar.system"
+    nonisolated static let hiddenSourcesKey = "dock.calendar.hidden"
 
     enum Access: Equatable { case notDetermined, granted, denied }
 
@@ -159,6 +159,17 @@ final class SystemCalendarService: ObservableObject {
     private var eventRequest: (range: DateInterval, revision: UInt64, readEvents: Bool)? {
         guard isEnabled, let range else { return nil }
         return (range, revision, eventAccess == .granted)
+    }
+
+    /// Today's events for a spoken briefing, or nil without full Calendar access or with
+    /// "Show Mac Calendar" off. Never asks for access.
+    nonisolated static func todayEvents(now: Date = .now, calendar: Calendar = .current) async -> [CalendarItem]? {
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess,
+            UserDefaults.standard.object(forKey: "dock.calendar.system") as? Bool ?? true
+        else { return nil }
+        let start = calendar.startOfDay(for: now)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? now
+        return await readEvents(DateInterval(start: start, end: end)).1.sorted { $0.start < $1.start }
     }
 
     nonisolated private static func readEvents(_ range: DateInterval) async -> ([Source], [CalendarItem]) {

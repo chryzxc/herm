@@ -172,6 +172,11 @@ struct AgentEvent: Identifiable, Equatable, Codable {
 }
 
 struct HermesSubagent: Identifiable, Equatable, Codable {
+    /// Still working: Hermes hasn't reported a terminal status.
+    var isRunning: Bool {
+        !["completed", "complete", "done", "failed", "error", "cancelled"].contains(status.lowercased())
+    }
+
     let id: String
     var name: String?
     var parentID: String?

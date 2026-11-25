@@ -4,6 +4,26 @@ import Testing
 @testable import Herm
 
 struct EdgeNotchTests {
+    @Test @MainActor func enabledWakeKeepsTheIndicatorSlotWhenCaptureIsNotRunning() {
+        let state = EdgeNotchState()
+        state.side = .right
+        let original = state.collapsedRailHeight
+        state.wakeEnabled = true
+        #expect(state.showsWakeIndicator)
+        #expect(state.collapsedRailHeight > original)
+        #expect(state.wakeAccessibilityValue.contains("not listening"))
+        #expect(state.wakeIndicatorStatus == .standby)
+        #expect(state.wakeIndicatorStatus?.icon == .microphone)
+        state.wakeError = "Speech recognition unavailable"
+        #expect(state.wakeIndicatorStatus == .unavailable)
+        #expect(state.wakeIndicatorStatus?.icon == .microphoneSlash)
+        #expect(state.wakeAccessibilityValue == "Speech recognition unavailable")
+        state.wakeError = nil
+        state.wakeListening = true
+        #expect(state.wakeIndicatorStatus?.icon == .microphone)
+        #expect(state.wakeAccessibilityValue == EdgeWakeIndicator.accessibilityStatus)
+    }
+
     @MainActor @Test func pendingRequestsStayVisibleUntilResolved() {
         let model = DockModel()
         model.receiveGatewayEvent(
@@ -317,6 +337,27 @@ struct EdgeNotchTests {
                 == CGSize(width: EdgeNotchState.islandSize.width, height: EdgeNotchState.islandSize.height + 32))
     }
 
+    @MainActor @Test func sideRailReservesClearanceForTheListeningIndicator() {
+        let state = EdgeNotchState()
+        for side in [EdgeDockSide.left, .right] {
+            state.side = side
+            state.wakeListening = false
+            let collapsed = state.collapsedSize
+            state.wakeListening = true
+            #expect(state.sideWakeTopMargin == 16)
+            #expect(EdgeNotchState.sideWakeClearance == 16)
+            #expect(state.collapsedSize.height == collapsed.height + 54)
+            #expect(state.collapsedSize.width == collapsed.width)
+            #expect(state.panelSize == state.collapsedSize)
+            let listening = state.collapsedSize
+            state.wakeEnabled = true
+            state.wakeListening = false
+            #expect(state.collapsedSize == listening)
+            state.wakeEnabled = false
+            #expect(state.collapsedSize == collapsed)
+        }
+    }
+
     @MainActor @Test func islandEarsFitTheirOwnMarks() {
         let state = EdgeNotchState()
         state.side = .top
@@ -332,6 +373,11 @@ struct EdgeNotchTests {
         #expect(state.collapsedSize.width == 200 + state.islandEar * 2)
         let cameraCenter = state.islandShellOffset - state.islandShellWidth / 2 + state.islandEars.left + 100
         #expect(cameraCenter == 0)
+
+        let quietEars = state.islandEars
+        state.wakeListening = true
+        #expect(state.islandEars.left == quietEars.left)
+        #expect(state.islandEars.right == quietEars.right + EdgeNotchState.wakeSlot + EdgeNotchState.wakeEdgeInset)
     }
 
     @MainActor @Test func quietNotchDoesNotExposePassiveLabelsOrLargeRail() {

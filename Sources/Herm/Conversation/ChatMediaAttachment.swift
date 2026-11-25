@@ -10,15 +10,26 @@ enum ChatMediaSegment: Equatable {
     /// `delivered` are files tools produced (e.g. image_generate), which rarely
     /// repeat a MEDIA: tag in the reply; they follow the text.
     static func split(_ text: String, delivered: [String] = []) -> [ChatMediaSegment] {
-        let segments = split(text)
-        let inText = Set(segments.compactMap { if case .media(let path) = $0 { path } else { nil } })
-        return segments + delivered.filter { !inText.contains($0) }.map { .media($0) }
+        let (segments, inlineWidgets) = splitText(text)
+        var seen = inlineWidgets
+        return (segments + delivered.map { .media($0) }).filter {
+            if case .media(let path) = $0 { return seen.insert(identity(path)).inserted }
+            return true
+        }
     }
 
-    private static func split(_ text: String) -> [ChatMediaSegment] {
-        guard text.contains("MEDIA:") || text.contains("![") else { return [.markdown(text)] }
+    private static func identity(_ path: String) -> String {
+        if let url = ArtifactOpener.url(path), url.isFileURL { return url.standardizedFileURL.path }
+        return path
+    }
+
+    private static func splitText(_ text: String) -> ([ChatMediaSegment], Set<String>) {
+        guard text.contains("MEDIA:") || text.contains("![") || text.contains("::preview{")
+        else { return ([.markdown(text)], []) }
         var segments: [ChatMediaSegment] = []
+        var inlineWidgets: Set<String> = []
         var buffer: [Substring] = []
+        var fence: MarkdownFence?
         func flush() {
             let chunk = buffer.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             if !chunk.isEmpty { segments.append(.markdown(chunk)) }
@@ -26,7 +37,25 @@ enum ChatMediaSegment: Equatable {
         }
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if let image = trimmed.range(of: #"^!\[[^\]]*\]\(([^)\s]+)\)$"#, options: .regularExpression) {
+            if let open = fence {
+                buffer.append(line)
+                if open.isClosed(by: trimmed) { fence = nil }
+                continue
+            }
+            if let opening = MarkdownFence(opening: trimmed) {
+                fence = opening
+                buffer.append(line)
+                continue
+            }
+            if let file = RichDocument.previewFile(trimmed) {
+                if HermesInlinePreview.htmlURL(file) != nil {
+                    inlineWidgets.insert(identity(file))
+                    buffer.append(line)
+                } else {
+                    flush()
+                    segments.append(.media(file))
+                }
+            } else if let image = trimmed.range(of: #"^!\[[^\]]*\]\(([^)\s]+)\)$"#, options: .regularExpression) {
                 flush()
                 segments.append(
                     .media(
@@ -43,7 +72,7 @@ enum ChatMediaSegment: Equatable {
             }
         }
         flush()
-        return segments
+        return (segments, inlineWidgets)
     }
 }
 
@@ -176,20 +205,18 @@ struct ChatMediaAttachmentCard: View {
     @ViewBuilder
     private func imagePreview(_ url: URL) -> some View {
         let shape = RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-        Group {
-            if url.isFileURL || url.scheme == "data" {
-                AttachmentThumbnailView(url: url).frame(maxWidth: 420).frame(height: 420)
-            } else {
-                AsyncImage(url: url) {
-                    $0.resizable().scaledToFit()
-                } placeholder: {
-                    DockLoadingIndicator().controlSize(.small)
-                }
-            }
+        if url.isFileURL || url.scheme == "data" {
+            AttachmentThumbnailView(url: url)
+                .frame(maxWidth: 420)
+                .frame(height: 420)
+                .clipShape(shape)
+                .dockTapAction { ArtifactOpener.open(path) }
+        } else if RichResourcePolicy.url(url.absoluteString, image: true) == url {
+            RichGalleryImage(url: url, title: name)
+                .frame(maxWidth: 420, alignment: .leading)
+                .clipShape(shape)
+                .id(url)
         }
-        .frame(maxWidth: 420, maxHeight: 420, alignment: .leading)
-        .clipShape(shape)
-        .dockTapAction { ArtifactOpener.open(path) }
     }
 
     private var card: some View {

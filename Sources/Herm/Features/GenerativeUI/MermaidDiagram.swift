@@ -204,9 +204,31 @@ struct MermaidDiagramView: View {
     @State private var failure: String?
     @State private var copied = false
     @State private var showingExpanded = false
+    @Environment(\.richGlance) private var glance
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if !glance { toolbar }
+            content
+        }
+        .foregroundStyle(Color.dockPrimaryText)
+        .dockCard(padding: 0)
+        .allowsHitTesting(!glance)
+        .task(id: "\(colorScheme == .dark):\(source)") { await render() }
+        .task(id: copied) {
+            guard copied else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            copied = false
+        }
+        .dockSheet(isPresented: $showingExpanded) {
+            DockExpandedPage(title: "Diagram", subtitle: "Mermaid", close: { showingExpanded = false }) {
+                MermaidDiagramView(source: source, expanded: true).dockPadding(16)
+            }.frame(minWidth: 640, minHeight: 500).modifier(ReviewSheetContext())
+        }
+    }
+
+    private var toolbar: some View {
+        VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Text("mermaid").dockFont(.metadata).foregroundStyle(Color.dockMetadataText)
                 Spacer(minLength: 8)
@@ -220,62 +242,50 @@ struct MermaidDiagramView: View {
                     DockIconLabel(copied ? "Copied" : "Copy", icon: .copy)
                 }.buttonStyle(.dockSecondary)
                 if !expanded {
-                    Button {
+                    DockIconAction(icon: .arrowsOut, label: "Expand diagram", iconSize: 16) {
                         showingExpanded = true
-                    } label: {
-                        DockIconLabel("Expand", icon: .arrowsOut)
-                    }.buttonStyle(.dockSecondary)
+                    }
                 }
             }
             .dockButtonSize(.compact)
             .dockPadding(.horizontal, 12)
             .dockPadding(.vertical, 8)
             Divider().overlay(Color.dockBorderLight)
-            Group {
-                if showsCode {
-                    ScrollView(.horizontal) {
-                        Text(source).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                            .fixedSize()
-                    }
-                } else if let image, expanded {
-                    ScrollView([.horizontal, .vertical]) {
-                        Image(nsImage: image).resizable().interpolation(.high)
-                            .frame(width: image.size.width, height: image.size.height)
-                    }
-                    .accessibilityLabel("Mermaid diagram")
-                } else if let image {
-                    // Inline fits the column; Expand shows full size.
-                    Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
-                        .frame(maxWidth: image.size.width, maxHeight: 640)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Mermaid diagram")
-                } else if let failure {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Diagram unavailable").dockFont(.body, weight: .semibold)
-                        Text(failure).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button("Show code") { showsCode = true }.buttonStyle(.dockLink)
-                    }
-                } else {
-                    DockLoadingIndicator().controlSize(.small).frame(maxWidth: .infinity, minHeight: 120)
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        Group {
+            if showsCode {
+                ScrollView(.horizontal) {
+                    Text(source).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                        .fixedSize()
                 }
+            } else if let image, expanded {
+                ScrollView([.horizontal, .vertical]) {
+                    Image(nsImage: image).resizable().interpolation(.high)
+                        .frame(width: image.size.width, height: image.size.height)
+                }
+                .accessibilityLabel("Mermaid diagram")
+            } else if let image {
+                // Inline fits the column; Expand shows full size.
+                Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
+                    .frame(maxWidth: image.size.width, maxHeight: 640)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Mermaid diagram")
+            } else if let failure {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Diagram unavailable").dockFont(.body, weight: .semibold)
+                    Text(failure).dockFont(.body).foregroundStyle(Color.dockSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Show code") { showsCode = true }.buttonStyle(.dockLink)
+                }
+            } else {
+                DockLoadingIndicator().controlSize(.small).frame(maxWidth: .infinity, minHeight: 120)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .dockPadding(12)
         }
-        .foregroundStyle(Color.dockPrimaryText)
-        .dockCard(padding: 0)
-        .task(id: "\(colorScheme == .dark):\(source)") { await render() }
-        .task(id: copied) {
-            guard copied else { return }
-            try? await Task.sleep(for: .seconds(1.5))
-            copied = false
-        }
-        .dockSheet(isPresented: $showingExpanded) {
-            DockExpandedPage(title: "Diagram", subtitle: "Mermaid", close: { showingExpanded = false }) {
-                MermaidDiagramView(source: source, expanded: true).dockPadding(16)
-            }.frame(minWidth: 640, minHeight: 500).modifier(ReviewSheetContext())
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .dockPadding(12)
     }
 
     private func render() async {

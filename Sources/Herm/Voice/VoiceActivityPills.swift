@@ -18,6 +18,8 @@ struct VoicePillQueue: Equatable {
         var target: String?
         var slot: Int
         var expiresAt: Date
+        /// The title came from Apple Intelligence.
+        var isNarrated = false
     }
 
     static let capacity = 3
@@ -33,7 +35,8 @@ struct VoicePillQueue: Equatable {
     /// `slots` limits where a new card may sit, e.g. to keep a side free.
     mutating func push(
         key: String, icon: Ph, title: String, detail: String?, isRunning: Bool = false,
-        tone: Tone = .accent, target: String? = nil, slots: [Int] = Array(0..<slotCount), now: Date = .now
+        tone: Tone = .accent, target: String? = nil, isNarrated: Bool = false, slots: [Int] = Array(0..<slotCount),
+        now: Date = .now
     ) {
         let slots = Array(Set(slots.filter { (0..<Self.slotCount).contains($0) })).sorted()
         expire(now: now)
@@ -48,6 +51,7 @@ struct VoicePillQueue: Equatable {
             pills[index].tone = tone
             pills[index].target = target
             pills[index].expiresAt = expiresAt
+            pills[index].isNarrated = isNarrated
             return
         }
         if pills.count >= min(Self.capacity, slots.count) { pills.removeFirst() }
@@ -59,7 +63,7 @@ struct VoicePillQueue: Equatable {
         pills.append(
             Pill(
                 id: key, icon: icon, title: title, detail: detail, isRunning: isRunning,
-                tone: tone, target: target, slot: slot, expiresAt: expiresAt))
+                tone: tone, target: target, slot: slot, expiresAt: expiresAt, isNarrated: isNarrated))
     }
 
     /// Running cards stay until their work ends, so a long step never
@@ -163,6 +167,12 @@ struct VoiceActivityPillsLayer: View {
             for call in new where !call.name.hasPrefix("__") {
                 let previous = old.first { $0.id == call.id }
                 guard previous == nil || (previous?.isComplete == false && call.isComplete) else { continue }
+                pushStep(call)
+            }
+        }
+        .onReceive(model.voiceStage.$toolNarrations.dropFirst().removeDuplicates()) { _ in
+            // Apple Intelligence's wording arrives after the card; swap it in where the card still shows.
+            for call in model.activeToolCalls where queue.pills.contains(where: { $0.id == "tool-\(call.id)" }) {
                 pushStep(call)
             }
         }
@@ -294,14 +304,20 @@ struct VoiceActivityPillsLayer: View {
                     ? "\(tests.failed) test\(tests.failed == 1 ? "" : "s") failed" : "All \(tests.passed) tests passed",
                 detail: tests.failed > 0 ? "\(tests.passed) passed" : nil, tone: tests.failed > 0 ? .danger : .success)
         }
+        // The stage's tool glimpse already shows these.
+        if VoiceHUDState.covers(name) { return }
         let step = ToolStep.describe(call)
+        // A narrated title already says it plainly; otherwise Herm's own title and friendly detail. Raw args never show.
+        let narrated = model.isToolStepNarrated(call)
+        let title = model.toolStepTitle(call)
         if name == "web_extract", call.isComplete {
             let target = call.args?["urls"].flatMap(VoicePillQueue.target(in:))
             let excerpt = (ToolText.field("content", in: call.result) ?? ToolText.field("text", in: call.result))
                 .map { String($0.split(whereSeparator: \.isNewline).joined(separator: " ").prefix(120)) }
             return push(
-                key: key, icon: .fileText, title: step.title, detail: excerpt ?? target.map(VoicePillQueue.label(for:)),
-                tone: .success, target: target)
+                key: key, icon: .fileText, title: title,
+                detail: narrated ? nil : excerpt ?? target.map(VoicePillQueue.label(for:)),
+                tone: .success, target: target, isNarrated: narrated)
         }
         let target =
             call.isComplete
@@ -311,17 +327,18 @@ struct VoiceActivityPillsLayer: View {
         if let stats = call.isComplete ? call.diffStats : nil {
             let file = target.map(VoicePillQueue.label(for:))
             push(
-                key: key, icon: .pencilSimple, title: file.map { "Edited \($0)" } ?? step.title,
-                detail: "+\(stats.added) −\(stats.removed) lines", tone: .success, target: target)
+                key: key, icon: .pencilSimple, title: narrated ? title : file.map { "Edited \($0)" } ?? title,
+                detail: narrated ? nil : "\(stats.added) lines added, \(stats.removed) removed", tone: .success,
+                target: target, isNarrated: narrated)
         } else if let target {
             push(
-                key: key, icon: step.icon, title: step.title,
-                detail: step.detail ?? VoicePillQueue.label(for: target), tone: .success, target: target)
+                key: key, icon: step.icon, title: title,
+                detail: narrated ? nil : step.detail ?? VoicePillQueue.label(for: target), tone: .success,
+                target: target, isNarrated: narrated)
         } else {
-            let detail = step.detail ?? [call.context, call.input].first { !$0.isEmpty }.map { String($0.prefix(90)) }
             push(
-                key: key, icon: step.icon, title: step.title, detail: detail, isRunning: !call.isComplete,
-                tone: call.isComplete ? .success : .accent)
+                key: key, icon: step.icon, title: title, detail: narrated ? nil : step.detail,
+                isRunning: !call.isComplete, tone: call.isComplete ? .success : .accent, isNarrated: narrated)
         }
     }
 
@@ -336,11 +353,11 @@ struct VoiceActivityPillsLayer: View {
 
     private func push(
         key: String, icon: Ph, title: String, detail: String?, isRunning: Bool = false,
-        tone: VoicePillQueue.Tone = .accent, target: String? = nil
+        tone: VoicePillQueue.Tone = .accent, target: String? = nil, isNarrated: Bool = false
     ) {
         queue.push(
             key: key, icon: icon, title: title, detail: detail, isRunning: isRunning, tone: tone, target: target,
-            slots: allowedSlots)
+            isNarrated: isNarrated, slots: allowedSlots)
         scheduleExpiry(after: target == nil ? VoicePillQueue.lifetime : VoicePillQueue.targetLifetime)
     }
 
@@ -352,7 +369,7 @@ struct VoiceActivityPillsLayer: View {
     }
 }
 
-private struct VoicePillCard: View {
+struct VoicePillCard: View {
     let pill: VoicePillQueue.Pill
     let maxWidth: CGFloat
 
@@ -380,7 +397,7 @@ private struct VoicePillCard: View {
     }
 
     private var card: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(spacing: 10) {
             DockIcon(pill.icon, size: 15, weight: .fill)
                 .foregroundStyle(tint)
                 .frame(width: 28, height: 28)
@@ -390,7 +407,7 @@ private struct VoicePillCard: View {
                     Text(pill.title)
                         .dockFont(.body, weight: .semibold)
                         .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(1)
+                        .lineLimit(pill.isNarrated ? 2 : 1)
                     if pill.isRunning { ThinkingDots() }
                     if pill.target != nil {
                         DockIcon(.arrowUpRight, size: 10).foregroundStyle(tint)

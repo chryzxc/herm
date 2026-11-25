@@ -149,7 +149,6 @@ struct SessionNavSidebarSnapshotTests {
             activeSessionID: nil,
             activeStatus: nil,
             profileScopeID: profileScopeID,
-            agentDisplayName: "Hermes",
             isLoadingSessions: false,
             isCreatingSession: false,
             deletingSessionID: nil,

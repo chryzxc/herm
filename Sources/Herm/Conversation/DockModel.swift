@@ -375,8 +375,26 @@ final class DockModel: ObservableObject {
                     into: &streamingTurnActivity)
             }
             scheduleActivityPresentation()
+            narrateLatestToolSteps()
         }
     }
+    /// Voice-stage state the notch, island and Talk views observe instead of the whole model.
+    let voiceStage = VoiceStageState()
+    /// One-shot Hermes reminders counting down in the notch; Control Center feeds it the cron list.
+    let voiceTimers: VoiceTimerBoard
+    var toolNarrations: [String: String] {
+        get { voiceStage.toolNarrations }
+        set { voiceStage.toolNarrations = newValue }
+    }
+    var dismissedVoicePreviewTurn: UUID?? {
+        get { voiceStage.dismissedVoicePreviewTurn }
+        set { voiceStage.dismissedVoicePreviewTurn = newValue }
+    }
+    var voiceRevealedTab: VoiceTabReveal? {
+        get { voiceStage.voiceRevealedTab }
+        set { voiceStage.voiceRevealedTab = newValue }
+    }
+    var pendingToolNarrations: Set<String> = []
     /// Every tool call of the in-flight response. `activeToolCalls` resets on
     /// each `message.start`; this log survives until the turn commits onto
     /// its message.
@@ -452,13 +470,35 @@ final class DockModel: ObservableObject {
     @Published var effortCatalog: HermesEffortCatalog?
     var sessionReasoningRevision = 0
     var sessionReasoningMutationToken, sessionModelMutationToken: UUID?
-    @Published var voiceState: HermesVoiceState = .inactive
+    @Published var voiceState: HermesVoiceState = .inactive {
+        didSet {
+            if oldValue != voiceState {
+                syncVoiceCapture(
+                    preservingUtterance: oldValue == .thinking && voiceState == .listening && voiceReplySilenced)
+            }
+        }
+    }
     @Published var voiceTelemetry = VoiceTurnTelemetry()
     @Published var voiceSpokenCaption: String?
     /// Spoken replies are enabled only for the conversation that owns voice.
     @Published var voiceRepliesEnabled = true
     /// Keeps the call open with the microphone closed.
-    @Published var isVoiceMicMuted = false
+    @Published var isVoiceMicMuted = false {
+        didSet { if oldValue != isVoiceMicMuted { syncVoiceCapture() } }
+    }
+    /// The one on-device voice engine. Every voice surface (Talk tab, notch)
+    /// reads it, so capture never depends on which view is mounted.
+    lazy var voiceMic = MicLevelMeter()
+    let voiceCapture: VoiceCaptureCoordinator
+    var mountedTalkStages: Int {
+        get { voiceStage.mountedTalkStages }
+        set { voiceStage.mountedTalkStages = newValue }
+    }
+    /// Words said after a cold "hey <name>", sent once the call is listening.
+    var pendingWakeRequest: String?
+    let voiceAssistant = VoiceAssistantSession()
+    /// The idle wake-word preference last applied to the mic.
+    var appliedIdleWake = false
     @Published var composerFocusRequest = 0
     @Published var isComposerEditing = false
     @Published var scrollToLatestMessageRequest = 0
@@ -761,15 +801,27 @@ final class DockModel: ObservableObject {
     /// The user interrupted a generating turn; its `message.complete` has no
     /// speech left to drain, so listening resumes immediately.
     var skipNextVoicePlaybackDrain = false
+    /// Cutting in silences the rest of this stream, but does not cancel the turn or its visual.
+    var voiceReplySilenced = false
     /// An approval or clarify question is being asked aloud.
     var isVoicePromptActive = false
     /// On-device recognition failed this conversation; Hermes' whisper takes over.
     var localVoiceTranscriptionFailed = false
+    /// Set once Herm went back from Hermes' recorder to on-device recognition, so the two can't loop.
+    var retriedLocalVoiceTranscription = false
     var nativeCaptureIsLocal = false
     /// The opening listen waits for the user; only follow-ups go to sleep.
-    var voiceFollowUpArmed = false
+    var preparingVoiceMessageID: UUID?
     /// What Hermes last said aloud, to recognize the mic hearing it back.
     var lastVoiceSpeech = ""
+    /// Notices spoken with no call open, through the local Mac voice; see `VoiceAnnouncer`.
+    var voiceAnnouncedAt: Date?
+    var voiceAnnouncementTask: Task<Void, Never>?
+    lazy var voiceAnnouncementPlayback = LocalVoicePlayback()
+    /// Today's facts for a spoken briefing; `ControlCenterModel.bind(to:)` supplies them.
+    var isNotchVoiceConversation = false
+    weak var notchVoiceNoticeTarget: DockModel?
+    var briefingFacts: (@MainActor () async -> VoiceBriefing.Facts)?
     /// Session recorder controls must reach Hermes in order, including cleanup.
     var voiceRequestChain: Task<Void, Never>?
     var hasShutDown = false
@@ -803,7 +855,9 @@ final class DockModel: ObservableObject {
         rpcClient: HermesRPCClientProtocol? = nil,
         voicePlayback: HermesVoicePlaybackProtocol? = nil,
         refreshesSessionIndexFromEvents: Bool = true,
-        sessionTranscriptCache: SessionTranscriptCache? = nil
+        sessionTranscriptCache: SessionTranscriptCache? = nil,
+        voiceTimers: VoiceTimerBoard? = nil,
+        voiceCapture: VoiceCaptureCoordinator? = nil
     ) {
         let agentStateStore = SessionAgentStateStore(fileURL: sessionAgentStateFileURL)
         self.messagePinStore = MessagePinStore(
@@ -817,6 +871,8 @@ final class DockModel: ObservableObject {
         self.botActivityWriter = BotActivityWriter(store: botActivityStore)
         self.botActivityBySessionID = loadArchives ? botActivityStore.load() : [:]
         self.defaults = defaults
+        self.voiceTimers = voiceTimers ?? VoiceTimerBoard()
+        self.voiceCapture = voiceCapture ?? VoiceCaptureCoordinator()
         self.refreshesSessionIndexFromEvents = refreshesSessionIndexFromEvents
         self.sessionTranscriptCache = sessionTranscriptCache ?? SessionTranscriptCache()
         self.ownsSessionTranscriptCache = sessionTranscriptCache == nil
@@ -844,9 +900,10 @@ final class DockModel: ObservableObject {
                 await HermesRuntimeInspector.inspectRemote(fetch: client.fetchHTTP)
             })
         }
-        self.voicePlayback = voicePlayback ?? HermesVoicePlayback()
+        self.voicePlayback = voicePlayback ?? VoicePlayback()
         completionNotificationsEnabled = defaults.bool(forKey: completionNotificationsKey)
         DebugLog.write("model: initialized")
+        voiceStage.observe(self)
         if let gateway { observeOwnedGateway(gateway) }
         observeGatewayAuthentication()
     }

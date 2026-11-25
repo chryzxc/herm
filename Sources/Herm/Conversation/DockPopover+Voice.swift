@@ -18,22 +18,31 @@ extension DockPopover {
     }
 
     func voiceStage(immersive: Bool) -> some View {
-        GeometryReader { geometry in
-            VoiceMicrophoneContent(meter: micLevelMeter) { meter in
-                voiceStage(immersive: immersive, size: geometry.size, meter: meter)
+        let stageModel = model
+        return GeometryReader { geometry in
+            VoiceStageVisualContent(stage: stageModel.voiceStage) {
+                VoiceMicrophoneContent(meter: stageModel.voiceMic) { meter in
+                    voiceStage(immersive: immersive, size: geometry.size, meter: meter)
+                }
             }
         }
         .onAppear {
+            stageModel.mountedTalkStages += 1
             beginVoiceConversation()
         }
+        .onDisappear { stageModel.mountedTalkStages -= 1 }
+        .id(ObjectIdentifier(stageModel))
     }
 
     private func voiceStage(immersive: Bool, size: CGSize, meter: MicLevelMeter) -> some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         let captions = voiceCaptions(meter: meter)
-        let generativeReply = voiceGenerativeReply
+        let preview = model.voicePreview(on: immersive ? .maximized : .talkTab)
+        let shownTab: SessionInspector.Section? = if case .tab(let section) = preview { section } else { nil }
+        let generativeReply = preview == .visual ? model.voiceGenerativeReply : nil
+        let showsScreen = preview == .agentScreen
         let layout = VoiceStageLayout(
-            size: size, immersive: immersive, hasPanel: generativeReply != nil,
+            size: size, immersive: immersive, hasPanel: shownTab != nil || generativeReply != nil || showsScreen,
             cardsEnabled: UserDefaults.standard.object(forKey: VoiceStageSettings.activityPillsKey) as? Bool ?? true)
         let orbScale = layout.orbSide / 320
         let stage = VStack(spacing: 0) {
@@ -62,8 +71,8 @@ extension DockPopover {
                         .foregroundStyle(Color.dockWarning)
                         .multilineTextAlignment(.center)
                     Button("Retry microphone") {
-                        micLevelMeter.stop()
-                        handleVoiceStateChange(model.voiceState)
+                        meter.stop()
+                        model.syncVoiceCapture()
                     }
                     .buttonStyle(.dockCompact)
                 } else if model.voiceState == .paused, let message = model.messages.last, message.isError {
@@ -124,6 +133,11 @@ extension DockPopover {
                     {
                         VoiceReplyCaption(text: caption, immersive: immersive)
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    } else if showsScreen, !layout.showsPanelBeside {
+                        // Too narrow to sit beside the stage: the screen takes the reply caption's slot.
+                        VoiceAgentScreen(model: model, showsLog: false)
+                            .frame(maxHeight: 260)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
                 .multilineTextAlignment(.center)
@@ -146,7 +160,8 @@ extension DockPopover {
                 cronJobs: controlCenter.cronJobs
             )
             .dockPadding(immersive ? 24 : 12)
-            .opacity(hasPendingVoicePrompt ? 0.2 : 1)
+            // The agent screen's step log carries the steps while it shows.
+            .opacity(showsScreen ? 0 : hasPendingVoicePrompt ? 0.2 : 1)
         }
         // Very short panes scroll rather than clip the controls.
         let scrollingStage = ScrollView(.vertical) { stage }
@@ -156,33 +171,40 @@ extension DockPopover {
         // stage left; the next user message returns the stage to the center.
         return HStack(spacing: 0) {
             scrollingStage
-            if let generativeReply, layout.showsPanelBeside {
+            if let shownTab, layout.showsPanelBeside {
+                voiceTabPanel(shownTab, style: style)
+                    .transition(voicePanelTransition)
+            } else if let generativeReply, layout.showsPanelBeside {
                 voiceGenerativePanel(generativeReply, immersive: immersive)
-                    .transition(
-                        .asymmetric(
-                            insertion: .move(edge: .trailing).combined(with: .opacity)
-                                .combined(with: .scale(scale: 0.96, anchor: .trailing)),
-                            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .trailing))))
+                    .transition(voicePanelTransition)
+            } else if showsScreen, layout.showsPanelBeside {
+                VoiceAgentScreen(model: model)
+                    .frame(maxWidth: immersive ? 560 : 440)
+                    .dockPadding(.vertical, immersive ? 56 : 40)
+                    .dockPadding(.trailing, immersive ? 40 : 24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(voicePanelTransition)
             }
         }
         .animation(.spring(response: 0.5, dampingFraction: 0.86), value: generativeReply?.id)
+        .animation(.spring(response: 0.5, dampingFraction: 0.86), value: showsScreen)
+        .animation(.spring(response: 0.5, dampingFraction: 0.86), value: shownTab)
         .animation(.dockEase(duration: 0.3), value: model.voiceState)
         .animation(.dockEase(duration: 0.25), value: captions.user)
         .animation(.dockEase(duration: 0.25), value: captions.reply == nil)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: hasPendingVoicePrompt)
     }
 
-    /// The current turn's reply when it carries generative UI.
-    var voiceGenerativeReply: ChatMessage? {
-        guard GenerativeUIIntegration.isEnabled else { return nil }
-        let start = model.messages.lastIndex { $0.role == .user }.map { $0 + 1 } ?? model.messages.startIndex
-        return model.messages[start...].last {
-            $0.role == .hermes && !$0.isError && RichDocument.mentionsSurface($0.text)
-        }
-    }
-
     /// A floating card beside the stage: inset from every edge, centered,
     /// hugging short replies and scrolling tall ones.
+    /// Side panels slide in from the right and push the stage left.
+    var voicePanelTransition: AnyTransition {
+        .asymmetric(
+            insertion: .move(edge: .trailing).combined(with: .opacity)
+                .combined(with: .scale(scale: 0.96, anchor: .trailing)),
+            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)))
+    }
+
     func voiceGenerativePanel(_ message: ChatMessage, immersive: Bool) -> some View {
         voiceGenerativeCard(message, immersive: immersive)
             .dockPadding(.vertical, immersive ? 56 : 40)
@@ -190,46 +212,47 @@ extension DockPopover {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    func voiceGenerativeCard(_ message: ChatMessage, immersive: Bool) -> some View {
+    /// The real inspector tab beside full voice mode, so asking to see the browser shows the browser.
+    func voiceTabPanel(_ section: SessionInspector.Section, style: DockThemePalette) -> some View {
         let shape = RoundedRectangle(cornerRadius: DockLayout.paneRadius + 8, style: .continuous)
-        let content = GenerativeUIIntegration.renderReply(message.text)
-            .generativeUIMessage(model: model, message: message)
-            .textSelection(.enabled)
-            .dockPadding(18)
-        return ViewThatFits(in: .vertical) {
-            content.fixedSize(horizontal: false, vertical: true)
-            ScrollView { content }.scrollIndicators(.never)
+        return VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                DockIcon(section.icon).foregroundStyle(Color.dockSecondaryText)
+                Text(section.navigationTitle).dockFont(.body, weight: .semibold)
+                    .foregroundStyle(Color.dockPrimaryText)
+                Spacer(minLength: 4)
+                DockIconButton(
+                    icon: .x, label: "Close \(section.navigationTitle)", style: style,
+                    action: model.dismissVoicePreview)
+            }
+            .dockPadding(12)
+            Divider()
+            sessionInspector(talkPanel: true)
         }
-        .frame(maxWidth: immersive ? 560 : 440)
+        .frame(maxWidth: 720, maxHeight: .infinity)
         .clipShape(shape)
         .dockFloatingSurface(shape, stroke: Color.dockBorderLight)
         .shadow(color: .black.opacity(0.22), radius: 28, y: 12)
+        .dockPadding(.vertical, 56)
+        .dockPadding(.trailing, 40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    func voiceGenerativeCard(_ message: ChatMessage, immersive: Bool) -> some View {
+        VoiceGenerativeCard(model: model, message: message, maxWidth: immersive ? 560 : 440)
     }
 
     var conversationHermFaceID: String? {
         botMode.orbHermFaceID(profileID: model.activeBotProfileID ?? model.sessionProfileID)
     }
 
-    var voiceOrbMode: VoiceOrbMode {
-        if speechInput.isRecording { return .listening }
-        if voiceOutput.isSpeaking { return .speaking }
-        switch model.voiceState {
-        case .listening: return .listening
-        case .transcribing, .interrupted: return .transcribing
-        case .preparing, .thinking: return .thinking
-        case .speaking: return model.voiceSpokenCaption == nil ? .thinking : .speaking
-        case .paused, .inactive, .localFallback: return model.status == .working ? .thinking : .idle
-        }
+    var voicePresentation: VoiceStagePresentation {
+        VoiceStagePresentation(
+            model: model, isRecording: speechInput.isRecording, isFallbackSpeaking: voiceOutput.isSpeaking)
     }
 
-    var voiceOrbHelp: String {
-        switch voiceOrbMode {
-        case .listening: "Send now"
-        case .thinking, .speaking: "Interrupt"
-        case .transcribing: "Transcribing"
-        case .idle: "Resume listening"
-        }
-    }
+    var voiceOrbMode: VoiceOrbMode { voicePresentation.orbMode }
+    var voiceOrbHelp: String { voicePresentation.orbHelp }
 
     @ViewBuilder
     var voiceStatusLabel: some View {
@@ -246,35 +269,24 @@ extension DockPopover {
                 Text(voiceStatusText)
                     .dockFont(.body, weight: .semibold)
                     .tracking(0.75)
-                    .foregroundStyle(
-                        model.voiceState == .listening
-                            ? Color.dockSuccess
-                            : (model.voiceState == .paused ? Color.dockMetadataText : Color.dockAccent)
-                    )
+                    .foregroundStyle(voicePresentation.statusTint)
                     .contentTransition(.opacity)
             }
         } else if model.status == .working && !speechInput.isRecording {
             voiceActivityIndicator
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         } else if speechInput.isRecording || voiceOutput.isSpeaking {
-            Text(
-                speechInput.isRecording
-                    ? "\(model.agentDisplayName.uppercased()) IS LISTENING"
-                    : "\(model.agentDisplayName.uppercased()) IS SPEAKING"
-            )
-            .dockFont(.body, weight: .semibold)
-            .tracking(0.75)
-            .foregroundStyle(speechInput.isRecording ? Color.dockSuccess : Color.dockAccent)
+            Text(speechInput.isRecording ? "HERM IS LISTENING" : "HERM IS SPEAKING")
+                .dockFont(.body, weight: .semibold)
+                .tracking(0.75)
+                .foregroundStyle(speechInput.isRecording ? Color.dockSuccess : Color.dockAccent)
         }
     }
 
     /// Approvals keep their card so the command stays readable; questions
     /// are asked aloud instead when spoken answers work.
     var hasPendingVoicePrompt: Bool {
-        model.approvalText != nil
-            || (showsVoiceClarificationCard && model.status == .needsClarification
-                && model.clarificationQuestion != nil)
-            || model.valuePrompt != nil
+        voicePresentation.showsPromptCard(clarificationCard: showsVoiceClarificationCard)
     }
 
     var showsVoiceClarificationCard: Bool {
@@ -366,26 +378,7 @@ extension DockPopover {
 
     @ViewBuilder
     private var voiceMuteControls: some View {
-        if model.voiceState.isNativeConversationActive {
-            Button {
-                model.toggleVoiceMicMuted()
-            } label: {
-                voiceControlLabel(
-                    model.isVoiceMicMuted ? "Unmute mic" : "Mute mic",
-                    icon: model.isVoiceMicMuted ? .microphoneSlash : .microphone,
-                    tint: model.isVoiceMicMuted ? .dockWarning : nil)
-            }
-            .buttonStyle(.dockSecondary)
-            Button {
-                model.toggleVoiceReplies()
-            } label: {
-                voiceControlLabel(
-                    model.voiceRepliesEnabled ? "Mute replies" : "Speak replies",
-                    icon: model.voiceRepliesEnabled ? .speakerSimpleHigh : .speakerSimpleSlash,
-                    tint: model.voiceRepliesEnabled ? nil : .dockWarning)
-            }
-            .buttonStyle(.dockSecondary)
-        }
+        if model.voiceState.isNativeConversationActive { VoiceMuteControls(model: model) }
     }
 
     private var endVoiceButton: some View {
@@ -397,53 +390,14 @@ extension DockPopover {
 
     /// Icon and title; a tint marks an off or destructive state on the icon.
     private func voiceControlLabel(_ title: String, icon: Ph, tint: Color? = nil) -> some View {
-        HStack(spacing: 6) {
-            DockIcon(icon, size: 13, color: tint)
-            Text(title)
-        }
+        VoiceControlLabel(title: title, icon: icon, tint: tint)
     }
 
-    var voiceInteractionHint: String {
-        if model.isVoiceMicMuted { return "Your microphone is off." }
-        switch model.voiceState {
-        case .listening: return "Speak naturally. Your request sends after a short pause."
-        case .speaking:
-            return model.answersVoicePromptsAloud ? "Speak to interrupt, or tap Interrupt." : "Tap Interrupt to speak."
-        case .thinking: return "You can keep talking to add to your request."
-        case .paused: return "Tap Resume listening when you’re ready."
-        default: return ""
-        }
-    }
-
-    var wakesByVoice: Bool {
-        model.answersVoicePromptsAloud && MicLevelMeter.canDetectWakePhrase
-    }
-
-    var voiceStatusText: String {
-        if model.isVoiceMicMuted { return "MIC MUTED — TAP TO RESUME" }
-        if model.voiceState == .speaking, model.voiceSpokenCaption == nil { return "PREPARING SPOKEN REPLY" }
-        if model.voiceState == .paused, wakesByVoice {
-            return "SAY “HEY \(model.agentDisplayName.uppercased())” OR TAP"
-        }
-        return model.voiceState.label(agentName: model.agentDisplayName)
-    }
+    var voiceInteractionHint: String { voicePresentation.interactionHint }
+    var voiceStatusText: String { voicePresentation.statusText }
 
     func handleVoiceOrbTap() {
-        switch model.voiceState {
-        case .listening:
-            model.finishVoiceUtterance(transcript: micLevelMeter.utteranceTranscript)
-            return
-        case .thinking, .speaking:
-            model.interruptVoiceTurn()
-            return
-        case .paused:
-            model.resumeVoiceListening()
-            return
-        case .preparing, .transcribing, .interrupted:
-            return
-        case .inactive, .localFallback:
-            break
-        }
+        if model.voiceOrbTapped() { return }
         if speechInput.isRecording {
             speechInput.finishUtterance()
         } else if voiceOutput.isSpeaking {
@@ -508,15 +462,14 @@ extension DockPopover {
         .shadow(color: Color.dockAccent.opacity(0.12), radius: 10)
     }
 
-    var voiceActivityText: String {
-        if let reasoning = model.reasoningState, !reasoning.text.isEmpty {
-            return "HERM IS REASONING"
-        }
-        if let tool = model.activeToolCalls.first(where: { !$0.isComplete }) {
-            return "RUNNING \(tool.name.uppercased())"
-        }
-        return "HERM IS THINKING"
-    }
+    var voiceActivityText: String { voicePresentation.activityText }
+}
+
+private struct VoiceStageVisualContent<Content: View>: View {
+    @ObservedObject var stage: VoiceStageState
+    @ViewBuilder let content: () -> Content
+
+    var body: some View { content() }
 }
 
 /// Keeps recognition and microphone startup updates inside the Talk stage.
@@ -525,21 +478,4 @@ struct VoiceMicrophoneContent<Content: View>: View {
     @ViewBuilder let content: (MicLevelMeter) -> Content
 
     var body: some View { content(meter) }
-}
-
-/// Observes only the audio-buffer-rate readings.
-private struct VoiceMeteredOrb: View {
-    let mode: VoiceOrbMode
-    @ObservedObject var speech: VoiceMeterReading
-    @ObservedObject var mic: VoiceMeterReading
-    let showsRing: Bool
-    let hermFaceID: String?
-
-    var body: some View {
-        VoiceOrbView(mode: mode, audioLevel: max(speech.level, mic.level), hermFaceID: hermFaceID)
-            .frame(width: 320, height: 320)
-            .overlay {
-                if showsRing { VoiceListeningRing(progress: mic.turnProgress).dockPadding(36) }
-            }
-    }
 }

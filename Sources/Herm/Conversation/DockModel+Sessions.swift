@@ -904,8 +904,10 @@ extension DockModel {
         // a session change. Its composer belongs to that active conversation
         // and must survive navigation through a Control page or a repeated
         // click in the session queue.
+        // Opening a Bot Chat mid-call hands the call to that Bot instead of hanging up.
+        let handsVoiceOff = !isRefreshingActiveSession && profileID != nil && canHandOffVoice
         if !isRefreshingActiveSession {
-            stopVoiceConversation()
+            if !handsVoiceOff, !voiceAssistant.isResolvingSession { stopVoiceConversation() }
             saveComposerDraft()
             restoreComposerDraft(for: SessionComposerDraft.Key(profileID: owningProfileID, sessionID: session.id))
 
@@ -959,11 +961,13 @@ extension DockModel {
         isLoadingEarlierTranscript = false
         isLoadingTranscriptHistory = false
         earlierTranscriptRetryAfter = nil
+        if handsVoiceOff { rebindVoice(sessionID: session.id, profileID: owningProfileID) }
         sessionID = session.id
         sessionProfileID = owningProfileID
         kanbanAttributionSessionID = session.id
         activeBotProfileID = profileID
         activeBotDisplayName = profileID == nil ? nil : session.displayTitle
+        if handsVoiceOff { greetVoiceHandoff() }
         // The old transcript belongs exclusively to the session that was just
         // left. Clear the visible projection before awaiting the new session's
         // resume response; otherwise the old conversation is rendered under
@@ -1139,6 +1143,8 @@ extension DockModel {
                 return false
             }
             if storedTranscriptAttach != nil { storedTranscriptAttach = .publishing }
+            // The same conversation under its runtime identity keeps its call.
+            if voiceSessionID == sessionID { voiceSessionID = resolvedSessionID }
             sessionID = resolvedSessionID
             kanbanAttributionSessionID = Self.kanbanAttributionAfterResume(
                 requestedSessionID: session.id,
@@ -1495,7 +1501,7 @@ extension DockModel {
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
         }
-        stopVoiceConversation()
+        if !voiceAssistant.isResolvingSession { stopVoiceConversation() }
         saveComposerDraft()
         sessionResumeGeneration &+= 1
         clearStoredSearch()

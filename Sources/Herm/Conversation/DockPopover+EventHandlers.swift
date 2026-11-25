@@ -54,39 +54,9 @@ extension DockPopover {
         model.refreshDefaultReasoningVariant()
     }
 
+    /// The shared mic follows voice state on its own (`DockModel.syncVoiceCapture`);
+    /// this only handles the popover's local playback and fallback capture.
     func handleVoiceStateChange(_ state: HermesVoiceState) {
-        // Permission and runtime setup finish before capture starts.
-        if state.isNativeConversationActive, state != .preparing, !model.isVoiceMicMuted {
-            micLevelMeter.start()
-        } else {
-            micLevelMeter.stop()
-        }
-        let sessionID = model.sessionID
-        let generation = model.voiceConversationGeneration
-        micLevelMeter.onUtteranceEnd = { [model, weak micLevelMeter] transcript in
-            guard let micLevelMeter, model.sessionID == sessionID, model.voiceConversationGeneration == generation
-            else { return }
-            model.finishVoiceUtterance(transcript: transcript, overPlayback: micLevelMeter.heardPlayback)
-        }
-        micLevelMeter.onQuiet = { [model] in
-            guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return }
-            model.speakPendingVoiceAnnouncements()
-        }
-        micLevelMeter.onIdle = { [model] in
-            guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return }
-            model.sleepVoiceConversation()
-        }
-        micLevelMeter.onBargeSpeech = { [model] heard in
-            guard model.sessionID == sessionID, model.voiceConversationGeneration == generation else { return false }
-            return model.bargeInVoiceReply(heard: heard)
-        }
-        // Asleep, the meter only listens for the wake phrase, and only on-device.
-        let listensForWake = state == .paused && !model.isVoiceMicMuted && wakesByVoice
-        micLevelMeter.listen(
-            // While Hermes thinks, speech steers the running turn instead of being lost.
-            endpointing: !model.isVoiceMicMuted && (state == .listening || listensForWake || state == .thinking),
-            watchingForBarge: state == .speaking && !model.isVoiceMicMuted && model.answersVoicePromptsAloud
-        )
         if state == .interrupted {
             // The native gateway has accepted a spoken interruption. Stop
             // any fallback playback immediately before it resumes capture.
@@ -99,8 +69,7 @@ extension DockPopover {
 
     /// Approvals and questions are spoken in voice mode and answered aloud.
     func handleVoicePromptChange(_ speech: String?) {
-        guard sessionWorkspaceMode == .voice else { return }
-        if model.voiceState.isNativeConversationActive { return model.presentVoicePrompt(speech) }
+        guard sessionWorkspaceMode == .voice, !model.voiceState.isNativeConversationActive else { return }
         if let speech { speakLocalVoicePrompt(speech) }
     }
 
@@ -123,7 +92,6 @@ extension DockPopover {
     }
 
     func releaseVoiceCapture() {
-        micLevelMeter.stop()
         speechInput.stopForAssistantSpeech()
         voiceOutput.stop()
         model.stopVoiceConversation()
@@ -141,7 +109,7 @@ extension DockPopover {
         }
         if sessionWorkspaceMode == .voice, model.voicePromptSpeech != nil, let transcript, !transcript.isEmpty {
             speechInput.consumeCompletedTranscript()
-            if let retry = model.answerVoicePrompt(transcript) { speakLocalVoicePrompt(retry) }
+            if !model.answerVoicePrompt(transcript) { resumeVoiceConversationIfReady() }
             return
         }
         guard let transcript, !transcript.isEmpty, !model.isSending else { return }

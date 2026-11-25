@@ -27,7 +27,7 @@ struct SidebarSnapshotProfileTests {
         var projectIDBySessionID: [String: String] = [:]
         for index in 200..<300 { projectIDBySessionID["s\(index)"] = "proj\(index % projectCount)" }
         var inputs = SessionNavSidebarSnapshot.Inputs(
-            activeSessionID: "s0", activeStatus: .working, profileScopeID: "p", agentDisplayName: "Herm",
+            activeSessionID: "s0", activeStatus: .working, profileScopeID: "p",
             isLoadingSessions: false, isCreatingSession: false, deletingSessionID: nil, renamingSessionID: nil,
             updatingSessionVisibilityID: nil, sessions: sessions, sessionProjectionState: .ready(sessions),
             activeSessions: [], projects: projects, projectIDBySessionID: projectIDBySessionID,

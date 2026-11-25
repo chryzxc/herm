@@ -16,7 +16,10 @@ extension DockModel {
                     payload: event.payload, currentSessionID: sessionID, agents: sessionAgents + activeSubagents)
             },
             handler: { [weak self] type, params in
-                self?.receiveGatewayEvent(type, params: params)
+                guard let self else { return }
+                // The idle wake listener has no chat yet, so it doesn't need global runtime events.
+                if isNotchVoiceConversation, !voiceState.isNativeConversationActive, sessionID == nil { return }
+                receiveGatewayEvent(type, params: params)
             })
         sessionEventOwnersChanged = { [weak self, weak router] in
             guard let self else { return }
@@ -862,7 +865,7 @@ extension DockModel {
             guard params["herm_trace_replayed"] as? Bool != true,
                 let section = SessionInspector.Section(agentTab: payload["pane"] as? String ?? "")
             else { break }
-            NotificationCenter.default.post(name: .hermRevealInspector, object: section)
+            revealInspector(section)
         case "notification.show":
             let level = payload["level"] as? String
             let event = SystemEvent(
@@ -895,8 +898,10 @@ extension DockModel {
             if !wasCompleted { announceVoiceBackgroundCompletion(backgroundTasks[index]) }
         case "voice.transcript":
             guard voiceState.isNativeConversationActive, !isVoiceMicMuted else { return }
-            let transcript = (payload["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if (payload["stop_phrase"] as? Bool) == true {
+            let transcript = voiceRequest(from: payload["text"] as? String ?? "")
+            if (payload["stop_phrase"] as? Bool) == true
+                || (!isVoicePromptActive && VoicePrompts.endsVoice(transcript))
+            {
                 stopVoiceConversation()
                 return
             }
@@ -916,6 +921,14 @@ extension DockModel {
                 return
             }
             voiceTelemetry.receivedTranscript()
+            // Hermes' recorder transcribed it; Herm's own commands still apply.
+            if !isVoicePromptActive, consumesVoicePreviewCommand(transcript) {
+                if voiceState != .speaking {
+                    voiceState = .listening
+                    armNativeVoiceCapture()
+                }
+                return
+            }
             submitNativeVoiceTranscript(transcript)
         case "voice.status":
             guard voiceState.isNativeConversationActive else { return }
@@ -939,6 +952,7 @@ extension DockModel {
                 voiceState = .thinking
             }
         case "voice.interrupted":
+            voiceReplySilenced = false
             guard voiceState == .thinking || voiceState == .speaking else { return }
             stopVoicePlayback()
             status = .idle
@@ -952,7 +966,9 @@ extension DockModel {
             guard status != .needsClarification else { return }
             status = .working
             isSending = true
-            if voiceState.isNativeConversationActive, !isVoicePromptActive, streamingMessageID == nil {
+            if voiceState.isNativeConversationActive, !isVoicePromptActive, !voiceReplySilenced,
+                streamingMessageID == nil
+            {
                 stopVoicePlayback()
                 nativeVoiceCapture.receivedTranscript(hasText: true)
                 voiceState = .thinking
@@ -993,6 +1009,7 @@ extension DockModel {
             scheduleStreamingMessageFlush()
             streamVoiceReply(delta)
         case "message.complete":
+            defer { voiceReplySilenced = false }
             isAwaitingClarificationResume = false
             let completedMessageIDForPin = storedReplyID ?? streamingMessageID
             if storedReplyID != nil {
@@ -1043,6 +1060,17 @@ extension DockModel {
             } else {
                 let completedReplyID = storedReplyID ?? streamingMessageID
                 commitStreamingMessage(tokenCount: turnTokens)
+                if voiceState.isNativeConversationActive, !wasInterrupting, !skipNextVoicePlaybackDrain,
+                    GenerativeUIIntegration.isEnabled, !isVoicePreviewDismissed
+                {
+                    let reply = completedReplyID.flatMap { id in messages.last { $0.id == id && !$0.isError } }
+                    let text = reply?.text ?? voiceResponseText
+                    if let visual = VoicePassiveVisual.tablePreview(text) {
+                        // Keep attachments alongside the projected Markdown table.
+                        voiceStage.localVisual = ChatMessage(
+                            role: .hermes, text: visual + "\n\n" + text, activity: reply?.activity ?? [])
+                    }
+                }
                 applyMessagePinReceipt(
                     payload["persisted_turn"] as? [String: Any],
                     assistantMessageID: completedMessageIDForPin ?? messages.last?.id)
@@ -1088,7 +1116,12 @@ extension DockModel {
                 resumeVoiceListening(force: true)
             } else if voiceState.isNativeConversationActive, voiceState != .preparing, voiceState != .paused {
                 voiceTelemetry.completedResponse()
-                finishStreamedVoiceReply(voiceResponseText)
+                if voiceReplySilenced {
+                    // Keep an explicit preview readout playing or finish hearing the cut-in.
+                    if voiceState == .thinking { resumeVoiceListening(force: true) }
+                } else {
+                    finishStreamedVoiceReply(voiceResponseText)
+                }
             }
             if let sessionStorageID {
                 cacheAgentState(for: sessionStorageID)
@@ -1177,6 +1210,7 @@ extension DockModel {
             conversationActivityPhase = .idle
             drainQueuedPromptIfIdle()
         case "error":
+            if compactingSessionID == sessionID { compactingSessionID = nil }
             commitStreamingMessage()
             // A turn stopped before its agent was ready ends with `error`, not
             // `message.complete`; that is the user's Stop, not a failure.
@@ -1197,6 +1231,7 @@ extension DockModel {
             if voiceState.isNativeConversationActive {
                 stopVoicePlayback()
                 skipNextVoicePlaybackDrain = false
+                voiceReplySilenced = false
                 nativeVoiceCapture.reset()
                 voiceState = wasInterrupting ? .listening : .paused
             }
@@ -1356,7 +1391,7 @@ extension DockModel {
                     params["herm_trace_replayed"] as? Bool != true, eventSessionID == currentSessionID,
                     payload["is_error"] as? Bool != true, let section = SessionInspector.Section.receipt(result)
                 {
-                    NotificationCenter.default.post(name: .hermRevealInspector, object: section)
+                    revealInspector(section)
                 }
                 let wasDelegation = Self.isDelegationTool(activeToolCalls[index].name)
                 if wasDelegation, let args = payload["args"] as? [String: Any] {
@@ -1452,6 +1487,7 @@ extension DockModel {
     }
 
     func beginStreamingMessage() {
+        voiceStage.clearLiveVisual()
         didAppendTerminalErrorForCurrentTurn = false
         let now = Date()
         var responseStartedAt = now
@@ -1727,6 +1763,7 @@ extension DockModel {
     }
 
     func discardStreamingMessage() {
+        voiceStage.clearLiveVisual()
         streamingMessageFlushTask?.cancel()
         streamingMessageFlushTask = nil
         if let id = streamingMessageID,
@@ -1842,6 +1879,7 @@ extension DockModel {
         endLocalTurn(eventSessionID: sessionID)
         if voiceState.isNativeConversationActive {
             skipNextVoicePlaybackDrain = false
+            voiceReplySilenced = false
             resumeVoiceListening(force: true)
         }
         if let sessionStorageID { cacheAgentState(for: sessionStorageID) }
@@ -1871,6 +1909,7 @@ extension DockModel {
     }
 
     func endLocalTurn(eventSessionID: String?) {
+        voiceStage.clearLiveVisual()
         // A few Hermes adapters omit the final tool-result identifier. The
         // response boundary is authoritative, so do not leave those calls
         // displayed as running after the assistant has completed.
@@ -1975,6 +2014,11 @@ extension DockModel {
             let delta = streamingMessagePendingPresentationDelta
             streamingMessagePendingPresentationDelta = ""
             streamingText.enqueuePresentation(delta)
+            let tail = String(streamingMessagePublishedSuffix.suffix(2))
+            // Only a fence boundary can make another native visual ready.
+            if voiceState.isNativeConversationActive, RichDocument.containsFenceMarker(tail + delta) {
+                prepareLiveVoiceVisual(publishedText)
+            }
         }
         streamingMessagePublishedSuffix = String(publishedText.suffix(Self.visionUnsupportedPhrase.count - 1))
     }

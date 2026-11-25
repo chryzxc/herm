@@ -3,7 +3,7 @@ import Foundation
 
 /// System-wide chord that opens the notch composer. `RegisterEventHotKey` needs no Accessibility permission.
 enum QuickCaptureChord: String, CaseIterable, Identifiable {
-    case optionSpace, controlSpace, off
+    case optionSpace, controlSpace, optionShiftSpace, off
 
     static let key = "hermes.shortcut.capture"
     static var stored: Self { UserDefaults.standard.string(forKey: key).flatMap(Self.init(rawValue:)) ?? .optionSpace }
@@ -13,6 +13,7 @@ enum QuickCaptureChord: String, CaseIterable, Identifiable {
         switch self {
         case .optionSpace: "⌥ Space"
         case .controlSpace: "⌃ Space"
+        case .optionShiftSpace: "⌥⇧ Space"
         case .off: "Off"
         }
     }
@@ -20,6 +21,7 @@ enum QuickCaptureChord: String, CaseIterable, Identifiable {
         switch self {
         case .optionSpace: UInt32(optionKey)
         case .controlSpace: UInt32(controlKey)
+        case .optionShiftSpace: UInt32(optionKey | shiftKey)
         case .off: nil
         }
     }

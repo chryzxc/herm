@@ -995,6 +995,10 @@ extension ControlCenterModel {
     }
 
     func createKanbanTask(title: String, body: String) async -> Bool {
+        await createKanbanTask(title: title, body: body, boardSlug: selectedKanbanBoardSlug)
+    }
+
+    func createKanbanTask(title: String, body: String, boardSlug: String?) async -> Bool {
         guard let cli, capabilityAvailable("kanban.create") else {
             reportActionError(
                 "Could not create task", message: "Kanban is unavailable because Hermes Control is not connected.")
@@ -1011,7 +1015,7 @@ extension ControlCenterModel {
         defer { isCreatingKanbanTask = false }
         do {
             let result = try await cli.kanbanCreate(
-                boardSlug: selectedKanbanBoardSlug,
+                boardSlug: boardSlug,
                 title: cleanTitle,
                 body: cleanBody.isEmpty ? nil : cleanBody
             )
@@ -1024,7 +1028,7 @@ extension ControlCenterModel {
                 return false
             }
             if let sessionID = conversationModel?.kanbanSessionID, !sessionID.isEmpty,
-                (selectedKanbanBoardSlug ?? "").isEmpty,
+                (boardSlug ?? "").isEmpty,
                 // The attribution script lives in this Mac's Hermes home; a remote backend has none.
                 GatewayConnectionStore.isLocalBackend,
                 let taskID = Self.kanbanTaskID(fromCreateOutput: result.stdout)

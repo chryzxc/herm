@@ -863,6 +863,25 @@ final class BotModeModel: ObservableObject {
         return bot.id
     }
 
+    /// The bot a voice conversation is with: the session's bot, else the default one.
+    /// Unlike the orb face it doesn't need the bot plugin, and it covers uploaded avatars.
+    func voiceBot(profileID: String?) -> BotSummary? {
+        guard inventory.availability == .ready else { return nil }
+        return (profileID ?? selectedProfileID).flatMap { botsByID[$0] }
+            ?? inventory.bots.first { $0.isDefault && !$0.isHidden }
+    }
+
+    /// The visible roster for a one-off decision. A refresh already in flight (a background
+    /// poll) makes `refreshNow` return at once, so this waits for it, up to `timeout`.
+    func readyRoster(timeout: Duration = .seconds(3)) async -> [BotSummary] {
+        if inventory.availability != .ready { await refreshNow(probeCapability: true) }
+        let deadline = ContinuousClock.now + timeout
+        while inventory.availability != .ready, isRefreshing || isPolling, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return inventory.availability == .ready ? inventory.bots.filter { !$0.isHidden } : []
+    }
+
     var canCreateBots: Bool { capabilityAvailable && inventory.availability == .ready }
 
     func bind(to client: HermesRPCClientProtocol, capabilityAvailable: Bool) {
