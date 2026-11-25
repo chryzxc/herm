@@ -236,7 +236,7 @@ struct ConversationManualScrollTests {
     }
 
     @Test(arguments: [false, true])
-    func movingAMessageIntoViewRemountsItsSections(moveAncestor: Bool) {
+    func movingAMessageIntoViewRemountsItsSections(moveAncestor: Bool) async {
         let fixture = NativeFixture()
         defer { fixture.window.orderOut(nil) }
         let content = FlippedDocument(frame: NSRect(x: 0, y: 0, width: 640, height: 3_000))
@@ -251,6 +251,10 @@ struct ConversationManualScrollTests {
         if !NSApp.isFullKeyboardAccessEnabled { #expect(fixture.document.mountedSectionViews.isEmpty) }
         movingView.setFrameOrigin(.zero)
         content.layoutSubtreeIfNeeded()
+        // The shared clip observer batches ancestor moves on the main queue.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
         #expect(!fixture.document.mountedSectionViews.isEmpty)
     }
 
