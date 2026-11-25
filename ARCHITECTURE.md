@@ -135,6 +135,8 @@ Workspace project attachment merges a returned session inventory into local
 metadata in one pass. The store publishes the merged tasks and references once
 and does not save an unchanged refresh.
 Each composer shares one in-flight process read and queues one follow-up as needed.
+Local Review prepares a diff once per loaded patch. A cancellable projection
+owns comparison search and file filtering by query and patch revision.
 Cancelling a WebSocket RPC waiter releases the local continuation and deadline
 without interrupting Hermes or the shared connection.
 
@@ -253,9 +255,14 @@ No generated executor, output store, Hermes RPC or HTML host bridge is added.
 
 Repository status read failures remain unavailable, including review baselines and
 clean-tree labels. Git commands share a bounded process-group runner with deadlines
-and cancellation. Editor saves compare the loaded contents inside file coordination;
-draft edits made during saving remain unsaved. Only images explicitly created by
-Herm are eligible for attachment cleanup.
+and cancellation. Repository Watch registers each repository ID once and shares
+one status read between the summary and its fingerprint. The fingerprint reads
+index and working-tree identities in batches. The Changes page reuses those
+identities to refresh affected expanded diffs, with two reads per browser.
+The Changes page runs
+the full local review on request. Editor saves compare the loaded contents inside
+file coordination. Draft edits made during saving remain unsaved. Only images
+explicitly created by Herm are eligible for attachment cleanup.
 
 Automatic app updates require a complete GitHub asset SHA-256 digest. Ad-hoc builds
 verify the DMG's detached Ed25519 signature with the installed app's pinned public

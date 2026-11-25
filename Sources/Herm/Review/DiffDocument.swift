@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 /// A bounded, immutable comparison. Selection always refers to this revision.
-struct DiffDocument: Equatable {
+struct DiffDocument: Equatable, Sendable {
     let path: String
     let patch: String
     let identity: String

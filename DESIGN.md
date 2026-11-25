@@ -1235,7 +1235,10 @@ not every session in the archive. Manual Refresh remains explicit forced work.
 Latest activity enrichment has an independent cancellable owner so archive reads
 do not delay core status. Only explicit recency and message-count metadata can
 validate reused activity steps; storage is bounded to 512 sessions/10,000 steps.
-Diff gutters use cached UTF-16 row offsets to start at the visible range. Confirmed
+Diff gutters use cached UTF-16 row offsets to start at the visible range.
+Local Review matches prepared patches off the UI actor and applies only the
+current query and comparison revision. Keep the existing search controls and
+selection in place while results update. Confirmed
 session deletion releases its browser pages and subscription; merely switching
 sessions continues to preserve user page state.
 
@@ -3919,6 +3922,8 @@ events, and main-agent tool activity.
 - File rows are single-line, 30pt rows with a file icon, name, secondary directory,
   a 20pt stage/unstage toggle shown on hover or keyboard focus (its slot stays
   reserved so rows never shift), and textual Git status.
+- Expanded file diffs stay open on repository refresh. An unrelated file update
+  leaves the existing diff in place. Closing the section stops its pending read.
 - Rows and group headers carry VS Code–ordered context menus. Discard is
   working-tree only, always confirms, restores tracked files from the index,
   and moves untracked files to the Trash; conflicted and staged rows offer none.

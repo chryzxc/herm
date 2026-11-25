@@ -6,7 +6,15 @@ final class LocalReviewModel: ObservableObject {
     let revisionNotes: RevisionNoteStore
     init(revisionNotes: RevisionNoteStore? = nil) { self.revisionNotes = revisionNotes ?? RevisionNoteStore() }
     @Published var comparison: RepositoryComparison?
-    @Published var patches: [String: RepositoryDiff] = [:]
+    @Published private(set) var patches: [String: DiffSearch.Patch] = [:]
+    private(set) var patchRevision = 0
+    private(set) var comparisonRevision = 0
+
+    private func setPatches(_ patches: [String: DiffSearch.Patch]) {
+        comparisonRevision &+= 1
+        patchRevision &+= 1
+        self.patches = patches
+    }
     @Published var error: String?
     @Published var loading = false
     @Published var partial = false
@@ -25,18 +33,20 @@ final class LocalReviewModel: ObservableObject {
             guard generation == token, !Task.isCancelled else { return }
             comparison = result
             revisionNotes.invalidateSources()
-            patches = [:]
+            setPatches([:])
             partial = result.partial
             stale = false
+            let comparisonID = DiffComparisonIdentity.local(path: path, comparison: result)
             for file in result.files {
                 try Task.checkCancellation()
                 let diff = try await RepositoryComparisonService.patch(path: path, file: file, comparison: result)
-                guard generation == token else { return }
-                revisionNotes.register(
-                    path: file,
-                    identity: DiffComparisonIdentity.local(path: path, comparison: result).documentID(
-                        DiffDocument(path: file, patch: diff.text)))
-                patches[file] = diff
+                let patch = await Task.detached(priority: .userInitiated) {
+                    DiffSearch.Patch(diff, at: comparisonID)
+                }.value
+                guard generation == token, !Task.isCancelled else { return }
+                revisionNotes.register(path: file, identity: patch.noteID)
+                patchRevision &+= 1
+                patches[file] = patch
                 partial = partial || diff.isTruncated
             }
             if scope == .working || scope == .staged {
@@ -49,7 +59,7 @@ final class LocalReviewModel: ObservableObject {
             if generation == token, !Task.isCancelled {
                 if previous.0 != nil {
                     comparison = previous.0
-                    patches = previous.1
+                    setPatches(previous.1)
                     partial = previous.2
                     stale = true
                 }
