@@ -439,15 +439,16 @@ struct ModelPickerView: View {
 private struct FastModeIcon: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dockWorkspaceScale) private var workspaceScale
+    @DockChromeTheme private var theme
 
     var body: some View {
-        DockIcon(.lightning, size: 11, color: DockAccentColor.amber.color)
+        let tint = DockThemePalette(theme: theme).accent
+        DockIcon(.lightning, size: 11, color: tint)
             .background {
-                if DockMotion.isEnabled(reduceMotion: reduceMotion) {
-                    let size = DockWorkspaceScale.points(13, scale: workspaceScale)
+                if DockMotion.isEnabled(reduceMotion: reduceMotion, theme: theme) {
+                    let size = DockWorkspaceScale.points(11, scale: workspaceScale)
                     DockLayerMotion(
-                        kind: .breathe(period: 1.8), color: DockAccentColor.amber.fill.opacity(0.30),
-                        glow: DockAccentColor.amber.fill.opacity(0.75)
+                        kind: .breathe(period: 1.8), color: tint.opacity(0.08), glow: tint.opacity(0.18)
                     )
                     .frame(width: size, height: size)
                     .allowsHitTesting(false)

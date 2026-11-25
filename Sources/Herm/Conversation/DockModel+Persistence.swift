@@ -66,6 +66,34 @@ extension DockModel {
         return "\(lastSessionIDKey).\(suffix)"
     }
 
+    func lastComposerSelection(for profileID: String?)
+        -> (model: HermesModelOption?, reasoning: HermesReasoningVariant?)
+    {
+        let saved = defaults.dictionary(forKey: composerSelectionKey(for: profileID))
+        let route = (saved?["model"] as? String)?.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+        let model = route.flatMap { parts -> HermesModelOption? in
+            guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+            return HermesModelOption(provider: String(parts[0]), model: String(parts[1]))
+        }
+        let reasoning = (saved?["reasoning"] as? String).flatMap(HermesReasoningVariant.init(rawValue:))
+        return (model, reasoning)
+    }
+
+    /// A preference for future drafts, independent of Hermes' session and global settings.
+    func rememberComposerSelection(modelID: String? = nil, reasoning: HermesReasoningVariant? = nil, profileID: String?)
+    {
+        let key = composerSelectionKey(for: profileID)
+        var saved = defaults.dictionary(forKey: key) ?? [:]
+        if let modelID { saved["model"] = modelID }
+        if let reasoning { saved["reasoning"] = reasoning.rawValue }
+        defaults.set(saved, forKey: key)
+    }
+
+    private func composerSelectionKey(for profileID: String?) -> String {
+        let suffix = Self.normalizedProfileID(profileID) ?? "launch"
+        return "herm.composer.lastSelection.\(suffix)"
+    }
+
     nonisolated static func normalizedProfileID(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)

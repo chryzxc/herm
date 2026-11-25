@@ -761,13 +761,14 @@ expand it to inspect process states and stop a running process.
 The **Effort** control uses Hermes' model catalog to offer inputs for the selected
 provider and model. Unsupported or unverified availability is shown in place;
 open an unverified control to refresh. Session changes are confirmed by a Hermes
-readback, while a new-chat choice is a draft override and does not change the
-global default. Offered inputs are not a promise of the final provider wire level:
+readback. New chats remember your last model and thinking choices for each
+profile, including after a restart. They apply as session settings, separate from
+Hermes’ global default. Offered inputs are not a promise of the final provider wire level:
 Hermes or the provider may adjust them. When Hermes reports a different route
 entry mapping, the control shows both values (for example, Ultra → Max).
-Fast sends a quick sweep through the filled Effort bar and adds a recurring glow
-behind the composer’s lightning icon. The Fast label and icon stay visible with
-Reduce Motion.
+Fast sends a quick sweep through the filled Effort bar. The composer’s lightning
+icon uses the active skin’s accent with a faint pulse. The Fast label and icon
+stay visible with Reduce Motion.
 
 The composer’s **@** picker shows each bot’s actual name, with its description when available. Hover or click the context gauge to see usage, the estimated category breakdown, and the runtime’s compaction threshold with remaining tokens in a popover, without a separate hover tooltip. Older runtimes show when the threshold is unavailable.
 
@@ -1747,7 +1748,7 @@ Wrapped prompts grow their bubbles to fit every line when the chat pane resizes.
 
 Generated HTML previews inherit the selected text size and update without resetting interactive inputs; authored styles may override the default.
 
-The model chip shows the provider mark, current thinking effort, and a lightning icon when Fast is enabled. The icon briefly animates on appearance unless motion is reduced. Its picker groups models by provider, marks the active model with a check inside a matching circle, offers catalog search, and includes thinking effort and fast controls alongside model selection, with the selected effort marked by a check. The speed switch responds immediately while Hermes confirms the change; the icon reflects the confirmed setting. The picker stays open while changing models or refreshing the catalog.
+The model chip shows the provider mark, current thinking effort, and a lightning icon when Fast is enabled. Its picker groups models by provider, marks the active model with a check inside a matching circle, offers catalog search, and includes thinking effort and fast controls alongside model selection, with the selected effort marked by a check. The speed switch responds immediately while Hermes confirms the change; the icon reflects the confirmed setting. The picker stays open while changing models or refreshing the catalog.
 
 Automation opens with a searchable schedule overview; select a schedule to inspect its history, configuration, and run output.
 

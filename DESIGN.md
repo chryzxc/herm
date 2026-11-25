@@ -1207,7 +1207,7 @@ Primary and additional Browser tabs show the live webpage title, updating when
 the page name changes. Empty, untitled, and URL-only titles retain the generic
 Browser label (with the existing number for additional tabs).
 
-The model chip shows the current thinking effort beside the model name and a lightning icon when Fast is enabled. The icon briefly animates on appearance, respecting Reduce Motion and motion-free skins. The speed switch moves immediately and indicates a pending change; the chip reflects the confirmed setting, and a failed change restores the switch. The picker stays open for model selection and catalog refresh, with vertical insets around its contents. The model picker keeps provider marks beside a search field and compact model list. Matching leading circles mark model choices, with a check identifying the active model; available thinking effort choices wrap into a compact grid below the choices, with a check and contour identifying the selected effort, with fast and catalog actions separated by a divider.
+The model chip shows the current thinking effort beside the model name and a lightning icon when Fast is enabled. The speed switch moves immediately and indicates a pending change; the chip reflects the confirmed setting, and a failed change restores the switch. The picker stays open for model selection and catalog refresh, with vertical insets around its contents. The model picker keeps provider marks beside a search field and compact model list. Matching leading circles mark model choices, with a check identifying the active model; available thinking effort choices wrap into a compact grid below the choices, with a check and contour identifying the selected effort, with fast and catalog actions separated by a divider.
 
 ### Compact workspace controls
 
@@ -3262,6 +3262,11 @@ independently of catalog loading. A reported name alone does not imply a provide
 The chip shows the thinking level supplied by the session resume response or its
 scoped settings read while the transcript and model catalog load. Level choices
 wait for the catalog, and changing the level requires transcript confirmation.
+When Fast is confirmed, the chip shows an accent-tinted lightning icon with a
+faint pulse. The icon stays visible at rest with Reduce Motion or in a motion-free skin.
+New chats prefill the last composer model and thinking choices for the active
+profile. The session-create request applies choices that the profile's current
+catalog supports. Existing chats continue to show their Hermes session settings.
 
 Reserve the session rail's actual width in both density settings, including for the
 transcript, composer, welcome and floating controls; density only tightens visual spacing.

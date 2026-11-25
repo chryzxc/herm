@@ -17,7 +17,7 @@ struct ModelPickerSkinRenderTests {
         }
         let model = DockModel()
         model.sessionID = "skin-fixture"
-        model.sessionFastEnabled = false
+        model.sessionFastEnabled = true
         model.effortCatalog = HermesEffortCatalog(result: [
             "providers": [["slug": "openai", "models": ["gpt-6"], "capabilities": ["gpt-6": ["reasoning": true]]]]
         ])
@@ -35,10 +35,24 @@ struct ModelPickerSkinRenderTests {
                     options: options, selectedID: "openai|gpt-6", isRefreshing: false, refreshError: nil,
                     onRefresh: {}, onSelect: { _ in }, effortModel: model, effortSelection: .constant(.medium)
                 )
-                let content = DockMenuPanel(content: picker.pickerContent.dockPadding(.vertical, 6))
-                    .background(dark ? Color.black : Color.white)
-                    .dockThemedRoot()
-                    .environment(\.colorScheme, dark ? .dark : .light)
+                let content = VStack(alignment: .leading, spacing: 8) {
+                    picker
+                        .dockFont(.control)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .dockPadding(.horizontal, 8)
+                        .frame(height: 28)
+                        .background {
+                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                .dockControlFace(DockSkinPresentation.current.composerControlFill)
+                        }
+                        .fixedSize(horizontal: true, vertical: false)
+                    DockMenuPanel(content: picker.pickerContent.dockPadding(.vertical, 6))
+                }
+                .padding(8)
+                .background(Color.dockCanvas)
+                .background(dark ? Color.black : Color.white)
+                .dockThemedRoot()
+                .environment(\.colorScheme, dark ? .dark : .light)
                 let host = NSHostingView(rootView: content)
                 host.frame = CGRect(origin: .zero, size: host.fittingSize)
                 let window = NSWindow(

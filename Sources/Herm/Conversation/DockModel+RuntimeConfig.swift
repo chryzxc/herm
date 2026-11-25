@@ -115,6 +115,12 @@ extension DockModel {
                 {
                     defaultModelOptionID = HermesModelOption(provider: provider, model: model).id
                 }
+                if sessionID == nil, self.sessionID == nil, let selected = sessionModelOptionID,
+                    !runtimeModelOptions.contains(where: { $0.id == selected })
+                {
+                    sessionModelOptionID = nil
+                    sessionModelValue = nil
+                }
                 if let sessionID, sessionID == self.sessionID,
                     let provider = result["provider"] as? String,
                     let model = result["model"] as? String
@@ -278,6 +284,7 @@ extension DockModel {
             // No session yet: hold the pick until createAuthorizedSession.
             sessionModelOptionID = option.id
             sessionModelValue = option.displayName
+            rememberComposerSelection(modelID: option.id, profileID: profileScopeID)
             return
         }
         guard !isUpdatingSessionModel, !isUpdatingSessionReasoning else { return }
@@ -319,6 +326,7 @@ extension DockModel {
                     throw QuickDraftError.message(
                         "Hermes has not acknowledged the model change. Refresh before retrying.")
                 }
+                rememberComposerSelection(modelID: option.id, reasoning: reasoning, profileID: profile)
                 refreshSessionModelOptions(keepingCatalog: true)
                 refreshSessionReasoningVariant()
                 refreshSessionFast()
@@ -381,6 +389,8 @@ extension DockModel {
     /// launch profile's global default instead).
     func updateDefaultReasoning(_ variant: HermesReasoningVariant) {
         draftReasoningVariant = variant
+        rememberComposerSelection(
+            modelID: sessionModelOptionID ?? defaultModelOptionID, reasoning: variant, profileID: profileScopeID)
     }
 
     /// Settings writes Hermes' global thinking default (`agent.reasoning_effort`).

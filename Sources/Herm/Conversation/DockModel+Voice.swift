@@ -130,6 +130,13 @@ extension DockModel {
 
         isCreatingSession = true
         defer { isCreatingSession = false }
+        let generation = sessionResumeGeneration
+        // A quick send from a fresh draft must use the same catalog as the composer.
+        if sessionModelOptionID != nil || draftReasoningVariant != nil {
+            await runtimeModelOptionsTask?.value
+            try Task.checkCancellation()
+            guard sessionResumeGeneration == generation else { throw CancellationError() }
+        }
         var createParams: [String: Any] = ["source": source]
         if let profileID = profileScopeID, !profileID.isEmpty {
             createParams["profile"] = profileID
@@ -140,19 +147,19 @@ extension DockModel {
         }
         // Hermes rejects sessionless model switches; a new-chat pick rides on
         // session.create as a per-session override instead.
-        if let id = sessionModelOptionID,
-            let option = runtimeModelOptions.first(where: { $0.id == id })
-        {
+        let option =
+            runtimeModelOptionsError == nil
+            ? runtimeModelOptions.first(where: { $0.id == sessionModelOptionID }) : nil
+        if let option {
             createParams["model"] = option.model
             createParams["provider"] = option.provider
         }
         if let draftReasoningVariant,
-            effortCatalog?.choices(for: sessionModelOptionID ?? defaultModelOptionID)?.contains(draftReasoningVariant)
+            effortCatalog?.choices(for: option?.id ?? defaultModelOptionID)?.contains(draftReasoningVariant)
                 == true
         {
             createParams["reasoning_effort"] = draftReasoningVariant.rawValue
         }
-        let generation = sessionResumeGeneration
         let result = try await sessionRPCClient.request(
             HermesFeatureIDs.ID.sessionCreate.rawValue, params: createParams)
         guard sessionResumeGeneration == generation else { throw CancellationError() }
@@ -176,10 +183,9 @@ extension DockModel {
         kanbanAttributionSessionID = createdSessionID
         persistActiveSessionID(sessionID)
         let model = (result["model"] as? String) ?? (result["model_name"] as? String)
-        if let model {
-            currentModelName = model
-            sessionModelValue = model
-        }
+        if let model { currentModelName = model }
+        sessionModelOptionID = option?.id
+        sessionModelValue = model ?? option?.displayName
         newSessionCreationAuthorized = false
         if newSessionProjectWasPicked, let path = newSessionProjectPath, let stableID = sessionStorageID {
             onPickedProjectSessionCreated?(stableID, path)

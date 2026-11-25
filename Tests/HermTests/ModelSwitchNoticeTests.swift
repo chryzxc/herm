@@ -103,6 +103,7 @@ struct ModelSwitchNoticeTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(!model.isUpdatingSessionModel)
+        #expect(model.lastComposerSelection(for: "profile").model?.id == "example|chosen")
         let message = try #require(model.messages.first)
         #expect(message.systemEvent?.isModelSwitch == true)
         #expect(model.storedMessageReferences[message.id]?.rowID == 42)
@@ -142,6 +143,7 @@ struct ModelSwitchNoticeTests {
         }
         #expect(model.messages.isEmpty)
         #expect(rpc.paths.isEmpty)
+        #expect(model.lastComposerSelection(for: nil).model == nil)
         #expect(model.runtimeConfigurationError != nil)
     }
 }

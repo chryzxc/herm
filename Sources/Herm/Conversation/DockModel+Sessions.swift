@@ -1531,8 +1531,10 @@ extension DockModel {
         defaults.removeObject(forKey: lastSessionIDKey(for: sessionProfileID ?? profileScopeID))
         currentSessionTitle = nil
         currentModelName = nil
-        sessionModelOptionID = nil
-        sessionModelValue = nil
+        let selection = lastComposerSelection(for: profileScopeID)
+        sessionModelOptionID = selection.model?.id
+        sessionModelValue = selection.model?.displayName
+        draftReasoningVariant = selection.reasoning
         messages = []
         activeToolCalls = []
         reasoningState = nil
