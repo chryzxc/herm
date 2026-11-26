@@ -74,6 +74,15 @@ final class SessionNavigationSelectionState: ObservableObject {
     }
 }
 
+/// Kept for the navigation lifetime, but observed only by the Chats list.
+@MainActor
+final class SessionSidebarDisclosureState: ObservableObject {
+    @Published var areConversationsExpanded = true
+    @Published var areAutomationsExpanded = true
+    @Published var arePinnedExpanded = true
+    @Published var expandedFilterSections: Set<SessionRailSection> = []
+}
+
 /// Presentation state owned by the left navigation rail, rather than a
 /// particular split-view host. Global destinations replace their trailing
 /// content host, so keeping this state here lets the rail retain its expanded
@@ -90,6 +99,7 @@ final class SessionNavigationState: ObservableObject {
     }
 
     let selection = SessionNavigationSelectionState()
+    let sidebarDisclosure = SessionSidebarDisclosureState()
     @Published var showsAllConversations = false
     /// The rail lists every profile's chats instead of the selected one's; a local preference.
     @Published var showsAllProfiles = UserDefaults.standard.bool(forKey: AllProfilesSessions.storageKey) {
@@ -98,10 +108,6 @@ final class SessionNavigationState: ObservableObject {
     @Published var showsAllAutomations = false
     @Published var selectedTaskID: UUID?
     @Published var selectedSessionID: String?
-    @Published var areConversationsExpanded = true
-    @Published var areAutomationsExpanded = true
-    @Published var arePinnedExpanded = true
-    @Published var expandedFilterSections: Set<SessionRailSection> = []
     /// User-chosen order of the rail's sections; a local preference.
     @Published private(set) var sectionOrder: [SessionRailSection] = SessionRailSection.stored()
     @Published private(set) var selectedGitHubSection: GitHubWorkspaceSection = .pullRequests
