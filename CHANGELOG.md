@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/chryzxc/herm/compare/v0.5.0...v0.5.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ci:** package the release app built by ci ([5a464d9](https://github.com/chryzxc/herm/commit/5a464d930c605c7e24e7a4ae006c35d8d4308654))
+* **voice:** detach the notch visual preview from the caption ([9453258](https://github.com/chryzxc/herm/commit/94532586f3ba350d4487706ca67849df0244db00))
+
 ## [0.5.0](https://github.com/chryzxc/herm/compare/v0.4.0...v0.5.0) (2026-11-26)
 
 
