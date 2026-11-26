@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 
@@ -5,6 +6,41 @@ import Testing
 
 @MainActor
 struct SessionNavigationSelectionTests {
+    @Test func repeatedSidebarTogglesDoNotPublishWorkspaceNavigationChanges() {
+        let navigation = SessionNavigationState()
+        navigation.openSession("session-a")
+        let disclosure = navigation.sidebarDisclosure
+        var navigationUpdates = 0
+        var sidebarUpdates = 0
+        let navigationObserver = navigation.objectWillChange.sink { navigationUpdates += 1 }
+        let sidebarObserver = disclosure.objectWillChange.sink { sidebarUpdates += 1 }
+        defer {
+            navigationObserver.cancel()
+            sidebarObserver.cancel()
+        }
+
+        #expect(disclosure.arePinnedExpanded)
+        #expect(disclosure.areConversationsExpanded)
+        #expect(disclosure.areAutomationsExpanded)
+        #expect(disclosure.expandedFilterSections.isEmpty)
+
+        for _ in 0..<5 { disclosure.arePinnedExpanded.toggle() }
+        disclosure.areConversationsExpanded.toggle()
+        disclosure.areAutomationsExpanded.toggle()
+        disclosure.expandedFilterSections.insert(.archived)
+        #expect(sidebarUpdates == 8)
+        #expect(navigationUpdates == 0)
+        #expect(navigation.selection.selection == .session("session-a"))
+
+        navigation.selectGlobal(.kanban)
+        #expect(navigationUpdates > 0)
+        #expect(navigation.sidebarDisclosure === disclosure)
+        #expect(!disclosure.arePinnedExpanded)
+        #expect(!disclosure.areConversationsExpanded)
+        #expect(!disclosure.areAutomationsExpanded)
+        #expect(disclosure.expandedFilterSections == [.archived])
+    }
+
     @Test func gitHubNavigationRemembersTheLastSectionAcrossOtherDestinations() {
         let state = SessionNavigationState()
         #expect(state.selectedGitHubSection == .pullRequests)

@@ -87,7 +87,7 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
         }
     }
 
-    /// Registers an observable the workspace root redraws for. Subscribed only while recording.
+    /// Registers UI publication counts. Subscribed only while recording.
     func watch<Object: ObservableObject>(_ name: String, _ object: Object) {
         watch(name, owner: object, object.objectWillChange)
     }
@@ -360,7 +360,7 @@ final class HermPerformanceRecorder: NSObject, ObservableObject {
             callbacks: \(total.frames)   estimated dropped: \(total.droppedFrames)   estimated lost: \(Int(total.lostTime * 1000))ms \
             (\(Int(total.lostTime / seconds * 100))% of wall time)   worst frame: \(Int(total.worstFrame * 1000))ms
 
-            Observed publications (→root names identify scoped workspace subscriptions; other names are broad observables):
+            Observed publications (→root marks scoped updates to the workspace shell):
             \(Self.ranked(total.publications, limit: 40, separator: "\n"))
 
             Callback arrival gaps: \(Self.gapSummary(gaps))
@@ -449,6 +449,7 @@ extension DockPopover {
         recorder.watch("dockThemeStore", dockThemeStore)
         recorder.watch("botMode", botMode)
         recorder.watch("sessionNavNavigation", sessionNavNavigation)
+        recorder.watch("sessionSidebarDisclosure", sessionNavNavigation.sidebarDisclosure)
         recorder.watch("sessionPullRequestCenter", sessionPullRequestCenter)
         recorder.watch("sessionIssueCenter", sessionIssueCenter)
         recorder.runningSessionCount = { [weak model] in

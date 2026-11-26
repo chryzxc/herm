@@ -15,6 +15,7 @@ struct SessionNavQueue: View, Equatable {
     let controlCenter: ControlCenterModel
     @ObservedObject var agentUpdateService: HermesUpdateService
     @ObservedObject var navigationState: SessionNavigationState
+    @ObservedObject private var disclosure: SessionSidebarDisclosureState
     @ObservedObject var dockThemeStore: DockThemeStore
     @ObservedObject private var sessionPanes = SessionPaneStore.shared
     @StateObject private var sidebar: SessionNavSidebarModel
@@ -144,6 +145,7 @@ struct SessionNavQueue: View, Equatable {
         self.controlCenter = controlCenter
         self.agentUpdateService = agentUpdateService
         self.navigationState = navigationState
+        self.disclosure = navigationState.sidebarDisclosure
         self.dockThemeStore = dockThemeStore
         _sidebar = StateObject(
             wrappedValue: SessionNavSidebarModel.shared(model: model, control: controlCenter, store: workspaceStore))
@@ -955,12 +957,12 @@ struct SessionNavQueue: View, Equatable {
 
     private func filterDisclosure(_ section: SessionRailSection) -> Binding<Bool> {
         Binding(
-            get: { navigationState.expandedFilterSections.contains(section) },
+            get: { disclosure.expandedFilterSections.contains(section) },
             set: { expanded in
                 if expanded {
-                    navigationState.expandedFilterSections.insert(section)
+                    disclosure.expandedFilterSections.insert(section)
                 } else {
-                    navigationState.expandedFilterSections.remove(section)
+                    disclosure.expandedFilterSections.remove(section)
                 }
             })
     }
@@ -973,7 +975,7 @@ struct SessionNavQueue: View, Equatable {
     private var archiveRequest: ArchiveRequest? {
         guard hostVisible, !isSidebarCollapsed,
             SessionRailSection.archived.isVisible(in: hiddenSidebarOptions),
-            navigationState.expandedFilterSections.contains(.archived)
+            disclosure.expandedFilterSections.contains(.archived)
         else { return nil }
         let scope: SessionSidebarArchive.Scope =
             showsAllProfiles
@@ -1005,7 +1007,7 @@ struct SessionNavQueue: View, Equatable {
 
     private var sidebarLiveRequest: SidebarLiveRequest? {
         guard hostVisible, !isSidebarCollapsed, !isSearchingSessions else { return nil }
-        let sections = navigationState.expandedFilterSections.intersection([.needsYou, .running])
+        let sections = disclosure.expandedFilterSections.intersection([.needsYou, .running])
             .filter { $0.isVisible(in: hiddenSidebarOptions) }
         guard !sections.isEmpty else { return nil }
         let current = selectedBot?.id ?? sidebarSnapshot.inputs.profileScopeID ?? "default"
@@ -1349,7 +1351,7 @@ struct SessionNavQueue: View, Equatable {
     ) -> some View {
         Section {
             Group {
-                if navigationState.arePinnedExpanded {
+                if disclosure.arePinnedExpanded {
                     pinnedRows(pinned, statuses: statuses, style: style)
                 }
             }
@@ -1358,13 +1360,13 @@ struct SessionNavQueue: View, Equatable {
             DockSectionHeader(
                 title: "Pinned",
                 count: pinned.count,
-                isExpanded: $navigationState.arePinnedExpanded,
+                isExpanded: $disclosure.arePinnedExpanded,
                 style: style
             )
             .sessionRailReorder(.pinned, state: navigationState)
             .frame(maxWidth: .infinity)
             .dockPadding(.top, style.sectionSpacing)
-            .dockPadding(.bottom, navigationState.arePinnedExpanded ? 2 : 0)
+            .dockPadding(.bottom, disclosure.arePinnedExpanded ? 2 : 0)
             .sessionSidebarStickyBackground()
             .accessibilityAddTraits(.isHeader)
         }
@@ -1482,8 +1484,7 @@ struct SessionNavQueue: View, Equatable {
         _ conversations: [HermesSession], type: SessionRecentsType,
         statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        let expanded =
-            type == .automation ? $navigationState.areAutomationsExpanded : $navigationState.areConversationsExpanded
+        let expanded = type == .automation ? $disclosure.areAutomationsExpanded : $disclosure.areConversationsExpanded
         Section {
             conversationRows(conversations, type: type, statuses: statuses, style: style)
                 .sessionSidebarRowsUnderStickyHeader()
@@ -1533,7 +1534,7 @@ struct SessionNavQueue: View, Equatable {
         _ conversations: [HermesSession], type: SessionRecentsType,
         statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        if type == .automation ? navigationState.areAutomationsExpanded : navigationState.areConversationsExpanded {
+        if type == .automation ? disclosure.areAutomationsExpanded : disclosure.areConversationsExpanded {
             if conversations.isEmpty {
                 queueEmpty(
                     sidebarSnapshot.inputs.isLoadingSessions
