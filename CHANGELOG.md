@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.2](https://github.com/chryzxc/herm/compare/v0.5.1...v0.5.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* keep chat section headers clickable while scrolling ([6d01fbd](https://github.com/chryzxc/herm/commit/6d01fbd04d30e0d7ed628230589d2ba72d7ea9d1))
+* keep chat section headers clickable while scrolling ([cf1341f](https://github.com/chryzxc/herm/commit/cf1341ffb8b5e8422845fcb9807ec7d870179a73))
+
 ## [0.5.1](https://github.com/chryzxc/herm/compare/v0.5.0...v0.5.1) (2026-11-26)
 
 
