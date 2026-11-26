@@ -379,7 +379,8 @@ struct SessionNavRail: View {
                 .dockPopover(isPresented: $showsNotchMenu, arrowEdge: .trailing) { NotchQuickMenu() }
             viewMenuRow("Voice", selected: false, hasSubmenu: true) { showsVoiceMenu.toggle() }
                 .dockPopover(isPresented: $showsVoiceMenu, arrowEdge: .trailing) {
-                    VoiceOutputSettings(compact: true)
+                    VoiceQuickSettings(
+                        recognitionStatus: (model.notchVoiceNoticeTarget ?? model).voiceMic.recognitionStatus)
                 }
             viewMenuRow("Status bar", selected: false, hasSubmenu: true) { showsStatusBarMenu.toggle() }
                 .dockPopover(isPresented: $showsStatusBarMenu, arrowEdge: .trailing) {

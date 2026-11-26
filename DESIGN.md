@@ -1616,20 +1616,25 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   embedded in the notch, Minimize voice collapses it to the quick-preview rail.
   Approvals and open-ended clarifications use the existing status and caption. Caption-only
   prompts fit within the 160pt compact header at the side notch's default width and scale.
-  A clarification with options uses the preview slot for a scrollable, numbered read-only
-  list in the same order as the spoken choices. An active question replaces the previous
-  preview; no buttons or new answer path are added. Approval
+  A clarification with options uses a scrollable, numbered read-only list in the same order
+  as the spoken choices. In an embedded notch, the list stays with the question. An active
+  question replaces the previous result preview; no buttons or new answer path are added. Approval
   speech describes known actions without reading commands, tool names, or coordinates.
   Optional Apple Intelligence explanations play locally for less obvious actions.
   The exact action, scope, and typed-input controls stay in chat. Apart from clarification
-  choices, only generative results use the preview. The detached reply visual floats in
-  its own 640pt dark-glass panel (`EdgeVoicePreviewView`, 26pt corners, up to 460pt tall)
-  12pt below the widget's visible body, showing only the visuals (`RichDocumentView`
+  choices, only generative results use the preview. In the top, side, and standalone
+  notch stages the reply visual has its own dark-glass panel (`EdgeVoicePreviewView`,
+  26pt corners, up to 640pt wide and 460pt tall). It sits 12pt below the top or
+  standalone widget, or toward the center of the display beside a side notch. The
+  panel fits the active display without changing the widget's caption height. It shows
+  only the visuals (`RichDocumentView`
   `visualsOnly`: charts, tables, previews; never the prose, which is spoken and captioned)
   on the glass without a second card. Voice previews read-only blocks from a reply
   even if it also contains a form, checklist, command, record target, HTML surface,
   or inline widget. Those parts are not shown in Voice. Selection and rendering share
-  `RichDocument.Segment.showsInVoiceGlance`, and empty groups are hidden. The preview drops
+  `RichDocument.Segment.showsInVoiceGlance`, and empty groups are hidden. Rendering and spoken
+  navigation use the same parsed visuals, so replying with a revised spoken summary does
+  not collapse or replay the preview. The preview drops
   out of the widget (scale 0.4 from the top, lifted 36pt, fading in) on the liquid spring
   and draws back up the same way, then leaves
   the screen. All light stays inside the body:
@@ -1655,8 +1660,8 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   Live speech and pending decisions still take priority. Route recovery does not reopen a muted call.
   Speaking over narration keeps the current visual and work intact.
   It floats over the real desktop, where the browser or terminal is already in view, so
-  it never shows Herm's tabs or the agent screen: only the reply's generative UI, in the
-  captions slot (260pt tall at most), until "close" or the next request (see Talk).
+  it never shows Herm's tabs or the agent screen: only the reply's generative UI,
+  until "close" or the next request (see Talk).
   An explicit place-map request resolves through Apple Maps and shows a read-only native map
   in the same preview. A completed Markdown table can populate a read-only preview without
   replacing its chat message. A Calendar agenda uses the same preview to show a paged list
@@ -2219,6 +2224,8 @@ lazy stack. The current section header stays below the fixed search bar
 until the next section pushes it away. Headers are transparent in the list;
 at the scroll viewport edge they use the matching canvas or native window
 material to cover scrolling rows. Retain disclosure, actions, and section reordering.
+Keep headers clickable during scroll momentum. Pause hit testing on the rows
+below the headers so scrolling does not churn through their hover controls.
 Routine session polls and runtime notifications reuse older loaded history
 for up to five minutes while fetching the recent page and current pins/activity.
 Manual refreshes and profile switches bypass that reuse; older sessions remain
@@ -2461,10 +2468,16 @@ opens at the top when the category changes.
   and needs installation. Its status stays in that row while Apple Speech remains available.
   When Hermes Agent speaks chat replies, the Apple picker still applies to local answers
   and notices.
-  The rail gear menu’s Voice submenu shares those preferences in three compact rows for
-  conversation voice, local voice with Preview, and speaking speed, with speech input
-  status below. With Apple Speech selected, the menu stays under 200pt tall in Light and
-  Dark. It offers Kokoro once installed and leaves wake and other advanced options in Settings.
+  Natural automatically picks an installed Apple voice for the Mac’s language without
+  replacing the user’s manual Apple Speech selection. It shares the same preview and speed.
+  Both menus suggest Kokoro as a conversational English alternative when the Mac supports it.
+  The rail gear menu’s Voice submenu puts output controls first, then recognizer and speech
+  language, Smart turn detection, and the wake, acknowledgment, announcement, and activity
+  toggles. It shares the same preferences and model setup progress as full Settings. On Apple
+  silicon, selecting Kokoro before setup shows the install or prerequisite action in place.
+  The quick menu scrolls when necessary and caps at 440pt. A trailing gutter keeps the
+  scrollbar clear of the controls. Voice access to the front app,
+  shortcut configuration, and contacts stay in full Settings.
 - **Gateway service.** Gateway shows the default-profile messaging gateway's
   running, stopped, or unavailable status with a dot and text. Refresh every
   15 seconds while visible and on demand. Keep progress and failures in fixed
@@ -4000,7 +4013,7 @@ recognizer's final result (at most 0.6 s after the pause when words were heard),
 rescored final replaces the partial instead of repeating it. Speech starts with the
 finished sentences before a code, link or `herm-ui` marker; the rest waits for the
 completed reply. Settings → Voice → Conversation voice selects Hermes Agent, Apple Speech,
-or Kokoro. The selected local engine also speaks direct results and notices. With Apple
+Natural, or Kokoro. The selected local engine also speaks direct results and notices. With Apple
 Intelligence, a short utterance that mentions a panel or hiding but misses the
 keyword commands is classified on device into close or one tab; anything else, or
 no answer within 1.2 s, goes to the agent unchanged. Each completed turn logs its

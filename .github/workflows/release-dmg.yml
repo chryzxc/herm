@@ -30,7 +30,8 @@ jobs:
   package:
     name: Build and release macOS DMG
     runs-on: macos-26
-    timeout-minutes: 30
+    # Older tags have no staged app artifact and still need a cold Swift build.
+    timeout-minutes: 60
     if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     # Job-level, so runs skipped by the `if` above (failed or cancelled CI) never cancel a nightly in progress.
     concurrency:
@@ -53,6 +54,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           INPUT_VERSION: ${{ inputs.version }}
+          TRIGGER_RUN: ${{ github.event.workflow_run.id }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
@@ -71,6 +73,7 @@ jobs:
             IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
             VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
             TAG=nightly
+            CI_RUN="$TRIGGER_RUN"
           else
             if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then VERSION="$INPUT_VERSION"; else VERSION="${REF_NAME#v}"; fi
             if ! ruby -e '
@@ -89,11 +92,35 @@ jobs:
               exit 1
             fi
             TAG="v$VERSION"
+            CI_RUN="$PASSED"
           fi
 
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "source_sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "ci_run=$CI_RUN" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the release app built by CI
+        id: app
+        if: steps.version.outputs.skip != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CI_RUN: ${{ steps.version.outputs.ci_run }}
+        run: |
+          set -euo pipefail
+          ARTIFACT=$(gh api "repos/$REPO/actions/runs/$CI_RUN/artifacts?name=herm-release-app" \
+            --jq '.artifacts[] | select(.expired == false) | .id')
+          if [[ -z "$ARTIFACT" ]]; then
+            echo 'No staged app on the passing CI run; package from source.'
+            exit 0
+          fi
+          STAGED="$RUNNER_TEMP/herm-release-app"
+          gh run download "$CI_RUN" -R "$REPO" --name herm-release-app --dir "$STAGED"
+          tar -xzf "$STAGED/herm-release-app.tar.gz" -C "$STAGED"
+          test -x "$STAGED/Herm.app/Contents/MacOS/Herm"
+          echo "path=$STAGED/Herm.app" >> "$GITHUB_OUTPUT"
 
       # Plugin pages run Hermes Desktop's own SDK, built from the Hermes revision Herm was checked
       # against. Herm hides plugin pages when the host is missing, so a failed build ships a DMG
@@ -121,6 +148,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.value }}
           HERM_BUILD_CHANNEL: ${{ steps.version.outputs.tag == 'nightly' && 'nightly' || '' }}
           HERM_BUILD_COMMIT: ${{ steps.version.outputs.source_sha }}
+          HERM_PREBUILT_APP: ${{ steps.app.outputs.path }}
         run: Scripts/package-app.sh "$VERSION"
 
       - name: Verify DMG

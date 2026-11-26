@@ -574,6 +574,7 @@ final class EdgeDockController: NSObject {
             collapseTask?.cancel()
             expandTask?.cancel()
             if inNotch {
+                state.previewInteraction.mode = .passive
                 state.clearPreviewDetails()
                 state.composing = false
                 state.showingAnnouncement = false
@@ -582,8 +583,12 @@ final class EdgeDockController: NSObject {
                 setExpanded(hovering)
             }
         }
-        voiceIsland.show(showVoice && workspaceVoice == .island && !notchVoiceActive && !inNotch)
-        notchVoiceIsland.show(showVoice && notchVoiceActive && !inNotch)
+        let attachment = inNotch ? placement.map(attachedVoicePreview) : nil
+        voiceIsland.show(
+            showVoice && workspaceVoice == .island && !notchVoiceActive,
+            attachedTo: visibleModel === model ? attachment : nil)
+        notchVoiceIsland.show(
+            showVoice && notchVoiceActive, attachedTo: visibleModel === notchVoiceModel ? attachment : nil)
     }
 
     private func peekResult(_ task: EdgeNotchTask) {
@@ -1499,6 +1504,8 @@ final class EdgeDockController: NSObject {
 
     func shutdown() {
         runtimeStarted = false
+        voiceIsland.show(false)
+        notchVoiceIsland.show(false)
         notchVoiceModel.refreshIdleWake(suspended: true)
         voiceConversation.shutdown()
         deferredCompletionDetail?.cancel()
@@ -1576,6 +1583,18 @@ final class EdgeDockController: NSObject {
         petWindow?.update(home: home, screen: placement.visibleFrame, visible: !workspacePresented, side: state.side)
         frameTransition.position(
             to: target, animated: animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        if let voice = state.voicePreviewModel {
+            (voice === model ? voiceIsland : notchVoiceIsland).moveAttachedPreview(
+                to: attachedVoicePreview(in: placement))
+        }
+    }
+
+    private func attachedVoicePreview(in placement: EdgeDockPlacement) -> EdgeVoicePreviewPlacement {
+        let panelSize = state.panelSize
+        let frame = placement.frame(width: panelSize.width, height: panelSize.height).integral
+        let height = min(frame.height, state.openSize.height)
+        let widget = NSRect(x: frame.minX, y: frame.maxY - height, width: frame.width, height: height)
+        return EdgeVoicePreviewPlacement(widget: widget, side: placement.side, visibleFrame: placement.visibleFrame)
     }
 
     static func frame(screenFrame: NSRect, visibleFrame: NSRect, expanded: Bool, railHeight: CGFloat = 136) -> NSRect {
@@ -2576,8 +2595,6 @@ struct EdgeNotchView: View {
         if state.voiceLive, let model = state.voicePreviewModel {
             EdgeVoiceWidget(
                 model: model, mic: model.voiceMic, bots: model.botMode, shown: open, inNotch: true,
-                // Notch width less the preview's and the widget's own horizontal padding.
-                visualWidth: isIsland ? EdgeVoiceIsland.width - 100 : EdgeNotchState.voiceSideWidth - 48,
                 onMinimize: onMinimizeVoice
             )
             .id(ObjectIdentifier(model))

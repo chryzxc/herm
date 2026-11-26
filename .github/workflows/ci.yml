@@ -30,7 +30,10 @@ jobs:
         run: make guard
 
       - name: Check launcher scripts
-        run: sh -n Scripts/run-debug-app.sh Scripts/build-and-run-app.sh
+        run: |
+          sh -n Scripts/run-debug-app.sh
+          sh -n Scripts/build-and-run-app.sh
+          sh -n Scripts/package-app.sh
 
   # Build once, then run balanced shards in separate serial processes to avoid UI contention.
   test:
@@ -87,7 +90,7 @@ jobs:
   release-build:
     if: github.event_name == 'push'
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -104,8 +107,16 @@ jobs:
           path: .build
           key: spm-release-${{ runner.os }}-${{ steps.toolchain.outputs.key }}-${{ hashFiles('Package.resolved') }}
 
-      - name: Release build
-        run: make build-release
+      - name: Build and stage the release app
+        run: HERM_RELEASE_APP_ARCHIVE="$RUNNER_TEMP/herm-release-app.tar.gz" Scripts/package-app.sh
+
+      - name: Upload the release app for packaging
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: herm-release-app
+          path: ${{ runner.temp }}/herm-release-app.tar.gz
+          if-no-files-found: error
+          compression-level: 0
 
   verify:
     runs-on: ubuntu-latest

@@ -110,8 +110,15 @@ In **Settings → Voice**, choose **Apple Speech** for on-device chat replies an
 local answers. Choose an installed **Apple voice** or leave it on **Automatic**.
 macOS offers additional voices through **System Settings → Accessibility**.
 Use **Preview** to hear a sample and **Speaking speed** to adjust its pacing.
+**Natural** picks a high-quality installed Apple voice automatically when
+available and leaves your manual **Apple Speech** choice untouched. On Apple
+silicon, the Natural voice row points to **Kokoro** for conversational English.
+
+The rail’s gear menu → **Voice** also offers these controls, speech input
+settings, the Smart turn detection download, and the main hands-free switches.
 
 Choose **Kokoro** on Apple silicon for another set of offline English voices.
+You can install it from the quick menu or from full Voice settings.
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if Herm
 shows **Get uv**, then select **Install Kokoro**. Herm sets up a private Python
 environment and downloads a quantized model and voice presets. The model files

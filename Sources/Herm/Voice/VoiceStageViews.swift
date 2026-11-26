@@ -133,14 +133,13 @@ struct VoiceGenerativeCard: View {
             ForEach(media) { item in
                 VoiceReplyMediaView(item: item)
             }
-            if preview?.isVisual == true {
-                GenerativeUIIntegration.renderReply(message.text, streaming: streaming, visualsOnly: true) {
-                    EmptyView()
-                }
-                .generativeUIMessage(model: model, message: message)
-                .environment(\.richGlance, true)
-                .environment(\.richVoiceContext, context)
-                .textSelection(.enabled)
+            if let preview, preview.isVisual {
+                // Layout uses the same parsed visuals as navigation, including on the first final frame.
+                RichDocumentView(document: preview.document, visualsOnly: true, readOnlySurfaces: streaming)
+                    .generativeUIMessage(model: model, message: message)
+                    .environment(\.richGlance, true)
+                    .environment(\.richVoiceContext, context)
+                    .textSelection(.enabled)
             }
         }
 

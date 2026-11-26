@@ -31,54 +31,66 @@ final class EdgeVoiceIsland {
     private let presence = EdgeVoiceIslandPresence()
     private(set) var panel: NSPanel?
     private let sizer = EdgeVoicePanelSizer(width: EdgeVoiceIsland.width)
-    /// The reply's visual, in its own floating glass panel below the widget.
-    private(set) var previewPanel: NSPanel?
-    private let previewSizer = EdgeVoicePanelSizer(width: EdgeVoicePreviewView.width)
+    private let preview: EdgeVoicePreviewPanel
+    var previewPanel: NSPanel? { preview.panel }
+    private var attached = false
+    private var wantsWidget = false
     /// The widget body's real height, so the preview floats just below it, not below the panel's headroom.
     private var bodyHeight: CGFloat = 0
     /// The widget's width; its light stays inside the body, so the panel needs no margin.
     static let width: CGFloat = 580
-    /// Gap between the notch widget and the floating preview.
-    static let previewGap: CGFloat = 12
+    init(model: DockModel) {
+        self.model = model
+        preview = EdgeVoicePreviewPanel(model: model)
+    }
 
-    init(model: DockModel) { self.model = model }
-
-    func show(_ visible: Bool) {
-        guard visible else {
-            guard presence.shown else { return }
-            presence.shown = false
-            // Let the widget fold back into the notch, and the preview drop back into it, first.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                guard let self, !self.presence.shown else { return }
-                self.panel?.orderOut(nil)
-                self.previewPanel?.orderOut(nil)
-            }
+    func show(_ visible: Bool, attachedTo attachment: EdgeVoicePreviewPlacement? = nil) {
+        let wasShowingWidget = wantsWidget
+        attached = visible && attachment != nil
+        wantsWidget = visible && !attached
+        guard wantsWidget else {
+            if attached || wasShowingWidget { hideWidget(immediately: attached) }
+            preview.show(at: visible ? attachment : nil, includesClarification: false)
             return
         }
         let panel =
             self.panel
-            ?? makePanel(
+            ?? makeEdgeVoicePanel(
                 EdgeVoiceIslandView(model: model, mic: model.voiceMic, presence: presence) { [weak self] size in
                     guard let self else { return }
                     self.bodyHeight = size.height
-                    self.sizer.fit(size) { self.place() }
+                    self.sizer.fit(size) { [weak self] in self?.place() }
                     self.placePreview()
                 })
         self.panel = panel
-        let preview =
-            previewPanel
-            ?? makePanel(
-                EdgeVoicePreviewView(model: model, presence: presence) { [weak self] size in
-                    guard let self else { return }
-                    self.previewSizer.fit(size, delay: 0.6) { self.placePreview() }
-                })
-        previewPanel = preview
         place()
         placePreview()
         guard !presence.shown else { return }
         panel.orderFrontRegardless()
         // Next pass, so the folded state renders first and the widget springs open from it.
-        DispatchQueue.main.async { [weak self] in self?.presence.shown = true }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.wantsWidget else { return }
+            self.presence.shown = true
+        }
+    }
+
+    func moveAttachedPreview(to placement: EdgeVoicePreviewPlacement) {
+        if attached { preview.show(at: placement, includesClarification: false) }
+    }
+
+    private func hideWidget(immediately: Bool) {
+        let wasShown = presence.shown
+        if wasShown { presence.shown = false }
+        if immediately {
+            panel?.orderOut(nil)
+        } else if wasShown {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self, !self.wantsWidget else { return }
+                self.panel?.orderOut(nil)
+            }
+        } else {
+            panel?.orderOut(nil)
+        }
     }
 
     private var top: CGFloat? {
@@ -96,39 +108,95 @@ final class EdgeVoiceIsland {
 
     /// Hangs the preview below the widget's visible body. Empty, it leaves the screen.
     private func placePreview() {
-        guard let previewPanel, let top, let screen = NSScreen.screens.first else { return }
-        guard previewSizer.height > 0, presence.shown || previewPanel.isVisible else {
-            previewPanel.orderOut(nil)
-            return
-        }
-        let frame = previewSizer.frame(midX: screen.frame.midX, top: top - bodyHeight - Self.previewGap)
-        if previewPanel.frame.size == frame.size {
-            previewPanel.setFrameOrigin(frame.origin)
-        } else {
-            previewPanel.setFrame(frame, display: true)
-        }
-        if !previewPanel.isVisible { previewPanel.orderFrontRegardless() }
+        guard wantsWidget, bodyHeight > 0, let top, let screen = NSScreen.screens.first else { return }
+        let widget = NSRect(
+            x: screen.frame.midX - Self.width / 2, y: top - bodyHeight, width: Self.width, height: bodyHeight)
+        preview.show(
+            at: EdgeVoicePreviewPlacement(widget: widget, side: .top, visibleFrame: screen.visibleFrame),
+            includesClarification: true)
     }
 
     /// The panel height for a content height: rounded up so small changes never resize the window.
     static func paddedHeight(_ content: CGFloat) -> CGFloat { (content / 40).rounded(.up) * 40 }
 
-    private func makePanel(_ root: some View) -> NSPanel {
-        let panel = NSPanel(
-            contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        // One above the dock's own panel, which shares the notch when it sits on the top edge.
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.isReleasedWhenClosed = false
-        // The notch's fixed dark look: Herm's skin never reaches the widget.
-        panel.appearance = DockThemeStore.notchAppearance
-        panel.contentView = EdgeVoiceHostingView(rootView: root)
-        // Lay the hosting view out once off-screen so the first open doesn't pay for it mid-spring.
-        panel.contentView?.layoutSubtreeIfNeeded()
-        return panel
+}
+
+@MainActor
+private func makeEdgeVoicePanel(_ root: some View) -> NSPanel {
+    let panel = NSPanel(
+        contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+    panel.isOpaque = false
+    panel.backgroundColor = .clear
+    panel.hasShadow = false
+    // One above the dock's own panel, which shares the notch when it sits on the top edge.
+    panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+    panel.isReleasedWhenClosed = false
+    panel.appearance = DockThemeStore.notchAppearance
+    panel.contentView = EdgeVoiceHostingView(rootView: root)
+    panel.contentView?.layoutSubtreeIfNeeded()
+    return panel
+}
+
+@MainActor
+private final class EdgeVoicePreviewPresence: ObservableObject {
+    struct Card: Equatable {
+        let size: CGSize
+        let includesClarification: Bool
+    }
+
+    @Published var card: Card?
+}
+
+/// One result panel per voice model, reused when the widget moves between the notch and the desktop.
+@MainActor
+private final class EdgeVoicePreviewPanel {
+    private let model: DockModel
+    private let presence = EdgeVoicePreviewPresence()
+    private let sizer = EdgeVoicePanelSizer(width: EdgeVoicePreviewPlacement.preferredWidth)
+    private var placement: EdgeVoicePreviewPlacement?
+    private(set) var panel: NSPanel?
+
+    init(model: DockModel) { self.model = model }
+
+    func show(at placement: EdgeVoicePreviewPlacement?, includesClarification: Bool) {
+        guard let placement, placement.contentSize.width > 40, placement.contentSize.height > 40 else {
+            guard presence.card != nil else { return }
+            presence.card = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self, self.presence.card == nil else { return }
+                self.panel?.orderOut(nil)
+            }
+            return
+        }
+        self.placement = placement
+        if panel == nil {
+            panel = makeEdgeVoicePanel(
+                EdgeVoicePreviewView(model: model, presence: presence) { [weak self] size in
+                    guard let self else { return }
+                    self.sizer.fit(size, delay: 0.6) { [weak self] in self?.place() }
+                })
+        }
+        let card = EdgeVoicePreviewPresence.Card(
+            size: placement.contentSize, includesClarification: includesClarification)
+        if card != presence.card { presence.card = card }
+        place()
+    }
+
+    private func place() {
+        guard let panel, let placement else { return }
+        guard sizer.height > 0 else {
+            panel.orderOut(nil)
+            return
+        }
+        guard presence.card != nil else { return }
+        let frame = placement.frame(height: sizer.height)
+        if panel.frame.size != frame.size {
+            panel.setFrame(frame, display: true)
+        } else if panel.frame.origin != frame.origin {
+            panel.setFrameOrigin(frame.origin)
+        }
+        if !panel.isVisible { panel.orderFrontRegardless() }
     }
 }
 
@@ -224,39 +292,38 @@ private struct EdgeVoicePreviewView: View {
     let model: DockModel
     /// Redraws on voice changes only; the body still reads the model.
     @ObservedObject private var stage: VoiceStageState
-    @ObservedObject var presence: EdgeVoiceIslandPresence
+    @ObservedObject var presence: EdgeVoicePreviewPresence
     let onSize: (CGSize) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(model: DockModel, presence: EdgeVoiceIslandPresence, onSize: @escaping (CGSize) -> Void) {
+    init(model: DockModel, presence: EdgeVoicePreviewPresence, onSize: @escaping (CGSize) -> Void) {
         self.model = model
         _stage = ObservedObject(wrappedValue: model.voiceStage)
         self.presence = presence
         self.onSize = onSize
     }
 
-    static let width: CGFloat = 640
-    static let maxHeight: CGFloat = 460
-
     var body: some View {
-        let clarification = presence.shown ? stage.snapshot.clarificationPreview : nil
+        let card = presence.card
+        let question = stage.snapshot.clarificationPreview
+        let clarification = card?.includesClarification == true ? question : nil
         let visual =
-            presence.shown && clarification == nil && model.voicePreview(on: .floating) == .visual
+            card != nil && question == nil && model.voicePreview(on: .floating) == .visual
             ? model.voiceGenerativeReply : nil
         let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
         VStack(spacing: 0) {
-            if clarification != nil || visual != nil {
+            if let card, clarification != nil || visual != nil {
                 Group {
                     if let clarification {
                         VoiceClarificationChoices(preview: clarification)
                     } else if let visual {
                         VoiceGenerativeCard(
-                            model: model, message: visual, maxWidth: Self.width - 40, floating: false,
-                            maxHeight: Self.maxHeight - 40)
+                            model: model, message: visual, maxWidth: card.size.width - 40, floating: false,
+                            maxHeight: card.size.height - 40)
                     }
                 }
                 .dockPadding(20)
-                .frame(width: Self.width)
+                .frame(width: card.size.width)
                 .fixedSize(horizontal: false, vertical: true)
                 .background { EdgeVoiceGlass(shape: AnyShape(shape), housing: 0) }
                 .clipShape(shape)
@@ -333,11 +400,8 @@ struct EdgeVoiceWidget: View {
     @ObservedObject var mic: MicLevelMeter
     @ObservedObject var bots: BotModeModel
     let shown: Bool
-    /// Inside Herm's notch the reply's visual opens in the notch too; the standalone
-    /// widget floats it in its own panel instead.
+    /// Embedded clarification choices stay with the question. Reply visuals always float separately.
     var inNotch = false
-    /// The content width inside the notch, for the reply's visual.
-    var visualWidth: CGFloat = 0
     let onMinimize: (() -> Void)?
     @State private var heldCue: (generation: Int, text: String)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -345,7 +409,7 @@ struct EdgeVoiceWidget: View {
 
     init(
         model: DockModel, mic: MicLevelMeter, bots: BotModeModel, shown: Bool, inNotch: Bool = false,
-        visualWidth: CGFloat = 0, onMinimize: (() -> Void)? = nil
+        onMinimize: (() -> Void)? = nil
     ) {
         self.model = model
         _stage = ObservedObject(wrappedValue: model.voiceStage)
@@ -353,7 +417,6 @@ struct EdgeVoiceWidget: View {
         self.bots = bots
         self.shown = shown
         self.inNotch = inNotch
-        self.visualWidth = visualWidth
         self.onMinimize = onMinimize
     }
 
@@ -368,13 +431,7 @@ struct EdgeVoiceWidget: View {
             header(stage)
             if inNotch, let clarification = self.stage.snapshot.clarificationPreview {
                 VoiceClarificationChoices(preview: clarification)
-                    .frame(maxWidth: visualWidth)
                     .transition(unfold)
-            } else if inNotch, model.voicePreview(on: .floating) == .visual, let visual = model.voiceGenerativeReply {
-                VoiceGenerativeCard(
-                    model: model, message: visual, maxWidth: visualWidth, floating: false, maxHeight: 320
-                )
-                .transition(unfold)
             }
         }
         .dockPadding(.horizontal, 16)

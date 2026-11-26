@@ -3,7 +3,7 @@ import Foundation
 
 /// The conversation engine. Announcements and private readbacks use local speech.
 enum VoiceSpeechEngine: String, CaseIterable {
-    case hermes, apple, kokoro
+    case hermes, apple, natural, kokoro
 
     static let outputKey = "herm.voice.output"
     static let macVoiceKey = "herm.voice.macVoice"
@@ -16,6 +16,7 @@ enum VoiceSpeechEngine: String, CaseIterable {
         switch self {
         case .hermes: "Hermes Agent"
         case .apple: "Apple Speech"
+        case .natural: "Natural"
         case .kokoro: "Kokoro"
         }
     }
@@ -52,10 +53,16 @@ enum VoiceSpeechEngine: String, CaseIterable {
         return voice
     }
 
-    /// The best installed voice for the current language: a Personal Voice the
-    /// user allowed, then Premium, then Enhanced, then the system default.
-    static func bestVoice(language: String = AVSpeechSynthesisVoice.currentLanguageCode()) -> AVSpeechSynthesisVoice? {
-        let personal = AVSpeechSynthesizer.personalVoiceAuthorizationStatus == .authorized
+    func localAppleVoice(identifier: String) -> AVSpeechSynthesisVoice? {
+        if self == .natural { return Self.bestVoice(includesPersonalVoice: false) }
+        return Self.appleVoice(identifier: identifier) ?? Self.bestVoice()
+    }
+
+    /// Prefer Premium and Enhanced system voices, favoring an exact locale at the same quality.
+    private static func bestVoice(
+        language: String = AVSpeechSynthesisVoice.currentLanguageCode(), includesPersonalVoice: Bool = true
+    ) -> AVSpeechSynthesisVoice? {
+        let personal = includesPersonalVoice && AVSpeechSynthesizer.personalVoiceAuthorizationStatus == .authorized
         let prefix = language.split(separator: "-").first.map(String.init) ?? language
         let voices = AVSpeechSynthesisVoice.speechVoices().filter {
             $0.language == language || $0.language.hasPrefix(prefix + "-")
@@ -130,7 +137,7 @@ final class MacVoicePlayback: NSObject, AVSpeechSynthesizerDelegate {
         _ text: String, literal: Bool = false, onCaption: @escaping @MainActor (String?) -> Void
     ) async throws {
         let identifier = UserDefaults.standard.string(forKey: VoiceSpeechEngine.appleVoiceKey) ?? ""
-        let voice = VoiceSpeechEngine.appleVoice(identifier: identifier) ?? VoiceSpeechEngine.bestVoice()
+        let voice = VoiceSpeechEngine.current.localAppleVoice(identifier: identifier)
         let rate = AVSpeechUtteranceDefaultSpeechRate * Float(VoiceSpeechEngine.speed)
         try Task.checkCancellation()
         halt()

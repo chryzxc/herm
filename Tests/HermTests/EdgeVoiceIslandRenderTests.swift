@@ -7,6 +7,38 @@ import Testing
 /// Env-gated snapshot of the real voice widget panel, so its size and look are checked, not assumed.
 @MainActor
 struct EdgeVoiceIslandRenderTests {
+    @Test func detachedCardStaysCenteredBelowTheTopWidget() {
+        let widget = NSRect(x: 310, y: 650, width: 580, height: 150)
+        let placement = EdgeVoicePreviewPlacement(
+            widget: widget, side: .top, visibleFrame: NSRect(x: 0, y: 0, width: 1200, height: 776))
+        let frame = placement.frame(height: 300)
+        #expect(frame.width == 640)
+        #expect(frame.midX == widget.midX)
+        #expect(frame.maxY == widget.minY - EdgeVoicePreviewPlacement.gap)
+    }
+
+    @Test(arguments: [EdgeDockSide.left, .right])
+    func detachedCardFitsBesideEitherSideWidget(side: EdgeDockSide) {
+        let screen = NSRect(x: -1024, y: 40, width: 1024, height: 650)
+        let widget = NSRect(x: side == .left ? screen.minX : screen.maxX - 420, y: 65, width: 420, height: 150)
+        let placement = EdgeVoicePreviewPlacement(widget: widget, side: side, visibleFrame: screen)
+        let frame = placement.frame(height: 550)
+        #expect(screen.contains(frame))
+        #expect(frame.width < 640)
+        #expect(!widget.intersects(frame))
+        #expect((side == .left ? frame.minX - widget.maxX : widget.minX - frame.maxX) == 12)
+    }
+
+    @Test func narrowDisplayMovesTheCardClearOfTheSideWidget() {
+        let screen = NSRect(x: 0, y: 0, width: 640, height: 600)
+        let widget = NSRect(x: 220, y: 16, width: 420, height: 140)
+        let placement = EdgeVoicePreviewPlacement(widget: widget, side: .right, visibleFrame: screen)
+        let frame = placement.frame(height: 300)
+        #expect(screen.contains(frame))
+        #expect(frame.minY == widget.maxY + 12)
+        #expect(frame.width > 500)
+    }
+
     @Test func widgetHugsItsContentAndRenders() async throws {
         guard let directory = ProcessInfo.processInfo.environment["VOICE_WIDGET_SNAPSHOT_DIR"] else { return }
         let model = DockModel(
@@ -95,7 +127,7 @@ struct EdgeVoiceIslandRenderTests {
         }
     }
 
-    @Test func onlyVisualRepliesAndClarificationChoicesExpandTheVoiceWidget() async throws {
+    @Test func embeddedChoicesStayInTheWidgetAndVisualRepliesUseASeparatePanel() async throws {
         let defaults = UserDefaults.standard
         let key = GenerativeUIIntegration.preferenceKey
         let previous = defaults.object(forKey: key)
@@ -111,7 +143,7 @@ struct EdgeVoiceIslandRenderTests {
 
         let root = EdgeVoiceWidget(
             model: model, mic: model.voiceMic, bots: model.botMode, shown: true,
-            inNotch: true, visualWidth: 332
+            inNotch: true
         )
         .frame(width: EdgeNotchState.voiceSideWidth)
         .fixedSize(horizontal: false, vertical: true)
@@ -168,11 +200,101 @@ struct EdgeVoiceIslandRenderTests {
         #expect(compactHeight < 160)
 
         model.valuePrompt = nil
+        let noticeFreeHeight = try await measure("voice-caption")
+        let island = EdgeVoiceIsland(model: model)
+        defer { island.show(false) }
+        let widget = NSRect(x: 310, y: 650, width: 580, height: noticeFreeHeight)
+        let placement = EdgeVoicePreviewPlacement(
+            widget: widget, side: .top, visibleFrame: NSRect(x: 0, y: 0, width: 1200, height: 800))
+        island.show(true, attachedTo: placement)
         let table = try #require(
             VoicePassiveVisual.table(title: "Results", columns: ["Option"], rows: [["A"], ["B"], ["C"]]))
         model.voiceStage.localVisual = ChatMessage(role: .hermes, text: table)
-        let preview = try await measure("generative-preview")
-        #expect(preview > compactHeight + 20)
+        let withVisual = try await measure("detached-voice-caption")
+        #expect(abs(withVisual - noticeFreeHeight) <= 1)
+        #expect(island.panel == nil)
+        let preview = try #require(island.previewPanel)
+        for _ in 0..<50 where !preview.isVisible { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(preview.isVisible)
+        #expect(preview.frame.maxY == widget.minY - EdgeVoicePreviewPlacement.gap)
+        #expect(preview.frame.width == 640)
+        if let directory = ProcessInfo.processInfo.environment["VOICE_WIDGET_SNAPSHOT_DIR"],
+            let view = preview.contentView
+        {
+            try await Task.sleep(for: .milliseconds(700))
+            view.layoutSubtreeIfNeeded()
+            let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            try #require(bitmap.representation(using: .png, properties: [:]))
+                .write(to: URL(fileURLWithPath: directory).appendingPathComponent("detached-voice-result.png"))
+        }
+        let movedWidget = widget.offsetBy(dx: 0, dy: -24)
+        island.moveAttachedPreview(
+            to: EdgeVoicePreviewPlacement(
+                widget: movedWidget, side: .top, visibleFrame: NSRect(x: 0, y: 0, width: 1200, height: 800)))
+        #expect(island.previewPanel === preview)
+        #expect(preview.frame.maxY == movedWidget.minY - EdgeVoicePreviewPlacement.gap)
+        island.show(false)
+        for _ in 0..<50 where preview.isVisible { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(!preview.isVisible)
+    }
+
+    @Test func previewStaysVisibleWhenCompletionRewritesTheSpokenSummary() async throws {
+        _ = NSApplication.shared
+        let defaults = UserDefaults.standard
+        let key = GenerativeUIIntegration.preferenceKey
+        let previous = defaults.object(forKey: key)
+        defaults.set(true, forKey: key)
+        defer { defaults.set(previous, forKey: key) }
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: "voice-preview-\(UUID())")!,
+            initialSessionID: "preview-handoff", loadArchives: false)
+        defer { model.shutdown() }
+        model.isNotchVoiceConversation = true
+        model.voiceState = .thinking
+        model.voiceRepliesEnabled = false
+        let chart = """
+            ```herm-ui
+            {"version":1,"id":"comparison","title":"Totals","fallback":"Two totals","kind":"native",
+            "blocks":[{"type":"chart","style":"bar","points":[{"label":"A","value":1},{"label":"B","value":2}]}]}
+            ```
+            """
+        model.handleEvent("message.start", params: ["session_id": "preview-handoff"])
+        model.handleEvent(
+            "message.delta",
+            params: ["session_id": "preview-handoff", "payload": ["delta": "I found two totals.\n\n" + chart]])
+        model.flushStreamingMessage()
+        await model.voiceStage.liveVisualTask?.value
+        let live = try #require(model.voiceGenerativeReply)
+        #expect(live == model.liveVoiceVisual)
+
+        func card(_ message: ChatMessage) -> some View {
+            VoiceGenerativeCard(model: model, message: message, maxWidth: 360)
+                .frame(width: 360)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        let host = NSHostingView(rootView: card(live))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 320), styleMask: [.borderless],
+            backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        for _ in 0..<100 where host.fittingSize.height < 100 {
+            try await Task.sleep(for: .milliseconds(10))
+            host.layoutSubtreeIfNeeded()
+        }
+        let liveHeight = host.fittingSize.height
+        try #require(liveHeight >= 100)
+
+        model.handleEvent("message.complete", params: ["session_id": "preview-handoff", "payload": ["text": chart]])
+        let complete = try #require(model.voiceGenerativeReply)
+        #expect(complete.id == live.id)
+        #expect(model.liveVoiceVisual == nil)
+        host.rootView = card(complete)
+        host.layoutSubtreeIfNeeded()
+        // Inspect the first layout, before an asynchronous parse could refill it.
+        #expect(abs(host.fittingSize.height - liveHeight) < 1)
     }
 
     @Test func botFaceOrbRendersEachMood() async throws {
