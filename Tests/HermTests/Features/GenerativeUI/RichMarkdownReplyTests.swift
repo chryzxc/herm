@@ -112,7 +112,7 @@ struct RichMarkdownReplyTests {
         }
     }
 
-    @Test func ordinaryReplyExposesSortingAndRespectsThePreference() async throws {
+    @Test func artifactRepliesExposeSortingButWrittenChatsStayPlain() async throws {
         let suite = "RichMarkdownReplyTests.\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -124,13 +124,20 @@ struct RichMarkdownReplyTests {
         func elements(_ element: AnyObject) -> [AnyObject] {
             [element] + (element.accessibilityChildren?() ?? []).flatMap { elements($0 as AnyObject) }
         }
-        let message = ChatMessage(role: .hermes, text: source)
-        let view = ConversationMessageRow(
-            message: message, isStreamingMessage: false, streamingText: nil, activeBotProfileID: nil,
-            botsByID: [:], avatarImages: [:], botRosterRevision: 0, onImagePreview: { _ in }
-        )
-        .defaultAppStorage(defaults).frame(width: 420)
-        let host = NSHostingView(rootView: view)
+        func reply(asArtifact: Bool) -> some View {
+            Group {
+                if asArtifact {
+                    GenerativeUIIntegration.renderArtifact(source)
+                } else {
+                    ConversationMessageRow(
+                        message: ChatMessage(role: .hermes, text: source), isStreamingMessage: false,
+                        streamingText: nil, activeBotProfileID: nil, botsByID: [:], avatarImages: [:],
+                        botRosterRevision: 0, onImagePreview: { _ in })
+                }
+            }
+            .defaultAppStorage(defaults).frame(width: 420)
+        }
+        let host = NSHostingView(rootView: reply(asArtifact: true))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 540),
             styleMask: [.borderless], backing: .buffered, defer: false)
@@ -154,6 +161,22 @@ struct RichMarkdownReplyTests {
             })
         let footer = try #require(restore.accessibilityFrame?())
         #expect(heading.midY > footer.midY && heading.midY - footer.midY < 180, "A short table should hug its rows.")
+
+        host.rootView = reply(asArtifact: false)
+        for _ in 0..<100 {
+            host.layoutSubtreeIfNeeded()
+            if sortButton() != nil { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(sortButton() == nil)
+
+        host.rootView = reply(asArtifact: true)
+        for _ in 0..<100 {
+            host.layoutSubtreeIfNeeded()
+            if sortButton() != nil { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(sortButton() != nil)
         defaults.set(false, forKey: GenerativeUIIntegration.preferenceKey)
         for _ in 0..<100 {
             host.layoutSubtreeIfNeeded()
