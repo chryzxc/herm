@@ -466,7 +466,7 @@ struct SessionNavQueue: View, Equatable {
             .animation(.easeInOut(duration: 0.25), value: botMode.activityBanner)
             .zIndex(1)
 
-            HoverPausingScrollView {
+            HoverPausingScrollView(pausesAllHitTesting: false) {
                 globalRailBar(style: style)
                     .dockButtonSize(.standard)
                     .dockPadding(.horizontal, 6)
@@ -823,6 +823,7 @@ struct SessionNavQueue: View, Equatable {
         return LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
             if isSearchingSessions {
                 searchResultRows(pinned: pinned, statuses: statuses, style: style)
+                    .dockPauseHitTestingWhileScrolling()
                 if SessionRailSection.archived.isVisible(in: hiddenSidebarOptions) {
                     filterOutline(.archived, style: style)
                 }
@@ -1067,7 +1068,7 @@ struct SessionNavQueue: View, Equatable {
                     }
                 }
             }
-            .sessionSidebarFadesUnderStickyHeader()
+            .sessionSidebarRowsUnderStickyHeader()
         } header: {
             DockSectionHeader(
                 title: section.title,
@@ -1352,7 +1353,7 @@ struct SessionNavQueue: View, Equatable {
                     pinnedRows(pinned, statuses: statuses, style: style)
                 }
             }
-            .sessionSidebarFadesUnderStickyHeader()
+            .sessionSidebarRowsUnderStickyHeader()
         } header: {
             DockSectionHeader(
                 title: "Pinned",
@@ -1485,7 +1486,7 @@ struct SessionNavQueue: View, Equatable {
             type == .automation ? $navigationState.areAutomationsExpanded : $navigationState.areConversationsExpanded
         Section {
             conversationRows(conversations, type: type, statuses: statuses, style: style)
-                .sessionSidebarFadesUnderStickyHeader()
+                .sessionSidebarRowsUnderStickyHeader()
         } header: {
             DockSectionHeader(
                 title: type == .automation ? "Automations" : "Recents",

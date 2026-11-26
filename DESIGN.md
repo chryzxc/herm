@@ -2224,6 +2224,8 @@ lazy stack. The current section header stays below the fixed search bar
 until the next section pushes it away. Headers are transparent in the list;
 at the scroll viewport edge they use the matching canvas or native window
 material to cover scrolling rows. Retain disclosure, actions, and section reordering.
+Keep headers clickable during scroll momentum. Pause hit testing on the rows
+below the headers so scrolling does not churn through their hover controls.
 Routine session polls and runtime notifications reuse older loaded history
 for up to five minutes while fetching the recent page and current pins/activity.
 Manual refreshes and profile switches bypass that reuse; older sessions remain

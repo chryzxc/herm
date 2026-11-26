@@ -6,32 +6,60 @@ import UniformTypeIdentifiers
 
 /// Rows sliding under a still pointer otherwise flip hover on every row they
 /// pass, each building and tearing down its action buttons. Like Finder, hover
-/// pauses while the list scrolls. `content` is stored, not a closure, so the
-/// scroll-phase flip does not rebuild the rail or the transcript's rows.
+/// pauses while the list scrolls. Use scoped hit testing when headers must
+/// remain interactive. `content` is stored so phase changes don't rebuild it.
 /// Without it SwiftUI re-hit-tests every hover region on each scroll frame
 /// (`EventBindingManager.enqueueHoverUpdateIfNeeded`), even with the pointer still.
 struct HoverPausingScrollView<Content: View>: View {
     let content: Content
     private let usesAppKitScrollPhase: Bool
+    private let pausesAllHitTesting: Bool
     @State private var isScrolling = false
 
-    init(usesAppKitScrollPhase: Bool = false, @ViewBuilder content: () -> Content) {
+    init(
+        usesAppKitScrollPhase: Bool = false, pausesAllHitTesting: Bool = true, @ViewBuilder content: () -> Content
+    ) {
         self.usesAppKitScrollPhase = usesAppKitScrollPhase
+        self.pausesAllHitTesting = pausesAllHitTesting
         self.content = content()
+    }
+
+    private var scrollContent: some View {
+        content
+            .environment(\.dockScrollIsInProgress, isScrolling)
+            .allowsHitTesting(!pausesAllHitTesting || !isScrolling)
     }
 
     var body: some View {
         if #available(macOS 15, *), !usesAppKitScrollPhase {
-            ScrollView { content.allowsHitTesting(!isScrolling) }
+            ScrollView { scrollContent }
                 .onScrollPhaseChange { _, phase in isScrolling = phase.isScrolling }
         } else {
             ScrollView {
-                content.allowsHitTesting(!isScrolling).background {
+                scrollContent.background {
                     AppKitScrollPhaseObserver(onPhase: { isScrolling = $0 }).allowsHitTesting(false)
                 }
             }
             .onDisappear { isScrolling = false }
         }
+    }
+}
+
+extension EnvironmentValues {
+    @Entry fileprivate var dockScrollIsInProgress = false
+}
+
+private struct DockPauseHitTestingWhileScrolling: ViewModifier {
+    @Environment(\.dockScrollIsInProgress) private var isScrolling
+
+    func body(content: Content) -> some View {
+        content.allowsHitTesting(!isScrolling)
+    }
+}
+
+extension View {
+    func dockPauseHitTestingWhileScrolling() -> some View {
+        modifier(DockPauseHitTestingWhileScrolling())
     }
 }
 

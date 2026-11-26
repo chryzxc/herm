@@ -32,13 +32,15 @@ extension View {
 
     /// Glass can't paint an opaque header backdrop (any translucent fill either
     /// shows rows through or reads as a separate slab), so section rows fade
-    /// out as they slide under the pinned header. Apply to a section's content.
-    func sessionSidebarFadesUnderStickyHeader() -> some View {
+    /// out as they slide under the pinned header. Pause hit testing on the
+    /// rows only so headers still accept clicks while the list scrolls.
+    func sessionSidebarRowsUnderStickyHeader() -> some View {
         let fades = DockThemeRuntime.current.usesNativeMaterial
         // ponytail: fixed header height (12 top spacing + 30 header + 2 bottom); measure if headers change size.
-        return visualEffect { content, proxy in
-            let minY = proxy.frame(in: .named(SessionSidebarStickyBackground.coordinateSpace)).minY
-            return content.opacity(fades ? min(max((minY - 28) / 16, 0), 1) : 1)
-        }
+        return dockPauseHitTestingWhileScrolling()
+            .visualEffect { content, proxy in
+                let minY = proxy.frame(in: .named(SessionSidebarStickyBackground.coordinateSpace)).minY
+                return content.opacity(fades ? min(max((minY - 28) / 16, 0), 1) : 1)
+            }
     }
 }
