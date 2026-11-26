@@ -1616,15 +1616,18 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   embedded in the notch, Minimize voice collapses it to the quick-preview rail.
   Approvals and open-ended clarifications use the existing status and caption. Caption-only
   prompts fit within the 160pt compact header at the side notch's default width and scale.
-  A clarification with options uses the preview slot for a scrollable, numbered read-only
-  list in the same order as the spoken choices. An active question replaces the previous
-  preview; no buttons or new answer path are added. Approval
+  A clarification with options uses a scrollable, numbered read-only list in the same order
+  as the spoken choices. In an embedded notch, the list stays with the question. An active
+  question replaces the previous result preview; no buttons or new answer path are added. Approval
   speech describes known actions without reading commands, tool names, or coordinates.
   Optional Apple Intelligence explanations play locally for less obvious actions.
   The exact action, scope, and typed-input controls stay in chat. Apart from clarification
-  choices, only generative results use the preview. The detached reply visual floats in
-  its own 640pt dark-glass panel (`EdgeVoicePreviewView`, 26pt corners, up to 460pt tall)
-  12pt below the widget's visible body, showing only the visuals (`RichDocumentView`
+  choices, only generative results use the preview. In the top, side, and standalone
+  notch stages the reply visual has its own dark-glass panel (`EdgeVoicePreviewView`,
+  26pt corners, up to 640pt wide and 460pt tall). It sits 12pt below the top or
+  standalone widget, or toward the center of the display beside a side notch. The
+  panel fits the active display without changing the widget's caption height. It shows
+  only the visuals (`RichDocumentView`
   `visualsOnly`: charts, tables, previews; never the prose, which is spoken and captioned)
   on the glass without a second card. Voice previews read-only blocks from a reply
   even if it also contains a form, checklist, command, record target, HTML surface,
@@ -1657,8 +1660,8 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   Live speech and pending decisions still take priority. Route recovery does not reopen a muted call.
   Speaking over narration keeps the current visual and work intact.
   It floats over the real desktop, where the browser or terminal is already in view, so
-  it never shows Herm's tabs or the agent screen: only the reply's generative UI, in the
-  captions slot (260pt tall at most), until "close" or the next request (see Talk).
+  it never shows Herm's tabs or the agent screen: only the reply's generative UI,
+  until "close" or the next request (see Talk).
   An explicit place-map request resolves through Apple Maps and shows a read-only native map
   in the same preview. A completed Markdown table can populate a read-only preview without
   replacing its chat message. A Calendar agenda uses the same preview to show a paged list

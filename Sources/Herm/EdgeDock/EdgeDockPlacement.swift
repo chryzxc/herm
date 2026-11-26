@@ -78,6 +78,56 @@ struct EdgeDockPlacement: Equatable {
     }
 }
 
+/// Anchors a separate voice result to the visible widget, not its window's animation headroom.
+struct EdgeVoicePreviewPlacement: Equatable {
+    static let preferredWidth: CGFloat = 640
+    static let maximumHeight: CGFloat = 460
+    static let gap: CGFloat = 12
+
+    private let x: CGFloat
+    private let preferredTop: CGFloat
+    private let bottom: CGFloat
+    private let top: CGFloat
+    let width: CGFloat
+
+    var contentSize: CGSize {
+        CGSize(width: width, height: min(Self.maximumHeight, max(0, top - bottom)))
+    }
+
+    init(widget: NSRect, side: EdgeDockSide, visibleFrame: NSRect) {
+        let space = visibleFrame.insetBy(dx: DockSpacing.control, dy: DockSpacing.control)
+        let sideRoom =
+            side == .left ? space.maxX - widget.maxX - Self.gap : widget.minX - Self.gap - space.minX
+        if side != .top, sideRoom >= 280 {
+            width = min(Self.preferredWidth, sideRoom)
+            x = side == .left ? widget.maxX + Self.gap : widget.minX - Self.gap - width
+            bottom = space.minY
+            top = space.maxY
+            preferredTop = widget.maxY
+        } else {
+            width = min(Self.preferredWidth, space.width)
+            x = min(max(widget.midX - width / 2, space.minX), space.maxX - width)
+            let below = min(widget.minY - Self.gap, space.maxY)
+            let above = max(widget.maxY + Self.gap, space.minY)
+            if side != .top, below - space.minY < 160, space.maxY - above > below - space.minY {
+                bottom = above
+                top = space.maxY
+                preferredTop = above
+            } else {
+                bottom = space.minY
+                top = below
+                preferredTop = below
+            }
+        }
+    }
+
+    func frame(height: CGFloat) -> NSRect {
+        let height = min(height, max(0, top - bottom))
+        let y = min(max(preferredTop - height, bottom), top - height)
+        return NSRect(x: x, y: y, width: width, height: height).integral
+    }
+}
+
 /// The camera housing the top island wraps; screens without one get a drawn pill of the same shape.
 enum EdgeNotchMetrics {
     static let fallbackWidth: CGFloat = 190
