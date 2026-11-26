@@ -175,6 +175,64 @@ struct EdgeVoiceIslandRenderTests {
         #expect(preview > compactHeight + 20)
     }
 
+    @Test func previewStaysVisibleWhenCompletionRewritesTheSpokenSummary() async throws {
+        _ = NSApplication.shared
+        let defaults = UserDefaults.standard
+        let key = GenerativeUIIntegration.preferenceKey
+        let previous = defaults.object(forKey: key)
+        defaults.set(true, forKey: key)
+        defer { defaults.set(previous, forKey: key) }
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: "voice-preview-\(UUID())")!,
+            initialSessionID: "preview-handoff", loadArchives: false)
+        defer { model.shutdown() }
+        model.isNotchVoiceConversation = true
+        model.voiceState = .thinking
+        model.voiceRepliesEnabled = false
+        let chart = """
+            ```herm-ui
+            {"version":1,"id":"comparison","title":"Totals","fallback":"Two totals","kind":"native",
+            "blocks":[{"type":"chart","style":"bar","points":[{"label":"A","value":1},{"label":"B","value":2}]}]}
+            ```
+            """
+        model.handleEvent("message.start", params: ["session_id": "preview-handoff"])
+        model.handleEvent(
+            "message.delta",
+            params: ["session_id": "preview-handoff", "payload": ["delta": "I found two totals.\n\n" + chart]])
+        model.flushStreamingMessage()
+        await model.voiceStage.liveVisualTask?.value
+        let live = try #require(model.voiceGenerativeReply)
+        #expect(live == model.liveVoiceVisual)
+
+        func card(_ message: ChatMessage) -> some View {
+            VoiceGenerativeCard(model: model, message: message, maxWidth: 360)
+                .frame(width: 360)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        let host = NSHostingView(rootView: card(live))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 320), styleMask: [.borderless],
+            backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        for _ in 0..<100 where host.fittingSize.height < 100 {
+            try await Task.sleep(for: .milliseconds(10))
+            host.layoutSubtreeIfNeeded()
+        }
+        let liveHeight = host.fittingSize.height
+        try #require(liveHeight >= 100)
+
+        model.handleEvent("message.complete", params: ["session_id": "preview-handoff", "payload": ["text": chart]])
+        let complete = try #require(model.voiceGenerativeReply)
+        #expect(complete.id == live.id)
+        #expect(model.liveVoiceVisual == nil)
+        host.rootView = card(complete)
+        host.layoutSubtreeIfNeeded()
+        // Inspect the first layout, before an asynchronous parse could refill it.
+        #expect(abs(host.fittingSize.height - liveHeight) < 1)
+    }
+
     @Test func botFaceOrbRendersEachMood() async throws {
         guard let directory = ProcessInfo.processInfo.environment["VOICE_WIDGET_SNAPSHOT_DIR"] else { return }
         let reading = VoiceMeterReading()

@@ -75,14 +75,15 @@ struct RichVoicePreview: Sendable {
     static let rowsPerPage = 6
     static let zoomRange = -3...3
 
-    let isVisual: Bool
+    let document: RichDocument
+    var isVisual: Bool { !document.segments.isEmpty }
     private(set) var table: Table?
     private(set) var comparison: (key: BlockKey, value: RichComparison)?
     private(set) var map: BlockKey?
 
-    init(_ document: RichDocument) {
-        isVisual = document.hasVoiceVisuals
-        for segment in document.segments where segment.showsInVoiceGlance {
+    init(_ reply: RichDocument) {
+        document = reply.voiceGlance
+        for segment in document.segments {
             guard case .surface(let surface, _) = segment, let blocks = surface.blocks else { continue }
             for (index, block) in blocks.enumerated() {
                 let key = BlockKey(surface: surface.id, index: index)

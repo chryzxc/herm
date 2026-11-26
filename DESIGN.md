@@ -1629,7 +1629,9 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   on the glass without a second card. Voice previews read-only blocks from a reply
   even if it also contains a form, checklist, command, record target, HTML surface,
   or inline widget. Those parts are not shown in Voice. Selection and rendering share
-  `RichDocument.Segment.showsInVoiceGlance`, and empty groups are hidden. The preview drops
+  `RichDocument.Segment.showsInVoiceGlance`, and empty groups are hidden. Rendering and spoken
+  navigation use the same parsed visuals, so replying with a revised spoken summary does
+  not collapse or replay the preview. The preview drops
   out of the widget (scale 0.4 from the top, lifted 36pt, fading in) on the liquid spring
   and draws back up the same way, then leaves
   the screen. All light stays inside the body:

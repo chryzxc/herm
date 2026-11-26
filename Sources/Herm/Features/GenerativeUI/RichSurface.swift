@@ -251,6 +251,12 @@ struct RichDocument: Equatable, Sendable {
         case preview(String)
     }
     let segments: [Segment]
+    var voiceGlance: Self { Self(segments: segments.filter(\.showsInVoiceGlance)) }
+
+    private init(segments: [Segment]) {
+        self.segments = segments
+    }
+
     var hasSurfaces: Bool {
         segments.contains {
             if case .markdown = $0 { return false }
