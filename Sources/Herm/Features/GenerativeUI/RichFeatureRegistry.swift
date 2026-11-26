@@ -199,7 +199,7 @@ enum RichFeatureRegistry {
         "For a real image, video, or file, deliver the verified local path or direct public HTTPS media URL on its own MEDIA: line outside code fences. Prefer a file already produced or downloaded by your tools. An image or video delivery counts as the visual. Use source links for web pages, and don't repeat the same asset in a gallery and as a delivery."
 
     private static let replyGuidance = """
-        Generative UI is enabled in Herm. For written chat: use a fenced `herm-ui` JSON surface by default for every answer. Use a native text block for a short answer and the matching structured blocks for data, comparisons, plans, or findings. Keep one useful surface and don't repeat its contents as prose.
+        This turn explicitly requests a Herm artifact. Use one useful fenced `herm-ui` JSON surface with blocks suited to the result, and don't repeat its contents as prose.
         For calculators, simulations, interactive graphics and tools whose results change with inputs, return a working self-contained HTML surface. Wire inputs to update results immediately.
         Honor explicit requests for plain text, raw code, or another exact format. Carry out project and file work normally. A verified media delivery can stand on its own. Never invent data, actions, status, or execution outcomes.
         """
@@ -208,10 +208,12 @@ enum RichFeatureRegistry {
         For specialized blocks, call herm_reference with surface "herm.generative-ui" if available. If no reference is available, use the basic native formats or a Markdown table.
         """
 
-    /// Session rules and per-turn instructions share the same reply default; only the catalog is deferred.
-    static let rules =
-        replyGuidance + "\nFor spoken turns, follow that turn's instructions for the spoken summary and visual preview."
-        + "\n" + referenceGuidance
+    /// Keep the reference available without requesting surfaces on written turns.
+    static let rules = """
+        Use ordinary Markdown for written chat. Do not emit a generated surface unless this turn explicitly requests a Herm artifact or the spoken-turn instructions ask for a visual. Preserve any explicitly requested output format.
+        For spoken turns, follow that turn's instructions for the spoken summary and visual preview.
+        \(referenceGuidance)
+        """
 
     /// Envelope, composition rules and the local block catalog. Session records come from `sessionReference`.
     static func reference() -> String {

@@ -5,7 +5,7 @@ struct GenerativeUISettings: View {
     var body: some View {
         SettingsPreferenceRow(
             title: "Generative UI",
-            detail: "Automatically request visual and interactive replies when useful. Turn off to show readable text."
+            detail: "Show generated visual previews in Voice mode and Talk. Written chats use Markdown."
         ) {
             Toggle("Generative UI", isOn: $enabled)
                 .labelsHidden().toggleStyle(.dockSwitch).controlSize(.small).tint(Color.dockAccent)

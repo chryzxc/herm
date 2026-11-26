@@ -1,16 +1,18 @@
 # Generative UI in Herm
 
 Generative UI ships in normal builds. Settings → Chat → Replies → Generative UI is on
-by default and applies immediately. Turning it off preserves canonical messages and
-shows readable fallbacks. HTML always needs an explicit Open action.
+by default and applies immediately. Written chats use ordinary Markdown and show
+readable fallbacks for generated surfaces. Voice mode and Talk keep their visual
+previews. Existing artifacts remain accessible from Artifacts. HTML always needs
+an explicit Open action.
 
 
 No build or launch environment variable is required.
 
 ## Standard Markdown replies
 
-Completed assistant replies get sortable pipe tables and GitHub-style alerts with
-the existing Generative UI preference. Write a header, separator with at least
+Written chat displays Markdown tables and alerts as Markdown. Generated artifact
+views can enhance compatible tables and alerts when Generative UI is on. Write a header, separator with at least
 three dashes per cell, and consistently sized data rows. Above ten rows the table
 offers a filter. Plain Markdown remains available for large messages (over 64 KiB),
 tables with linked headers, incomplete tables, and fenced examples. Two or more
@@ -73,9 +75,9 @@ Glass/monochrome appearance, and actual map integration still need acceptance.
 - Presentation scopes own unsent form values and preview lifetime. Existing
   destination-validated submission handlers remain authoritative. The feature
   adds no executor, event ingestion, tool interception, or transcript store.
-- When disabled, future prompts omit rendering instructions and existing replies
-  use readable text projections. Legacy rendering context stays hidden without
-  rewriting canonical records. Active HTML previews close immediately.
+- Written chat always uses readable text projections. Legacy rendering context
+  stays hidden without rewriting canonical records. Turning off Generative UI
+  closes active HTML previews.
 - New workflow cards belong here, using read-only adapters over existing stores
   and existing action handlers. Keep provider-confirmed state separate from
   generated content; do not derive a merge result from an assistant claim.
@@ -176,7 +178,7 @@ through a custom scheme; a content rule list and CSP block every other load.
 Mermaid runs with `securityLevel: 'strict'` and `htmlLabels: false`, so the SVG
 rasterizes on an untainted canvas and only a PNG data URL returns to Herm.
 Sources over 50,000 bytes or renders over 10 seconds fail with a visible reason.
-Streaming fences and fences while Generative UI is off stay code blocks.
+Written chats keep Mermaid fences as Markdown code blocks.
 
 ## Hermes inline widgets
 

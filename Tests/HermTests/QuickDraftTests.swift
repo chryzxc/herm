@@ -228,8 +228,7 @@ struct QuickDraftTests {
             })
         #expect(
             rpc.calls.last?.1["text"] as? String
-                == GenerativeUIIntegration.preparePrompt(
-                    "Review this\n\n@file:docs/sample.txt\n\n@file:docs/sample.txt"))
+                == "Review this\n\n@file:docs/sample.txt\n\n@file:docs/sample.txt")
     }
 
     @Test func partialUploadRetriesOnlyUnacknowledgedFiles() async throws {

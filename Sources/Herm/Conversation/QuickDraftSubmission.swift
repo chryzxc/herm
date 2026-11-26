@@ -212,8 +212,8 @@ enum QuickDraftSubmission {
             var prompt = scope
             let text = material.isEmpty ? "Review these attachments." : material
             prompt["text"] =
-                draft.requestsVisualReply == false
-                ? text : GenerativeUIIntegration.preparePrompt(text, context: generationContext)
+                draft.requestsVisualReply == true
+                ? GenerativeUIIntegration.preparePrompt(text, context: generationContext) : text
             if let directory = validatedDirectory, let beforeSubmit {
                 await beforeSubmit(draft, directory)
                 guard try await validateDestination() == runtime else {

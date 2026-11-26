@@ -124,8 +124,7 @@ struct ForwardToBotPopoverTests {
         #expect(model.forwardDraft(for: key).note.isEmpty, "A successful forward must clear its submitted draft")
         #expect(rpc.createdProfiles == Array(repeating: bot.id, count: scenario == "retry" ? 2 : 1))
         if sendsPlainText {
-            let expectedText = GenerativeUIIntegration.preparePrompt(
-                "Review this\n\nForwarded message:\nForwarded fixture message")
+            let expectedText = "Review this\n\nForwarded message:\nForwarded fixture message"
             let expected = Array(repeating: expectedText, count: scenario == "retry" ? 2 : 1)
             #expect(rpc.submittedTexts == expected)
         }

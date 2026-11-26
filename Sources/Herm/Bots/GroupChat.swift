@@ -690,9 +690,7 @@ final class GroupChatStore: ObservableObject {
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let client, !trimmed.isEmpty || !attachments.isEmpty else { return }
-        var payload: [String: Any] = [
-            "text": trimmed.isEmpty ? "" : GenerativeUIIntegration.preparePrompt(trimmed), "thread_id": thread,
-        ]
+        var payload: [String: Any] = ["text": trimmed, "thread_id": thread]
         if !attachments.isEmpty { payload["attachments"] = attachments.map(\.manifest) }
         do {
             _ = try await client.request(

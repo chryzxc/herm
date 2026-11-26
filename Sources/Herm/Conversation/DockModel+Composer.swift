@@ -69,11 +69,7 @@ extension DockModel {
                 profileID: queued?.profileID, sessionID: $0,
                 title: (isForeground ? currentSessionTitle : nil) ?? "Session")
         }
-        let richContext = generationContext(for: capturedDestination)
         let mentionProfiles = queueOwner == nil ? composerMentionProfiles : queued?.mentionProfiles ?? []
-        let submittedText = GenerativeUIIntegration.preparePrompt(
-            ComposerMentionPresentation.annotatedPrompt(text, profileIDs: mentionProfiles), context: richContext
-        )
         let sessionBeforeSend = queueRuntimeID ?? sessionID
         let sendOwner =
             isForeground
@@ -234,14 +230,8 @@ extension DockModel {
                     }
                     fileReferences.append(reference)
                 }
-                let outgoingText =
-                    fileReferences.isEmpty
-                    ? submittedText
-                    : GenerativeUIIntegration.preparePrompt(
-                        ComposerMentionPresentation.annotatedPrompt(
-                            text + "\n\n" + fileReferences.joined(separator: "\n"), profileIDs: mentionProfiles),
-                        context: richContext
-                    )
+                let material = fileReferences.isEmpty ? text : text + "\n\n" + fileReferences.joined(separator: "\n")
+                let annotated = ComposerMentionPresentation.annotatedPrompt(material, profileIDs: mentionProfiles)
                 for attachedImage in attachedImages {
                     let base64 = try await AttachmentPayload.encoded(at: attachedImage.fileURL)
                     guard canSubmit(to: promptSessionID) else { return }
@@ -288,16 +278,16 @@ extension DockModel {
                         origin: baselineOrigin, path: directory, attemptID: baselineAttempt)
                     guard canSubmit(to: promptSessionID) else { return }
                 }
+                let outgoingText = isVoiceTurn ? VoicePrompts.conversationPrompt(annotated) : annotated
                 if let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }) {
                     pendingSessionSends[index].phase = .submitting
-                    pendingSessionSends[index].submittedText =
-                        isVoiceTurn ? VoicePrompts.conversationPrompt(outgoingText) : outgoingText
+                    pendingSessionSends[index].submittedText = outgoingText
                 }
                 let acknowledgment = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.promptSubmit.rawValue,
                     params: scoped([
                         "session_id": promptSessionID,
-                        "text": isVoiceTurn ? VoicePrompts.conversationPrompt(outgoingText) : outgoingText,
+                        "text": outgoingText,
                         "voice_turn": isVoiceTurn, "queued": queued != nil,
                     ]))
                 if acknowledgment["status"] as? String == "streaming" {

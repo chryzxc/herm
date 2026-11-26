@@ -244,7 +244,9 @@ struct GroupChatTests {
         let store = GroupChatStore(defaults: freshDefaults())
         store.bind(to: client)
         await store.send("hello", to: "r", thread: "t-1")
-        #expect((client.sent?["payload"] as? [String: Any])?["thread_id"] as? String == "t-1")
+        let payload = client.sent?["payload"] as? [String: Any]
+        #expect(payload?["thread_id"] as? String == "t-1")
+        #expect(payload?["text"] as? String == "hello")
     }
 
     @Test func attachmentsUploadThenRideOnTheSendManifest() async throws {

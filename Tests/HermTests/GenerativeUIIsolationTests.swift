@@ -31,10 +31,10 @@ struct GenerativeUIIsolationTests {
         #expect(GenerativeUIIntegration.displayUserText(prompt) == "Explain this")
     }
 
-    @Test func enabledChatStillRequestsVisualsWhenThePluginServesTheCatalog() throws {
+    @Test func explicitArtifactUsesPluginCatalog() throws {
         let request = "What changed in the release?"
         let prepared = GenerativeUIIntegration.preparePrompt(request, enabled: true, servedByPlugin: true)
-        #expect(prepared.contains("For written chat: use a fenced `herm-ui` JSON surface by default for every answer."))
+        #expect(prepared.contains("This turn explicitly requests a Herm artifact."))
         #expect(prepared.contains("Honor explicit requests for plain text, raw code, or another exact format."))
         #expect(prepared.contains("herm_reference"))
         #expect(!prepared.contains("Available blocks:"))
@@ -63,7 +63,7 @@ struct GenerativeUIIsolationTests {
         #expect(GenerativeUIIntegration.isEnabled)
         let prepared = GenerativeUIIntegration.preparePrompt(request)
         #expect(prepared.hasPrefix(request))
-        #expect(prepared.contains("For written chat: use a fenced `herm-ui` JSON surface by default for every answer."))
+        #expect(prepared.contains("This turn explicitly requests a Herm artifact."))
         #expect(prepared.contains("return a working self-contained HTML surface"))
         #expect(prepared.contains("Wire inputs to update results immediately."))
         #expect(prepared.contains("Honor explicit requests for plain text, raw code, or another exact format."))
@@ -74,6 +74,13 @@ struct GenerativeUIIsolationTests {
         #expect(GenerativeUIIntegration.preparePrompt(request) == request)
         UserDefaults.standard.set(true, forKey: key)
         #expect(GenerativeUIIntegration.preparePrompt(request) == prepared)
+    }
+
+    @Test func sessionRulesDefaultWrittenRepliesToMarkdownAndPreserveSpokenInstructions() {
+        let rules = RichFeatureRegistry.rules
+        #expect(rules.contains("Use ordinary Markdown for written chat."))
+        #expect(!rules.contains("for every answer"))
+        #expect(rules.contains("For spoken turns, follow that turn's instructions"))
     }
 
     @Test func legacyInstructionBlocksAreHiddenFromDisplayedPrompts() {
@@ -220,11 +227,11 @@ struct GenerativeUIIsolationTests {
         }
     }
 
-    @Test func rendererReturnsToTheOrdinaryFallbackAfterRichContent() async throws {
+    @Test func defaultChatRendererReturnsToTheOrdinaryFallbackAfterRichContent() async throws {
         var appearances = 0
         var disappearances = 0
         func reply(_ text: String, streaming: Bool) -> some View {
-            GenerativeUIIntegration.renderReply(text, streaming: streaming, enabled: false) {
+            GenerativeUIIntegration.renderReply(text, streaming: streaming) {
                 Text("Existing renderer")
                     .onAppear { appearances += 1 }
                     .onDisappear { disappearances += 1 }

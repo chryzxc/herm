@@ -168,7 +168,7 @@ struct SessionConversationIsolationTests {
         try await waitUntil { rpc.requests.contains { $0.method == "prompt.submit" } }
         let submission = try #require(rpc.requests.first { $0.method == "prompt.submit" })
         #expect(submission.params["session_id"] as? String == "runtime-a-2")
-        #expect(submission.params["text"] as? String == GenerativeUIIntegration.preparePrompt("Follow up in A"))
+        #expect(submission.params["text"] as? String == "Follow up in A")
         #expect(model.queuedPrompts.map(\.text) == ["Follow up in B"])
     }
 

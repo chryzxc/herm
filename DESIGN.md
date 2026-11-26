@@ -1628,7 +1628,7 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   `visualsOnly`: charts, tables, previews; never the prose, which is spoken and captioned)
   on the glass without a second card. Voice previews read-only blocks from a reply
   even if it also contains a form, checklist, command, record target, HTML surface,
-  or inline widget. Those parts stay in the chat. Selection and rendering share
+  or inline widget. Those parts are not shown in Voice. Selection and rendering share
   `RichDocument.Segment.showsInVoiceGlance`, and empty groups are hidden. The preview drops
   out of the widget (scale 0.4 from the top, lifted 36pt, fading in) on the liquid spring
   and draws back up the same way, then leaves
@@ -3005,21 +3005,15 @@ reply content must not replace or restyle this activity presentation.
 
 ### Generated replies
 
-Generative UI is included in normal builds and tests. Settings → Chat → Replies has one
-Generative UI toggle, on by default. Changes apply immediately: disabling closes any
-active HTML view, requests ordinary replies, and projects saved visual replies as
-readable text. Canonical Hermes records remain unchanged. All host hooks continue
-through `GenerativeUIIntegration`; the feature owns parsing, form state, and HTML
-lifecycle. Legacy rendering instructions remain hidden only in presentation.
+Written chats, including bot and group chats, use ordinary Markdown. Existing
+generated surfaces project their readable text in the transcript without changing
+canonical Hermes records. The original artifacts remain accessible separately.
 
-When enabled, prompt context directs Hermes to use visual replies whenever interaction
-or structure helps, without requiring the user to name Herm UI or HTML. Calculators,
-simulations, and interactive graphics request complete offline HTML with inputs wired
-to update results immediately. Simple answers remain Markdown, and explicit requests
-for plain text, source code, or project/file changes retain their requested deliverable.
-
-Direct bot mentions use the same rendering guidance without opening the recipient's
-chat. Generation context belongs to the recipient's profile and session.
+Settings → Chat → Replies has a Generative UI toggle, on by default. Voice mode
+and Talk keep their generated visual previews. The dedicated review guide and
+artifact library retain their own presentation. Legacy rendering instructions
+remain hidden in chat. The shared session rule sets the Markdown default;
+written submissions do not append visual guidance.
 
 Hermes owns execution and transcripts; there is no additional workflow engine
 or operational store. Rendering instructions travel through
@@ -3100,12 +3094,12 @@ source reference and digest; they do not duplicate transcripts or provider recor
 Saving a tool stores its original reply reference. Export is an explicit user file.
 HTML DOM/input state is never persisted.
 
-A finished ```mermaid fence in an assistant reply renders as a `.dockCard` with a
+A finished ```mermaid fence in a generated preview can render as a `.dockCard` with a
 toolbar: the `mermaid` language label in metadata ink, a `DockSegmentedPicker`
 (Preview / Code), and compact secondary Copy and Expand actions. Preview is a
 native image scaled to fit the column (max 640 pt tall); Expand opens a
-`DockExpandedPage` at full size with scrolling. While the reply streams, or when
-Generative UI is off, the fence stays an ordinary code block. Render failures show
+`DockExpandedPage` at full size with scrolling. Written chat keeps the fence as an
+ordinary code block. Render failures show
 "Diagram unavailable", the reason, and a Show code link in the same card.
 Mermaid runs in one shared offscreen WebKit page with no network or storage, strict
 security level and SVG-only labels; the PNG result is cached per source and appearance.
@@ -5287,10 +5281,8 @@ and does not carry into the page.
 
 ### Generative visualization refinements
 
-When Generative UI is enabled, chat requests one surface on each turn. Short
-answers can use a native text block. Structured results use their matching
-blocks, and explicit output formats are preserved. The plugin keeps the full
-catalog available on demand without removing the per-turn request.
+Written chat does not request generated surfaces. Voice mode and Talk keep
+their visual previews, and the plugin keeps the catalog available on demand.
 
 A native `map` block shows a verified place pin with a spoken-friendly title. Voice
 previews disable map interaction and fit the map in the existing glance slot.

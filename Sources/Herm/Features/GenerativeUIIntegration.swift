@@ -23,7 +23,7 @@ enum GenerativeUIIntegration {
             reference: RichFeatureRegistry.sessionReference(context: context))
     }
 
-    /// Remind the model on each chat turn. The plugin still serves the full catalog and loaded records.
+    /// Dedicated artifact requests can still carry the full catalog when the plugin is unavailable.
     static func preparePrompt(
         _ text: String, enabled: Bool = isEnabled, context: RichGenerationContext = RichGenerationContext(),
         servedByPlugin: Bool = HermPlugin.isLoaded
@@ -68,7 +68,14 @@ enum GenerativeUIIntegration {
 
     @MainActor
     static func renderReply(_ text: String) -> some View {
-        renderReply(text) { renderMarkdown(text) }
+        renderReply(text) { MarkdownMessageView(markdown: text).equatable() }
+    }
+
+    @MainActor
+    static func renderArtifact(_ text: String) -> some View {
+        GenerativeReply(
+            text: text, streaming: false, override: nil, visualsOnly: false,
+            allowsVisuals: true, fallback: renderMarkdown(text))
     }
 
     @MainActor @ViewBuilder
@@ -77,7 +84,8 @@ enum GenerativeUIIntegration {
         @ViewBuilder fallback: () -> Content
     ) -> some View {
         GenerativeReply(
-            text: text, streaming: streaming, override: enabled, visualsOnly: visualsOnly, fallback: fallback())
+            text: text, streaming: streaming, override: enabled, visualsOnly: visualsOnly,
+            allowsVisuals: visualsOnly, fallback: fallback())
     }
 }
 
@@ -117,6 +125,7 @@ private struct GenerativeReply<Content: View>: View {
     let streaming: Bool
     let override: Bool?
     let visualsOnly: Bool
+    let allowsVisuals: Bool
     let fallback: Content
     @AppStorage(GenerativeUIIntegration.preferenceKey) private var enabled = true
     @State private var parsed: RichDocument?
@@ -128,7 +137,7 @@ private struct GenerativeReply<Content: View>: View {
         Group {
             if let request {
                 let document = parsedRequest?.canPresent(whileParsing: request) == true ? parsed : nil
-                if override ?? enabled {
+                if override ?? (allowsVisuals && enabled) {
                     RichDocumentView(
                         document: document ?? .preparing, enhancesMarkdown: !streaming, visualsOnly: visualsOnly,
                         readOnlySurfaces: streaming || (document != nil && parsedRequest?.streaming == true))

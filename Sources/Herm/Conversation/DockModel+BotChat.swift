@@ -77,11 +77,7 @@ extension DockModel {
         let sendGeneration = sessionResumeGeneration
         let visibleText = originalText ?? "@\(displayName) \(request)"
         let transcriptText = quote?.composing(visibleText) ?? visibleText
-        let relayMessage = GenerativeUIIntegration.preparePrompt(
-            Self.botRelayMessage(request: quote?.composing(request) ?? request, transcript: messages),
-            context: generationContext(
-                for: QuickDestination(
-                    profileID: profileID, sessionID: explicitBotSessionID, title: displayName)))
+        let relayMessage = Self.botRelayMessage(request: quote?.composing(request) ?? request, transcript: messages)
         if clearsComposer {
             draft = ""
             replyQuote = nil

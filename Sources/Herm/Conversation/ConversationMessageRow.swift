@@ -481,9 +481,7 @@ struct ConversationMessageRow: View, Equatable {
 
     private func messageMarkdownView(_ markdown: String) -> some View {
         let text = markdown.trimmingCharacters(in: .newlines)
-        return GenerativeUIIntegration.renderReply(text) {
-            GenerativeUIIntegration.renderMarkdown(text).fixedSize(horizontal: false, vertical: true)
-        }
+        return GenerativeUIIntegration.renderReply(text).fixedSize(horizontal: false, vertical: true)
     }
 
     private var userMessageReaction: some View {
