@@ -1,13 +1,28 @@
 #!/bin/bash
-# Run one CI shard of the test suites: Scripts/test-shard.sh <index> <count>
+# Build tests or run one CI shard: Scripts/test-shard.sh --build-only | <index> <count> [--skip-build]
 # Whole suites are assigned greedily by test count, so `.serialized` suites stay intact.
 set -euo pipefail
+usage() {
+    echo "Usage: $0 --build-only | <index> <count> [--skip-build]" >&2
+    exit 2
+}
+
+case $# in
+    1) [ "$1" = --build-only ] || usage ;;
+    2) ;;
+    3) [ "$3" = --skip-build ] || usage ;;
+    *) usage ;;
+esac
+
+cd "$(dirname "$0")/.."
+if [ "$#" -ne 3 ]; then
+    . Scripts/appintents.sh
+    reset_stale_metal_cache
+    swift build --build-tests --disable-automatic-resolution
+fi
+[ "$#" -ne 1 ] || exit 0
 index=$1
 count=$2
-cd "$(dirname "$0")/.."
-. Scripts/appintents.sh
-reset_stale_metal_cache
-swift build --build-tests --disable-automatic-resolution
 
 suites=$(swift test list --skip-build --disable-automatic-resolution |
     awk -F/ '/^HermTests\./ { sub(/^HermTests\./, "", $1); print $1 }' | sort | uniq -c | sort -k1,1nr -k2 |

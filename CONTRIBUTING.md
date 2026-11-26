@@ -49,8 +49,10 @@ versioned release DMG.
 ## CI and releases
 
 CI (`.github/workflows/ci.yml`) runs on every pull request and push to `main`.
-`guard` (`make guard` and launcher syntax) and `test` run in parallel on every
-run; pushes to `main` also run `release-build`. PRs skip the release build, so
+`guard` (`make guard` and launcher syntax) and one `test` job run in parallel on every
+run. The test job builds once, then runs three shards as separate serial steps.
+See the `Build tests` and `Test shard` step timings in Actions; runner queue delay
+is separate from those timings. Pushes to `main` also run `release-build`. PRs skip the release build, so
 run `make build-release` locally for changes that may fail only under
 optimization. The `verify` job passes only when every job that ran passed, and
 it is the required check on `main`.
@@ -128,6 +130,7 @@ swift test --disable-automatic-resolution --filter RepositoryCodeWorkspaceTests
 swift test --disable-automatic-resolution --filter HermesCapabilityServiceTests
 ```
 
+For a full local run, use `make test`; `make check` also runs the full suite.
 The full suite is required before merge. Network and live third-party accounts
 must not be required by tests; use deterministic fixtures and test doubles.
 
