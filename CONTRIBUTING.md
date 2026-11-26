@@ -54,7 +54,8 @@ run; pushes to `main` also run `release-build`. PRs skip the release build, so
 run `make build-release` locally for changes that may fail only under
 optimization. The `verify` job passes only when every job that ran passed, and
 it is the required check on `main`.
-A newer push to the same branch cancels the older run.
+A newer push to a pull request cancels its older run. Every `main` commit keeps
+its own run so releases can use the check for the exact tagged commit.
 
 `.github/workflows/release-dmg.yml` publishes two channels:
 
@@ -68,6 +69,14 @@ A newer push to the same branch cancels the older run.
   and attaches `Herm.dmg`. To release by hand instead, push a tag
   (`git tag v1.2.3 && git push origin v1.2.3`) or run the DMG workflow with a
   version. Either way it packages only a commit whose CI already passed.
+
+On `main`, `release-build` stages the unsigned app, including SwiftPM resources
+and App Intents metadata, as the `herm-release-app` artifact. Packaging downloads
+it from the passing CI run for the exact source commit, adds the Desktop plugin
+host, then stamps, signs, and verifies the DMG. Older commits or expired artifacts
+fall back to compiling from source. To recover a release after changing the
+workflow, start a new dispatch from `main` with the existing version and tag as
+`source_ref`. Rerunning the old workflow retains its old job settings.
 
 Both channels publish `Herm.dmg.sig`, an Ed25519 signature over the complete DMG.
 `HERM_UPDATE_PRIVATE_KEY` is an Actions secret; its public key is pinned as
