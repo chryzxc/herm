@@ -8,58 +8,107 @@ import Vision
 
 @MainActor
 struct VoiceOutputTests {
-    @Test func quickMenuOffersKokoroOnlyWhenItCanBeUsedOrIsAlreadySelected() {
-        #expect(VoiceOutputSettings.engineChoices(includesKokoro: false, selected: .hermes) == [.hermes, .apple])
+    @Test func quickMenuOffersKokoroBeforeDownloadOnSupportedMacs() {
         #expect(
-            VoiceOutputSettings.engineChoices(includesKokoro: true, selected: .apple) == [.hermes, .apple, .kokoro])
+            VoiceOutputSettings.engineChoices(supportsKokoro: false, selected: .hermes) == [.hermes, .apple, .natural])
         #expect(
-            VoiceOutputSettings.engineChoices(includesKokoro: false, selected: .kokoro) == [.hermes, .apple, .kokoro])
+            VoiceOutputSettings.engineChoices(supportsKokoro: true, selected: .apple)
+                == [.hermes, .apple, .natural, .kokoro])
+        #expect(VoiceOutputSettings.engineChoices(supportsKokoro: false, selected: .kokoro).contains(.kokoro))
     }
 
-    @Test(arguments: [false, true])
-    func quickMenuRendersTheSavedVoiceAndSpeed(dark: Bool) async throws {
+    @Test func naturalVoiceUsesTheAutomaticChoiceInsteadOfTheManualAppleVoice() {
+        let automatic = VoiceSpeechEngine.natural.localAppleVoice(identifier: "")
+        if let manual = VoiceSpeechEngine.appleVoices.first(where: { $0.identifier != automatic?.identifier }) {
+            #expect(
+                VoiceSpeechEngine.apple.localAppleVoice(identifier: manual.identifier)?.identifier == manual.identifier)
+            #expect(
+                VoiceSpeechEngine.natural.localAppleVoice(identifier: manual.identifier)?.identifier
+                    == automatic?.identifier)
+        }
+    }
+
+    @Test(arguments: [(false, VoiceSpeechEngine.apple), (true, .apple), (true, .kokoro), (true, .natural)])
+    func quickMenuRendersTheSavedVoiceAndSpeed(dark: Bool, engine: VoiceSpeechEngine) async throws {
         _ = NSApplication.shared
+        let previousTheme = DockThemeRuntime.current
+        let previousAppearance = NSApplication.shared.appearance
+        DockThemeRuntime.current = .glass
+        DockThemeRuntime.revision &+= 1
+        let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        NSApplication.shared.appearance = appearance
+        defer {
+            NSApplication.shared.appearance = previousAppearance
+            DockThemeRuntime.current = previousTheme
+            DockThemeRuntime.revision &+= 1
+        }
         let name = "herm.quick-voice-test." + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
-        defaults.set(VoiceSpeechEngine.apple.rawValue, forKey: VoiceSpeechEngine.outputKey)
+        defaults.set(engine.rawValue, forKey: VoiceSpeechEngine.outputKey)
         defaults.set(1.15, forKey: VoiceSpeechEngine.speedKey)
         defaults.set("classic", forKey: VoiceRecognitionPreference.engineKey)
+        let turnModel = TurnModelStore(
+            defaults: defaults, directory: FileManager.default.temporaryDirectory.appendingPathComponent(name))
 
         let host = NSHostingView(
-            rootView: VoiceOutputSettings(compact: true)
+            rootView: VoiceQuickSettings(recognitionStatus: VoiceRecognitionStatus(), turnModel: turnModel)
                 .defaultAppStorage(defaults)
                 .background(Color.dockOpaqueCanvas)
                 .dockThemedRoot())
         host.frame = CGRect(origin: .zero, size: host.fittingSize)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.appearance = appearance
         window.contentView = host
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
         try await Task.sleep(for: .milliseconds(200))
+        window.setContentSize(host.fittingSize)
         host.layoutSubtreeIfNeeded()
         #expect(host.bounds.width == 360)
-        #expect(host.fittingSize.height < 200)
+        #expect(host.fittingSize.height <= 440)
 
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
         if let dir = ProcessInfo.processInfo.environment["HERM_FOUNDATION_UI_DIR"] {
             let output = URL(fileURLWithPath: dir)
             try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            let rendered = engine == .apple ? (dark ? "dark" : "light") : engine.rawValue
             try #require(bitmap.representation(using: .png, properties: [:])).write(
-                to: output.appendingPathComponent(dark ? "quick-voice-dark.png" : "quick-voice-light.png"))
+                to: output.appendingPathComponent("quick-voice-\(rendered).png"))
         }
         let image = try #require(bitmap.cgImage)
         let request = VNRecognizeTextRequest()
         try VNImageRequestHandler(cgImage: image).perform([request])
         let text = request.results?.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ") ?? ""
-        let labels = ["Conversation voice", "Apple Speech", "Apple voice", "Preview", "Speaking speed", "Speech input"]
+        var labels = [
+            "Conversation voice", engine.title, "Preview", "Speaking speed", "Recognizer",
+            "Speech language", "Smart turn detection", "Download", "Wake word",
+        ]
+        if engine == .apple {
+            labels += ["Apple voice", "Acknowledge right away", "Announce aloud", "Activity cards"]
+            #expect(!text.contains("Kokoro setup"))
+            #expect(text.lowercased().components(separatedBy: "activity cards").count == 2)
+        } else if engine == .natural {
+            labels.append("Natural voice")
+            #expect(text.localizedCaseInsensitiveContains("Try Kokoro") == KokoroVoice.available)
+        } else if KokoroVoice.installed {
+            labels.append("Kokoro voice")
+        } else {
+            labels += ["Kokoro setup", "Apple voice"]
+            if KokoroVoice.available {
+                labels.append(KokoroVoice.installer == nil ? "Get uv" : "Install Kokoro")
+            }
+        }
         for label in labels {
             #expect(text.localizedCaseInsensitiveContains(label), "Missing \(label) from the quick voice menu: \(text)")
         }
-        #expect(text.filter { !$0.isWhitespace }.contains(1.15.formatted(.percent).filter { !$0.isWhitespace }))
-        #expect(!text.contains("Kokoro setup"))
+        let speed = 1.15.formatted(.percent).filter { !$0.isWhitespace }
+        let speedObservation = try #require(
+            request.results?.first {
+                $0.topCandidates(1).first?.string.filter { !$0.isWhitespace }.contains(speed) == true
+            })
+        #expect((1 - speedObservation.boundingBox.maxX) * host.bounds.width >= 17)
     }
 
     @Test func newOutputPreferenceOverridesTheLegacyMacVoiceToggle() {
@@ -71,6 +120,8 @@ struct VoiceOutputTests {
         #expect(VoiceSpeechEngine.selected(in: defaults) == .apple)
         defaults.set(VoiceSpeechEngine.kokoro.rawValue, forKey: VoiceSpeechEngine.outputKey)
         #expect(VoiceSpeechEngine.selected(in: defaults) == .kokoro)
+        defaults.set(VoiceSpeechEngine.natural.rawValue, forKey: VoiceSpeechEngine.outputKey)
+        #expect(VoiceSpeechEngine.selected(in: defaults) == .natural)
         defaults.set("unknown", forKey: VoiceSpeechEngine.outputKey)
         #expect(VoiceSpeechEngine.selected(in: defaults) == .apple)
     }

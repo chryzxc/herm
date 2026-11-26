@@ -267,18 +267,26 @@ final class TurnAudio: @unchecked Sendable {
 
 struct TurnModelSettingsView: View {
     @ObservedObject var store: TurnModelStore
+    var compact = false
 
     var body: some View {
-        SettingsPreferenceRow(
-            title: "Smart turn detection",
-            detail: detail
-        ) {
-            switch store.phase {
-            case .notInstalled, .failed:
-                Button(store.phase == .notInstalled ? "Download" : "Retry") { store.install() }
-                    .buttonStyle(.dockPrimary)
-            case .downloading(let fraction):
-                HStack(spacing: 8) {
+        if compact {
+            VoiceQuickRow(title: "Smart turn detection", detail: detail) { action }
+        } else {
+            SettingsPreferenceRow(title: "Smart turn detection", detail: detail) { action }
+        }
+    }
+
+    @ViewBuilder private var action: some View {
+        switch store.phase {
+        case .notInstalled, .failed:
+            Button(store.phase == .notInstalled ? "Download" : "Retry") { store.install() }
+                .buttonStyle(.dockPrimary)
+                .accessibilityLabel(
+                    store.phase == .notInstalled ? "Download Smart turn detection" : "Retry Smart turn detection")
+        case .downloading(let fraction):
+            HStack(spacing: 8) {
+                if !compact {
                     ProgressView(value: fraction)
                         .frame(width: 120)
                         .accessibilityLabel("Turn model download")
@@ -288,12 +296,13 @@ struct TurnModelSettingsView: View {
                         .lineLimit(1)
                         .fixedSize()
                         .frame(minWidth: 40, alignment: .trailing)
-                    Button("Cancel") { store.cancel() }
-                        .buttonStyle(.dockCompact)
-                        .dockFont(.body, weight: .medium)
                 }
-                .fixedSize(horizontal: true, vertical: false)
-            case .installed:
+                Button("Cancel") { store.cancel() }
+                    .buttonStyle(.dockSecondary)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+        case .installed:
+            if !compact {
                 Button("Remove") { store.remove() }
                     .buttonStyle(.dockCompact)
                     .dockFont(.body, weight: .medium)
@@ -306,12 +315,15 @@ struct TurnModelSettingsView: View {
         let size = ByteCountFormatter.string(fromByteCount: Int64(TurnModelStore.downloadSize), countStyle: .file)
         switch store.phase {
         case .notInstalled:
-            return
-                "Waits while you pause mid-sentence and replies as soon as you finish, from how you sound. Runs on this Mac (\(size))."
-        case .downloading:
-            return "Downloading the turn model (\(size))…"
+            return compact
+                ? "Waits through pauses · \(size)"
+                : "Waits while you pause mid-sentence and replies as soon as you finish, from how you sound. Runs on this Mac (\(size))."
+        case .downloading(let fraction):
+            return compact ? "Downloading… \(Int(fraction * 100))%" : "Downloading the turn model (\(size))…"
         case .installed:
-            return "Installed. Voice mode replies as soon as you finish a thought and waits through pauses."
+            return compact
+                ? "Installed on this Mac."
+                : "Installed. Voice mode replies as soon as you finish a thought and waits through pauses."
         case .failed(let reason):
             return reason
         }

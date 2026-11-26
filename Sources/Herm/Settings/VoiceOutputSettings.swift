@@ -14,13 +14,14 @@ struct VoiceOutputSettings: View {
     @State private var preview: Task<Void, Never>?
     @State private var previewFailed = false
     @State private var appleVoices: [(value: String, title: String)] = []
+    @State private var naturalVoiceName: String?
 
     init(compact: Bool = false) { self.compact = compact }
 
     private var engine: VoiceSpeechEngine { VoiceSpeechEngine(rawValue: output) ?? VoiceSpeechEngine.current }
     private var usesKokoro: Bool { engine == .kokoro && KokoroVoice.installed }
-    static func engineChoices(includesKokoro: Bool, selected: VoiceSpeechEngine) -> [VoiceSpeechEngine] {
-        VoiceSpeechEngine.allCases.filter { $0 != .kokoro || includesKokoro || selected == .kokoro }
+    static func engineChoices(supportsKokoro: Bool, selected: VoiceSpeechEngine) -> [VoiceSpeechEngine] {
+        VoiceSpeechEngine.allCases.filter { $0 != .kokoro || supportsKokoro || selected == .kokoro }
     }
 
     var body: some View {
@@ -33,15 +34,18 @@ struct VoiceOutputSettings: View {
 
     private var quickMenu: some View {
         VStack(alignment: .leading, spacing: 8) {
-            quickRow("Conversation voice") { outputPicker }
-            quickRow(voiceTitle) {
+            VoiceQuickRow(title: "Conversation voice") { outputPicker }
+            if needsKokoroSetup {
+                VoiceQuickRow(title: "Kokoro setup", detail: setupDescription) { kokoroSetupAction }
+            }
+            VoiceQuickRow(
+                title: voiceTitle,
+                detail: naturalVoiceSuggestion ?? (engine == .natural ? "Best installed Apple voice" : nil)
+            ) {
                 voicePicker
                 previewButton.fixedSize()
             }
-            quickRow("Speaking speed") { speedControls }
-
-            Divider().overlay(Color.dockBorderLight)
-            VoiceRecognitionQuickStatus()
+            VoiceQuickRow(title: "Speaking speed") { speedControls }
 
             if let quickNote {
                 Text(quickNote)
@@ -50,25 +54,15 @@ struct VoiceOutputSettings: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .dockPadding(12)
-        .frame(width: 360)
-    }
-
-    private func quickRow<Control: View>(_ title: String, @ViewBuilder control: () -> Control) -> some View {
-        HStack(spacing: 8) {
-            Text(title).dockFont(.body, weight: .semibold).foregroundStyle(Color.dockPrimaryText)
-            Spacer(minLength: 4)
-            control()
-        }
-        .frame(minHeight: 28)
     }
 
     private var quickNote: String? {
-        if previewFailed { return "Preview couldn’t play. Check Settings → Voice." }
-        if engine == .kokoro && !usesKokoro { return "Using Apple Speech until Kokoro is set up in Settings → Voice." }
+        if previewFailed && !usesKokoro { return "Preview couldn’t play. Check Settings → Voice." }
         if engine == .hermes { return "Apple voice and speed apply to local answers and notices." }
         return nil
     }
+
+    private var needsKokoroSetup: Bool { engine == .kokoro && (!usesKokoro || previewFailed) }
 
     @ViewBuilder private var settingsRows: some View {
         SettingsPreferenceRow(
@@ -80,25 +74,9 @@ struct VoiceOutputSettings: View {
             outputPicker
         }
 
-        if engine == .kokoro && (!usesKokoro || previewFailed) {
+        if needsKokoroSetup {
             Divider().overlay(Color.dockBorderLight)
-            SettingsPreferenceRow(title: "Kokoro setup", detail: setupDescription) {
-                if KokoroVoice.available {
-                    if KokoroVoice.installer == nil {
-                        Button("Get uv") {
-                            openURL(URL(string: "https://docs.astral.sh/uv/getting-started/installation/")!)
-                        }
-                        .buttonStyle(.dockSecondary)
-                    } else {
-                        Button(setup.installing ? "Installing…" : usesKokoro ? "Repair Kokoro" : "Install Kokoro") {
-                            stopPreview()
-                            setup.install()
-                        }
-                        .buttonStyle(.dockSecondary)
-                        .disabled(setup.installing)
-                    }
-                }
-            }
+            SettingsPreferenceRow(title: "Kokoro setup", detail: setupDescription) { kokoroSetupAction }
         }
 
         Divider().overlay(Color.dockBorderLight)
@@ -108,16 +86,22 @@ struct VoiceOutputSettings: View {
         }
 
         Divider().overlay(Color.dockBorderLight)
-        SettingsPreferenceRow(title: "Speaking speed", detail: "Applies to Apple Speech and Kokoro.") {
+        SettingsPreferenceRow(title: "Speaking speed", detail: "Applies to local voices.") {
             speedControls
         }
     }
 
-    private var voiceTitle: String { usesKokoro ? "Kokoro voice" : "Apple voice" }
+    private var voiceTitle: String {
+        if usesKokoro { return "Kokoro voice" }
+        return engine == .natural ? "Natural voice" : "Apple voice"
+    }
+
+    private var naturalVoiceSuggestion: String? {
+        engine == .natural && KokoroVoice.available ? "Try Kokoro for a more conversational English voice." : nil
+    }
 
     private var outputPicker: some View {
-        let includesKokoro = compact ? KokoroVoice.installed : KokoroVoice.available
-        let choices = Self.engineChoices(includesKokoro: includesKokoro, selected: engine).map {
+        let choices = Self.engineChoices(supportsKokoro: KokoroVoice.available, selected: engine).map {
             ($0.rawValue, $0.title)
         }
         return DockOptionPicker(placeholder: engine.title, selection: $output, options: choices)
@@ -162,7 +146,7 @@ struct VoiceOutputSettings: View {
 
     private var setupDescription: String {
         if !KokoroVoice.available { return "Kokoro requires Apple silicon. Apple Speech is active." }
-        if setup.installing { return "Downloading and checking Kokoro. Apple Speech is active until setup finishes." }
+        if setup.installing { return "Downloading and checking Kokoro. Apple Speech is active until it’s ready." }
         if setup.failed { return "Kokoro couldn’t finish setup. Check uv and your connection, then try again." }
         if previewFailed && usesKokoro { return "Check the runtime and model files, then try the preview again." }
         if KokoroVoice.installer == nil {
@@ -171,9 +155,37 @@ struct VoiceOutputSettings: View {
         return "Download the runtime and voice files once. Kokoro speaks offline after setup."
     }
 
+    @ViewBuilder private var kokoroSetupAction: some View {
+        if KokoroVoice.available {
+            if KokoroVoice.installer == nil, !setup.installing {
+                Button("Get uv") {
+                    openURL(URL(string: "https://docs.astral.sh/uv/getting-started/installation/")!)
+                }
+                .buttonStyle(.dockSecondary)
+            } else {
+                Button(kokoroSetupTitle) {
+                    stopPreview()
+                    setup.install()
+                }
+                .buttonStyle(.dockSecondary)
+                .disabled(setup.installing)
+            }
+        }
+    }
+
+    private var kokoroSetupTitle: String {
+        if setup.installing { return "Installing…" }
+        if setup.failed { return "Retry Kokoro" }
+        return usesKokoro ? "Repair Kokoro" : "Install Kokoro"
+    }
+
     private var voiceDescription: String {
         if previewFailed { return "The preview couldn’t play. Check the voice installation and try again." }
         if usesKokoro { return "English voice presets. Apple Speech handles other languages and playback failures." }
+        if engine == .natural {
+            let detail = "Automatically picks the best installed Apple voice for your Mac’s language."
+            return naturalVoiceSuggestion.map { "\(detail) \($0)" } ?? detail
+        }
         return "Choose an installed voice or let Herm match your Mac’s language."
     }
 
@@ -184,6 +196,12 @@ struct VoiceOutputSettings: View {
                 options: KokoroVoice.presets.map { ($0.id, $0.name) }, maxTitleWidth: compact ? 140 : nil
             )
             .accessibilityLabel("Kokoro voice")
+        } else if engine == .natural {
+            Text(naturalVoiceName ?? "Automatic")
+                .dockFont(.body)
+                .foregroundStyle(Color.dockSecondaryText)
+                .lineLimit(1)
+                .frame(maxWidth: compact ? 140 : nil, alignment: .trailing)
         } else {
             DockOptionPicker(
                 placeholder: "Automatic", selection: $appleVoice, options: appleVoices,
@@ -200,6 +218,7 @@ struct VoiceOutputSettings: View {
             return (voice.identifier, "\(voice.name) · \(language)")
         }.sorted { $0.1.localizedStandardCompare($1.1) == .orderedAscending }
         appleVoices = [("", "Automatic")] + voices
+        naturalVoiceName = VoiceSpeechEngine.natural.localAppleVoice(identifier: "")?.name
     }
 
     private func togglePreview() {

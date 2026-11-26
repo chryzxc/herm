@@ -2463,10 +2463,16 @@ opens at the top when the category changes.
   and needs installation. Its status stays in that row while Apple Speech remains available.
   When Hermes Agent speaks chat replies, the Apple picker still applies to local answers
   and notices.
-  The rail gear menu’s Voice submenu shares those preferences in three compact rows for
-  conversation voice, local voice with Preview, and speaking speed, with speech input
-  status below. With Apple Speech selected, the menu stays under 200pt tall in Light and
-  Dark. It offers Kokoro once installed and leaves wake and other advanced options in Settings.
+  Natural automatically picks an installed Apple voice for the Mac’s language without
+  replacing the user’s manual Apple Speech selection. It shares the same preview and speed.
+  Both menus suggest Kokoro as a conversational English alternative when the Mac supports it.
+  The rail gear menu’s Voice submenu puts output controls first, then recognizer and speech
+  language, Smart turn detection, and the wake, acknowledgment, announcement, and activity
+  toggles. It shares the same preferences and model setup progress as full Settings. On Apple
+  silicon, selecting Kokoro before setup shows the install or prerequisite action in place.
+  The quick menu scrolls when necessary and caps at 440pt. A trailing gutter keeps the
+  scrollbar clear of the controls. Voice access to the front app,
+  shortcut configuration, and contacts stay in full Settings.
 - **Gateway service.** Gateway shows the default-profile messaging gateway's
   running, stopped, or unavailable status with a dot and text. Refresh every
   15 seconds while visible and on demand. Keep progress and failures in fixed
@@ -4002,7 +4008,7 @@ recognizer's final result (at most 0.6 s after the pause when words were heard),
 rescored final replaces the partial instead of repeating it. Speech starts with the
 finished sentences before a code, link or `herm-ui` marker; the rest waits for the
 completed reply. Settings → Voice → Conversation voice selects Hermes Agent, Apple Speech,
-or Kokoro. The selected local engine also speaks direct results and notices. With Apple
+Natural, or Kokoro. The selected local engine also speaks direct results and notices. With Apple
 Intelligence, a short utterance that mentions a panel or hiding but misses the
 keyword commands is classified on device into close or one tab; anything else, or
 no answer within 1.2 s, goes to the agent unchanged. Each completed turn logs its
