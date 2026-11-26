@@ -79,7 +79,7 @@ struct OfficeActivityRegressionTests {
         #expect(OfficePreviewInteractionPlan.make(agents: agents.reversed()).stations == plan.stations)
     }
 
-    @Test func defaultProfileRemainsVisibleWhenNoMainSessionRepresentsIt() {
+    @Test func defaultProfileKeepsItsDeskWhenTheMainSessionIsIdle() {
         let bot = BotSummary(
             id: "nexus", name: "Nexus", title: nil, description: nil, model: nil,
             isActive: false, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
@@ -91,6 +91,9 @@ struct OfficeActivityRegressionTests {
             sessions: [
                 .init(id: "chat", title: "Chat", state: "idle", isCurrent: true, activities: [])
             ])
-        #expect(simulation.agents.map(\.id) == ["main-session:chat"])
+        #expect(simulation.agents.map(\.id) == ["nexus"])
+        #expect(simulation.agents.first?.ownsMainOffice == true)
+        #expect(simulation.agents.first?.reportedWork.isEmpty == true)
+        #expect(simulation.agents.first?.isAtWork == false)
     }
 }
