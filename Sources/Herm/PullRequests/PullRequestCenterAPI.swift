@@ -106,11 +106,14 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
     }
 
     func index(repository: GitHubRepositoryReference, localPath: String) async -> Result<
-        [PullRequestRecord], PullRequestCenterFailure
+        GitHubPage<PullRequestRecord>, PullRequestCenterFailure
     > {
         do {
             let page = try await client.pages(repository.apiRepositoryPath + "/pulls", query: ["state": "open"])
-            return .success(page.rows.compactMap { parse($0, repository: repository, localPath: localPath) })
+            return .success(
+                GitHubPage(
+                    items: page.rows.compactMap { parse($0, repository: repository, localPath: localPath) },
+                    coverage: page.coverage))
         } catch { return .failure(PullRequestCenterFailure(repository: repository.id)) }
     }
 

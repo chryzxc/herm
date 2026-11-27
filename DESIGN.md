@@ -4419,6 +4419,10 @@ events, and main-agent tool activity.
 
 ### Pull requests and Issues metadata
 
+When repository open-PR pagination is incomplete, session and attached-repository
+fallback lists retain retrieved rows and show a warning in their existing status
+area. A complete refresh clears the warning; other diagnostics remain visible.
+
 When a pull request chat closes, Herm keeps the most recent idle chats ready to
 reopen. Open chats, running turns, and unsent drafts stay available.
 

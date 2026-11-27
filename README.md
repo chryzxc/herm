@@ -863,6 +863,7 @@ Selected pull request and issue cards use a themed fill and outline. Wide pull r
 
 - PR summaries use a violet branch-route icon and baseline-aligned reviewer and conflict-warning icons. The reviewer picker provides a searchable, aligned checkbox list and reports when no reviewers match. Reviewer and metadata pickers center their initial loading indicators.
 - Open pull requests for the session's repository, with check status, review state, blockers, and deep links. The **Merged** filter includes the repository's merged PRs from the last 14 days, including PRs by other contributors; unavailable merged history is reported without hiding open PRs.
+- If a repository's open pull request list only partly loads, the session and attached-repository fallback keep the retrieved rows and show a warning. A complete refresh clears the warning.
 - The session header shows Pull Requests only when the session is connected to a project or repository.
 - Pull request filters adapt to narrow panes with a compact selection menu; session search stays in the full-width first row, matching the Issues layout.
 - Pull request and issue headers provide one GitHub open button; the actions menu keeps editing and Copy link.

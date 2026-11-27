@@ -82,7 +82,7 @@ struct SessionPullRequestsSurface: View {
     private var pullRequestList: some View {
         VStack(spacing: 0) {
             filterBar
-            if let error = center.errorMessage {
+            if let error = center.listWarning {
                 Text(error)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)

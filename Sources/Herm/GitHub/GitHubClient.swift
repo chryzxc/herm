@@ -218,6 +218,9 @@ struct GitHubClient: Sendable {
                     }
                 } catch { return try keepPartial(after: error) }
             }
+            if !search, last <= limit, coverage.total == nil {
+                return GitHubRawPage(rows: rows, coverage: coverage)
+            }
         } else {
             for page in 2...limit {
                 do {

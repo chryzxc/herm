@@ -84,11 +84,14 @@ struct PullRequestWorkspace: View {
             Text(
                 center.isRefreshing
                     ? "Loading \(center.browsing.state.rawValue.lowercased()) pull requests…"
-                    : (center.errorMessage ?? center.coverage ?? "\(center.visible.count) pull requests")
+                    : (center.listWarning ?? center.coverage ?? "\(center.visible.count) pull requests")
             )
             .dockFont(.metadata).foregroundStyle(
-                center.errorMessage != nil ? Color.dockWarning : Color.dockMetadataText
-            ).lineLimit(2).frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).dockPadding(.horizontal, 18)
+                center.listWarning != nil ? Color.dockWarning : Color.dockMetadataText
+            )
+            .lineLimit(center.hasPartialRepositoryCoverage ? nil : 3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).dockPadding(.horizontal, 18)
             ScrollView {
                 LazyVStack(spacing: 2) {
                     if center.isInitialLoad || (center.isRefreshing && center.browsing != loadedBrowse) {
