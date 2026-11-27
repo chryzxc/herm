@@ -25,6 +25,11 @@ extension DockPopover {
             return current.sessionID == destination.sessionID && current.profileID == destination.profileID
         }
         let projectPath = activeSessionRepositoryScope?.repositoryPath ?? activeSessionRepositoryPath
+        func isCurrentRepository(_ centerPath: String?) -> Bool {
+            guard isCurrent(), let projectPath else { return false }
+            return (activeSessionRepositoryScope?.repositoryPath ?? activeSessionRepositoryPath) == projectPath
+                && centerPath == projectPath
+        }
         let directory =
             model.sessionWorkspace?.cwd ?? projectPath ?? FileManager.default.homeDirectoryForCurrentUser.path
         let identity = WorkspaceIdentity.session(model)
@@ -56,21 +61,40 @@ extension DockPopover {
                     ensureInspectorPanelVisible()
                 },
             features: [
-                .init(kind: .pullRequest, ids: { [weak prs] in prs?.records.map(\.id) ?? [] }) { id in
-                    guard isCurrent(), let record = sessionPullRequestCenter.records.first(where: { $0.id == id })
+                .init(
+                    kind: .pullRequest,
+                    ids: { [weak prs] in
+                        guard let prs, isCurrentRepository(prs.scopedRepositoryPath) else { return [] }
+                        return prs.records.map(\.id)
+                    }
+                ) { id in
+                    guard isCurrentRepository(sessionPullRequestCenter.scopedRepositoryPath),
+                        let record = sessionPullRequestCenter.records.first(where: { $0.id == id })
                     else { return nil }
                     return .init(title: record.title, detail: "Last loaded pull request · \(record.state)") {
-                        guard isCurrent() else { return }
+                        guard isCurrentRepository(sessionPullRequestCenter.scopedRepositoryPath),
+                            sessionPullRequestCenter.records.contains(where: { $0.id == record.id })
+                        else { return }
                         sessionPullRequestCenter.selectedID = record.id
                         showSessionRailInspector(.pullRequests)
                     }
                 },
-                .init(kind: .issue, ids: { [weak issues] in issues?.records.map(\.id) ?? [] }) { id in
-                    guard isCurrent(), let record = sessionIssueCenter.records.first(where: { $0.id == id }) else {
+                .init(
+                    kind: .issue,
+                    ids: { [weak issues] in
+                        guard let issues, isCurrentRepository(issues.scopedRepositoryPath) else { return [] }
+                        return issues.records.map(\.id)
+                    }
+                ) { id in
+                    guard isCurrentRepository(sessionIssueCenter.scopedRepositoryPath),
+                        let record = sessionIssueCenter.records.first(where: { $0.id == id })
+                    else {
                         return nil
                     }
                     return .init(title: record.title, detail: "Last loaded issue · \(record.state)") {
-                        guard isCurrent() else { return }
+                        guard isCurrentRepository(sessionIssueCenter.scopedRepositoryPath),
+                            sessionIssueCenter.records.contains(where: { $0.id == record.id })
+                        else { return }
                         sessionIssueCenter.selectedIssueID = record.id
                         showSessionRailInspector(.issues)
                     }

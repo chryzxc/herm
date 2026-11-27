@@ -22,6 +22,8 @@ final class IssueCenterModel: ObservableObject {
     @Published private(set) var accessRequirement: GitHubAccessRequirement?
     @Published private(set) var errorMessage: String?
     @Published private(set) var hasLoaded = false
+    @Published private(set) var scopedRepositoryPath: String?
+    private var scopedRepositoryID: String?
     @Published var viewerLogin: String? { didSet { invalidateVisible() } }
     @Published var selectedIssueID: String? {
         didSet {
@@ -208,28 +210,39 @@ final class IssueCenterModel: ObservableObject {
     /// Session-scoped refresh: open issues of one local repository only.
     func refreshScoped(repositoryPath: String) async {
         guard !Task.isCancelled else { return }
+        if scopedRepositoryPath != repositoryPath {
+            resetScopedProjection()
+            scopedRepositoryPath = repositoryPath
+            scopedRepositoryID = nil
+        }
         let token = UUID()
         generation = token
         isRefreshing = true
         errorMessage = nil
+        loadingDetailID = nil
         defer { if token == generation { isRefreshing = false } }
         let remote = await RepositoryService.githubRemote(path: repositoryPath)
         guard token == generation, !Task.isCancelled else { return }
+        if remote == nil || (scopedRepositoryID != nil && scopedRepositoryID != remote?.id.lowercased()) {
+            resetScopedProjection()
+        }
+        scopedRepositoryID = remote?.id.lowercased()
         guard let remote else {
-            records = []
-            selectedIssueID = nil
             errorMessage = "This session's repository has no GitHub remote."
             return
         }
         async let viewerLookup = api.viewer()
         let page = try? await api.searchPage(
             "repo:\(remote.id) is:issue is:open", localPaths: [remote.id: repositoryPath])
-        if case .success(let viewer) = await viewerLookup { viewerLogin = viewer }
+        let viewerResult = await viewerLookup
         guard token == generation, !Task.isCancelled else { return }
+        if case .success(let viewer) = viewerResult { viewerLogin = viewer }
         guard let page else {
-            if records.isEmpty {
-                errorMessage = "GitHub could not load issues for \(remote.id). Check your sign-in and try again."
-            }
+            errorMessage =
+                records.isEmpty
+                ? "GitHub could not load issues for \(remote.id). Check your sign-in and try again."
+                : "Showing last loaded issues for \(remote.id). Refresh to retry."
+            repairSelection()
             return
         }
         records = page.items.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
@@ -238,6 +251,14 @@ final class IssueCenterModel: ObservableObject {
         hasLoaded = true
         errorMessage = nil
         repairSelection()
+    }
+
+    private func resetScopedProjection() {
+        hasLoaded = false
+        records = []
+        selectedIssueID = nil
+        changedIDs.removeAll()
+        coverage = nil
     }
 
     @discardableResult
