@@ -11,6 +11,8 @@ struct InspectorPresentation: Codable {
     var selectedExtra: UUID?
     var selectedBrowser: Int?
     var simulatorSections: [String]?
+    /// Optional proof of ownership for legacy presentation records.
+    var browserOwner: SessionBrowserKey?
 
     /// Activity became Trace, which became Timeline.
     static func migratedTab(_ value: String) -> String { value == "Activity" || value == "Trace" ? "Timeline" : value }
@@ -42,6 +44,25 @@ final class WorkspacePresentationStore {
     }
     func save(_ value: InspectorPresentation, identity: String) {
         if let data = try? JSONEncoder().encode(value) { defaults.set(data, forKey: key(identity)) }
+    }
+    func browserIdentity(_ browser: SessionBrowserKey) -> String {
+        WorkspaceIdentity.session(profileID: browser.profileID, sessionID: browser.sessionID)
+            + ":browser:" + browser.profileDirectory
+    }
+    static func browserRestored(_ restored: SessionBrowserKey?, current: SessionBrowserKey?) -> Bool {
+        current != nil && restored == current
+    }
+    func loadBrowser(_ browser: SessionBrowserKey) -> InspectorPresentation? {
+        if let saved = load(browserIdentity(browser)) { return saved }
+        let legacyIdentity = WorkspaceIdentity.session(profileID: browser.profileID, sessionID: browser.sessionID)
+        guard let legacy = load(legacyIdentity), legacy.browserOwner == browser else { return nil }
+        let migrated = InspectorPresentation(
+            browserURL: legacy.browserURL, browserTabs: legacy.browserTabs, selectedBrowser: legacy.selectedBrowser)
+        saveBrowser(migrated, for: browser)
+        return migrated
+    }
+    func saveBrowser(_ value: InspectorPresentation, for browser: SessionBrowserKey) {
+        save(value, identity: browserIdentity(browser))
     }
     static func restorableBrowserURL(_ text: String) -> String? {
         guard var parts = URLComponents(string: text), ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),

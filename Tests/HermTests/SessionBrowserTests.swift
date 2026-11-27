@@ -202,6 +202,33 @@ struct SessionBrowserTests {
         #expect(store.workspace(for: a).agent !== agent)
     }
 
+    @Test func deletingReleasedSessionStopsOnlyItsLastProfileBrowser() async throws {
+        let client = BrowserHandoffRPCClient()
+        let model = DockModel(initialSessionID: "a", loadArchives: false, rpcClient: client)
+        model.profileScopeID = "first"
+        defer { model.delegationMonitoringTask?.cancel() }
+        let store = SessionBrowserStore()
+        let first = try #require(model.browserSessionKey)
+        store.activate(model: model)
+        let agent = store.workspace(for: first).agent
+        await agent.browserDidStart(endpoint: client.endpoint)?.value
+        model.sessionStorageID = "b"
+        store.activate(model: model)
+        let second = try #require(model.browserSessionKey)
+        store.delete(first)
+        #expect(agent.state == .running)
+        model.profileScopeID = "other"
+        store.activate(model: model)
+        store.delete(second)
+        #expect(agent.state == .off)
+        let foreground = store.workspace(for: try #require(model.browserSessionKey)).agent
+        await foreground.browserDidStart(endpoint: client.endpoint)?.value
+        #expect(client.requests.contains {
+            $0["action"] as? String == "disconnect" && $0["profile"] as? String == "first"
+        })
+        foreground.stop()
+    }
+
     @Test func reapsOnlyOrphanedAgentBrowserChromes() {
         let root = "/Users/me/Library/Application Support/Herm/AgentBrowser"
         let chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new"
@@ -231,6 +258,58 @@ struct SessionBrowserTests {
         #expect(!a.profileDirectory.contains("chat"))
     }
 
+    @Test func switchingBotChatsKeepsEachProfilesPageAndNavigation() async throws {
+        let model = DockModel(initialSessionID: "shared-chat", loadArchives: false, rpcClient: BrowserHandoffRPCClient())
+        model.profileScopeID = "workspace-profile"
+        let store = SessionBrowserStore()
+        let firstURL = try #require(URL(string: "https://example.com/first"))
+        let secondURL = try #require(URL(string: "https://example.com/second"))
+        let nextURL = try #require(URL(string: "https://example.com/next"))
+
+        model.sessionProfileID = "bot-one"
+        let firstKey = try #require(model.browserSessionKey)
+        store.activate(model: model)
+        let first = store.workspace(for: firstKey)
+        _ = first.addTab()
+        first.primary.web.loadHTMLString("<title>First profile page</title>", baseURL: firstURL)
+        first.agent.navigate(firstURL)
+
+        model.sessionProfileID = "bot-two"
+        let secondKey = try #require(model.browserSessionKey)
+        store.activate(model: model)
+        let second = store.workspace(for: secondKey)
+        _ = second.addTab()
+        #expect(second.agent !== first.agent)
+        #expect(second.agent.pendingURL == nil)
+        second.primary.web.loadHTMLString("<title>Second profile page</title>", baseURL: secondURL)
+        second.agent.navigate(secondURL)
+        for _ in 0..<100 {
+            if first.tabTitle() == "First profile page", second.tabTitle() == "Second profile page" { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(first.tabTitle() == "First profile page")
+        #expect(second.tabTitle() == "Second profile page")
+
+        model.sessionProfileID = "bot-one"
+        store.activate(model: model)
+        #expect(model.browserSessionKey == firstKey)
+        #expect(store.workspace(for: firstKey).agent.pendingURL == firstURL)
+        #expect(store.workspace(for: firstKey).tabTitle() == "First profile page")
+        _ = try await first.primary.web.evaluateJavaScript("document.title = 'First navigated'")
+        for _ in 0..<100 {
+            if first.tabTitle() == "First navigated" { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        first.agent.navigate(nextURL)
+        model.sessionProfileID = "bot-two"
+        store.activate(model: model)
+        #expect(model.browserSessionKey == secondKey)
+        #expect(store.workspace(for: secondKey).agent.pendingURL == secondURL)
+        #expect(store.workspace(for: secondKey).tabTitle() == "Second profile page")
+        #expect(first.tabTitle() == "First navigated")
+        #expect(first.agent.pendingURL == nextURL)
+    }
+
     @Test func runtimeAliasesKeepTheStoredSessionsBrowser() {
         let model = DockModel(initialSessionID: "stored-session")
         let key = model.browserSessionKey
@@ -245,7 +324,8 @@ struct SessionBrowserTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = DockModel(defaults: defaults, initialSessionID: "browser-chat", rpcClient: client)
-        model.profileScopeID = profile
+        model.profileScopeID = "workspace-profile"
+        model.sessionProfileID = profile
         defer { model.delegationMonitoringTask?.cancel() }
 
         try await model.setHermesBrowser(cdpURL: client.endpoint)
@@ -284,7 +364,7 @@ struct SessionBrowserTests {
         model.profileScopeID = "other-profile"
         client.releaseStatus()
         await switched?.value
-        #expect(!browser.handoffFailed)
+        #expect(browser.handoffFailed)
         model.profileScopeID = "lifecycle-test"
         client.holdStatus = true
         client.statusFails = true
@@ -302,6 +382,28 @@ struct SessionBrowserTests {
         await restarted?.value
         #expect(!browser.handoffFailed)
         browser.stop()
+    }
+
+    @Test func backgroundBrowserHandoffAndDeletionKeepTheirOwner() async throws {
+        let client = BrowserHandoffRPCClient()
+        let model = DockModel(initialSessionID: "chat", loadArchives: false, rpcClient: client)
+        model.profileScopeID = "workspace"
+        model.sessionProfileID = "first"
+        defer { model.delegationMonitoringTask?.cancel() }
+        let browser = AgentBrowser(profileID: "first")
+        browser.model = model
+        model.sessionProfileID = "second"
+        let handoff = browser.browserDidStart(endpoint: client.endpoint)
+        await handoff?.value
+        browser.stop()
+        let foreground = AgentBrowser(profileID: "second")
+        foreground.model = model
+        await foreground.browserDidStart(endpoint: client.endpoint)?.value
+        let actions = client.requests.compactMap { $0["action"] as? String }
+        let profiles = client.requests.compactMap { $0["profile"] as? String }
+        #expect(actions == ["status", "connect", "disconnect", "status", "connect"])
+        #expect(profiles == ["first", "first", "first", "second", "second"])
+        foreground.stop()
     }
 
     @Test func browserHandoffDoesNotReconnectAnAlreadySharedBrowser() async throws {
@@ -356,16 +458,20 @@ struct SessionBrowserTests {
     @Test func browserHandoffCapturesProfileDuringStatus() async throws {
         let client = BrowserHandoffRPCClient()
         let model = DockModel(initialSessionID: "browser-chat", rpcClient: client)
-        model.profileScopeID = "original-profile"
-        model.sessionProfileID = "stale-profile"
+        model.profileScopeID = "workspace-profile"
+        model.sessionProfileID = "original-profile"
         client.holdStatus = true
         defer { model.delegationMonitoringTask?.cancel() }
-        let handoff = Task { try await model.setHermesBrowser(cdpURL: client.endpoint) }
+        let browser = AgentBrowser(profileID: "original-profile")
+        browser.model = model
+        let handoff = browser.browserDidStart(endpoint: client.endpoint)
         await client.waitForStatus()
         model.profileScopeID = "new-profile"
+        model.sessionProfileID = "new-profile"
         client.releaseStatus()
-        try await handoff.value
+        await handoff?.value
         #expect(client.requests.compactMap { $0["profile"] as? String } == ["original-profile", "original-profile"])
+        browser.stop()
     }
 
     @Test(arguments: [nil, ""] as [String?])

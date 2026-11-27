@@ -249,7 +249,8 @@ struct SessionBrowserView: View {
         .onAppear {
             browser.model = model
             if isPrimary, browser.currentURL == nil, browser.address.isEmpty || browser.address == "about:blank",
-                let restored = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))?.browserURL
+                let key = model.browserSessionKey,
+                let restored = WorkspacePresentationStore.shared.loadBrowser(key)?.browserURL
             {
                 browser.address = restored
             }
@@ -268,11 +269,10 @@ struct SessionBrowserView: View {
             guard let url, !showsAgent else { return }
             if !isEditingAddress { field = displayAddress(url) }
             browser.address = url
-            guard isPrimary else { return }
-            let key = WorkspaceIdentity.session(model)
-            var presentation = WorkspacePresentationStore.shared.load(key) ?? InspectorPresentation()
+            guard isPrimary, let key = model.browserSessionKey else { return }
+            var presentation = WorkspacePresentationStore.shared.loadBrowser(key) ?? InspectorPresentation()
             presentation.browserURL = WorkspacePresentationStore.restorableBrowserURL(url)
-            WorkspacePresentationStore.shared.save(presentation, identity: key)
+            WorkspacePresentationStore.shared.saveBrowser(presentation, for: key)
         }
         .onChange(of: agent.activePage, initial: true) { _, page in
             guard showsAgent, let url = page?.url else { return }
