@@ -41,6 +41,19 @@ private actor GitHubPageTransport: GitHubIssueTransport {
 }
 
 struct GitHubPageLoadingTests {
+    @Test func mergedLookbackUsesInclusiveFourteenDayBoundary() async throws {
+        let now = try Date("2026-03-01T00:00:00Z", strategy: .iso8601)
+        let transport = try GitHubPageTransport(responses: [
+            "/search/issues?is:pr is:open author:ada": ["items": []],
+            "/search/issues?is:pr is:open review-requested:ada": ["items": []],
+            "/search/issues?is:pr is:merged involves:ada merged:>=2026-02-15": ["items": []],
+        ])
+        let api = PullRequestCenterAPI(transport: transport, now: { now })
+        let page = try await api.workPage(viewer: "ada", localPaths: [:])
+        #expect(!page.coverage.partial)
+        #expect(api.mergedLookbackDate == "2026-02-15")
+    }
+
     @MainActor @Test(arguments: [true, false])
     func repositoryPullRequestCoverageSurvivesLaterPageFailure(scoped: Bool) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-pr-pages-" + UUID().uuidString)
@@ -131,6 +144,7 @@ struct GitHubPageLoadingTests {
 
     @MainActor @Test(arguments: [true, false])
     func sessionRepositoryIncludesMergedHistoryWithoutHidingOpenPRs(historyAvailable: Bool) async throws {
+        let now = try Date("2026-03-01T00:00:00Z", strategy: .iso8601)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-scoped-pr-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -146,8 +160,8 @@ struct GitHubPageLoadingTests {
         merged["number"] = 20
         merged["state"] = "closed"
         merged["user"] = ["login": "another-contributor"]
-        merged["pull_request"] = ["merged_at": "2026-10-22T00:00:00Z"]
-        let since = Date.now.addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
+        merged["pull_request"] = ["merged_at": "2026-02-15T00:00:00Z"]
+        let since = "2026-02-15"
         var responses: [String: Any] = [
             "/user": ["login": "ada"],
             "/repos/owner/repo/pulls": [searchRow],
@@ -156,7 +170,7 @@ struct GitHubPageLoadingTests {
             responses["/search/issues?is:pr is:merged repo:owner/repo merged:>=\(since)"] = ["items": [merged]]
         }
         let transport = try GitHubPageTransport(responses: responses)
-        let center = PullRequestCenterModel(api: PullRequestCenterAPI(transport: transport))
+        let center = PullRequestCenterModel(api: PullRequestCenterAPI(transport: transport, now: { now }))
         await center.refreshScoped(repositoryPath: root.path)
 
         #expect(center.hasLoaded)
