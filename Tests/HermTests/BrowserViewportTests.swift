@@ -128,6 +128,11 @@ struct BrowserViewportTests {
         #expect(first.viewers == 0)
         #expect(second.viewers == 1)
         #expect(second.panelSize == NSSize(width: 640, height: 400))
+        let otherWindow = NSWindow(
+            contentRect: other.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        otherWindow.contentView = other
+        defer { otherWindow.contentView = nil }
+        #expect(first.viewers == 1)
         first.frameUpdates.send((NSImage(size: NSSize(width: 1000, height: 800)), NSSize(width: 1000, height: 800)))
         second.frameUpdates.send((NSImage(size: NSSize(width: 1280, height: 800)), NSSize(width: 1280, height: 800)))
         #expect(other.pageRect.width == 500)
@@ -144,6 +149,8 @@ struct BrowserViewportTests {
         canvas.browser = second
         #expect(second.viewers == 1)
         window.contentView = nil
+        otherWindow.contentView = nil
+        #expect(first.viewers == 0)
         #expect(second.viewers == 0)
     }
 
