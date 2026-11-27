@@ -30,7 +30,8 @@ struct WorkspaceRecoveryTests {
         let second = SessionBrowserKey(profileID: "bot-two", sessionID: "same-chat")
         store.save(InspectorPresentation(selected: "Terminal"), identity: "workspace")
         store.saveBrowser(
-            InspectorPresentation(browserURL: "https://example.com/a", browserTabs: ["https://example.com/a/extra"],
+            InspectorPresentation(
+                browserURL: "https://example.com/a", browserTabs: ["https://example.com/a/extra"],
                 selectedBrowser: 0), for: first)
         #expect(store.loadBrowser(second) == nil)
         store.saveBrowser(

@@ -134,7 +134,9 @@ struct GroupChatOpeningTests {
         host.layoutSubtreeIfNeeded()
         #expect(try visibleText(in: host).contains("Stored message 80"))
 
-        client.arrivals = [("message.member", "main", "Fresh reply with enough words to wrap across the group transcript")]
+        client.arrivals = [
+            ("message.member", "main", "Fresh reply with enough words to wrap across the group transcript")
+        ]
         await store.poll("existing")
         try await Task.sleep(for: .milliseconds(200))
         host.layoutSubtreeIfNeeded()

@@ -72,7 +72,8 @@ struct EdgeQuickConversationTests {
         let directory = model.agentStateStore.fileURL.deletingLastPathComponent().lastPathComponent
         let domain = directory.replacingOccurrences(of: "herm-quick-chat-", with: "herm.quick-chat.presentation.")
         model.defaults.set("marker", forKey: "projection-test-marker")
-        #expect(UserDefaults.standard.persistentDomain(forName: domain)?["projection-test-marker"] as? String == "marker")
+        #expect(
+            UserDefaults.standard.persistentDomain(forName: domain)?["projection-test-marker"] as? String == "marker")
         workspace.defaultReasoningVariant = .low
         #expect(model.defaultReasoningVariant == nil)
         model.draft = "quick draft"
@@ -106,6 +107,7 @@ struct EdgeQuickConversationTests {
         workspace.draft = "Keep this draft"
         let projection = EdgeQuickConversationModel()
         let voice = projection.prepareVoice(runtime: workspace)
+        #expect(voice.profileScopeID == nil)
         voice.voiceAssistant.hasRecognition = { true }
         defer {
             projection.shutdown()

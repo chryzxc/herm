@@ -27,7 +27,7 @@ final class DisposableChatProjection {
     private var reasoningLink: AnyCancellable?
 
     init(
-        surface: Surface, profileID: String, sessionID: String?, runtime: DockModel,
+        surface: Surface, profileID: String?, sessionID: String?, runtime: DockModel,
         voiceTimers: VoiceTimerBoard? = nil, identity: String = UUID().uuidString
     ) {
         suite = "herm.\(surface.prefix).presentation." + identity
@@ -42,7 +42,9 @@ final class DisposableChatProjection {
             voiceCapture: surface == .quick ? runtime.voiceCapture : nil)
         connectionLink = runtime.$isHermesConnected.sink { [weak model] in model?.isHermesConnected = $0 }
         if surface.followsReasoning {
-            reasoningLink = runtime.$defaultReasoningVariant.sink { [weak model] in model?.defaultReasoningVariant = $0 }
+            reasoningLink = runtime.$defaultReasoningVariant.sink { [weak model] in
+                model?.defaultReasoningVariant = $0
+            }
         }
         eventOwner = runtime
         eventSubscription = model.subscribeSessionEvents(from: runtime.eventRouter, requestedSessionID: sessionID)
