@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.3](https://github.com/chryzxc/herm/compare/v0.5.2...v0.5.3) (2026-11-27)
+
+
+### Bug Fixes
+
+* isolate chat section toggles from workspace updates ([de80ca4](https://github.com/chryzxc/herm/commit/de80ca401f9757f52cbec95876ae99ba8d2cd5f2))
+* isolate chat section toggles from workspace updates ([2eadf6f](https://github.com/chryzxc/herm/commit/2eadf6fdd120e99b0e048c552e741d38bfc129a0))
+* render the latest chat section disclosure state ([9e6bf79](https://github.com/chryzxc/herm/commit/9e6bf793db47317c592bc2e0874ef608d916688e))
+* render the latest chat section disclosure state ([bb4ce76](https://github.com/chryzxc/herm/commit/bb4ce76d5e51a9ec9771417ef65080c0461684b1))
+
+
+### Performance Improvements
+
+* **ci:** build test binaries once for all shards ([4a06b3d](https://github.com/chryzxc/herm/commit/4a06b3dfba9cc864690e78226efbc73615e11696))
+
 ## [0.5.2](https://github.com/chryzxc/herm/compare/v0.5.1...v0.5.2) (2026-11-26)
 
 
