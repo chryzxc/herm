@@ -87,8 +87,11 @@ final class PullRequestCenterModel: ObservableObject {
         return false
     }
     var listWarning: String? {
-        guard hasPartialRepositoryCoverage else { return errorMessage }
-        return [coverage, errorMessage].compactMap { $0 }.joined(separator: " ")
+        let warnings = [
+            hasPartialRepositoryCoverage ? coverage : nil, scopedIndexErrorMessage, workspaceOrDetailErrorMessage,
+        ]
+        .compactMap { $0 }
+        return warnings.isEmpty ? nil : warnings.joined(separator: " ")
     }
     @Published private(set) var repositories: [GitHubRepositoryReference] = []
     private var generation = UUID()
@@ -467,10 +470,10 @@ final class PullRequestCenterModel: ObservableObject {
             filesByID[selected.id] == nil || !filesAreCurrent(for: selected) || detailNeedsRefresh.contains(selected.id)
         else { return }
         guard beginDetailLoad(for: selected.id) else { return }
-        if errorMessage?.hasPrefix("Diff revisions could not be verified.") == true
-            || errorMessage?.hasPrefix("Some pull request sections could not be refreshed.") == true
-            || errorMessage?.hasPrefix("Showing ") == true
-                && errorMessage?.contains("changed files. GitHub limits") == true
+        if workspaceOrDetailErrorMessage?.hasPrefix("Diff revisions could not be verified.") == true
+            || workspaceOrDetailErrorMessage?.hasPrefix("Some pull request sections could not be refreshed.") == true
+            || workspaceOrDetailErrorMessage?.hasPrefix("Showing ") == true
+                && workspaceOrDetailErrorMessage?.contains("changed files. GitHub limits") == true
         {
             errorMessage = nil
         }
@@ -534,7 +537,7 @@ final class PullRequestCenterModel: ObservableObject {
         defer { isPostingComment = false }
         guard let comment = await mutationExecutor.postComment(trimmed, on: record) else {
             errorMessage = "GitHub could not add the comment. Check your sign-in and try again."
-            DockActionErrorCenter.shared.report("Could not post comment", message: errorMessage ?? "")
+            DockActionErrorCenter.shared.report("Could not post comment", message: workspaceOrDetailErrorMessage ?? "")
             return false
         }
         if !commentsByID[record.id, default: []].contains(where: { $0.id == comment.id }) {
@@ -576,7 +579,8 @@ final class PullRequestCenterModel: ObservableObject {
         }
         guard let response = await mutationExecutor.updateStatus(status, for: record) else {
             errorMessage = "GitHub could not update this pull request status. Check your sign-in and try again."
-            DockActionErrorCenter.shared.report("Could not update pull request", message: errorMessage ?? "")
+            DockActionErrorCenter.shared.report(
+                "Could not update pull request", message: workspaceOrDetailErrorMessage ?? "")
             return false
         }
         summaryTasks.removeValue(forKey: record.id)?.cancel()

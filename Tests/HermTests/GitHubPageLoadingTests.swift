@@ -97,12 +97,21 @@ struct GitHubPageLoadingTests {
         #expect(center.selectedID == selected.id)
         #expect(center.visible.count == 100)
 
+        if scoped {
+            await transport.setResponse(nil, for: "\(pulls)?page=1")
+            await refresh()
+            await center.refreshSelectedDetail()
+            let stale = "Showing last loaded pull requests for owner/repo. Refresh to retry."
+            #expect(center.listWarning == "\(warning) \(stale) \(detailFailure)")
+            await transport.setResponse(try JSONSerialization.data(withJSONObject: firstPage), for: "\(pulls)?page=1")
+        }
+
         var last = searchRow
         last["number"] = 101
         await transport.setResponse(try JSONSerialization.data(withJSONObject: [last]), for: "\(pulls)?page=2")
         await refresh()
 
-        #expect(await transport.count(pulls) == 4)
+        #expect(await transport.count(pulls) == (scoped ? 5 : 4))
         #expect(center.visible.map(\.number).sorted() == Array(1...101))
         #expect(center.coverage == nil)
         #expect(!center.hasPartialRepositoryCoverage)
@@ -111,12 +120,13 @@ struct GitHubPageLoadingTests {
 
         await transport.setResponse(nil, for: "\(pulls)?page=1")
         await refresh()
-        #expect(await transport.count(pulls) == 5)
+        #expect(await transport.count(pulls) == (scoped ? 6 : 5))
         #expect(center.visible.map(\.number).sorted() == Array(1...101))
         #expect(center.failedRepositories == ["owner/repo"])
         #expect(center.coverage == nil)
         let failure = "GitHub could not load pull requests. Check your GitHub sign-in or try again."
-        #expect(center.listWarning == (scoped ? nil : failure))
+        let stale = "Showing last loaded pull requests for owner/repo. Refresh to retry."
+        #expect(center.listWarning == (scoped ? stale : failure))
     }
 
     @MainActor @Test(arguments: [true, false])

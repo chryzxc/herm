@@ -6,13 +6,19 @@ import Testing
 private actor ScopedRepositoryTransport: GitHubIssueTransport {
     private var responses: [String: Data] = [:]
     private var held: Set<String> = []
-    private var arrivals: [String: CheckedContinuation<Void, Never>] = [:]
+    private var arrivals: [String: CheckedContinuation<Bool, Never>] = [:]
     private var releases: [String: CheckedContinuation<Void, Never>] = [:]
+    private var finished: Set<String> = []
 
     func hold(_ key: String) { held.insert(key) }
-    func waitForArrival(_ key: String) async {
-        if releases[key] != nil { return }
-        await withCheckedContinuation { arrivals[key] = $0 }
+    func waitForArrival(_ key: String) async -> Bool {
+        if releases[key] != nil { return true }
+        if finished.contains(key) { return false }
+        return await withCheckedContinuation { arrivals[key] = $0 }
+    }
+    func didFinish(_ key: String) {
+        finished.insert(key)
+        arrivals.removeValue(forKey: key)?.resume(returning: false)
     }
     func release(_ key: String) {
         held.remove(key)
@@ -30,7 +36,7 @@ private actor ScopedRepositoryTransport: GitHubIssueTransport {
         if held.contains(key) {
             await withCheckedContinuation { continuation in
                 releases[key] = continuation
-                arrivals.removeValue(forKey: key)?.resume()
+                arrivals.removeValue(forKey: key)?.resume(returning: true)
             }
         }
         let data: Data?
@@ -56,7 +62,7 @@ struct SessionGitHubRepositoryScopeTests {
             process.arguments = ["-C", directory.path] + arguments
             try process.run()
             process.waitUntilExit()
-            #expect(process.terminationStatus == 0)
+            try #require(process.terminationStatus == 0)
         }
         return directory
     }
@@ -159,14 +165,42 @@ struct SessionGitHubRepositoryScopeTests {
         let pullA = "/repos/fixture/a/pulls"
         let pullB = "/repos/fixture/b/pulls"
         for key in [issueA, issueB, pullA, pullB] { await transport.hold(key) }
-        let oldIssues = Task { await issues.refreshScoped(repositoryPath: a.path) }
-        let oldPulls = Task { await pulls.refreshScoped(repositoryPath: a.path) }
-        await transport.waitForArrival(issueA)
-        await transport.waitForArrival(pullA)
-        let newIssues = Task { await issues.refreshScoped(repositoryPath: b.path) }
-        let newPulls = Task { await pulls.refreshScoped(repositoryPath: b.path) }
-        await transport.waitForArrival(issueB)
-        await transport.waitForArrival(pullB)
+        let oldIssues = Task {
+            await issues.refreshScoped(repositoryPath: a.path)
+            await transport.didFinish(issueA)
+        }
+        let oldPulls = Task {
+            await pulls.refreshScoped(repositoryPath: a.path)
+            await transport.didFinish(pullA)
+        }
+        let oldIssueArrived = await transport.waitForArrival(issueA)
+        let oldPullArrived = await transport.waitForArrival(pullA)
+        #expect(oldIssueArrived && oldPullArrived)
+        guard oldIssueArrived && oldPullArrived else {
+            for key in [issueA, issueB, pullA, pullB] { await transport.release(key) }
+            await oldIssues.value
+            await oldPulls.value
+            return
+        }
+        let newIssues = Task {
+            await issues.refreshScoped(repositoryPath: b.path)
+            await transport.didFinish(issueB)
+        }
+        let newPulls = Task {
+            await pulls.refreshScoped(repositoryPath: b.path)
+            await transport.didFinish(pullB)
+        }
+        let newIssueArrived = await transport.waitForArrival(issueB)
+        let newPullArrived = await transport.waitForArrival(pullB)
+        #expect(newIssueArrived && newPullArrived)
+        guard newIssueArrived && newPullArrived else {
+            for key in [issueA, issueB, pullA, pullB] { await transport.release(key) }
+            await newIssues.value
+            await newPulls.value
+            await oldIssues.value
+            await oldPulls.value
+            return
+        }
         #expect(issues.records.isEmpty && issues.selected == nil)
         #expect(pulls.records.isEmpty && pulls.selected == nil)
         await transport.release(issueB)
