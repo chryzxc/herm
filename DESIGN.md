@@ -3419,7 +3419,8 @@ On failure it remains open with the note and an error so the user can retry.
 
 **Herm Faces.** Bots without uploaded art draw a seeded face (`HermFace.swift`)
 in a 100-unit box: one of five bodies, ten hue palettes, four eye styles and a
-±7° lean, all from the profile ID. Each `BotMood` maps to something Hermes or
+±7° lean, all from the profile ID. Live full-color faces use an approved fill
+from the seeded face palette, stable by ID and shared with Office. Each `BotMood` maps to something Hermes or
 Herm actually knows: tool (busy or `working`), clarify (`waiting`), queued,
 done, failed, stopped (canceled), voice listening/thinking/replying, sleepy
 (hidden) and happy (hover). Live session asks override the busy face through

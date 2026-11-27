@@ -126,7 +126,8 @@ struct BotAvatarView: View {
             return false
         }
         if [DockThemeID?.none, .glass].contains(where: { theme in
-            BotFaceMark.still(id: id, theme: theme).cgImage.map { matches(stored, NSBitmapImageRep(cgImage: $0)) }
+            BotFaceMark.still(id: id, theme: theme, legacyIdentityHue: theme == .glass).cgImage
+                .map { matches(stored, NSBitmapImageRep(cgImage: $0)) }
                 ?? false
         }) {
             return true
@@ -618,7 +619,8 @@ struct BotFaceMark: View {
     }
 
     @MainActor static func still(
-        id: String, legacy: Bool = false, theme: DockThemeID? = nil, originalColors: Bool = false
+        id: String, legacy: Bool = false, theme: DockThemeID? = nil, originalColors: Bool = false,
+        legacyIdentityHue: Bool = false
     ) -> ImageRenderer<some View> {
         let renderer = ImageRenderer(
             content: Canvas { ctx, _ in
@@ -627,7 +629,7 @@ struct BotFaceMark: View {
                 } else {
                     draw(
                         in: &ctx, id: id, size: 160, mood: .idle, pose: .rest, theme: theme,
-                        originalColors: originalColors)
+                        originalColors: originalColors, legacyIdentityHue: legacyIdentityHue)
                 }
             }.frame(width: 160, height: 160))
         renderer.scale = 1

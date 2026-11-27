@@ -78,6 +78,9 @@ struct HermFaceGenes: Equatable {
         ("#80e2f1", "#1a8eac"), ("#ffdb70", "#c4940f"),
     ]
     static let grays = [("#f2f2f2", "#8a8a8a"), ("#e0e0e0", "#666666"), ("#fafafa", "#9c9c9c"), ("#d6d6d6", "#555555")]
+    private static let liveHueAccents: [DockAccentColor] = [
+        .coral, .orange, .amber, .green, .teal, .violet, .blue, .indigo, .pink, .tangerine,
+    ]
 
     let palette: Int
     let gray: Int
@@ -86,6 +89,8 @@ struct HermFaceGenes: Equatable {
     /// Resting lean in degrees, ±7.
     let tilt: Double
     let sparkle: Bool
+
+    var liveHueAccent: DockAccentColor { Self.liveHueAccents[palette] }
 
     init(id: String) {
         var random = BotSeededRandom(id: id)
@@ -231,9 +236,10 @@ extension BotFaceMark {
     static func bodyColor(id: String, theme: DockThemeID) -> Color {
         let colors = DockThemePalette(theme: theme)
         let tone = HermFaceTone(theme: theme)
+        let genes = HermFaceGenes(id: id)
         return tone == .hue
-            ? colors.fill(DockAccentColor.identity(for: id))
-            : bodyColors(HermFaceGenes(id: id), tone: tone, colors: colors).0
+            ? colors.fill(genes.liveHueAccent)
+            : bodyColors(genes, tone: tone, colors: colors).0
     }
 
     private static func hex(_ value: String) -> Color {
@@ -250,7 +256,8 @@ extension BotFaceMark {
     /// rims must contrast with (Onyx on the camera notch). Nil inks with `theme`.
     static func draw(
         in ctx: inout GraphicsContext, id: String, size: CGFloat, mood: BotMood,
-        pose: BotFacePose, theme: DockThemeID?, ink inkTheme: DockThemeID? = nil, originalColors: Bool = false
+        pose: BotFacePose, theme: DockThemeID?, ink inkTheme: DockThemeID? = nil, originalColors: Bool = false,
+        legacyIdentityHue: Bool = false
     ) {
         let genes = HermFaceGenes(id: id)
         let colors = DockThemePalette(theme: theme ?? .glass)
@@ -258,8 +265,8 @@ extension BotFaceMark {
         let tone = HermFaceTone(theme: theme)
         // Unskinned exports retain their original colors so previously saved faces remain recognizable.
         let (lite, deep): (Color, Color)
-        if let theme, tone == .hue, !originalColors {
-            let color = bodyColor(id: id, theme: theme)
+        if theme != nil, tone == .hue, !originalColors {
+            let color = colors.fill(legacyIdentityHue ? DockAccentColor.identity(for: id) : genes.liveHueAccent)
             (lite, deep) = (color, color.opacity(0.78))
         } else {
             (lite, deep) = bodyColors(genes, tone: tone, colors: colors)
