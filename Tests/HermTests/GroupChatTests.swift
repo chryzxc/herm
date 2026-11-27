@@ -540,7 +540,14 @@ struct GroupChatTests {
         let local = BotSummary(
             id: "forge", name: "Forge", title: nil, description: nil, model: nil, isActive: false, chat: nil,
             avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
-        #expect(await store.create(name: "Mixed", bots: [local], remote: [invite], roomID: "r") == "r")
+        guard
+            case .complete(let roomID) = await store.create(
+                name: "Mixed", bots: [local], remote: [invite], roomID: "r")
+        else {
+            Issue.record("Expected a completed room")
+            return
+        }
+        #expect(roomID == "r")
         #expect(client.registered?["target_url"] as? String == "https://far.example/roomlink")
         #expect((client.registered?["catalog"] as? [String: Any])?["catalog_digest"] as? String == "abc")
     }

@@ -3257,6 +3257,10 @@ running card can change hands.
 
 ### Bots
 
+When remote-bot setup fails after group creation, the New Group sheet identifies
+the existing room and confirmed progress. Retry Setup resumes unfinished seats;
+closing the sheet leaves the room and confirmed registrations intact.
+
 The Bots destination is a Messenger-style page: the icon rail, a 360pt bot
 list, and the open chat: a bot's main chat (its canonical Bot Chat) with bot
 mode on, or a group room. It has no session sections and no inspector. The

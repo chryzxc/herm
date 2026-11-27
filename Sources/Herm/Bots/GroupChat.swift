@@ -595,14 +595,11 @@ final class GroupChatStore: ObservableObject {
         }
     }
 
-    /// Returns the new room id, or nil with `errorMessage` set.
-    /// Remote members are registered right after the room exists, since
-    /// `groups.peer.register` needs the room on this gateway.
     func create(
         name: String, bots: [BotSummary], remote: [RemoteMemberInvite] = [],
         roomID: String = UUID().uuidString.lowercased()
-    ) async -> String? {
-        guard let client, Self.memberLimits.contains(bots.count + remote.count) else { return nil }
+    ) async -> GroupRoomCreationOutcome {
+        guard let client, Self.memberLimits.contains(bots.count + remote.count) else { return .notCreated }
         let generation = bindingGeneration
         do {
             let result = try await client.request(
@@ -610,27 +607,35 @@ final class GroupChatStore: ObservableObject {
                 params: [
                     "room_id": roomID, "name": name, "members": Self.members(for: bots) + remote.map(\.rosterRow),
                 ])
-            guard generation == bindingGeneration else { return nil }
+            guard generation == bindingGeneration else { return .notCreated }
             if let room = (result["room"] as? [String: Any]).flatMap(GroupRoom.init) {
                 rooms.insert(room, at: 0)
             }
-            for invite in remote {
-                _ = try await client.request(
-                    HermesFeatureIDs.ID.groupsPeerRegister.rawValue,
-                    params: [
-                        "room_id": roomID, "member_id": invite.memberID, "target_url": invite.endpointURL,
-                        "target_profile": invite.targetProfile, "grant": invite.grant, "catalog": invite.catalog,
-                    ])
-                guard generation == bindingGeneration else { return nil }
-            }
-            errorMessage = nil
-            return roomID
         } catch {
-            guard generation == bindingGeneration else { return nil }
+            guard generation == bindingGeneration else { return .notCreated }
             errorMessage =
                 "Couldn't create the group: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
-            return nil
+            return .notCreated
         }
+        return await retryRoomSetup(
+            GroupRoomSetup(roomID: roomID, name: name, generation: generation, total: remote.count, remaining: remote))
+    }
+
+    func canRetryRoomSetup(_ setup: GroupRoomSetup) -> Bool {
+        client != nil && setup.generation == bindingGeneration
+    }
+
+    func retryRoomSetup(_ setup: GroupRoomSetup) async -> GroupRoomCreationOutcome {
+        guard let client, canRetryRoomSetup(setup) else { return .partial(setup) }
+        let result = await setup.register(using: client) { setup.generation == self.bindingGeneration }
+        guard canRetryRoomSetup(setup) else { return .partial(setup) }
+        guard result.remaining.isEmpty else {
+            errorMessage = nil
+            DockActionErrorCenter.shared.report("Group action failed", message: result.note)
+            return .partial(result)
+        }
+        errorMessage = nil
+        return .complete(result.roomID)
     }
 
     static let maxAttachmentBytes = 15_000_000
