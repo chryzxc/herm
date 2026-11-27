@@ -5643,6 +5643,8 @@ Density offers Default and Compact, stored as the workspace selection (1.1 / 0.9
 - SwiftUI views own only disclosure, selection, form, and confirmation state.
 - `WorkspaceStore` persists local task/reference presentation metadata. It must
   not create a second Hermes gateway or execute background agents.
+  An unreadable or undecodable workspace remains untouched and edits are temporary;
+  normal quit waits at most one second for queued workspace saves.
 
 ### Implementation boundaries
 

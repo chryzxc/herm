@@ -1510,6 +1510,9 @@ and delivery/execution settings.
 3. **Find the notch** on the edge of your screen. Hover over it, click it, or double-tap ⌘ to open the workspace.
 
 The notch appears while Herm loads local workspace preferences and activity archives.
+If workspace preferences cannot be read or decoded, Herm leaves the original file untouched;
+changes to that workspace are temporary until it can be loaded again. On normal quit,
+Herm waits up to one second for pending workspace saves, without guaranteeing disk completion.
 Clicking it or using the workspace shortcut during launch opens the workspace as soon as it is ready.
 On first opening the workspace, a loading screen covers the panes until
 the first session rows, an empty list, or a connection error is available. Older

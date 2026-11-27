@@ -281,6 +281,19 @@ struct WorkspaceStoreTests {
         #expect(secondLoad.controlReferences == references)
     }
 
+    @Test func corruptWorkspaceSurvivesSubsequentSave() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let corruptBytes = Data("{ invalid workspace JSON".utf8)
+        try corruptBytes.write(to: fixture.fileURL)
+        let store = WorkspaceStore(fileURL: fixture.fileURL)
+        store.attachProject(at: "/tmp/corrupt-workspace-project")
+
+        try #require(WorkspaceStatePersistence.flushPendingSaves())
+        #expect(store.projectPath == "/tmp/corrupt-workspace-project")
+        #expect(try Data(contentsOf: fixture.fileURL) == corruptBytes)
+    }
+
 }
 
 private struct LegacyWorkspaceState: Encodable {
@@ -313,7 +326,7 @@ extension JSONDecoder {
     }
 }
 
-private struct WorkspaceFixture {
+struct WorkspaceFixture {
     let directory: URL
     let fileURL: URL
 

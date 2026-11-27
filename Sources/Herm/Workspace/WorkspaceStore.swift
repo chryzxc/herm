@@ -125,6 +125,7 @@ final class WorkspaceStore: ObservableObject {
     let profilePickerOrder: DockProfilePickerOrder
     let pinnedSessionOrder: PinnedSessionOrder
     private let fileURL: URL
+    private let allowsPersistence: Bool
     private static var launchedStore: WorkspaceStore?
     static var shared: WorkspaceStore {
         if let launchedStore { return launchedStore }
@@ -136,21 +137,22 @@ final class WorkspaceStore: ObservableObject {
     static func prepareForLaunch() async {
         guard launchedStore == nil else { return }
         let url = defaultURL
-        let state = await Task.detached(priority: .userInitiated) { read(url) }.value
+        let state = await Task.detached(priority: .userInitiated) { WorkspaceStatePersistence.load(url) }.value
         guard launchedStore == nil, !Task.isCancelled else { return }
         launchedStore = WorkspaceStore(url: url, defaults: .standard, state: state)
     }
 
     convenience init(fileURL: URL? = nil, profilePickerDefaults: UserDefaults = .standard) {
         let url = fileURL ?? Self.defaultURL
-        self.init(url: url, defaults: profilePickerDefaults, state: Self.read(url))
+        self.init(url: url, defaults: profilePickerDefaults, state: WorkspaceStatePersistence.load(url))
     }
 
-    private init(url: URL, defaults: UserDefaults, state: WorkspaceState?) {
+    private init(url: URL, defaults: UserDefaults, state: WorkspaceStatePersistence.LoadResult) {
         self.profilePickerOrder = DockProfilePickerOrder(defaults: defaults)
         self.pinnedSessionOrder = PinnedSessionOrder(defaults: defaults)
         self.fileURL = url
-        if let state { apply(state) }
+        if case .unavailable = state { self.allowsPersistence = false } else { self.allowsPersistence = true }
+        if case .loaded(let snapshot) = state { apply(snapshot) }
     }
 
     private static var defaultURL: URL {
@@ -305,11 +307,6 @@ final class WorkspaceStore: ObservableObject {
         save()
     }
 
-    nonisolated private static func read(_ url: URL) -> WorkspaceState? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder.workspace.decode(WorkspaceState.self, from: data)
-    }
-
     private func apply(_ state: WorkspaceState) {
         lastIntegrationsCategory =
             state.lastIntegrationsCategory.flatMap(IntegrationsCategory.init(rawValue:)) ?? .skills
@@ -363,39 +360,16 @@ final class WorkspaceStore: ObservableObject {
         return trimmed.isEmpty ? "Untitled task" : String(trimmed.prefix(100))
     }
 
-    // Saves snapshot state on the main actor and write on a serial background
-    // queue; a synchronous atomic write here put a disk hitch on every task
-    // action. The serial queue preserves mutation ordering so an older
-    // snapshot can never overwrite a newer one.
-    private nonisolated static let saveQueue = DispatchQueue(
-        label: "io.github.chryzxc.Herm.workspace-store-save", qos: .utility)
-
     private func save() {
+        guard allowsPersistence else { return }
         let state = WorkspaceState(
             tasks: tasks, agentRuns: agentRuns, projectPath: projectPath, controlReferences: controlReferences,
             lastIntegrationsCategory: lastIntegrationsCategory.rawValue)
-        Self.saveQueue.async { [fileURL] in
-            Self.write(state, to: fileURL)
-        }
-    }
-
-    private nonisolated static func write(_ state: WorkspaceState, to fileURL: URL) {
-        guard let data = try? JSONEncoder.workspace.encode(state) else { return }
-        do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try data.write(to: fileURL, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
-        } catch {
-            let detail = error.localizedDescription
-            Task { @MainActor in
-                DebugLog.write("workspace: persistence failed: \(detail)")
-            }
-        }
+        WorkspaceStatePersistence.enqueue(state, to: fileURL)
     }
 }
 
-private struct WorkspaceState: Codable {
+struct WorkspaceState: Codable {
     static let currentSchemaVersion = 2
     var schemaVersion: Int
     var lastIntegrationsCategory: String?
@@ -432,7 +406,7 @@ private struct WorkspaceState: Codable {
 }
 
 extension JSONEncoder {
-    fileprivate static var workspace: JSONEncoder {
+    static var workspace: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -441,7 +415,7 @@ extension JSONEncoder {
 }
 
 extension JSONDecoder {
-    fileprivate static var workspace: JSONDecoder {
+    static var workspace: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
