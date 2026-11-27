@@ -3294,7 +3294,8 @@ preview and retries on the next room-list refresh. The group composer keeps Stop
 admission or the room is working; Hermes remains authoritative about the outcome.
 The group editor and its placeholder share the same top inset. The editor
 reserves its minimum height for an empty draft and grows for multiline text.
-Group transcripts follow new replies while the reader is at the bottom.
+Group transcripts keep in-view messages visible during updates and follow new
+replies while the reader is at the bottom.
 Scrolling up keeps the reader's position and shows the shared floating
 Scroll to bottom control above the composer. Its count reflects new member
 replies in the selected thread and clears when the reader returns to the latest.

@@ -451,7 +451,7 @@ final class GroupChatStore: ObservableObject {
     private var cursors: [String: Int] = [:]
     private var memberSessionIDs: [String: String] = [:]
     private var client: HermesRPCClientProtocol?
-    private var bindingGeneration = 0
+    private(set) var bindingGeneration = 0
     private var roomRefreshGeneration = 0
     private var pollGenerations: [String: Int] = [:]
     private var stoppingRooms: Set<String> = []
@@ -662,6 +662,13 @@ final class GroupChatStore: ObservableObject {
         guard let attachment = GroupRoomAttachment(result) else { throw CocoaError(.fileReadCorruptFile) }
         if generation == bindingGeneration { localAttachmentURLs[roomID + ":" + attachment.id] = url }
         return attachment
+    }
+
+    func loadImages(_ files: [GroupRoomAttachment], event eventID: String, in roomID: String, generation: Int) async {
+        for file in files {
+            guard !Task.isCancelled, generation == bindingGeneration else { return }
+            await loadImage(file, event: eventID, in: roomID)
+        }
     }
 
     /// Reads one sent image so the bubble can preview it like the main chat. Failure leaves
