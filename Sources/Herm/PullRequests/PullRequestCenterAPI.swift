@@ -14,9 +14,11 @@ protocol PullRequestMutationExecuting {
 /// parsing independently reviewable.
 struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
     let client: GitHubClient
+    let now: @Sendable () -> Date
 
-    init(transport: any GitHubIssueTransport = GitHubClient.sharedSession) {
+    init(transport: any GitHubIssueTransport = GitHubClient.sharedSession, now: @escaping @Sendable () -> Date = { .now }) {
         self.client = GitHubClient(transport: transport)
+        self.now = now
     }
 
     func resolve(_ reference: GitHubItemReference, localPath: String) async throws -> PullRequestRecord {
@@ -32,33 +34,14 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         return row["login"] as? String
     }
 
-    func searchPullRequests(viewerLogin: String, localPaths: [String: String]) async -> Result<
-        [PullRequestRecord], PullRequestCenterFailure
-    > {
-        do {
-            async let authored = search("is:pr is:open author:\(viewerLogin)", localPaths: localPaths)
-            async let reviewing = search("is:pr is:open review-requested:\(viewerLogin)", localPaths: localPaths)
-            // Recently merged is best-effort: a failure here must not hide open PRs.
-            let since = Date.now.addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
-            async let merged = try? search(
-                "is:pr is:merged involves:\(viewerLogin) merged:>=\(since)", localPaths: localPaths)
-            var unique: [String: PullRequestRecord] = [:]
-            let (authoredRows, reviewingRows) = try await (authored, reviewing)
-            for record in await merged ?? [] { unique[record.id] = record }
-            for record in authoredRows { unique[record.id] = record }
-            // Search omits requested_reviewers; membership in this result is authoritative.
-            for var record in reviewingRows {
-                record.requestedReviewers = [viewerLogin]
-                unique[record.id] = record
-            }
-            return .success(Array(unique.values))
-        } catch { return .failure(PullRequestCenterFailure(repository: "GitHub account search")) }
+    var mergedLookbackDate: String {
+        now().addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
     }
 
     func workPage(viewer: String, localPaths: [String: String]) async throws -> GitHubPage<PullRequestRecord> {
         async let authored = searchPageResult("is:pr is:open author:\(viewer)", localPaths: localPaths)
         async let other = searchPageResult("is:pr is:open review-requested:\(viewer)", localPaths: localPaths)
-        let since = Date.now.addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
+        let since = mergedLookbackDate
         async let mergedLookup = try? searchPage(
             "is:pr is:merged involves:\(viewer) merged:>=\(since)", localPaths: localPaths)
         let (authoredResult, otherResult) = await (authored, other)
@@ -100,9 +83,6 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         let page = try await client.pages("/search/issues", query: ["q": query], key: "items", search: true)
         return GitHubPage(
             items: page.rows.compactMap { parseSearchItem($0, localPaths: localPaths) }, coverage: page.coverage)
-    }
-    private func search(_ query: String, localPaths: [String: String]) async throws -> [PullRequestRecord] {
-        try await searchPage(query, localPaths: localPaths).items
     }
 
     func index(repository: GitHubRepositoryReference, localPath: String) async -> Result<

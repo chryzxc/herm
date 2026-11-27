@@ -339,7 +339,7 @@ final class PullRequestCenterModel: ObservableObject {
         }
         async let viewerLookup = api.viewer()
         async let indexLookup = api.index(repository: remote, localPath: repositoryPath)
-        let since = Date.now.addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
+        let since = api.mergedLookbackDate
         async let mergedLookup = try? api.searchPage(
             "is:pr is:merged repo:\(remote.id) merged:>=\(since)", localPaths: [remote.id: repositoryPath])
         let (viewer, result, merged) = await (viewerLookup, indexLookup, mergedLookup)
