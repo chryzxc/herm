@@ -56,6 +56,7 @@ struct SessionInspector: View {
     @State private var recentClosed: [String] = []
     @State private var restoringPresentation = false
     @State private var restoredWorkspace: String?
+    @State private var restoredBrowserKey: SessionBrowserKey?
     @State private var terminalExtrasByWorkspace: [String: [ExtraTab]] = [:]
     private var terminalExtras: [ExtraTab] {
         get { terminalExtrasByWorkspace[WorkspaceIdentity.session(model)] ?? [] }
@@ -231,9 +232,10 @@ struct SessionInspector: View {
         .onReceive(browsers.presentationChanges(for: hostVisible ? model.browserSessionKey : nil)) { _ in
             modelRevision &+= 1
         }
-        .task(id: WorkspaceIdentity.session(model)) {
+        .task(id: WorkspaceIdentity.session(model) + ":" + (model.browserSessionKey?.profileDirectory ?? "new")) {
             let workspace = WorkspaceIdentity.session(model)
             restoringPresentation = true
+            restoredBrowserKey = nil
             closingExtra = nil
             closingTerminal = false
             selectedExtraID = nil
@@ -258,19 +260,21 @@ struct SessionInspector: View {
                         ExtraTab(
                             id: id, kind: .terminal, number: terminalExtras.count + 2))
                 }
-                browserWorkspace?.restoreExtraTabs(saved.browserTabs ?? [])
                 selectedExtraID = saved.selectedExtra.flatMap { id in
                     extras.contains(where: { $0.id == id }) ? id : nil
-                }
-                if let index = saved.selectedBrowser, let workspace = browserWorkspace,
-                    workspace.extras.indices.contains(index)
-                {
-                    selectedExtraID = workspace.extras[index].id
                 }
                 if let section = Section(rawValue: saved.selected) { selectedSection = section }
             } else {
                 // New chats start with every tab closed; the + menu reopens them.
                 closedRaw = Section.allCases.map(\.rawValue).joined(separator: "|")
+            }
+            if let key = model.browserSessionKey, let saved = WorkspacePresentationStore.shared.loadBrowser(key) {
+                browserWorkspace?.restoreExtraTabs(saved.browserTabs ?? [])
+                if let index = saved.selectedBrowser, let workspace = browserWorkspace,
+                    workspace.extras.indices.contains(index)
+                {
+                    selectedExtraID = workspace.extras[index].id
+                }
             }
             if gitHub.item(for: WorkspaceIdentity.session(model))?.reference != nil {
                 reopen(.github)
@@ -297,6 +301,7 @@ struct SessionInspector: View {
             }
             messageTabs.select(messageSelection, in: WorkspaceIdentity.session(model))
             restoredWorkspace = workspace
+            restoredBrowserKey = model.browserSessionKey
             restoringPresentation = false
             savePresentation()
             consumeTabRequest()
@@ -533,21 +538,30 @@ struct SessionInspector: View {
 
     private func savePresentation() {
         guard !restoringPresentation, restoredWorkspace == WorkspaceIdentity.session(model),
-            model.navigationSessionID != nil
+            model.navigationSessionID != nil,
+            WorkspacePresentationStore.browserRestored(restoredBrowserKey, current: model.browserSessionKey)
         else { return }
         let browserTabs = browserWorkspace?.extras.compactMap { tab in
             WorkspacePresentationStore.restorableBrowserURL(tab.currentURL ?? tab.address).map { (tab.id, $0) }
         }
+        if let key = model.browserSessionKey, let browserTabs {
+            var browser = WorkspacePresentationStore.shared.loadBrowser(key) ?? InspectorPresentation()
+            browser.browserTabs = browserTabs.map { $0.1 }
+            browser.selectedBrowser = browserTabs.firstIndex(where: { $0.0 == selectedExtraID })
+            WorkspacePresentationStore.shared.saveBrowser(browser, for: key)
+        }
+        let previous = WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))
         WorkspacePresentationStore.shared.save(
             InspectorPresentation(
                 selected: selectedSection.rawValue, closed: closedRaw,
                 recentClosed: Array(recentClosed.suffix(20)),
-                browserURL: WorkspacePresentationStore.shared.load(WorkspaceIdentity.session(model))?.browserURL,
+                browserURL: previous?.browserURL,
                 terminalTabs: terminalExtras.map(\.id),
-                browserTabs: browserTabs?.map { $0.1 },
+                browserTabs: previous?.browserTabs,
                 selectedExtra: selectedExtraID,
-                selectedBrowser: browserTabs?.firstIndex(where: { $0.0 == selectedExtraID }),
-                simulatorSections: simulatorSections.filter { $0 != Section.talk.rawValue }),
+                selectedBrowser: previous?.selectedBrowser,
+                simulatorSections: simulatorSections.filter { $0 != Section.talk.rawValue },
+                browserOwner: previous?.browserOwner),
             identity: WorkspaceIdentity.session(model))
     }
 
