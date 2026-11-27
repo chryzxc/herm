@@ -7,28 +7,79 @@ import Testing
 struct BrowserPageRenderingReproductionTests {
     @Test func becomingVisibleReplaysCachedFrameAndPointer() throws {
         let browser = AgentBrowser(profileID: "cached-replay")
-        let canvas = AgentBrowserCanvas(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
+        let canvas = AgentBrowserCanvas(frame: container.bounds)
+        let hidden = AgentBrowserCanvas(frame: container.bounds)
         canvas.browser = browser
-        let window = NSWindow(contentRect: canvas.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.contentView = canvas
+        hidden.browser = browser
+        container.addSubview(canvas)
+        container.addSubview(hidden)
+        let window = NSWindow(contentRect: container.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = container
         defer { window.contentView = nil }
         // Decoded frames arrive as CGImage-backed images; the layer shows that CGImage directly.
         let cachedImage = try #require(try frame().cgImage(forProposedRect: nil, context: nil, hints: nil))
         browser.receiveFrame(NSImage(cgImage: cachedImage, size: .zero), css: NSSize(width: 1280, height: 800))
         browser.updatePointer(AgentPointer(kind: .down, point: CGPoint(x: 640, y: 400)))
-        canvas.surfaceVisible = false
-        canvas.setFrameSize(NSSize(width: 500, height: 400))
-        browser.frameUpdates.send((try frame(), NSSize(width: 1280, height: 2000)))
-        #expect(canvas.pageRect.width == 256)
-        canvas.surfaceVisible = true
-        #expect(canvas.pageRect.width == 500)
-        let shown = try #require(canvas.subviews.first?.layer?.contents)
+        hidden.surfaceVisible = false
+        let visibleLayer = try #require(canvas.subviews.first?.layer)
+        let hiddenLayer = try #require(hidden.subviews.first?.layer)
+        #expect(ObjectIdentifier(try #require(hiddenLayer.contents) as CFTypeRef) == ObjectIdentifier(cachedImage))
+        let images = try (0..<8).map { _ in
+            try #require(try frame().cgImage(forProposedRect: nil, context: nil, hints: nil))
+        }
+        var visibleChanges = 0
+        var hiddenChanges = 0
+        for image in images {
+            browser.receiveFrame(NSImage(cgImage: image, size: .zero), css: NSSize(width: 1280, height: 800))
+            if let shown = visibleLayer.contents, ObjectIdentifier(shown as CFTypeRef) == ObjectIdentifier(image) {
+                visibleChanges += 1
+            }
+            let shown = try #require(hiddenLayer.contents)
+            if ObjectIdentifier(shown as CFTypeRef) != ObjectIdentifier(cachedImage) {
+                hiddenChanges += 1
+            }
+        }
+        print("FRAME WORK visible=\(visibleChanges) hidden=\(hiddenChanges)")
+        #expect(visibleChanges == 8)
+        #expect(hiddenChanges == 0)
+        #expect(browser.viewers == 1)
+        let latest = try #require(browser.lastFrame?.image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        #expect(ObjectIdentifier(latest) == ObjectIdentifier(images[7]))
+        let replayImage = try #require(try frame().cgImage(forProposedRect: nil, context: nil, hints: nil))
+        browser.receiveFrame(NSImage(cgImage: replayImage, size: .zero), css: NSSize(width: 1280, height: 2000))
+        let replayPoint = CGPoint(x: 320, y: 1000)
+        browser.updatePointer(AgentPointer(kind: .move, point: replayPoint))
+        hidden.setFrameSize(NSSize(width: 500, height: 400))
+        hidden.surfaceVisible = true
+        #expect(hidden.pageRect.width == 256)
+        #expect(hidden.pageRect.height == 400)
+        let shown = try #require(hiddenLayer.contents)
         #expect(CFGetTypeID(shown as CFTypeRef) == CGImage.typeID)
-        #expect(ObjectIdentifier(shown as CFTypeRef) == ObjectIdentifier(cachedImage))
-        #expect(browser.panelSize == canvas.bounds.size)
+        #expect(ObjectIdentifier(shown as CFTypeRef) == ObjectIdentifier(replayImage))
+        #expect(browser.panelSize == hidden.bounds.size)
         #expect(browser.lastPointer?.kind == .move)
-        let cursor = try #require(canvas.subviews.compactMap { $0 as? AgentCursorView }.first)
+        let cursor = try #require(hidden.subviews.compactMap { $0 as? AgentCursorView }.first)
         #expect(!cursor.isHidden)
+        #expect(browser.lastPointer?.point == replayPoint)
+        #expect(
+            cursor.frame.origin
+                == CGPoint(
+                    x: hidden.pageRect.minX + 64 - AgentCursorView.tip.x,
+                    y: hidden.pageRect.minY + 200 - AgentCursorView.tip.y))
+        let next = try #require(try frame().cgImage(forProposedRect: nil, context: nil, hints: nil))
+        browser.receiveFrame(NSImage(cgImage: next, size: .zero), css: NSSize(width: 1280, height: 800))
+        #expect(ObjectIdentifier(try #require(visibleLayer.contents) as CFTypeRef) == ObjectIdentifier(next))
+        #expect(ObjectIdentifier(try #require(hiddenLayer.contents) as CFTypeRef) == ObjectIdentifier(next))
+        hidden.isHidden = true
+        let other = AgentBrowser(profileID: "hidden-rebind")
+        other.receiveFrame(NSImage(cgImage: cachedImage, size: .zero), css: NSSize(width: 1280, height: 800))
+        hidden.browser = other
+        #expect(hiddenLayer.contents == nil)
+        #expect(other.viewers == 0)
+        hidden.isHidden = false
+        #expect(other.viewers == 1)
+        #expect(ObjectIdentifier(try #require(hiddenLayer.contents) as CFTypeRef) == ObjectIdentifier(cachedImage))
     }
 
     @Test func hiddenCanvasDoesNotReceivePageFieldEvents() {
@@ -116,6 +167,12 @@ struct BrowserPageRenderingReproductionTests {
     }
 
     @Test func liveChromiumFramesFillTheDesktopPreviewAfterResizing() async throws {
+        try await withIsolatedChromium { cdp, session in
+            try await verifyResizedPreview(cdp, session: session)
+        }
+    }
+
+    private func withIsolatedChromium(_ body: (CDPConnection, String) async throws -> Void) async throws {
         let executable = URL(fileURLWithPath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             Issue.record("Local Chrome unavailable for browser rendering reproduction")
@@ -150,6 +207,10 @@ struct BrowserPageRenderingReproductionTests {
         let targetID = try #require(target["targetId"] as? String)
         let attached = try await cdp.send("Target.attachToTarget", ["targetId": targetID, "flatten": true])
         let session = try #require(attached["sessionId"] as? String)
+        try await body(cdp, session)
+    }
+
+    private func verifyResizedPreview(_ cdp: CDPConnection, session: String) async throws {
         let browser = AgentBrowser(profileID: "render-metrics")
         browser.presetWidth = 1280
         let canvas = AgentBrowserCanvas(frame: .zero)
