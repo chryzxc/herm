@@ -381,22 +381,28 @@ extension DockModel {
     /// Answers the open sudo / secret / vault prompt; an empty value skips it.
     /// The value is never logged or kept after the request is sent.
     func respondToValuePrompt(_ value: String) {
-        guard sessionActionsReady, let prompt = valuePrompt, !isRespondingToValuePrompt else { return }
+        guard sessionActionsReady, let sessionID, let prompt = valuePrompt, !isRespondingToValuePrompt else { return }
+        let generation = sessionResumeGeneration
         isRespondingToValuePrompt = true
         valuePromptError = nil
         Task {
-            defer { self.isRespondingToValuePrompt = false }
+            let ownsResponse = { self.sessionResumeGeneration == generation && self.sessionID == sessionID }
+            guard ownsResponse() else { return }
+            defer { if ownsResponse() { isRespondingToValuePrompt = false } }
+            guard valuePrompt?.requestID == prompt.requestID else { return }
             do {
                 let result = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.clarifyRespond.rawValue,
                     params: [
                         "id": prompt.requestID, "result": ["value": value],
                     ])
-                if valuePrompt?.requestID == prompt.requestID { valuePrompt = nil }
+                guard ownsResponse(), valuePrompt?.requestID == prompt.requestID else { return }
+                valuePrompt = nil
                 if result["status"] as? String == "expired" {
                     DebugLog.write("model: value prompt expired before the answer arrived")
                 }
             } catch {
+                guard ownsResponse(), valuePrompt?.requestID == prompt.requestID else { return }
                 let diagnostic = Self.safeUserDiagnostic(error.localizedDescription)
                 valuePromptError = diagnostic
                 DebugLog.write("model: value prompt response failed: \(diagnostic)")
@@ -427,7 +433,7 @@ extension DockModel {
         // foreground conversation remains selected. Resolve that activity by
         // its exact event session before applying the foreground approval UI.
         setInFlightBotActivityWorking(for: resolvedSessionID)
-        let activeSessionIDs = Set([sessionID, sessionStorageID, kanbanAttributionSessionID].compactMap { $0 })
+        let activeSessionIDs = promptSessionIDs
         let resolvedAliases = removePendingApproval(for: resolvedSessionID)
         guard !activeSessionIDs.isDisjoint(with: resolvedAliases) else { return }
         for activeSessionID in activeSessionIDs {

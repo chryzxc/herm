@@ -3549,6 +3549,11 @@ Reserve the session rail's actual width in both density settings, including for 
 transcript, composer, welcome and floating controls; density only tightens visual spacing.
 
 Remove the approval card from the conversation as soon as Hermes confirms a decision, whichever surface answered it. Pending and uncertain responses stay in the same card with explicit recovery. The record is process-local and does not alter transcript history.
+Approvals, clarification questions, and secure input requests appear only in
+the owning conversation, including a Bot's main chat. The confirmed runtime
+and stored IDs identify the same chat. A blank conversation never shows
+another session's request. Reopening the chat restores requests Hermes still
+reports as pending.
 
 The composer background-process tray uses a shared disclosure with a terminal icon,
 separate running count or neutral Finished label, and the last running process's

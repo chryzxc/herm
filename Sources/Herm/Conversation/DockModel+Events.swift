@@ -62,6 +62,7 @@ extension DockModel {
         let params = event.params
         let noticePayload = event.payload
         let eventSessionID = event.sessionID
+        if Self.isConversationPromptEvent(type), promptOwner(of: event) == nil { return }
         let storedTip = transcriptHistoryCursor?.readOnlyResolvedSessionID
         let matchesSelection = eventSessionID.map { owner in
             currentSessionIDs.contains(owner) || owner == storedTip || rowSessionID(owner) == sessionStorageID
@@ -84,19 +85,7 @@ extension DockModel {
                 return owner
             } : nil
         guard acceptGatewayEvent(type: type, params: params) else { return }
-        if type == "approval.request" {
-            let payload = params["payload"] as? [String: Any] ?? [:]
-            if let owner = (params["session_id"] as? String) ?? (payload["session_id"] as? String) ?? sessionID {
-                let approval = ApprovalPresentation.from(payload: payload)
-                let target = attentionTarget(sessionID: owner, requestID: approval.requestID, params: params)
-                let profile = attentionProfile(sessionID: owner, params: params)
-                let pending = PendingApproval(
-                    title: approval.title, detail: approval.detail, presentation: approval,
-                    responseTarget: target, serverRequestID: payload["server_request_id"] as? String,
-                    profileID: profile)
-                guard captureConversationApproval(pending, sessionID: owner, profileID: profile) else { return }
-            }
-        }
+        if type == "approval.request", !capturePendingApproval(event) { return }
         if let owner = queueCompletionOwner {
             for (key, pending) in redirectingPrompts
             where key == rowSessionID(owner) || pending.runtimeSessionID == owner {
@@ -169,7 +158,6 @@ extension DockModel {
         if storedTranscriptAttach == nil { captureObservedKanbanTaskIDs(type: type, params: params) }
         eventRouter.route(event)
         reconcileDirectBotLifecycle(type: type, params: params)
-        capturePendingApproval(type: type, params: params)
         capturePendingClarification(type: type, params: params)
         if type == "approval.expire", let eventSessionID {
             let requestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
@@ -474,36 +462,97 @@ extension DockModel {
         }
     }
 
-    func capturePendingApproval(type: String, params: [String: Any]) {
-        guard type == "approval.request" else { return }
-        let payload = params["payload"] as? [String: Any] ?? [:]
-        guard
-            let ownerSessionID = ((params["session_id"] as? String) ?? (payload["session_id"] as? String) ?? sessionID)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-            !ownerSessionID.isEmpty
-        else { return }
-        let approval = ApprovalPresentation.from(payload: payload)
-        let pendingApproval = PendingApproval(
-            title: approval.title,
-            detail: approval.detail,
-            presentation: approval,
-            responseTarget: attentionTarget(sessionID: ownerSessionID, requestID: approval.requestID, params: params),
-            serverRequestID: payload["server_request_id"] as? String,
-            profileID: attentionProfile(sessionID: ownerSessionID, params: params)
-        )
-        let aliases = pendingApprovalAliasesBySessionID[ownerSessionID] ?? [ownerSessionID]
-        for alias in aliases {
-            pendingApprovalsBySessionID[alias] = pendingApproval
+    private static func isConversationPromptEvent(_ type: String) -> Bool {
+        switch type {
+        case "approval.request", "approval.expire", "clarify.request", "clarification.request",
+            "clarify.expire", "clarification.expire", "prompt.request", "prompt.expire":
+            true
+        default: false
         }
+    }
+
+    /// Every prompt must name its session. A live or stored ID may identify the
+    /// open conversation, but a conflicting profile or the shared title may not.
+    private func promptOwner(of event: HermesEventRouter.Event) -> String? {
+        guard let owner = event.sessionID, !owner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            owner != BotService.canonicalBotChatTitle,
+            Self.eventBelongsToSession(
+                type: event.type, envelopeSessionID: event.envelopeSessionID, eventSessionID: owner,
+                payload: event.payload, currentSessionID: owner, agents: [])
+        else { return nil }
+        let reported = Set(
+            [
+                event.params["profile"] as? String, event.payload["profile"] as? String,
+                event.params["profile_id"] as? String, event.payload["profile_id"] as? String,
+            ].compactMap(Self.normalizedProfileID))
+        guard reported.count <= 1 else { return nil }
+        if promptSessionIDs.contains(owner), let profile = reported.first,
+            profile != (sessionProfileID ?? profileScopeID ?? "default")
+        {
+            return nil
+        }
+        return owner
+    }
+
+    private func currentPromptOwner(of event: HermesEventRouter.Event) -> String? {
+        guard let owner = promptOwner(of: event), promptSessionIDs.contains(owner) else { return nil }
+        return owner
+    }
+
+    func restoreOpenConversationPrompts(from resume: [String: Any], for runtimeID: String) {
+        guard sessionID == runtimeID else { return }
+        let requests = (resume["open_requests"] as? [[String: Any]] ?? [])
+            .compactMap(HermesGateway.event(forServerRequest:))
+            .filter { currentPromptOwner(of: .init(type: $0.type, params: $0.params)) != nil }
+        // The gateway can report a queued approval even when it has no open server request frame.
+        if !requests.contains(where: { $0.type == "approval.request" }),
+            let approval = resume["pending_approval"] as? [String: Any], !approval.isEmpty
+        {
+            let event = HermesEventRouter.Event(
+                type: "approval.request",
+                params: ["session_id": approval["session_id"] as? String ?? runtimeID, "payload": approval])
+            if currentPromptOwner(of: event) != nil { receiveGatewayEvent(event.type, params: event.params) }
+        }
+        for request in requests { receiveGatewayEvent(request.type, params: request.params) }
+    }
+
+    private func capturePendingApproval(_ event: HermesEventRouter.Event) -> Bool {
+        guard let owner = event.sessionID else { return false }
+        let profile = attentionProfile(sessionID: owner, params: event.params)
+        var aliases: Set<String> = [owner]
+        if pendingApprovalsBySessionID[owner]?.profileID == profile || pendingApprovalsBySessionID[owner] == nil {
+            aliases.formUnion(pendingApprovalAliasesBySessionID[owner] ?? [])
+        }
+        if promptSessionIDs.contains(owner) { aliases.formUnion(promptSessionIDs) }
+        let approval = ApprovalPresentation.from(payload: event.payload)
+        guard
+            let record = captureConversationApproval(
+                approval,
+                target: attentionTarget(sessionID: owner, requestID: approval.requestID, params: event.params),
+                serverRequestID: event.payload["server_request_id"] as? String, profileID: profile, aliases: aliases)
+        else { return false }
+        let pendingApproval = PendingApproval(
+            title: record.approval.title, detail: record.approval.detail, presentation: record.approval,
+            responseTarget: record.target, serverRequestID: record.serverRequestID, profileID: record.profileID)
+        for alias in record.aliases {
+            pendingApprovalsBySessionID[alias] = pendingApproval
+            pendingApprovalAliasesBySessionID[alias] = record.aliases
+        }
+        return true
     }
 
     func restorePendingApproval(for sessionIDs: [String?]) {
         let identities =
             sessionIDs
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .filter { !$0.isEmpty && $0 != BotService.canonicalBotChatTitle }
         addResolvedApprovalAliases(Set(identities))
-        guard let approval = identities.compactMap({ pendingApprovalsBySessionID[$0] }).first else {
+        let profile = sessionProfileID ?? profileScopeID
+        guard
+            let approval = identities.compactMap({ pendingApprovalsBySessionID[$0] }).first(where: {
+                $0.profileID == profile
+            })
+        else {
             approvalTitle = nil
             approvalText = nil
             approvalDetails = nil
@@ -513,7 +562,7 @@ extension DockModel {
         // conversation. Preserve that alias group so a response from another
         // surface clears the whole request even while this session is hidden.
         var aliases = Set(identities)
-        for identity in identities {
+        for identity in identities where pendingApprovalsBySessionID[identity]?.profileID == profile {
             aliases.formUnion(pendingApprovalAliasesBySessionID[identity] ?? [])
         }
         addConversationApprovalAliases(aliases, pending: approval)
@@ -542,12 +591,8 @@ extension DockModel {
             type == "clarification.request" || type == "clarify.request"
                 || type == "clarification.expire" || type == "clarify.expire"
         else { return }
-        let payload = params["payload"] as? [String: Any] ?? [:]
-        guard
-            let ownerSessionID = ((params["session_id"] as? String) ?? (payload["session_id"] as? String) ?? sessionID)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-            !ownerSessionID.isEmpty
-        else { return }
+        let event = HermesEventRouter.Event(type: type, params: params)
+        guard let ownerSessionID = event.sessionID else { return }
 
         if type == "clarification.expire" || type == "clarify.expire" {
             let requestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
@@ -559,14 +604,22 @@ extension DockModel {
         var clarification = Self.pendingClarification(from: params)
         clarification.responseTarget = attentionTarget(
             sessionID: ownerSessionID, requestID: clarification.requestID, params: params)
+        clarification.profileID = attentionProfile(sessionID: ownerSessionID, params: params)
         if let requestID = clarification.requestID,
             resolvedClarificationRequestIDs.contains(requestID)
         {
             return
         }
-        let aliases = pendingClarificationAliasesBySessionID[ownerSessionID] ?? [ownerSessionID]
+        var aliases: Set<String> = [ownerSessionID]
+        if pendingClarificationsBySessionID[ownerSessionID]?.profileID == clarification.profileID
+            || pendingClarificationsBySessionID[ownerSessionID] == nil
+        {
+            aliases.formUnion(pendingClarificationAliasesBySessionID[ownerSessionID] ?? [])
+        }
+        if promptSessionIDs.contains(ownerSessionID) { aliases.formUnion(promptSessionIDs) }
         for alias in aliases {
             pendingClarificationsBySessionID[alias] = clarification
+            pendingClarificationAliasesBySessionID[alias] = aliases
         }
     }
 
@@ -574,14 +627,19 @@ extension DockModel {
         let identities =
             sessionIDs
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard let clarification = identities.compactMap({ pendingClarificationsBySessionID[$0] }).first else {
+            .filter { !$0.isEmpty && $0 != BotService.canonicalBotChatTitle }
+        let profile = sessionProfileID ?? profileScopeID
+        guard
+            let clarification = identities.compactMap({ pendingClarificationsBySessionID[$0] }).first(where: {
+                $0.profileID == profile
+            })
+        else {
             showClarification(nil)
             clarificationResponseError = nil
             return
         }
         var aliases = Set(identities)
-        for identity in identities {
+        for identity in identities where pendingClarificationsBySessionID[identity]?.profileID == profile {
             aliases.formUnion(pendingClarificationAliasesBySessionID[identity] ?? [])
         }
         for identity in aliases {
@@ -622,11 +680,12 @@ extension DockModel {
 
     func attentionProfile(sessionID: String, params: [String: Any]) -> String? {
         let payload = params["payload"] as? [String: Any] ?? [:]
+        if promptSessionIDs.contains(sessionID) { return sessionProfileID ?? profileScopeID }
         return
-            (params["profile"] as? String) ?? (payload["profile"] as? String) ?? quickSessionOwners[sessionID]?
+            (params["profile"] as? String) ?? (payload["profile"] as? String)
+            ?? (params["profile_id"] as? String) ?? (payload["profile_id"] as? String) ?? quickSessionOwners[sessionID]?
             .profileID
             ?? sessions.first(where: { $0.id == sessionID })?.profileID
-            ?? (currentSessionIDs.contains(sessionID) ? sessionProfileID ?? profileScopeID : nil)
     }
 
     static func pendingClarification(from params: [String: Any]) -> PendingClarification {
@@ -718,13 +777,15 @@ extension DockModel {
         let envelopeSessionID = params["session_id"] as? String
         let payloadSessionID = rawPayload["session_id"] as? String
         let eventSessionID = envelopeSessionID ?? payloadSessionID
+        let isPrompt = Self.isConversationPromptEvent(type)
+        let eventOwner = isPrompt ? currentPromptOwner(of: .init(type: type, params: params)) : sessionID
         if storedTranscriptAttach == .publishing {
             let reportedProfile = (params["profile"] as? String) ?? (rawPayload["profile"] as? String)
-            if let sessionID,
-                reportedProfile.map({ Self.normalizedProfileID($0) == sessionProfileID }) ?? true,
+            if let eventOwner,
+                isPrompt || (reportedProfile.map { Self.normalizedProfileID($0) == sessionProfileID } ?? true),
                 Self.eventBelongsToSession(
                     type: type, envelopeSessionID: envelopeSessionID, eventSessionID: eventSessionID,
-                    payload: rawPayload, currentSessionID: sessionID, agents: sessionAgents + activeSubagents)
+                    payload: rawPayload, currentSessionID: eventOwner, agents: sessionAgents + activeSubagents)
             {
                 pendingAttachedEvents.append((type, params))
             }
@@ -740,13 +801,13 @@ extension DockModel {
         // previous code projected first and filtered later, which let a known
         // agent (or an event with a missing session ID) mutate the current
         // session before the later guard ran.
-        guard let currentSessionID = sessionID,
+        guard let currentSessionID = sessionID, let eventOwner,
             Self.eventBelongsToSession(
                 type: type,
                 envelopeSessionID: envelopeSessionID,
                 eventSessionID: eventSessionID,
                 payload: rawPayload,
-                currentSessionID: currentSessionID,
+                currentSessionID: eventOwner,
                 agents: sessionAgents + activeSubagents
             )
         else {
@@ -783,7 +844,7 @@ extension DockModel {
         if let eventSessionID,
             !eventSessionID.isEmpty,
             let sessionID, sessionID != eventSessionID,
-            !isRelevantSubagentEvent
+            !isRelevantSubagentEvent, !isPrompt
         {
             if !Self.isHighFrequencyEvent(type) {
                 DebugLog.write("model: ignoring event \(type) for other session \(eventSessionID)")
@@ -1133,7 +1194,9 @@ extension DockModel {
                 drainQueuedPromptIfIdle(resumePausedQueue: resumePausedQueue)
             }
         case "approval.request":
-            let approval = ApprovalPresentation.from(payload: payload)
+            // The queued frame may outlive the request if Hermes cancelled it while history was loading.
+            guard let owner = eventSessionID, let approval = pendingApprovalsBySessionID[owner]?.presentation
+            else { break }
             setInFlightBotActivityWaiting(for: eventSessionID)
             let isPresentingApproval = approvalText == nil
             approvalTitle = approval.title

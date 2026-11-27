@@ -624,6 +624,8 @@ refreshes both GitHub and repository data. Hide the rail to give the conversatio
 its full width.
 
 Session list spinners follow Hermes’ live execution state and refresh every ten seconds while the sidebar is visible, including unopened sessions for the selected bot. Recent writes alone do not indicate running work; the next live refresh clears missed completion events.
+Approvals, clarification questions, and secure input requests appear in the
+chat that owns them, including a bot's main chat under **Bots**.
 
 The empty chat centers the orb, introductory text, and composer together. Once a message appears, the welcome fades in place and the composer glides to the bottom. Transitions respect Reduce Motion and motion-free skins.
 

@@ -31,6 +31,7 @@ private final class SessionIsolationRPCClient: HermesRPCClientProtocol {
         case "prompt.receipt":
             duringReceipt?()
             return promptReceipt
+        case "approval.respond": return ["resolved": 1]
         default:
             return [:]
         }
@@ -332,6 +333,132 @@ struct SessionConversationIsolationTests {
         #expect(model.clarificationRequestID == "srq-b")
         #expect(model.clarificationChoices == ["A", "B"])
         #expect(model.messages.map(\.text) == ["Which task?"])
+    }
+
+    @Test func botChatRestoresQueuedApprovalThatArrivedWhileSessionsWasOpen() async throws {
+        let rpc = SessionIsolationRPCClient()
+        let model = DockModel(rpcClient: rpc)
+        let bot = approvalFixtureBot()
+        let payload = ["title": "Review the action", "command": "git status", "request_id": "tool-approval"]
+        let stored = try #require(bot.chat?.sessionID)
+        rpc.resumeResponses = [
+            ["session_id": "bot-runtime", "session_key": stored, "messages": [], "pending_approval": payload]
+        ]
+        model.receiveGatewayEvent("approval.request", params: ["session_id": stored, "payload": payload])
+        #expect(model.currentConversationApproval == nil)
+        model.resumeBotChat(bot)
+        try await waitUntil { model.sessionID == "bot-runtime" && model.sessionActionsReady }
+        let record = try #require(model.currentConversationApproval)
+        #expect(record.profileID == bot.id)
+        #expect(model.approvalText == "git status")
+        model.respondToApproval(ApprovalChoice.deny)
+        try await waitUntil { model.currentConversationApproval?.resolved == true }
+        let response = try #require(rpc.requests.first { $0.method == "approval.respond" })
+        #expect(response.params["session_id"] as? String == "bot-runtime")
+        #expect(response.params["profile"] as? String == bot.id)
+        #expect(response.params["request_id"] as? String == "tool-approval")
+        #expect(model.currentConversationApproval?.resolved == true)
+    }
+
+    @Test(arguments: ["approval", "clarify", "secret"])
+    func botChatPromptsFollowTheirStoredIDAndNeverAppearInBlankChat(method: String) async throws {
+        let rpc = SessionIsolationRPCClient()
+        let model = DockModel(rpcClient: rpc)
+        let bot = approvalFixtureBot()
+        let stored = try #require(bot.chat?.sessionID)
+        let payload = [
+            "session_id": stored, "command": "git status", "request_id": "tool-approval",
+            "question": "Which task?", "env_var": "FIXTURE_INPUT",
+        ]
+        let openRequest: [String: Any] = ["id": "srq-fixture", "method": method, "params": payload]
+        var reattachedRequest = openRequest
+        reattachedRequest["params"] = payload.merging(["session_id": "bot-runtime"]) { _, new in new }
+        let resume: [String: Any] = ["session_id": "bot-runtime", "session_key": stored, "messages": []]
+        rpc.resumeResponses = [resume, resume.merging(["open_requests": [reattachedRequest]]) { _, new in new }]
+        model.resumeBotChat(bot)
+        try await waitUntil { model.sessionID == "bot-runtime" && model.sessionActionsReady }
+        let event = try #require(HermesGateway.event(forServerRequest: openRequest))
+        func expectOpen() {
+            switch method {
+            case "approval":
+                #expect(model.currentConversationApproval?.target?.sessionID == stored)
+                #expect(model.approvalText == "git status")
+            case "clarify": #expect(model.clarificationRequestID == "srq-fixture")
+            default: #expect(model.valuePrompt?.requestID == "srq-fixture")
+            }
+        }
+        model.receiveGatewayEvent(event.type, params: event.params)
+        expectOpen()
+        model.newChat()
+        // A request delivered again while its Bot Chat is hidden belongs there, not here.
+        model.receiveGatewayEvent(event.type, params: event.params)
+        #expect(model.sessionID == nil)
+        #expect(model.currentConversationApproval == nil)
+        #expect(model.approvalText == nil)
+        #expect(model.clarificationQuestion == nil)
+        #expect(model.valuePrompt == nil)
+
+        model.resumeBotChat(bot)
+        try await waitUntil { model.sessionID == "bot-runtime" && model.sessionActionsReady }
+        expectOpen()
+        let expiry = method == "secret" ? "prompt.expire" : "\(method).expire"
+        model.receiveGatewayEvent(
+            expiry, params: ["session_id": stored, "payload": ["request_id": "srq-fixture"]])
+        #expect(model.currentConversationApproval?.resolved != false)
+        #expect(model.approvalText == nil)
+        #expect(model.clarificationQuestion == nil)
+        #expect(model.valuePrompt == nil)
+    }
+
+    @Test func promptWithoutAnExactOwnerCannotChangeTheSelectedChat() {
+        let model = DockModel(initialSessionID: "bot-runtime")
+        model.sessionProfileID = "selected-bot"
+        let payload = [
+            "command": "git status", "question": "Which task?", "request_id": "srq-elsewhere", "method": "secret",
+        ]
+        for type in ["approval.request", "clarify.request", "prompt.request"] {
+            model.receiveGatewayEvent(type, params: ["payload": payload])
+            model.receiveGatewayEvent(
+                type, params: ["session_id": "bot-runtime", "profile": "other-bot", "payload": payload])
+        }
+        #expect(model.sessionAttention.isEmpty)
+        #expect(model.currentConversationApproval == nil)
+        #expect(model.clarificationQuestion == nil)
+        #expect(model.valuePrompt == nil)
+    }
+
+    @Test func cancellationDuringHistoryLoadWinsOverTheResumeApproval() async throws {
+        let rpc = SessionIsolationRPCClient()
+        let model = DockModel(rpcClient: rpc)
+        let session = HermesSession(
+            id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        rpc.resumeResponses = [
+            [
+                "session_id": session.id, "messages": [], "messages_omitted": true,
+                "pending_approval": ["command": "git status", "request_id": "tool-approval"],
+            ],
+            ["session_id": session.id, "messages": []],
+        ]
+        // The fixture has no HTTP history, so the second resume is the inline fallback.
+        rpc.duringResume = { [weak model, weak rpc] in
+            guard rpc?.requests.filter({ $0.method == "session.resume" }).count == 2 else { return }
+            model?.receiveGatewayEvent(
+                "approval.expire",
+                params: ["session_id": session.id, "payload": ["request_id": "tool-approval"]])
+        }
+        model.resumeSession(session)
+        try await waitUntil { model.sessionID == session.id && model.sessionActionsReady }
+        #expect(model.sessionActionsReady)
+        #expect(rpc.requests.filter { $0.method == "session.resume" }.count == 2)
+        #expect(model.currentConversationApproval?.resolved == true)
+        #expect(model.approvalText == nil)
+    }
+
+    private func approvalFixtureBot() -> BotSummary {
+        BotSummary(
+            id: "fixture-bot", name: "Fixture Bot", title: nil, description: nil, model: nil, isActive: true,
+            chat: BotChatReference(sessionID: Fixtures.sessionB, profileID: "fixture-bot"), avatarURL: nil,
+            preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
     }
 
     @Test func pendingClarificationReturnsWhenItsSessionIsReopened() async throws {

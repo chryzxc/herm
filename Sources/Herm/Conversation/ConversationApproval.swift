@@ -4,7 +4,7 @@ struct ConversationApproval: Equatable, Identifiable {
     let id: UUID
     let approval: ApprovalPresentation
     let target: AttentionRequest?
-    let serverRequestID: String?
+    var serverRequestID: String?
     let profileID: String?
     var aliases: Set<String>
     var resolved: Bool
@@ -27,7 +27,7 @@ extension DockModel {
         let profile = sessionProfileID ?? profileScopeID
         guard
             let record = records.last(where: {
-                $0.profileID == profile && !$0.aliases.isDisjoint(with: currentSessionIDs)
+                $0.profileID == profile && !$0.aliases.isDisjoint(with: promptSessionIDs)
             }), !record.resolved
         else { return nil }
         return VoiceApproval(record: record, answer: record.target.flatMap { answers[$0] } ?? record.legacyAnswer)
@@ -36,28 +36,35 @@ extension DockModel {
     var currentConversationApproval: ConversationApproval? {
         let profile = sessionProfileID ?? profileScopeID
         return conversationApprovals.last {
-            $0.profileID == profile && !$0.aliases.isDisjoint(with: currentSessionIDs)
+            $0.profileID == profile && !$0.aliases.isDisjoint(with: promptSessionIDs)
         }
     }
 
-    func captureConversationApproval(_ pending: PendingApproval, sessionID: String, profileID: String?) -> Bool {
-        let aliases = pendingApprovalAliasesBySessionID[sessionID] ?? [sessionID]
+    func captureConversationApproval(
+        _ approval: ApprovalPresentation, target: AttentionRequest?, serverRequestID: String?,
+        profileID: String?, aliases: Set<String>
+    ) -> ConversationApproval? {
         let index = conversationApprovals.firstIndex {
             $0.profileID == profileID && !$0.aliases.isDisjoint(with: aliases)
         }
         if let index {
             let old = conversationApprovals[index]
             let same =
-                pending.presentation.requestID != nil && old.approval.requestID == pending.presentation.requestID
-                || pending.serverRequestID != nil && old.serverRequestID == pending.serverRequestID
-            if same { return !old.resolved }
+                approval.requestID != nil && old.approval.requestID == approval.requestID
+                || serverRequestID != nil && old.serverRequestID == serverRequestID
+            if same {
+                guard !old.resolved else { return nil }
+                conversationApprovals[index].aliases.formUnion(aliases)
+                if old.serverRequestID == nil { conversationApprovals[index].serverRequestID = serverRequestID }
+                return conversationApprovals[index]
+            }
             conversationApprovals.remove(at: index)
         }
-        conversationApprovals.append(
-            ConversationApproval(
-                id: UUID(), approval: pending.presentation, target: pending.responseTarget,
-                serverRequestID: pending.serverRequestID, profileID: profileID, aliases: aliases, resolved: false))
-        return true
+        let record = ConversationApproval(
+            id: UUID(), approval: approval, target: target, serverRequestID: serverRequestID,
+            profileID: profileID, aliases: aliases, resolved: false)
+        conversationApprovals.append(record)
+        return record
     }
 
     func conversationApprovalID(sessionID: String, pending: PendingApproval) -> UUID? {
