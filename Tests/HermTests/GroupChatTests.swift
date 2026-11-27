@@ -1,9 +1,12 @@
+import AppKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import Herm
 
 @MainActor
+@Suite(.serialized)
 struct GroupChatTests {
     @Test(arguments: ["groups.stop", "groups.rename", "groups.approve"])
     func failedRoomActionsKeepTheirErrorAndReleasePendingState(method: String) async throws {
@@ -271,6 +274,271 @@ struct GroupChatTests {
         #expect(echoed?.attachments == [file])
         #expect(GroupRoomAttachment.kind(forMIME: "image/png") == "image")
         #expect(GroupRoomAttachment.kind(forMIME: "application/pdf") == "pdf")
+    }
+
+    @Test func selectedFilesReachGroupUploadAndSend() async throws {
+        let client = RoomClient()
+        let store = GroupChatStore(defaults: freshDefaults())
+        store.bind(to: client)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("group-\(UUID().uuidString).txt")
+        try Data("selected".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        var selected: [URL] = []
+        var error: String?
+        GroupChatView.handleAttachmentSelection(.success([url]), upload: { selected = $0 }, report: { error = $0 })
+        #expect(selected == [url])
+        #expect(error == nil)
+        let attachment = try await store.uploadAttachment(try #require(selected.first), to: "r")
+        await store.send("draft", attachments: [attachment], to: "r")
+        let payload = client.sent?["payload"] as? [String: Any]
+        #expect(payload?["text"] as? String == "draft")
+        #expect((payload?["attachments"] as? [[String: Any]])?.first?["attachment_id"] as? String == attachment.id)
+    }
+
+    @Test func attachFileActionCompletesNativePickerAndSendsManifest() async throws {
+        let app = NSApplication.shared
+        let accessibility = app.value(forKey: "accessibilityEnhancedUserInterface")
+        app.setValue(true, forKey: "accessibilityEnhancedUserInterface")
+        defer { app.setValue(accessibility, forKey: "accessibilityEnhancedUserInterface") }
+        let client = RoomClient()
+        let store = GroupChatStore(defaults: freshDefaults())
+        store.bind(to: client)
+        await store.refreshRooms()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("group-\(UUID().uuidString).txt")
+        try Data("selected".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let view = GroupChatView(
+            store: store, botMode: BotModeModel(), roomID: "r", toolbar: { title, _ in title }, onDisbanded: {}
+        ).environment(\.dockHostVisible, false).frame(width: 420, height: 500)
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 500),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        func elements(_ element: AnyObject) -> [AnyObject] {
+            [element] + (element.accessibilityChildren?() ?? []).flatMap { elements($0 as AnyObject) }
+        }
+        host.layoutSubtreeIfNeeded()
+        let insert = try #require(
+            elements(host).first { $0.accessibilityLabel?() == "Attach files or insert a snippet" })
+        #expect(insert.accessibilityPerformPress?() == true)
+        var attach: AnyObject?
+        for _ in 0..<100 {
+            attach = app.windows.flatMap { elements($0) }.first { $0.accessibilityLabel?() == "Attach File" }
+            if attach != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let before = Set(app.windows.map(ObjectIdentifier.init))
+        #expect(try #require(attach).accessibilityPerformPress?() == true)
+        var panel: NSOpenPanel?
+        for _ in 0..<100 {
+            panel =
+                (window.attachedSheet as? NSOpenPanel)
+                ?? (app.windows.first { !before.contains(ObjectIdentifier($0)) && $0 is NSOpenPanel } as? NSOpenPanel)
+            if panel != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let picker = try #require(panel)
+        #expect(picker.allowsMultipleSelection)
+        defer { picker.cancel(nil) }
+        picker.directoryURL = url.deletingLastPathComponent()
+        var fileRow: AnyObject?
+        for _ in 0..<200 {
+            fileRow = elements(picker).first {
+                $0.accessibilityLabel?() == url.lastPathComponent
+                    && $0.accessibilityRole?() == .row
+            }
+            if fileRow != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(try #require(fileRow).accessibilityPerformPress?() == true)
+        picker.ok(nil)
+        for _ in 0..<200 {
+            host.layoutSubtreeIfNeeded()
+            if elements(host).contains(where: { $0.accessibilityLabel?() == "Remove \(url.lastPathComponent)" }) {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(elements(host).contains { $0.accessibilityLabel?() == "Remove \(url.lastPathComponent)" })
+        func findEditor(_ view: NSView) -> ComposerInputTextView? {
+            if let editor = view as? ComposerInputTextView { return editor }
+            return view.subviews.lazy.compactMap(findEditor).first
+        }
+        try #require(findEditor(host)).onSubmit?()
+        for _ in 0..<200 where client.sent == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let payload = try #require(client.sent?["payload"] as? [String: Any])
+        let manifest = try #require((payload["attachments"] as? [[String: Any]])?.first)
+        #expect(manifest["attachment_id"] as? String == "att-1")
+        #expect(manifest["name"] as? String == url.lastPathComponent)
+    }
+
+    @Test func pastingAFileInTheGroupComposerUploadsWithoutReplacingDraft() async throws {
+        _ = NSApplication.shared
+        let client = RoomClient()
+        let store = GroupChatStore(defaults: freshDefaults())
+        store.bind(to: client)
+        await store.refreshRooms()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("group-\(UUID().uuidString).txt")
+        try Data("pasted".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let view = GroupChatView(
+            store: store, botMode: BotModeModel(), roomID: "r", toolbar: { title, _ in title }, onDisbanded: {}
+        ).environment(\.dockHostVisible, false).frame(width: 420, height: 500)
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 500),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        host.layoutSubtreeIfNeeded()
+        func findEditor(_ view: NSView) -> ComposerInputTextView? {
+            if let editor = view as? ComposerInputTextView { return editor }
+            return view.subviews.lazy.compactMap(findEditor).first
+        }
+        let editor = try #require(findEditor(host))
+        window.makeFirstResponder(editor)
+        editor.insertText("Keep draft", replacementRange: NSRange(location: NSNotFound, length: 0))
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        defer { pasteboard.clearContents() }
+        #expect(pasteboard.writeObjects([url as NSURL]))
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "")
+        #expect(editor.validateUserInterfaceItem(pasteItem))
+        editor.paste(nil)
+        for _ in 0..<200 where client.uploaded == nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(editor.string == "Keep draft")
+        #expect(client.uploaded?["name"] as? String == url.lastPathComponent)
+        #expect(client.uploaded?["room_id"] as? String == "r")
+    }
+
+    @Test func pastingAFileWithoutGatewaySupportKeepsDraftAndReportsError() async throws {
+        _ = NSApplication.shared
+        let client = RoomClient()
+        client.supportsAttachments = false
+        let store = GroupChatStore(defaults: freshDefaults())
+        store.bind(to: client)
+        await store.refreshRooms()
+        let view = GroupChatView(
+            store: store, botMode: BotModeModel(), roomID: "r", toolbar: { title, _ in title }, onDisbanded: {}
+        ).environment(\.dockHostVisible, false).frame(width: 420, height: 500)
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 500),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        host.layoutSubtreeIfNeeded()
+        func findEditor(_ view: NSView) -> ComposerInputTextView? {
+            if let editor = view as? ComposerInputTextView { return editor }
+            return view.subviews.lazy.compactMap(findEditor).first
+        }
+        let editor = try #require(findEditor(host))
+        window.makeFirstResponder(editor)
+        editor.insertText("Keep draft", replacementRange: NSRange(location: NSNotFound, length: 0))
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        defer { pasteboard.clearContents() }
+        #expect(pasteboard.writeObjects([URL(fileURLWithPath: "/tmp/group-file.txt") as NSURL]))
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "")
+        #expect(editor.validateUserInterfaceItem(pasteItem))
+        editor.paste(nil)
+        #expect(editor.string == "Keep draft")
+        #expect(client.uploaded == nil)
+        #expect(store.errorMessage == "This gateway does not support group file attachments.")
+    }
+
+    @Test func failedAttachmentSendReportsFailure() async {
+        let client = RoomClient()
+        client.failingMethod = "groups.send"
+        let store = GroupChatStore(defaults: freshDefaults())
+        store.bind(to: client)
+        let file = GroupRoomAttachment(id: "a", kind: "file", name: "file.txt", mime: "text/plain", size: 5)
+        #expect(!(await store.send("draft", attachments: [file], to: "r")))
+        #expect(store.errorMessage?.contains("Couldn't send:") == true)
+    }
+
+    @Test(arguments: [false, true])
+    func attachmentSendKeepsNewerDraftAfterRoomUnmount(success: Bool) async throws {
+        let app = NSApplication.shared
+        let accessibility = app.value(forKey: "accessibilityEnhancedUserInterface")
+        app.setValue(true, forKey: "accessibilityEnhancedUserInterface")
+        defer { app.setValue(accessibility, forKey: "accessibilityEnhancedUserInterface") }
+        let client = RoomClient()
+        let (pause, release) = AsyncStream<Void>.makeStream()
+        client.sendPause = pause
+        client.failSendAfterPause = !success
+        defer { release.finish() }
+        let store = GroupChatStore(defaults: freshDefaults())
+        store.bind(to: client)
+        await store.refreshRooms()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("group-\(UUID().uuidString).txt")
+        try Data("pasted".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let view = GroupChatView(
+            store: store, botMode: BotModeModel(), roomID: "r", toolbar: { title, _ in title }, onDisbanded: {}
+        ).environment(\.dockHostVisible, false).frame(width: 420, height: 500)
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 500),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        func findEditor(_ view: NSView) -> ComposerInputTextView? {
+            if let editor = view as? ComposerInputTextView { return editor }
+            return view.subviews.lazy.compactMap(findEditor).first
+        }
+        func elements(_ element: AnyObject) -> [AnyObject] {
+            [element] + (element.accessibilityChildren?() ?? []).flatMap { elements($0 as AnyObject) }
+        }
+        func hasAttachment() -> Bool {
+            elements(host).contains { $0.accessibilityLabel?() == "Remove \(url.lastPathComponent)" }
+        }
+        host.layoutSubtreeIfNeeded()
+        let editor = try #require(findEditor(host))
+        window.makeFirstResponder(editor)
+        editor.insertText("Keep draft", replacementRange: NSRange(location: NSNotFound, length: 0))
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        defer { pasteboard.clearContents() }
+        #expect(pasteboard.writeObjects([url as NSURL]))
+        editor.paste(nil)
+        for _ in 0..<200 {
+            host.layoutSubtreeIfNeeded()
+            if hasAttachment() { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(hasAttachment())
+        editor.onSubmit?()
+        for _ in 0..<200 where client.sendCount == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        try #require(client.sendCount == 1)
+        if success {
+            editor.insertText("Keep draft", replacementRange: NSRange(location: 0, length: 10))
+        } else {
+            editor.insertText(" newer", replacementRange: NSRange(location: NSNotFound, length: 0))
+        }
+        let otherRoom = GroupChatView(
+            store: store, botMode: BotModeModel(), roomID: "other", toolbar: { title, _ in title }, onDisbanded: {}
+        ).environment(\.dockHostVisible, false).frame(width: 420, height: 500)
+        window.contentView = NSHostingView(rootView: otherRoom)
+        release.yield(())
+        for _ in 0..<200 where store.composerDrafts["r"]?.submitting == true {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(store.composerDrafts["r"]?.submitting == false)
+        let reopened = NSHostingView(rootView: view)
+        window.contentView = reopened
+        reopened.layoutSubtreeIfNeeded()
+        let reopenedEditor = try #require(findEditor(reopened))
+        #expect(reopenedEditor.string == (success ? "Keep draft" : "Keep draft newer"))
+        let restoredChip = elements(reopened).contains { $0.accessibilityLabel?() == "Remove \(url.lastPathComponent)" }
+        #expect(restoredChip == !success)
+        if !success { #expect(store.errorMessage?.contains("Couldn't send:") == true) }
     }
 
     @Test func imageAttachmentsDownloadOnceAndRefusalsStayNamedRows() async {
@@ -604,6 +872,8 @@ struct GroupChatTests {
 @MainActor
 private final class RoomClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
+    var supportsAttachments = true
+    var failSendAfterPause = false
     var sendPause: AsyncStream<Void>?
     var sendStarted: AsyncStream<Void>.Continuation?
     var renamePause: AsyncStream<Void>?
@@ -642,7 +912,8 @@ private final class RoomClient: HermesRPCClientProtocol {
             sessionListCount += 1
             return [:]
         case "groups.capabilities":
-            return ["driver": driver, "methods": ["groups.send", "groups.attachment.upload"]]
+            let methods = supportsAttachments ? ["groups.send", "groups.attachment.upload"] : ["groups.send"]
+            return ["driver": driver, "methods": methods]
         case "groups.attachment.download":
             downloads += 1
             guard params["event_id"] as? String == "e-1" else { throw HermesGateway.GatewayError.httpRefused(404, "") }
@@ -690,6 +961,7 @@ private final class RoomClient: HermesRPCClientProtocol {
                 sendStarted?.yield(())
                 for await _ in sendPause { break }
             }
+            if failSendAfterPause { throw HermesGateway.GatewayError.httpRefused(500, "refused") }
             sent = params
             return [:]
         case "groups.peer.invite":

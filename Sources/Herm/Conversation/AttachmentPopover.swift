@@ -123,6 +123,7 @@ struct AttachmentPopover: View {
     let onSelectSnippet: (String) -> Void
     /// Group rooms offer only the actions their gateway supports.
     var actions = AttachmentPopoverAction.allCases
+    var fileActionTitle: String = AttachmentPopoverAction.files.title
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -156,13 +157,14 @@ struct AttachmentPopover: View {
 
     private func actionRow(_ action: AttachmentPopoverAction) -> some View {
         let unavailable = (action == .pasteImage && !pasteImageAvailable)
+        let title = action == .files ? fileActionTitle : action.title
         return Button {
             onSelect(action)
         } label: {
             HStack(spacing: 9) {
                 DockIcon(action.icon)
                     .frame(width: 16)
-                Text(action.title)
+                Text(title)
                 Spacer()
             }
             .dockFont(.body, weight: .medium)
@@ -172,8 +174,8 @@ struct AttachmentPopover: View {
         }
         .buttonStyle(.dockHover)
         .disabled(unavailable)
-        .help(action == .folder ? "Insert a folder path into the message" : action.title)
-        .accessibilityLabel(unavailable ? "\(action.title), unavailable" : action.title)
+        .help(action == .folder ? "Insert a folder path into the message" : title)
+        .accessibilityLabel(unavailable ? "\(title), unavailable" : title)
     }
 
     private var snippetsRow: some View {
