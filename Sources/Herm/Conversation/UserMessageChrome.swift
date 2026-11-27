@@ -47,6 +47,83 @@ struct UserMessageImages: View {
     }
 }
 
+/// Stored images keep a URL, not a full bitmap, in the transcript.
+struct RestoredMessageImages: View {
+    let urls: [URL]
+    let onPreview: (NSImage) -> Void
+
+    var body: some View {
+        if let first = urls.first, urls.count == 1 {
+            RestoredMessageImage(url: first, tile: false, onPreview: onPreview)
+        } else if !urls.isEmpty {
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.fixed(104), spacing: 6), count: min(urls.count, 3)),
+                alignment: .trailing, spacing: 6
+            ) {
+                ForEach(urls.indices, id: \.self) { index in
+                    RestoredMessageImage(url: urls[index], tile: true, onPreview: onPreview)
+                }
+            }
+            .fixedSize()
+        }
+    }
+}
+
+private struct RestoredMessageImage: View {
+    let url: URL
+    let tile: Bool
+    let onPreview: (NSImage) -> Void
+    @State private var image: CGImage?
+    @State private var unavailable = false
+    @State private var previewRequest: UUID?
+
+    private var size: CGSize {
+        if tile { return CGSize(width: 104, height: 104) }
+        guard let image else { return CGSize(width: 220, height: 124) }
+        let scale = min(0.5, 220 / CGFloat(max(image.width, image.height)))
+        return CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
+    }
+
+    var body: some View {
+        Button {
+            previewRequest = UUID()
+        } label: {
+            Group {
+                if let image {
+                    Image(decorative: image, scale: 2)
+                        .resizable().aspectRatio(contentMode: tile ? .fill : .fit)
+                } else {
+                    DockIcon(unavailable ? .warningCircle : .image)
+                        .foregroundStyle(Color.dockMetadataText)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.dockSurface2)
+                }
+            }
+            .frame(width: size.width, height: size.height)
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
+        }
+        .buttonStyle(.dockHover)
+        .disabled(image == nil)
+        .accessibilityLabel(unavailable ? "Image unavailable" : "Open image preview")
+        .help(unavailable ? "Image unavailable" : "Open image preview")
+        .task(id: url) {
+            image = nil
+            unavailable = false
+            previewRequest = nil
+            let thumbnail = await AttachmentThumbnailLoader.shared.image(at: url, maximumPixelSize: 440)
+            guard !Task.isCancelled else { return }
+            image = thumbnail
+            unavailable = thumbnail == nil
+        }
+        .task(id: previewRequest) {
+            guard previewRequest != nil else { return }
+            let preview = await AttachmentThumbnailLoader.shared.image(at: url, maximumPixelSize: 1_800)
+            guard !Task.isCancelled, let selected = preview ?? image else { return }
+            onPreview(NSImage(cgImage: selected, size: .zero))
+        }
+    }
+}
+
 /// One attached file inside a user bubble.
 struct UserMessageAttachmentRow: View {
     @Environment(\.sessionPreviewWorkspace) private var previewWorkspace

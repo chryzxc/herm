@@ -93,7 +93,6 @@ extension DockModel {
         clearStoredSearch()
         transcriptTimelineTask?.cancel()
         transcriptTimelineTask = nil
-        sessionTranscriptImageTask?.cancel()
         transcriptHistoryCursor = nil
         replaceTranscriptRowIDs([:])
         transcriptTimeline = []
@@ -350,14 +349,6 @@ extension DockModel {
             }
         }
         messages = merge.messages
-        if let sessionID, !merge.inserted.isEmpty {
-            let pending = restored.pendingImages.compactMap { entry -> RestoredTranscript.PendingImages? in
-                let id = renamed[entry.messageID] ?? entry.messageID
-                guard merge.inserted.contains(id) else { return nil }
-                return .init(messageID: id, fileURLs: entry.fileURLs)
-            }
-            rehydratePendingTranscriptImages(pending, requestedSessionID: sessionID)
-        }
     }
 
     static func externalTurnPollDelay(failures: Int, remaining: Duration) -> Duration {
@@ -511,15 +502,6 @@ extension DockModel {
             messagesRevision: messagesRevision &+ 1
         )
         messages = inserted + retained
-        if let sessionID, !inserted.isEmpty, !restored.pendingImages.isEmpty {
-            let insertedIDs = Set(inserted.map(\.id))
-            rehydratePendingTranscriptImages(
-                restored.pendingImages.compactMap { entry in
-                    let id = renamed[entry.messageID] ?? entry.messageID
-                    guard insertedIDs.contains(id) else { return nil }
-                    return .init(messageID: id, fileURLs: entry.fileURLs)
-                }, requestedSessionID: sessionID)
-        }
         DebugLog.write("model: loaded \(restored.messages.count) earlier messages (offset \(cursor.nextOffset))")
     }
 

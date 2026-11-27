@@ -8,11 +8,14 @@ struct ConversationTranscriptSnapshot: Equatable {
     struct Row: Equatable {
         let index: Int
         let message: ChatMessage
+        var changes: [ConversationChangeSummary.File] = []
         static func == (lhs: Self, rhs: Self) -> Bool {
             let a = lhs.message
             let b = rhs.message
-            return lhs.index == rhs.index && a.id == b.id && a.contentRevision == b.contentRevision
-                && a.role == b.role && a.images.map(ObjectIdentifier.init) == b.images.map(ObjectIdentifier.init)
+            return lhs.index == rhs.index && lhs.changes == rhs.changes && a.id == b.id
+                && a.contentRevision == b.contentRevision
+                && a.role == b.role && a.restoredImageURLs == b.restoredImageURLs
+                && a.images.map(ObjectIdentifier.init) == b.images.map(ObjectIdentifier.init)
                 && a.timestamp == b.timestamp && a.modelName == b.modelName && a.responseRoute == b.responseRoute
                 && a.responseDuration == b.responseDuration && a.tokenCount == b.tokenCount
                 && a.isSteering == b.isSteering && a.steeringStatus == b.steeringStatus && a.isError == b.isError
@@ -81,7 +84,9 @@ struct ConversationTranscriptSnapshot: Equatable {
     let isPreview: Bool
     let unreadDividerMessageID: UUID?
     let layoutGeneration: UInt64
-    let messages: [ChatMessage]
+    let messageCount: Int
+    let nearbyStart: Int
+    let nearbyMessages: [ChatMessage]
     let range: Range<Int>
     let rows: [Row]
     let context: Context
@@ -91,11 +96,21 @@ struct ConversationTranscriptSnapshot: Equatable {
     let hasEarlierHistory: Bool
     var navigatorItems: [MessageNavigatorItem] { navigator.items }
 
+    func nearbyMessage(at index: Int) -> ChatMessage? {
+        let offset = index - nearbyStart
+        return nearbyMessages.indices.contains(offset) ? nearbyMessages[offset] : nil
+    }
+
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.sessionID == rhs.sessionID && lhs.layoutSessionID == rhs.layoutSessionID && lhs.isPreview == rhs.isPreview
             && lhs.unreadDividerMessageID == rhs.unreadDividerMessageID
             && lhs.layoutGeneration == rhs.layoutGeneration
-            && lhs.messages.count == rhs.messages.count
+            && lhs.messageCount == rhs.messageCount && lhs.nearbyStart == rhs.nearbyStart
+            && lhs.nearbyMessages.elementsEqual(
+                rhs.nearbyMessages,
+                by: {
+                    $0.id == $1.id && $0.contentRevision == $1.contentRevision
+                })
             && lhs.range == rhs.range && lhs.rows == rhs.rows && lhs.context == rhs.context
             && lhs.prepend == rhs.prepend && lhs.navigator === rhs.navigator && lhs.navigatorCount == rhs.navigatorCount
             && lhs.hasEarlierHistory == rhs.hasEarlierHistory
@@ -266,16 +281,6 @@ final class ConversationTranscriptSource: ObservableObject {
 
     func resume() {
         isActive = true
-        model.prioritizedTranscriptImageIDs = { [weak self] in
-            guard let self, isActive, !snapshot.isPreview,
-                snapshot.layoutSessionID == model.transcriptPresentationID,
-                let geometry = coordinator.controller.geometry
-            else { return [] }
-            let bottom = geometry.visibleTop + geometry.visibleHeight
-            return coordinator.rowViewports.compactMap {
-                $0.maxY > geometry.visibleTop && $0.minY < bottom ? $0.target.messageID : nil
-            }
-        }
         refresh()
         prefetch()
     }
@@ -345,12 +350,15 @@ final class ConversationTranscriptSource: ObservableObject {
         let page = ConversationMessageWindow.pageSize
         let indices =
             Array(max(0, range.lowerBound - page)..<range.lowerBound)
-            + Array(range.upperBound..<min(snapshot.messages.count, range.upperBound + page))
+            + Array(range.upperBound..<min(snapshot.messageCount, range.upperBound + page))
         let positions = Dictionary(
-            indices.map { (snapshot.messages[$0].id, $0) }, uniquingKeysWith: { first, _ in first })
+            indices.compactMap { index in snapshot.nearbyMessage(at: index).map { ($0.id, index) } },
+            uniquingKeysWith: { first, _ in first })
+        let first = snapshot.nearbyStart
         markdownPrefetch.update(
-            messages: snapshot.messages, range: snapshot.range, sessionID: snapshot.sessionID,
-            streamingID: snapshot.context.streamingID, controller: coordinator.controller
+            messages: snapshot.nearbyMessages, range: (range.lowerBound - first)..<(range.upperBound - first),
+            sessionID: snapshot.sessionID,
+            streamingID: snapshot.context.streamingID, controller: coordinator.controller, indexOffset: first
         ) { [weak model] id, revision in
             guard let model, model.sessionID == sessionID, let index = positions[id] else { return false }
             let messages = model.displayedTranscriptMessages
@@ -374,12 +382,14 @@ final class ConversationTranscriptSource: ObservableObject {
         prefetch()
         holdingPrefetch = true
         heldMeasurementContext = context
-        let added = range.filter { snapshot.messages.indices.contains($0) }
+        let added = range.filter { $0 < snapshot.messageCount }
         let current = model.displayedTranscriptMessages
         guard model.sessionID == snapshot.sessionID,
             added.allSatisfy({ index in
-                current.indices.contains(index) && current[index].id == snapshot.messages[index].id
-                    && current[index].contentRevision == snapshot.messages[index].contentRevision
+                guard current.indices.contains(index), let expected = snapshot.nearbyMessage(at: index) else {
+                    return false
+                }
+                return current[index].id == expected.id && current[index].contentRevision == expected.contentRevision
             })
         else {
             coordinator.cancelHistoryRequest()
@@ -388,7 +398,8 @@ final class ConversationTranscriptSource: ObservableObject {
             return .init(count: 0, preparedPage: nil)
         }
         let ordered = direction < 0 ? Array(added.reversed()) : added
-        let ready = markdownPrefetch.readyPrefix(messageIDs: ordered.map { snapshot.messages[$0].id }, context: context)
+        let ready = markdownPrefetch.readyPrefix(
+            messageIDs: ordered.compactMap { snapshot.nearbyMessage(at: $0)?.id }, context: context)
         return .init(count: ready.count, preparedPage: ready.page)
     }
 
@@ -417,11 +428,26 @@ final class ConversationTranscriptSource: ObservableObject {
         let olderCount =
             preview == nil && loadedCount < MessageNavigator.minimumMessagesToShowNavigator
             ? model.unloadedTranscriptPrompts.count : 0
+        let page = ConversationMessageWindow.pageSize
+        let nearbyStart = max(0, range.lowerBound - page)
+        let nearbyEnd = min(messages.count, range.upperBound + page)
+        let storedReferences = preview?.references ?? model.storedMessageReferences
+        let visibleReferences = Dictionary(
+            range.compactMap { index in
+                let id = messages[index].id
+                return storedReferences[id].map { (id, $0) }
+            }, uniquingKeysWith: { first, _ in first })
         return ConversationTranscriptSnapshot(
             sessionID: model.sessionID, layoutSessionID: model.transcriptPresentationID, isPreview: preview != nil,
             unreadDividerMessageID: preview == nil && model.sessionActionsReady ? model.unreadDividerMessageID : nil,
-            layoutGeneration: generation, messages: messages, range: range,
-            rows: range.map { .init(index: $0, message: messages[$0]) },
+            layoutGeneration: generation, messageCount: messages.count, nearbyStart: nearbyStart,
+            nearbyMessages: Array(messages[nearbyStart..<nearbyEnd]), range: range,
+            rows: range.map { index in
+                .init(
+                    index: index, message: messages[index],
+                    changes: ConversationChangeSummary.turnFiles(
+                        messages: messages, at: index, streamingID: streamingID))
+            },
             context: .init(
                 status: model.status, streamingID: streamingID,
                 // The canonical turn keeps accumulating while its row is unmounted.
@@ -446,8 +472,7 @@ final class ConversationTranscriptSource: ObservableObject {
                 mentions: mentions, botSteps: botSteps,
                 rosterRevision: bots.rosterRevision, selectedProfileID: bots.selectedProfileID,
                 pinSupport: model.messagePinsSupported, pinnedIDs: model.pinnedMessageUIDs,
-                pinnedRows: model.pinnedMessageRowIDs,
-                storedReferences: preview?.references ?? model.storedMessageReferences,
+                pinnedRows: model.pinnedMessageRowIDs, storedReferences: visibleReferences,
                 updatingPin: model.updatingMessagePinRowID,
                 pendingActions: actions.pendingActions, speakingID: voice.speakingMessageID,
                 historyLoading: model.isLoadingTranscriptHistory, latestRequest: model.scrollToLatestMessageRequest,

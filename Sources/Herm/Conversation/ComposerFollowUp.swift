@@ -12,7 +12,7 @@ struct ComposerFollowUp {
     static func prompt(in messages: [ChatMessage]) -> String? {
         let recent = messages.suffix(16).filter {
             $0.systemEvent == nil && $0.kanbanNotice == nil
-                && ($0.hasBodyText || $0.isError || !$0.images.isEmpty || !$0.attachmentURLs.isEmpty)
+                && ($0.hasBodyText || $0.isError || $0.hasImages || !$0.attachmentURLs.isEmpty)
         }.suffix(4)
         guard let latest = recent.last, latest.role == .hermes, latest.hasBodyText, !latest.isError,
             recent.contains(where: { $0.role == .user && $0.hasBodyText })

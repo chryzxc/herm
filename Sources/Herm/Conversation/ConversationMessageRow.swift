@@ -168,6 +168,7 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.changes == rhs.changes
             && lhs.message.contentRevision == rhs.message.contentRevision
             && lhs.message.attachmentURLs == rhs.message.attachmentURLs
+            && lhs.message.restoredImageURLs == rhs.message.restoredImageURLs
             && lhs.message.role == rhs.message.role
             && lhs.message.images.elementsEqual(rhs.message.images, by: { $0 === $1 })
             && lhs.message.timestamp == rhs.message.timestamp
@@ -220,7 +221,10 @@ struct ConversationMessageRow: View, Equatable {
                 VStack(alignment: .trailing, spacing: 4) {
                     // Attachments sit above the text surface instead of inside
                     // the bubble, keeping media visually distinct from copy.
-                    if !message.images.isEmpty {
+                    if !message.restoredImageURLs.isEmpty {
+                        RestoredMessageImages(urls: message.restoredImageURLs, onPreview: onImagePreview)
+                            .overlay(alignment: .topLeading) { userMessageReaction }
+                    } else if !message.images.isEmpty {
                         UserMessageImages(
                             images: message.images,
                             cacheKey: { index in
@@ -257,7 +261,7 @@ struct ConversationMessageRow: View, Equatable {
                             isSteering: message.isSteering, isSpotlit: isSpotlit, reduceMotion: reduceMotion
                         )
                         .overlay(alignment: .topLeading) {
-                            if message.images.isEmpty { userMessageReaction }
+                            if !message.hasImages { userMessageReaction }
                         }
                     }
 
@@ -324,6 +328,9 @@ struct ConversationMessageRow: View, Equatable {
                         .accessibilityLabel("Message from \(bot?.name ?? message.botDisplayName ?? botProfileID)")
                     }
 
+                    if !message.restoredImageURLs.isEmpty {
+                        RestoredMessageImages(urls: message.restoredImageURLs, onPreview: onImagePreview)
+                    }
                     if let event = message.systemEvent, event.isFeed {
                         FeedEventRow(
                             event: event, line: FeedLine(message.text), timeLabel: message.timeLabel,

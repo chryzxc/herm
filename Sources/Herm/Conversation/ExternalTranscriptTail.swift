@@ -67,10 +67,11 @@ enum ExternalTranscriptTail {
                 let previous = current[index]
                 guard
                     previous.contentRevision != message.contentRevision
+                        || previous.restoredImageURLs != message.restoredImageURLs
                         || !sameActivity(previous.activity, message.activity)
                         || previous.reactions != message.reactions
                 else { continue }
-                updated[index] = message.attachingImages(previous.images)
+                updated[index] = message.restoredImageURLs.isEmpty ? message.attachingImages(previous.images) : message
                 changed = true
             } else if row > newestKnownRow {
                 additions.append(message)

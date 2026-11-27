@@ -106,7 +106,7 @@ enum MessageNavigator {
             revision = message.contentRevision
             isUser = message.role == .user
             isReply = message.role == .hermes && message.systemEvent == nil && message.kanbanNotice == nil
-            hasImages = !message.images.isEmpty
+            hasImages = message.hasImages
         }
     }
 
@@ -192,7 +192,7 @@ enum MessageNavigator {
         return MessageNavigatorItem(
             target: MessageNavigatorTarget(sessionID: sessionID, messageID: message.id), ordinal: ordinal,
             roleLabel: message.role == .user ? "You" : "Herm", preview: boundedPreview(text, limit: previewLimit),
-            contentRevision: message.contentRevision, hasImages: !message.images.isEmpty, searchText: text)
+            contentRevision: message.contentRevision, hasImages: message.hasImages, searchText: text)
     }
 
     private static func addingEarlierPrompts(
@@ -278,7 +278,7 @@ enum MessageNavigator {
             rows.append(
                 .init(
                     id: rowID, ordinal: index + 1, role: message.role == .user ? "You" : "Herm",
-                    text: text, contentRevision: message.contentRevision, hasImages: !message.images.isEmpty))
+                    text: text, contentRevision: message.contentRevision, hasImages: message.hasImages))
         }
         return StoredSearchProjection(rows: rows, messageCount: stored.messages.count, cost: cost)
     }
@@ -398,7 +398,7 @@ enum MessageNavigator {
             withUnsafeBytes(of: message.id) { $0.forEach(mix) }
             mix(UInt64(bitPattern: Int64(message.contentRevision)))
             mix(message.role == .user ? UInt64(1) : 0)
-            mix(UInt64(message.images.count))
+            mix(UInt64(message.images.count + message.restoredImageURLs.count))
         }
         return value
     }

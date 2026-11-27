@@ -725,17 +725,8 @@ struct SessionConversationIsolationTests {
         #expect(parsed.messages.count == 1)
         #expect(parsed.messages[0].text == "what is in this photo?")
         #expect(parsed.messages[0].images.isEmpty)
-        #expect(parsed.pendingImages.count == 1)
-        #expect(parsed.pendingImages[0].messageID == parsed.messages[0].id)
-        #expect(parsed.pendingImages[0].fileURLs == [imageURL])
-
-        let loaded = parsed.pendingImages[0].fileURLs.compactMap { NSImage(contentsOf: $0) }
-        #expect(loaded.count == 1)
-        let attached = parsed.messages[0].attachingImages(loaded)
-        #expect(attached.id == parsed.messages[0].id)
-        #expect(attached.images.count == 1)
-        #expect(attached.images[0].size.width > 0)
-        #expect(attached.images[0].size.height > 0)
+        #expect(parsed.messages[0].restoredImageURLs == [imageURL])
+        #expect(parsed.messages[0].hasImages)
     }
 
     @Test func hermesNativeImageHandlesBecomeAttachmentsNotText() {
@@ -743,54 +734,6 @@ struct SessionConversationIsolationTests {
         let parsed = DockModel.persistedImageContent(from: raw)
         #expect(parsed.text == "compare these")
         #expect(parsed.imageFileURLs == [URL(fileURLWithPath: "/tmp/a.png"), URL(fileURLWithPath: "/tmp/b.png")])
-    }
-
-    @Test func pendingImageRehydrationDropsPayloadForSessionMismatch() async {
-        let model = DockModel(rpcClient: SessionIsolationRPCClient())
-        let pending = [
-            RestoredTranscript.PendingImages(
-                messageID: UUID(),
-                fileURLs: [
-                    FileManager.default.temporaryDirectory.appendingPathComponent("missing-\(UUID().uuidString).png")
-                ]
-            )
-        ]
-
-        await model.rehydratePendingTranscriptImages(
-            pending,
-            requestedSessionID: "session-that-was-never-opened",
-            loadData: { _ in Data(count: 16) }
-        ).value
-
-        #expect(model.messages.isEmpty)
-    }
-
-    @Test func restoringHistoryPreparesThumbnailBeforeDisplayingImage() async throws {
-        let session = "history-image"
-        let model = DockModel(initialSessionID: session, rpcClient: SessionIsolationRPCClient())
-        let message = ChatMessage(role: .user, text: "Image from history")
-        model.messages = [message]
-        let original = NSImage(size: NSSize(width: 640, height: 320), flipped: false) { rect in
-            NSColor.white.setFill()
-            rect.fill()
-            return true
-        }
-        let data = try #require(original.tiffRepresentation)
-        let source = try #require(NSImage(data: data))
-        let pending = RestoredTranscript.PendingImages(
-            messageID: message.id, fileURLs: [URL(fileURLWithPath: "/tmp/history-image.tiff")])
-
-        await model.rehydratePendingTranscriptImages([pending], requestedSessionID: session, loadData: { _ in data })
-            .value
-
-        let restored = try #require(model.messages.first)
-        let image = try #require(restored.images.first)
-        let key = ConversationThumbnailCache.key(
-            messageID: restored.id, index: 0, imageCount: 1, contentRevision: restored.contentRevision)
-        let thumbnail = try #require(ConversationThumbnailCache.cachedImage(forKey: key))
-        #expect(image.size == source.size)
-        #expect(thumbnail.size == NSSize(width: 220, height: 110))
-        #expect(ConversationThumbnailCache.image(image, key: key) === thumbnail)
     }
 
     @Test func restoredAssistantMarkdownPreservesLineBreaksForTheTranscriptRenderer() {

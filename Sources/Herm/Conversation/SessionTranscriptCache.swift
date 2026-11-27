@@ -11,7 +11,6 @@ struct SessionTranscriptPreview {
     let messages: [ChatMessage]
     let rowIDs: [Int: UUID]
     let references: [UUID: StoredMessageReference]
-    let pendingImages: [RestoredTranscript.PendingImages]
     // A background read does not establish that this chat has been opened before.
     var isPreloaded = false
     var readCoverage: ReadCoverage?
@@ -140,7 +139,7 @@ final class SessionTranscriptCache {
                 }
         }
         guard messages.allSatisfy({ $0.images.isEmpty && !$0.isError }),
-            restored.pendingImages.allSatisfy({ $0.fileURLs.allSatisfy(\.isFileURL) }), cost <= maximumCost
+            messages.allSatisfy({ $0.restoredImageURLs.allSatisfy(\.isFileURL) }), cost <= maximumCost
         else {
             return nil
         }
@@ -148,7 +147,7 @@ final class SessionTranscriptCache {
             messages: messages,
             rowIDs: restored.rowIDs.filter { ids.contains($0.value) },
             references: Dictionary(uniqueKeysWithValues: ids.compactMap { id in references[id].map { (id, $0) } }),
-            pendingImages: restored.pendingImages.filter { ids.contains($0.messageID) }, isPreloaded: isPreloaded,
+            isPreloaded: isPreloaded,
             readCoverage: readCoverage)
         return Entry(preview: preview, cost: cost)
     }
@@ -195,7 +194,6 @@ extension DockModel {
         return SessionTranscriptPreview(
             messages: tail, rowIDs: preview.rowIDs.filter { ids.contains($0.value) },
             references: preview.references.filter { ids.contains($0.key) },
-            pendingImages: preview.pendingImages.filter { ids.contains($0.messageID) },
             isPreloaded: preview.isPreloaded,
             readCoverage: preview.readCoverage
         )
@@ -221,34 +219,6 @@ extension DockModel {
             guard !sessionSwitchFreshLayoutRecorded else { return }
             sessionSwitchFreshLayoutRecorded = true
             recordSessionSwitch("fresh_layout", startedAt: sessionSwitchStartedAt)
-        }
-    }
-
-    func loadPreviewImages() {
-        sessionPreviewImageTask?.cancel()
-        guard let preview = sessionTranscriptPreview, !preview.pendingImages.isEmpty else { return }
-        let generation = sessionResumeGeneration
-        let pendingImages = preview.pendingImages
-        sessionPreviewImageTask = Task { @MainActor [weak self] in
-            var queue = TranscriptImageHydration.Queue(pendingImages)
-            var application = TranscriptImageHydration.Application()
-            while !Task.isCancelled {
-                let jobs = queue.next(prioritizing: [])
-                guard !jobs.isEmpty else { return }
-                let batch = await TranscriptImageHydration.Worker.shared.prepare(
-                    jobs, load: DockModel.transcriptImageData)
-                guard let self, !Task.isCancelled, generation == sessionResumeGeneration,
-                    let current = sessionTranscriptPreview
-                else { return }
-                var messages = current.messages
-                if application.apply(batch, to: &messages) {
-                    sessionTranscriptPreview = SessionTranscriptPreview(
-                        messages: messages, rowIDs: current.rowIDs,
-                        references: current.references, pendingImages: current.pendingImages,
-                        isPreloaded: current.isPreloaded, readCoverage: current.readCoverage)
-                }
-                await Task.yield()
-            }
         }
     }
 }

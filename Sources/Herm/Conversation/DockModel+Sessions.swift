@@ -295,9 +295,10 @@ extension DockModel {
             if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
             _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: params)
             invalidateArchivedSidebar()
-            sessionTranscriptCache.remove(
-                WorkspaceIdentity.session(
-                    profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id))
+            let previewWorkspace = WorkspaceIdentity.session(
+                profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id)
+            sessionTranscriptCache.remove(previewWorkspace)
+            SessionMessageTabs.shared.forget(previewWorkspace)
             discardComposerDraft(
                 for: SessionComposerDraft.Key(
                     profileID: Self.normalizedProfileID(session.profileID ?? profileScopeID), sessionID: session.id
@@ -927,8 +928,6 @@ extension DockModel {
         resetEffortTransition(keepingSessionReasoning: isRefreshingActiveSession)
         interruptGeneration &+= 1
         let resumeGeneration = sessionResumeGeneration
-        sessionPreviewImageTask?.cancel()
-        sessionTranscriptImageTask?.cancel()
         sessionSwitchStartedAt = selectedAt
         sessionSwitchToken = UUID().uuidString
         sessionSwitchCachedLayoutRecorded = false
@@ -949,7 +948,6 @@ extension DockModel {
         recordSessionSwitch(
             "selection", startedAt: selectedAt,
             extra: "cache_hit=\(sessionTranscriptPreview == nil ? 0 : 1)")
-        loadPreviewImages()
         let openingRowIDs =
             sessionTranscriptPreview?.rowIDs ?? (isRefreshingActiveSession ? transcriptMessageIDsByRowID : [:])
         if !keepsStoredTranscript {
@@ -1219,9 +1217,6 @@ extension DockModel {
                 uniquingKeysWith: { first, _ in first })
             let restored = RestoredTranscript(
                 messages: stable.messages,
-                pendingImages: parsed.pendingImages.map {
-                    .init(messageID: renamed[$0.messageID] ?? $0.messageID, fileURLs: $0.fileURLs)
-                },
                 rowIDs: stable.rowIDs,
                 trailingActivity: parsed.trailingActivity)
             replaceTranscriptRowIDs(restored.rowIDs)
@@ -1231,7 +1226,6 @@ extension DockModel {
             if sessionStorageID != BotService.canonicalBotChatTitle {
                 sessionTranscriptCache.store(restored, references: storedMessageReferences, for: resolvedKey)
             }
-            let imageHandoff = TranscriptImageHydration.reusePreview(sessionTranscriptPreview, in: restored)
             // A turn that went live while the transcript loaded keeps its row.
             let liveRow = streamingMessageID.flatMap { id in messages.first { $0.id == id } }
             // Mid-turn messages Hermes has not stored yet stay until it does.
@@ -1239,7 +1233,7 @@ extension DockModel {
                 sessionStorageID
                 .flatMap { unconfirmedUserMessagesBySessionID.removeValue(forKey: $0) }
                 .map { Self.missingUserMessages($0, from: restored.messages) } ?? []
-            messages = imageHandoff.messages + [liveRow].compactMap { $0 }
+            messages = restored.messages + [liveRow].compactMap { $0 }
             let pendingSends = reconcilePendingSends(
                 for: composerDraftKey, restored: restored.messages, rowIDs: restored.rowIDs, replacingTranscript: true)
             messages.append(contentsOf: pendingSends.unmatchedMessages)
@@ -1268,10 +1262,6 @@ extension DockModel {
                 let index = messages.firstIndex { $0.id == streamingMessageID } ?? messages.endIndex
                 messages.insert(contentsOf: Self.missingUserMessages(pendingUserMessages, from: messages), at: index)
             }
-            sessionTranscriptImageTask = rehydratePendingTranscriptImages(
-                imageHandoff.pending,
-                requestedSessionID: resolvedSessionID
-            )
             if let reviewCutoff = context.reviewCutoff {
                 let seenStore = SidebarSessionSeenStore.shared
                 let seenAt = context.seenAt
@@ -1344,7 +1334,6 @@ extension DockModel {
                     updatedAt: written ?? .distantPast)
             }
             sessionTranscriptPreview = nil
-            sessionPreviewImageTask?.cancel()
             publishPendingAttachedEvents()
             sessionTranscriptLoadState = .ready
             recordSessionSwitch(
@@ -1381,7 +1370,6 @@ extension DockModel {
                 } == true
             if notFound {
                 sessionTranscriptCache.remove(context.previewKey)
-                sessionPreviewImageTask?.cancel()
                 sessionTranscriptPreview = nil
                 clearStoredTranscriptProjection()
             }
@@ -1438,12 +1426,7 @@ extension DockModel {
         storedMessageReferences = Dictionary(
             references.map { (renamed[$0.key] ?? $0.key, $0.value) }, uniquingKeysWith: { first, _ in first })
         messages = stable.messages
-        sessionPreviewImageTask?.cancel()
         sessionTranscriptPreview = nil
-        sessionTranscriptImageTask = rehydratePendingTranscriptImages(
-            parsed.pendingImages.map {
-                .init(messageID: renamed[$0.messageID] ?? $0.messageID, fileURLs: $0.fileURLs)
-            }, requestedSessionID: session.id)
     }
 
     /// Sets the project the not-yet-created chat will start in (the new-chat project picker).
@@ -1472,7 +1455,7 @@ extension DockModel {
         else { return }
         let tail = Array(messages.suffix(SessionTranscriptCache.messageLimit))
         sessionTranscriptCache.refresh(
-            RestoredTranscript(messages: tail, pendingImages: [], rowIDs: transcriptRowIDs(for: tail)),
+            RestoredTranscript(messages: tail, rowIDs: transcriptRowIDs(for: tail)),
             references: storedMessageReferences,
             for: WorkspaceIdentity.session(profileID: sessionProfileID, sessionID: id))
     }
@@ -1487,10 +1470,6 @@ extension DockModel {
         sessionResumeTask = nil
         transcriptTimelineTask?.cancel()
         transcriptTimelineTask = nil
-        sessionPreviewImageTask?.cancel()
-        sessionPreviewImageTask = nil
-        sessionTranscriptImageTask?.cancel()
-        sessionTranscriptImageTask = nil
         sessionTranscriptPreview = nil
         sessionTranscriptLoadState = .ready
         detachInFlightBotActivities(as: .canceled, keepingSubmitted: true)
@@ -1618,6 +1597,9 @@ extension DockModel {
             agentActivities: agentActivities,
             synthesizedSubagentIDs: synthesizedSubagentIDs
         )
+        if agentStateBySessionID.count > SessionAgentStateRetention.maximumSessionCount {
+            agentStateBySessionID = SessionAgentStateRetention.pruned(agentStateBySessionID)
+        }
         scheduleAgentStateCommit(agentStateBySessionID, immediate: true)
     }
 

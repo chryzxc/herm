@@ -165,7 +165,7 @@ final class ConversationMarkdownPrefetch {
 
     func update(
         messages: [ChatMessage], range: Range<Int>, sessionID: String?, streamingID: UUID?,
-        controller: ConversationScrollController? = nil,
+        controller: ConversationScrollController? = nil, indexOffset: Int = 0,
         isCurrent: @escaping @MainActor (UUID, Int) -> Bool
     ) {
         let range = ConversationMessageWindow.visibleRange(range, totalCount: messages.count)
@@ -182,7 +182,8 @@ final class ConversationMarkdownPrefetch {
             completed.append(message)
         }
         let next = Identity(
-            sessionID: sessionID, range: range, themeRevision: DockThemeRuntime.revision,
+            sessionID: sessionID, range: (range.lowerBound + indexOffset)..<(range.upperBound + indexOffset),
+            themeRevision: DockThemeRuntime.revision,
             messages: completed.map { "\($0.id):\($0.contentRevision)" },
             context: controller?.markdownMeasurementContext)
         guard identity != next else { return }

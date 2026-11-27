@@ -34,7 +34,14 @@ actor AttachmentThumbnailLoader {
         if url.isFileURL {
             source = CGImageSourceCreateWithURL(url as CFURL, nil)
         } else {
-            source = (try? Data(contentsOf: url)).flatMap { CGImageSourceCreateWithData($0 as CFData, nil) }
+            let value = url.absoluteString
+            let bytes: Data?
+            if let comma = value.firstIndex(of: ","), value[..<comma].lowercased().hasSuffix(";base64") {
+                bytes = Data(base64Encoded: String(value[value.index(after: comma)...]))
+            } else {
+                bytes = try? Data(contentsOf: url)
+            }
+            source = bytes.flatMap { CGImageSourceCreateWithData($0 as CFData, nil) }
         }
         guard let source, let image = Self.thumbnail(from: source, maximumPixelSize: maximumPixelSize) else {
             return nil
