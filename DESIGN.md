@@ -3493,7 +3493,8 @@ available height with the scrollbar hidden. Hovering
 over a bot shows a profile preview beside the rail. The bot's avatar, name,
 and role form its header. A hairline separates the description when one is
 set. Activity and unread badges use separate corners within each avatar
-slot. Drag an avatar to reorder it using the same saved order as the picker.
+slot. The working Herm face's ring spins on its own layer without animating
+the face or moving the row. Drag an avatar to reorder it using the same saved order as the picker.
 Both layouts use the same edge scrolling. Hold the pointer near or past the top
 or bottom of the avatar list during a drag to reach offscreen bots.
 New Bot appears when creation is available. The layout choice persists locally.
@@ -4054,6 +4055,8 @@ The welcome orb retains the same footprint and pointer reactions as voice,
 including Reduce Motion support.
 The running indicator uses the responding Bot's stored avatar or generated
 face, falling back to the session profile and selected Bot for ordinary chats.
+The work ring around a Herm face spins independently of the avatar's pose.
+Reduce Motion and motion-free themes keep the ring visible but still.
 Between activity changes the avatar leans into a short hop as three diamond tiles light from left to right beneath it. Core Animation drives the transform and tiles inside the indicator's fixed footprint. An activity change shows the corresponding glyph while the avatar reacts. Reduce Motion and motion-free themes keep the avatar still and hide the tiles.
 Activity rows appear immediately; their insertion and the Bot's movement share
 one short spring transition. Disclosure and completion transitions use the same

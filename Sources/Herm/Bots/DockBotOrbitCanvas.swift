@@ -8,6 +8,7 @@ struct DockBotOrbitCanvas: View {
     let size: CGFloat
     let mood: BotMood
     let pose: BotFacePose
+    var showsToolRing = true
     @ObservedObject private var themeStore = DockThemeStore.shared
     @DockChromeTheme private var chrome
 
@@ -30,7 +31,9 @@ struct DockBotOrbitCanvas: View {
                         x: (size - width) / 2, y: (size - height) / 2,
                         width: width, height: height))
             } else {
-                BotFaceMark.draw(in: &avatar, id: id, size: size, mood: mood, pose: pose, theme: theme, ink: ink)
+                BotFaceMark.draw(
+                    in: &avatar, id: id, size: size, mood: mood, pose: pose, theme: theme, ink: ink,
+                    showsToolRing: showsToolRing)
             }
         }
         .frame(width: size * 1.4, height: size * 1.4)

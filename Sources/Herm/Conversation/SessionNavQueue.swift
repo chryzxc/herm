@@ -509,7 +509,8 @@ struct SessionNavQueue: View, Equatable {
                         DockLoadingIndicator().controlSize(.small)
                     } else {
                         BotAvatarView(
-                            bot: bot, imageData: imageData, size: DockBotRailMetrics.avatarSize, animated: false)
+                            bot: bot, imageData: imageData, size: DockBotRailMetrics.avatarSize,
+                            animated: false, animatesToolRing: true)
                     }
                 }
                 .overlay(alignment: .trailing) {

@@ -698,6 +698,7 @@ its repository path.
 The bold vertical ellipsis beside **Chat tiles** lets you choose **Bot menu** or **Bot rail**.
 Horizontal and vertical three-dot menu icons use the same heavier weight across Herm.
 Bot rail replaces the picker above the session list with a wider column and roomier rows for bot avatars and badges.
+The ring around a working Herm face spins in both the Bot rail and the conversation, unless Reduce Motion or a motion-free theme is enabled.
 Click an avatar to switch bots, or choose the **All** tile at the top to see
 sessions across profiles. Scroll to see more avatars and drag them to reorder the rail.
 As in the picker, holding a dragged bot near or past the top or bottom of the list

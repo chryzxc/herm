@@ -39,7 +39,7 @@ struct DockLayerMotionTests {
 
     @Test func pausingEveryLoopKeepsItsArtworkAndRemovesAnimations() throws {
         let kinds: [DockLayerMotion.Kind] = [
-            .thinkingRelay, .compactLines, .loading, .startupLogo,
+            .thinkingRelay, .compactLines, .loading, .startupLogo, .botToolRing(avatarSize: 28),
             .capsuleRim(period: 2.4, lineWidth: 1),
             .breathe(period: 2), .sweep(period: 1.6, fraction: 0.4, clamp: 0...80),
             .tide(period: 2, depth: 4),
@@ -56,6 +56,58 @@ struct DockLayerMotionTests {
             #expect(animationCount(layer) > 0)
             DockLayerMotion.dismantleNSView(view, coordinator: ())
             #expect(animationCount(layer) == 0)
+        }
+    }
+
+    @Test func botToolRingMovesInTheRailAndConversationWithoutChangingAvatarSize() async throws {
+        _ = DockThemeStore.shared
+        let previous = DockThemeRuntime.current
+        DockThemeRuntime.current = .glass
+        defer { DockThemeRuntime.current = previous }
+        let bot = BotSummary(
+            id: "nexus", name: "Nexus", title: nil, description: nil, model: nil,
+            isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil,
+            isHidden: false, hasAvatar: false, isDefault: false)
+        let railSize = DockBotRailMetrics.avatarSize
+        func root(visible: Bool) -> some View {
+            VStack(spacing: 8) {
+                BotAvatarView(
+                    bot: bot, imageData: nil, size: railSize, animated: false, animatesToolRing: true, mood: .tool)
+                BotAvatarView(
+                    bot: bot, imageData: nil, size: railSize, animated: false, animatesToolRing: true, mood: .idle)
+                BotWorkingAvatarView(bot: bot, imageData: nil)
+            }
+            .fixedSize()
+            .environment(\.dockHostVisible, visible)
+        }
+        func rings(in view: NSView) -> [DockLayerMotionView] {
+            if let motion = view as? DockLayerMotionView, case .botToolRing = motion.spec?.kind { return [motion] }
+            return view.subviews.flatMap { rings(in: $0) }
+        }
+        let host = NSHostingView(rootView: root(visible: true))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 80, height: 170), styleMask: [.borderless], backing: .buffered,
+            defer: false)
+        window.contentView = host
+        defer { window.contentView = nil }
+        for visible in [true, false, true] {
+            host.rootView = root(visible: visible)
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(30))
+            #expect(host.fittingSize == CGSize(width: 40, height: railSize * 2 + 40 + 16))
+            let marks = rings(in: host)
+            try #require(marks.count == 2)
+            let shouldAnimate = visible && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            for mark in marks {
+                let orbit = try #require(mark.layer?.sublayers?.first)
+                #expect(orbit.sublayers?.count == 2)
+                let animation = orbit.animation(forKey: "transform.rotation.z")
+                #expect((animation != nil) == shouldAnimate)
+                if let animation {
+                    #expect(animation.duration == 1.2)
+                    #expect(animation.repeatCount == .infinity)
+                }
+            }
         }
     }
 
