@@ -10,7 +10,10 @@ private actor ScopedRepositoryTransport: GitHubIssueTransport {
     private var releases: [String: CheckedContinuation<Void, Never>] = [:]
     private var finished: Set<String> = []
 
-    func hold(_ key: String) { held.insert(key) }
+    func hold(_ key: String) {
+        finished.remove(key)
+        held.insert(key)
+    }
     func waitForArrival(_ key: String) async -> Bool {
         if releases[key] != nil { return true }
         if finished.contains(key) { return false }
@@ -80,6 +83,75 @@ struct SessionGitHubRepositoryScopeTests {
         let pullData = rows == nil ? nil : try JSONSerialization.data(withJSONObject: items)
         await transport.set(issueData, for: "/search/issues?repo:\(repository) is:issue is:open")
         await transport.set(pullData, for: "/repos/\(repository)/pulls")
+    }
+
+    @MainActor @Test func listPresentationTracksEachScopedModel() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-scope-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = try repository(root, name: "a")
+        let b = try repository(root, name: "b")
+        let transport = ScopedRepositoryTransport()
+        await transport.set(try JSONSerialization.data(withJSONObject: ["login": "ada"]), for: "/user")
+        try await setRows(transport, name: "a", rows: false)
+        let issues = IssueCenterModel(api: GitHubIssueCenterAPI(transport: transport))
+        let pulls = PullRequestCenterModel(api: PullRequestCenterAPI(transport: transport))
+        func issueState(_ path: String) -> SessionGitHubListPresentation {
+            SessionIssuesSurface.listPresentation(center: issues, repositoryPath: path)
+        }
+        func pullState(_ path: String) -> SessionGitHubListPresentation {
+            SessionPullRequestsSurface.listPresentation(center: pulls, repositoryPath: path)
+        }
+        let issueKey = "/search/issues?repo:fixture/a is:issue is:open"
+        let pullKey = "/repos/fixture/a/pulls"
+        for populated in [false, true] {
+            try await setRows(transport, name: "a", rows: populated)
+            if populated {
+                await issues.refreshScoped(repositoryPath: a.path)
+                await pulls.refreshScoped(repositoryPath: a.path)
+                issues.query = "no matching title"
+                pulls.query = "no matching title"
+                #expect(issues.records.count == 1 && issues.visible.isEmpty)
+                #expect(pulls.records.count == 1 && pulls.visible.isEmpty)
+            }
+            await transport.hold(issueKey)
+            await transport.hold(pullKey)
+            let issueRefresh = Task {
+                await issues.refreshScoped(repositoryPath: a.path)
+                await transport.didFinish(issueKey)
+            }
+            let pullRefresh = Task {
+                await pulls.refreshScoped(repositoryPath: a.path)
+                await transport.didFinish(pullKey)
+            }
+            let issueArrived = await transport.waitForArrival(issueKey)
+            let pullArrived = await transport.waitForArrival(pullKey)
+            #expect(issueArrived && pullArrived)
+            if issueArrived && pullArrived {
+                #expect(issueState(a.path).isLoading == !populated)
+                #expect(pullState(a.path).isLoading == !populated)
+                #expect(issueState(a.path).warning == nil && pullState(a.path).warning == nil)
+            }
+            await transport.release(issueKey)
+            await transport.release(pullKey)
+            await issueRefresh.value
+            await pullRefresh.value
+            #expect(!issueState(a.path).isLoading && !pullState(a.path).isLoading)
+        }
+        issues.query = ""
+        pulls.query = ""
+        try await setRows(transport, name: "a", rows: nil)
+        await issues.refreshScoped(repositoryPath: a.path)
+        await pulls.refreshScoped(repositoryPath: a.path)
+        #expect(issues.visible.count == 1 && pulls.visible.count == 1)
+        #expect(!issueState(a.path).isLoading && issueState(a.path).warning?.contains("last loaded") == true)
+        #expect(!pullState(a.path).isLoading && pullState(a.path).warning?.contains("last loaded") == true)
+        #expect(issueState(b.path).isLoading && issueState(b.path).warning == nil)
+        #expect(pullState(b.path).isLoading && pullState(b.path).warning == nil)
+        await issues.refreshScoped(repositoryPath: b.path)
+        await pulls.refreshScoped(repositoryPath: b.path)
+        #expect(issues.records.isEmpty && pulls.records.isEmpty)
+        #expect(!issueState(b.path).isLoading && issueState(b.path).warning?.contains("fixture/b") == true)
+        #expect(!pullState(b.path).isLoading && pullState(b.path).warning?.contains("fixture/b") == true)
     }
 
     @MainActor @Test func switchFailureNeverRetainsPreviousRepository() async throws {

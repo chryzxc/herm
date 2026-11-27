@@ -62,6 +62,12 @@ struct SessionPullRequestsSurface: View {
     var onSelect: () -> Void = {}
     @State private var refreshID = UUID()
 
+    static func listPresentation(center: PullRequestCenterModel, repositoryPath: String?) -> SessionGitHubListPresentation {
+        SessionGitHubListPresentation(
+            scopeMatches: center.scopedRepositoryPath == repositoryPath,
+            isInitialLoad: center.isInitialLoad, warning: center.listWarning)
+    }
+
     var body: some View {
         Group {
             if repositoryPath == nil {
@@ -83,41 +89,20 @@ struct SessionPullRequestsSurface: View {
     private var pullRequestList: some View {
         VStack(spacing: 0) {
             filterBar
-            if center.scopedRepositoryPath == repositoryPath, let error = center.listWarning {
-                Text(error)
-                    .dockFont(.metadata)
-                    .foregroundStyle(Color.dockWarning)
-                    .dockPadding(.horizontal, DockSpacing.inspectorInset)
-                    .dockPadding(.vertical, DockSpacing.control)
-            }
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    if center.scopedRepositoryPath != repositoryPath || center.isInitialLoad {
-                        VStack(spacing: 12) {
-                            DockLoadingIndicator().controlSize(.small)
-                            Text("Loading pull requests…")
-                                .dockFont(.body)
-                                .foregroundStyle(Color.dockMetadataText)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .dockPadding(.vertical, 32)
-                    } else {
-                        ForEach(center.visible) { pullRequest in
-                            Button {
-                                center.selectedID = pullRequest.id
-                                onSelect()
-                            } label: {
-                                PullRequestRowView(
-                                    pullRequest: pullRequest,
-                                    isSelected: center.selectedID == pullRequest.id
-                                )
-                            }
-                            .buttonStyle(.dockHover)
-                        }
+            SessionGitHubListContent(
+                state: Self.listPresentation(center: center, repositoryPath: repositoryPath),
+                loadingMessage: "Loading pull requests…"
+            ) {
+                ForEach(center.visible) { pullRequest in
+                    Button {
+                        center.selectedID = pullRequest.id
+                        onSelect()
+                    } label: {
+                        PullRequestRowView(
+                            pullRequest: pullRequest, isSelected: center.selectedID == pullRequest.id)
                     }
+                    .buttonStyle(.dockHover)
                 }
-                .dockPadding(.horizontal, DockSpacing.inspectorInset)
-                .dockPadding(.vertical, 6)
             }
         }
     }
@@ -161,6 +146,12 @@ struct SessionIssuesSurface: View {
     var onSelect: () -> Void = {}
     @State private var refreshID = UUID()
 
+    static func listPresentation(center: IssueCenterModel, repositoryPath: String?) -> SessionGitHubListPresentation {
+        SessionGitHubListPresentation(
+            scopeMatches: center.scopedRepositoryPath == repositoryPath,
+            isInitialLoad: center.isRefreshing && center.records.isEmpty, warning: center.errorMessage)
+    }
+
     var body: some View {
         Group {
             if repositoryPath == nil {
@@ -168,42 +159,21 @@ struct SessionIssuesSurface: View {
             } else {
                 VStack(spacing: 0) {
                     filterBar
-                    if center.scopedRepositoryPath == repositoryPath, let error = center.errorMessage {
-                        Text(error)
-                            .dockFont(.metadata)
-                            .foregroundStyle(Color.dockWarning)
-                            .dockPadding(.horizontal, DockSpacing.inspectorInset)
-                            .dockPadding(.vertical, DockSpacing.control)
-                    }
-                    ScrollView {
-                        LazyVStack(spacing: 2) {
-                            if center.scopedRepositoryPath != repositoryPath
-                                || (center.isRefreshing && center.records.isEmpty)
-                            {
-                                VStack(spacing: 12) {
-                                    DockLoadingIndicator().controlSize(.small)
-                                    Text("Loading issues…")
-                                        .dockFont(.body)
-                                        .foregroundStyle(Color.dockMetadataText)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .dockPadding(.vertical, 32)
-                            } else {
-                                ForEach(center.visible) { issue in
-                                    Button {
-                                        center.selectedIssueID = issue.id
-                                        onSelect()
-                                    } label: {
-                                        IssueRowView(
-                                            issue: issue, isSelected: center.selectedIssueID == issue.id,
-                                            viewer: center.viewerLogin)
-                                    }
-                                    .buttonStyle(.dockHover)
-                                }
+                    SessionGitHubListContent(
+                        state: Self.listPresentation(center: center, repositoryPath: repositoryPath),
+                        loadingMessage: "Loading issues…"
+                    ) {
+                        ForEach(center.visible) { issue in
+                            Button {
+                                center.selectedIssueID = issue.id
+                                onSelect()
+                            } label: {
+                                IssueRowView(
+                                    issue: issue, isSelected: center.selectedIssueID == issue.id,
+                                    viewer: center.viewerLogin)
                             }
+                            .buttonStyle(.dockHover)
                         }
-                        .dockPadding(.horizontal, DockSpacing.inspectorInset)
-                        .dockPadding(.vertical, 6)
                     }
                 }
             }
