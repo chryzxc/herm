@@ -4514,6 +4514,9 @@ rendering pipeline and follow the active theme.
 Pull request filter labels stay on one line at their intrinsic width. When tabs
 show merged history, the label is “Merged”. Session lists include repository-scoped
 merged PRs from the last 14 days, independent of the signed-in user's involvement.
+Session PR and issue rows and selections belong to the current repository; a switch
+clears the previous projection. A failed same-repository refresh may retain rows
+only with a visible last-loaded warning and refresh action.
 Merged-history failures keep open PRs visible with an unavailable message. When tabs
 cannot fit, use the shared menu picker showing the selected filter. Session pull
 request toolbars follow the Issues list layout: full-width search first, filters
