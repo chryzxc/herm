@@ -19,15 +19,15 @@ struct SessionNavigationSelectionTests {
             sidebarObserver.cancel()
         }
 
-        #expect(disclosure.arePinnedExpanded)
-        #expect(disclosure.areConversationsExpanded)
-        #expect(disclosure.areAutomationsExpanded)
-        #expect(disclosure.expandedFilterSections.isEmpty)
+        #expect(disclosure.expandedSections == [.pinned, .recents, .automations])
 
-        for _ in 0..<5 { disclosure.arePinnedExpanded.toggle() }
-        disclosure.areConversationsExpanded.toggle()
-        disclosure.areAutomationsExpanded.toggle()
-        disclosure.expandedFilterSections.insert(.archived)
+        let toggles: [SessionRailSection] = [
+            .pinned, .pinned, .pinned, .pinned, .pinned, .recents, .automations, .archived,
+        ]
+        for section in toggles {
+            disclosure.binding(for: section, rendered: disclosure.expandedSections.contains(section)).wrappedValue
+                .toggle()
+        }
         #expect(sidebarUpdates == 8)
         #expect(navigationUpdates == 0)
         #expect(navigation.selection.selection == .session("session-a"))
@@ -35,10 +35,7 @@ struct SessionNavigationSelectionTests {
         navigation.selectGlobal(.kanban)
         #expect(navigationUpdates > 0)
         #expect(navigation.sidebarDisclosure === disclosure)
-        #expect(!disclosure.arePinnedExpanded)
-        #expect(!disclosure.areConversationsExpanded)
-        #expect(!disclosure.areAutomationsExpanded)
-        #expect(disclosure.expandedFilterSections == [.archived])
+        #expect(disclosure.expandedSections == [.archived])
     }
 
     @Test func gitHubNavigationRemembersTheLastSectionAcrossOtherDestinations() {
