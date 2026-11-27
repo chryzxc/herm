@@ -3285,7 +3285,8 @@ opening any row closes the form. The roster's New Bot modal uses the same
 fields in a scrolling body capped at 400pt so the header and footer never clip. Group rooms share the
 list with bots and keep the group row (member avatars, unread, approval and
 working marks, the more-actions menu); the whole list sorts by last activity,
-newest first. The group composer keeps Stop accessible while a send is awaiting
+newest first. If the group preview cannot load, the row keeps its existing
+preview and retries on the next room-list refresh. The group composer keeps Stop accessible while a send is awaiting
 admission or the room is working; Hermes remains authoritative about the outcome.
 The group editor and its placeholder share the same top inset. The editor
 reserves its minimum height for an empty draft and grows for multiline text.
