@@ -327,7 +327,7 @@ struct EditGroupChatSheet: View {
             defer { isSaving = false }
             if membersChanged {
                 guard
-                    let created = await store.create(
+                    case .complete(let created) = await store.create(
                         name: trimmedName, bots: bots.filter { selected.contains($0.id) })
                 else { return }
                 onCreated(created)
@@ -350,6 +350,7 @@ struct NewGroupChatSheet: View {
     @State private var name = ""
     @State private var selected: Set<String> = []
     @State private var isCreating = false
+    @State private var pendingSetup: GroupRoomSetup?
     /// Fixed when the sheet opens: invites from other machines are scoped to it.
     @State private var roomID = UUID().uuidString.lowercased()
     @State private var remote: [RemoteDraft] = []
@@ -382,34 +383,63 @@ struct NewGroupChatSheet: View {
         ) {
             if store.isRoomLinkEnabled {
                 DockSegmentedPicker(
-                    selection: $mode, options: [(Mode.create, "Create a group"), (Mode.share, "Join from another Mac")])
+                    selection: $mode, options: [(Mode.create, "Create a group"), (Mode.share, "Join from another Mac")]
+                )
+                .disabled(isCreating || pendingSetup != nil)
             }
-            if mode == .create { createForm } else { ShareBotForm(store: store, bots: bots) }
-            if let message = store.errorMessage { ModalNote(text: message, icon: .warning, tone: .dockDestructive) }
+            if mode == .create {
+                createForm.disabled(isCreating || pendingSetup != nil)
+            } else {
+                ShareBotForm(store: store, bots: bots)
+            }
+            if let setup = pendingSetup {
+                ModalNote(
+                    text: store.canRetryRoomSetup(setup)
+                        ? setup.note
+                        : "The group was created on the previous connection. Setup can’t be retried from this connection.",
+                    icon: .warning, tone: .dockDestructive)
+            } else if let message = store.errorMessage {
+                ModalNote(text: message, icon: .warning, tone: .dockDestructive)
+            }
         } footer: {
             if mode == .create {
                 modalActions(
-                    primaryTitle: "Create", pendingTitle: "Creating…", isDisabled: !canCreate, isPending: isCreating,
-                    onCancel: { dismiss() }, onPrimary: create)
+                    primaryTitle: pendingSetup == nil ? "Create" : "Retry Setup",
+                    pendingTitle: pendingSetup == nil ? "Creating…" : "Retrying…",
+                    isDisabled: pendingSetup.map { !store.canRetryRoomSetup($0) || isCreating } ?? !canCreate,
+                    isPending: isCreating,
+                    onCancel: { dismiss() }, onPrimary: create
+                )
+                .disabled(isCreating)
             } else {
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).buttonStyle(
                     DockModalButtonStyle(isPrimary: true))
             }
         }
+        .interactiveDismissDisabled(isCreating)
     }
 
     private func create() {
+        guard !isCreating, pendingSetup.map({ store.canRetryRoomSetup($0) }) ?? canCreate else { return }
         isCreating = true
         Task {
-            if let created = await store.create(
-                name: name.trimmingCharacters(in: .whitespaces), bots: chosen,
-                remote: remote.compactMap(\.invite), roomID: roomID
-            ) {
+            defer { isCreating = false }
+            let outcome: GroupRoomCreationOutcome
+            if let pendingSetup {
+                outcome = await store.retryRoomSetup(pendingSetup)
+            } else {
+                outcome = await store.create(
+                    name: name.trimmingCharacters(in: .whitespaces), bots: chosen,
+                    remote: remote.compactMap(\.invite), roomID: roomID)
+            }
+            switch outcome {
+            case .notCreated: break
+            case .partial(let setup): pendingSetup = setup
+            case .complete(let created):
                 onCreated(created)
                 dismiss()
             }
-            isCreating = false
         }
     }
 
