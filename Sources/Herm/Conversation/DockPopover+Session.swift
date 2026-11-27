@@ -57,7 +57,12 @@ extension DockPopover {
             return AnyView(voiceMode)
         case .pullRequests:
             return AnyView(
-                SessionListDetailTab(backLabel: "All pull requests") { open in
+                SessionListDetailTab(
+                    backLabel: "All pull requests", repositoryPath: activeSessionRepositoryPath,
+                    canShowDetail: activeSessionRepositoryPath != nil
+                        && sessionPullRequestCenter.scopedRepositoryPath == activeSessionRepositoryPath
+                        && sessionPullRequestCenter.selected != nil
+                ) { open in
                     SessionPullRequestsSurface(
                         center: sessionPullRequestCenter, repositoryPath: activeSessionRepositoryPath,
                         onOpenChat: openPullRequestChat, onSelect: open)
@@ -67,7 +72,12 @@ extension DockPopover {
                 })
         case .issues:
             return AnyView(
-                SessionListDetailTab(backLabel: "All issues") { open in
+                SessionListDetailTab(
+                    backLabel: "All issues", repositoryPath: activeSessionRepositoryPath,
+                    canShowDetail: activeSessionRepositoryPath != nil
+                        && sessionIssueCenter.scopedRepositoryPath == activeSessionRepositoryPath
+                        && sessionIssueCenter.selected != nil
+                ) { open in
                     SessionIssuesSurface(
                         center: sessionIssueCenter, repositoryPath: activeSessionRepositoryPath, onSelect: open)
                 } detail: {

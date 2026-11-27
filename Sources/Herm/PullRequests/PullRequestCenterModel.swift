@@ -52,7 +52,14 @@ final class PullRequestCenterModel: ObservableObject {
     @Published private(set) var isUpdatingStatus = false
     @Published private(set) var updatingStatusID: String?
     @Published private(set) var accessRequirement: GitHubAccessRequirement?
-    @Published private(set) var errorMessage: String?
+    @Published private var workspaceOrDetailErrorMessage: String?
+    @Published private var scopedIndexErrorMessage: String?
+    private(set) var errorMessage: String? {
+        get { scopedIndexErrorMessage ?? workspaceOrDetailErrorMessage }
+        set { workspaceOrDetailErrorMessage = newValue }
+    }
+    @Published private(set) var scopedRepositoryPath: String?
+    private var scopedRepositoryID: String?
     @Published private(set) var failedRepositories: [String] = []
     @Published private(set) var viewerLogin: String? { didSet { visibleCache = nil } }
     @Published var filter: PullRequestFilter = .all { didSet { visibleCache = nil } }
@@ -303,9 +310,15 @@ final class PullRequestCenterModel: ObservableObject {
     /// pull-request workspace performs.
     func refreshScoped(repositoryPath: String) async {
         guard !Task.isCancelled else { return }
+        if scopedRepositoryPath != repositoryPath {
+            resetScopedProjection()
+            scopedRepositoryPath = repositoryPath
+            scopedRepositoryID = nil
+        }
         let token = UUID()
         generation = token
         isRefreshing = true
+        scopedIndexErrorMessage = nil
         errorMessage = nil
         failedRepositories = []
         defer { if token == generation { isRefreshing = false } }
@@ -313,10 +326,11 @@ final class PullRequestCenterModel: ObservableObject {
         loadingDetailIDs.removeAll()
         let remote = await RepositoryService.githubRemote(path: repositoryPath)
         guard token == generation, !Task.isCancelled else { return }
+        if remote == nil || (scopedRepositoryID != nil && scopedRepositoryID != remote?.id.lowercased()) {
+            resetScopedProjection()
+        }
+        scopedRepositoryID = remote?.id.lowercased()
         guard let remote else {
-            records = []
-            listCoverage = nil
-            selectedID = nil
             errorMessage = "This session's repository has no GitHub remote."
             return
         }
@@ -342,11 +356,20 @@ final class PullRequestCenterModel: ObservableObject {
                 : (merged?.coverage.partial == true ? merged?.coverage.label : nil)
         case .failure:
             failedRepositories = [remote.id]
-            if records.isEmpty {
-                errorMessage = "GitHub could not load pull requests for \(remote.id). Check your sign-in and try again."
-            }
+            scopedIndexErrorMessage =
+                records.isEmpty
+                ? "GitHub could not load pull requests for \(remote.id). Check your sign-in and try again."
+                : "Showing last loaded pull requests for \(remote.id). Refresh to retry."
         }
         repairSelection()
+    }
+
+    private func resetScopedProjection() {
+        hasLoaded = false
+        records = []
+        selectedID = nil
+        changedIDs.removeAll()
+        listCoverage = nil
     }
 
     @discardableResult

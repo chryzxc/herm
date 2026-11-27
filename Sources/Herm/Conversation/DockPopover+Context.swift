@@ -799,9 +799,21 @@ extension DockPopover {
                 isLoading: isLoadingChangeDiff
             )
         case .pullRequests:
-            PullRequestDetailView(center: sessionPullRequestCenter, onOpenChat: openPullRequestChat, isInspector: true)
+            if let path = activeSessionRepositoryPath, sessionPullRequestCenter.scopedRepositoryPath == path {
+                PullRequestDetailView(
+                    center: sessionPullRequestCenter, onOpenChat: openPullRequestChat, isInspector: true)
+            } else {
+                SessionSurfacePreviewPlaceholder(
+                    icon: .folder, title: "No pull request selected",
+                    detail: "Select a pull request in the session tab.")
+            }
         case .issues:
-            IssueDetailView(center: sessionIssueCenter, onOpenChat: openIssueChat, isInspector: true)
+            if let path = activeSessionRepositoryPath, sessionIssueCenter.scopedRepositoryPath == path {
+                IssueDetailView(center: sessionIssueCenter, onOpenChat: openIssueChat, isInspector: true)
+            } else {
+                SessionSurfacePreviewPlaceholder(
+                    icon: .folder, title: "No issue selected", detail: "Select an issue in the session tab.")
+            }
         case .chat, .voice:
             EmptyView()
         }

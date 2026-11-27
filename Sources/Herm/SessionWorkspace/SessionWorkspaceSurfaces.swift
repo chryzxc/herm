@@ -60,6 +60,7 @@ struct SessionPullRequestsSurface: View {
     let repositoryPath: String?
     let onOpenChat: (PullRequestRecord) -> Void
     var onSelect: () -> Void = {}
+    @State private var refreshID = UUID()
 
     var body: some View {
         Group {
@@ -70,7 +71,7 @@ struct SessionPullRequestsSurface: View {
             }
         }
         .background(Color.dockCanvas)
-        .task(id: repositoryPath) {
+        .task(id: [repositoryPath ?? "", refreshID.uuidString]) {
             guard let repositoryPath, !repositoryPath.isEmpty else { return }
             await center.refreshScoped(repositoryPath: repositoryPath)
         }
@@ -82,7 +83,7 @@ struct SessionPullRequestsSurface: View {
     private var pullRequestList: some View {
         VStack(spacing: 0) {
             filterBar
-            if let error = center.listWarning {
+            if center.scopedRepositoryPath == repositoryPath, let error = center.listWarning {
                 Text(error)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockWarning)
@@ -91,7 +92,7 @@ struct SessionPullRequestsSurface: View {
             }
             ScrollView {
                 LazyVStack(spacing: 2) {
-                    if center.isInitialLoad {
+                    if center.scopedRepositoryPath != repositoryPath || center.isInitialLoad {
                         VStack(spacing: 12) {
                             DockLoadingIndicator().controlSize(.small)
                             Text("Loading pull requests…")
@@ -142,12 +143,12 @@ struct SessionPullRequestsSurface: View {
     }
 
     @ViewBuilder private var refreshButton: some View {
-        if let repositoryPath {
+        if repositoryPath != nil {
             DockIconButton(
                 icon: .arrowsClockwise, label: "Refresh pull requests", isBusy: center.isRefreshing,
                 style: DockThemePalette(theme: DockThemeRuntime.current)
             ) {
-                Task { await center.refreshScoped(repositoryPath: repositoryPath) }
+                refreshID = UUID()
             }
         }
     }
@@ -158,6 +159,7 @@ struct SessionIssuesSurface: View {
     @ObservedObject var center: IssueCenterModel
     let repositoryPath: String?
     var onSelect: () -> Void = {}
+    @State private var refreshID = UUID()
 
     var body: some View {
         Group {
@@ -166,7 +168,7 @@ struct SessionIssuesSurface: View {
             } else {
                 VStack(spacing: 0) {
                     filterBar
-                    if let error = center.errorMessage {
+                    if center.scopedRepositoryPath == repositoryPath, let error = center.errorMessage {
                         Text(error)
                             .dockFont(.metadata)
                             .foregroundStyle(Color.dockWarning)
@@ -175,7 +177,9 @@ struct SessionIssuesSurface: View {
                     }
                     ScrollView {
                         LazyVStack(spacing: 2) {
-                            if center.isRefreshing && center.records.isEmpty {
+                            if center.scopedRepositoryPath != repositoryPath
+                                || (center.isRefreshing && center.records.isEmpty)
+                            {
                                 VStack(spacing: 12) {
                                     DockLoadingIndicator().controlSize(.small)
                                     Text("Loading issues…")
@@ -205,7 +209,7 @@ struct SessionIssuesSurface: View {
             }
         }
         .background(Color.dockCanvas)
-        .task(id: repositoryPath) {
+        .task(id: [repositoryPath ?? "", refreshID.uuidString]) {
             guard let repositoryPath, !repositoryPath.isEmpty else { return }
             await center.refreshScoped(repositoryPath: repositoryPath)
         }
@@ -221,12 +225,12 @@ struct SessionIssuesSurface: View {
                 DockTabBar(options: GitHubIssueFilter.allCases, selection: $center.filter, title: { $0.rawValue })
                     .fixedSize(horizontal: true, vertical: false)
                 Spacer(minLength: DockSpacing.control)
-                if let repositoryPath {
+                if repositoryPath != nil {
                     DockIconButton(
                         icon: .arrowsClockwise, label: "Refresh issues", isBusy: center.isRefreshing,
                         style: DockThemePalette(theme: DockThemeRuntime.current)
                     ) {
-                        Task { await center.refreshScoped(repositoryPath: repositoryPath) }
+                        refreshID = UUID()
                     }
                 }
             }
@@ -676,12 +680,18 @@ struct WorktreeChooserPanel: View {
 /// list, which stays mounted so its loads and scroll position survive the round trip.
 struct SessionListDetailTab<ListContent: View, Detail: View>: View {
     let backLabel: String
+    let repositoryPath: String?
+    let canShowDetail: Bool
     @ViewBuilder let list: (_ open: @escaping () -> Void) -> ListContent
     @ViewBuilder let detail: () -> Detail
-    @State private var isShowingDetail = false
+    @State private var detailRepositoryPath: String?
+
+    private var isShowingDetail: Bool {
+        detailRepositoryPath != nil && detailRepositoryPath == repositoryPath && canShowDetail
+    }
 
     var body: some View {
-        list { isShowingDetail = true }
+        list { detailRepositoryPath = repositoryPath }
             .opacity(isShowingDetail ? 0 : 1)
             .allowsHitTesting(!isShowingDetail)
             .overlay {
@@ -689,7 +699,7 @@ struct SessionListDetailTab<ListContent: View, Detail: View>: View {
                     VStack(spacing: 0) {
                         HStack {
                             Button {
-                                isShowingDetail = false
+                                detailRepositoryPath = nil
                             } label: {
                                 DockIconLabel(backLabel, icon: .arrowLeft)
                             }
@@ -704,6 +714,10 @@ struct SessionListDetailTab<ListContent: View, Detail: View>: View {
                     }
                     .background(Color.dockCanvas)
                 }
+            }
+            .onChange(of: repositoryPath) { _, _ in detailRepositoryPath = nil }
+            .onChange(of: canShowDetail) { _, canShow in
+                if !canShow { detailRepositoryPath = nil }
             }
     }
 }
