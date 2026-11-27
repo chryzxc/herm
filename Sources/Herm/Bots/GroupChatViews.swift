@@ -968,7 +968,7 @@ struct GroupChatView: View {
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 14) {
                     if events.isEmpty, store.events[roomID] != nil {
                         GroupWelcome(members: room?.members ?? [], bot: botInfo, onMention: insertMention)
                     }
@@ -1081,6 +1081,7 @@ struct GroupChatView: View {
     private func row(_ event: GroupRoomEvent) -> some View {
         switch event.kind {
         case .user:
+            let generation = store.bindingGeneration
             HStack {
                 Spacer(minLength: 40)
                 let split = ReplyQuote.split(GenerativeUIIntegration.displayUserText(event.text))
@@ -1131,7 +1132,7 @@ struct GroupChatView: View {
                 }
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
                 .task(id: event.id) {
-                    for file in event.attachments { await store.loadImage(file, event: event.id, in: roomID) }
+                    await store.loadImages(event.attachments, event: event.id, in: roomID, generation: generation)
                 }
             }
         case .member(let memberID):

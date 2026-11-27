@@ -101,6 +101,74 @@ struct GroupChatOpeningTests {
         }
     }
 
+    @Test
+    func populatedRoomKeepsVisibleRowsAcrossTranscriptLayoutChange() async throws {
+        let client = OpeningRoomClient(messageCount: 80)
+        let store = GroupChatStore()
+        store.replyNotifier = { _, _ in }
+        store.bind(to: client)
+        await store.refreshRooms()
+        let host = NSHostingView(
+            rootView: GroupChatView(
+                store: store, botMode: BotModeModel(), roomID: "existing",
+                toolbar: { identity, actions in
+                    AnyView(
+                        HStack {
+                            identity
+                            actions
+                        })
+                },
+                onDisbanded: {}
+            ).dockThemedRoot().environment(\.dockHostVisible, true))
+        host.frame = NSRect(x: 0, y: 0, width: 700, height: 650)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        for _ in 0..<100 {
+            host.layoutSubtreeIfNeeded()
+            if store.events["existing"]?.count == 80 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+        #expect(try visibleText(in: host).contains("Stored message 80"))
+
+        client.arrivals = [("message.member", "main", "Fresh reply with enough words to wrap across the group transcript")]
+        await store.poll("existing")
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+        let stationary = try visibleText(in: host)
+        #expect(stationary.contains("Stored message 80"))
+        #expect(stationary.contains("Fresh reply"))
+        for width: CGFloat in [420, 700] {
+            window.setContentSize(NSSize(width: width, height: 650))
+            try await Task.sleep(for: .milliseconds(200))
+            host.layoutSubtreeIfNeeded()
+            let text = try visibleText(in: host)
+            #expect(text.contains("Stored message 80"))
+            #expect(text.contains("Fresh reply"))
+        }
+        #expect(store.events["existing"]?.map(\.id) == (1...81).map { "stored-\($0)" })
+
+        let transcript = try #require(scrollableTranscript(in: host))
+        let controller = ConversationScrollController()
+        controller.clipView = transcript.contentView
+        controller.shiftVisibleTop(by: -(try #require(controller.geometry)).visibleTop)
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+        let older = try visibleText(in: host)
+        #expect(older.range(of: #"\bStored message 1\b"#, options: .regularExpression) != nil)
+        #expect(older.range(of: #"\bStored message 2\b"#, options: .regularExpression) != nil)
+        #expect(!older.contains("Stored message 80"))
+        controller.scrollToBottom()
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+        let latest = try visibleText(in: host)
+        #expect(latest.contains("Stored message 80"))
+        #expect(latest.contains("Fresh reply"))
+    }
+
     private func scrollableTranscript(in view: NSView) -> NSScrollView? {
         if let scroll = view as? NSScrollView,
             let document = scroll.documentView,
