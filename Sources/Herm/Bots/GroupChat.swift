@@ -549,16 +549,15 @@ final class GroupChatStore: ObservableObject {
         for room in listed where seenSeq[room.id] == nil { markSeen(room.id, through: room.latestSeq) }
         if listed != rooms { rooms = listed }
         for room in listed where room.latestSeq != previewSeq[room.id] {
-            previewSeq[room.id] = room.latestSeq
             // The last message sits within the trailing bookkeeping events of its turn.
-            guard
-                let page = try? await client.request(
-                    HermesFeatureIDs.ID.groupsLog.rawValue,
-                    params: [
-                        "room_id": room.id, "since_seq": max(0, room.latestSeq - 12), "limit": 12,
-                    ])
-            else { continue }
+            let page = try? await client.request(
+                HermesFeatureIDs.ID.groupsLog.rawValue,
+                params: [
+                    "room_id": room.id, "since_seq": max(0, room.latestSeq - 12), "limit": 12,
+                ])
             guard generation == bindingGeneration, refresh == roomRefreshGeneration else { return false }
+            guard let page else { continue }
+            previewSeq[room.id] = room.latestSeq
             let recent = (page["events"] as? [[String: Any]] ?? []).compactMap(GroupRoomEvent.init)
             updateLastMessage(room.id, from: recent)
             // Rooms on screen announce from their own poll.
