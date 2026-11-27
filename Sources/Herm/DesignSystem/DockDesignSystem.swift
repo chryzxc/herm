@@ -99,10 +99,9 @@ enum DockSidebarListMetrics {
     static let sessionRowHeight: CGFloat = 30
     /// One footprint for every leading status mark (spinner, approval, question, failure, done,
     /// unread count), so states swap in place without one reading smaller than another.
-    static let statusMark: CGFloat = 16
-    /// The leading status column. Fits a spinner, a warning or a "99+" pill; the rare
-    /// warning-plus-count pair is trailing-aligned and spills into the row's leading inset.
-    static let statusSlotWidth: CGFloat = 28
+    static let statusMark: CGFloat = 14
+    /// Reserve one column in every row. A wide "99+" pill can use the leading inset.
+    static let statusSlotWidth: CGFloat = 27
 }
 
 enum DockControlMetrics {

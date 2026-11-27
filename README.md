@@ -693,7 +693,8 @@ Bot rail and Bot menu.
 
 Drag a conversation within **Pinned** to set its saved order. Recents and
 Projects list conversations by last update. Hover over a project pill to see
-its repository path.
+its repository path. Session rows keep unread counts, approvals, and running
+spinners in a compact column so titles stay aligned.
 
 The bold vertical ellipsis beside **Chat tiles** lets you choose **Bot menu** or **Bot rail**.
 Horizontal and vertical three-dot menu icons use the same heavier weight across Herm.
