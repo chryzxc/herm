@@ -9,12 +9,10 @@ final class EdgeQuickConversationModel: ObservableObject {
     @Published private(set) var loadFailed = false
     private var destinationKey: String?
     private var generation = UUID()
-    private var presentationSuite: String?
-    private var connectionLink: AnyCancellable?
+    private var projection: DisposableChatProjection?
     private var statusLink: AnyCancellable?
     private var identityLink: AnyCancellable?
-    private var eventSubscription: UUID?
-    private weak var eventOwner: DockModel?
+
     var onSessionIdentityChange: ((DockModel) -> Void)?
 
     var unavailableReason: String? {
@@ -41,21 +39,14 @@ final class EdgeQuickConversationModel: ObservableObject {
         if destinationKey == destination.sessionKey, let conversation { return conversation }
         shutdown()
         destinationKey = destination.sessionKey
-        let identity = UUID().uuidString
-        let suite = "herm.quick-chat.presentation." + identity
-        let defaults = UserDefaults(suiteName: suite)!
-        presentationSuite = suite
-        defaults.set(destination.profileID, forKey: runtime.profileScopeKey)
-        let cache = FileManager.default.temporaryDirectory.appendingPathComponent("herm-quick-chat-" + identity)
-        let model = DockModel(
-            sessionAgentStateFileURL: cache.appendingPathComponent("agents.json"), defaults: defaults,
-            botActivityFileURL: cache.appendingPathComponent("bots.json"), loadArchives: false,
-            rpcClient: runtime.controlRPCClient, refreshesSessionIndexFromEvents: false,
-            sessionTranscriptCache: runtime.sessionTranscriptCache, voiceTimers: voiceTimers,
-            voiceCapture: runtime.voiceCapture)
+        let projection = DisposableChatProjection(
+            surface: .quick, profileID: destination.profileID, sessionID: destination.sessionID,
+            runtime: runtime, voiceTimers: voiceTimers)
+        self.projection = projection
+        let model = projection.model
         model.defaultBotName = runtime.defaultBotName
         conversation = model
-        connectionLink = runtime.$isHermesConnected.sink { [weak model] in model?.isHermesConnected = $0 }
+
         statusLink = Publishers.CombineLatest4(
             model.$status.removeDuplicates(), model.$isSending.removeDuplicates(),
             model.$isRestoringSession.removeDuplicates(), model.$sessionTranscriptLoadState.removeDuplicates()
@@ -69,9 +60,6 @@ final class EdgeQuickConversationModel: ObservableObject {
                     onSessionIdentityChange?(model)
                 }
         }
-        eventOwner = runtime
-        eventSubscription = model.subscribeSessionEvents(
-            from: runtime.eventRouter, requestedSessionID: destination.sessionID)
         return model
     }
 
@@ -116,22 +104,13 @@ final class EdgeQuickConversationModel: ObservableObject {
 
     func shutdown() {
         generation = UUID()
-        if let eventSubscription { eventOwner?.eventRouter.unsubscribe(eventSubscription) }
-        eventSubscription = nil
-        eventOwner = nil
-        connectionLink = nil
         statusLink = nil
         identityLink = nil
-        if let conversation {
-            conversation.cacheLeavingTranscript()
-            conversation.sessionResumeGeneration &+= 1
-        }
-        conversation?.shutdown()
+        projection?.shutdown(invalidateResume: true)
+        projection = nil
         conversation = nil
         destinationKey = nil
         isLoading = false
         loadFailed = false
-        if let presentationSuite { UserDefaults.standard.removePersistentDomain(forName: presentationSuite) }
-        presentationSuite = nil
     }
 }

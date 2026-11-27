@@ -53,6 +53,40 @@ private final class QuickConversationRPC: HermesRPCClientProtocol {
 
 @MainActor
 struct EdgeQuickConversationTests {
+    @Test func projectionCreationAndTeardownPreservesQuickPolicies() async throws {
+        #expect(!DisposableChatProjection.Surface.quick.loadsArchives)
+        #expect(!DisposableChatProjection.Surface.quick.followsReasoning)
+        let workspace = runtime(QuickConversationRPC())
+        defer { workspace.shutdown() }
+        workspace.defaultReasoningVariant = .high
+        workspace.draft = "workspace draft"
+        let chat = EdgeQuickConversationModel()
+        await chat.load(QuickDestination(profileID: "builder", sessionID: "quick"), runtime: workspace)
+        let model = try #require(chat.conversation)
+        #expect(model !== workspace)
+        #expect(model.gateway == nil)
+        #expect(model.sessionProfileID == "builder")
+        #expect(model.defaultReasoningVariant == nil)
+        workspace.isHermesConnected = true
+        #expect(model.isHermesConnected)
+        let directory = model.agentStateStore.fileURL.deletingLastPathComponent().lastPathComponent
+        let domain = directory.replacingOccurrences(of: "herm-quick-chat-", with: "herm.quick-chat.presentation.")
+        model.defaults.set("marker", forKey: "projection-test-marker")
+        #expect(UserDefaults.standard.persistentDomain(forName: domain)?["projection-test-marker"] as? String == "marker")
+        workspace.defaultReasoningVariant = .low
+        #expect(model.defaultReasoningVariant == nil)
+        model.draft = "quick draft"
+        chat.shutdown()
+        chat.shutdown()
+        #expect(UserDefaults.standard.persistentDomain(forName: domain)?["projection-test-marker"] == nil)
+        workspace.isHermesConnected = false
+        #expect(model.isHermesConnected)
+        workspace.receiveGatewayEvent("message.start", params: ["session_id": "runtime-quick"])
+        #expect(model.streamingMessageID == nil)
+        #expect(chat.conversation == nil)
+        #expect(workspace.draft == "workspace draft")
+    }
+
     private func runtime(_ client: QuickConversationRPC) -> DockModel {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         return DockModel(

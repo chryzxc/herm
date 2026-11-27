@@ -47,12 +47,8 @@ final class PullRequestChatModel: ObservableObject {
     @Published private(set) var conversation: DockModel?
     private let links: UserDefaults
     private var sessionLink: AnyCancellable?
-    private var connectionLink: AnyCancellable?
-    private var reasoningLink: AnyCancellable?
     private var retentionLink: AnyCancellable?
-    private var presentationSuite: String?
-    private var eventSubscription: UUID?
-    private weak var eventOwner: DockModel?
+    private var projection: DisposableChatProjection?
     var visibleHosts = Set<UUID>()
     var onRetentionChange: (() -> Void)?
     private var isPreparing = false
@@ -87,19 +83,11 @@ final class PullRequestChatModel: ObservableObject {
             isPreparing = false
             onRetentionChange?()
         }
-        // Keep this panel's preferences and disposable caches away from the workspace model.
-        let identity = UUID().uuidString
-        let suite = "herm.pr-chat.presentation." + identity
-        let defaults = UserDefaults(suiteName: suite)!
-        presentationSuite = suite
-        defaults.set("default", forKey: runtime.profileScopeKey)
-        let cache = FileManager.default.temporaryDirectory.appendingPathComponent("herm-pr-chat-" + identity)
-        let model = DockModel(
-            sessionAgentStateFileURL: cache.appendingPathComponent("agents.json"), defaults: defaults,
-            botActivityFileURL: cache.appendingPathComponent("bots.json"), rpcClient: runtime.controlRPCClient,
-            refreshesSessionIndexFromEvents: false, sessionTranscriptCache: runtime.sessionTranscriptCache)
-        connectionLink = runtime.$isHermesConnected.sink { [weak model] in model?.isHermesConnected = $0 }
-        reasoningLink = runtime.$defaultReasoningVariant.sink { [weak model] in model?.defaultReasoningVariant = $0 }
+        let linked = linkedDestination(for: pr)
+        let projection = DisposableChatProjection(
+            surface: .pullRequest, profileID: "default", sessionID: linked?.sessionID, runtime: runtime)
+        self.projection = projection
+        let model = projection.model
         retentionLink = Publishers.MergeMany(
             model.$status.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
             model.$isSending.removeDuplicates().map { _ in () }.eraseToAnyPublisher(),
@@ -109,10 +97,7 @@ final class PullRequestChatModel: ObservableObject {
         .receive(on: DispatchQueue.main)
         .sink { [weak self] in self?.onRetentionChange?() }
         conversation = model
-        eventOwner = runtime
-        let linked = linkedDestination(for: pr)
-        eventSubscription = model.subscribeSessionEvents(
-            from: runtime.eventRouter, requestedSessionID: linked?.sessionID)
+
         sessionLink = model.$sessionStorageID.compactMap { $0 }.sink { [weak self, weak model] sessionID in
             guard let self, let model else { return }
             let destination = QuickDestination(
@@ -137,17 +122,10 @@ final class PullRequestChatModel: ObservableObject {
     }
 
     func shutdown() {
-        if let eventSubscription { eventOwner?.eventRouter.unsubscribe(eventSubscription) }
-        eventSubscription = nil
-        eventOwner = nil
         sessionLink = nil
-        connectionLink = nil
-        reasoningLink = nil
         retentionLink = nil
-        if let presentationSuite { UserDefaults.standard.removePersistentDomain(forName: presentationSuite) }
-        presentationSuite = nil
-        conversation?.cacheLeavingTranscript()
-        conversation?.shutdown()
+        projection?.shutdown(invalidateResume: false)
+        projection = nil
         conversation = nil
         automaticContext = nil
     }
