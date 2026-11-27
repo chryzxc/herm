@@ -32,12 +32,93 @@ private actor GitHubPageTransport: GitHubIssueTransport {
         try await Task.sleep(for: .milliseconds(30))
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value
         let key = query.map { "\(path)?\($0)" } ?? path
-        guard let data = responses[key] else { throw GitHubCodeHostError.unavailable }
+        let page = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "page" }?
+            .value
+        let data = page.flatMap { responses["\(key)?page=\($0)"] }
+        guard let data = data ?? responses[key] else { throw GitHubCodeHostError.unavailable }
         return (data, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
     }
 }
 
 struct GitHubPageLoadingTests {
+    @MainActor @Test(arguments: [true, false])
+    func repositoryPullRequestCoverageSurvivesLaterPageFailure(scoped: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-pr-pages-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for arguments in [["init", "-q"], ["remote", "add", "origin", "https://github.com/owner/repo.git"]] {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", root.path] + arguments
+            try process.run()
+            process.waitUntilExit()
+            try #require(process.terminationStatus == 0)
+        }
+        let pulls = "/repos/owner/repo/pulls"
+        let since = Date.now.addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
+        let firstPage = (1...100).map { number in
+            var row = searchRow
+            row["number"] = number
+            return row
+        }
+        let transport = try GitHubPageTransport(responses: [
+            "/user": ["login": "ada"],
+            "\(pulls)?page=1": firstPage,
+            "/search/issues?is:pr is:merged repo:owner/repo merged:>=\(since)": ["items": []],
+        ])
+        let center = PullRequestCenterModel(api: PullRequestCenterAPI(transport: transport))
+        func refresh() async {
+            if scoped {
+                await center.refreshScoped(repositoryPath: root.path)
+            } else {
+                let project = ProjectSummary(
+                    id: "fixture", name: root.path, repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil,
+                    isActive: true)
+                await center.refresh(projects: [project])
+            }
+        }
+        await refresh()
+
+        #expect(await transport.count(pulls) == 2)
+        #expect(center.hasLoaded)
+        #expect(center.failedRepositories.isEmpty)
+        #expect(center.visible.map(\.number).sorted() == Array(1...100))
+        #expect(center.coverage != nil)
+        let diagnostic = "GitHub account search failed. Showing attached repositories."
+        let warning = "Open pull request list is incomplete."
+        #expect(center.listWarning == (scoped ? warning : "\(warning) \(diagnostic)"))
+        #expect(center.hasPartialRepositoryCoverage)
+        let selected = try #require(center.visible.first { $0.number == 99 })
+        center.selectedID = selected.id
+        await center.loadSelectedDetail()
+        let detailFailure =
+            "Some pull request sections could not be refreshed. Showing available data; refresh this pull request to retry."
+        #expect(center.listWarning == "\(warning) \(detailFailure)")
+        #expect(center.selectedID == selected.id)
+        #expect(center.visible.count == 100)
+
+        var last = searchRow
+        last["number"] = 101
+        await transport.setResponse(try JSONSerialization.data(withJSONObject: [last]), for: "\(pulls)?page=2")
+        await refresh()
+
+        #expect(await transport.count(pulls) == 4)
+        #expect(center.visible.map(\.number).sorted() == Array(1...101))
+        #expect(center.coverage == nil)
+        #expect(!center.hasPartialRepositoryCoverage)
+        #expect(center.selectedID == selected.id)
+        #expect(center.listWarning == (scoped ? nil : diagnostic))
+
+        await transport.setResponse(nil, for: "\(pulls)?page=1")
+        await refresh()
+        #expect(await transport.count(pulls) == 5)
+        #expect(center.visible.map(\.number).sorted() == Array(1...101))
+        #expect(center.failedRepositories == ["owner/repo"])
+        #expect(center.coverage == nil)
+        let failure = "GitHub could not load pull requests. Check your GitHub sign-in or try again."
+        #expect(center.listWarning == (scoped ? nil : failure))
+    }
+
     @MainActor @Test(arguments: [true, false])
     func sessionRepositoryIncludesMergedHistoryWithoutHidingOpenPRs(historyAvailable: Bool) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("herm-scoped-pr-" + UUID().uuidString)
@@ -317,8 +398,11 @@ struct GitHubPageLoadingTests {
 }
 
 private actor GitHubLinkedPageTransport: GitHubIssueTransport {
+    let lastPageCount: Int
     private var active = 0
     private(set) var peak = 0
+
+    init(lastPageCount: Int) { self.lastPageCount = lastPageCount }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let url = request.url!
@@ -330,7 +414,7 @@ private actor GitHubLinkedPageTransport: GitHubIssueTransport {
         peak = max(peak, active)
         defer { active -= 1 }
         try await Task.sleep(for: .milliseconds(20))
-        let rows = (0..<(page == 4 ? 7 : 100)).map { ["id": page * 1_000 + $0] }
+        let rows = (0..<(page == 4 ? lastPageCount : 100)).map { ["id": page * 1_000 + $0] }
         let link = "<https://api.github.com/user/repos?page=4&per_page=100>; rel=\"last\""
         return (
             try JSONSerialization.data(withJSONObject: rows),
@@ -340,10 +424,10 @@ private actor GitHubLinkedPageTransport: GitHubIssueTransport {
 }
 
 extension GitHubPageLoadingTests {
-    @Test func linkedPagesLoadConcurrentlyInOrder() async throws {
-        let transport = GitHubLinkedPageTransport()
+    @Test(arguments: [7, 100]) func linkedPagesLoadConcurrentlyInOrder(lastPageCount: Int) async throws {
+        let transport = GitHubLinkedPageTransport(lastPageCount: lastPageCount)
         let page = try await GitHubClient(transport: transport).pages("/user/repos")
-        #expect(page.rows.count == 307)
+        #expect(page.rows.count == 300 + lastPageCount)
         #expect(page.rows.map { $0["id"] as? Int } == page.rows.map { $0["id"] as? Int }.sorted { $0! < $1! })
         #expect(!page.coverage.partial)
         #expect(await transport.peak > 1)

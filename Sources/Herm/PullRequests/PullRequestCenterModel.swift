@@ -63,7 +63,26 @@ final class PullRequestCenterModel: ObservableObject {
     }
     @Published var selectedID: String? { didSet { if let selectedID { changedIDs.remove(selectedID) } } }
     @Published var browsing = GitHubBrowseOptions() { didSet { visibleCache = nil } }
-    @Published private(set) var coverage: String?
+    private enum ListCoverage {
+        case search(String)
+        case repository
+    }
+    @Published private var listCoverage: ListCoverage?
+    var coverage: String? {
+        switch listCoverage {
+        case .search(let label): label
+        case .repository: "Open pull request list is incomplete."
+        case nil: nil
+        }
+    }
+    var hasPartialRepositoryCoverage: Bool {
+        if case .repository? = listCoverage { return true }
+        return false
+    }
+    var listWarning: String? {
+        guard hasPartialRepositoryCoverage else { return errorMessage }
+        return [coverage, errorMessage].compactMap { $0 }.joined(separator: " ")
+    }
     @Published private(set) var repositories: [GitHubRepositoryReference] = []
     private var generation = UUID()
     private var detailNeedsRefresh = Set<String>()
@@ -188,7 +207,7 @@ final class PullRequestCenterModel: ObservableObject {
                     browsing.query(kind: .pullRequest, viewer: viewer), localPaths: localPaths)
                 guard token == generation, !Task.isCancelled else { return }
                 records = page.items
-                coverage = page.coverage.label
+                listCoverage = page.coverage.label.map(ListCoverage.search)
                 hasLoaded = true
                 repairSelection()
             } catch {
@@ -213,7 +232,7 @@ final class PullRequestCenterModel: ObservableObject {
             switch global {
             case .success(let page):
                 let rows = page.items
-                coverage = page.coverage.label
+                listCoverage = page.coverage.label.map(ListCoverage.search)
                 // Row metadata is loaded as the lazy list reveals each PR.
                 records = rows.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
                 if let selectedID { detailNeedsRefresh.insert(selectedID) }
@@ -241,25 +260,29 @@ final class PullRequestCenterModel: ObservableObject {
             return
         }
         let results = await withTaskGroup(
-            of: Result<[PullRequestRecord], PullRequestCenterFailure>.self,
-            returning: [Result<[PullRequestRecord], PullRequestCenterFailure>].self
+            of: Result<GitHubPage<PullRequestRecord>, PullRequestCenterFailure>.self,
+            returning: [Result<GitHubPage<PullRequestRecord>, PullRequestCenterFailure>].self
         ) { group in
             for (path, remote) in remotes {
                 group.addTask { [api] in await api.index(repository: remote, localPath: path) }
             }
-            var output: [Result<[PullRequestRecord], PullRequestCenterFailure>] = []
+            var output: [Result<GitHubPage<PullRequestRecord>, PullRequestCenterFailure>] = []
             for await result in group { output.append(result) }
             return output
         }
         guard token == generation, !Task.isCancelled else { return }
         var fresh: [PullRequestRecord] = []
         var failures: [String] = []
+        var partial = false
         for result in results {
             switch result {
-            case .success(let rows): fresh += rows
+            case .success(let page):
+                fresh += page.items
+                partial = partial || page.coverage.partial
             case .failure(let failure): failures.append(failure.repository)
             }
         }
+        if !fresh.isEmpty || failures.isEmpty { listCoverage = partial ? .repository : nil }
         if !fresh.isEmpty {
             records = fresh.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
             if let selectedID { detailNeedsRefresh.insert(selectedID) }
@@ -292,6 +315,7 @@ final class PullRequestCenterModel: ObservableObject {
         guard token == generation, !Task.isCancelled else { return }
         guard let remote else {
             records = []
+            listCoverage = nil
             selectedID = nil
             errorMessage = "This session's repository has no GitHub remote."
             return
@@ -305,10 +329,11 @@ final class PullRequestCenterModel: ObservableObject {
         guard token == generation, !Task.isCancelled else { return }
         viewerLogin = viewer
         switch result {
-        case .success(let rows):
+        case .success(let page):
             hasLoaded = true
+            listCoverage = page.coverage.partial ? .repository : nil
             let unique = Dictionary(
-                (rows + (merged?.items ?? [])).map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+                (page.items + (merged?.items ?? [])).map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
             records = unique.values.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
             failedRepositories = []
             errorMessage =
@@ -365,7 +390,7 @@ final class PullRequestCenterModel: ObservableObject {
         selectedID = nil
         changedIDs.removeAll()
         errorMessage = nil
-        coverage = nil
+        listCoverage = nil
         accessRequirement = nil
         repositories = [repository]
         failedRepositories = []
