@@ -13,7 +13,7 @@ struct ConversationInitialUnreadPositionTests {
         let target = model.messages[20].id
         if delayed && cached {
             model.sessionTranscriptPreview = .init(
-                messages: Array(model.messages.suffix(12)), rowIDs: [:], references: [:], pendingImages: [])
+                messages: Array(model.messages.suffix(12)), rowIDs: [:], references: [:])
         }
         model.sessionTranscriptLoadState = delayed ? (cached ? .refreshing : .loading) : .ready
         model.unreadDividerMessageID = delayed ? nil : target
