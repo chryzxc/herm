@@ -531,6 +531,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         // cycle hook for the local Hermes backend.
         startup?.cancel()
         if ready { model.shutdown() }
+        WorkspaceStatePersistence.flushPendingSaves()
     }
 
     nonisolated func userNotificationCenter(
