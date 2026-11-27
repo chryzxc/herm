@@ -48,6 +48,86 @@ final class PullRequestChatRPC: HermesRPCClientProtocol {
 
 @MainActor
 struct PullRequestChatTests {
+    @Test func projectionCreationAndTeardownKeepsWorkspaceIndependent() async throws {
+        #expect(DisposableChatProjection.Surface.pullRequest.loadsArchives)
+        #expect(DisposableChatProjection.Surface.pullRequest.followsReasoning)
+        let suite = "PullRequestChatTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let workspace = runtime(PullRequestChatRPC(), defaults: defaults)
+        defer {
+            workspace.shutdown()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        workspace.defaultReasoningVariant = .high
+        workspace.draft = "workspace draft"
+        let chat = PullRequestChatModel(links: defaults)
+        await chat.prepareConversation(for: try record(), runtime: workspace)
+        let model = try #require(chat.conversation)
+        #expect(model !== workspace)
+        #expect(model.gateway == nil)
+        #expect(model.defaultReasoningVariant == .high)
+        workspace.isHermesConnected = true
+        #expect(model.isHermesConnected)
+        let directory = model.agentStateStore.fileURL.deletingLastPathComponent().lastPathComponent
+        let domain = directory.replacingOccurrences(of: "herm-pr-chat-", with: "herm.pr-chat.presentation.")
+        model.defaults.set("marker", forKey: "projection-test-marker")
+        #expect(UserDefaults.standard.persistentDomain(forName: domain)?["projection-test-marker"] as? String == "marker")
+        workspace.defaultReasoningVariant = .low
+        #expect(model.defaultReasoningVariant == .low)
+        _ = try await model.createAuthorizedSession(source: "herm")
+        chat.shutdown()
+        chat.shutdown()
+        #expect(UserDefaults.standard.persistentDomain(forName: domain)?["projection-test-marker"] == nil)
+        workspace.isHermesConnected = false
+        #expect(model.isHermesConnected)
+        workspace.defaultReasoningVariant = .medium
+        workspace.receiveGatewayEvent("message.start", params: ["session_id": "runtime"])
+        #expect(model.defaultReasoningVariant == .low)
+        #expect(model.streamingMessageID == nil)
+        #expect(chat.conversation == nil)
+        #expect(workspace.draft == "workspace draft")
+    }
+
+    @Test func projectionConstructorLoadsArchivesOnlyForPullRequests() throws {
+        let suite = "PullRequestChatTests." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let workspace = runtime(PullRequestChatRPC(), defaults: defaults)
+        defer {
+            workspace.shutdown()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let state = SessionAgentState(
+            activeToolCalls: [], recentEvents: [], sessionAgents: [], activeSubagents: [],
+            agentActivities: [], synthesizedSubagentIDs: [])
+        let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
+        let activity = BotActivityRecord(
+            originSessionID: "archived", botID: "bot", botName: "Bot", summary: "Saved",
+            createdAt: timestamp, updatedAt: timestamp)
+        for surface in [DisposableChatProjection.Surface.pullRequest, .quick] {
+            let identity = UUID().uuidString
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("herm-\(surface.prefix)-" + identity)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let agents = SessionAgentStateStore(fileURL: directory.appendingPathComponent("agents.json"))
+            let bots = BotActivityStore(fileURL: directory.appendingPathComponent("bots.json"))
+            agents.save(["archived": state])
+            let data = try #require(bots.encoded(["archived": [activity]]))
+            #expect(bots.saveEncoded(data))
+            #expect(agents.load()["archived"] == state)
+            #expect(bots.load()["archived"] == [activity])
+            let projection = DisposableChatProjection(
+                surface: surface, profileID: "default", sessionID: nil, runtime: workspace, identity: identity)
+            defer { projection.shutdown(invalidateResume: false) }
+            if surface == .pullRequest {
+                #expect(projection.model.agentStateBySessionID["archived"] == state)
+                #expect(projection.model.botActivityBySessionID["archived"] == [activity])
+            } else {
+                #expect(projection.model.agentStateBySessionID.isEmpty)
+                #expect(projection.model.botActivityBySessionID.isEmpty)
+            }
+        }
+    }
+
     func record(_ number: Int = 93, repository: String = "owner/repo") throws -> PullRequestRecord {
         try #require(
             PullRequestCenterAPI().parse(
