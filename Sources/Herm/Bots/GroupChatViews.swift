@@ -567,8 +567,17 @@ struct GroupChatView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var voiceOutput = VoiceOutput()
     @State private var speakingEventID: String?
-    @State private var replyQuote: ReplyQuote?
-    @State private var draft = ""
+    private var draft: String {
+        get { store.composerDrafts[roomID]?.text ?? "" }
+        nonmutating set {
+            store.composerDrafts[roomID, default: GroupComposerDraft()].text = newValue
+            store.composerDrafts[roomID, default: GroupComposerDraft()].textRevision = UUID()
+        }
+    }
+    private var replyQuote: ReplyQuote? {
+        get { store.composerDrafts[roomID]?.quote }
+        nonmutating set { store.composerDrafts[roomID, default: GroupComposerDraft()].quote = newValue }
+    }
     @State private var mentionIndex = 0
     @State private var dismissedMentionToken: String?
     // Not @State: the editor consumes it during a view update, where a state write is dropped and the caret keeps snapping back.
@@ -587,7 +596,10 @@ struct GroupChatView: View {
     /// Threads hidden from the bar; their messages stay in the room. Cleared when the room changes.
     @State private var closedThreads: Set<String> = []
     @State private var showingInsertPopover = false
-    @State private var attachments: [GroupRoomAttachment] = []
+    private var attachments: [GroupRoomAttachment] {
+        get { store.composerDrafts[roomID]?.attachments ?? [] }
+        nonmutating set { store.composerDrafts[roomID, default: GroupComposerDraft()].attachments = newValue }
+    }
     @State private var uploadingCount = 0
     @State private var showingFilePicker = false
     @State private var attachmentPicker: AttachmentPopoverFilePicker = .files
@@ -1430,12 +1442,18 @@ struct GroupChatView: View {
                 VStack(spacing: 6) {
                     ZStack(alignment: .topLeading) {
                         ComposerInputEditor(
-                            text: $draft,
+                            text: Binding(get: { draft }, set: { draft = $0 }),
                             isFocused: isEditorFocused,
                             onSubmit: send,
                             onCompletionKey: handleMentionKey,
                             // Dropped or pasted file URLs upload like the picker's.
-                            onDropFiles: store.supportsAttachments ? { upload($0) } : nil,
+                            onDropFiles: { urls in
+                                if store.supportsAttachments {
+                                    upload(urls)
+                                } else {
+                                    store.errorMessage = "This gateway does not support group file attachments."
+                                }
+                            },
                             onFocusChanged: { isEditorFocused = $0 },
                             onCaretMoved: { _, _ in },
                             takePendingCaret: {
@@ -1443,6 +1461,9 @@ struct GroupChatView: View {
                                 return pendingCaret
                             },
                             onTextChanged: { _, _ in mentionIndex = 0 },
+                            onTextReplaced: { _, _ in
+                                store.composerDrafts[roomID, default: GroupComposerDraft()].textRevision = UUID()
+                            },
                             onContentHeightChanged: { editorHeight = ComposerLayout.height(for: $0) }
                         )
                         .frame(height: draft.isEmpty ? ComposerLayout.minHeight : editorHeight)
@@ -1474,10 +1495,16 @@ struct GroupChatView: View {
             allowedContentTypes: attachmentPicker.allowedContentTypes,
             allowsMultipleSelection: true
         ) { result in
-            switch result {
-            case .success(let urls): upload(urls)
-            case .failure(let error): store.errorMessage = AttachmentPopoverPresentation.importerErrorMessage(error)
-            }
+            Self.handleAttachmentSelection(result, upload: upload) { store.errorMessage = $0 }
+        }
+    }
+
+    static func handleAttachmentSelection(
+        _ result: Result<[URL], Error>, upload: ([URL]) -> Void, report: (String?) -> Void
+    ) {
+        switch result {
+        case .success(let urls): upload(urls)
+        case .failure(let error): report(AttachmentPopoverPresentation.importerErrorMessage(error))
         }
     }
 
@@ -1503,6 +1530,7 @@ struct GroupChatView: View {
                         }
                         .buttonStyle(.dockHover)
                         .help("Remove \(file.name)")
+                        .accessibilityLabel("Remove \(file.name)")
                     }
                     .dockPadding(.horizontal, 8)
                     .dockPadding(.vertical, 5)
@@ -1552,6 +1580,7 @@ struct GroupChatView: View {
             }
             .buttonStyle(.dockHover)
             .help(store.supportsAttachments ? "Attach files or insert a snippet" : "Insert a snippet")
+            .accessibilityLabel(store.supportsAttachments ? "Attach files or insert a snippet" : "Insert a snippet")
             .dockPopover(isPresented: $showingInsertPopover, arrowEdge: .bottom) {
                 AttachmentPopover(
                     pasteImageAvailable: false,
@@ -1564,7 +1593,8 @@ struct GroupChatView: View {
                         draft = AttachmentPopoverPresentation.insertingSnippet($0, into: draft)
                         showingInsertPopover = false
                     },
-                    actions: store.supportsAttachments ? [.files, .images, .promptSnippets] : [.promptSnippets]
+                    actions: store.supportsAttachments ? [.files, .images, .promptSnippets] : [.promptSnippets],
+                    fileActionTitle: "Attach File"
                 )
             }
             Button {
@@ -1598,18 +1628,40 @@ struct GroupChatView: View {
         }
         .buttonStyle(.dockHover)
         .frame(width: 32, height: 32)
-        .disabled(!canStop && (store.pendingRooms.contains(roomID) || !canSend))
+        .disabled(
+            !canStop
+                && (store.pendingRooms.contains(roomID) || store.composerDrafts[roomID]?.submitting == true || !canSend)
+        )
         .help(canStop ? "Stop the room" : "Send")
     }
 
     private func send() {
         let text = draft
-        guard !store.pendingRooms.contains(roomID), canSend else { return }
+        guard store.composerDrafts[roomID]?.submitting != true, !store.pendingRooms.contains(roomID), canSend else {
+            return
+        }
         let files = attachments
-        draft = ""
-        attachments = []
-        let outgoing = replyQuote?.composing(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? text
-        replyQuote = nil
-        Task { await store.send(outgoing, attachments: files, to: roomID, thread: thread) }
+        let quote = replyQuote
+        let outgoing = quote?.composing(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? text
+        if files.isEmpty {
+            draft = ""
+            replyQuote = nil
+            Task { await store.send(outgoing, to: roomID, thread: thread) }
+        } else {
+            let revision = store.composerDrafts[roomID]?.textRevision
+            let binding = store.bindingGeneration
+            store.composerDrafts[roomID, default: GroupComposerDraft()].submitting = true
+            Task {
+                let sent = await store.send(outgoing, attachments: files, to: roomID, thread: thread)
+                guard store.bindingGeneration == binding, var current = store.composerDrafts[roomID] else { return }
+                current.submitting = false
+                if sent {
+                    if current.textRevision == revision { current.text = "" }
+                    if current.quote == quote { current.quote = nil }
+                    current.attachments.removeAll { files.contains($0) }
+                }
+                store.composerDrafts[roomID] = current
+            }
+        }
     }
 }

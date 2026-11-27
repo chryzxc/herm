@@ -386,6 +386,15 @@ struct GroupLastMessage: Equatable {
     let date: Date
 }
 
+/// Ephemeral composer state belongs to the room, not a particular mounted view.
+struct GroupComposerDraft {
+    var text = ""
+    var textRevision = UUID()
+    var quote: ReplyQuote?
+    var attachments: [GroupRoomAttachment] = []
+    var submitting = false
+}
+
 @MainActor
 final class GroupChatStore: ObservableObject {
     /// Hermes' roster rule: 2–6 local profiles per room.
@@ -397,6 +406,7 @@ final class GroupChatStore: ObservableObject {
     @Published private(set) var rooms: [GroupRoom] = []
     @Published private(set) var events: [String: [GroupRoomEvent]] = [:]
     @Published private(set) var pendingRooms: Set<String> = []
+    @Published var composerDrafts: [String: GroupComposerDraft] = [:]
     @Published private(set) var sendingRooms: Set<String> = []
     @Published private(set) var workingRooms: Set<String> = []
     /// When each room was last seen working; keeps polling fast between chained turns.
@@ -478,6 +488,7 @@ final class GroupChatStore: ObservableObject {
         errorMessage = nil
         rooms = []
         events = [:]
+        composerDrafts = [:]
         attachmentImages = [:]
         localAttachmentURLs = [:]
         requestedAttachments = []
@@ -687,10 +698,11 @@ final class GroupChatStore: ObservableObject {
         attachmentImages[file.id] = image
     }
 
+    @discardableResult
     func send(
         _ text: String, attachments: [GroupRoomAttachment] = [], to roomID: String, thread: String = mainThreadID
-    ) async {
-        guard pendingRooms.insert(roomID).inserted else { return }
+    ) async -> Bool {
+        guard pendingRooms.insert(roomID).inserted else { return false }
         let generation = bindingGeneration
         sendingRooms.insert(roomID)
         defer {
@@ -700,21 +712,26 @@ final class GroupChatStore: ObservableObject {
             }
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let client, !trimmed.isEmpty || !attachments.isEmpty else { return }
+        guard let client, !trimmed.isEmpty || !attachments.isEmpty else {
+            if client == nil { errorMessage = "Couldn't send: The gateway is unavailable." }
+            return false
+        }
         var payload: [String: Any] = ["text": trimmed, "thread_id": thread]
         if !attachments.isEmpty { payload["attachments"] = attachments.map(\.manifest) }
         do {
             _ = try await client.request(
                 HermesFeatureIDs.ID.groupsSend.rawValue,
                 params: ["room_id": roomID, "event_id": UUID().uuidString.lowercased(), "payload": payload])
-            guard generation == bindingGeneration else { return }
+            guard generation == bindingGeneration else { return false }
             workingRooms.insert(roomID)
             lastBusyAt[roomID] = .now
             errorMessage = nil
             await poll(roomID)
+            return true
         } catch {
-            guard generation == bindingGeneration else { return }
+            guard generation == bindingGeneration else { return false }
             errorMessage = "Couldn't send: \(HermesDiagnosticsService.safeSummary(error.localizedDescription))"
+            return false
         }
     }
 
