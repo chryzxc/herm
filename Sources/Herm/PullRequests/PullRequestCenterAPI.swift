@@ -16,7 +16,10 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
     let client: GitHubClient
     let now: @Sendable () -> Date
 
-    init(transport: any GitHubIssueTransport = GitHubClient.sharedSession, now: @escaping @Sendable () -> Date = { .now }) {
+    init(
+        transport: any GitHubIssueTransport = GitHubClient.sharedSession,
+        now: @escaping @Sendable () -> Date = { .now }
+    ) {
         self.client = GitHubClient(transport: transport)
         self.now = now
     }
