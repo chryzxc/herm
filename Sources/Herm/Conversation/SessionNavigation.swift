@@ -77,10 +77,19 @@ final class SessionNavigationSelectionState: ObservableObject {
 /// Kept for the navigation lifetime, but observed only by the Chats list.
 @MainActor
 final class SessionSidebarDisclosureState: ObservableObject {
-    @Published var areConversationsExpanded = true
-    @Published var areAutomationsExpanded = true
-    @Published var arePinnedExpanded = true
-    @Published var expandedFilterSections: Set<SessionRailSection> = []
+    @Published private(set) var expandedSections: Set<SessionRailSection> = [.pinned, .recents, .automations]
+
+    func binding(for section: SessionRailSection, rendered isExpanded: Bool) -> Binding<Bool> {
+        Binding(
+            get: { isExpanded },
+            set: { expanded in
+                if expanded {
+                    self.expandedSections.insert(section)
+                } else {
+                    self.expandedSections.remove(section)
+                }
+            })
+    }
 }
 
 /// Presentation state owned by the left navigation rail, rather than a

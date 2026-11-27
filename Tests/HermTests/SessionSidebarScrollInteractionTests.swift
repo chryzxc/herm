@@ -5,6 +5,7 @@ import Testing
 @testable import Herm
 
 @MainActor
+@Suite(.serialized)
 struct SessionSidebarScrollInteractionTests {
     @Test func pinnedHeaderAcceptsClicksWhileRowHitTestingIsPaused() async throws {
         _ = NSApplication.shared
@@ -62,6 +63,66 @@ struct SessionSidebarScrollInteractionTests {
         try await Task.sleep(for: .milliseconds(50))
         try click(y: 348, in: window)
         #expect(rowClicks == 2)
+    }
+
+    @Test(arguments: [SessionRailSection.pinned, .recents])
+    func repeatedClicksUpdateTheRenderedSection(_ section: SessionRailSection) async throws {
+        _ = NSApplication.shared
+        let disclosure = SessionSidebarDisclosureState()
+        let view = DisclosureFixture(section: section, disclosure: disclosure)
+            .equatable()
+            .transaction {
+                $0.animation = nil
+                $0.disablesAnimations = true
+            }
+            .frame(width: 300, height: 400)
+        let host = DockWindowHostingView(rootView: view)
+        let window = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 400),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.alphaValue = 0
+        window.contentView = host
+        window.orderBack(nil)
+        defer { window.orderOut(nil) }
+
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        let document = try #require(scrollView(in: host)?.documentView)
+        let expandedHeight = document.frame.height
+
+        for expanded in [false, true, false, true] {
+            try click(y: 385, in: window)
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(disclosure.expandedSections.contains(section) == expanded)
+            #expect((document.frame.height >= expandedHeight - 400) == expanded)
+        }
+    }
+
+    private struct DisclosureFixture: View, Equatable {
+        let section: SessionRailSection
+        @ObservedObject var disclosure: SessionSidebarDisclosureState
+
+        nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.section == rhs.section }
+
+        var body: some View {
+            let expandedSections = disclosure.expandedSections
+            HoverPausingScrollView(pausesAllHitTesting: false) {
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    ForEach([section, .projects], id: \.self) { item in
+                        let expanded = disclosure.binding(for: item, rendered: expandedSections.contains(item))
+                        Section {
+                            if item == .projects || expanded.wrappedValue {
+                                ForEach(0..<24) { _ in Text("Conversation").frame(height: 44) }
+                            }
+                        } header: {
+                            DockSectionHeader(
+                                title: item.rawValue.capitalized, isExpanded: expanded,
+                                style: DockThemePalette(theme: .clean))
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func click(y: CGFloat, in window: NSWindow) throws {

@@ -820,6 +820,9 @@ struct SessionNavQueue: View, Equatable {
         let projects = sidebarSnapshot.linkedProjectGroups
         let pinned = pinnedSessionPresentation
         let statuses = sidebarSnapshot.sessionStatuses
+        // A lazy section can reuse a closure that captures only the observable reference.
+        // Capture the rendered values so both its rows and header follow each toggle.
+        let expandedSections = disclosure.expandedSections
 
         // Native sections keep headers visible without geometry tracking or eager row containers.
         return LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
@@ -827,7 +830,8 @@ struct SessionNavQueue: View, Equatable {
                 searchResultRows(pinned: pinned, statuses: statuses, style: style)
                     .dockPauseHitTestingWhileScrolling()
                 if SessionRailSection.archived.isVisible(in: hiddenSidebarOptions) {
-                    filterOutline(.archived, style: style)
+                    let expanded = disclosure.binding(for: .archived, rendered: expandedSections.contains(.archived))
+                    filterOutline(.archived, expanded: expanded, style: style)
                 }
             } else {
                 let recents = showsAllProfiles ? sidebarSnapshot.allBotRecents : sidebarSnapshot.scopedRecents
@@ -836,21 +840,22 @@ struct SessionNavQueue: View, Equatable {
                 let automations = recents.automations.filter(scope.includes)
                 let sections = navigationState.sectionOrder.filter { $0.isVisible(in: hiddenSidebarOptions) }
                 ForEach(sections, id: \.self) { section in
+                    let expanded = disclosure.binding(for: section, rendered: expandedSections.contains(section))
                     switch section {
                     case .pinned:
                         if pinned.status != .empty || !pinned.sessions.isEmpty {
-                            pinnedOutline(pinned, statuses: statuses, style: style)
+                            pinnedOutline(pinned, expanded: expanded, statuses: statuses, style: style)
                         }
                     case .recents:
                         conversationOutline(
-                            conversations, type: .conversations, statuses: statuses, style: style)
+                            conversations, type: .conversations, expanded: expanded, statuses: statuses, style: style)
                     case .projects:
                         projectsOutline(projects, statuses: statuses, style: style)
                     case .automations:
                         conversationOutline(
-                            automations, type: .automation, statuses: statuses, style: style)
+                            automations, type: .automation, expanded: expanded, statuses: statuses, style: style)
                     case .unread, .needsYou, .running, .archived:
-                        filterOutline(section, style: style)
+                        filterOutline(section, expanded: expanded, style: style)
                     }
                 }
                 SessionRailEndDropZone(state: navigationState)
@@ -955,18 +960,6 @@ struct SessionNavQueue: View, Equatable {
         }
     }
 
-    private func filterDisclosure(_ section: SessionRailSection) -> Binding<Bool> {
-        Binding(
-            get: { disclosure.expandedFilterSections.contains(section) },
-            set: { expanded in
-                if expanded {
-                    disclosure.expandedFilterSections.insert(section)
-                } else {
-                    disclosure.expandedFilterSections.remove(section)
-                }
-            })
-    }
-
     private struct ArchiveRequest: Equatable {
         let scope: SessionSidebarArchive.Scope
         let revision: UInt64
@@ -975,7 +968,7 @@ struct SessionNavQueue: View, Equatable {
     private var archiveRequest: ArchiveRequest? {
         guard hostVisible, !isSidebarCollapsed,
             SessionRailSection.archived.isVisible(in: hiddenSidebarOptions),
-            disclosure.expandedFilterSections.contains(.archived)
+            disclosure.expandedSections.contains(.archived)
         else { return nil }
         let scope: SessionSidebarArchive.Scope =
             showsAllProfiles
@@ -1007,7 +1000,7 @@ struct SessionNavQueue: View, Equatable {
 
     private var sidebarLiveRequest: SidebarLiveRequest? {
         guard hostVisible, !isSidebarCollapsed, !isSearchingSessions else { return nil }
-        let sections = disclosure.expandedFilterSections.intersection([.needsYou, .running])
+        let sections = disclosure.expandedSections.intersection([.needsYou, .running])
             .filter { $0.isVisible(in: hiddenSidebarOptions) }
         guard !sections.isEmpty else { return nil }
         let current = selectedBot?.id ?? sidebarSnapshot.inputs.profileScopeID ?? "default"
@@ -1028,8 +1021,9 @@ struct SessionNavQueue: View, Equatable {
     }
 
     @ViewBuilder
-    private func filterOutline(_ section: SessionRailSection, style: DockThemePalette) -> some View {
-        let expanded = filterDisclosure(section)
+    private func filterOutline(
+        _ section: SessionRailSection, expanded: Binding<Bool>, style: DockThemePalette
+    ) -> some View {
         let snapshot = sidebarSnapshot
         let live =
             sidebarLiveResult?.request.profiles == sidebarLiveRequest?.profiles
@@ -1347,11 +1341,12 @@ struct SessionNavQueue: View, Equatable {
     /// Section rows remain lazy; only the header is pinned by the rail.
     @ViewBuilder
     private func pinnedOutline(
-        _ pinned: PinnedSessionPresentation, statuses: [String: SidebarSessionStatus], style: DockThemePalette
+        _ pinned: PinnedSessionPresentation, expanded: Binding<Bool>,
+        statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
         Section {
             Group {
-                if disclosure.arePinnedExpanded {
+                if expanded.wrappedValue {
                     pinnedRows(pinned, statuses: statuses, style: style)
                 }
             }
@@ -1360,13 +1355,13 @@ struct SessionNavQueue: View, Equatable {
             DockSectionHeader(
                 title: "Pinned",
                 count: pinned.count,
-                isExpanded: $disclosure.arePinnedExpanded,
+                isExpanded: expanded,
                 style: style
             )
             .sessionRailReorder(.pinned, state: navigationState)
             .frame(maxWidth: .infinity)
             .dockPadding(.top, style.sectionSpacing)
-            .dockPadding(.bottom, disclosure.arePinnedExpanded ? 2 : 0)
+            .dockPadding(.bottom, expanded.wrappedValue ? 2 : 0)
             .sessionSidebarStickyBackground()
             .accessibilityAddTraits(.isHeader)
         }
@@ -1481,13 +1476,14 @@ struct SessionNavQueue: View, Equatable {
     /// Section rows remain lazy; only the header is pinned by the rail.
     @ViewBuilder
     private func conversationOutline(
-        _ conversations: [HermesSession], type: SessionRecentsType,
+        _ conversations: [HermesSession], type: SessionRecentsType, expanded: Binding<Bool>,
         statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        let expanded = type == .automation ? $disclosure.areAutomationsExpanded : $disclosure.areConversationsExpanded
         Section {
-            conversationRows(conversations, type: type, statuses: statuses, style: style)
-                .sessionSidebarRowsUnderStickyHeader()
+            conversationRows(
+                conversations, type: type, isExpanded: expanded.wrappedValue, statuses: statuses, style: style
+            )
+            .sessionSidebarRowsUnderStickyHeader()
         } header: {
             DockSectionHeader(
                 title: type == .automation ? "Automations" : "Recents",
@@ -1531,10 +1527,10 @@ struct SessionNavQueue: View, Equatable {
 
     @ViewBuilder
     private func conversationRows(
-        _ conversations: [HermesSession], type: SessionRecentsType,
+        _ conversations: [HermesSession], type: SessionRecentsType, isExpanded: Bool,
         statuses: [String: SidebarSessionStatus], style: DockThemePalette
     ) -> some View {
-        if type == .automation ? disclosure.areAutomationsExpanded : disclosure.areConversationsExpanded {
+        if isExpanded {
             if conversations.isEmpty {
                 queueEmpty(
                     sidebarSnapshot.inputs.isLoadingSessions

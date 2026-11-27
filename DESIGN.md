@@ -2228,6 +2228,7 @@ Keep headers clickable during scroll momentum. Pause hit testing on the rows
 below the headers so scrolling does not churn through their hover controls.
 Section disclosure stays with the sidebar across workspace presentations. Its
 updates stay in the list and do not invalidate the conversation or composer.
+Each lazy section uses the same captured disclosure value for its header and rows.
 Routine session polls and runtime notifications reuse older loaded history
 for up to five minutes while fetching the recent page and current pins/activity.
 Manual refreshes and profile switches bypass that reuse; older sessions remain
