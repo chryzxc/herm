@@ -204,7 +204,9 @@ struct SessionBrowserTests {
 
     @Test func deletingReleasedSessionStopsOnlyItsLastProfileBrowser() async throws {
         let client = BrowserHandoffRPCClient()
-        let model = DockModel(initialSessionID: "a", loadArchives: false, rpcClient: client)
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "a", loadArchives: false,
+            rpcClient: client)
         model.profileScopeID = "first"
         defer { model.delegationMonitoringTask?.cancel() }
         let store = SessionBrowserStore()
@@ -479,7 +481,8 @@ struct SessionBrowserTests {
     @Test(arguments: [nil, ""] as [String?])
     func browserHandoffDefaultScopeAndDisconnect(profile: String?) async throws {
         let client = BrowserHandoffRPCClient()
-        let model = DockModel(initialSessionID: "browser-chat", rpcClient: client)
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "browser-chat", rpcClient: client)
         model.profileScopeID = profile
         defer { model.delegationMonitoringTask?.cancel() }
         try await model.setHermesBrowser(cdpURL: client.endpoint)
