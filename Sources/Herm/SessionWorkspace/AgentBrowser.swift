@@ -167,6 +167,9 @@ final class AgentBrowser: ObservableObject {
     @Published var presetWidth = 0 { didSet { if presetWidth != oldValue { scheduleViewport() } } }
     weak var model: DockModel? {
         didSet {
+            if let model, owns(model), GatewayConnectionStore.isLocalBackend {
+                ownerClient = model.sessionRPCClient
+            }
             guard model !== oldValue else { return }
             activityCancellable?.cancel()
             if let model {
@@ -218,6 +221,7 @@ final class AgentBrowser: ObservableObject {
     private var webKitSignIns: [String: BrowserCookieJar] = [:]
     private var cdpURL: String?
     private weak var turnClient: (any HermesRPCClientProtocol)?
+    private var ownerClient: (any HermesRPCClientProtocol)?
     private var turnPreparation: (connection: UUID, task: Task<Void, Never>)?
     private var preparedConnection: UUID?
     private var turnRetryAfter: ContinuousClock.Instant?
@@ -229,30 +233,23 @@ final class AgentBrowser: ObservableObject {
     func reconnectHermes() -> Task<Void, Never>? {
         // The CDP address is this Mac's loopback; a remote backend would dial its own host.
         guard state == .running, let cdpURL else { return nil }
-        let model = model
-        let client = turnClient
-        // A turn client is bound only after the browser store verifies the gateway is local.
-        guard client != nil || (GatewayConnectionStore.isLocalBackend && owns(model)) else { return nil }
+        guard let client = turnClient ?? ownerClient else { return nil }
         let generation = lifecycleGeneration
         let previous = Self.connectionTask
         Self.connectionTask = Task { [weak self] in
             await previous?.value
-            guard let self, lifecycleGeneration == generation, client != nil || owns(model), state == .running,
+            guard let self, lifecycleGeneration == generation, state == .running,
                 self.cdpURL == cdpURL
             else { return }
             do {
-                if let client {
-                    try await HermesControlRPC(client: client).setBrowser(cdpURL: cdpURL, profile: profileID)
-                } else {
-                    try await model?.setHermesBrowser(cdpURL: cdpURL)
-                }
-                if lifecycleGeneration == generation, client != nil || owns(model), state == .running,
+                try await HermesControlRPC(client: client).setBrowser(cdpURL: cdpURL, profile: profileID)
+                if lifecycleGeneration == generation, state == .running,
                     self.cdpURL == cdpURL
                 {
                     handoffFailed = false
                 }
             } catch {
-                if lifecycleGeneration == generation, client != nil || owns(model), state == .running,
+                if lifecycleGeneration == generation, state == .running,
                     self.cdpURL == cdpURL
                 {
                     handoffFailed = true
@@ -293,7 +290,7 @@ final class AgentBrowser: ObservableObject {
     private var tabsToFollow: Set<String> = []
 
     private func owns(_ model: DockModel?) -> Bool {
-        model.map { $0.profileScopeID == profileID } ?? false
+        model.map { $0.browserProfileID == profileID } ?? false
     }
 
     private var profileDirectory: String { SessionBrowserKey.browserDirectory(profileID: profileID) }
@@ -399,8 +396,7 @@ final class AgentBrowser: ObservableObject {
     }
 
     func stop() {
-        let model = model
-        let client = turnClient
+        let client = turnClient ?? ownerClient
         let previous = Self.connectionTask
         let profileID = profileID
         if isActive {
@@ -408,8 +404,6 @@ final class AgentBrowser: ObservableObject {
                 await previous?.value
                 if let client {
                     try? await HermesControlRPC(client: client).setBrowser(cdpURL: nil, profile: profileID)
-                } else if model?.profileScopeID == profileID {
-                    try? await model?.setHermesBrowser(cdpURL: nil)
                 }
             }
         }

@@ -2,7 +2,7 @@ import Combine
 import CryptoKit
 import WebKit
 
-struct SessionBrowserKey: Hashable {
+struct SessionBrowserKey: Hashable, Codable {
     let profileID: String?
     let sessionID: String
 
@@ -17,8 +17,10 @@ struct SessionBrowserKey: Hashable {
 }
 
 extension DockModel {
+    var browserProfileID: String? { sessionProfileID ?? profileScopeID }
+
     var browserSessionKey: SessionBrowserKey? {
-        navigationSessionID.map { SessionBrowserKey(profileID: profileScopeID, sessionID: $0) }
+        navigationSessionID.map { SessionBrowserKey(profileID: browserProfileID, sessionID: $0) }
     }
 }
 
@@ -195,6 +197,7 @@ final class SessionBrowserStore: ObservableObject {
     @Published var presentation: SessionBrowserKey?
     private var workspaces: [SessionBrowserKey: SessionBrowserWorkspace] = [:]
     private var agents: [String?: AgentBrowser] = [:]
+    private var retainedSessions: Set<SessionBrowserKey> = []
     private var activeKey: SessionBrowserKey?
 
     func signOutAll() async {
@@ -216,6 +219,7 @@ final class SessionBrowserStore: ObservableObject {
     }
 
     func workspace(for key: SessionBrowserKey) -> SessionBrowserWorkspace {
+        retainedSessions.insert(key)
         if let existing = workspaces[key] { return existing }
         let workspace = SessionBrowserWorkspace(key: key, agent: agent(for: key.profileID))
         workspaces[key] = workspace
@@ -239,13 +243,16 @@ final class SessionBrowserStore: ObservableObject {
     }
 
     private func remove(_ key: SessionBrowserKey, preserveAgent: Bool) {
-        guard let workspace = workspaces.removeValue(forKey: key) else { return }
-        workspace.suspend()
-        for tab in workspace.extras { workspace.closeTab(tab.id) }
+        let knownSession = retainedSessions.contains(key)
+        if let workspace = workspaces.removeValue(forKey: key) {
+            workspace.suspend()
+            for tab in workspace.extras { workspace.closeTab(tab.id) }
+        }
+        if !preserveAgent { retainedSessions.remove(key) }
         if presentation == key { presentation = nil }
         if activeKey == key { activeKey = nil }
         // The profile's last session went: quit its Chrome and disconnect Hermes.
-        if !preserveAgent, !workspaces.keys.contains(where: { $0.profileID == key.profileID }) {
+        if knownSession, !preserveAgent, !retainedSessions.contains(where: { $0.profileID == key.profileID }) {
             agents.removeValue(forKey: key.profileID)?.stop()
         }
     }
