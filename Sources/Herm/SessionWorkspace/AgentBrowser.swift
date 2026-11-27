@@ -1439,9 +1439,10 @@ final class AgentBrowserCanvas: NSView {
             }
             subscriptions.removeAll()
             page.layer?.contents = nil
-            if let frame = browser?.lastFrame { show(frame.image, css: frame.css) }
+            if isViewing, let frame = browser?.lastFrame { show(frame.image, css: frame.css) }
             browser?.frameUpdates.sink { [weak self] frame in
-                self?.show(frame.image, css: frame.css)
+                guard let self, self.isViewing else { return }
+                self.show(frame.image, css: frame.css)
             }.store(in: &subscriptions)
             browser?.pointerUpdates.sink { [weak self] pointer in
                 self?.showPointer(pointer)
