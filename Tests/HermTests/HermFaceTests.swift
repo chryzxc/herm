@@ -1,9 +1,39 @@
+import AppKit
 import SwiftUI
 import Testing
 
 @testable import Herm
 
 struct HermFaceTests {
+    @MainActor
+    @Test(arguments: [ColorScheme.light, .dark])
+    func namedBotOptionsHaveDistinctFaceFill(scheme: ColorScheme) throws {
+        let delta = try Self.namedBotOptionFillDelta(scheme: scheme)
+        #expect(delta >= 0.15, "Forge and Sentinel should not share the same apparent body fill: \(delta)")
+    }
+
+    @MainActor
+    static func namedBotOptionFillDelta(scheme: ColorScheme) throws -> CGFloat {
+        func fill(for id: String) throws -> NSColor {
+            let renderer = ImageRenderer(
+                content: Canvas { context, _ in
+                    BotFaceMark.draw(in: &context, id: id, size: 22, mood: .idle, pose: .rest, theme: .clean)
+                }
+                .frame(width: 22, height: 22)
+                .background(scheme == .light ? Color.white : Color.black)
+                .environment(\.colorScheme, scheme))
+            let image = try #require(renderer.cgImage)
+            let pixels = NSBitmapImageRep(cgImage: image)
+            return try #require(pixels.colorAt(x: 10, y: 17)?.usingColorSpace(.sRGB))
+        }
+        let forge = try fill(for: "forge")
+        let sentinel = try fill(for: "sentinel")
+        return max(
+            abs(forge.redComponent - sentinel.redComponent),
+            abs(forge.greenComponent - sentinel.greenComponent),
+            abs(forge.blueComponent - sentinel.blueComponent))
+    }
+
     @Test func genesAreSeededPerProfile() {
         #expect(HermFaceGenes(id: "nexus") == HermFaceGenes(id: " Nexus "))
         let roster = Set(

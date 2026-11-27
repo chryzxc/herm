@@ -892,7 +892,9 @@ struct BotServiceTests {
     @Test func savedGlossyHermFacesAreRecognized() throws {
         let renderer = ImageRenderer(
             content: Canvas { context, _ in
-                BotFaceMark.draw(in: &context, id: "nexus", size: 160, mood: .idle, pose: .rest, theme: .glass)
+                BotFaceMark.draw(
+                    in: &context, id: "nexus", size: 160, mood: .idle, pose: .rest, theme: .glass,
+                    legacyIdentityHue: true)
             }.frame(width: 160, height: 160))
         renderer.scale = 1
         let tiff = try #require(renderer.nsImage?.tiffRepresentation)
