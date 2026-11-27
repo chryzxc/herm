@@ -297,8 +297,8 @@ struct SessionSwitchCacheTests {
         try await waitUntil { rpc.held != nil }
         source.refresh()
         #expect(model.messages.isEmpty)
-        #expect(source.snapshot.messages.map(\.text) == ["question a", "answer a"])
-        #expect(source.snapshot.messages.map(\.id) == originalIDs)
+        #expect(source.snapshot.rows.map(\.message).map(\.text) == ["question a", "answer a"])
+        #expect(source.snapshot.rows.map(\.message).map(\.id) == originalIDs)
         #expect(!source.snapshot.context.actionsReady)
         #expect(!model.sessionActionsReady)
         model.draft = "do not send yet"
@@ -319,7 +319,7 @@ struct SessionSwitchCacheTests {
         try await waitUntil { model.sessionActionsReady && model.sessionStorageID == "a" }
         source.refresh()
         #expect(model.scrollToLatestMessageRequest == latestRequest)
-        #expect(source.snapshot.messages.map(\.id) == originalIDs)
+        #expect(source.snapshot.rows.map(\.message).map(\.id) == originalIDs)
         #expect(source.snapshot.context.actionsReady)
         #expect(model.sessionTranscriptPreview == nil)
     }
@@ -403,7 +403,7 @@ struct SessionSwitchCacheTests {
         #expect((model.sessionTranscriptPreview?.isPreloaded == true) == (tail != .unprovenOwner))
         #expect(model.positionsAtUnreadOnResume)
         #expect(!source.snapshot.context.actionsReady)
-        #expect(source.snapshot.messages.map(\.text) == (tail == .read ? ["Preloaded reply"] : []))
+        #expect(source.snapshot.rows.map(\.message).map(\.text) == (tail == .read ? ["Preloaded reply"] : []))
     }
 
     @Test func switchingBackToAnotherBotShowsItsTranscriptInTheSelectionTurn() async throws {
@@ -434,7 +434,7 @@ struct SessionSwitchCacheTests {
         let source = ConversationTranscriptSource(
             model: model, bots: BotModeModel(), actions: ConversationMessageActionState(),
             voice: VoiceOutput(), coordinator: ConversationTranscriptCoordinator())
-        #expect(source.snapshot.messages.map(\.text) == ["question a", "answer a"])
+        #expect(source.snapshot.rows.map(\.message).map(\.text) == ["question a", "answer a"])
         #expect(!source.snapshot.context.actionsReady)
         try await waitUntil { rpc.held != nil }
         rpc.release()
@@ -811,28 +811,29 @@ struct SessionSwitchCacheTests {
         let cache = SessionTranscriptCache()
         for index in 0..<8 {
             let message = ChatMessage(role: .user, text: "message \(index)")
-            cache.store(RestoredTranscript(messages: [message], pendingImages: []), references: [:], for: "\(index)")
+            cache.store(RestoredTranscript(messages: [message]), references: [:], for: "\(index)")
         }
         #expect(cache.value(for: "0") != nil)
         let newest = ChatMessage(role: .user, text: "newest")
-        cache.store(RestoredTranscript(messages: [newest], pendingImages: []), references: [:], for: "8")
+        cache.store(RestoredTranscript(messages: [newest]), references: [:], for: "8")
         #expect(cache.value(for: "1") == nil)
         #expect(cache.value(for: "0") != nil)
         let large = ChatMessage(role: .user, text: String(repeating: "x", count: 16 * 1024 * 1024 + 1))
-        cache.store(RestoredTranscript(messages: [large], pendingImages: []), references: [:], for: "large")
+        cache.store(RestoredTranscript(messages: [large]), references: [:], for: "large")
         #expect(cache.value(for: "large") == nil)
         let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("cached-image.png")
-        let pending = RestoredTranscript.PendingImages(messageID: newest.id, fileURLs: [imageURL])
-        cache.store(RestoredTranscript(messages: [newest], pendingImages: [pending]), references: [:], for: "image-ref")
-        #expect(cache.value(for: "image-ref")?.pendingImages.first?.fileURLs == [imageURL])
+        let imageReference = ChatMessage(role: .user, text: "Image", restoredImageURLs: [imageURL])
+        cache.store(RestoredTranscript(messages: [imageReference]), references: [:], for: "image-ref")
+        #expect(cache.value(for: "image-ref")?.messages.first?.restoredImageURLs == [imageURL])
+        #expect(cache.value(for: "image-ref")?.messages.first?.images.isEmpty == true)
         let decoded = ChatMessage(role: .user, text: "image", image: NSImage(size: NSSize(width: 1, height: 1)))
-        cache.store(RestoredTranscript(messages: [decoded], pendingImages: []), references: [:], for: "decoded")
+        cache.store(RestoredTranscript(messages: [decoded]), references: [:], for: "decoded")
         #expect(cache.value(for: "decoded") == nil)
-        cache.store(RestoredTranscript(messages: [newest], pendingImages: []), references: [:], for: "keep")
-        cache.refresh(RestoredTranscript(messages: [decoded], pendingImages: []), references: [:], for: "keep")
+        cache.store(RestoredTranscript(messages: [newest]), references: [:], for: "keep")
+        cache.refresh(RestoredTranscript(messages: [decoded]), references: [:], for: "keep")
         #expect(cache.value(for: "keep")?.messages.last?.text == "newest")
         let history = (0..<50).map { ChatMessage(role: .user, text: "message \($0)") }
-        cache.store(RestoredTranscript(messages: history, pendingImages: []), references: [:], for: "history")
+        cache.store(RestoredTranscript(messages: history), references: [:], for: "history")
         #expect(cache.value(for: "history")?.messages.count == 36)
         #expect(cache.value(for: "history")?.messages.first?.text == "message 14")
     }

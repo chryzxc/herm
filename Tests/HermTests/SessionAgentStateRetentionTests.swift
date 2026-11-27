@@ -57,6 +57,28 @@ struct SessionAgentStateRetentionTests {
         #expect(loaded["s\(limit)"] != nil)
     }
 
+    @MainActor
+    @Test func switchingAwayDoesNotGrowTheInMemoryArchivePastRetention() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let agentURL = directory.appendingPathComponent("agents.json")
+        let botURL = directory.appendingPathComponent("bots.json")
+        let model = DockModel(sessionAgentStateFileURL: agentURL, botActivityFileURL: botURL, loadArchives: false)
+        let limit = SessionAgentStateRetention.maximumSessionCount
+        for index in 0..<limit {
+            model.agentStateBySessionID["old-\(index)"] = state(eventAt: TimeInterval(index))
+        }
+        model.recentEvents = [
+            AgentEvent(id: UUID(), type: "test", detail: "", timestamp: Date(timeIntervalSince1970: 1_000))
+        ]
+        model.cacheAgentState(for: "recent")
+        #expect(model.agentStateBySessionID.count == limit)
+        #expect(model.agentStateBySessionID["old-0"] == nil)
+        #expect(model.agentStateBySessionID["recent"] != nil)
+        await model.agentStateCommit?.value
+        #expect(model.agentStateStore.load().count == limit)
+    }
+
     @Test func incrementalWritesKeepTheExistingArchiveReadable() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let store = SessionAgentStateStore(fileURL: directory.appendingPathComponent("agents.json"))

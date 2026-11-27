@@ -257,7 +257,7 @@ enum ConversationUnreadMessagePolicy {
     static func isAssistantResponse(_ message: ChatMessage) -> Bool {
         message.role == .hermes && !message.isError && !message.isSteering
             && message.systemEvent == nil && message.kanbanNotice == nil
-            && (message.hasBodyText || !message.images.isEmpty)
+            && (message.hasBodyText || message.hasImages)
     }
 
     static func assistantResponseCount(_ messages: [ChatMessage], after seenAt: Date? = nil) -> Int {

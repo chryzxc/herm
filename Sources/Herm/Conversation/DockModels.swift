@@ -434,7 +434,8 @@ actor SessionAgentStateWriter {
     }
 
     /// Coalesce activity while keeping an upper bound on the time between saves.
-    func enqueue(_ states: [String: SessionAgentState]) {
+    func enqueue(_ snapshot: [String: SessionAgentState]) {
+        let states = SessionAgentStateRetention.pruned(snapshot)
         if states == pending || (pending == nil && states == lastCommittedStates) { return }
         pending = states
         guard !isCommitScheduled else { return }
@@ -460,8 +461,7 @@ actor SessionAgentStateWriter {
             self.pending = nil
             return
         }
-        let retained = SessionAgentStateRetention.pruned(pending)
-        guard let rows = encodeChangedRows(retained) else { return }
+        guard let rows = encodeChangedRows(pending) else { return }
         let needsWrite =
             lastCommittedStates == nil || rows.count != encodedRows.count
             || rows.contains { encodedRows[$0.key]?.json != $0.value.json }
@@ -558,6 +558,7 @@ struct ChatMessage: Identifiable, Equatable {
     let role: Role
     let text: String
     let images: [NSImage]
+    let restoredImageURLs: [URL]
     let attachmentURLs: [URL]
     let timestamp: Date
     let modelName: String?
@@ -607,13 +608,15 @@ struct ChatMessage: Identifiable, Equatable {
         tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false,
         botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil,
         activity: [ActiveToolCall] = [], kanbanNotice: KanbanNotice? = nil, systemEvent: SystemEvent? = nil,
-        isBotHandoffReply: Bool = false, botMentions: [ComposerBotMention] = [], attachmentURLs: [URL] = []
+        isBotHandoffReply: Bool = false, botMentions: [ComposerBotMention] = [], attachmentURLs: [URL] = [],
+        restoredImageURLs: [URL] = []
     ) {
         self.id = id
         self.role = role
         self.text = text
         self.images = images.isEmpty ? image.map { [$0] } ?? [] : images
         self.attachmentURLs = attachmentURLs
+        self.restoredImageURLs = restoredImageURLs
         self.timestamp = timestamp
         self.modelName = modelName
         self.responseDuration = responseDuration
@@ -635,6 +638,7 @@ struct ChatMessage: Identifiable, Equatable {
     }
 
     var image: NSImage? { images.first }
+    var hasImages: Bool { !images.isEmpty || !restoredImageURLs.isEmpty }
 
     private static func revision(for text: String) -> Int {
         var value: UInt64 = 1_469_598_103_934_665_603
@@ -666,7 +670,7 @@ struct ChatMessage: Identifiable, Equatable {
             systemEvent: systemEvent,
             isBotHandoffReply: isBotHandoffReply,
             botMentions: botMentions,
-            attachmentURLs: attachmentURLs
+            attachmentURLs: attachmentURLs, restoredImageURLs: restoredImageURLs
         )
         copy.reactions = reactions
         copy.responseRoute = responseRoute

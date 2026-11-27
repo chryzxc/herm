@@ -97,8 +97,8 @@ struct TranscriptHistoryPagingTests {
         ])
         let restored = DockModel.parseMessages(rows)
         #expect(restored.messages.first?.text == "What is this?")
-        let url = restored.pendingImages.first?.fileURLs.first
-        #expect(url.flatMap(DockModel.transcriptImageData) == Data("image bytes".utf8))
+        #expect(restored.messages.first?.restoredImageURLs.first?.absoluteString == "data:image/png;base64,\(encoded)")
+        #expect(restored.messages.first?.images.isEmpty == true)
     }
     @Test func pagePathRequestsLatestDisplayPageForProfile() throws {
         let path = try #require(

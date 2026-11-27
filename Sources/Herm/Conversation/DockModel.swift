@@ -10,13 +10,7 @@ import UserNotifications
 /// file references are parsed synchronously so session selection never
 /// performs disk reads or image decoding on the main actor.
 struct RestoredTranscript {
-    struct PendingImages: Sendable {
-        let messageID: UUID
-        let fileURLs: [URL]
-    }
-
     let messages: [ChatMessage]
-    let pendingImages: [PendingImages]
     /// Stored Hermes row id of each message that carried one.
     var rowIDs: [Int: UUID] = [:]
     /// Tool calls after the last reply: a turn still running, possibly in
@@ -697,9 +691,6 @@ final class DockModel: ObservableObject {
     var transcriptTimelineTask: Task<Void, Never>?
     var runtimeModelOptionsTask: Task<Void, Never>?
     var runtimeModelOptionsRequestKey: (sessionID: String?, profileID: String?, generation: Int)?
-    var sessionPreviewImageTask: Task<Void, Never>?
-    var sessionTranscriptImageTask: Task<Void, Never>?
-    var prioritizedTranscriptImageIDs: () -> [UUID] = { [] }
     var gatewayAuthenticationObserver: AnyCancellable?
     var sessionSwitchStartedAt: UInt64 = 0
     var sessionSwitchToken = ""
@@ -980,7 +971,6 @@ final class DockModel: ObservableObject {
         sessionResumeTask = nil
         allBotSessionsTask?.cancel()
         sessionTranscriptPreloadTask?.cancel()
-        sessionPreviewImageTask?.cancel()
         runtimeModelOptionsTask?.cancel()
         clearStoredTranscriptProjection()
         if sessionID != nil {

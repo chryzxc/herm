@@ -45,10 +45,13 @@ extending the idle deadline. Switching sessions or shutting down cancels the wat
 `ConversationMessageWindow` sets eight-message history pages, a 12-message initial
 window, and the existing 36-row backstop with visible-row protection. Markdown
 prefetch uses that same page size in both directions.
-Stored transcript images and cached switch previews share a worker. Hydration
-pulls four attachments at a time, prioritizes the visible transcript, and
-applies completed message attachments by ID. A successfully transferred preview
-attachment is not decoded again during fresh history hydration.
+Published transcript snapshots retain only mounted rows and the adjacent
+Markdown preparation window. Hermes remains the history owner. Stored image
+rows carry references and decode only when their tiles mount, through a shared
+byte-budgeted thumbnail cache. A larger image is loaded only for an open preview.
+Bot activity updates re-encode only the affected sessions before an atomic
+write of the existing v1 archive. The agent activity snapshot cap also applies
+in memory.
 Markdown section parsing is independent of AppKit;
 adjacent-page prefetch runs off the main actor, while styling and exact measurement
 remain on it. The shared completed-height cache retains numbers only. The native streaming

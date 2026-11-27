@@ -94,6 +94,16 @@ struct BotActivityStore {
         try? Self.encoder.encode(BotActivityArchive(recordsBySessionID: recordsBySessionID))
     }
 
+    fileprivate func encodedMembers(_ recordsBySessionID: [String: [BotActivityRecord]]) -> [String: Data]? {
+        let encoder = Self.encoder
+        return try? recordsBySessionID.reduce(into: [:]) { members, entry in
+            var data = try encoder.encode(entry.key)
+            data.append(0x3A)
+            data.append(try encoder.encode(entry.value))
+            members[entry.key] = data
+        }
+    }
+
     @discardableResult
     func saveEncoded(_ data: Data) -> Bool {
         do {
@@ -126,19 +136,20 @@ struct BotActivityStore {
 final class BotActivityWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "io.github.chryzxc.Herm.bot-activity", qos: .utility)
     private let store: BotActivityStore
-    private var pending: [String: [BotActivityRecord]]?
-    private var generation = 0
-    private var lastEncoded: Data?
+    private var pending: [String: [BotActivityRecord]] = [:]
+    private var scheduled = false
+    private var committedMembers: [String: Data]?
 
     init(store: BotActivityStore) { self.store = store }
 
-    func enqueue(_ recordsBySessionID: [String: [BotActivityRecord]]) {
+    func enqueue(_ records: [BotActivityRecord], for sessionID: String) {
         queue.async {
-            self.pending = recordsBySessionID
-            self.generation &+= 1
-            let expected = self.generation
+            self.pending[sessionID] = records
+            guard !self.scheduled else { return }
+            self.scheduled = true
             self.queue.asyncAfter(deadline: .now() + .milliseconds(250)) {
-                if self.generation == expected { self.commit() }
+                self.scheduled = false
+                self.commit()
             }
         }
     }
@@ -148,10 +159,23 @@ final class BotActivityWriter: @unchecked Sendable {
     }
 
     private func commit() {
-        guard let pending, let data = store.encoded(pending) else { return }
-        guard data == lastEncoded || store.saveEncoded(data) else { return }
-        lastEncoded = data
-        self.pending = nil
+        guard !pending.isEmpty, let dirty = store.encodedMembers(pending),
+            var members = committedMembers ?? store.encodedMembers(store.load())
+        else { return }
+        if !dirty.allSatisfy({ members[$0.key] == $0.value }) {
+            members.merge(dirty) { _, current in current }
+            // Keep the atomic v1 archive while avoiding re-encoding unchanged sessions.
+            var data = Data(#"{"schemaVersion":1,"recordsBySessionID":{"#.utf8)
+            data.reserveCapacity(data.count + members.values.reduce(2) { $0 + $1.count + 1 })
+            for (index, entry) in members.sorted(by: { $0.key < $1.key }).enumerated() {
+                if index != 0 { data.append(0x2C) }
+                data.append(entry.value)
+            }
+            data.append(contentsOf: "}}".utf8)
+            guard store.saveEncoded(data) else { return }
+        }
+        committedMembers = members
+        pending.removeAll()
     }
 }
 

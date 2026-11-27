@@ -23,8 +23,6 @@ extension DockModel {
         pendingAttachedEvents.removeAll()
         transcriptTimelineTask?.cancel()
         runtimeModelOptionsTask?.cancel()
-        sessionPreviewImageTask?.cancel()
-        sessionTranscriptImageTask?.cancel()
         allBotSessionsTask?.cancel()
         sessionTranscriptPreloadTask?.cancel()
         gatewayAuthenticationObserver = nil

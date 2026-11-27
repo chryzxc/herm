@@ -201,40 +201,6 @@ extension DockModel {
         return nil
     }
 
-    /// Reads deferred transcript image files off the main actor and attaches
-    /// the decoded images to their messages. Returns the task so tests can
-    /// await completion. A stale generation or a session mismatch drops the
-    /// payload exactly like a stale resume response.
-    @discardableResult
-    func rehydratePendingTranscriptImages(
-        _ pending: [RestoredTranscript.PendingImages],
-        requestedSessionID: String,
-        loadData: (@Sendable (URL) -> Data?)? = nil
-    ) -> Task<Void, Never> {
-        guard !pending.isEmpty else { return Task<Void, Never> {} }
-        let generation = sessionResumeGeneration
-        return Task { @MainActor in
-            var queue = TranscriptImageHydration.Queue(pending)
-            var application = TranscriptImageHydration.Application()
-            var indexedRevision: UInt64?
-            while !Task.isCancelled, generation == sessionResumeGeneration, sessionID == requestedSessionID {
-                let jobs = queue.next(prioritizing: prioritizedTranscriptImageIDs())
-                guard !jobs.isEmpty else { return }
-                let batch = await TranscriptImageHydration.Worker.shared.prepare(
-                    jobs, load: loadData ?? Self.transcriptImageData)
-                guard !Task.isCancelled, generation == sessionResumeGeneration, sessionID == requestedSessionID else {
-                    return
-                }
-                var updated = messages
-                if application.apply(batch, to: &updated, reindex: indexedRevision != messagesRevision) {
-                    messages = updated
-                }
-                indexedRevision = messagesRevision
-                await Task.yield()
-            }
-        }
-    }
-
     /// Long transcripts stalled the main actor on resume. The rows are plain
     /// JSON values and the result carries no images yet, so neither is shared
     /// mutable state across the hop.
@@ -291,10 +257,9 @@ extension DockModel {
         cancelOnTask: Bool = false
     ) -> RestoredTranscript {
         guard let rows = value as? [[String: Any]] else {
-            return RestoredTranscript(messages: [], pendingImages: [])
+            return RestoredTranscript(messages: [])
         }
         var messages: [ChatMessage] = []
-        var pendingImages: [RestoredTranscript.PendingImages] = []
         var rowIDs: [Int: UUID] = [:]
         // Tool calls since the last visible assistant reply; they attach to
         // the next one so restored turns show the same activity as live ones.
@@ -431,23 +396,16 @@ extension DockModel {
                     ? nil : turnStartedAt.flatMap { start in rowTimestamp.map { $0.timeIntervalSince(start) } },
                 botProfileID: attribution?.profileID ?? defaultBotProfileID,
                 botDisplayName: attribution?.displayName ?? defaultBotDisplayName,
-                activity: activity
+                activity: activity, restoredImageURLs: imageURLs
             )
             message.reactions = MessageReaction.parse(displayMetadata: row["display_metadata"])
             messages.append(message)
             if let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id") {
                 rowIDs[rowID] = message.id
             }
-            if !imageURLs.isEmpty {
-                pendingImages.append(
-                    RestoredTranscript.PendingImages(
-                        messageID: message.id,
-                        fileURLs: imageURLs
-                    ))
-            }
         }
         return RestoredTranscript(
-            messages: messages, pendingImages: pendingImages, rowIDs: rowIDs, trailingActivity: pendingActivity)
+            messages: messages, rowIDs: rowIDs, trailingActivity: pendingActivity)
     }
 
     nonisolated static func userTextWithoutRecalledMemory(_ text: String) -> String {
@@ -468,15 +426,6 @@ extension DockModel {
             else { return nil }
             return url
         }
-    }
-
-    nonisolated static func transcriptImageData(_ url: URL) -> Data? {
-        if url.isFileURL { return try? Data(contentsOf: url, options: .mappedIfSafe) }
-        let value = url.absoluteString
-        guard value.lowercased().hasPrefix("data:image/"), let comma = value.firstIndex(of: ","),
-            value[..<comma].lowercased().hasSuffix(";base64")
-        else { return nil }
-        return Data(base64Encoded: String(value[value.index(after: comma)...]))
     }
 
     /// Tool calls an assistant history row requested, in either the OpenAI

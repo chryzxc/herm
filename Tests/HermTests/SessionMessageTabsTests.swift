@@ -43,6 +43,21 @@ struct SessionMessageTabsTests {
         #expect(changes.other == 0)
     }
 
+    @Test func confirmedDeletionReleasesPreviewsOnlyForThatWorkspace() {
+        let tabs = SessionMessageTabs()
+        let deleted = tabs.workspace("profile-a/session")
+        let kept = tabs.workspace("profile-b/session")
+        tabs.open(ChatMessage(role: .user, text: "Delete"), in: "profile-a/session")
+        tabs.open(ChatMessage(role: .user, text: "Keep"), in: "profile-b/session")
+
+        tabs.forget("profile-a/session")
+
+        #expect(deleted.tabs.isEmpty)
+        #expect(deleted.selection == nil)
+        #expect(tabs.workspace("profile-a/session") !== deleted)
+        #expect(kept.tabs.count == 1)
+    }
+
     @Test func openingSelectsAndDeduplicatesMessages() {
         let tabs = SessionMessageTabs()
         let first = ChatMessage(role: .hermes, text: "First message")

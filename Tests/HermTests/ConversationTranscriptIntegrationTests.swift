@@ -244,7 +244,7 @@ struct ConversationTranscriptIntegrationTests {
         let messages = (0..<60).map { ChatMessage(role: .hermes, text: "Reply \($0)") }
         let fixture = Fixture(messages: messages)
         fixture.model.sessionTranscriptPreview = SessionTranscriptPreview(
-            messages: messages, rowIDs: [:], references: [:], pendingImages: [])
+            messages: messages, rowIDs: [:], references: [:])
         fixture.model.sessionTranscriptLoadState = .refreshing
         fixture.window.orderFrontRegardless()
         defer { fixture.window.orderOut(nil) }
@@ -386,7 +386,7 @@ struct ConversationTranscriptIntegrationTests {
         fixture.model.sessionID = "requested-session"
         fixture.model.messages = []
         fixture.model.sessionTranscriptPreview = SessionTranscriptPreview(
-            messages: cached, rowIDs: [:], references: [:], pendingImages: [])
+            messages: cached, rowIDs: [:], references: [:])
         fixture.model.sessionTranscriptLoadState = .refreshing
         try await fixture.settle()
         #expect(fixture.coordinator.sessionID == fixture.model.transcriptPresentationID)

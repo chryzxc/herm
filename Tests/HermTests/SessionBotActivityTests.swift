@@ -84,7 +84,7 @@ struct SessionBotActivityTests {
             id: "persisted", originSessionID: "session-a", botID: "forge", botName: "Forge", summary: "Persist me",
             state: .working)
         let writer = BotActivityWriter(store: store)
-        writer.enqueue(["session-a": [record]])
+        writer.enqueue([record], for: "session-a")
         writer.flush()
         let loaded = try #require(store.load()["session-a"]?.first)
         #expect(loaded.id == record.id)
@@ -92,6 +92,30 @@ struct SessionBotActivityTests {
         #expect(loaded.state == record.state)
         #expect(loaded.summary == record.summary)
         try? FileManager.default.removeItem(at: url)
+    }
+
+    @Test func writingDirtySessionsKeepsUntouchedArchivedSessions() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = BotActivityStore(fileURL: url)
+        let archivedID = "archived/\"session\""
+        let old = BotActivityRecord(
+            id: "old", originSessionID: archivedID, botID: "bot", botName: "Bot", summary: "Prior work",
+            createdAt: Date(timeIntervalSince1970: 10), updatedAt: Date(timeIntervalSince1970: 10))
+        try #require(store.saveEncoded(try #require(store.encoded([archivedID: [old]]))))
+        let writer = BotActivityWriter(store: store)
+        let new = BotActivityRecord(
+            id: "new", originSessionID: "second", botID: "bot", botName: "Bot", summary: "New work")
+        writer.enqueue([new], for: "second")
+        writer.flush()
+        #expect(store.load()[archivedID] == [old])
+        #expect(store.load()["second"]?.first?.id == "new")
+        var updated = old
+        updated.state = .completed
+        writer.enqueue([updated], for: archivedID)
+        writer.flush()
+        #expect(store.load()[archivedID] == [updated])
+        #expect(store.load()["second"]?.first?.id == "new")
     }
 
     @Test func exactKanbanReferencesStayHiddenFromBotRowsButSurvivePersistence() async throws {

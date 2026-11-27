@@ -12,7 +12,7 @@ struct TranscriptStableIDTests {
         let third = ChatMessage(role: .hermes, text: "split")
         // Rows 1 and 2 were one message before; now they are two.
         let restored = RestoredTranscript(
-            messages: [first, second, third], pendingImages: [], rowIDs: [1: first.id, 2: third.id, 3: second.id],
+            messages: [first, second, third], rowIDs: [1: first.id, 2: third.id, 3: second.id],
             trailingActivity: [])
 
         let stable = DockModel.keepingMessageIDs(restored, previous: [1: old, 2: old])

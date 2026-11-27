@@ -5,6 +5,23 @@ import Testing
 
 @MainActor
 struct ConversationTranscriptSourceTests {
+    @Test func publishedTranscriptDoesNotKeepTheEntireLoadedHistory() {
+        let model = DockModel(initialSessionID: "bounded-snapshot", loadArchives: false)
+        model.messages = (0..<5_000).map { ChatMessage(role: .hermes, text: "Reply \($0)") }
+        let source = ConversationTranscriptSource(
+            model: model, bots: BotModeModel(), actions: ConversationMessageActionState(),
+            voice: VoiceOutput(), coordinator: ConversationTranscriptCoordinator(), needsNavigator: false)
+        defer { source.suspend() }
+
+        let snapshot = source.snapshot
+        #expect(snapshot.messageCount == 5_000)
+        #expect(
+            snapshot.nearbyMessages.count <= ConversationMessageWindow.maxMountedRowCount + 2
+                * ConversationMessageWindow.pageSize)
+        #expect(snapshot.nearbyMessage(at: 0) == nil)
+        #expect(snapshot.nearbyMessage(at: 4_999)?.id == model.messages.last?.id)
+    }
+
     @Test func historyAtTheTopContinuesPreparingAfterWidthChanges() async throws {
         let model = DockModel(initialSessionID: "resize-paging")
         model.messages = (0..<40).map { ChatMessage(role: .hermes, text: "**Saved reply** \($0)") }

@@ -500,11 +500,11 @@ extension DockModel {
                 // The card runs on the board; `reconcileKanbanAssignments` follows it.
                 botActivityBySessionID[originSessionID]![index].linkedCardID = cardID
                 botActivityRevision &+= 1
-                enqueueBotActivityPersistence()
+                enqueueBotActivityPersistence(for: originSessionID)
             } else if let processID {
                 botActivityBySessionID[originSessionID]![index].processID = processID
                 botActivityRevision &+= 1
-                enqueueBotActivityPersistence()
+                enqueueBotActivityPersistence(for: originSessionID)
             } else {
                 // A foreground `hermes -p <bot> chat` returns the reply itself:
                 // no process, so no completion notice will ever arrive.
@@ -707,7 +707,7 @@ extension DockModel {
     func insertBotActivity(_ record: BotActivityRecord) {
         botActivityBySessionID[record.originSessionID, default: []].append(record)
         botActivityRevision &+= 1
-        enqueueBotActivityPersistence()
+        enqueueBotActivityPersistence(for: record.originSessionID)
     }
 
     func updateBotActivity(id: String, state: BotActivityState, result: String? = nil, botChatSessionID: String? = nil)
@@ -726,7 +726,7 @@ extension DockModel {
                 record.botChatSessionID = record.botChatSessionID ?? botChatSessionID
                 botActivityBySessionID[originSessionID]![index] = record
                 botActivityRevision &+= 1
-                enqueueBotActivityPersistence()
+                enqueueBotActivityPersistence(for: originSessionID)
                 return
             }
             record.state = state
@@ -736,7 +736,7 @@ extension DockModel {
             botActivityBySessionID[originSessionID]![index] = record
             if !record.isLive { botLiveSteps.removeValue(forKey: id) }
             botActivityRevision &+= 1
-            enqueueBotActivityPersistence()
+            enqueueBotActivityPersistence(for: originSessionID)
             return
         }
     }
@@ -767,8 +767,9 @@ extension DockModel {
         }
     }
 
-    func enqueueBotActivityPersistence() {
-        botActivityWriter.enqueue(botActivityBySessionID)
+    private func enqueueBotActivityPersistence(for sessionID: String) {
+        guard let records = botActivityBySessionID[sessionID] else { return }
+        botActivityWriter.enqueue(records, for: sessionID)
     }
 
     func markBotActivityFailed(originSessionID: String?, result: String) {

@@ -54,12 +54,17 @@ final class SessionMessageTabs {
     }
 
     func close(_ id: UUID, in workspace: String) {
-        let state = self.workspace(workspace)
-        guard let index = state.tabs.firstIndex(where: { $0.id == id }) else { return }
+        guard let state = workspaces[workspace],
+            let index = state.tabs.firstIndex(where: { $0.id == id })
+        else { return }
         var snapshot = state.snapshot
         snapshot.tabs.remove(at: index)
         if snapshot.selection == id { snapshot.selection = snapshot.tabs.last?.id }
         state.snapshot = snapshot
+    }
+
+    func forget(_ key: String) {
+        workspaces.removeValue(forKey: key)?.snapshot = Snapshot()
     }
 }
 
@@ -154,6 +159,7 @@ struct SessionMessageTabView: View {
     let message: ChatMessage
     @ObservedObject var model: DockModel
     @State private var isAnnotating = false
+    @State private var imagePreview: ChatImagePreview?
 
     private var text: String {
         message.role == .user ? GenerativeUIIntegration.displayUserText(message.text) : message.text
@@ -188,11 +194,13 @@ struct SessionMessageTabView: View {
             isAnnotating = FilePreviewCenter.shared.hasDrafts(AnnotationSource.message(id: message.id, text: "").key)
         }
         .id(message.id)
+        .dockSheet(item: $imagePreview) { ChatImagePreviewModal(image: $0.image) }
     }
 
     private var richContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                RestoredMessageImages(urls: message.restoredImageURLs) { imagePreview = ChatImagePreview(image: $0) }
                 ForEach(message.images.indices, id: \.self) { index in
                     Image(nsImage: message.images[index]).resizable().scaledToFit()
                 }

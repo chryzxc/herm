@@ -95,7 +95,7 @@ struct ConversationTranscriptView: View, Equatable {
                     HoverPausingScrollView(usesAppKitScrollPhase: true) {
                         VStack(spacing: 0) {
                             VStack(spacing: 0) {
-                                if snapshot.messages.isEmpty && snapshot.context.conversationApproval == nil
+                                if snapshot.messageCount == 0 && snapshot.context.conversationApproval == nil
                                     && (hasEmptyPreview
                                         || (model.sessionTranscriptLoadState != .loading
                                             && model.sessionTranscriptLoadState != .refreshing
@@ -106,7 +106,7 @@ struct ConversationTranscriptView: View, Equatable {
                                     )
                                     .frame(maxWidth: .infinity)
                                     .frame(minHeight: max(300, viewport.size.height - 16))
-                                } else if snapshot.messages.isEmpty && snapshot.context.conversationApproval == nil {
+                                } else if snapshot.messageCount == 0 && snapshot.context.conversationApproval == nil {
                                     ConversationLoadingState(
                                         minHeight: max(300, viewport.size.height - 16))
                                 }
@@ -119,7 +119,7 @@ struct ConversationTranscriptView: View, Equatable {
                                             unreadDivider
                                         }
                                         messageRow(
-                                            message, index: descriptor.index, snapshot: snapshot,
+                                            message, changes: descriptor.changes, snapshot: snapshot,
                                             defaultBot: defaultBot)
                                     }
                                     .opacity(spotlightMessageID == nil || spotlightMessageID == message.id ? 1 : 0.3)
@@ -372,7 +372,8 @@ struct ConversationTranscriptView: View, Equatable {
 
     @ViewBuilder
     func messageRow(
-        _ message: ChatMessage, index: Int, snapshot: ConversationTranscriptSnapshot, defaultBot: BotSummary?
+        _ message: ChatMessage, changes: [ConversationChangeSummary.File], snapshot: ConversationTranscriptSnapshot,
+        defaultBot: BotSummary?
     ) -> some View {
         let target = MessageNavigatorTarget(sessionID: snapshot.sessionID ?? "", messageID: message.id)
         let context = snapshot.context
@@ -396,7 +397,7 @@ struct ConversationTranscriptView: View, Equatable {
                 activity: activity,
                 runningSince: isStreaming ? (context.streamingStartedAt ?? message.timestamp) : nil,
                 duration: message.responseDuration,
-                expandsByDefault: !message.hasBodyText && message.images.isEmpty,
+                expandsByDefault: !message.hasBodyText && !message.hasImages,
                 bot: isStreaming ? workingBot : nil,
                 botAvatar: workingBot.flatMap { botMode.avatarImages[$0.id] },
                 dispatches: rowDispatches,
@@ -416,15 +417,14 @@ struct ConversationTranscriptView: View, Equatable {
             .dockPadding(.horizontal, conversationMetrics.contentInset + 4)
             .dockPadding(.top, 8)
         }
-        if message.role == .hermes && !message.hasBodyText && message.images.isEmpty && !isStreaming {
+        if message.role == .hermes && !message.hasBodyText && !message.hasImages && !isStreaming {
             EmptyView()
         } else {
             let owner = model.composerDraftKey
             let generation = model.sessionResumeGeneration
             ConversationMessageRow(
                 message: message,
-                changes: ConversationChangeSummary.turnFiles(
-                    messages: snapshot.messages, at: index, streamingID: context.streamingID),
+                changes: changes,
                 isStreamingMessage: isStreaming,
                 streamingMood: isStreaming
                     ? BotMood(
@@ -459,7 +459,7 @@ struct ConversationTranscriptView: View, Equatable {
                 onRefresh: { source.perform(.refresh, target: target) },
                 onReply: { source.perform(.reply, target: target) },
                 showsPinAction: model.messagePinsSupported
-                    && model.storedMessageReferences[message.id] != nil
+                    && context.storedReferences[message.id] != nil
                     && message.systemEvent == nil && message.kanbanNotice == nil && !message.isError,
                 isPinAvailable: model.canPinMessage(message),
                 isPinned: model.isMessagePinned(message),

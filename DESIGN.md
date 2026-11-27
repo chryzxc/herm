@@ -3493,6 +3493,10 @@ New Bot appears when creation is available. The layout choice persists locally.
 
 ### Conversation workspace
 
+Stored transcript images retain their place above the message while a thumbnail
+loads. Open image preview fetches a larger representation on demand. A missing
+source stays in the same attachment slot and is labeled unavailable.
+
 `ProviderLabel` pairs the name with its shared provider mark immediately on the
 left. It supplies the same unboxed mark to compact transcript metadata, menus,
 settings, and usage. Each named provider gets its own mark in a multi-provider
