@@ -17,7 +17,7 @@ enum UsageReportProjection {
         var report = base
         report.models = base.models.map { model in
             var updated = model
-            updated.providers = providers[model.model] ?? []
+            updated.providers = providers[model.providerLookupKey] ?? []
             return updated
         }
         report.costRankedProviders = ControlCenterModel.parseProviderCosts(models, days: base.days)

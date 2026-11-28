@@ -6,9 +6,15 @@ import Testing
 @MainActor
 struct TokenUsageReportTests {
     @Test func backgroundProjectionsMatchFullParsing() async throws {
+        let usageModels: [[String: Any]] = [
+            ["model": "example", "input_tokens": 12],
+            ["input_tokens": 5],
+            ["model": "unknown", "input_tokens": 7],
+            ["model": 42, "input_tokens": 9],
+        ]
         let usage: [String: Any] = [
             "period_days": 30, "daily": [["day": "2026-09-25", "input_tokens": 42]],
-            "by_model": [["model": "example", "input_tokens": 12]],
+            "by_model": usageModels,
         ]
         let models: [String: Any] = [
             "period_days": 30,
@@ -16,7 +22,15 @@ struct TokenUsageReportTests {
                 [
                     "model": "example", "provider": "test", "estimated_cost": 0.25,
                     "input_tokens": 12, "output_tokens": 2,
-                ]
+                ],
+                [
+                    "model": "", "provider": "empty-key", "estimated_cost": 0.125,
+                    "input_tokens": 14, "output_tokens": 0,
+                ],
+                [
+                    "model": "unknown", "provider": "literal-key", "estimated_cost": 0.0625,
+                    "input_tokens": 7, "output_tokens": 0,
+                ],
             ],
         ]
         let usageData = try JSONSerialization.data(withJSONObject: usage)
@@ -25,6 +39,9 @@ struct TokenUsageReportTests {
         let expected = ControlCenterModel.parseTokenUsage(usage, models: models)
         let enriched = try await UsageReportProjection.enrich(base, models: modelData)
         #expect(enriched == expected)
+        #expect(enriched.models.map(\.model) == ["example", "unknown", "unknown", "unknown"])
+        #expect(enriched.models.map(\.inputTokens) == [12, 5, 7, 9])
+        #expect(enriched.models.map(\.providers) == [["test"], ["empty-key"], ["literal-key"], ["empty-key"]])
         #expect(enriched.costRankedProviders?.first?.estimatedCost == 0.25)
         let daily = try await UsageReportProjection.daily(usageData)
         #expect(daily == expected.daily)

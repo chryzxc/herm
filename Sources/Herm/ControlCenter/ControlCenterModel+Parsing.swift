@@ -594,15 +594,18 @@ extension ControlCenterModel {
             apiCalls: intValue(totals["total_api_calls"]),
             daily: parseUsageDays(rows("daily", result)),
             models: rows("by_model", result).map { row in
-                TokenUsageReport.Model(
-                    model: (row["model"] as? String) ?? "unknown",
+                let rawModel = row["model"] as? String
+                let providerLookupKey = rawModel ?? ""
+                return TokenUsageReport.Model(
+                    model: rawModel ?? "unknown",
                     inputTokens: intValue(row["input_tokens"]),
                     outputTokens: intValue(row["output_tokens"]),
                     estimatedCost: doubleValue(row["estimated_cost"]) ?? 0,
                     sessions: intValue(row["sessions"]),
                     apiCalls: intValue(row["api_calls"]),
                     tasks: tasks(rows("aux_tasks", row)),
-                    providers: providers[(row["model"] as? String) ?? ""] ?? []
+                    providerLookupKey: providerLookupKey,
+                    providers: providers[providerLookupKey] ?? []
                 )
             },
             tasks: tasks(rows("by_task", result)),

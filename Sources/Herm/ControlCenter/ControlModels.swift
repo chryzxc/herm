@@ -1029,6 +1029,8 @@ struct TokenUsageReport: Equatable, Sendable {
         let sessions: Int
         let apiCalls: Int
         let tasks: [Task]
+        /// Raw analytics join key, independent of the display fallback above.
+        var providerLookupKey: String = ""
         /// Hermes billing providers that served this model, busiest first.
         var providers: [String] = []
         var id: String { model }
