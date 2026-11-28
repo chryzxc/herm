@@ -7,6 +7,30 @@ import Testing
 
 @MainActor
 struct CodeExplorerTests {
+    @Test func explorerReusesVisibleTreeUntilInputsChange() {
+        let cache = ExplorerVisibleTree()
+        let entries = [
+            ProjectFileEntry(path: "Sources", depth: 0, isDirectory: true),
+            ProjectFileEntry(path: "Sources/a.swift", depth: 1, isDirectory: false),
+            ProjectFileEntry(path: "readme.md", depth: 0, isDirectory: false),
+        ]
+        let initial = cache.resolve(entries: entries, expanded: [], query: "")
+        #expect(initial.entries.map(\.path) == ["Sources", "readme.md"])
+        #expect(initial.fileCount == 1)
+        #expect(initial.firstFile?.path == "readme.md")
+        _ = cache.resolve(entries: entries, expanded: [], query: " ")
+        #expect(cache.buildCount == 1)
+        let expanded = cache.resolve(entries: entries, expanded: ["Sources"], query: "")
+        #expect(expanded.entries.map(\.path) == entries.map(\.path))
+        #expect(expanded.fileCount == 2)
+        let filtered = cache.resolve(entries: entries, expanded: [], query: " A.SWIFT ")
+        #expect(filtered.entries.map(\.path) == ["Sources", "Sources/a.swift"])
+        #expect(filtered.firstFile?.path == "Sources/a.swift")
+        let extra = ProjectFileEntry(path: "b", depth: 0, isDirectory: false)
+        _ = cache.resolve(entries: entries + [extra], expanded: [], query: "a.swift")
+        #expect(cache.buildCount == 4)
+    }
+
     @Test func treeListsFoldersBeforeFilesAtEveryLevel() {
         let entries = [
             ProjectFileEntry(path: "README.md", depth: 0, isDirectory: false),

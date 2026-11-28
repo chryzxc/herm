@@ -21,7 +21,7 @@ struct SessionFilesView: View {
     @State private var error: String?
     @State private var filterText = ""
     @State private var selectedPath: String?
-    @State private var hoveredPath: String?
+    @State private var visibleTree = ExplorerVisibleTree()
     @State private var showsGeneratedFiles = false
     @State private var openRequestID = UUID()
 
@@ -122,13 +122,13 @@ struct SessionFilesView: View {
                             showsGeneratedFiles
                                 ? "The selected project folder has no readable files."
                                 : "Generated folders are hidden. Use Explorer options to show them.")
-                    } else if visibleEntries.isEmpty {
+                    } else if visibleTreeResult.entries.isEmpty {
                         Text("No files match “\(filterText)”")
                             .dockFont(.body)
                             .foregroundStyle(Color.dockMetadataText)
                             .dockPadding(12)
                     } else {
-                        ForEach(visibleEntries) { entry in
+                        ForEach(visibleTreeResult.entries) { entry in
                             row(entry)
                         }
                     }
@@ -185,19 +185,11 @@ struct SessionFilesView: View {
             .dockPadding(.trailing, 10)
             .frame(maxWidth: .infinity, minHeight: ExplorerWorkspaceMetrics.treeRowHeight, alignment: .leading)
             .background(alignment: .leading) { indentGuides(depth: entry.depth) }
-            .background {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .dockSelectionFill(
-                        isSelected,
-                        fallback: isSelected
-                            ? Color.dockAccent.opacity(0.16)
-                            : hoveredPath == entry.path ? Color.dockSurface4.opacity(0.55) : .clear)
-            }
+            .background { ExplorerRowBackground(isSelected: isSelected) }
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
         .disabled(isOpeningFile && !entry.isDirectory)
-        .onHover { hoveredPath = $0 ? entry.path : (hoveredPath == entry.path ? nil : hoveredPath) }
         .help(entry.path)
         .accessibilityLabel(
             entry.isDirectory ? "\(isExpanded ? "Collapse" : "Expand") \(entry.path)" : "Open \(entry.path)"
@@ -299,9 +291,9 @@ struct SessionFilesView: View {
                 .textFieldStyle(.plain)
                 .dockFont(.body)
                 .foregroundStyle(Color.dockPrimaryText)
-                .onSubmit { if let first = visibleEntries.first(where: { !$0.isDirectory }) { open(first) } }
+                .onSubmit { if let first = visibleTreeResult.firstFile { open(first) } }
             if !filterText.isEmpty {
-                Text("\(visibleEntries.filter { !$0.isDirectory }.count)")
+                Text("\(visibleTreeResult.fileCount)")
                     .dockFont(.metadata, weight: .regular, design: .monospaced)
                     .foregroundStyle(Color.dockMetadataText)
                 Button {
@@ -379,26 +371,8 @@ struct SessionFilesView: View {
         filterText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    private var visibleEntries: [ProjectFileEntry] {
-        if !filterQuery.isEmpty {
-            var paths = Set<String>()
-            for entry in entries where !entry.isDirectory && entryName(entry).lowercased().contains(filterQuery) {
-                paths.insert(entry.path)
-                let components = entry.path.split(separator: "/").map(String.init)
-                for index in 0..<max(0, components.count - 1) {
-                    paths.insert(components[...index].joined(separator: "/"))
-                }
-            }
-            return entries.filter { paths.contains($0.path) }
-        }
-        return entries.filter { entry in
-            let components = entry.path.split(separator: "/").map(String.init)
-            for index in 0..<max(0, components.count - 1)
-            where !expandedDirectories.contains(components[...index].joined(separator: "/")) {
-                return false
-            }
-            return true
-        }
+    private var visibleTreeResult: ExplorerVisibleTree.Result {
+        visibleTree.resolve(entries: entries, expanded: expandedDirectories, query: filterText)
     }
 
     /// Folders before files at every level, each group in Finder order.
@@ -516,5 +490,21 @@ struct SessionFilesView: View {
         .foregroundStyle(Color.dockPrimaryText)
         .dockPadding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ExplorerRowBackground: View {
+    let isSelected: Bool
+    @State private var isHovered = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
+            .dockSelectionFill(
+                isSelected,
+                fallback: isSelected
+                    ? Color.dockAccent.opacity(0.16)
+                    : isHovered ? Color.dockSurface4.opacity(0.55) : .clear
+            )
+            .onHover { isHovered = $0 }
     }
 }
