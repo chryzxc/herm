@@ -4787,8 +4787,9 @@ Chromium’s canvas reports frame changes directly rather than waiting for a
 subview layout pass. Chromium keeps the emulated viewport and device scale while
 streaming high-quality JPEG frames sized for the visible page. Large previews
 cap each frame at the pixel count of a 1920 × 1080 image. Every frame is eligible
-for capture so a single click or keystroke can repaint promptly. Frames decode on
-the socket callback and are shown as layer contents. Unchanged navigation state
+for capture so a single click or keystroke can repaint promptly. The socket
+callback enqueues Chromium's frame acknowledgment before checking eligibility or
+decoding the image. Frames are shown as layer contents. Unchanged navigation state
 does not publish workspace updates. Resizes coalesce metrics updates, request
 layout at the new size and restart capture. The preview keeps the last usable
 frame if Chromium briefly sends pixels from the previous layout. It retries
