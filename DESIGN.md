@@ -2171,10 +2171,10 @@ Working and unread activity follows each session through selection, pinned rows,
 and project summaries; the notch uses the same session activity state.
 Each leading status slot shows one mark. Approval, clarification, running, and failure
 icons take precedence over the unread count. An unseen failed turn from history
-shows a red triangle using `dockDestructive` in that slot, including in All profiles. Leading status marks (running, approval, warning, unread
-count, done) share `DockSidebarListMetrics.statusMark` (14pt) inside a 27pt
-`statusSlotWidth`, via `DockActivityIndicator`'s `.status` role. The column stays
-reserved on rows without a mark so titles line up. Opening the session acknowledges
+shows a red triangle using `dockDestructive` in that slot, including in All profiles. Status icons
+and unread counts share a 14pt mark size in a fixed 24pt column. Session titles start 2pt after
+the column and line up on rows with or without a mark. A wide `99+` badge can extend into the
+leading inset. Opening the session acknowledges
 the history warning while retaining error details in the transcript.
 
 A fixed Search sessions field below the Bot header filters loaded session titles,
