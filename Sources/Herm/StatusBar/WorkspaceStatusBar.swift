@@ -34,7 +34,7 @@ struct WorkspaceStatusBar: View {
                 let tests = preferences.isOn(.verification)
                 content(layout)
                     .buttonStyle(.dockHover)
-                    .dockButtonSize(.compact)
+                    .dockButtonSize(.inline)
                     .dockFont(.metadata)
                     .foregroundStyle(Color.dockPrimaryText)
                     .dockPadding(.horizontal, 8)

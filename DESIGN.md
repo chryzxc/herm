@@ -932,7 +932,8 @@ New Git revisions and terminal verification events recheck test evidence without
   verification, and simulators with the Local gateway. Unavailable items hide in the bar and
   say why in Settings.
 - Modes share the same row. Quiet shows "Quiet until 14:30", the attention count, "N held", and
-  End quiet. When space is tight, Quiet folds the held count first. Stale counts dim and become
+  End quiet. The bar uses inline button sizing to leave clearance above and below End quiet.
+  When space is tight, Quiet folds the held count first. Stale counts dim and become
   inert, with a reconnecting message when Hermes Agent is offline. After the selected idle period,
   a return summary chip can show "While you were away: 3 finished · 1 needs you".
 - The pulse icon and ⌘J open the 344pt Activity popover with one status headline and at most two rows.

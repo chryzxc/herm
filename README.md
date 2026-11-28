@@ -1398,8 +1398,8 @@ Click the running count to keep its preview open.
 Click the count or press ⌘J to open the Activity popover. It shows up to two items that need attention,
 or one running or recently finished item. Click a linked item to open it, or choose
 **Open Activity** for the workspace page. When the bar is hidden, ⌘J opens that page directly.
-Quiet hours, reconnects, and a summary when you come
-back use the same strip. Turn on optional shortcuts such as a reachable local dev
+Quiet hours, reconnects, and a summary when you come back use the same strip. Use **End quiet**
+in the bar to resume notifications. Turn on optional shortcuts such as a reachable local dev
 server, unpushed commits, or a failed terminal test in Settings › Status bar or by right-clicking
 the bar. The rail’s gear menu also opens the same controls under **Status bar**, with changes
 applying across open windows. The chat’s
