@@ -12,6 +12,9 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
     var held: CheckedContinuation<Void, Never>?
     var nextFailure: Error?
     var nextResponse: [String: Any]?
+    var resumeTargets: [(id: String, profile: String?)] = []
+    var scriptedResume: Result<[String: Any], Error>?
+    var beforeScriptedResumeReturns: (@MainActor () async -> Void)?
     var holdModelOptions = false
     var heldModelOptions: CheckedContinuation<Void, Never>?
     var holdHistory = false
@@ -46,6 +49,14 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
         }
         guard method == "session.resume" else { return [:] }
         let id = params["session_id"] as? String ?? ""
+        resumeTargets.append((id, params["profile"] as? String))
+        if let scriptedResume {
+            self.scriptedResume = nil
+            let beforeReturn = beforeScriptedResumeReturns
+            beforeScriptedResumeReturns = nil
+            await beforeReturn?()
+            return try scriptedResume.get()
+        }
         if id == "a", timeoutNextA {
             timeoutNextA = false
             throw Self.resumeTimeout
@@ -248,6 +259,22 @@ struct SessionSwitchCacheTests {
             id: id, profileID: profile, title: id, preview: "", startedAt: nil, messageCount: 2, source: "test")
     }
 
+    private func bot(_ profile: String, pointer: String? = nil) -> BotSummary {
+        BotSummary(
+            id: profile, name: "Bot", title: nil, description: nil, model: nil, isActive: false,
+            chat: pointer.map { BotChatReference(sessionID: $0, profileID: profile) },
+            avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
+    }
+
+    private func titleReply(storageID: String? = nil, text: String = "answer a") -> [String: Any] {
+        var response: [String: Any] = [
+            "session_id": "bot-runtime", "session_key": BotService.canonicalBotChatTitle,
+            "messages": [["role": "assistant", "text": text, "row_id": 2]],
+        ]
+        response["stored_session_id"] = storageID
+        return response
+    }
+
     private func waitUntil(_ condition: @escaping () -> Bool) async throws {
         for _ in 0..<500 {
             if condition() { return }
@@ -440,6 +467,219 @@ struct SessionSwitchCacheTests {
         rpc.release()
         _ = await model.sessionResumeTask?.value
         #expect(model.sessionActionsReady)
+    }
+
+    @Test(arguments: [false, true])
+    func botOpenReusesOnlyHealthySelectedConversation(byTitle: Bool) async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        let profile = UUID().uuidString
+        let selected = bot(profile, pointer: byTitle ? nil : "a")
+        if byTitle { rpc.scriptedResume = .success(titleReply()) }
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        let generation = model.sessionResumeGeneration
+        let rowIDs = model.messages.map(\.id)
+        let runtimeID = try #require(model.sessionID)
+        model.draft = "unsent"
+        model.isSending = true
+        model.status = .working
+        model.streamingMessageID = try #require(rowIDs.last)
+        model.streamingMessageSessionID = runtimeID
+
+        var focus: [String] = []
+        model.focusDetachedSession = { _ in
+            focus.append("detached")
+            return true
+        }
+        model.focusProjectedSession = { _, _ in
+            focus.append("projected")
+            return true
+        }
+        model.resumeBotChat(selected)
+        #expect(focus == ["detached"])
+        model.focusDetachedSession = { _ in
+            focus.append("detached")
+            return false
+        }
+        model.resumeBotChat(selected)
+        #expect(focus == ["detached", "detached", "projected"])
+        model.focusDetachedSession = nil
+        model.focusProjectedSession = nil
+
+        model.resumeBotChat(selected)
+        #expect(model.sessionResumeGeneration == generation)
+        #expect(model.sessionResumeTask == nil)
+        #expect(model.messages.map(\.id) == rowIDs)
+        #expect(model.draft == "unsent")
+        #expect(model.isSending && model.streamingMessageID == rowIDs.last)
+        _ = await model.sessionResumeTask?.value
+        #expect(rpc.resumeTargets.count == 1)
+
+        var refreshReply = titleReply(storageID: selected.chat?.sessionID)
+        refreshReply["session_id"] = runtimeID
+        if let pointer = selected.chat?.sessionID { refreshReply["session_key"] = pointer }
+        rpc.scriptedResume = .success(refreshReply)
+        await model.refreshCurrentSession()
+        #expect(rpc.resumeTargets.count == 2)
+        #expect(rpc.resumeTargets.last?.id == runtimeID)
+        #expect(model.sessionActionsReady)
+        model.resumeBotChat(selected)
+        #expect(model.sessionResumeTask == nil)
+        _ = await model.sessionResumeTask?.value
+
+        for unhealthyState in ["offline", "failed", "read-only"] {
+            switch unhealthyState {
+            case "offline": model.status = .offline
+            case "failed": model.sessionTranscriptLoadState = .failed("Needs retry")
+            default:
+                model.transcriptHistoryCursor = TranscriptHistoryCursor(
+                    storageSessionID: selected.chat?.sessionID ?? BotService.canonicalBotChatTitle,
+                    profileID: profile, readOnlyResolvedSessionID: runtimeID)
+            }
+            let before = rpc.resumeTargets.count
+            if byTitle { rpc.scriptedResume = .success(titleReply()) }
+            model.resumeBotChat(selected)
+            #expect(await model.sessionResumeTask?.value == true)
+            #expect(rpc.resumeTargets.count == before + 1)
+        }
+
+        model.resumeBotChat(bot(profile, pointer: "different"))
+        #expect(await model.sessionResumeTask?.value == true)
+        model.resumeBotChat(bot(UUID().uuidString, pointer: "different"))
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.resumeTargets.suffix(2).map(\.id) == ["different", "different"])
+        #expect(rpc.resumeTargets.last?.profile != profile)
+    }
+
+    enum TitleReturn: CaseIterable {
+        case matching, differentStorage, conflictingStorage, unprovenStorage, unrelated, missing, auth, superseded
+        case retry
+        case cold, legacy, runtimeOnly, differentProfile
+
+        var hasPreview: Bool {
+            switch self {
+            case .cold, .legacy, .runtimeOnly, .differentProfile: false
+            default: true
+            }
+        }
+    }
+
+    @Test(arguments: TitleReturn.allCases)
+    func titleBotOpenUsesOnlyVerifiedProfilePreview(scenario: TitleReturn) async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        let profile = UUID().uuidString
+        let title = BotService.canonicalBotChatTitle
+        let other = session("b")
+        let targetProfile = scenario == .differentProfile ? UUID().uuidString : profile
+        if scenario != .cold {
+            let pointer = scenario == .legacy || scenario == .runtimeOnly ? nil : "a"
+            if pointer == nil {
+                var response = titleReply()
+                if scenario == .runtimeOnly { response["session_id"] = "a" }
+                rpc.scriptedResume = .success(response)
+            }
+            model.resumeBotChat(bot(profile, pointer: pointer))
+            #expect(await model.sessionResumeTask?.value == true)
+        }
+        let previousID = model.messages.last?.id
+        #expect(await model.resumeSession(other, reportFailure: true, reviewUnread: false))
+        let seen = SidebarSessionSeenStore.shared
+        if scenario == .matching { seen.markSeen(profileID: targetProfile, sessionID: title) }
+        defer {
+            if scenario == .matching { seen.reconcile(profileID: targetProfile, availableSessionIDs: []) }
+        }
+
+        let response = titleReply(storageID: "a")
+        rpc.scriptedResume = .success(response)
+        switch scenario {
+        case .differentStorage:
+            rpc.scriptedResume = .success(titleReply(storageID: "other-storage", text: "different transcript"))
+        case .conflictingStorage:
+            var conflicting = response
+            conflicting["session_id"] = title
+            conflicting["session_key"] = "a"
+            conflicting["stored_session_id"] = "other-storage"
+            rpc.scriptedResume = .success(conflicting)
+        case .unprovenStorage:
+            rpc.scriptedResume = .success(titleReply())
+        case .unrelated:
+            var unrelated = response
+            unrelated["session_key"] = "unrelated"
+            rpc.scriptedResume = .success(unrelated)
+        case .missing:
+            rpc.scriptedResume = .failure(NSError(domain: "Hermes", code: 1, userInfo: ["HermesRPCCode": 4007]))
+        case .auth, .superseded:
+            rpc.scriptedResume = .success(titleReply(storageID: "stale-storage", text: "stale transcript"))
+        case .retry:
+            rpc.storedHistory = ["messages": []]
+            rpc.scriptedResume = .failure(SessionSwitchRPC.resumeTimeout)
+        default: break
+        }
+        rpc.beforeScriptedResumeReturns = {
+            #expect(rpc.resumeTargets.last?.id == title)
+            #expect(rpc.resumeTargets.last?.profile == targetProfile)
+            #expect(model.sessionStorageID == title)
+            #expect(!model.sessionActionsReady)
+            if scenario == .auth { model.invalidateGatewayAuthenticationProjection() }
+            if scenario == .superseded {
+                let newer = model.startSessionResume(other, reportFailure: true, reviewUnread: false)
+                #expect(await newer.value)
+            }
+        }
+        model.resumeBotChat(bot(targetProfile))
+        let opened = try #require(model.sessionResumeTask)
+        let expectedPreview = scenario.hasPreview ? ["question a", "answer a"] : []
+        let coordinator = ConversationTranscriptCoordinator()
+        #expect(coordinator.openingMessages(model: model).map(\.text) == expectedPreview)
+        #expect(!model.sessionActionsReady)
+
+        let loaded = await opened.value
+        switch scenario {
+        case .matching:
+            #expect(loaded)
+            #expect(model.sessionStorageID == "a")
+            #expect(model.messages.last?.id == previousID)
+            #expect(model.positionsAtUnreadOnResume)
+        case .differentStorage, .conflictingStorage, .unprovenStorage:
+            #expect(loaded)
+            #expect(model.messages.last?.id != previousID)
+            #expect(model.messages.count == 1)
+        case .retry:
+            #expect(!loaded)
+            #expect(model.displayedTranscriptMessages.last?.id == previousID)
+            #expect(!model.sessionActionsReady)
+            #expect(rpc.historyPaths.isEmpty)
+            let before = rpc.resumeTargets.count
+            rpc.scriptedResume = .success(titleReply(storageID: "other-storage", text: "retry transcript"))
+            await model.refreshCurrentSession()
+            #expect(rpc.resumeTargets.count == before + 1 && rpc.resumeTargets.last?.id == title)
+            #expect(model.sessionActionsReady)
+            #expect(model.messages.last?.id != previousID)
+        case .unrelated, .missing, .auth, .superseded:
+            #expect(!loaded)
+            #expect(model.sessionTranscriptPreview == nil)
+            #expect(!model.displayedTranscriptMessages.contains { $0.text == "answer a" })
+            #expect(!model.displayedTranscriptMessages.contains { $0.text == "stale transcript" })
+            if scenario == .superseded {
+                #expect(model.sessionStorageID == other.id)
+                #expect(model.sessionActionsReady)
+            } else {
+                #expect(!model.sessionActionsReady)
+            }
+            #expect(await model.resumeSession(other, reportFailure: true, reviewUnread: false))
+            rpc.scriptedResume = .success(titleReply())
+            model.resumeBotChat(bot(targetProfile))
+            let retry = try #require(model.sessionResumeTask)
+            #expect((model.sessionTranscriptPreview != nil) == (scenario == .superseded))
+            #expect(await retry.value)
+        case .cold, .legacy, .runtimeOnly, .differentProfile:
+            #expect(loaded)
+            #expect(model.sessionActionsReady)
+        }
     }
 
     @Test func activityWhileAwayStillShowsLastLoadedTranscriptBeforeResume() async throws {

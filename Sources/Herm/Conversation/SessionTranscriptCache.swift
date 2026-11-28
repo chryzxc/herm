@@ -14,6 +14,7 @@ struct SessionTranscriptPreview {
     // A background read does not establish that this chat has been opened before.
     var isPreloaded = false
     var readCoverage: ReadCoverage?
+    var borrowedBotStorageID: String?
     let navigator = MessageNavigatorSnapshot(items: [])
 }
 
@@ -54,6 +55,8 @@ final class SessionTranscriptCache {
     private let maximumEntries = 8
     private let maximumCost = 16 * 1024 * 1024
     private var entries: [String: Entry] = [:]
+    // A title hint exists only while its verified profile-scoped entry is cached.
+    private var botStorageIDsByProfile: [String: String] = [:]
     private var order: [String] = []
     private var totalCost = 0
     private struct PageKey: Hashable {
@@ -93,6 +96,16 @@ final class SessionTranscriptCache {
 
     func contains(_ key: String) -> Bool { entries[key] != nil }
 
+    func botStorageID(for profileID: String) -> String? { botStorageIDsByProfile[profileID] }
+
+    func setBotStorageID(_ storageID: String?, for profileID: String) {
+        botStorageIDsByProfile[profileID] = nil
+        guard let storageID,
+            entries[WorkspaceIdentity.session(profileID: profileID, sessionID: storageID)]?.preview.isPreloaded == false
+        else { return }
+        botStorageIDsByProfile[profileID] = storageID
+    }
+
     func value(for key: String) -> SessionTranscriptPreview? {
         guard let entry = entries[key] else { return nil }
         order.removeAll { $0 == key }
@@ -101,15 +114,16 @@ final class SessionTranscriptCache {
     }
 
     func store(_ restored: RestoredTranscript, references: [UUID: StoredMessageReference], for key: String) {
-        remove(key)
-        guard let entry = makeEntry(restored, references: references) else { return }
+        guard let entry = makeEntry(restored, references: references) else {
+            remove(key)
+            return
+        }
         insert(entry, for: key)
     }
 
     /// Replaces the entry only when the new transcript is cacheable; otherwise the existing one stays.
     func refresh(_ restored: RestoredTranscript, references: [UUID: StoredMessageReference], for key: String) {
         guard let entry = makeEntry(restored, references: references) else { return }
-        remove(key)
         insert(entry, for: key)
     }
 
@@ -153,7 +167,10 @@ final class SessionTranscriptCache {
     }
 
     private func insert(_ entry: Entry, for key: String) {
-        entries[key] = entry
+        if let previous = entries.updateValue(entry, forKey: key) {
+            totalCost -= previous.cost
+            order.removeAll { $0 == key }
+        }
         order.append(key)
         totalCost += entry.cost
         while order.count > maximumEntries || totalCost > maximumCost {
@@ -165,10 +182,14 @@ final class SessionTranscriptCache {
     func remove(_ key: String) {
         if let entry = entries.removeValue(forKey: key) { totalCost -= entry.cost }
         order.removeAll { $0 == key }
+        botStorageIDsByProfile = botStorageIDsByProfile.filter {
+            WorkspaceIdentity.session(profileID: $0.key, sessionID: $0.value) != key
+        }
     }
 
     func removeAll() {
         entries.removeAll()
+        botStorageIDsByProfile.removeAll()
         order.removeAll()
         totalCost = 0
     }
@@ -176,8 +197,16 @@ final class SessionTranscriptCache {
 
 extension DockModel {
     /// A preload contains Hermes rows. A bot may also have finished since the last visit.
-    func openingPreview(for key: String, session: HermesSession, seenAt: Date?) -> SessionTranscriptPreview? {
+    func openingPreview(
+        for key: String, session: HermesSession, seenAt: Date?, borrowedBotStorageID: String? = nil
+    ) -> SessionTranscriptPreview? {
         guard var preview = sessionTranscriptCache.value(for: key) else { return nil }
+        if let borrowedBotStorageID {
+            guard !preview.isPreloaded else { return nil }
+            // Do not merge activity keyed by the unscoped title alias.
+            preview.borrowedBotStorageID = borrowedBotStorageID
+            return preview
+        }
         if let coverage = preview.readCoverage {
             if coverage.updatedAt != session.lastUpdatedAt
                 || seenAt.map({ $0 >= max(coverage.updatedAt, coverage.latestRowAt) }) != true

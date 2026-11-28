@@ -724,12 +724,25 @@ extension DockModel {
         }
     }
 
-    func resumeSession(_ session: HermesSession, profileID: String? = nil) {
+    func resumeSession(_ session: HermesSession, profileID: String? = nil, isBotChatOpen: Bool = false) {
         if focusDetachedSession?(session.id) == true { return }
         if focusProjectedSession?(session, profileID ?? session.profileID ?? profileScopeID) == true { return }
+        if isBotChatOpen, canKeepSelectedBotChat(session.id, profileID: profileID) { return }
         restoreGeneration &+= 1
         if isRestoringSession { isRestoringSession = false }
-        startSessionResume(session, reportFailure: true, profileID: profileID)
+        startSessionResume(session, reportFailure: true, profileID: profileID, isBotChatOpen: isBotChatOpen)
+    }
+
+    private func canKeepSelectedBotChat(_ requestedID: String, profileID: String?) -> Bool {
+        guard sessionActionsReady, status != .offline, !hasShutDown, !isRestoringSession,
+            !isShowingReadOnlyStoredTranscript, sessionResumeTask == nil,
+            let sessionID, !sessionID.isEmpty, !requestedID.isEmpty,
+            let owner = Self.normalizedProfileID(profileID), owner == Self.normalizedProfileID(sessionProfileID)
+        else { return false }
+        if requestedID == BotService.canonicalBotChatTitle {
+            return confirmedTitleBotGeneration == sessionResumeGeneration
+        }
+        return requestedID == sessionID || requestedID == sessionStorageID
     }
 
     /// Reloads the selected transcript from Hermes rather than patching the
@@ -873,7 +886,7 @@ extension DockModel {
     @discardableResult
     func startSessionResume(
         _ session: HermesSession, reportFailure: Bool, profileID: String? = nil, reviewUnread: Bool = true,
-        onComplete: ((Bool) -> Void)? = nil
+        isBotChatOpen: Bool = false, onComplete: ((Bool) -> Void)? = nil
     ) -> Task<Bool, Never> {
         let selectedAt = DispatchTime.now().uptimeNanoseconds
         sessionResumeTask?.cancel()
@@ -918,6 +931,8 @@ extension DockModel {
         // A refresh re-reads at least as much history as the reader already
         // paged in, so refreshing never collapses the transcript they scrolled.
         let refreshedTranscriptRowCount = isRefreshingActiveSession ? (transcriptHistoryCursor?.nextOffset ?? 0) : 0
+        let refreshesConfirmedTitleBot =
+            isRefreshingActiveSession && confirmedTitleBotGeneration == sessionResumeGeneration
         sessionResumeGeneration &+= 1
         externalTurnWatchTask?.cancel()
         clearStoredSearch()
@@ -938,12 +953,21 @@ extension DockModel {
             session.id == BotService.canonicalBotChatTitle
             || storageIDsByRuntimeID[requestedStorageID].map { $0 != requestedStorageID } == true
         if !isRefreshingActiveSession {
-            sessionTranscriptPreview =
-                isUnprovenAlias ? nil : openingPreview(for: previewKey, session: session, seenAt: seenAt)
+            if isBotChatOpen, session.id == BotService.canonicalBotChatTitle, let owningProfileID,
+                let borrowedID = sessionTranscriptCache.botStorageID(for: owningProfileID)
+            {
+                let borrowedKey = WorkspaceIdentity.session(profileID: owningProfileID, sessionID: borrowedID)
+                sessionTranscriptPreview = openingPreview(
+                    for: borrowedKey, session: session, seenAt: seenAt, borrowedBotStorageID: borrowedID)
+            } else {
+                sessionTranscriptPreview =
+                    isUnprovenAlias ? nil : openingPreview(for: previewKey, session: session, seenAt: seenAt)
+            }
         }
-        positionsAtUnreadOnResume =
-            needsUnreadReview && (!isRefreshingActiveSession || messages.isEmpty)
-            && sessionTranscriptPreview?.isPreloaded != false
+        let borrowedBotStorageID = sessionTranscriptPreview?.borrowedBotStorageID
+        let shouldPositionAtUnread = needsUnreadReview && (!isRefreshingActiveSession || messages.isEmpty)
+        // A verified warm preview can paint immediately; the fresh transcript still lands at unread.
+        positionsAtUnreadOnResume = shouldPositionAtUnread && sessionTranscriptPreview?.isPreloaded != false
         sessionTranscriptLoadState = sessionTranscriptPreview != nil || keepsStoredTranscript ? .refreshing : .loading
         recordSessionSwitch(
             "selection", startedAt: selectedAt,
@@ -1018,6 +1042,9 @@ extension DockModel {
         let context = SessionResumeContext(
             generation: resumeGeneration, startedAt: selectedAt, token: sessionSwitchToken,
             owningProfileID: owningProfileID, storageID: requestedStorageID, previewKey: previewKey,
+            borrowedBotStorageID: borrowedBotStorageID,
+            positionsAtUnreadAfterPreview: shouldPositionAtUnread && borrowedBotStorageID != nil,
+            isBotChatOpen: isBotChatOpen, refreshesConfirmedTitleBot: refreshesConfirmedTitleBot,
             openingRowIDs: openingRowIDs, isRefresh: isRefreshingActiveSession, rowCount: refreshedTranscriptRowCount,
             canReadStoredHistory: !isUnprovenAlias && !requestedStorageID.isEmpty,
             reviewCutoff: needsUnreadReview ? reviewCutoff : nil, seenAt: seenAt)
@@ -1042,12 +1069,24 @@ extension DockModel {
         let owningProfileID: String?
         let storageID: String
         let previewKey: String
+        let borrowedBotStorageID: String?
+        let positionsAtUnreadAfterPreview: Bool
+        let isBotChatOpen: Bool
+        let refreshesConfirmedTitleBot: Bool
         let openingRowIDs: [Int: UUID]
         let isRefresh: Bool
         let rowCount: Int
         let canReadStoredHistory: Bool
         let reviewCutoff: Date?
         let seenAt: Date?
+    }
+
+    private func discardBorrowedBotPreview(_ context: SessionResumeContext) {
+        guard let borrowedID = context.borrowedBotStorageID, let owner = context.owningProfileID else { return }
+        sessionTranscriptPreview = nil
+        if sessionTranscriptCache.botStorageID(for: owner) == borrowedID {
+            sessionTranscriptCache.setBotStorageID(nil, for: owner)
+        }
     }
 
     private func finishSessionResume(
@@ -1127,6 +1166,7 @@ extension DockModel {
                 )
             else {
                 guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
+                discardBorrowedBotPreview(context)
                 let safeMessage = "Hermes returned a different session than the one requested. Try opening it again."
                 sessionTranscriptLoadState = .failed(safeMessage)
                 if reportFailure { status = .offline }
@@ -1141,6 +1181,16 @@ extension DockModel {
                 DebugLog.write("model: session resume mismatch: requested \(session.id), resolved \(resolvedSessionID)")
                 return false
             }
+            let isTitleBotAttach =
+                session.id == BotService.canonicalBotChatTitle
+                && (context.isBotChatOpen || context.borrowedBotStorageID != nil)
+            let verifiesBotAttach = context.isBotChatOpen || isTitleBotAttach
+            // Alias ownership and durable storage proof are separate. In particular,
+            // a title echo can pass ownership but cannot verify a cached transcript.
+            let confirmedStorageID = verifiesBotAttach ? Self.confirmedBotStorageID(from: result) : nil
+            let canReuseOpeningRows =
+                context.borrowedBotStorageID == nil || context.borrowedBotStorageID == confirmedStorageID
+            if !canReuseOpeningRows { discardBorrowedBotPreview(context) }
             if storedTranscriptAttach != nil { storedTranscriptAttach = .publishing }
             // The same conversation under its runtime identity keeps its call.
             if voiceSessionID == sessionID { voiceSessionID = resolvedSessionID }
@@ -1149,7 +1199,9 @@ extension DockModel {
                 requestedSessionID: session.id,
                 resolvedSessionID: resolvedSessionID
             )
-            sessionStorageID = Self.stableSessionID(from: result) ?? context.storageID
+            sessionStorageID =
+                (isTitleBotAttach ? confirmedStorageID : nil)
+                ?? Self.stableSessionID(from: result) ?? context.storageID
             storageIDsByRuntimeID[resolvedSessionID] = sessionStorageID
             if workspaceRevision == sessionWorkspaceRevision {
                 applySessionWorkspace(result, owner: resolvedSessionID)
@@ -1214,8 +1266,9 @@ extension DockModel {
             }
             transcriptHistoryCursor = attachedCursor
             let stable = Self.keepingMessageIDs(
-                parsed, previous: context.openingRowIDs,
-                previousMessages: sessionTranscriptPreview?.messages ?? (isRefreshingActiveSession ? messages : []))
+                parsed, previous: canReuseOpeningRows ? context.openingRowIDs : [:],
+                previousMessages: canReuseOpeningRows
+                    ? sessionTranscriptPreview?.messages ?? (isRefreshingActiveSession ? messages : []) : [])
             let renamed = Dictionary(
                 parsed.rowIDs.compactMap { row, id in stable.rowIDs[row].map { (id, $0) } },
                 uniquingKeysWith: { first, _ in first })
@@ -1331,6 +1384,16 @@ extension DockModel {
             }
             sessionTranscriptPreview = nil
             publishPendingAttachedEvents()
+            if verifiesBotAttach, let owningProfileID {
+                let verifiesBotStorage =
+                    confirmedStorageID == sessionStorageID
+                    && (isTitleBotAttach || confirmedStorageID == session.id)
+                sessionTranscriptCache.setBotStorageID(
+                    verifiesBotStorage ? confirmedStorageID : nil, for: owningProfileID)
+            }
+            confirmedTitleBotGeneration =
+                isTitleBotAttach || context.refreshesConfirmedTitleBot ? resumeGeneration : nil
+            if context.positionsAtUnreadAfterPreview { positionsAtUnreadOnResume = true }
             sessionTranscriptLoadState = .ready
             recordSessionSwitch(
                 "fresh_publication", startedAt: context.startedAt, generation: resumeGeneration, token: switchToken)
@@ -1365,6 +1428,7 @@ extension DockModel {
                     return false
                 } == true
             if notFound {
+                discardBorrowedBotPreview(context)
                 sessionTranscriptCache.remove(context.previewKey)
                 sessionTranscriptPreview = nil
                 clearStoredTranscriptProjection()
@@ -1389,6 +1453,17 @@ extension DockModel {
             DebugLog.write("model: session resume failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
+    }
+
+    private static func confirmedBotStorageID(from result: [String: Any]) -> String? {
+        let ids = ["stored_session_id", "session_key"].compactMap { key -> String? in
+            guard let id = (result[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !id.isEmpty, id != BotService.canonicalBotChatTitle
+            else { return nil }
+            return id
+        }
+        guard let first = ids.first, ids.allSatisfy({ $0 == first }) else { return nil }
+        return first
     }
 
     private func recoverStoredTranscript(for session: HermesSession, context: SessionResumeContext) async throws {

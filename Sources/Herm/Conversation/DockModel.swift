@@ -658,6 +658,7 @@ final class DockModel: ObservableObject {
     /// The latest ordered agent-state commit; tests await it before relaunching.
     var agentStateCommit: Task<Void, Never>?
     var sessionResumeGeneration = 0
+    var confirmedTitleBotGeneration: Int?
     // Gateway ownership is independent of the cursor displayed by the reader.
     enum StoredTranscriptAttach {
         case awaitingOwnership
