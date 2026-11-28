@@ -75,6 +75,10 @@ extension DockModel {
             isForeground
             ? composerDraftKey : SessionComposerDraft.Key(profileID: queued?.profileID, sessionID: queueOwner)
         let profile = queueOwner == nil ? sessionProfileID ?? profileScopeID : queued?.profileID
+        let browserOwner = (queueOwner ?? navigationSessionID).map {
+            SessionBrowserKey(profileID: profile, sessionID: $0)
+        }
+        let sharedBrowserTabs = contexts.compactMap(\.sharedBrowserTab)
         func scoped(_ params: [String: Any]) -> [String: Any] {
             guard let profile else { return params }
             return params.merging(["profile": profile]) { _, captured in captured }
@@ -279,6 +283,9 @@ extension DockModel {
                     guard canSubmit(to: promptSessionID) else { return }
                 }
                 let outgoingText = isVoiceTurn ? VoicePrompts.conversationPrompt(annotated) : annotated
+                guard !contexts.contains(where: BrowserPageContext.needsReattachment),
+                    sharedBrowserTabs.allSatisfy({ $0.owner == browserOwner })
+                else { throw PromptAdmissionError.sharedBrowserUnavailable }
                 if let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }) {
                     pendingSessionSends[index].phase = .submitting
                     pendingSessionSends[index].submittedText = outgoingText
@@ -289,7 +296,7 @@ extension DockModel {
                         "session_id": promptSessionID,
                         "text": outgoingText,
                         "voice_turn": isVoiceTurn, "queued": queued != nil,
-                    ]))
+                    ]), sharedBrowserTabs: sharedBrowserTabs)
                 if acknowledgment["status"] as? String == "streaming" {
                     DeveloperWorkflowModel.shared.acknowledgeTurnBaseline(
                         origin: baselineOrigin, attemptID: baselineAttempt)
@@ -317,7 +324,8 @@ extension DockModel {
                 {
                     pendingSessionSends[index].owner = composerDraftKey
                 }
-                if let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }),
+                if !(error is PromptAdmissionError),
+                    let index = pendingSessionSends.firstIndex(where: { $0.id == sendID }),
                     pendingSessionSends[index].phase == .submitting
                 {
                     pendingSessionSends[index].phase = .uncertain
@@ -352,10 +360,10 @@ extension DockModel {
                     let nsError = error as NSError
                     transportFailure = nsError.domain == NSURLErrorDomain || nsError.domain == NSPOSIXErrorDomain
                 }
-                let message =
-                    transportFailure
+                let message = (error as? PromptAdmissionError)?.errorDescription
+                    ?? (transportFailure
                     ? "I couldn’t connect to Hermes: \(Self.safeUserDiagnostic(error.localizedDescription))"
-                    : "Hermes couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))"
+                    : "Hermes couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))")
                 if !pendingSessionSends.contains(where: { $0.id == sendID && $0.phase == .uncertain }) {
                     messages.append(ChatMessage(role: .hermes, text: message, modelName: currentModelName))
                 }

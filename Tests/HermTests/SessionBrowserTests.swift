@@ -39,13 +39,94 @@ struct SessionBrowserTests {
         let first = Task { await browser.prepareForTurn(client: client, connection: connection) }
         await client.waitForStatus()
         let second = Task { await browser.prepareForTurn(client: client, connection: connection) }
+        await Task.yield()
         client.releaseStatus()
-        await first.value
-        await second.value
+        #expect(await first.value == browser.lifecycleGeneration)
+        #expect(await second.value == browser.lifecycleGeneration)
         #expect(client.requests.compactMap { $0["action"] as? String } == ["status", "connect"])
         #expect(client.requests.allSatisfy { $0["profile"] as? String == "cold-profile" })
         await browser.prepareForTurn(client: client, connection: UUID())
         #expect(client.requests.compactMap { $0["action"] as? String } == ["status", "connect", "status"])
+    }
+
+    @Test func exactSharedTargetMustSurviveTheCurrentProfileHandoff() async throws {
+        let client = BrowserHandoffRPCClient()
+        let browser = AgentBrowser(profileID: "bot")
+        _ = browser.browserDidStart(endpoint: client.endpoint)
+        let owner = SessionBrowserKey(profileID: "bot", sessionID: "owned-chat")
+        let connection = UUID()
+        for id in ["exact", "lookalike"] {
+            browser.handle("Target.targetInfoChanged", ["targetInfo": [
+                "type": "page", "targetId": id, "url": "https://example.com/same-page",
+            ]], nil)
+        }
+        let first = try #require(await browser.prepareForTurn(client: client, connection: connection))
+        let old = ChatContext.SharedBrowserTab(owner: owner, generation: first, targetID: "exact")
+        var sent = 0
+        func admit(_ tab: ChatContext.SharedBrowserTab, generation: UUID?, current: Bool = true) throws {
+            try HermesGateway.checkPromptAdmission(
+                [tab], profile: owner.profileID, handoff: generation.map { (browser, $0) }, connectionIsCurrent: current)
+            sent += 1
+        }
+        try admit(old, generation: first)
+        #expect(throws: PromptAdmissionError.self) { try admit(old, generation: first, current: false) }
+
+        client.holdStatus = true
+        let stale = Task { await browser.prepareForTurn(client: client, connection: connection) }
+        await client.waitForStatus()
+        client.endpoint = "http://127.0.0.1:19334"
+        let rebound = browser.browserDidStart(endpoint: client.endpoint)
+        client.releaseStatus()
+        #expect(await stale.value == nil)
+        #expect(await rebound?.value == true)
+        let second = try #require(await browser.prepareForTurn(client: client, connection: connection))
+        #expect(second != first)
+        #expect(client.requests.compactMap { $0["action"] as? String }
+            == ["status", "connect", "status", "status", "connect", "status"])
+        #expect(throws: PromptAdmissionError.self) { try admit(old, generation: second) }
+        let fresh = ChatContext.SharedBrowserTab(owner: owner, generation: second, targetID: "exact")
+        try admit(fresh, generation: second)
+        browser.handle("Target.targetDestroyed", ["targetId": "exact"], nil)
+        #expect(throws: PromptAdmissionError.self) { try admit(fresh, generation: second) }
+        #expect(sent == 2)
+        #expect(client.requests.allSatisfy { $0["profile"] as? String == "bot" })
+    }
+
+    @Test(arguments: [false, true])
+    func refusedOrMismatchedHandoffCannotAdmitSharedTab(mismatched: Bool) async throws {
+        let client = BrowserHandoffRPCClient()
+        client.connectResult = ["connected": mismatched, "url": "http://127.0.0.1:19999"]
+        let browser = AgentBrowser(profileID: nil)
+        _ = browser.browserDidStart(endpoint: client.endpoint)
+        let handoff = await browser.prepareForTurn(client: client, connection: UUID())
+        #expect(handoff == nil)
+        #expect(browser.handoffFailed)
+        let tab = ChatContext.SharedBrowserTab(
+            owner: .init(profileID: nil, sessionID: "chat"), generation: browser.lifecycleGeneration, targetID: "t")
+        #expect(throws: PromptAdmissionError.self) {
+            try HermesGateway.checkPromptAdmission(
+                [tab], profile: nil, handoff: handoff.map { (browser, $0) }, connectionIsCurrent: true)
+        }
+        try HermesGateway.checkPromptAdmission([], profile: nil, handoff: nil, connectionIsCurrent: true)
+    }
+
+    @Test func rejectedSharedTabRestoresTheComposerDraft() async {
+        let client = BrowserHandoffRPCClient()
+        let model = DockModel(initialSessionID: "draft-chat", loadArchives: false, rpcClient: client)
+        let tab = ChatContext.SharedBrowserTab(
+            owner: .init(profileID: nil, sessionID: "draft-chat"), generation: UUID(), targetID: "old-tab")
+        var attachment = BrowserPageContext.make(url: "https://example.com/", title: "Page", targetID: "old-tab")
+        attachment.sharedBrowserTab = tab
+        model.draft = "Keep this draft"
+        model.attachedContexts = [attachment]
+        let failure = await withCheckedContinuation { continuation in
+            model.send(onSubmission: { continuation.resume(returning: $0) })
+        }
+        #expect(failure == PromptAdmissionError.sharedBrowserUnavailable.errorDescription)
+        #expect(model.draft == "Keep this draft")
+        #expect(model.attachedContexts.first?.sharedBrowserTab == tab)
+        #expect(model.pendingSessionSends.isEmpty)
+        #expect(client.requests.isEmpty)
     }
 
     @Test func restoredTabsStayDormantUntilMaterialized() throws {
@@ -666,7 +747,8 @@ struct SessionBrowserTests {
 @MainActor
 private final class BrowserHandoffRPCClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
-    let endpoint = "http://127.0.0.1:19333"
+    var endpoint = "http://127.0.0.1:19333"
+    private var boundEndpoint: String?
     var connected = false
     var status: [String: Any]?
     var statusFails = false
@@ -697,6 +779,7 @@ private final class BrowserHandoffRPCClient: HermesRPCClientProtocol {
         case "connect":
             if let connectResult { return connectResult }
             connected = true
+            boundEndpoint = params["url"] as? String
         case "disconnect": connected = false
         case "status":
             let fails = statusFails
@@ -711,6 +794,6 @@ private final class BrowserHandoffRPCClient: HermesRPCClientProtocol {
             if let status { return status }
         default: throw HermesGateway.GatewayError.malformedResponse
         }
-        return ["connected": connected, "url": endpoint]
+        return ["connected": connected, "url": boundEndpoint ?? endpoint]
     }
 }

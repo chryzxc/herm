@@ -132,10 +132,10 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         super.init()
         model.interruptionCoordinator = interruptions
         if let gateway = model.gateway {
-            gateway.prepareBrowserForPrompt = { [weak gateway, weak model] profile, connection in
-                guard let gateway, let model else { return }
-                await SessionBrowserStore.shared.prepareForTurn(
-                    profileID: profile ?? model.profileScopeID, client: gateway, connection: connection)
+            gateway.prepareBrowserForPrompt = { [weak gateway] profile, connection in
+                guard let gateway else { return nil }
+                return await SessionBrowserStore.shared.prepareForTurn(
+                    profileID: profile, client: gateway, connection: connection)
             }
         }
         Self.current = self

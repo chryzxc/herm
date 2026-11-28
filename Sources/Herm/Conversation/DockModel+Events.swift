@@ -916,11 +916,12 @@ extension DockModel {
         case "notice":
             appendSystemEvent(SystemEvent(label: "Notice"), text: payload["message"] as? String ?? "")
         case "preview.open":
-            // Hermes' desktop_preview tool: show the page in the Browser tab, or externally if that's off.
-            guard params["herm_trace_replayed"] as? Bool != true, let raw = payload["url"] as? String,
-                let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+            guard params["herm_trace_replayed"] as? Bool != true,
+                [params["profile"], rawPayload["profile"]].compactMap({ $0 as? String }).allSatisfy({
+                    Self.normalizedProfileID($0) == browserProfileID
+                })
             else { break }
-            if AgentBrowser.opensInHerm() { InAppBrowser.open(url) } else { ExternalOpen.open(url) }
+            presentAgentPreview(payload["url"] as? String, inHerm: AgentBrowser.opensInHerm())
         case "pane.reveal":
             // Hermes' focus_pane tool. Chat and sessions are already in view.
             guard params["herm_trace_replayed"] as? Bool != true,

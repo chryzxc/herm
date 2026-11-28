@@ -14,7 +14,7 @@ final class AgentBrowser: ObservableObject {
     /// Hermes' `browser.manage connect` is per profile, so each profile has one agent Chrome
     /// that its sessions share; Hermes' browser tools keep a session's work on its own tab.
     let profileID: String?
-    private static var connectionTask: Task<Void, Never>?
+    private static var connectionTask: Task<Bool, Never>?
     private static let world = "herm"
     static let worldScript =
         BrowserAnnotation.script + """
@@ -222,48 +222,57 @@ final class AgentBrowser: ObservableObject {
     private var cdpURL: String?
     private weak var turnClient: (any HermesRPCClientProtocol)?
     private var ownerClient: (any HermesRPCClientProtocol)?
-    private var turnPreparation: (connection: UUID, task: Task<Void, Never>)?
-    private var preparedConnection: UUID?
+    private var turnPreparation: (connection: UUID, id: UUID, task: Task<UUID?, Never>)?
     private var turnRetryAfter: ContinuousClock.Instant?
-    private var lifecycleGeneration = UUID()
+    private(set) var lifecycleGeneration = UUID()
     @Published private(set) var handoffFailed = false
 
     /// A restarted Hermes gateway forgets the connection; point it back at this browser.
     @discardableResult
-    func reconnectHermes() -> Task<Void, Never>? {
+    func reconnectHermes() -> Task<Bool, Never>? {
+        guard let client = turnClient ?? ownerClient else { return nil }
+        return bindHermes(client: client)
+    }
+
+    private func bindHermes(client: HermesRPCClientProtocol, connection: UUID? = nil) -> Task<Bool, Never>? {
         // The CDP address is this Mac's loopback; a remote backend would dial its own host.
         guard state == .running, let cdpURL else { return nil }
-        guard let client = turnClient ?? ownerClient else { return nil }
+        let gateway = client as? HermesGateway
+        guard gateway?.isLocal != false else { return nil }
         let generation = lifecycleGeneration
         let previous = Self.connectionTask
         Self.connectionTask = Task { [weak self] in
-            await previous?.value
-            guard let self, lifecycleGeneration == generation, state == .running,
-                self.cdpURL == cdpURL
-            else { return }
+            _ = await previous?.value
+            guard let self else { return false }
+            @MainActor func isCurrent() -> Bool {
+                self.lifecycleGeneration == generation && self.state == .running && self.cdpURL == cdpURL
+                    && (connection.map { gateway?.isCurrentConnection($0) ?? true } ?? true)
+            }
+            guard isCurrent() else { return false }
             do {
-                try await HermesControlRPC(client: client).setBrowser(cdpURL: cdpURL, profile: profileID)
-                if lifecycleGeneration == generation, state == .running,
-                    self.cdpURL == cdpURL
-                {
-                    handoffFailed = false
-                }
+                try await HermesControlRPC(client: client).setBrowser(
+                    cdpURL: cdpURL, profile: profileID, isCurrent: isCurrent)
+                guard isCurrent() else { return false }
+                handoffFailed = false
+                return true
             } catch {
-                if lifecycleGeneration == generation, state == .running,
-                    self.cdpURL == cdpURL
-                {
-                    handoffFailed = true
-                }
+                if isCurrent() { handoffFailed = true }
+                return false
             }
         }
         return Self.connectionTask
     }
 
     @discardableResult
-    func browserDidStart(endpoint: String) -> Task<Void, Never>? {
+    func browserDidStart(endpoint: String) -> Task<Bool, Never>? {
+        if let cdpURL, cdpURL != endpoint {
+            lifecycleGeneration = UUID()
+            turnPreparation = nil
+            turnRetryAfter = nil
+        }
         cdpURL = endpoint
         state = .running
-        return reconnectHermes()
+        return turnPreparation == nil ? reconnectHermes() : nil
     }
 
     private var startupTask: Task<Void, Never>?
@@ -312,34 +321,36 @@ final class AgentBrowser: ObservableObject {
 
     // MARK: Lifecycle
 
-    func prepareForTurn(client: HermesRPCClientProtocol, connection: UUID) async {
-        guard !Task.isCancelled else { return }
-        if preparedConnection == connection, state == .running, !handoffFailed { return }
-        if let turnRetryAfter, .now < turnRetryAfter { return }
-        if let turnPreparation, turnPreparation.connection == connection {
-            await turnPreparation.task.value
-            return
+    @discardableResult
+    func prepareForTurn(client: HermesRPCClientProtocol, connection: UUID) async -> UUID? {
+        guard !Task.isCancelled else { return nil }
+        if let turnPreparation, turnPreparation.connection == connection, turnClient === client {
+            return await turnPreparation.task.value
         }
+        if let turnRetryAfter, .now < turnRetryAfter { return nil }
         turnClient = client
-        let task = Task { @MainActor [weak self] in
-            guard let self else { return }
+        let id = UUID()
+        let task = Task<UUID?, Never> { @MainActor [weak self] in
+            guard let self else { return nil }
             if !isActive { start() }
-            if state == .starting {
-                await startupTask?.value
-            } else {
-                await reconnectHermes()?.value
-            }
-            guard turnPreparation?.connection == connection else { return }
+            if state == .starting { await startupTask?.value }
+            guard turnPreparation?.id == id else { return nil }
+            let generation = lifecycleGeneration
+            let handedOff = await bindHermes(client: client, connection: connection)?.value == true
+            guard turnPreparation?.id == id, lifecycleGeneration == generation else { return nil }
             turnPreparation = nil
-            if state == .running, !handoffFailed {
-                preparedConnection = connection
+            if handedOff {
                 turnRetryAfter = nil
+                return generation
             } else {
-                turnRetryAfter = .now.advanced(by: .seconds(15))
+                if (client as? HermesGateway)?.isCurrentConnection(connection) != false {
+                    turnRetryAfter = .now.advanced(by: .seconds(15))
+                }
+                return nil
             }
         }
-        turnPreparation = (connection, task)
-        await task.value
+        turnPreparation = (connection, id, task)
+        return await task.value
     }
 
     func start() {
@@ -388,7 +399,7 @@ final class AgentBrowser: ObservableObject {
                     pendingURL = nil
                     navigate(url)
                 }
-                await handoff?.value
+                _ = await handoff?.value
             } catch {
                 if !Task.isCancelled { fail(error.localizedDescription) }
             }
@@ -401,10 +412,11 @@ final class AgentBrowser: ObservableObject {
         let profileID = profileID
         if isActive {
             Self.connectionTask = Task {
-                await previous?.value
+                _ = await previous?.value
                 if let client {
                     try? await HermesControlRPC(client: client).setBrowser(cdpURL: nil, profile: profileID)
                 }
+                return false
             }
         }
         turnPreparation = nil
@@ -438,7 +450,8 @@ final class AgentBrowser: ObservableObject {
 
     private func teardown() {
         lifecycleGeneration = UUID()
-        preparedConnection = nil
+        cdpURL = nil
+        turnPreparation = nil
         turnRetryAfter = nil
         pointerTracker?.stop()
         pointerTracker = nil
@@ -512,6 +525,17 @@ final class AgentBrowser: ObservableObject {
                 fields[2].contains("--user-data-dir=\(profileRoot)/")
             else { return nil }
             return pid_t(fields[0])
+        }
+    }
+
+    func shownPage(session: String) -> Page? {
+        guard shownSession == session, sessionID != nil, tabs[session] == activeTargetID else { return nil }
+        return activePage
+    }
+
+    func admits(_ tabs: [ChatContext.SharedBrowserTab], generation: UUID) -> Bool {
+        state == .running && !handoffFailed && lifecycleGeneration == generation && tabs.allSatisfy { tab in
+            tab.owner.profileID == profileID && tab.generation == generation && pages.contains { $0.id == tab.targetID }
         }
     }
 
@@ -1084,7 +1108,8 @@ final class AgentBrowser: ObservableObject {
 
     // MARK: Navigation and input
 
-    func navigate(_ url: URL) {
+    func navigate(_ url: URL, inShownSession owner: String? = nil) {
+        if let owner, shownPage(session: owner) == nil { return }
         guard state == .running, sessionID != nil else {
             pendingURL = url
             return
@@ -1094,9 +1119,11 @@ final class AgentBrowser: ObservableObject {
             return performNavigation("Page.navigate", ["url": url.absoluteString])
         }
         navigation.start()
+        let attachedSession = sessionID
         Task { [weak self] in
             let failure = await SSHPortForwards.shared.prepare(url)
             guard let self, self.state == .running else { return }
+            if let owner, self.sessionID != attachedSession || self.shownPage(session: owner) == nil { return }
             if let failure { return self.navigation.fail(failure) }
             self.performNavigation("Page.navigate", ["url": url.absoluteString])
         }

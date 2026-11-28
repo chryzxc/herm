@@ -13,6 +13,13 @@ struct ChatContext: Identifiable, Equatable, Codable, Sendable {
     /// Project a new chat should be scoped to, when the source has one.
     var attachmentURL: URL? = nil
     var projectPath: String? = nil
+    var sharedBrowserTab: SharedBrowserTab? = nil
+
+    struct SharedBrowserTab: Equatable, Codable, Sendable {
+        let owner: SessionBrowserKey
+        let generation: UUID
+        let targetID: String
+    }
 
     static func prompt(_ text: String, contexts: [ChatContext]) -> String {
         var rendered = text

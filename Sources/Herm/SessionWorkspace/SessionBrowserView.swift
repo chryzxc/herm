@@ -4,6 +4,7 @@ import WebKit
 
 extension Notification.Name {
     static let hermOpenInBrowser = Notification.Name("hermOpenInBrowser")
+    static let hermOpenAgentPreview = Notification.Name("hermOpenAgentPreview")
     /// Object: the `SessionInspector.Section` Hermes asked to show in the current chat.
     static let hermRevealInspector = Notification.Name("hermRevealInspector")
 }
@@ -20,6 +21,61 @@ enum InAppBrowser {
         handled = false
         NotificationCenter.default.post(name: .hermOpenInBrowser, object: url)
         if !handled { ExternalOpen.open(url) }
+    }
+}
+
+@MainActor
+final class AgentPreviewReveal {
+    enum Selection: Equatable {
+        case primary, extra(UUID)
+
+        var extraID: UUID? {
+            if case .extra(let id) = self { return id }
+            return nil
+        }
+    }
+
+    let url: URL
+    private let owner: DockModel
+    private let workspace: String
+    private let key: SessionBrowserKey
+    private(set) var selection: Selection?
+
+    init?(url: URL, owner: DockModel) {
+        guard let key = owner.browserSessionKey else { return nil }
+        self.url = url
+        self.owner = owner
+        workspace = WorkspaceIdentity.session(owner)
+        self.key = key
+    }
+
+    func present(in model: DockModel, canPresent: Bool, select: (SessionBrowserKey) -> Selection?) {
+        guard selection == nil, canPresent, model === owner, model.browserSessionKey == key,
+            WorkspaceIdentity.session(model) == workspace
+        else { return }
+        selection = select(key)
+    }
+}
+
+extension DockModel {
+    func presentAgentPreview(
+        _ address: String?, inHerm: Bool, external: (URL) -> Void = { ExternalOpen.open($0) },
+        reveal: (AgentPreviewReveal) -> Void = {
+            NotificationCenter.default.post(name: .hermOpenAgentPreview, object: $0)
+        }
+    ) {
+        if let address, let url = URL(string: address), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+            let host = url.host(), !host.isEmpty
+        {
+            if !inHerm { external(url); return }
+            if let request = AgentPreviewReveal(url: url, owner: self) {
+                reveal(request)
+                if request.selection != nil { return }
+            }
+        }
+        appendSystemEvent(
+            SystemEvent(label: "Browser", tone: .attention),
+            text: "Herm couldn’t show this page in this chat’s Browser tab.")
     }
 }
 
@@ -532,16 +588,20 @@ struct SessionBrowserView: View {
         defer { sendingPage = false }
         let url = pageURL
         let title = pageTitle
-        let targetID = showsAgent ? agent.activeTargetID : nil
+        let targetID = showsAgent ? agent.shownPage(session: workspace.key.sessionID)?.id : nil
+        let browserGeneration = agent.lifecycleGeneration
         let generation = model.sessionResumeGeneration
-        guard !url.isEmpty, url != "about:blank" else { return }
+        guard !url.isEmpty, url != "about:blank", !showsAgent || targetID != nil else { return }
         let selection = showsAgent ? await agent.selection() : await browser.selection()
         guard model.browserSessionKey == workspace.key, model.sessionResumeGeneration == generation,
-            pageURL == url, (showsAgent ? agent.activeTargetID : nil) == targetID
+            pageURL == url, (showsAgent ? agent.shownPage(session: workspace.key.sessionID)?.id : nil) == targetID,
+            targetID == nil || agent.lifecycleGeneration == browserGeneration
         else { return }
-        model.attachBrowserPage(
-            BrowserPageContext.make(url: url, title: title, targetID: targetID, selection: selection),
-            owner: workspace.key)
+        var context = BrowserPageContext.make(url: url, title: title, targetID: targetID, selection: selection)
+        context.sharedBrowserTab = targetID.map {
+            .init(owner: workspace.key, generation: browserGeneration, targetID: $0)
+        }
+        model.attachBrowserPage(context, owner: workspace.key)
     }
 
     private func sendConsole() {
