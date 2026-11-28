@@ -44,4 +44,39 @@ struct KanbanCardDragTests {
         #expect(visited == 2)
     }
 
+    @MainActor
+    @Test func interruptedDragClearsPreviewAndAllowsAnotherDrop() throws {
+        let first = KanbanTaskSummary(
+            id: "first", title: "First", status: "todo", detail: nil, priority: nil, assignee: nil)
+        let second = KanbanTaskSummary(
+            id: "second", title: "Second", status: "todo", detail: nil, priority: nil, assignee: nil)
+        let drag = KanbanDragController()
+        drag.tasks = [first, second]
+        drag.actions.move = true
+        drag.laneFrames = [.ready: CGRect(x: 100, y: 0, width: 100, height: 200)]
+        drag.rowFrames = [
+            first.id: CGRect(x: 0, y: 0, width: 80, height: 30),
+            second.id: CGRect(x: 0, y: 40, width: 80, height: 30),
+        ]
+        var dropped: [String] = []
+        drag.drop = { task, _ in dropped.append(task.id) }
+
+        drag.dragChanged(task: first, lane: .todo, start: CGPoint(x: 10, y: 10), location: CGPoint(x: 110, y: 10))
+        let interrupted = try #require(drag.session?.id)
+        #expect(drag.target == .ready)
+        drag.cancelDrag(interrupted)
+        #expect(drag.session == nil)
+        #expect(drag.target == nil)
+        #expect(drag.placement == nil)
+        #expect(dropped.isEmpty)
+
+        drag.dragChanged(task: second, lane: .todo, start: CGPoint(x: 10, y: 50), location: CGPoint(x: 110, y: 50))
+        drag.cancelDrag(interrupted)
+        drag.dragEnded(taskID: first.id)
+        #expect(drag.session?.task.id == second.id)
+        drag.dragEnded(taskID: second.id)
+        #expect(drag.session == nil)
+        #expect(drag.placement == .init(taskID: second.id, lane: .ready, index: 0))
+        #expect(dropped == [second.id])
+    }
 }

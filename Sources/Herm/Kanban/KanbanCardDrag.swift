@@ -12,6 +12,7 @@ final class KanbanDragController {
     nonisolated static let cardSpacing: CGFloat = 6
 
     struct Session {
+        let id = UUID()
         let task: KanbanTaskSummary
         let source: KanbanLane
         let size: CGSize
@@ -52,17 +53,17 @@ final class KanbanDragController {
 
     func isPending(_ taskID: String) -> Bool { pendingActionIDs.contains { $0.hasSuffix(":\(taskID)") } }
 
-    func dragChanged(task: KanbanTaskSummary, lane: KanbanLane, value: DragGesture.Value) {
+    func dragChanged(task: KanbanTaskSummary, lane: KanbanLane, start: CGPoint, location: CGPoint) {
         if session == nil {
             guard let frame = rowFrames[task.id] else { return }
             session = Session(
                 task: task, source: lane, size: frame.size,
-                grab: CGSize(width: value.startLocation.x - frame.minX, height: value.startLocation.y - frame.minY))
+                grab: CGSize(width: start.x - frame.minX, height: start.y - frame.minY))
         }
         guard let session, !session.isSettling, session.task.id == task.id else { return }
-        location = value.location
+        self.location = location
 
-        let hovered = laneFrames.first { $0.value.contains(value.location) }?.key
+        let hovered = laneFrames.first { $0.value.contains(location) }?.key
         let accepts =
             hovered.map {
                 $0 != session.source && !isPending(task.id) && actions.destinations(for: task.status).contains($0)
@@ -75,7 +76,7 @@ final class KanbanDragController {
         let newInsertion =
             newTarget.map { lane in
                 Self.insertionIndex(
-                    pointerY: value.location.y,
+                    pointerY: location.y,
                     rowMidYs: (rowsByLane[lane] ?? []).lazy.filter { $0 != task.id }
                         .map { self.rowFrames[$0]?.midY ?? .infinity },
                     openGap: target == lane ? insertion : nil,
@@ -88,8 +89,8 @@ final class KanbanDragController {
         }
     }
 
-    func dragEnded() {
-        guard var session, !session.isSettling else { return }
+    func dragEnded(taskID: String) {
+        guard var session, session.task.id == taskID, !session.isSettling else { return }
         let lane = target
         let index = insertion
         NSCursor.arrow.set()
@@ -104,9 +105,7 @@ final class KanbanDragController {
                 if let lane, settles {
                     placement = Placement(taskID: session.task.id, lane: lane, index: index)
                 }
-                self.session = nil
-                target = nil
-                insertion = 0
+                clearSession()
             }
             if let lane { drop?(session.task, lane) }
         }
@@ -121,6 +120,18 @@ final class KanbanDragController {
         } completion: {
             finish()
         }
+    }
+
+    func cancelDrag(_ sessionID: UUID) {
+        guard let session, session.id == sessionID, !session.isSettling else { return }
+        NSCursor.arrow.set()
+        clearSession()
+    }
+
+    private func clearSession() {
+        session = nil
+        target = nil
+        insertion = 0
     }
 
     /// Where the dragged card lands among a lane's rows. Rows after an already

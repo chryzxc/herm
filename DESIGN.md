@@ -3234,10 +3234,11 @@ updates to another card must not rebuild unchanged card content or menus.
 
 Cards drag between lanes, matching the Hermes desktop board. The card lifts
 (slight scale, tilt, and shadow) and follows the pointer at its grab offset,
-leaving a dashed slot in its lane. Over a lane that accepts it, the source slot
-closes and the lane's cards part to open a dashed gap under the pointer; on drop
-the card settles into that gap. Cancellation, and Done/Blocked drops awaiting
-confirmation, fly the card back to its slot.
+leaving a dashed slot in its lane that keeps the source row mounted. Over an
+expanded lane that accepts it, cards part to open a dashed gap under the pointer.
+On drop the card settles into the gap. A release outside a valid lane, or a
+Done/Blocked drop awaiting confirmation, flies the card back to its slot. If the
+gesture is interrupted, clear the preview without sending a move.
 Confirmed lane ordering changes use a short dockEase transition, respecting Reduce Motion. Expanded lanes and
 collapsed rails are both drop targets and highlight in the lane color while a
 droppable card is over them. Running, Review, and Scheduled are system-owned:
