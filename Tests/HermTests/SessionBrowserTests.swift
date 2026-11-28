@@ -204,7 +204,9 @@ struct SessionBrowserTests {
 
     @Test func deletingReleasedSessionStopsOnlyItsLastProfileBrowser() async throws {
         let client = BrowserHandoffRPCClient()
-        let model = DockModel(initialSessionID: "a", loadArchives: false, rpcClient: client)
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "a", loadArchives: false,
+            rpcClient: client)
         model.profileScopeID = "first"
         defer { model.delegationMonitoringTask?.cancel() }
         let store = SessionBrowserStore()
@@ -223,9 +225,10 @@ struct SessionBrowserTests {
         #expect(agent.state == .off)
         let foreground = store.workspace(for: try #require(model.browserSessionKey)).agent
         await foreground.browserDidStart(endpoint: client.endpoint)?.value
-        #expect(client.requests.contains {
-            $0["action"] as? String == "disconnect" && $0["profile"] as? String == "first"
-        })
+        #expect(
+            client.requests.contains {
+                $0["action"] as? String == "disconnect" && $0["profile"] as? String == "first"
+            })
         foreground.stop()
     }
 
@@ -259,7 +262,8 @@ struct SessionBrowserTests {
     }
 
     @Test func switchingBotChatsKeepsEachProfilesPageAndNavigation() async throws {
-        let model = DockModel(initialSessionID: "shared-chat", loadArchives: false, rpcClient: BrowserHandoffRPCClient())
+        let model = DockModel(
+            initialSessionID: "shared-chat", loadArchives: false, rpcClient: BrowserHandoffRPCClient())
         model.profileScopeID = "workspace-profile"
         let store = SessionBrowserStore()
         let firstURL = try #require(URL(string: "https://example.com/first"))
@@ -477,7 +481,8 @@ struct SessionBrowserTests {
     @Test(arguments: [nil, ""] as [String?])
     func browserHandoffDefaultScopeAndDisconnect(profile: String?) async throws {
         let client = BrowserHandoffRPCClient()
-        let model = DockModel(initialSessionID: "browser-chat", rpcClient: client)
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "browser-chat", rpcClient: client)
         model.profileScopeID = profile
         defer { model.delegationMonitoringTask?.cancel() }
         try await model.setHermesBrowser(cdpURL: client.endpoint)

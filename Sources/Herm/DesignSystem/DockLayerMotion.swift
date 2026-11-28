@@ -12,6 +12,7 @@ struct DockLayerMotion: NSViewRepresentable {
         /// Three transcript lines fold together as context is compacted.
         case compactLines
         case botStride
+        case botToolRing(avatarSize: CGFloat)
         /// Four mosaic tiles lift and brighten in clockwise order while work is pending.
         case loading
         case startupLogo
@@ -151,6 +152,29 @@ final class DockLayerMotionView: NSView {
                         line, "position.y", from: start, to: bounds.midY, duration: 0.7,
                         autoreverses: true, timing: .easeInEaseOut)
                 }
+            }
+
+        case .botToolRing(let size):
+            let orbit = CALayer()
+            orbit.frame = bounds
+            host.addSublayer(orbit)
+            let center = CGPoint(x: bounds.midX, y: bounds.midY)
+            let radius = size * 0.55
+            let direction: CGFloat = isFlipped ? 1 : -1
+            let arcs: [(start: CGFloat, length: CGFloat, opacity: Float)] = [
+                (0, 26.0 / 55, 0.9), (44 * .pi / 180, 6.0 / 55, 0.35),
+            ]
+            for arc in arcs {
+                let path = CGMutablePath()
+                path.addArc(
+                    center: center, radius: radius, startAngle: direction * arc.start,
+                    endAngle: direction * (arc.start + arc.length), clockwise: direction < 0)
+                let stroke = ring(path, lineWidth: size * 0.03, color: color)
+                stroke.opacity = arc.opacity
+                orbit.addSublayer(stroke)
+            }
+            if !spec.paused {
+                loop(orbit, "transform.rotation.z", from: 0, to: direction * 2 * .pi, duration: 1.2)
             }
 
         case .botStride:

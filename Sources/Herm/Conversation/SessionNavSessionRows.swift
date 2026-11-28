@@ -659,7 +659,7 @@ struct SessionNavSidebarSessionRow: View, Equatable {
 
     var body: some View {
         let _ = HermPerformanceRecorder.countBody("SessionNavSidebarSessionRow")
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
             statusIndicator
             VStack(alignment: .leading, spacing: DockSidebarListMetrics.titleToPreview) {
                 titleLine

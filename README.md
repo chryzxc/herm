@@ -624,6 +624,8 @@ refreshes both GitHub and repository data. Hide the rail to give the conversatio
 its full width.
 
 Session list spinners follow Hermes’ live execution state and refresh every ten seconds while the sidebar is visible, including unopened sessions for the selected bot. Recent writes alone do not indicate running work; the next live refresh clears missed completion events.
+Approvals, clarification questions, and secure input requests appear in the
+chat that owns them, including a bot's main chat under **Bots**.
 
 The empty chat centers the orb, introductory text, and composer together. Once a message appears, the welcome fades in place and the composer glides to the bottom. Transitions respect Reduce Motion and motion-free skins.
 
@@ -693,11 +695,13 @@ Bot rail and Bot menu.
 
 Drag a conversation within **Pinned** to set its saved order. Recents and
 Projects list conversations by last update. Hover over a project pill to see
-its repository path.
+its repository path. Session rows keep unread counts, approvals, and running
+spinners in a compact column so titles stay aligned.
 
 The bold vertical ellipsis beside **Chat tiles** lets you choose **Bot menu** or **Bot rail**.
 Horizontal and vertical three-dot menu icons use the same heavier weight across Herm.
 Bot rail replaces the picker above the session list with a wider column and roomier rows for bot avatars and badges.
+The ring around a working Herm face spins in both the Bot rail and the conversation, unless Reduce Motion or a motion-free theme is enabled.
 Click an avatar to switch bots, or choose the **All** tile at the top to see
 sessions across profiles. Scroll to see more avatars and drag them to reorder the rail.
 As in the picker, holding a dragged bot near or past the top or bottom of the list

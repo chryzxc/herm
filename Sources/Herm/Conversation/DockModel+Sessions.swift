@@ -980,6 +980,7 @@ extension DockModel {
         presentedClarificationRequestIDs = []
         valuePrompt = nil
         valuePromptError = nil
+        isRespondingToValuePrompt = false
         clarificationResponseError = nil
         approvalTitle = nil
         approvalText = nil
@@ -1172,6 +1173,9 @@ extension DockModel {
             guard result["messages"] is [[String: Any]] else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
+            // Apply the prompt snapshot before awaiting history. A live cancellation
+            // during that read must win over the earlier resume response.
+            restoreOpenConversationPrompts(from: result, for: resolvedSessionID)
             let info = result["info"] as? [String: Any] ?? result
             if reasoningRevision == sessionReasoningRevision, !applyReportedSessionReasoning(info) {
                 refreshSessionReasoningVariant(afterConfirmedResume: true)
@@ -1309,14 +1313,6 @@ extension DockModel {
                 }
             }
             guard resumeGeneration == sessionResumeGeneration, !Task.isCancelled else { return false }
-            // Questions still waiting on this session (Herm was detached when Hermes asked).
-            for request in result["open_requests"] as? [[String: Any]] ?? [] {
-                if let event = HermesGateway.event(forServerRequest: request) {
-                    receiveGatewayEvent(event.type, params: event.params)
-                }
-            }
-            // Open requests captured above land in the pending map but are not
-            // presented by the session-filtered handler; project them now.
             restorePendingClarification(for: [session.id, resolvedSessionID, sessionStorageID])
             restorePendingApproval(for: [session.id, resolvedSessionID, sessionStorageID])
             mergePersistedBotActivities(for: [session.id, sessionStorageID, kanbanAttributionSessionID])
@@ -1499,6 +1495,7 @@ extension DockModel {
         activeBotDisplayName = nil
         sessionProfileID = profileScopeID
         sessionStorageID = nil
+        kanbanAttributionSessionID = nil
         replaceTranscriptRowIDs([:])
         clearMessagePins()
         newSessionCreationAuthorized = true
@@ -1509,6 +1506,7 @@ extension DockModel {
         presentedClarificationRequestIDs = []
         valuePrompt = nil
         valuePromptError = nil
+        isRespondingToValuePrompt = false
         clarificationResponseError = nil
         approvalTitle = nil
         approvalText = nil

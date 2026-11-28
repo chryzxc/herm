@@ -257,7 +257,7 @@ extension BotFaceMark {
     static func draw(
         in ctx: inout GraphicsContext, id: String, size: CGFloat, mood: BotMood,
         pose: BotFacePose, theme: DockThemeID?, ink inkTheme: DockThemeID? = nil, originalColors: Bool = false,
-        legacyIdentityHue: Bool = false
+        legacyIdentityHue: Bool = false, showsToolRing: Bool = true
     ) {
         let genes = HermFaceGenes(id: id)
         let colors = DockThemePalette(theme: theme ?? .glass)
@@ -482,7 +482,7 @@ extension BotFaceMark {
         // In front: rings, waves, hints and the status badge, all in theme tokens.
         orbiters(front: true)
         switch mood {
-        case .tool:
+        case .tool where showsToolRing:
             let rotation = (t * 300).truncatingRemainder(dividingBy: 360)
             ring(55, 0.9, 3, colors.accent, dash: [26, 320], rotation: rotation)
             ring(55, 0.35, 3, colors.accent, dash: [6, 340], rotation: rotation + 44)

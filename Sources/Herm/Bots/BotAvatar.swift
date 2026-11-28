@@ -33,6 +33,8 @@ struct BotAvatarView: View {
     let imageData: Data?
     var size: CGFloat = 28
     var animated = true
+    /// Lets a working ring move even when the face itself uses a still pose.
+    var animatesToolRing = false
     var mood: BotMood?
     /// Overrides the Bot's live busy state; a busy Herm face shows the tool ring.
     var orbits: Bool?
@@ -59,34 +61,43 @@ struct BotAvatarView: View {
                     ? .sleepy
                     : orbits.map { $0 ? .tool : .idle } ?? activity?.mood(for: bot.id)
                         ?? (bot.isWorkingNow ? .tool : .idle))
+        let nativeRing = animatesToolRing && herm && face == .tool
         Group {
             if let indicatorFrame {
-                canvas(herm: herm, mood: face, frame: indicatorFrame)
+                canvas(herm: herm, mood: face, frame: indicatorFrame, showsToolRing: !nativeRing)
             } else if indicatorLive {
-                DockBotFrameClock { canvas(herm: herm, mood: face, frame: $0) }
+                DockBotFrameClock { canvas(herm: herm, mood: face, frame: $0, showsToolRing: !nativeRing) }
             } else {
-                standalone(herm: herm, mood: face)
+                standalone(herm: herm, mood: face, showsToolRing: !nativeRing)
                     .botStatusMotion(
                         statusMotion && animated ? BotStatusMotion(mood: face) : .resting, size: points, live: live)
+            }
+        }
+        .overlay {
+            if nativeRing {
+                DockLayerMotion(kind: .botToolRing(avatarSize: points), color: .dockAccent)
+                    .frame(width: points * 1.2, height: points * 1.2)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
         }
         .onHover { hovering = $0 }
         .opacity(bot.isHidden ? 0.45 : 1)
     }
 
-    private func canvas(herm: Bool, mood: BotMood, frame: DockBotIndicatorFrame) -> some View {
+    private func canvas(herm: Bool, mood: BotMood, frame: DockBotIndicatorFrame, showsToolRing: Bool) -> some View {
         DockBotOrbitCanvas(
             id: bot.id, image: herm ? nil : imageData.flatMap(Self.decoded), size: points, mood: mood,
-            pose: frame.face(id: bot.id, busy: mood.moves, animated: animated))
+            pose: frame.face(id: bot.id, busy: mood.moves, animated: animated), showsToolRing: showsToolRing)
     }
 
-    @ViewBuilder private func standalone(herm: Bool, mood: BotMood) -> some View {
+    @ViewBuilder private func standalone(herm: Bool, mood: BotMood, showsToolRing: Bool) -> some View {
         if !herm, let imageData, let image = Self.decoded(imageData) {
             BotLiveImage(image: image, id: bot.id, size: points, busy: mood.moves, animated: animated)
                 .frame(width: points, height: points)
                 .clipShape(RoundedRectangle(cornerRadius: points * 0.28, style: .continuous))
         } else {
-            BotFaceMark(id: bot.id, size: points, animated: animated, mood: mood)
+            BotFaceMark(id: bot.id, size: points, animated: animated, mood: mood, showsToolRing: showsToolRing)
         }
     }
 
@@ -248,7 +259,7 @@ struct BotWorkingAvatarView: View {
         let points = DockWorkspaceScale.points(size, scale: workspaceScale)
         BotWorkingAvatarLayer(
             avatar: BotAvatarView(
-                bot: bot, imageData: imageData, size: size, animated: false,
+                bot: bot, imageData: imageData, size: size, animated: false, animatesToolRing: true,
                 orbits: true, statusMotion: false),
             size: points, signature: activitySignature, engaged: moves
         )
@@ -594,6 +605,7 @@ struct BotFaceMark: View {
     var mood: BotMood?
     /// Live faces follow the app skin; previews pass the skin they show.
     var theme: DockThemeID?
+    var showsToolRing = true
     @ObservedObject private var themeStore = DockThemeStore.shared
     @DockChromeTheme private var chrome
 
@@ -605,7 +617,9 @@ struct BotFaceMark: View {
         BotMotion(id: id, animated: animated, busy: mood.moves) { pose in
             Canvas { ctx, _ in
                 ctx.translateBy(x: size * 0.2, y: size * 0.2)
-                Self.draw(in: &ctx, id: id, size: size, mood: mood, pose: pose, theme: theme, ink: ink)
+                Self.draw(
+                    in: &ctx, id: id, size: size, mood: mood, pose: pose, theme: theme, ink: ink,
+                    showsToolRing: showsToolRing)
             }
             .frame(width: size * 1.4, height: size * 1.4)
         }

@@ -2165,9 +2165,10 @@ and project summaries; the notch uses the same session activity state.
 Each leading status slot shows one mark. Approval, clarification, running, and failure
 icons take precedence over the unread count. An unseen failed turn from history
 shows a red triangle using `dockDestructive` in that slot, including in All profiles. Leading status marks (running, approval, warning, unread
-count, done) share `DockSidebarListMetrics.statusMark` (16pt) inside a 28pt
-`statusSlotWidth`, via `DockActivityIndicator`'s `.status` role; never size one locally. Opening the session acknowledges the history warning
-while retaining error details in the transcript.
+count, done) share `DockSidebarListMetrics.statusMark` (14pt) inside a 27pt
+`statusSlotWidth`, via `DockActivityIndicator`'s `.status` role. The column stays
+reserved on rows without a mark so titles line up. Opening the session acknowledges
+the history warning while retaining error details in the transcript.
 
 A fixed Search sessions field below the Bot header filters loaded session titles,
 previews, and project names case-insensitively in the selected Bot scope. Nonempty
@@ -3495,7 +3496,8 @@ available height with the scrollbar hidden. Hovering
 over a bot shows a profile preview beside the rail. The bot's avatar, name,
 and role form its header. A hairline separates the description when one is
 set. Activity and unread badges use separate corners within each avatar
-slot. Drag an avatar to reorder it using the same saved order as the picker.
+slot. The working Herm face's ring spins on its own layer without animating
+the face or moving the row. Drag an avatar to reorder it using the same saved order as the picker.
 Both layouts use the same edge scrolling. Hold the pointer near or past the top
 or bottom of the avatar list during a drag to reach offscreen bots.
 New Bot appears when creation is available. The layout choice persists locally.
@@ -3549,6 +3551,11 @@ Reserve the session rail's actual width in both density settings, including for 
 transcript, composer, welcome and floating controls; density only tightens visual spacing.
 
 Remove the approval card from the conversation as soon as Hermes confirms a decision, whichever surface answered it. Pending and uncertain responses stay in the same card with explicit recovery. The record is process-local and does not alter transcript history.
+Approvals, clarification questions, and secure input requests appear only in
+the owning conversation, including a Bot's main chat. The confirmed runtime
+and stored IDs identify the same chat. A blank conversation never shows
+another session's request. Reopening the chat restores requests Hermes still
+reports as pending.
 
 The composer background-process tray uses a shared disclosure with a terminal icon,
 separate running count or neutral Finished label, and the last running process's
@@ -4056,6 +4063,8 @@ The welcome orb retains the same footprint and pointer reactions as voice,
 including Reduce Motion support.
 The running indicator uses the responding Bot's stored avatar or generated
 face, falling back to the session profile and selected Bot for ordinary chats.
+The work ring around a Herm face spins independently of the avatar's pose.
+Reduce Motion and motion-free themes keep the ring visible but still.
 Between activity changes the avatar leans into a short hop as three diamond tiles light from left to right beneath it. Core Animation drives the transform and tiles inside the indicator's fixed footprint. An activity change shows the corresponding glyph while the avatar reacts. Reduce Motion and motion-free themes keep the avatar still and hide the tiles.
 Activity rows appear immediately; their insertion and the Bot's movement share
 one short spring transition. Disclosure and completion transitions use the same

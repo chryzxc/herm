@@ -282,6 +282,7 @@ extension DockModel {
         var batch: [ClarifyQuestion] = []
         var lockedAnswers: [String: String] = [:]
         var responseTarget: AttentionRequest? = nil
+        var profileID: String? = nil
 
         var current: ClarifyQuestion? { batch.first { lockedAnswers[$0.id] == nil } }
         var remainingCount: Int { batch.filter { lockedAnswers[$0.id] == nil }.count }
@@ -376,6 +377,12 @@ extension DockModel {
     /// id it was opened by.
     var currentSessionIDs: Set<String> {
         Set([sessionID, sessionStorageID, kanbanAttributionSessionID].compactMap { $0 })
+    }
+
+    /// The shared lookup title is not evidence that a request belongs to this Bot Chat.
+    var promptSessionIDs: Set<String> {
+        guard sessionID != nil else { return [] }
+        return currentSessionIDs.subtracting([BotService.canonicalBotChatTitle, ""])
     }
 
     /// Maps the open chat's runtime alias onto its stored row id.

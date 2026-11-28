@@ -29,11 +29,13 @@ private final class AttentionAnswerRPC: HermesRPCClientProtocol {
 struct AttentionAnswerTests {
     private func makeModel(_ rpc: AttentionAnswerRPC) -> DockModel {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        return DockModel(
+        let model = DockModel(
             sessionAgentStateFileURL: root.appendingPathComponent("agents.json"),
             defaults: UserDefaults(suiteName: UUID().uuidString)!,
             initialSessionID: "current", botActivityFileURL: root.appendingPathComponent("bots.json"),
             rpcClient: rpc)
+        model.sessionProfileID = "builder"
+        return model
     }
 
     private func ask(

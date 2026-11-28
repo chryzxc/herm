@@ -71,7 +71,8 @@ struct PullRequestChatTests {
         let directory = model.agentStateStore.fileURL.deletingLastPathComponent().lastPathComponent
         let domain = directory.replacingOccurrences(of: "herm-pr-chat-", with: "herm.pr-chat.presentation.")
         model.defaults.set("marker", forKey: "projection-test-marker")
-        #expect(UserDefaults.standard.persistentDomain(forName: domain)?["projection-test-marker"] as? String == "marker")
+        #expect(
+            UserDefaults.standard.persistentDomain(forName: domain)?["projection-test-marker"] as? String == "marker")
         workspace.defaultReasoningVariant = .low
         #expect(model.defaultReasoningVariant == .low)
         _ = try await model.createAuthorizedSession(source: "herm")

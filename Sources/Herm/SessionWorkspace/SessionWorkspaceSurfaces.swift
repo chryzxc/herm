@@ -62,7 +62,9 @@ struct SessionPullRequestsSurface: View {
     var onSelect: () -> Void = {}
     @State private var refreshID = UUID()
 
-    static func listPresentation(center: PullRequestCenterModel, repositoryPath: String?) -> SessionGitHubListPresentation {
+    static func listPresentation(center: PullRequestCenterModel, repositoryPath: String?)
+        -> SessionGitHubListPresentation
+    {
         SessionGitHubListPresentation(
             scopeMatches: center.scopedRepositoryPath == repositoryPath,
             isInitialLoad: center.isInitialLoad, warning: center.listWarning)

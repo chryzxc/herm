@@ -24,8 +24,17 @@ fi
 index=$1
 count=$2
 
+# Keep session ownership checks independent of suites that post native window events.
+isolation_suite=SessionConversationIsolationTests
+if [ "$index" -eq 0 ]; then
+    swift test --skip-build --no-parallel --disable-automatic-resolution --filter "^HermTests\.$isolation_suite/"
+fi
+
 suites=$(swift test list --skip-build --disable-automatic-resolution |
-    awk -F/ '/^HermTests\./ { sub(/^HermTests\./, "", $1); print $1 }' | sort | uniq -c | sort -k1,1nr -k2 |
+    awk -F/ -v isolate="$isolation_suite" '/^HermTests\./ {
+        sub(/^HermTests\./, "", $1)
+        if ($1 != isolate) print $1
+    }' | sort | uniq -c | sort -k1,1nr -k2 |
     awk -v n="$count" -v i="$index" '{
         best = 0
         for (s = 1; s < n; s++) if (load[s] < load[best]) best = s
