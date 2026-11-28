@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.6.0](https://github.com/chryzxc/herm/compare/v0.5.3...v0.6.0) (2026-11-28)
+
+
+### Features
+
+* **group-chat:** support composer file attachments ([#348](https://github.com/chryzxc/herm/issues/348)) ([8ce8b5e](https://github.com/chryzxc/herm/commit/8ce8b5e96d6298f43cb6e57e67d2ba4f4d2132ab))
+
+
+### Bug Fixes
+
+* **bots:** retry partial group setup in existing room ([a098d26](https://github.com/chryzxc/herm/commit/a098d261c51bd382cc23b3068ed5fbe14ccb264f))
+* **bots:** retry partial group setup in existing room ([decd6bd](https://github.com/chryzxc/herm/commit/decd6bdff4140b5d421cb57f6818e7350f07910d))
+* **browser:** isolate pages by bot profile ([#346](https://github.com/chryzxc/herm/issues/346)) ([b46bddb](https://github.com/chryzxc/herm/commit/b46bddba56e75b8622ffdb81ba297c806280004a))
+* **composer:** stabilize editor height measurement ([#350](https://github.com/chryzxc/herm/issues/350)) ([99570b4](https://github.com/chryzxc/herm/commit/99570b40232dd66af30770e5e123c101e69e9bd0))
+* distinguish named face appearances ([4ee7092](https://github.com/chryzxc/herm/commit/4ee7092bf6603c17fa95628ce8087d64c23a4fca))
+* distinguish seeded bot face colors ([6bde6a8](https://github.com/chryzxc/herm/commit/6bde6a81e7b268d5278986b4a22f54c2239a8d6c))
+* **github:** report partial pull request lists ([7b067dc](https://github.com/chryzxc/herm/commit/7b067dcf282fcca6364c72da1fef279e25790130))
+* **groups:** keep transcript rows mounted during updates ([#345](https://github.com/chryzxc/herm/issues/345)) ([2e162f4](https://github.com/chryzxc/herm/commit/2e162f45e2f399c0463cacfe2ea3d0b2fc26c35d))
+* **groups:** retry failed sidebar preview fetches ([374f263](https://github.com/chryzxc/herm/commit/374f263b0366866c0274a2b7d207e11422178092))
+* **groups:** retry failed sidebar preview fetches ([5dee557](https://github.com/chryzxc/herm/commit/5dee557dcdf1acfbf4628b973b6276d7bef4d985))
+* inset the end quiet status bar button ([638a721](https://github.com/chryzxc/herm/commit/638a72136df2e53f34d6fd7809015e3441987d35))
+* preserve scoped pull request diagnostics ([187340f](https://github.com/chryzxc/herm/commit/187340f83fdb5aa4a36b30cd6ffa06d260d3f06b))
+* recover from interrupted kanban card drags ([#353](https://github.com/chryzxc/herm/issues/353)) ([5a4fe7c](https://github.com/chryzxc/herm/commit/5a4fe7c2d3d93cdd396135b96559a8c9f2324faa))
+* reduce session inspector type-check complexity ([f081874](https://github.com/chryzxc/herm/commit/f081874d9e9e3cb70c0bbf091fc72b09c5c5f682))
+* refine workspace status bar hierarchy ([3d64df1](https://github.com/chryzxc/herm/commit/3d64df1b45a0164e28d0701c64d07889754ed3a5))
+* report partial pull request lists ([5447bf3](https://github.com/chryzxc/herm/commit/5447bf3b7d2438333f69cd5894cd8bcdeb238afd))
+* restore chat status indicators and prompt routing ([#347](https://github.com/chryzxc/herm/issues/347)) ([809b2c4](https://github.com/chryzxc/herm/commit/809b2c46bd068b3cfe4febb8381c397f4076da89))
+* scope session github rows to repository ([c95ae8b](https://github.com/chryzxc/herm/commit/c95ae8bf316d35c3394f70448aaa0e68dc8ccb3f))
+* scope session rows to the selected repository ([dbec642](https://github.com/chryzxc/herm/commit/dbec6424b9f37e8f45cdb40f51f5370dc23be8ac))
+* show item-specific status bar popovers ([621b009](https://github.com/chryzxc/herm/commit/621b0095a7c1d7ab8cfd8b2f3edce2a861059368))
+* tighten the session sidebar status column ([b2ae3c7](https://github.com/chryzxc/herm/commit/b2ae3c709322a17e7aeb57f13650adf454de8a58))
+* **workspace:** protect state after failed reads ([b1a5435](https://github.com/chryzxc/herm/commit/b1a54355d0e8901e74650992876c1dd509998149))
+* **workspace:** protect state after failed reads ([f92978b](https://github.com/chryzxc/herm/commit/f92978bbb58bbc536b7c5ad04ddf307e12e1804a))
+
+
+### Performance Improvements
+
+* **bots:** reuse connected bot chats on reselection ([#359](https://github.com/chryzxc/herm/issues/359)) ([4f7dab7](https://github.com/chryzxc/herm/commit/4f7dab7a9a52f257447b475d3fc2722643584500))
+* **browser:** avoid rendering frames in hidden canvases ([#336](https://github.com/chryzxc/herm/issues/336)) ([cb2abfc](https://github.com/chryzxc/herm/commit/cb2abfc3accc33bb0e93c4ea9be6d6ff5e419467))
+* **browser:** return screencast credit before decoding ([#357](https://github.com/chryzxc/herm/issues/357)) ([7b65317](https://github.com/chryzxc/herm/commit/7b653175ba99bd3c1af9dfaf7b676bee1eb9f345))
+* **explorer:** avoid rebuilding the file tree on hover ([#352](https://github.com/chryzxc/herm/issues/352)) ([4e7742f](https://github.com/chryzxc/herm/commit/4e7742f16bc4d14d47ab497744de9ab8e40e099f))
+* **source-control:** narrow chat observation ([#358](https://github.com/chryzxc/herm/issues/358)) ([c64adf2](https://github.com/chryzxc/herm/commit/c64adf2c5f865ad2a7c55254d81efc157a67f881))
+* **workspace:** publish each task status update once ([#355](https://github.com/chryzxc/herm/issues/355)) ([ab58390](https://github.com/chryzxc/herm/commit/ab583903a827aadddc1de2246511b77b2f1d54cb))
+
 ## [0.5.3](https://github.com/chryzxc/herm/compare/v0.5.2...v0.5.3) (2026-11-27)
 
 
