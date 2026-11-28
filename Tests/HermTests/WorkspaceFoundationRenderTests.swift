@@ -128,6 +128,65 @@ struct WorkspaceFoundationRenderTests {
         host.layoutSubtreeIfNeeded()
         #expect(abs(scroll.frame.height - initialHeight) < 1)
     }
+    @Test func newlineOnlyDraftGrowsButIsNotSendableAndClearsToMinimum() async throws {
+        _ = NSApplication.shared
+        let name = "ComposerNewlines.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent(name),
+            defaults: defaults, initialSessionID: "sizing-fixture", rpcClient: FoundationFixtureRPC())
+        defer { model.shutdown() }
+        let composer = ChatComposerView(
+            model: model, composer: model.composer, speechInput: SpeechInput(), botMode: BotModeModel(), onStop: {})
+        let host = NSHostingView(
+            rootView: VStack {
+                Spacer()
+                composer
+            }
+            .frame(width: 600, height: 500)
+            .transaction { $0.disablesAnimations = true }
+            .dockThemedRoot())
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        func find(_ view: NSView) -> ComposerInputTextView? {
+            if let text = view as? ComposerInputTextView { return text }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        func waitFor(_ stage: String, details: @autoclosure () -> String, _ condition: () -> Bool) async throws {
+            let deadline = ContinuousClock.now + .seconds(3)
+            while !condition(), ContinuousClock.now < deadline {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            try #require(condition(), "\(stage): \(details())")
+        }
+        try await waitFor("Mount native editor", details: "Text view found: \(find(host) != nil)") {
+            find(host)?.enclosingScrollView != nil
+        }
+        let text = try #require(find(host))
+        let scroll = try #require(text.enclosingScrollView)
+        func editorState(expected: String) -> String {
+            "Model matches: \(model.composer.text == expected), native text matches: \(text.string == expected), "
+                + "height: \(scroll.frame.height), minimum: \(ComposerLayout.minHeight), same editor: \(find(host) === text)"
+        }
+        let newlines = "\n\n\n"
+        model.composer.text = newlines
+        try await waitFor("Grow newline-only draft", details: editorState(expected: newlines)) {
+            text.string == newlines && scroll.frame.height > ComposerLayout.minHeight
+        }
+        #expect(!ComposerLayout.hasSendableText(model.composer.text))
+        model.composer.text = ""
+        try await waitFor("Clear back to minimum", details: editorState(expected: "")) {
+            text.string.isEmpty && abs(scroll.frame.height - ComposerLayout.minHeight) < 1
+        }
+        #expect(find(host) === text)
+    }
+
     @Test func multilineComposerKeepsLastLineVisible() async throws {
         _ = NSApplication.shared
         let oldTheme = DockThemeRuntime.current

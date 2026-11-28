@@ -94,6 +94,11 @@ final class ComposerEditorSynchronization: NSObject, @preconcurrency NSTextStora
             highlightedAccent = accent
             highlightCount += 1
         }
+        // A newly mounted or temporarily collapsed editor has no usable line width.
+        // Measuring it can wrap a short draft into many lines and publish that height.
+        guard textView.bounds.width > textView.textContainerInset.width * 2,
+            container.containerSize.width > 0
+        else { return }
         guard
             measuredGeneration != generation || measuredWidth != textView.bounds.width
                 || measuredContainerSize != container.containerSize || measuredPadding != container.lineFragmentPadding
@@ -107,9 +112,12 @@ final class ComposerEditorSynchronization: NSObject, @preconcurrency NSTextStora
         measuredPadding = container.lineFragmentPadding
         measuredInset = textView.textContainerInset
         measuredFont = textView.font
+        let extraLineBottom =
+            layout.extraLineFragmentTextContainer === container
+            ? layout.extraLineFragmentRect.maxY : 0
         let height = max(
             ComposerLayout.minHeight,
-            layout.usedRect(for: container).height + textView.textContainerInset.height * 2 + 4)
+            max(layout.usedRect(for: container).maxY, extraLineBottom) + textView.textContainerInset.height * 2 + 4)
         if publishedHeight != height {
             publishedHeight = height
             publishHeight(height)

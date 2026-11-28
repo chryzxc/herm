@@ -756,7 +756,7 @@ Chat keeps unsent text, attachments, context, and reply quotes with each session
 while Herm is open. Switch sessions, pages, or bots and return to continue your
 draft. Drafts are separate for each bot/profile and are cleared when Herm quits.
 Drafts are saved during navigation; typing continues to update only the composer.
-Short drafts keep the composer compact; it grows as text wraps.
+Short drafts keep the composer compact; it grows with wrapped and explicit lines and shrinks as text is removed.
 In narrow chat panes, the composer toolbar wraps so the model, quota, context,
 and send controls remain visible.
 Typing a leading `/` immediately opens the command menu while Hermes loads its commands.

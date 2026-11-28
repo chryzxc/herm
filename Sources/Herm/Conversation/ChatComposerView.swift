@@ -230,7 +230,7 @@ struct ChatComposerView: View {
 
     private func composerContent(suggestion: ComposerFollowUp?) -> some View {
         // Evaluate submission capabilities based on draft text, images, and steering state
-        let draftIsEmpty = composer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let draftIsEmpty = !ComposerLayout.hasSendableText(composer.text)
         let hasComposerContent =
             !draftIsEmpty || !model.pendingImages.isEmpty || !model.pendingPDFURLs.isEmpty
             || !model.attachedContexts.isEmpty
@@ -265,7 +265,7 @@ struct ChatComposerView: View {
         // Leave room for TextEditor's native top and bottom insets.
         let minimumComposerHeight = ComposerLayout.minHeight
         let effectiveComposerHeight = max(
-            minimumComposerHeight, draftIsEmpty ? ComposerLayout.minHeight : composerHeight)
+            minimumComposerHeight, composer.text.isEmpty ? ComposerLayout.minHeight : composerHeight)
         // One visual gutter shared by the native editor and placeholder. Do
         // not counteract TextEditor's internal padding with nested offsets:
         // those offsets made the caret look detached from the input edge.

@@ -3863,6 +3863,8 @@ beside More. Timing and other subdued monospaced metadata align to the trailing 
 without a divider before the hover-revealed timestamp. Hover and keyboard focus strengthen the control surface but
 never reveal or hide actions. The composer is one centered floating surface with
 the editor, attachments, model, reasoning, and send controls kept together.
+The shared editor stays compact for short drafts, grows for wrapped or explicit
+lines, and shrinks when lines are removed, including after restoring or sending a draft.
 Typing a leading `/` immediately opens the command menu with a loading status until
 Hermes returns the available commands; the forward composer behaves the same way.
 There is no dedicated Writing Tools button. All shared chat composers use native
