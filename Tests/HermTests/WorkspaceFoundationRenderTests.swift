@@ -157,22 +157,33 @@ struct WorkspaceFoundationRenderTests {
             if let text = view as? ComposerInputTextView { return text }
             return view.subviews.lazy.compactMap(find).first
         }
-        func waitFor(_ condition: () -> Bool) async throws {
+        func waitFor(_ stage: String, details: @autoclosure () -> String, _ condition: () -> Bool) async throws {
             let deadline = ContinuousClock.now + .seconds(3)
             while !condition(), ContinuousClock.now < deadline {
                 host.layoutSubtreeIfNeeded()
                 try await Task.sleep(for: .milliseconds(10))
             }
-            try #require(condition())
+            try #require(condition(), "\(stage): \(details())")
         }
-        try await waitFor { find(host)?.enclosingScrollView != nil }
+        try await waitFor("Mount native editor", details: "Text view found: \(find(host) != nil)") {
+            find(host)?.enclosingScrollView != nil
+        }
         let text = try #require(find(host))
         let scroll = try #require(text.enclosingScrollView)
-        model.composer.text = "\n\n\n"
-        try await waitFor { text.string == "\n\n\n" && scroll.frame.height > ComposerLayout.minHeight }
+        func editorState(expected: String) -> String {
+            "Model matches: \(model.composer.text == expected), native text matches: \(text.string == expected), "
+                + "height: \(scroll.frame.height), minimum: \(ComposerLayout.minHeight), same editor: \(find(host) === text)"
+        }
+        let newlines = "\n\n\n"
+        model.composer.text = newlines
+        try await waitFor("Grow newline-only draft", details: editorState(expected: newlines)) {
+            text.string == newlines && scroll.frame.height > ComposerLayout.minHeight
+        }
         #expect(!ComposerLayout.hasSendableText(model.composer.text))
         model.composer.text = ""
-        try await waitFor { text.string.isEmpty && abs(scroll.frame.height - ComposerLayout.minHeight) < 1 }
+        try await waitFor("Clear back to minimum", details: editorState(expected: "")) {
+            text.string.isEmpty && abs(scroll.frame.height - ComposerLayout.minHeight) < 1
+        }
         #expect(find(host) === text)
     }
 

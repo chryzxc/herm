@@ -81,7 +81,7 @@ struct ComposerInputEditor: NSViewRepresentable {
 
         scrollView.documentView = textView
         context.coordinator.synchronize(textView)
-        context.coordinator.reportContentHeight(for: textView)
+        context.coordinator.schedulePresentationUpdate(for: textView)
         return scrollView
     }
 
@@ -103,7 +103,7 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.onInspectContext = onInspectContext
         context.coordinator.synchronize(textView)
         context.coordinator.applyPendingCaret(in: textView)
-        context.coordinator.reportContentHeight(for: textView)
+        context.coordinator.schedulePresentationUpdate(for: textView)
 
         guard isFocused, scrollView.window?.firstResponder !== textView else { return }
         DispatchQueue.main.async { [weak coordinator = context.coordinator, weak textView, weak scrollView] in
@@ -205,6 +205,7 @@ struct ComposerInputEditor: NSViewRepresentable {
         func schedulePresentationUpdate(for textView: NSTextView) {
             guard !presentationUpdatePending else { return }
             presentationUpdatePending = true
+            // Do not publish height into SwiftUI state during a representable update.
             // Native wrapping settles after SwiftUI assigns the scroll view's width.
             DispatchQueue.main.async { [weak self, weak textView] in
                 guard let self else { return }
