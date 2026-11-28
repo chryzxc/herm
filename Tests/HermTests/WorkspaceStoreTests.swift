@@ -54,6 +54,27 @@ struct WorkspaceStoreTests {
         #expect(store.projectPathsBySessionID.isEmpty)
     }
 
+    @Test func statusUpdatePublishesOnceAndPreservesLookups() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let store = WorkspaceStore(fileURL: fixture.fileURL)
+        let task = store.ensureTask(title: "First", sessionID: "session-1")
+        store.attachProject(at: "/tmp/project", toSessionID: "session-1")
+        var publications = 0
+        let subscription = store.$tasks.dropFirst().sink { _ in publications += 1 }
+
+        store.updateStatus(.awaitingApproval, for: task.id)
+
+        #expect(publications == 1)
+        #expect(store.task(forSessionID: "session-1")?.status == .awaitingApproval)
+        #expect(store.projectPathsBySessionID["session-1"] == "/tmp/project")
+        store.updateTaskFromHermes(taskID: task.id, status: .inProgress, summary: "Updated")
+        #expect(publications == 2)
+        #expect(store.task(forSessionID: "session-1")?.summary == "Updated")
+        #expect(store.projectPathsBySessionID["session-1"] == "/tmp/project")
+        withExtendedLifetime(subscription) {}
+    }
+
     @Test func statusUpdatesAreScopedToTheOwningSession() throws {
         let fixture = try WorkspaceFixture()
         defer { fixture.remove() }

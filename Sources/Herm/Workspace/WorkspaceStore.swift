@@ -98,6 +98,12 @@ struct WorkspaceTask: Identifiable, Codable, Equatable {
 final class WorkspaceStore: ObservableObject {
     @Published private(set) var tasks: [WorkspaceTask] = [] {
         didSet {
+            let sameLookupKeys =
+                tasks.count == oldValue.count
+                && !zip(tasks, oldValue).contains { new, old in
+                    new.id != old.id || new.sessionID != old.sessionID || new.projectPath != old.projectPath
+                }
+            guard !sameLookupKeys else { return }
             taskIndexBySessionID = Dictionary(
                 tasks.indices.compactMap { index in tasks[index].sessionID.map { ($0, index) } },
                 uniquingKeysWith: { first, _ in first })
@@ -107,7 +113,7 @@ final class WorkspaceStore: ObservableObject {
         }
     }
     /// Views read these several times per render across thousands of tasks;
-    /// both are rebuilt only when `tasks` changes.
+    /// Rebuild only when identity, association, or row positions change.
     private var taskIndexBySessionID: [String: Int] = [:]
     private(set) var projectPathsBySessionID: [String: String] = [:]
     @Published private(set) var agentRuns: [WorkspaceAgentRun] = []
@@ -207,8 +213,10 @@ final class WorkspaceStore: ObservableObject {
     func updateStatus(_ status: WorkspaceTaskStatus, for taskID: UUID) {
         guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
         guard tasks[index].status != status else { return }
-        tasks[index].status = status
-        tasks[index].updatedAt = Date()
+        var task = tasks[index]
+        task.status = status
+        task.updatedAt = Date()
+        tasks[index] = task
         save()
     }
 
@@ -219,9 +227,11 @@ final class WorkspaceStore: ObservableObject {
 
     func updateTaskFromHermes(taskID: UUID, status: WorkspaceTaskStatus, summary: String? = nil) {
         guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
-        tasks[index].status = status
-        tasks[index].updatedAt = Date()
-        if let summary, !summary.isEmpty { tasks[index].summary = summary }
+        var task = tasks[index]
+        task.status = status
+        task.updatedAt = Date()
+        if let summary, !summary.isEmpty { task.summary = summary }
+        tasks[index] = task
         save()
     }
 
