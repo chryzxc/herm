@@ -2,7 +2,7 @@ import Combine
 import SwiftUI
 
 /// The 32pt bar along the bottom of the workspace card. Left: live work and
-/// what needs a decision. Right: context. Every item opens the work it counts.
+/// what needs a decision. Right: context. Each item previews its own status.
 struct WorkspaceStatusBar: View {
     static let height: CGFloat = 32
 
@@ -11,7 +11,7 @@ struct WorkspaceStatusBar: View {
     @ObservedObject var interruptions: HermInterruptionCoordinator
     @ObservedObject private var preferences = StatusBarPreferences.shared
     @State private var hoveredPreview: UUID?
-    @State private var pinnedItem: StatusBarItem?
+    @State private var pinnedItem: PreviewItem?
     var isFloating = false
     var isCompact = false
     var terminalScope: WorkspaceStatusModel.TerminalScope?
@@ -22,6 +22,11 @@ struct WorkspaceStatusBar: View {
     private struct TerminalMonitor: Equatable {
         let scope: WorkspaceStatusModel.TerminalProcessScope?
         let servers: Bool
+    }
+
+    private enum PreviewItem: Equatable {
+        case entry(StatusBarItem)
+        case heldNotifications
     }
 
     private var isVisible: Bool { preferences.isVisible(inFloatingPanel: isFloating) }
@@ -151,24 +156,33 @@ struct WorkspaceStatusBar: View {
     }
 
     private func quietRow(_ attention: [StatusBarEntry], held: Int?) -> some View {
-        HStack(spacing: 4) {
+        let quietLabel = interruptions.expiry.map { "Quiet until \(StatusBarLayout.clock($0))" }
+        return HStack(spacing: 4) {
             HStack(spacing: 6) {
                 DockIcon(.moon, size: 12, weight: .fill, color: .dockSecondaryText)
                     .accessibilityHidden(true)
-                Text(interruptions.expiry.map { "Quiet until \(StatusBarLayout.clock($0))" } ?? "Quiet")
-                    .monospacedDigit().lineLimit(1)
+                Text(quietLabel ?? "Quiet").monospacedDigit().lineLimit(1)
             }
             .foregroundStyle(Color.dockSecondaryText)
             .dockPadding(.horizontal, 8)
+            .modifier(
+                hoverPreview {
+                    .init(
+                        headline: quietLabel ?? "Quiet until you end it", title: "Quiet mode", icon: .moon,
+                        detail: "Banners and sounds are paused. Requests that need your attention still appear.",
+                        footerAction: .none)
+                })
             if !attention.isEmpty || held != nil { separator }
             // The attention queue remains reachable during Quiet mode.
             ForEach(attention) { chip($0) }
             if let held {
-                summaryChip(
-                    "\(held.formatted()) held", icon: .caretUp, help: "Banners and sounds waiting until quiet ends"
-                ) {
-                    status.openActivity()
+                summaryChip("\(held.formatted()) held", icon: .caretUp) {
+                    togglePreview(.heldNotifications)
                 }
+                .modifier(
+                    hoverPreview(for: .heldNotifications) {
+                        .heldNotifications(interruptions.entries, overflow: interruptions.overflow)
+                    })
             }
             Spacer(minLength: 8)
             Button {
@@ -178,6 +192,12 @@ struct WorkspaceStatusBar: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .buttonStyle(.dockSecondary)
+            .modifier(
+                hoverPreview {
+                    .init(
+                        headline: "Resume banners and sounds for new updates", title: "End quiet", icon: .bellRinging,
+                        footerAction: .none)
+                })
             trayButton
         }
     }
@@ -198,19 +218,28 @@ struct WorkspaceStatusBar: View {
             Text(message)
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(1)
-                .help("The displayed counts are from the last available update.")
+                .modifier(
+                    hoverPreview {
+                        .init(
+                            headline: message, title: "Connection status", icon: .plugs,
+                            detail: "The displayed counts are from the last available update.", footerAction: .none)
+                    })
             trayButton
         }
     }
 
     private func returnChip(_ summary: (since: Date, text: String)) -> some View {
-        summaryChip(
-            "Since \(StatusBarLayout.clock(summary.since)): \(summary.text)", icon: .arrowUpRight,
-            help: "What changed while you were away"
-        ) {
+        let since = "Since \(StatusBarLayout.clock(summary.since))"
+        return summaryChip("\(since): \(summary.text)", icon: .arrowUpRight) {
             status.dismissReturnSummary()
             perform(.tab(.usage))
         }
+        .modifier(
+            hoverPreview {
+                .init(
+                    headline: summary.text, title: "While you were away", icon: .clockCounterClockwise,
+                    detail: since, footerAction: .none)
+            })
     }
 
     // MARK: - Pieces
@@ -230,7 +259,7 @@ struct WorkspaceStatusBar: View {
     private func chip(_ entry: StatusBarEntry) -> some View {
         let isAttention = entry.tone == .decision
         return Button {
-            perform(entry.action)
+            activate(entry)
         } label: {
             let label = HStack(spacing: 5) {
                 if let icon = entry.icon {
@@ -256,7 +285,7 @@ struct WorkspaceStatusBar: View {
         .modifier(hoverPreview(for: entry))
     }
 
-    private func summaryChip(_ text: String, icon: Ph, help: String, action: @escaping () -> Void) -> some View {
+    private func summaryChip(_ text: String, icon: Ph, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: DockSpacing.micro) {
                 Text(text).dockFont(.metadata).underline().monospacedDigit().lineLimit(1)
@@ -268,7 +297,6 @@ struct WorkspaceStatusBar: View {
             .fixedSize()
             .contentShape(Capsule())
         }
-        .help(help)
     }
 
     /// Right-zone context with an affordance for navigation or a pinned preview.
@@ -292,13 +320,7 @@ struct WorkspaceStatusBar: View {
                 label.contentShape(Rectangle())
             } else {
                 Button {
-                    if entry.action == .preview {
-                        status.isTrayPresented = false
-                        hoveredPreview = nil
-                        pinnedItem = pinnedItem == entry.item ? nil : entry.item
-                    } else {
-                        perform(entry.action)
-                    }
+                    activate(entry)
                 } label: {
                     label.contentShape(Rectangle())
                 }
@@ -335,13 +357,22 @@ struct WorkspaceStatusBar: View {
     }
 
     private func hoverPreview(for entry: StatusBarEntry) -> some ViewModifier {
-        let pin = Binding(
-            get: { pinnedItem == entry.item },
-            set: { if !$0, pinnedItem == entry.item { pinnedItem = nil } })
+        hoverPreview(for: .entry(entry.item)) { status.layout.preview(for: entry) }
+    }
+
+    private func hoverPreview(
+        for item: PreviewItem? = nil, content: @escaping () -> StatusBarLayout.Preview
+    ) -> some ViewModifier {
+        let pin =
+            item.map { item in
+                Binding(
+                    get: { pinnedItem == item },
+                    set: { if !$0, pinnedItem == item { pinnedItem = nil } })
+            } ?? .constant(false)
         return StatusBarHoverPreview(
             selection: $hoveredPreview, isPinned: pin, allowsHover: !status.isTrayPresented && pinnedItem == nil
         ) {
-            preview(status.layout.preview(for: entry))
+            preview(content())
         }
     }
 
@@ -355,10 +386,24 @@ struct WorkspaceStatusBar: View {
     /// From the command registry, so the bar, menu and shortcut list agree.
     static let activityKeycap = HermCommand.all.first { $0.id == .toggleActivity }?.keycap ?? ""
 
+    private func activate(_ entry: StatusBarEntry) {
+        if entry.action == .preview {
+            togglePreview(.entry(entry.item))
+        } else {
+            perform(entry.action)
+        }
+    }
+
+    private func togglePreview(_ item: PreviewItem) {
+        status.isTrayPresented = false
+        hoveredPreview = nil
+        pinnedItem = pinnedItem == item ? nil : item
+    }
+
     private func perform(_ action: StatusBarEntry.Action) {
         hoveredPreview = nil
         pinnedItem = nil
-        if action == .tray { status.openActivity() } else { performAction(action) }
+        performAction(action)
     }
 
     // MARK: - Right-click

@@ -1392,10 +1392,10 @@ or in the rail’s gear menu under **Status bar**. The bar uses regular-weight l
 highlights work that needs attention with an amber count badge. It also shows the next
 meeting or routine if it starts within 30 minutes. Click the countdown to open the
 scheduled item. Calendar events appear when Herm already has Calendar access.
-Hover over a status item for details. Running work and items ready for review show Bot avatars
+Hover over a status item for its own preview. Running work and items ready for review show Bot avatars
 when Herm can resolve the Bot’s identity. Running work includes active Bots from other profiles.
-Click the running count to keep its preview open.
-Click the count or press ⌘J to open the Activity popover. It shows up to two items that need attention,
+Click the attention, held, or running count to keep that preview open.
+Click **Activity** or press ⌘J to open the Activity popover. It shows up to two items that need attention,
 or one running or recently finished item. Click a linked item to open it, or choose
 **Open Activity** for the workspace page. When the bar is hidden, ⌘J opens that page directly.
 Quiet hours, reconnects, and a summary when you come back use the same strip. Use **End quiet**

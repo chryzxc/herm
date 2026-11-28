@@ -914,9 +914,9 @@ New Git revisions and terminal verification events recheck test evidence without
   color. Quiet mode and held counts use secondary ink, and summary links have a navigation glyph
   and underline. The Activity shortcut follows the action label in secondary ink. Compact layouts
   show the Activity pulse icon and keep the shortcut available.
-- With default item settings, the visible bar shows the attention count
-  and the trailing Activity button. Both open the Activity preview. The badge and preview share
-  the same inventory of approvals, questions, blocked cards, failures, and failing checks on the user's pull requests.
+- With default item settings, the visible bar shows the attention count and the trailing Activity button.
+  Needs attention has a dedicated preview of approvals, questions, blocked cards, failures, and
+  failing checks on the user's pull requests. The Activity snapshot uses the same attention inventory.
   Queued Bot work does not count as running.
 - The default context beside Activity is the nearest meeting or enabled routine in
   the next 30 minutes. It opens that item directly. Mac meetings honor Calendar access and
@@ -942,9 +942,12 @@ New Git revisions and terminal verification events recheck test evidence without
   leads to the full workspace page through the existing rail destination.
 - Running work combines task rows with the notch’s shared Bot activity board, so switching
   profiles keeps other running Bots visible without counting the same work twice.
-- Hovering over a status item opens an anchored popover after a short delay. Running work and
-  review previews show their own items with a Bot avatar for a resolved identity. The preview
-  stays open while the pointer crosses to it. Clicking the running count pins its preview.
+- Hovering over a status item opens its own anchored popover after a short delay. Running work and
+  review previews show their own items with a Bot avatar for a resolved identity. Quiet shows its
+  expiry and notification behavior. Held notifications shows up to two recent updates and includes
+  older updates in the count. End quiet, reconnecting, and the return summary each explain their status.
+  The preview stays open while the pointer crosses to it. Clicking Needs attention, the held count,
+  or the running count pins that item's popover.
   Clicking Activity or pressing ⌘J opens the Activity popover until dismissed.
   When the bar is hidden, ⌘J opens the Activity workspace directly.
 - Right-click toggles items, opens Settings › Status bar, or hides the bar. Settings › Status bar

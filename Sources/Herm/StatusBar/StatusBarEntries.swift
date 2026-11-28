@@ -43,7 +43,6 @@ struct StatusBarEntry: Identifiable, Equatable {
     enum Action: Equatable {
         case task(EdgeNotchTask)
         case tab(ControlTab)
-        case tray
         case preview
         case pullRequests
         case url(URL)
@@ -57,7 +56,7 @@ struct StatusBarEntry: Identifiable, Equatable {
     var icon: Ph?
     let text: String
     let tone: Tone
-    var action: Action = .tray
+    var action: Action
     var help: String = ""
     var compactText: String? = nil
 
@@ -155,12 +154,30 @@ struct StatusBarLayout: Equatable {
         var detail: String?
         var footerAction: StatusBarEntry.Action = .tab(.usage)
         var footerTitle = "Open Activity"
+
+        @MainActor static func heldNotifications(_ notices: [HermNotice], overflow: Int) -> Self {
+            let count = notices.count + overflow
+            let rows = notices.suffix(2).reversed().map { notice in
+                Row(
+                    id: notice.id, title: notice.kind.title, status: StatusBarLayout.clock(notice.createdAt),
+                    icon: .bellSimple, action: .none)
+            }
+            return Self(
+                headline: "\(count.formatted()) held \(count == 1 ? "notification" : "notifications")",
+                rows: rows, title: "Held notifications", icon: .bellSimpleSlash,
+                detail: rows.isEmpty ? "Details of earlier notifications are unavailable." : nil,
+                footerAction: .none)
+        }
     }
 
     func preview(for entry: StatusBarEntry) -> Preview {
         let tasks: [EdgeNotchTask]
         switch entry.item {
-        case .needsYou: return preview
+        case .needsYou:
+            return Preview(
+                headline: isStale ? unavailableHeadline : attentionLabel,
+                rows: isStale ? [] : attentionRows(), title: entry.item.title, icon: .warning,
+                detail: isStale ? "The count is from the last available update." : entry.item.detail)
         case .agentActivity:
             return Preview(
                 headline: entry.text, rows: runningRows(limit: 2), title: entry.item.title, icon: entry.icon ?? .pulse)
@@ -182,17 +199,10 @@ struct StatusBarLayout: Equatable {
 
     var preview: Preview {
         if isStale {
-            return Preview(headline: isOffline ? "Hermes Agent is offline" : "Activity status unavailable")
+            return Preview(headline: unavailableHeadline)
         }
         if attentionCount > 0 {
-            let limit = 2
-            let tasks = summary.attention.prefix(limit).map(Preview.Row.init(task:))
-            let pulls = attentionPullRequests.prefix(limit - tasks.count).map { pull in
-                Preview.Row(
-                    id: pull.id, title: "#\(pull.number) \(pull.title)", status: "Checks failed", icon: .gitPullRequest,
-                    action: pull.webURL.map(StatusBarEntry.Action.url) ?? .pullRequests)
-            }
-            return Preview(headline: attentionLabel, rows: tasks + pulls)
+            return Preview(headline: attentionLabel, rows: attentionRows())
         }
         if summary.runningCount > 0 {
             return Preview(headline: "\(summary.runningCount) running", rows: runningRows(limit: 1))
@@ -201,6 +211,21 @@ struct StatusBarLayout: Equatable {
             return Preview(headline: "Recently finished", rows: [Preview.Row(task: task)])
         }
         return Preview(headline: "No current activity")
+    }
+
+    private var unavailableHeadline: String {
+        isOffline ? "Hermes Agent is offline" : "Activity status unavailable"
+    }
+
+    private func attentionRows() -> [Preview.Row] {
+        let limit = 2
+        let tasks = summary.attention.prefix(limit).map(Preview.Row.init(task:))
+        let pulls = attentionPullRequests.prefix(limit - tasks.count).map { pull in
+            Preview.Row(
+                id: pull.id, title: "#\(pull.number) \(pull.title)", status: "Checks failed", icon: .gitPullRequest,
+                action: pull.webURL.map(StatusBarEntry.Action.url) ?? .pullRequests)
+        }
+        return tasks + pulls
     }
 
     private func runningRows(limit: Int) -> [Preview.Row] {
@@ -230,7 +255,7 @@ struct StatusBarLayout: Equatable {
             layout.chips.append(
                 StatusBarEntry(
                     item: .needsYou, icon: .warning, text: layout.attentionLabel,
-                    tone: .decision, action: .tray, help: "Preview what needs attention"))
+                    tone: .decision, action: .preview))
         }
         var context: [StatusBarEntry] = []
         if let upcoming = Self.upcoming(input) { context.append(upcoming) }
