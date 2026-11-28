@@ -125,7 +125,7 @@ struct SessionInspector: View {
     var body: some View {
         let _ = HermPerformanceRecorder.countBody("SessionInspector")
         let _ = modelRevision
-        VStack(spacing: 0) {
+        let content = VStack(spacing: 0) {
             if showsHeader {
                 inspectorHeader
             }
@@ -227,7 +227,13 @@ struct SessionInspector: View {
         } message: {
             Text("The foreground commands will stop. Other terminal groups stay open.")
         }
-        .onReceive(model.inspectorPresentationChanges) { _ in modelRevision &+= 1 }
+        return observeInspector(content)
+    }
+
+    private func observeInspector(_ content: some View) -> some View {
+        content.onReceive(model.inspectorPresentationChanges) { _ in
+            modelRevision &+= 1
+        }
         .onReceive(control.$projectFacts.dropFirst()) { _ in modelRevision &+= 1 }
         .onReceive(browsers.presentationChanges(for: hostVisible ? model.browserSessionKey : nil)) { _ in
             modelRevision &+= 1
@@ -341,17 +347,19 @@ struct SessionInspector: View {
                 reopen(.changes)
             }
         }
-        .onReceive(browsers.$presentation) { key in
-            guard let key, key == model.browserSessionKey else { return }
-            reopen(.browser)
-            // Published emits before assignment; consume after the request is stored.
-            Task { @MainActor in
-                if browsers.presentation == key { browsers.presentation = nil }
-            }
-        }
+        .onReceive(browsers.$presentation, perform: handleBrowserPresentation)
         .onChange(of: model.browserSessionKey, initial: true) { _, _ in
             if let id = selectedExtraID, !extras.contains(where: { $0.id == id }) { selectedExtraID = nil }
             if !openSections.contains(selectedSection), let first = openSections.first { selectedSection = first }
+        }
+    }
+
+    private func handleBrowserPresentation(_ key: SessionBrowserKey?) {
+        guard let key, key == model.browserSessionKey else { return }
+        reopen(.browser)
+        // Published emits before assignment; consume after the request is stored.
+        Task { @MainActor in
+            if browsers.presentation == key { browsers.presentation = nil }
         }
     }
 
