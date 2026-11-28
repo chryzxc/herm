@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Foundation
 import Testing
+import os
 
 @testable import Herm
 
@@ -100,23 +101,7 @@ struct BrowserFramePerformanceTests {
     }
 
     @Test func losslessFramesDecodeAwayFromTheMainActor() async throws {
-        let bitmap = try #require(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 16, bitsPerSample: 8,
-                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-                bytesPerRow: 0, bitsPerPixel: 0))
-        // Avoid AppKit color conversion: it can yield transparent pixels without an app color space.
-        let pixels = try #require(bitmap.bitmapData)
-        for y in 0..<16 {
-            for x in 0..<32 {
-                let offset = y * bitmap.bytesPerRow + x * 4
-                pixels[offset] = 255
-                pixels[offset + 1] = 0
-                pixels[offset + 2] = 0
-                pixels[offset + 3] = 255
-            }
-        }
-        let base64 = try #require(bitmap.representation(using: .png, properties: [:])).base64EncodedString()
+        let base64 = try losslessFramePayload()
         let event: [String: Any] = [
             "method": "Page.screencastFrame", "sessionId": "visible",
             "params": ["data": base64, "sessionId": 12],
@@ -140,5 +125,89 @@ struct BrowserFramePerformanceTests {
         #expect(pixel.greenComponent == 0)
         #expect(CDPConnection.decodeFrame("invalid base64") == nil)
         #expect(CDPConnection.decodeFrame(Data("not an image".utf8).base64EncodedString()) == nil)
+    }
+
+    @Test func frameCreditPrecedesPayloadHandling() throws {
+        let base64 = try losslessFramePayload()
+        let enqueued = OSAllocatedUnfairLock(initialState: [String]())
+        let writer = CDPConnection.Writer { text, _ in enqueued.withLock { $0.append(text) } }
+        func commands() throws -> [WireCommand] {
+            try enqueued.withLock { $0 }.map { try JSONDecoder().decode(WireCommand.self, from: Data($0.utf8)) }
+        }
+
+        writer.write("Page.enable", session: "visible")
+        var expected = [WireCommand(id: 1, method: "Page.enable", sessionId: "visible", params: [:])]
+        let wanted = try frameMessage(session: "visible", frame: 12, payload: base64)
+        expected.append(
+            WireCommand(id: 2, method: "Page.screencastFrameAck", sessionId: "visible", params: ["sessionId": 12]))
+        let decoded = CDPConnection.decode(wanted, writer: writer) { session in
+            #expect((try? commands()) == expected, "Expected matching frame credit enqueued before payload handling")
+            return session == "visible"
+        }
+        let params = try #require(decoded?["params"] as? [String: Any])
+        #expect((params["decodedFrame"] as? CDPConnection.Frame)?.image.width == 32)
+        writer.write("Target.getTargets")
+        expected.append(WireCommand(id: 3, method: "Target.getTargets", sessionId: nil, params: [:]))
+        #expect(try commands() == expected)
+
+        for (session, frame, payload) in [("stale", 13, base64), ("visible", 14, "invalid base64")] {
+            let message = try frameMessage(session: session, frame: frame, payload: payload)
+            let decoded = CDPConnection.decode(message, writer: writer) { $0 == "visible" }
+            let params = try #require(decoded?["params"] as? [String: Any])
+            #expect(params["decodedFrame"] == nil)
+            expected.append(
+                WireCommand(
+                    id: expected.count + 1, method: "Page.screencastFrameAck", sessionId: session,
+                    params: ["sessionId": frame]))
+            #expect(try commands() == expected)
+        }
+
+        let invalidIDs: [(session: Any?, frame: Any?)] = [(nil, 12), (42, 12), ("visible", nil), ("visible", "12")]
+        for (session, frame) in invalidIDs {
+            let message = try frameMessage(session: session, frame: frame, payload: base64)
+            _ = try #require(CDPConnection.decode(message, writer: writer) { _ in true })
+            #expect(try commands() == expected)
+        }
+
+        let reply: [String: Any] = ["id": 1, "sessionId": "visible", "result": ["sessionId": 12]]
+        let message = URLSessionWebSocketTask.Message.data(try JSONSerialization.data(withJSONObject: reply))
+        let decodedReply = try #require(CDPConnection.decode(message, writer: writer) { _ in true })
+        #expect(decodedReply as NSDictionary == reply as NSDictionary)
+        #expect(try commands() == expected)
+    }
+
+    private struct WireCommand: Decodable, Equatable {
+        let id: Int
+        let method: String
+        let sessionId: String?
+        let params: [String: Int]
+    }
+
+    private func frameMessage(session: Any?, frame: Any?, payload: String) throws -> URLSessionWebSocketTask.Message {
+        var params: [String: Any] = ["data": payload]
+        params["sessionId"] = frame
+        var event: [String: Any] = ["method": "Page.screencastFrame", "params": params]
+        event["sessionId"] = session
+        return .data(try JSONSerialization.data(withJSONObject: event))
+    }
+
+    private func losslessFramePayload() throws -> String {
+        let bitmap = try #require(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 16, bitsPerSample: 8,
+                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                bytesPerRow: 0, bitsPerPixel: 0))
+        // Avoid AppKit color conversion: it can yield transparent pixels without an app color space.
+        let pixels = try #require(bitmap.bitmapData)
+        for y in 0..<16 {
+            for x in 0..<32 {
+                let offset = y * bitmap.bytesPerRow + x * 4
+                pixels[offset] = 255
+                pixels[offset + 1] = 0
+                pixels[offset + 2] = 0
+                pixels[offset + 3] = 255
+            }
+        }
+        return try #require(bitmap.representation(using: .png, properties: [:])).base64EncodedString()
     }
 }
