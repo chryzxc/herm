@@ -191,7 +191,8 @@ final class HermesControlRPC {
                 if status["connected"] as? Bool == true, status["url"] as? String == cdpURL { return }
             }
         }
-        let detail = (result["message"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let detail =
+            (result["message"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             ?? "Hermes could not connect to the browser."
         throw NSError(domain: "Herm.AgentBrowser", code: 1, userInfo: [NSLocalizedDescriptionKey: detail])
     }

@@ -56,16 +56,21 @@ struct SessionBrowserTests {
         let owner = SessionBrowserKey(profileID: "bot", sessionID: "owned-chat")
         let connection = UUID()
         for id in ["exact", "lookalike"] {
-            browser.handle("Target.targetInfoChanged", ["targetInfo": [
-                "type": "page", "targetId": id, "url": "https://example.com/same-page",
-            ]], nil)
+            browser.handle(
+                "Target.targetInfoChanged",
+                [
+                    "targetInfo": [
+                        "type": "page", "targetId": id, "url": "https://example.com/same-page",
+                    ]
+                ], nil)
         }
         let first = try #require(await browser.prepareForTurn(client: client, connection: connection))
         let old = ChatContext.SharedBrowserTab(owner: owner, generation: first, targetID: "exact")
         var sent = 0
         func admit(_ tab: ChatContext.SharedBrowserTab, generation: UUID?, current: Bool = true) throws {
             try HermesGateway.checkPromptAdmission(
-                [tab], profile: owner.profileID, handoff: generation.map { (browser, $0) }, connectionIsCurrent: current)
+                [tab], profile: owner.profileID, handoff: generation.map { (browser, $0) }, connectionIsCurrent: current
+            )
             sent += 1
         }
         try admit(old, generation: first)
@@ -81,8 +86,9 @@ struct SessionBrowserTests {
         #expect(await rebound?.value == true)
         let second = try #require(await browser.prepareForTurn(client: client, connection: connection))
         #expect(second != first)
-        #expect(client.requests.compactMap { $0["action"] as? String }
-            == ["status", "connect", "status", "status", "connect", "status"])
+        #expect(
+            client.requests.compactMap { $0["action"] as? String }
+                == ["status", "connect", "status", "status", "connect", "status"])
         #expect(throws: PromptAdmissionError.self) { try admit(old, generation: second) }
         let fresh = ChatContext.SharedBrowserTab(owner: owner, generation: second, targetID: "exact")
         try admit(fresh, generation: second)

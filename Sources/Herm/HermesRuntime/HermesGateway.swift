@@ -252,7 +252,7 @@ final class HermesGateway: NSObject {
         if socket == nil {
             do {
                 try await connect()
-            } catch where !sharedBrowserTabs.isEmpty {
+            } catch  where !sharedBrowserTabs.isEmpty {
                 throw PromptAdmissionError.sharedBrowserUnavailable
             }
         }
@@ -265,7 +265,8 @@ final class HermesGateway: NSObject {
         }
         if preparesBrowser || !sharedBrowserTabs.isEmpty {
             try Self.checkPromptAdmission(
-                sharedBrowserTabs, profile: profile, handoff: handoff, connectionIsCurrent: isCurrentConnection(connection))
+                sharedBrowserTabs, profile: profile, handoff: handoff,
+                connectionIsCurrent: isCurrentConnection(connection))
         }
         let response = try await send(
             method: method, params: HermesSimulatorPreference.applying(to: params, method: method))

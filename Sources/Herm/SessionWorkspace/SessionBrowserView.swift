@@ -27,7 +27,8 @@ enum InAppBrowser {
 @MainActor
 final class AgentPreviewReveal {
     enum Selection: Equatable {
-        case primary, extra(UUID)
+        case primary
+        case extra(UUID)
 
         var extraID: UUID? {
             if case .extra(let id) = self { return id }
@@ -67,7 +68,10 @@ extension DockModel {
         if let address, let url = URL(string: address), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
             let host = url.host(), !host.isEmpty
         {
-            if !inHerm { external(url); return }
+            if !inHerm {
+                external(url)
+                return
+            }
             if let request = AgentPreviewReveal(url: url, owner: self) {
                 reveal(request)
                 if request.selection != nil { return }

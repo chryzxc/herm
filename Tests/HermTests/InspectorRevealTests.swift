@@ -14,9 +14,9 @@ struct InspectorRevealTests {
         let key = try #require(owner.browserSessionKey)
         let expected: AgentPreviewReveal.Selection = extra ? .extra(UUID()) : .primary
         let messagesBefore = owner.messages.count
-        owner.presentAgentPreview("https://example.com/preview", inHerm: true, external: { _ in
+        owner.presentAgentPreview("https://example.com/preview", inHerm: true) { _ in
             Issue.record("Unexpected external open")
-        }) { request in
+        } reveal: { request in
             request.present(in: other, canPresent: true) { _ in
                 Issue.record("A competing chat claimed the request")
                 return .primary
@@ -46,7 +46,9 @@ struct InspectorRevealTests {
         }
         let messageCount = owner.messages.count
         var openedURL: URL?
-        owner.presentAgentPreview(address, inHerm: false, external: { openedURL = $0 }) { _ in
+        owner.presentAgentPreview(address, inHerm: false) {
+            openedURL = $0
+        } reveal: { _ in
             Issue.record("Explicit external preference offered to an inspector")
         }
         #expect(openedURL?.absoluteString == address)

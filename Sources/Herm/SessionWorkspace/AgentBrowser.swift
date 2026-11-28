@@ -534,9 +534,11 @@ final class AgentBrowser: ObservableObject {
     }
 
     func admits(_ tabs: [ChatContext.SharedBrowserTab], generation: UUID) -> Bool {
-        state == .running && !handoffFailed && lifecycleGeneration == generation && tabs.allSatisfy { tab in
-            tab.owner.profileID == profileID && tab.generation == generation && pages.contains { $0.id == tab.targetID }
-        }
+        state == .running && !handoffFailed && lifecycleGeneration == generation
+            && tabs.allSatisfy { tab in
+                tab.owner.profileID == profileID && tab.generation == generation
+                    && pages.contains { $0.id == tab.targetID }
+            }
     }
 
     /// Shows `session`'s tab: the one it last showed, else the current one becomes its tab.

@@ -360,10 +360,11 @@ extension DockModel {
                     let nsError = error as NSError
                     transportFailure = nsError.domain == NSURLErrorDomain || nsError.domain == NSPOSIXErrorDomain
                 }
-                let message = (error as? PromptAdmissionError)?.errorDescription
+                let message =
+                    (error as? PromptAdmissionError)?.errorDescription
                     ?? (transportFailure
-                    ? "I couldn’t connect to Hermes: \(Self.safeUserDiagnostic(error.localizedDescription))"
-                    : "Hermes couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                        ? "I couldn’t connect to Hermes: \(Self.safeUserDiagnostic(error.localizedDescription))"
+                        : "Hermes couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))")
                 if !pendingSessionSends.contains(where: { $0.id == sendID && $0.phase == .uncertain }) {
                     messages.append(ChatMessage(role: .hermes, text: message, modelName: currentModelName))
                 }

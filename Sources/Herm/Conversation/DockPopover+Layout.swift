@@ -75,18 +75,7 @@ extension DockPopover {
             }
             .onReceive(NotificationCenter.default.publisher(for: .hermOpenAgentPreview)) { notification in
                 guard let request = notification.object as? AgentPreviewReveal else { return }
-                request.present(
-                    in: model,
-                    canPresent: hostPresentation.isVisible && !isGlobalSurfaceActive && openGroupRoom == nil
-                        && expandedReviewRouter.layers.isEmpty
-                        && (sessionWorkspaceMode == .chat || sessionWorkspaceMode == .explorer)
-                ) { key in
-                    guard let selection = SessionBrowserStore.shared.presentAgentPreview(request.url, owner: key)
-                    else { return nil }
-                    if isNarrowLayout && sessionWorkspaceMode == .explorer { selectSessionMode(.chat) }
-                    showSessionRailInspector(.browser, browserTabID: selection.extraID, conversation: model)
-                    return selection
-                }
+                handleAgentPreviewReveal(request)
             }
             .onReceive(NotificationCenter.default.publisher(for: .hermOpenGroupRoom)) { notification in
                 guard let roomID = notification.userInfo?[GroupReplyNotifier.roomKey] as? String else { return }
@@ -120,6 +109,20 @@ extension DockPopover {
             .onChange(of: speechInput.isRecording) { _, isRecording in
                 handleRecordingChange(isRecording)
             }
+    }
+
+    private func handleAgentPreviewReveal(_ request: AgentPreviewReveal) {
+        let canPresent =
+            hostPresentation.isVisible && !isGlobalSurfaceActive && openGroupRoom == nil
+            && expandedReviewRouter.layers.isEmpty
+            && (sessionWorkspaceMode == .chat || sessionWorkspaceMode == .explorer)
+        request.present(in: model, canPresent: canPresent) { key in
+            guard let selection = SessionBrowserStore.shared.presentAgentPreview(request.url, owner: key)
+            else { return nil }
+            if isNarrowLayout && sessionWorkspaceMode == .explorer { selectSessionMode(.chat) }
+            showSessionRailInspector(.browser, browserTabID: selection.extraID, conversation: model)
+            return selection
+        }
     }
 
     func observerLayerTwo<V: View>(_ view: V) -> some View {
