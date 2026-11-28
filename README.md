@@ -1213,7 +1213,7 @@ Dragging a card smoothly fades its source and highlights valid destination lanes
 - **Send to chat** in a card’s menu opens Chats with a new conversation and the task attached as a removable context chip, ready for your next message.
 - Reads and edits the **real Hermes board**: create, complete, block or unblock, archive, comment on, schedule, assign, promote, and reclaim tasks.
 - Drag cards between Triage, Todo, and Ready, or use **Move to** in the always-visible three-dot menu. Done and Blocked drops require their supported action and confirmation; Running, Review, and Scheduled are managed by Hermes. Details remains available from the loaded card summary.
-- Dragging lifts the full card under your pointer and leaves a faint placeholder; cancel returns it to its original position. Confirmed lane updates ease into place.
+- Dragging lifts the full card under your pointer and leaves a faint placeholder. If a drag is interrupted, the preview clears without moving the card and you can drag again. Confirmed lane updates ease into place.
 - Use the lane carets to collapse columns into labeled rails and expand them again. Select a card to read its description and activity in the inspector.
 - The board menu in the toolbar switches boards and offers **New board…**. Herm reads and creates boards through the Hermes Kanban dashboard API, the same one that loads the board, and falls back to the Hermes CLI. Herm derives the board's slug from its name, creates it with Hermes, and opens it. Hermes Agent shares boards across every profile, so the menu already lists every profile's boards.
 - Filters for status, assignee, "mine", and session are passed to Hermes.

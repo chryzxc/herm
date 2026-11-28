@@ -182,7 +182,8 @@ struct KanbanBoardView: View, Equatable {
         lane: KanbanLane,
         snapshot: KanbanBoardPresentation.Snapshot,
         now: Date,
-        draggable: Bool
+        draggable: Bool,
+        isLifted: Bool = false
     ) -> some View {
         KanbanTaskCard(
             task: task,
@@ -197,6 +198,7 @@ struct KanbanBoardView: View, Equatable {
             pendingActionIDs: pendingActionIDs.filter { $0.hasSuffix(":\(task.id)") },
             isLoadingDetail: loadingDetailTaskID == task.id,
             assignableBots: bots,
+            isLifted: isLifted,
             drag: draggable ? drag : nil,
             onSelect: onSelect,
             onAction: onAction,
@@ -294,20 +296,12 @@ struct KanbanBoardView: View, Equatable {
             stroke: drag.target == lane ? lane.color.opacity(0.7) : nil)
     }
 
-    /// The dragged card stays mounted so its gesture keeps running: it leaves a
-    /// slot behind, and collapses once another lane has opened a gap for it.
+    /// Keep the gesture's source at its original size so the lazy stack doesn't evict it mid-drag.
     private func sourceAwareCard(
         _ task: KanbanTaskSummary, lane: KanbanLane, snapshot: KanbanBoardPresentation.Snapshot, now: Date
     ) -> some View {
-        let isSource = drag.session?.task.id == task.id
-        let collapsed = isSource && drag.target != nil
-        return card(task, lane: lane, snapshot: snapshot, now: now, draggable: true)
-            .opacity(isSource ? 0 : 1)
-            .overlay {
-                if isSource && !collapsed { KanbanDropSlot(height: nil, tint: lane.color) }
-            }
-            .frame(height: collapsed ? 0 : nil, alignment: .top)
-            .dockPadding(.bottom, collapsed ? -KanbanDragController.cardSpacing : 0)
+        let isLifted = drag.session?.task.id == task.id
+        return card(task, lane: lane, snapshot: snapshot, now: now, draggable: true, isLifted: isLifted)
     }
 }
 
@@ -394,6 +388,7 @@ private struct KanbanTaskCard: View, Equatable {
     let pendingActionIDs: Set<String>
     let isLoadingDetail: Bool
     let assignableBots: [BotSummary]
+    let isLifted: Bool
     /// The board's drag controller; `nil` for the lifted copy, which is not interactive.
     let drag: KanbanDragController?
     let onSelect: (KanbanTaskSummary) -> Void
@@ -403,6 +398,7 @@ private struct KanbanTaskCard: View, Equatable {
 
     // Hover is local so it re-renders one card, not the board.
     @State private var isHovered = false
+    @GestureState private var isDragging = false
     @Environment(\.chatContextRouter) private var chatRouter
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if DEBUG
@@ -412,6 +408,7 @@ private struct KanbanTaskCard: View, Equatable {
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.isSelected == rhs.isSelected
             && lhs.isLoadingDetail == rhs.isLoadingDetail
+            && lhs.isLifted == rhs.isLifted
             && lhs.activityLabel == rhs.activityLabel
             && lhs.actions == rhs.actions
             && lhs.pendingActionIDs == rhs.pendingActionIDs
@@ -473,15 +470,28 @@ private struct KanbanTaskCard: View, Equatable {
                     .stroke(Color.dockAccent.opacity(0.7), lineWidth: 1)
             }
         }
+        .opacity(isLifted ? 0 : 1)
+        .overlay {
+            if isLifted {
+                KanbanDropSlot(height: nil, tint: lane.color).allowsHitTesting(false)
+            }
+        }
         .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         .dockHoverable()
         .dockTapAction { onSelect(task) }
         .gesture(
             DragGesture(minimumDistance: 4, coordinateSpace: .named(KanbanDragController.space))
-                .onChanged { [drag] in drag?.dragChanged(task: task, lane: lane, value: $0) }
-                .onEnded { [drag] _ in drag?.dragEnded() },
+                .updating($isDragging) { _, active, _ in active = true }
+                .onChanged { [drag] in
+                    drag?.dragChanged(task: task, lane: lane, start: $0.startLocation, location: $0.location)
+                }
+                .onEnded { [drag] _ in drag?.dragEnded(taskID: task.id) },
             including: isDraggable && drag != nil ? .all : .subviews
         )
+        .onChange(of: isDragging) { _, active in
+            if !active { cancelInterruptedDrag() }
+        }
+        .onDisappear(perform: cancelInterruptedDrag)
         // Attached after the tap/drag gestures so they cannot swallow the
         // click, and kept in the tree so losing hover while the menu is open
         // does not tear it down.
@@ -508,6 +518,7 @@ private struct KanbanTaskCard: View, Equatable {
             .fixedSize()
             .dockPadding(.top, 6)
             .dockPadding(.trailing, 6)
+            .opacity(isLifted ? 0 : 1)
             .disabled(isMutationPending)
             .help("More Kanban actions")
             .accessibilityLabel("More actions for \(task.title)")
@@ -524,6 +535,12 @@ private struct KanbanTaskCard: View, Equatable {
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel("\(task.title), \(lane.rawValue)")
         .accessibilityAction { onSelect(task) }
+    }
+
+    private func cancelInterruptedDrag() {
+        guard let drag, let session = drag.session, session.task.id == task.id, session.source == lane else { return }
+        // Gesture state also resets on a normal release. Give onEnded first claim to settle it.
+        Task { @MainActor in drag.cancelDrag(session.id) }
     }
 
     private var isMutationPending: Bool { pendingActionIDs.contains { $0.hasSuffix(":\(task.id)") } }
