@@ -909,7 +909,12 @@ use the active session's existing terminal workspaces.
 New Git revisions and terminal verification events recheck test evidence without clearing the current local server. Turning the bar off stops its idle clock.
 `StatusBarLayout.make` is the pure rule for what shows, in which order and tone (`StatusBarLayoutTests`).
 
-- With default item settings, the visible bar shows the attention count (a `.dockWarning` pill)
+- Status bar text uses regular weight. The attention count stands out with a filled warning glyph
+  and a `.dockWarning` capsule with a tinted rim. Trailing warnings and failures use semantic icon
+  color. Quiet mode and held counts use secondary ink, and summary links have a navigation glyph
+  and underline. The Activity shortcut follows the action label in secondary ink. Compact layouts
+  show the Activity pulse icon and keep the shortcut available.
+- With default item settings, the visible bar shows the attention count
   and the trailing Activity button. Both open the Activity preview. The badge and preview share
   the same inventory of approvals, questions, blocked cards, failures, and failing checks on the user's pull requests.
   Queued Bot work does not count as running.
@@ -926,9 +931,10 @@ New Git revisions and terminal verification events recheck test evidence without
   everywhere, Calendar on this Mac, and repository status, pull requests, local previews,
   verification, and simulators with the Local gateway. Unavailable items hide in the bar and
   say why in Settings.
-- Modes replace the row in place: Quiet ("Quiet until 14:30", attention still shown, "N held",
-  End quiet), Stale (dimmed, inert, with a reconnecting message when Hermes Agent is offline), and a return summary
-  chip ("While you were away: 3 finished · 1 needs you") after idle past the chosen minutes.
+- Modes share the same row. Quiet shows "Quiet until 14:30", the attention count, "N held", and
+  End quiet. When space is tight, Quiet folds the held count first. Stale counts dim and become
+  inert, with a reconnecting message when Hermes Agent is offline. After the selected idle period,
+  a return summary chip can show "While you were away: 3 finished · 1 needs you".
 - The pulse icon and ⌘J open the 344pt Activity popover with one status headline and at most two rows.
   Attention takes priority, then one running item or one recent result. A row opens its source
   when Herm can resolve it. Empty and offline states use the same status slot. Open Activity

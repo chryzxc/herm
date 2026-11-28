@@ -142,23 +142,42 @@ struct WorkspaceStatusBar: View {
     // MARK: - Modes
 
     private func quiet(_ layout: StatusBarLayout) -> some View {
+        let attention = layout.chips.filter { $0.item == .needsYou }
+        let held = interruptions.entries.count + interruptions.overflow
+        return ViewThatFits(in: .horizontal) {
+            if held > 0 { quietRow(attention, held: held) }
+            quietRow(attention, held: nil)
+        }
+    }
+
+    private func quietRow(_ attention: [StatusBarEntry], held: Int?) -> some View {
         HStack(spacing: 4) {
             HStack(spacing: 6) {
                 DockIcon(.moon, size: 12, weight: .fill, color: .dockSecondaryText)
+                    .accessibilityHidden(true)
                 Text(interruptions.expiry.map { "Quiet until \(StatusBarLayout.clock($0))" } ?? "Quiet")
-                    .fontWeight(.semibold)
+                    .monospacedDigit().lineLimit(1)
             }
+            .foregroundStyle(Color.dockSecondaryText)
             .dockPadding(.horizontal, 8)
-            separator
+            if !attention.isEmpty || held != nil { separator }
             // The attention queue remains reachable during Quiet mode.
-            ForEach(layout.chips.filter { $0.item == .needsYou }) { chip($0) }
-            let held = interruptions.entries.count + interruptions.overflow
-            if held > 0 {
-                plainChip("\(held) held", help: "Banners and sounds waiting until quiet ends") { status.openActivity() }
+            ForEach(attention) { chip($0) }
+            if let held {
+                summaryChip(
+                    "\(held.formatted()) held", icon: .caretUp, help: "Banners and sounds waiting until quiet ends"
+                ) {
+                    status.openActivity()
+                }
             }
             Spacer(minLength: 8)
-            Button("End quiet") { interruptions.end() }
-                .buttonStyle(.dockSecondary)
+            Button {
+                interruptions.end()
+            } label: {
+                Text("End quiet").dockFont(.control, weight: .regular)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .buttonStyle(.dockSecondary)
             trayButton
         }
     }
@@ -185,8 +204,9 @@ struct WorkspaceStatusBar: View {
     }
 
     private func returnChip(_ summary: (since: Date, text: String)) -> some View {
-        plainChip(
-            "Since \(StatusBarLayout.clock(summary.since)): \(summary.text)", help: "What changed while you were away"
+        summaryChip(
+            "Since \(StatusBarLayout.clock(summary.since)): \(summary.text)", icon: .arrowUpRight,
+            help: "What changed while you were away"
         ) {
             status.dismissReturnSummary()
             perform(.tab(.usage))
@@ -199,28 +219,32 @@ struct WorkspaceStatusBar: View {
         Color.dockBorder.frame(width: DockLayout.hairline, height: 14).dockPadding(.horizontal, 4)
     }
 
+    private func iconColor(for tone: StatusBarEntry.Tone) -> Color {
+        switch tone {
+        case .decision, .warning: .dockWarning
+        case .problem: .dockDestructive
+        case .outcome, .context: .dockSecondaryText
+        }
+    }
+
     private func chip(_ entry: StatusBarEntry) -> some View {
-        let tint: Color? = entry.tone == .decision ? .dockWarning : nil
-        let iconColor: Color =
-            switch entry.tone {
-            case .decision, .warning: .dockWarning
-            case .problem: .dockDestructive
-            case .outcome, .context: .dockSecondaryText
-            }
+        let isAttention = entry.tone == .decision
         return Button {
             perform(entry.action)
         } label: {
             let label = HStack(spacing: 5) {
                 if let icon = entry.icon {
-                    DockIcon(icon, size: 12, weight: entry.tone == .decision ? .fill : .regular, color: iconColor)
+                    DockIcon(icon, size: 12, weight: isAttention ? .fill : .regular, color: iconColor(for: entry.tone))
+                        .accessibilityHidden(true)
                 }
-                Text(entry.text).dockFont(.metadata, weight: entry.tone == .decision ? .semibold : .medium)
-                    .foregroundStyle(entry.tone == .decision ? Color.dockPrimaryText : Color.dockSecondaryText)
+                Text(entry.text).dockFont(.metadata)
+                    .foregroundStyle(isAttention ? Color.dockPrimaryText : Color.dockSecondaryText)
                     .monospacedDigit().lineLimit(1).frame(maxWidth: 168)
             }
             Group {
-                if let tint {
-                    label.dockPadding(.horizontal, 2).dockPill(tint: tint)
+                if isAttention {
+                    label.dockPadding(.horizontal, 2)
+                        .dockPill(tint: .dockWarning, outline: Color.dockWarning.opacity(0.34))
                 } else {
                     label.dockPadding(.horizontal, 6)
                 }
@@ -232,13 +256,17 @@ struct WorkspaceStatusBar: View {
         .modifier(hoverPreview(for: entry))
     }
 
-    private func plainChip(_ text: String, help: String, action: @escaping () -> Void) -> some View {
+    private func summaryChip(_ text: String, icon: Ph, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(text).fontWeight(.semibold).monospacedDigit().lineLimit(1)
-                .dockPadding(.horizontal, 2)
-                .dockPill(outline: Color.dockBorder)
-                .fixedSize()
-                .contentShape(Capsule())
+            HStack(spacing: DockSpacing.micro) {
+                Text(text).dockFont(.metadata).underline().monospacedDigit().lineLimit(1)
+                DockIcon(icon, size: 9, color: .dockSecondaryText).accessibilityHidden(true)
+            }
+            .foregroundStyle(Color.dockSecondaryText)
+            .dockPadding(.horizontal, 2)
+            .dockPill(outline: Color.dockBorder)
+            .fixedSize()
+            .contentShape(Capsule())
         }
         .help(help)
     }
@@ -247,8 +275,7 @@ struct WorkspaceStatusBar: View {
     @ViewBuilder private func segment(_ entry: StatusBarEntry) -> some View {
         let label = HStack(spacing: 5) {
             if let icon = entry.icon {
-                DockIcon(
-                    icon, size: 12, color: entry.tone == .problem ? .dockDestructive : .dockSecondaryText)
+                DockIcon(icon, size: 12, color: iconColor(for: entry.tone)).accessibilityHidden(true)
             }
             Text(isCompact ? entry.compactText ?? entry.text : entry.text)
                 .dockFont(.metadata).lineLimit(1).truncationMode(.middle).frame(maxWidth: 170)
@@ -287,10 +314,12 @@ struct WorkspaceStatusBar: View {
             status.toggleActivity()
         } label: {
             HStack(spacing: 6) {
-                Text(Self.activityKeycap).dockFont(.metadata, weight: .semibold, design: .monospaced)
-                    .foregroundStyle(Color.dockSecondaryText).accessibilityHidden(true)
-                DockIcon(.pulse, size: 13, color: .dockPrimaryText)
-                if !isCompact { Text("Activity").dockFont(.metadata, weight: .semibold) }
+                DockIcon(.pulse, size: 13, color: .dockPrimaryText).accessibilityHidden(true)
+                if !isCompact {
+                    Text("Activity").dockFont(.control, weight: .regular)
+                    Text(Self.activityKeycap).dockFont(.metadata, design: .monospaced)
+                        .foregroundStyle(Color.dockSecondaryText).accessibilityHidden(true)
+                }
             }
             .dockPadding(.horizontal, 6)
             .frame(height: 24)

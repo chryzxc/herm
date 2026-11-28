@@ -1388,8 +1388,9 @@ inspector if necessary; resizing wider restores the list unless it was manually 
 Window title-row drag regions occupy empty space only, outside action and menu targets.
 
 The workspace status bar is off by default. Turn on **Show status bar** in Settings › Status bar
-or in the rail’s gear menu under **Status bar**. The bar shows a count when work needs attention
-and the next meeting or routine if it starts within 30 minutes. Click the countdown to open the
+or in the rail’s gear menu under **Status bar**. The bar uses regular-weight labels and
+highlights work that needs attention with an amber count badge. It also shows the next
+meeting or routine if it starts within 30 minutes. Click the countdown to open the
 scheduled item. Calendar events appear when Herm already has Calendar access.
 Hover over a status item for details. Running work and items ready for review show Bot avatars
 when Herm can resolve the Bot’s identity. Running work includes active Bots from other profiles.
