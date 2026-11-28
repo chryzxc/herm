@@ -2728,6 +2728,10 @@ Order is presentation state scoped to the backend/profile/session workspace for 
 current app run. New tabs append, and closed tabs disappear without leaving gaps.
 Only tabs belonging to the active workspace enter the inspector layout. A
 session switch does not close a live terminal or clear its scrollback.
+An agent-requested web preview selects its matching Browser tab in the owning
+chat and expands the existing inspector. If narrow Explorer hides it, switch
+that chat to Chat mode first. If no matching host can present the tab, show
+the unavailability in the owning chat; do not redirect an in-app preview.
 
 
 Bot and activity previews share the message reading tab strip and its workspace

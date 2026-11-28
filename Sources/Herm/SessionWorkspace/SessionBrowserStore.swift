@@ -2,7 +2,7 @@ import Combine
 import CryptoKit
 import WebKit
 
-struct SessionBrowserKey: Hashable, Codable {
+struct SessionBrowserKey: Hashable, Codable, Sendable {
     let profileID: String?
     let sessionID: String
 
@@ -189,6 +189,25 @@ final class SessionBrowserWorkspace: ObservableObject {
         tab.open(url)
         return tab.id
     }
+
+    func openAgentPreview(_ url: URL) -> AgentPreviewReveal.Selection? {
+        let address = url.absoluteString
+        let primaryAddress = agent.isActive ? agent.shownPage(session: key.sessionID)?.url : primary.address
+        if primaryAddress == address { return .primary }
+        if let tab = extras.first(where: { $0.address == address }) { return .extra(tab.id) }
+        guard let primaryAddress else { return nil }
+        if primaryAddress.isEmpty || primaryAddress == "about:blank" {
+            if agent.isActive {
+                agent.navigate(url, inShownSession: key.sessionID)
+            } else {
+                primary.open(url)
+            }
+            return .primary
+        }
+        let tab = addTab()
+        tab.open(url)
+        return .extra(tab.id)
+    }
 }
 
 @MainActor
@@ -282,9 +301,11 @@ final class SessionBrowserStore: ObservableObject {
         activeKey = key
     }
 
-    func prepareForTurn(profileID: String?, client: HermesRPCClientProtocol, connection: UUID) async {
-        guard GatewayConnectionStore.isLocalBackend, !Task.isCancelled else { return }
-        await agent(for: profileID).prepareForTurn(client: client, connection: connection)
+    func prepareForTurn(profileID: String?, client: HermesGateway, connection: UUID) async -> (AgentBrowser, UUID)? {
+        guard client.isLocal, !Task.isCancelled else { return nil }
+        let agent = agent(for: profileID)
+        guard let generation = await agent.prepareForTurn(client: client, connection: connection) else { return nil }
+        return (agent, generation)
     }
 
     /// Drop unused session views, but don't disconnect a browser a running turn can still need.
@@ -305,5 +326,11 @@ final class SessionBrowserStore: ObservableObject {
         let tabID = url.flatMap { workspace.openLink($0) }
         presentation = key
         return tabID
+    }
+
+    func presentAgentPreview(_ url: URL, owner key: SessionBrowserKey) -> AgentPreviewReveal.Selection? {
+        guard let selection = workspace(for: key).openAgentPreview(url) else { return nil }
+        presentation = key
+        return selection
     }
 }

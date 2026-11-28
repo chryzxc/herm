@@ -11,6 +11,8 @@ protocol HermesRPCClientProtocol: AnyObject {
     var onEvent: ((String, [String: Any]) -> Void)? { get set }
     func connect() async throws
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any]
+    func request(_ method: String, params: [String: Any], sharedBrowserTabs: [ChatContext.SharedBrowserTab])
+        async throws -> [String: Any]
     func fetchHTTP(_ path: String) async throws -> [String: Any]
     func fetchHTTP(_ path: String, timeout: TimeInterval) async throws -> [String: Any]
     func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any]
@@ -19,7 +21,25 @@ protocol HermesRPCClientProtocol: AnyObject {
     func close()
 }
 
+enum PromptAdmissionError: LocalizedError {
+    case interrupted, sharedBrowserUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .interrupted: "The connection changed before your message was sent. Try again."
+        case .sharedBrowserUnavailable: "Your message wasn’t sent. Reattach the shared browser tab and try again."
+        }
+    }
+}
+
 extension HermesRPCClientProtocol {
+    func request(_ method: String, params: [String: Any], sharedBrowserTabs: [ChatContext.SharedBrowserTab])
+        async throws -> [String: Any]
+    {
+        guard sharedBrowserTabs.isEmpty else { throw PromptAdmissionError.sharedBrowserUnavailable }
+        return try await request(method, params: params)
+    }
+
     func fetchHTTP(_ path: String, timeout: TimeInterval) async throws -> [String: Any] {
         try await fetchHTTP(path)
     }
@@ -145,23 +165,36 @@ final class HermesControlRPC {
         self.client = client
     }
 
-    func setBrowser(cdpURL: String?, profile: String?) async throws {
+    func setBrowser(cdpURL: String?, profile: String?, isCurrent: @MainActor () -> Bool = { true }) async throws {
         var scope: [String: Any] = [:]
         if let profile, !profile.isEmpty { scope["profile"] = profile }
+        var statusParams = scope
+        statusParams["action"] = "status"
+        let method = HermesFeatureIDs.ID.browserManage.rawValue
         if let cdpURL {
-            var statusParams = scope
-            statusParams["action"] = "status"
-            let status = try await client.request(HermesFeatureIDs.ID.browserManage.rawValue, params: statusParams)
+            let status = try await client.request(method, params: statusParams)
+            guard isCurrent() else { throw CancellationError() }
             if status["connected"] as? Bool == true, status["url"] as? String == cdpURL { return }
         }
         var params = scope
         params["action"] = cdpURL == nil ? "disconnect" : "connect"
         if let cdpURL { params["url"] = cdpURL }
-        let result = try await client.request(HermesFeatureIDs.ID.browserManage.rawValue, params: params)
-        if cdpURL != nil, result["connected"] as? Bool != true {
-            let detail = (result["messages"] as? [String])?.last ?? "Hermes could not connect to the browser."
-            throw NSError(domain: "Herm.AgentBrowser", code: 1, userInfo: [NSLocalizedDescriptionKey: detail])
+        let result = try await client.request(method, params: params)
+        guard let cdpURL else { return }
+        guard isCurrent() else { throw CancellationError() }
+        if result["connected"] as? Bool == true {
+            if let url = result["url"] {
+                if url as? String == cdpURL { return }
+            } else {
+                let status = try await client.request(method, params: statusParams)
+                guard isCurrent() else { throw CancellationError() }
+                if status["connected"] as? Bool == true, status["url"] as? String == cdpURL { return }
+            }
         }
+        let detail =
+            (result["message"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            ?? "Hermes could not connect to the browser."
+        throw NSError(domain: "Herm.AgentBrowser", code: 1, userInfo: [NSLocalizedDescriptionKey: detail])
     }
 
     func sessionControl(sessionID: String, profileID: String?) async throws -> [String: Any] {

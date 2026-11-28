@@ -66,7 +66,7 @@ final class HermesGateway: NSObject {
         }
     }
     private var connectionIdentity = UUID()
-    var prepareBrowserForPrompt: ((String?, UUID) async -> Void)?
+    var prepareBrowserForPrompt: ((String?, UUID) async -> (AgentBrowser, UUID)?)?
     private var port: Int?
     private var token = ""
     private var nextID = 0
@@ -236,15 +236,54 @@ final class HermesGateway: NSObject {
     }
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        try await request(method, params: params, sharedBrowserTabs: [])
+    }
+
+    func isCurrentConnection(_ identity: UUID) -> Bool {
+        socket != nil && connectionIdentity == identity
+    }
+
+    func request(_ method: String, params: [String: Any], sharedBrowserTabs: [ChatContext.SharedBrowserTab])
+        async throws -> [String: Any]
+    {
+        if Task.isCancelled, !sharedBrowserTabs.isEmpty { throw PromptAdmissionError.sharedBrowserUnavailable }
         try Task.checkCancellation()
         DebugLog.write("request: \(method)")
-        if socket == nil { try await connect() }
-        if Self.shouldPrepareBrowser(for: method) {
-            await prepareBrowserForPrompt?(params["profile"] as? String, connectionIdentity)
+        if socket == nil {
+            do {
+                try await connect()
+            } catch  where !sharedBrowserTabs.isEmpty {
+                throw PromptAdmissionError.sharedBrowserUnavailable
+            }
+        }
+        let preparesBrowser = Self.shouldPrepareBrowser(for: method)
+        let connection = connectionIdentity
+        let profile = params["profile"] as? String
+        var handoff: (AgentBrowser, UUID)?
+        if isLocal && preparesBrowser, let prepareBrowserForPrompt {
+            handoff = await prepareBrowserForPrompt(profile, connection)
+        }
+        if preparesBrowser || !sharedBrowserTabs.isEmpty {
+            try Self.checkPromptAdmission(
+                sharedBrowserTabs, profile: profile, handoff: handoff,
+                connectionIsCurrent: isCurrentConnection(connection))
         }
         let response = try await send(
             method: method, params: HermesSimulatorPreference.applying(to: params, method: method))
         return response.object
+    }
+
+    static func checkPromptAdmission(
+        _ tabs: [ChatContext.SharedBrowserTab], profile: String?, handoff: (AgentBrowser, UUID)?,
+        connectionIsCurrent: Bool
+    ) throws {
+        guard !Task.isCancelled, connectionIsCurrent else {
+            throw tabs.isEmpty ? PromptAdmissionError.interrupted : .sharedBrowserUnavailable
+        }
+        guard !tabs.isEmpty else { return }
+        guard let (browser, generation) = handoff, browser.profileID == profile,
+            browser.admits(tabs, generation: generation)
+        else { throw PromptAdmissionError.sharedBrowserUnavailable }
     }
 
     static func shouldPrepareBrowser(for method: String) -> Bool {
