@@ -99,26 +99,55 @@ struct ComposerInlineEditorTests {
 
     @Test func nativeEditorRemeasuresWrappedDraftAfterResize() async throws {
         var heights: [CGFloat] = []
-        let editor = ComposerInputEditor(
-            text: .constant(String(repeating: "Please review the test failures. ", count: 8)),
-            isFocused: false, onSubmit: {}, onCompletionKey: { _ in false },
-            onFocusChanged: { _ in }, onCaretMoved: { _, _ in }, takePendingCaret: { nil },
-            onTextChanged: { _, _ in }, onContentHeightChanged: { heights.append($0) })
-        let host = NSHostingView(rootView: editor)
+        func editor(_ draft: String) -> ComposerInputEditor {
+            ComposerInputEditor(
+                text: .constant(draft), isFocused: false, onSubmit: {}, onCompletionKey: { _ in false },
+                onFocusChanged: { _ in }, onCaretMoved: { _, _ in }, takePendingCaret: { nil },
+                onTextChanged: { _, _ in }, onContentHeightChanged: { heights.append($0) })
+        }
+        let draft = String(repeating: "Please review the test failures. ", count: 8) + "\nRestored line"
+        let host = NSHostingView(rootView: editor(""))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 120),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
-        host.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(100))
+        func find(_ view: NSView) -> ComposerInputTextView? {
+            if let text = view as? ComposerInputTextView { return text }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        func waitFor(_ condition: () -> Bool) async throws {
+            let deadline = ContinuousClock.now + .seconds(3)
+            while !condition(), ContinuousClock.now < deadline {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            try #require(condition())
+        }
+        try await waitFor { find(host) != nil && !heights.isEmpty }
+        let text = try #require(find(host))
+        let beforeRestore = heights.count
+        host.rootView = editor(draft)
+        try await waitFor { text.string == draft && heights.count > beforeRestore }
+        #expect(find(host) === text)
+        #expect(text.string == draft)
+        let wideWidth = text.frame.width
         let wideHeight = try #require(heights.last)
         #expect(wideHeight > ComposerLayout.minHeight)
+        let beforeNarrow = heights.count
         window.setContentSize(NSSize(width: 220, height: 120))
-        host.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(100))
+        try await waitFor { text.frame.width < wideWidth && heights.count > beforeNarrow }
+        #expect(text.frame.width < wideWidth)
+        #expect(heights.count > beforeNarrow)
         #expect(try #require(heights.last) > wideHeight)
+        let beforeWide = heights.count
+        window.setContentSize(NSSize(width: 500, height: 120))
+        try await waitFor { text.frame.width == wideWidth && heights.count > beforeWide }
+        #expect(text.frame.width == wideWidth)
+        #expect(heights.count > beforeWide)
+        #expect(heights.last == wideHeight)
+        #expect(text.string == draft)
     }
 
     @Test(arguments: [false, true])
@@ -244,6 +273,39 @@ struct ComposerInlineEditorTests {
         text.setFrameSize(NSSize(width: 180, height: 100))
         update("/goal")
         #expect(sync.layoutCount == beforeResize + 1)
+    }
+
+    @Test func heightWaitsForUsableWidthAndTracksDraftChanges() throws {
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 0, height: 100))
+        text.isHorizontallyResizable = false
+        text.textContainer?.widthTracksTextView = true
+        let sync = ComposerEditorSynchronization()
+        var heights: [CGFloat] = []
+        func update(_ draft: String) {
+            sync.synchronize(text, markdown: draft, contexts: [], inset: NSSize(width: 16, height: 0))
+            sync.updatePresentation(text) { heights.append($0) }
+        }
+        update("Short draft")
+        #expect(heights.isEmpty)
+        text.setFrameSize(NSSize(width: 352, height: 100))
+        update("Short draft")
+        let short = try #require(heights.last)
+        #expect(short == ComposerLayout.minHeight)
+        update("One\nTwo\nThree\n")
+        let multiline = try #require(heights.last)
+        update("One\nTwo\nThree")
+        #expect(multiline > (try #require(heights.last)))
+        update("")  // Sending clears the draft.
+        #expect(heights.last == ComposerLayout.minHeight)
+        update("Short draft")  // Restoring a draft does not need another edit.
+        #expect(heights.last == short)
+        update(String(repeating: "A wrapping draft ", count: 12))
+        let wide = try #require(heights.last)
+        text.setFrameSize(NSSize(width: 180, height: 100))
+        update(String(repeating: "A wrapping draft ", count: 12))
+        #expect(try #require(heights.last) > wide)
+        update("Short draft")
+        #expect(heights.last == short)
     }
 
     @Test func contextReplacementAndAttachmentEditsInvalidateSerialization() throws {

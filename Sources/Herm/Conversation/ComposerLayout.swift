@@ -1,4 +1,4 @@
-import CoreGraphics
+import Foundation
 
 enum ComposerLayout {
     static let minHeight: CGFloat = 34
@@ -13,5 +13,9 @@ enum ComposerLayout {
 
     static func height(for measuredContentHeight: CGFloat) -> CGFloat {
         min(max(measuredContentHeight, minHeight), maxHeight)
+    }
+
+    static func hasSendableText(_ text: String) -> Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
