@@ -74,6 +74,7 @@ extension WorkspaceActivitySidebar {
             if workflow.repository.path == activeRepositoryPath {
                 RepositoryChangesBrowser(
                     model: model,
+                    sessionIdentity: WorkspaceIdentity.session(model),
                     workflow: workflow,
                     projectPath: activeRepositoryPath,
                     onRefresh: { await refreshRepository() },

@@ -1,10 +1,47 @@
+import Combine
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import Herm
 
 @MainActor
 struct RepositoryChangesBrowserTests {
+    @Test func sourceControlViewsDoNotObserveTheChatModel() {
+        let model = DockModel(initialSessionID: "source-control-selected")
+        let workflow = DeveloperWorkflowModel()
+        let foreignID = "source-control-background"
+        let earlier = Date(timeIntervalSince1970: 1)
+        model.sessions = [
+            HermesSession(
+                id: foreignID, profileID: nil, title: "Background", preview: "", startedAt: earlier,
+                updatedAt: earlier, messageCount: 0, source: "conversation")
+        ]
+        let identity = WorkspaceIdentity.session(model)
+        let browser = RepositoryChangesBrowser(
+            model: model, sessionIdentity: identity, workflow: workflow, projectPath: nil, onRefresh: {})
+        let surface = SessionSourceControlSurface(
+            model: model, sessionIdentity: identity, workflow: workflow, scope: nil, onRefresh: {},
+            onSelectFile: { _ in }, selectedFilePath: nil)
+        var publications = 0
+        let subscription = model.objectWillChange.sink { publications += 1 }
+        defer { subscription.cancel() }
+
+        let later = earlier.addingTimeInterval(1)
+        model.touchSession(sessionID: foreignID, at: later)
+        #expect(model.sessions.first?.lastUpdatedAt == later)
+        #expect(publications > 0)
+        #expect(WorkspaceIdentity.session(model) == identity)
+
+        for view in [browser as Any, surface as Any] {
+            let stored = Mirror(reflecting: view).children.first { $0.label == "model" || $0.label == "_model" }
+            #expect(stored?.label == "model")
+            #expect((stored?.value as? DockModel) === model)
+        }
+        let observedWorkflow = Mirror(reflecting: browser).children.first { $0.label == "_workflow" }
+        #expect(observedWorkflow?.value is ObservedObject<DeveloperWorkflowModel>)
+    }
+
     @Test func displayLinesDropGitPreambleAndNoNewlineMarker() {
         let patch =
             "diff --git a/x b/x\nnew file mode 100644\nindex 0..1\n--- /dev/null\n+++ b/x\n@@ -0,0 +1,2 @@\n+# Title\n-old\n\\ No newline at end of file"
