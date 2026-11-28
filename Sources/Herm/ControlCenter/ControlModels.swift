@@ -998,8 +998,8 @@ struct SessionUsageSummary: Equatable {
 /// Hermes' `/api/analytics/usage` report. `totals` and `daily` carry the
 /// main conversation loop only; auxiliary work (review, compression, titles,
 /// vision…) lives in `tasks` and is folded into each model's figures.
-struct TokenUsageReport: Equatable {
-    struct Day: Identifiable, Equatable {
+struct TokenUsageReport: Equatable, Sendable {
+    struct Day: Identifiable, Equatable, Sendable {
         let day: Date
         let inputTokens: Int
         let outputTokens: Int
@@ -1011,7 +1011,7 @@ struct TokenUsageReport: Equatable {
         var id: Date { day }
     }
 
-    struct Task: Identifiable, Equatable {
+    struct Task: Identifiable, Equatable, Sendable {
         let task: String
         let inputTokens: Int
         let outputTokens: Int
@@ -1021,7 +1021,7 @@ struct TokenUsageReport: Equatable {
         var totalTokens: Int { inputTokens + outputTokens }
     }
 
-    struct Model: Identifiable, Equatable {
+    struct Model: Identifiable, Equatable, Sendable {
         let model: String
         let inputTokens: Int
         let outputTokens: Int
@@ -1029,20 +1029,22 @@ struct TokenUsageReport: Equatable {
         let sessions: Int
         let apiCalls: Int
         let tasks: [Task]
+        /// Raw analytics join key, independent of the display fallback above.
+        var providerLookupKey: String = ""
         /// Hermes billing providers that served this model, busiest first.
         var providers: [String] = []
         var id: String { model }
         var totalTokens: Int { inputTokens + outputTokens }
     }
 
-    struct Share: Identifiable, Equatable {
+    struct Share: Identifiable, Equatable, Sendable {
         let name: String
         let count: Int
         let percentage: Double
         var id: String { name }
     }
 
-    struct Provider: Identifiable, Equatable {
+    struct Provider: Identifiable, Equatable, Sendable {
         let provider: String
         let inputTokens: Int
         let outputTokens: Int
@@ -1061,7 +1063,7 @@ struct TokenUsageReport: Equatable {
     let sessions: Int
     let apiCalls: Int
     let daily: [Day]
-    let models: [Model]
+    var models: [Model]
     let tasks: [Task]
     let tools: [Share]
     let skills: [Share]

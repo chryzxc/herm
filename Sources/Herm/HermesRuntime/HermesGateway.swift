@@ -298,6 +298,16 @@ final class HermesGateway: NSObject {
         return result
     }
 
+    func fetchHTTPData(_ path: String, timeout: TimeInterval) async throws -> Data {
+        try await connect()
+        guard let baseURL else { throw GatewayError.backendUnavailable }
+        let (status, data) = try await GatewayHTTP.requestData(
+            GatewayConnectionSettings.endpoint(baseURL, path), token: usesBrowserSignIn ? nil : token,
+            signIn: usesBrowserSignIn, authBase: baseURL, timeout: timeout)
+        guard (200..<300).contains(status) else { throw GatewayError.httpError(status) }
+        return data
+    }
+
     /// Authenticated JSON write to the local backend. A refusal's FastAPI
     /// `detail` is surfaced verbatim so the user sees why (e.g. open parents).
     func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {

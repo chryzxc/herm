@@ -84,32 +84,39 @@ extension ControlCenterModel {
                 guard generation == tokenUsageGeneration,
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
-                tokenUsage = Self.parseTokenUsage(result)
+                let baseReport = try await UsageReportProjection.monthly(result)
+                guard !Task.isCancelled, generation == tokenUsageGeneration,
+                    isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                else { return }
+                tokenUsage = baseReport
                 recordProjectionSuccess("token.usage", count: tokenUsage?.sessions ?? 0)
                 // Slower provider accounting enriches the visible report without blocking yearly activity.
                 beginProjectionRefresh("usage.providers")
                 providerUsageTask = Task { @MainActor in
                     defer { if generation == tokenUsageGeneration { providerUsageTask = nil } }
                     do {
-                        let modelRows = try await rpc.modelAnalytics(days: days)
+                        let modelData = try await rpc.modelAnalytics(days: days)
                         guard generation == tokenUsageGeneration,
                             isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                         else { return }
-                        let report = Self.parseTokenUsage(result, models: modelRows)
+                        let report = try await UsageReportProjection.enrich(baseReport, models: modelData)
+                        guard !Task.isCancelled, generation == tokenUsageGeneration,
+                            isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+                        else { return }
                         guard let providers = report.costRankedProviders else {
                             throw HermesGateway.GatewayError.malformedResponse
                         }
                         tokenUsage = report
                         recordProjectionSuccess("usage.providers", count: providers.count)
                     } catch {
-                        guard generation == tokenUsageGeneration,
+                        guard !Task.isCancelled, generation == tokenUsageGeneration,
                             isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                         else { return }
                         recordProjectionFailure("usage.providers", error: error.localizedDescription)
                     }
                 }
             } catch {
-                guard generation == tokenUsageGeneration,
+                guard !Task.isCancelled, generation == tokenUsageGeneration,
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
                 recordProjectionFailure("token.usage", error: error.localizedDescription)
@@ -137,11 +144,15 @@ extension ControlCenterModel {
             guard generation == yearActivityGeneration,
                 isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
             else { return }
-            guard result["daily"] is [[String: Any]] else { throw HermesGateway.GatewayError.malformedResponse }
-            yearActivity = Self.parseTokenUsage(result).daily
+            let days = try await UsageReportProjection.daily(result)
+            guard !Task.isCancelled, generation == yearActivityGeneration,
+                isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
+            else { return }
+            guard let days else { throw HermesGateway.GatewayError.malformedResponse }
+            yearActivity = days
             recordProjectionSuccess("usage.year", count: yearActivity?.count ?? 0)
         } catch {
-            guard generation == yearActivityGeneration,
+            guard !Task.isCancelled, generation == yearActivityGeneration,
                 isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
             else { return }
             recordProjectionFailure("usage.year", error: error.localizedDescription)
@@ -247,7 +258,7 @@ extension ControlCenterModel {
     /// Usage is best-effort: older Hermes builds lack the web server.
     private static func workCalendarUsage(rpc: HermesControlRPC, days: Int) async -> [TokenUsageReport.Day] {
         guard (1...365).contains(days), let result = try? await rpc.usageAnalytics(days: days) else { return [] }
-        return parseTokenUsage(result).daily
+        return (try? await UsageReportProjection.daily(result)) ?? []
     }
 
     /// Hermes' projects are the working directories its sessions ran in, the same list the PR center reads.
