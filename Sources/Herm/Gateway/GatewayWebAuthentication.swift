@@ -181,13 +181,37 @@ enum GatewayHTTP {
         _ url: URL, method: String = "GET", token: String? = nil, signIn: Bool = false, authBase: URL? = nil,
         body: [String: Any]? = nil, timeout: TimeInterval = 15
     ) async throws -> (Int, [String: Any]) {
+        try await performRequest(
+            url, method: method, token: token, signIn: signIn, authBase: authBase, body: body, timeout: timeout,
+            decode: decodeJSON)
+    }
+
+    static func requestData(
+        _ url: URL, token: String?, signIn: Bool, authBase: URL?, timeout: TimeInterval
+    ) async throws -> (Int, Data) {
+        try await performRequest(url, method: "GET", token: token, signIn: signIn, authBase: authBase, timeout: timeout)
+        {
+            status, data in
+            // A malformed 401 used to throw before the native-token retry decision.
+            if status == 401 { _ = try await decodeJSON(status, data) }
+            return data
+        }
+    }
+
+    private static func performRequest<Response>(
+        _ url: URL, method: String, token: String?, signIn: Bool = false, authBase: URL? = nil,
+        body: [String: Any]? = nil, timeout: TimeInterval,
+        decode: @MainActor (Int, Data) async throws -> Response
+    ) async throws -> (Int, Response) {
         if signIn, let authBase, let access = try await GatewayNativeAuthentication.shared.accessToken(authBase) {
-            let response = try await request(url, method: method, token: access, body: body, timeout: timeout)
+            let response = try await performRequest(
+                url, method: method, token: access, body: body, timeout: timeout, decode: decode)
             if response.0 != 401 { return response }
             if let refreshed = try await GatewayNativeAuthentication.shared.accessToken(authBase, force: true),
                 refreshed != access
             {
-                let retried = try await request(url, method: method, token: refreshed, body: body, timeout: timeout)
+                let retried = try await performRequest(
+                    url, method: method, token: refreshed, body: body, timeout: timeout, decode: decode)
                 if retried.0 != 401 { return retried }
             }
             // The remaining path uses the independently held browser session.
@@ -207,15 +231,19 @@ enum GatewayHTTP {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw HermesGateway.GatewayError.malformedResponse }
         if signIn { await GatewayWebAuthentication.shared.capture(response) }
+        return (response.statusCode, try await decode(response.statusCode, data))
+    }
+
+    private static func decodeJSON(_ status: Int, _ data: Data) async throws -> [String: Any] {
         let parsed = await parseJSON(data).value
         // A few dashboard routes (e.g. `/api/tools/toolsets`) answer with a bare array; callers read it under `items`.
         guard let json = parsed as? [String: Any] ?? (parsed as? [Any]).map({ ["items": $0] }) else {
-            if !(200..<300).contains(response.statusCode) {
-                throw HermesGateway.GatewayError.httpError(response.statusCode)
+            if !(200..<300).contains(status) {
+                throw HermesGateway.GatewayError.httpError(status)
             }
             throw HermesGateway.GatewayError.malformedResponse
         }
-        return (response.statusCode, json)
+        return json
     }
 
     private struct ParsedJSON: @unchecked Sendable { let value: Any? }

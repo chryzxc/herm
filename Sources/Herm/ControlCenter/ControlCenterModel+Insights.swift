@@ -84,7 +84,7 @@ extension ControlCenterModel {
                 guard generation == tokenUsageGeneration,
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
-                let baseReport = await UsageReportProjection.monthly(result)
+                let baseReport = try await UsageReportProjection.monthly(result)
                 guard !Task.isCancelled, generation == tokenUsageGeneration,
                     isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                 else { return }
@@ -95,11 +95,11 @@ extension ControlCenterModel {
                 providerUsageTask = Task { @MainActor in
                     defer { if generation == tokenUsageGeneration { providerUsageTask = nil } }
                     do {
-                        let modelRows = try await rpc.modelAnalytics(days: days)
+                        let modelData = try await rpc.modelAnalytics(days: days)
                         guard generation == tokenUsageGeneration,
                             isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                         else { return }
-                        let report = await UsageReportProjection.enrich(baseReport, models: modelRows)
+                        let report = try await UsageReportProjection.enrich(baseReport, models: modelData)
                         guard !Task.isCancelled, generation == tokenUsageGeneration,
                             isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
                         else { return }
@@ -144,7 +144,7 @@ extension ControlCenterModel {
             guard generation == yearActivityGeneration,
                 isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
             else { return }
-            let days = await UsageReportProjection.daily(result)
+            let days = try await UsageReportProjection.daily(result)
             guard !Task.isCancelled, generation == yearActivityGeneration,
                 isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration)
             else { return }
@@ -258,7 +258,7 @@ extension ControlCenterModel {
     /// Usage is best-effort: older Hermes builds lack the web server.
     private static func workCalendarUsage(rpc: HermesControlRPC, days: Int) async -> [TokenUsageReport.Day] {
         guard (1...365).contains(days), let result = try? await rpc.usageAnalytics(days: days) else { return [] }
-        return await UsageReportProjection.daily(result) ?? []
+        return (try? await UsageReportProjection.daily(result)) ?? []
     }
 
     /// Hermes' projects are the working directories its sessions ran in, the same list the PR center reads.

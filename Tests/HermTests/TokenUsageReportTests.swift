@@ -5,11 +5,11 @@ import Testing
 
 @MainActor
 struct TokenUsageReportTests {
-    @Test func backgroundProjectionsMatchFullParsing() async {
-        let base = await UsageReportProjection.monthly([
+    @Test func backgroundProjectionsMatchFullParsing() async throws {
+        let usage: [String: Any] = [
             "period_days": 30, "daily": [["day": "2026-09-25", "input_tokens": 42]],
             "by_model": [["model": "example", "input_tokens": 12]],
-        ])
+        ]
         let models: [String: Any] = [
             "period_days": 30,
             "models": [
@@ -19,19 +19,30 @@ struct TokenUsageReportTests {
                 ]
             ],
         ]
-        let expected = ControlCenterModel.parseTokenUsage(
-            [
-                "period_days": 30, "daily": [["day": "2026-09-25", "input_tokens": 42]],
-                "by_model": [["model": "example", "input_tokens": 12]],
-            ],
-            models: models)
-        let enriched = await UsageReportProjection.enrich(base, models: models)
+        let usageData = try JSONSerialization.data(withJSONObject: usage)
+        let modelData = try JSONSerialization.data(withJSONObject: models)
+        let base = try await UsageReportProjection.monthly(usageData)
+        let expected = ControlCenterModel.parseTokenUsage(usage, models: models)
+        let enriched = try await UsageReportProjection.enrich(base, models: modelData)
         #expect(enriched == expected)
         #expect(enriched.costRankedProviders?.first?.estimatedCost == 0.25)
-        let daily = await UsageReportProjection.daily(["daily": [["day": "2026-09-25", "input_tokens": 42]]])
+        let daily = try await UsageReportProjection.daily(usageData)
         #expect(daily == expected.daily)
-        let malformed = await UsageReportProjection.daily([:])
-        #expect(malformed == nil)
+        let missing = try await UsageReportProjection.daily(Data("{}".utf8))
+        #expect(missing == nil)
+        let wrongShape = try await UsageReportProjection.daily(Data(#"{"daily":{}}"#.utf8))
+        #expect(wrongShape == nil)
+        let empty = try await UsageReportProjection.daily(Data(#"{"daily":[]}"#.utf8))
+        #expect(empty == [])
+    }
+
+    @Test func backgroundProjectionRejectsMalformedBodies() async throws {
+        for body in ["{", "42"] {
+            do {
+                _ = try await UsageReportProjection.daily(Data(body.utf8))
+                Issue.record("Expected a malformed analytics response")
+            } catch HermesGateway.GatewayError.malformedResponse {}
+        }
     }
 
     /// Shape of Hermes' `/api/analytics/usage`, trimmed from a real response.

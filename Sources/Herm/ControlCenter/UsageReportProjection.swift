@@ -1,11 +1,12 @@
 import Foundation
 
 enum UsageReportProjection {
-    nonisolated static func monthly(_ input: sending [String: Any]) async -> TokenUsageReport {
-        ControlCenterModel.parseTokenUsage(input)
+    nonisolated static func monthly(_ input: Data) async throws -> TokenUsageReport {
+        try ControlCenterModel.parseTokenUsage(decode(input))
     }
 
-    nonisolated static func enrich(_ base: TokenUsageReport, models: sending [String: Any]) async -> TokenUsageReport {
+    nonisolated static func enrich(_ base: TokenUsageReport, models input: Data) async throws -> TokenUsageReport {
+        let models = try decode(input)
         var providers: [String: [String]] = [:]
         for row in models["models"] as? [[String: Any]] ?? [] {
             guard let model = row["model"] as? String, let provider = row["provider"] as? String,
@@ -23,8 +24,17 @@ enum UsageReportProjection {
         return report
     }
 
-    nonisolated static func daily(_ input: sending [String: Any]) async -> [TokenUsageReport.Day]? {
-        guard let rows = input["daily"] as? [[String: Any]] else { return nil }
+    nonisolated static func daily(_ input: Data) async throws -> [TokenUsageReport.Day]? {
+        let report = try decode(input)
+        guard let rows = report["daily"] as? [[String: Any]] else { return nil }
         return ControlCenterModel.parseUsageDays(rows)
+    }
+
+    nonisolated private static func decode(_ input: Data) throws -> [String: Any] {
+        let parsed = try? JSONSerialization.jsonObject(with: input)
+        guard let json = parsed as? [String: Any] ?? (parsed as? [Any]).map({ ["items": $0] }) else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        return json
     }
 }

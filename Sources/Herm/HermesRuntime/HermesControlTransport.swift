@@ -13,6 +13,7 @@ protocol HermesRPCClientProtocol: AnyObject {
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any]
     func fetchHTTP(_ path: String) async throws -> [String: Any]
     func fetchHTTP(_ path: String, timeout: TimeInterval) async throws -> [String: Any]
+    func fetchHTTPData(_ path: String, timeout: TimeInterval) async throws -> Data
     func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any]
     func sendHTTP(_ method: String, path: String, body: [String: Any], timeout: TimeInterval) async throws -> [String:
         Any]
@@ -22,6 +23,16 @@ protocol HermesRPCClientProtocol: AnyObject {
 extension HermesRPCClientProtocol {
     func fetchHTTP(_ path: String, timeout: TimeInterval) async throws -> [String: Any] {
         try await fetchHTTP(path)
+    }
+    func fetchHTTPData(_ path: String, timeout: TimeInterval) async throws -> Data {
+        // Legacy clients and test doubles distinguish default from explicit timeouts.
+        let response: [String: Any]
+        if timeout == 15 {
+            response = try await fetchHTTP(path)
+        } else {
+            response = try await fetchHTTP(path, timeout: timeout)
+        }
+        return try JSONSerialization.data(withJSONObject: response)
     }
     func sendHTTP(_ method: String, path: String, body: [String: Any], timeout: TimeInterval) async throws -> [String:
         Any]
@@ -449,12 +460,12 @@ final class HermesControlRPC {
         )
     }
     /// Hermes clamps `days` to 1…365 server-side.
-    func usageAnalytics(days: Int) async throws -> [String: Any] {
-        try await client.fetchHTTP("/api/analytics/usage?days=\(days)", timeout: 60)
+    func usageAnalytics(days: Int) async throws -> Data {
+        try await client.fetchHTTPData("/api/analytics/usage?days=\(days)", timeout: 60)
     }
 
-    func modelAnalytics(days: Int) async throws -> [String: Any] {
-        try await client.fetchHTTP("/api/analytics/models?days=\(days)")
+    func modelAnalytics(days: Int) async throws -> Data {
+        try await client.fetchHTTPData("/api/analytics/models?days=\(days)", timeout: 15)
     }
     func sessionUsage(sessionID: String) async throws -> [String: Any] {
         try await client.request(HermesFeatureIDs.ID.sessionUsage.rawValue, params: ["session_id": sessionID])

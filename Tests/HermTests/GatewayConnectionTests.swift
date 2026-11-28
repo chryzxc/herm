@@ -308,6 +308,15 @@ struct GatewayConnectionTests {
         #expect(result["saved"] as? String == "Asia/Manila")
         let capability = try await gateway.request("client.capabilities", params: ["server_requests": true])
         #expect(capability["ok"] as? Bool == true)
+        let rpc = HermesControlRPC(client: gateway)
+        let analytics = try await rpc.usageAnalytics(days: 30)
+        #expect(analytics == Data(#"{ "period_days": 30, "daily": [] }"#.utf8))
+        do {
+            _ = try await rpc.usageAnalytics(days: 31)
+            Issue.record("Unexpected analytics query succeeded")
+        } catch HermesGateway.GatewayError.httpError(let status) {
+            #expect(status == 404)
+        }
         let rejected = HermesGateway(connectionSettings: settings, sessionToken: "wrong-token")
         defer { rejected.close() }
         do {
@@ -368,7 +377,8 @@ private final class GatewayHTTPFixture {
             protocol_version = 'HTTP/1.1'
             def log_message(self, *args): pass
             def reply(self, code, payload):
-                data = json.dumps(payload).encode()
+                self.reply_bytes(code, json.dumps(payload).encode())
+            def reply_bytes(self, code, data):
                 self.send_response(code)
                 self.send_header('Content-Type', 'application/json')
                 self.send_header('Content-Length', str(len(data)))
@@ -408,6 +418,8 @@ private final class GatewayHTTPFixture {
                     if urllib.parse.parse_qs(parsed.query).get('token') != [TOKEN]: return self.reply(401, {'detail':'bad WS auth'})
                     return self.websocket()
                 if parsed.path == '/proxy/api/status': return self.reply(200, {'version':'fixture'})
+                if parsed.path == '/proxy/api/analytics/usage' and parsed.query == 'days=30':
+                    return self.reply_bytes(200, b'{ "period_days": 30, "daily": [] }')
                 self.reply(404, {'detail': 'unexpected path'})
             def do_PUT(self):
                 data = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
