@@ -12,6 +12,7 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
     var held: CheckedContinuation<Void, Never>?
     var nextFailure: Error?
     var nextResponse: [String: Any]?
+    var resumeTargets: [(id: String, profile: String?)] = []
     var holdModelOptions = false
     var heldModelOptions: CheckedContinuation<Void, Never>?
     var holdHistory = false
@@ -46,6 +47,7 @@ private final class SessionSwitchRPC: HermesRPCClientProtocol {
         }
         guard method == "session.resume" else { return [:] }
         let id = params["session_id"] as? String ?? ""
+        resumeTargets.append((id, params["profile"] as? String))
         if id == "a", timeoutNextA {
             timeoutNextA = false
             throw Self.resumeTimeout
@@ -248,6 +250,13 @@ struct SessionSwitchCacheTests {
             id: id, profileID: profile, title: id, preview: "", startedAt: nil, messageCount: 2, source: "test")
     }
 
+    private func bot(_ profile: String, pointer: String) -> BotSummary {
+        BotSummary(
+            id: profile, name: "Bot", title: nil, description: nil, model: nil, isActive: false,
+            chat: BotChatReference(sessionID: pointer, profileID: profile),
+            avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
+    }
+
     private func waitUntil(_ condition: @escaping () -> Bool) async throws {
         for _ in 0..<500 {
             if condition() { return }
@@ -440,6 +449,154 @@ struct SessionSwitchCacheTests {
         rpc.release()
         _ = await model.sessionResumeTask?.value
         #expect(model.sessionActionsReady)
+    }
+
+    @Test func botOpenReusesOnlyConnectedConfirmedSelection() async throws {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        let profile = UUID().uuidString
+        let selected = bot(profile, pointer: "a")
+        model.isHermesConnected = true
+
+        // A regular chat restored with the same storage ID and profile is not Bot mode.
+        #expect(await model.resumeSession(session("a", profile: profile), reportFailure: true, reviewUnread: false))
+        #expect(model.sessionStorageID == "a" && model.sessionProfileID == profile)
+        #expect(model.activeBotProfileID == nil)
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.resumeTargets.count == 2)
+        #expect(rpc.resumeTargets.last?.id == "a" && rpc.resumeTargets.last?.profile == profile)
+        #expect(model.activeBotProfileID == profile)
+        let generation = model.sessionResumeGeneration
+        let rowIDs = model.messages.map(\.id)
+        let runtimeID = try #require(model.sessionID)
+        model.draft = "unsent"
+        model.isSending = true
+        model.status = .working
+        model.streamingMessageID = try #require(rowIDs.last)
+        model.streamingMessageSessionID = runtimeID
+
+        var focus: [String] = []
+        model.focusDetachedSession = { _ in
+            focus.append("detached")
+            return true
+        }
+        model.focusProjectedSession = { _, _ in
+            focus.append("projected")
+            return true
+        }
+        model.resumeBotChat(selected)
+        #expect(focus == ["detached"])
+        model.focusDetachedSession = { _ in
+            focus.append("detached")
+            return false
+        }
+        model.resumeBotChat(selected)
+        #expect(focus == ["detached", "detached", "projected"])
+        model.focusDetachedSession = nil
+        model.focusProjectedSession = nil
+
+        model.resumeBotChat(selected)
+        #expect(model.sessionResumeGeneration == generation)
+        #expect(model.sessionResumeTask == nil)
+        #expect(model.messages.map(\.id) == rowIDs)
+        #expect(model.draft == "unsent")
+        #expect(model.isSending && model.streamingMessageID == rowIDs.last)
+        _ = await model.sessionResumeTask?.value
+        #expect(rpc.resumeTargets.count == 2)
+
+        // The connection callback does not set status to .offline on disconnect.
+        model.isHermesConnected = false
+        #expect(model.status == .working && model.sessionActionsReady)
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.resumeTargets.count == 3)
+        #expect(rpc.resumeTargets.last?.id == "a" && rpc.resumeTargets.last?.profile == profile)
+
+        model.isHermesConnected = true
+        let beforeRefresh = model.sessionResumeGeneration
+        await model.refreshCurrentSession()
+        #expect(rpc.resumeTargets.count == 4)
+        #expect(rpc.resumeTargets.last?.id == runtimeID)
+        #expect(rpc.resumeTargets.last?.profile == profile)
+        #expect(model.sessionResumeGeneration != beforeRefresh)
+        #expect(model.sessionActionsReady)
+        #expect(model.activeBotProfileID == nil)
+    }
+
+    @Test func botReselectAfterReconnectResumesBeforeReusingSelection() async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        let selected = bot(UUID().uuidString, pointer: "a")
+        model.isHermesConnected = true
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.resumeTargets.count == 1)
+
+        model.isHermesConnected = false
+        model.isHermesConnected = true
+        #expect(model.sessionActionsReady)
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.resumeTargets.count == 2)
+
+        model.resumeBotChat(selected)
+        #expect(model.sessionResumeTask == nil)
+        _ = await model.sessionResumeTask?.value
+        #expect(rpc.resumeTargets.count == 2)
+    }
+
+    @Test func reconnectDuringHistoryReadDoesNotConfirmBotSelection() async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        let profile = UUID().uuidString
+        let selected = bot(profile, pointer: "a")
+        model.isHermesConnected = true
+        rpc.holdHistory = true
+        rpc.storedHistory = ["messages": [[String: Any]]()]
+        rpc.beforeStoredHistoryReturns = { [weak rpc] in
+            model.isHermesConnected = false
+            model.isHermesConnected = true
+            rpc?.holdHistory = false
+        }
+
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.historyPaths.count == 1)
+        #expect(model.isHermesConnected && model.sessionActionsReady)
+        #expect(rpc.resumeTargets.count == 1)
+
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.resumeTargets.count == 2)
+    }
+
+    @Test func inlineHistoryFallbackDoesNotConfirmBotSelection() async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        let profile = UUID().uuidString
+        let selected = bot(profile, pointer: "a")
+        model.isHermesConnected = true
+        rpc.holdHistory = true
+        // Malformed page; the normal inline fallback still succeeds.
+        rpc.storedHistory = [:]
+        rpc.beforeStoredHistoryReturns = { [weak rpc] in rpc?.holdHistory = false }
+
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.historyPaths.count == 1)
+        #expect(rpc.resumeTargets.map(\.id) == ["a", "a"])
+        #expect(rpc.resumeTargets.allSatisfy { $0.profile == profile })
+        #expect(model.sessionActionsReady)
+        #expect(model.messages.map(\.text) == ["question a", "answer a"])
+
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.resumeTargets.count == 3)
     }
 
     @Test func activityWhileAwayStillShowsLastLoadedTranscriptBeforeResume() async throws {

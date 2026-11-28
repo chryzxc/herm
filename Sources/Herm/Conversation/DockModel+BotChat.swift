@@ -8,7 +8,7 @@ import UserNotifications
 extension DockModel {
     func resumeBotChat(_ bot: BotSummary) {
         let target = botChatSession(bot)
-        resumeSession(target.session, profileID: target.profileID)
+        resumeSession(target.session, profileID: target.profileID, isBotChatOpen: true)
     }
 
     /// A bot's canonical, persistent chat. When the roster row has no canonical
