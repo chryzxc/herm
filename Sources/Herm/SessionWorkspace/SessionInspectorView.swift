@@ -918,6 +918,7 @@ struct SessionInspector: View {
             } else {
                 RepositoryChangesBrowser(
                     model: model,
+                    sessionIdentity: WorkspaceIdentity.session(model),
                     workflow: workflow,
                     projectPath: sessionRepositoryPath,
                     onRefresh: { await workflow.refresh(preferences: preferences, control: control) },

@@ -764,6 +764,7 @@ extension DockPopover {
                     case .sourceControl:
                         SessionSourceControlSurface(
                             model: model,
+                            sessionIdentity: WorkspaceIdentity.session(model),
                             workflow: developerWorkflow,
                             scope: activeSessionRepositoryScope,
                             onRefresh: { await refreshSessionWorkflow() },
