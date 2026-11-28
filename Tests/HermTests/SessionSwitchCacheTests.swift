@@ -525,6 +525,80 @@ struct SessionSwitchCacheTests {
         #expect(model.activeBotProfileID == nil)
     }
 
+    @Test func botReselectAfterReconnectResumesBeforeReusingSelection() async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        let selected = bot(UUID().uuidString, pointer: "a")
+        model.isHermesConnected = true
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.resumeTargets.count == 1)
+
+        model.isHermesConnected = false
+        model.isHermesConnected = true
+        #expect(model.sessionActionsReady)
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.resumeTargets.count == 2)
+
+        model.resumeBotChat(selected)
+        #expect(model.sessionResumeTask == nil)
+        _ = await model.sessionResumeTask?.value
+        #expect(rpc.resumeTargets.count == 2)
+    }
+
+    @Test func reconnectDuringHistoryReadDoesNotConfirmBotSelection() async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        let profile = UUID().uuidString
+        let selected = bot(profile, pointer: "a")
+        model.isHermesConnected = true
+        rpc.holdHistory = true
+        rpc.storedHistory = ["messages": [[String: Any]]()]
+        rpc.beforeStoredHistoryReturns = { [weak rpc] in
+            model.isHermesConnected = false
+            model.isHermesConnected = true
+            rpc?.holdHistory = false
+        }
+
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.historyPaths.count == 1)
+        #expect(model.isHermesConnected && model.sessionActionsReady)
+        #expect(rpc.resumeTargets.count == 1)
+
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.resumeTargets.count == 2)
+    }
+
+    @Test func inlineHistoryFallbackDoesNotConfirmBotSelection() async {
+        let rpc = SessionSwitchRPC()
+        let model = makeModel(rpc)
+        defer { model.shutdown() }
+        let profile = UUID().uuidString
+        let selected = bot(profile, pointer: "a")
+        model.isHermesConnected = true
+        rpc.holdHistory = true
+        // Malformed page; the normal inline fallback still succeeds.
+        rpc.storedHistory = [:]
+        rpc.beforeStoredHistoryReturns = { [weak rpc] in rpc?.holdHistory = false }
+
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.historyPaths.count == 1)
+        #expect(rpc.resumeTargets.map(\.id) == ["a", "a"])
+        #expect(rpc.resumeTargets.allSatisfy { $0.profile == profile })
+        #expect(model.sessionActionsReady)
+        #expect(model.messages.map(\.text) == ["question a", "answer a"])
+
+        model.resumeBotChat(selected)
+        #expect(await model.sessionResumeTask?.value == true)
+        #expect(rpc.resumeTargets.count == 3)
+    }
+
     @Test func activityWhileAwayStillShowsLastLoadedTranscriptBeforeResume() async throws {
         let rpc = SessionSwitchRPC()
         let model = makeModel(rpc)

@@ -48,7 +48,12 @@ final class DockModel: ObservableObject {
     /// clarify requests carry only the runtime sid, so rows need the durable id.
     var storageIDsByRuntimeID: [String: String] = [:]
     @Published var status: HermesStatus = .idle
-    @Published var isHermesConnected = false
+    @Published var isHermesConnected = false {
+        didSet {
+            if oldValue != isHermesConnected { botSelectionConnectionEpoch &+= 1 }
+        }
+    }
+    private(set) var botSelectionConnectionEpoch = 0
     /// Why Hermes is offline, from the gateway's last failure.
     @Published private(set) var hermesConnectionIssue: String?
     @Published var messages: [ChatMessage] = [] {
@@ -658,7 +663,10 @@ final class DockModel: ObservableObject {
     /// The latest ordered agent-state commit; tests await it before relaunching.
     var agentStateCommit: Task<Void, Never>?
     var sessionResumeGeneration = 0
-    var confirmedBotSelection: (generation: Int, profileID: String, runtimeID: String, pointer: String)?
+    var confirmedBotSelection:
+        (
+            generation: Int, connectionEpoch: Int, profileID: String, runtimeID: String, pointer: String
+        )?
     // Gateway ownership is independent of the cursor displayed by the reader.
     enum StoredTranscriptAttach {
         case awaitingOwnership

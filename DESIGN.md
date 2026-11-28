@@ -3417,9 +3417,10 @@ updates the originating activity even while it is hidden, and the saved reply
 rehydrates with its bot name and avatar attribution. The recipient’s canonical
 Bot Chat is persistent and hidden from the regular session list by Hermes;
 opening its bot on the Bots page reaches that same conversation.
-While connected, reselecting a healthy Bot Chat with the same confirmed session
-pointer leaves its transcript, draft and live turn in place. Retry and Refresh
-still reload.
+Reselecting a healthy Bot Chat with the same confirmed session pointer on the
+same uninterrupted connection leaves its transcript, draft and live turn in
+place. After a reconnect, the next selection reloads. Retry and Refresh still
+reload.
 
 The existing replying huddle shows the mentioned bot’s latest reported activity
 below its elapsed time. When a plain message starts a foreground turn, pending mentioned bots
