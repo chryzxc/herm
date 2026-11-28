@@ -547,7 +547,9 @@ extension ControlCenterModel {
     }
 
     /// `/api/analytics/models` supplies per-provider accounting; never split model totals by provider names.
-    static func parseTokenUsage(_ result: [String: Any], models modelResult: [String: Any] = [:]) -> TokenUsageReport {
+    nonisolated static func parseTokenUsage(_ result: [String: Any], models modelResult: [String: Any] = [:])
+        -> TokenUsageReport
+    {
         let totals = result["totals"] as? [String: Any] ?? [:]
         let rows = { (key: String, source: [String: Any]) in source[key] as? [[String: Any]] ?? [] }
         var providers: [String: [String]] = [:]
@@ -558,9 +560,7 @@ extension ControlCenterModel {
             else { continue }
             providers[model, default: []].append(provider)
         }
-        let dayFormatter = DateFormatter()
-        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
-        dayFormatter.dateFormat = "yyyy-MM-dd"
+
         // Hermes emits the same task once per model/provider pair; the
         // dashboard reads a task as one line, so merge by name.
         func tasks(_ raw: [[String: Any]]) -> [TokenUsageReport.Task] {
@@ -592,19 +592,7 @@ extension ControlCenterModel {
             actualCost: doubleValue(totals["total_actual_cost"]) ?? 0,
             sessions: intValue(totals["total_sessions"]),
             apiCalls: intValue(totals["total_api_calls"]),
-            daily: rows("daily", result).compactMap { row in
-                guard let day = (row["day"] as? String).flatMap(dayFormatter.date(from:)) else { return nil }
-                return TokenUsageReport.Day(
-                    day: day,
-                    inputTokens: intValue(row["input_tokens"]),
-                    outputTokens: intValue(row["output_tokens"]),
-                    cacheReadTokens: intValue(row["cache_read_tokens"]),
-                    reasoningTokens: intValue(row["reasoning_tokens"]),
-                    estimatedCost: doubleValue(row["estimated_cost"]) ?? 0,
-                    sessions: intValue(row["sessions"]),
-                    apiCalls: intValue(row["api_calls"])
-                )
-            },
+            daily: parseUsageDays(rows("daily", result)),
             models: rows("by_model", result).map { row in
                 TokenUsageReport.Model(
                     model: (row["model"] as? String) ?? "unknown",
@@ -634,7 +622,22 @@ extension ControlCenterModel {
         )
     }
 
-    static func parseProviderCosts(_ result: [String: Any], days: Int) -> [TokenUsageReport.Provider]? {
+    nonisolated static func parseUsageDays(_ rows: [[String: Any]]) -> [TokenUsageReport.Day] {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return rows.compactMap { row in
+            guard let day = (row["day"] as? String).flatMap(formatter.date(from:)) else { return nil }
+            return TokenUsageReport.Day(
+                day: day, inputTokens: intValue(row["input_tokens"]), outputTokens: intValue(row["output_tokens"]),
+                cacheReadTokens: intValue(row["cache_read_tokens"]),
+                reasoningTokens: intValue(row["reasoning_tokens"]),
+                estimatedCost: doubleValue(row["estimated_cost"]) ?? 0,
+                sessions: intValue(row["sessions"]), apiCalls: intValue(row["api_calls"]))
+        }
+    }
+
+    nonisolated static func parseProviderCosts(_ result: [String: Any], days: Int) -> [TokenUsageReport.Provider]? {
         guard days > 0, intValue(result["period_days"]) == days,
             let rows = result["models"] as? [[String: Any]]
         else { return nil }
@@ -764,14 +767,14 @@ extension ControlCenterModel {
         return clean
     }
 
-    static func intValue(_ value: Any?) -> Int {
+    nonisolated static func intValue(_ value: Any?) -> Int {
         if let value = value as? Int { return value }
         if let value = value as? NSNumber { return value.intValue }
         if let value = value as? String { return Int(value) ?? 0 }
         return 0
     }
 
-    static func optionalIntValue(_ value: Any?) -> Int? {
+    nonisolated static func optionalIntValue(_ value: Any?) -> Int? {
         guard value != nil else { return nil }
         return intValue(value)
     }
@@ -788,7 +791,7 @@ extension ControlCenterModel {
         return nil
     }
 
-    static func doubleValue(_ value: Any?) -> Double? {
+    nonisolated static func doubleValue(_ value: Any?) -> Double? {
         if let value = value as? Double { return value }
         if let value = value as? NSNumber { return value.doubleValue }
         if let value = value as? String { return Double(value) }

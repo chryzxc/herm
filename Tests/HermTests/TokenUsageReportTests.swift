@@ -5,6 +5,35 @@ import Testing
 
 @MainActor
 struct TokenUsageReportTests {
+    @Test func backgroundProjectionsMatchFullParsing() async {
+        let base = await UsageReportProjection.monthly([
+            "period_days": 30, "daily": [["day": "2026-09-25", "input_tokens": 42]],
+            "by_model": [["model": "example", "input_tokens": 12]],
+        ])
+        let models: [String: Any] = [
+            "period_days": 30,
+            "models": [
+                [
+                    "model": "example", "provider": "test", "estimated_cost": 0.25,
+                    "input_tokens": 12, "output_tokens": 2,
+                ]
+            ],
+        ]
+        let expected = ControlCenterModel.parseTokenUsage(
+            [
+                "period_days": 30, "daily": [["day": "2026-09-25", "input_tokens": 42]],
+                "by_model": [["model": "example", "input_tokens": 12]],
+            ],
+            models: models)
+        let enriched = await UsageReportProjection.enrich(base, models: models)
+        #expect(enriched == expected)
+        #expect(enriched.costRankedProviders?.first?.estimatedCost == 0.25)
+        let daily = await UsageReportProjection.daily(["daily": [["day": "2026-09-25", "input_tokens": 42]]])
+        #expect(daily == expected.daily)
+        let malformed = await UsageReportProjection.daily([:])
+        #expect(malformed == nil)
+    }
+
     /// Shape of Hermes' `/api/analytics/usage`, trimmed from a real response.
     @Test func parsesAnalyticsAndAddsBackgroundWorkToTotals() {
         let report = ControlCenterModel.parseTokenUsage(
