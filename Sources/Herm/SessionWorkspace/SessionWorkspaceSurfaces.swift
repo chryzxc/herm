@@ -26,8 +26,9 @@ struct SessionExplorerSurface: View {
 }
 
 struct SessionSourceControlSurface: View {
-    @ObservedObject var model: DockModel
-    @ObservedObject var workflow: DeveloperWorkflowModel
+    let model: DockModel
+    let sessionIdentity: String
+    let workflow: DeveloperWorkflowModel
     let scope: SessionRepositoryScope?
     let onRefresh: () async -> Void
     let onSelectFile: (RepositoryFileChange) -> Void
@@ -40,6 +41,7 @@ struct SessionSourceControlSurface: View {
             ScrollView {
                 RepositoryChangesBrowser(
                     model: model,
+                    sessionIdentity: sessionIdentity,
                     workflow: workflow,
                     projectPath: scope?.repositoryPath,
                     onRefresh: onRefresh,

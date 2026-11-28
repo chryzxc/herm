@@ -909,9 +909,14 @@ use the active session's existing terminal workspaces.
 New Git revisions and terminal verification events recheck test evidence without clearing the current local server. Turning the bar off stops its idle clock.
 `StatusBarLayout.make` is the pure rule for what shows, in which order and tone (`StatusBarLayoutTests`).
 
-- With default item settings, the visible bar shows the attention count (a `.dockWarning` pill)
-  and the trailing Activity button. Both open the Activity preview. The badge and preview share
-  the same inventory of approvals, questions, blocked cards, failures, and failing checks on the user's pull requests.
+- Status bar text uses regular weight. The attention count stands out with a filled warning glyph
+  and a `.dockWarning` capsule with a tinted rim. Trailing warnings and failures use semantic icon
+  color. Quiet mode and held counts use secondary ink, and summary links have a navigation glyph
+  and underline. The Activity shortcut follows the action label in secondary ink. Compact layouts
+  show the Activity pulse icon and keep the shortcut available.
+- With default item settings, the visible bar shows the attention count and the trailing Activity button.
+  Needs attention has a dedicated preview of approvals, questions, blocked cards, failures, and
+  failing checks on the user's pull requests. The Activity snapshot uses the same attention inventory.
   Queued Bot work does not count as running.
 - The default context beside Activity is the nearest meeting or enabled routine in
   the next 30 minutes. It opens that item directly. Mac meetings honor Calendar access and
@@ -926,18 +931,23 @@ New Git revisions and terminal verification events recheck test evidence without
   everywhere, Calendar on this Mac, and repository status, pull requests, local previews,
   verification, and simulators with the Local gateway. Unavailable items hide in the bar and
   say why in Settings.
-- Modes replace the row in place: Quiet ("Quiet until 14:30", attention still shown, "N held",
-  End quiet), Stale (dimmed, inert, with a reconnecting message when Hermes Agent is offline), and a return summary
-  chip ("While you were away: 3 finished · 1 needs you") after idle past the chosen minutes.
+- Modes share the same row. Quiet shows "Quiet until 14:30", the attention count, "N held", and
+  End quiet. The bar uses inline button sizing to leave clearance above and below End quiet.
+  When space is tight, Quiet folds the held count first. Stale counts dim and become
+  inert, with a reconnecting message when Hermes Agent is offline. After the selected idle period,
+  a return summary chip can show "While you were away: 3 finished · 1 needs you".
 - The pulse icon and ⌘J open the 344pt Activity popover with one status headline and at most two rows.
   Attention takes priority, then one running item or one recent result. A row opens its source
   when Herm can resolve it. Empty and offline states use the same status slot. Open Activity
   leads to the full workspace page through the existing rail destination.
 - Running work combines task rows with the notch’s shared Bot activity board, so switching
   profiles keeps other running Bots visible without counting the same work twice.
-- Hovering over a status item opens an anchored popover after a short delay. Running work and
-  review previews show their own items with a Bot avatar for a resolved identity. The preview
-  stays open while the pointer crosses to it. Clicking the running count pins its preview.
+- Hovering over a status item opens its own anchored popover after a short delay. Running work and
+  review previews show their own items with a Bot avatar for a resolved identity. Quiet shows its
+  expiry and notification behavior. Held notifications shows up to two recent updates and includes
+  older updates in the count. End quiet, reconnecting, and the return summary each explain their status.
+  The preview stays open while the pointer crosses to it. Clicking Needs attention, the held count,
+  or the running count pins that item's popover.
   Clicking Activity or pressing ⌘J opens the Activity popover until dismissed.
   When the bar is hidden, ⌘J opens the Activity workspace directly.
 - Right-click toggles items, opens Settings › Status bar, or hides the bar. Settings › Status bar
@@ -2164,10 +2174,10 @@ Working and unread activity follows each session through selection, pinned rows,
 and project summaries; the notch uses the same session activity state.
 Each leading status slot shows one mark. Approval, clarification, running, and failure
 icons take precedence over the unread count. An unseen failed turn from history
-shows a red triangle using `dockDestructive` in that slot, including in All profiles. Leading status marks (running, approval, warning, unread
-count, done) share `DockSidebarListMetrics.statusMark` (14pt) inside a 27pt
-`statusSlotWidth`, via `DockActivityIndicator`'s `.status` role. The column stays
-reserved on rows without a mark so titles line up. Opening the session acknowledges
+shows a red triangle using `dockDestructive` in that slot, including in All profiles. Status icons
+and unread counts share a 14pt mark size in a fixed 24pt column. Session titles start 2pt after
+the column and line up on rows with or without a mark. A wide `99+` badge can extend into the
+leading inset. Opening the session acknowledges
 the history warning while retaining error details in the transcript.
 
 A fixed Search sessions field below the Bot header filters loaded session titles,
@@ -3407,6 +3417,10 @@ updates the originating activity even while it is hidden, and the saved reply
 rehydrates with its bot name and avatar attribution. The recipient’s canonical
 Bot Chat is persistent and hidden from the regular session list by Hermes;
 opening its bot on the Bots page reaches that same conversation.
+Reselecting a healthy Bot Chat with the same confirmed session pointer on the
+same uninterrupted connection leaves its transcript, draft and live turn in
+place. After a reconnect, the next selection reloads. Retry and Refresh still
+reload.
 
 The existing replying huddle shows the mentioned bot’s latest reported activity
 below its elapsed time. When a plain message starts a foreground turn, pending mentioned bots
@@ -4781,8 +4795,9 @@ Chromium’s canvas reports frame changes directly rather than waiting for a
 subview layout pass. Chromium keeps the emulated viewport and device scale while
 streaming high-quality JPEG frames sized for the visible page. Large previews
 cap each frame at the pixel count of a 1920 × 1080 image. Every frame is eligible
-for capture so a single click or keystroke can repaint promptly. Frames decode on
-the socket callback and are shown as layer contents. Unchanged navigation state
+for capture so a single click or keystroke can repaint promptly. The socket
+callback enqueues Chromium's frame acknowledgment before checking eligibility or
+decoding the image. Frames are shown as layer contents. Unchanged navigation state
 does not publish workspace updates. Resizes coalesce metrics updates, request
 layout at the new size and restart capture. The preview keeps the last usable
 frame if Chromium briefly sends pixels from the previous layout. It retries

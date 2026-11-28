@@ -4,7 +4,8 @@ import SwiftUI
 /// and the session inspector. The repository remains the source of truth; this
 /// view renders Git state, explicit index/commit actions, and read-only diffs.
 struct RepositoryChangesBrowser: View {
-    @ObservedObject var model: DockModel
+    let model: DockModel
+    let sessionIdentity: String
     @ObservedObject var workflow: DeveloperWorkflowModel
     let projectPath: String?
     let onRefresh: () async -> Void
@@ -33,7 +34,7 @@ struct RepositoryChangesBrowser: View {
     @FocusState private var focusedStageFileID: String?
     @State private var isCommitPopoverPresented = false
 
-    private var reviewScope: String { WorkspaceIdentity.session(model) + ":repository:" + (projectPath ?? "") }
+    private var reviewScope: String { sessionIdentity + ":repository:" + (projectPath ?? "") }
     private var revisionNotes: RevisionNoteStore { ReviewDraftStore.shared.notes(key: reviewScope) }
     private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
     private var actionsDisabled: Bool {
@@ -42,6 +43,30 @@ struct RepositoryChangesBrowser: View {
     }
     @State private var isStagedExpanded = true
     @State private var isChangesExpanded = true
+
+    init(
+        model: DockModel,
+        sessionIdentity: String? = nil,
+        workflow: DeveloperWorkflowModel,
+        projectPath: String?,
+        onRefresh: @escaping () async -> Void,
+        onSelectProjectFolder: (() -> Void)? = nil,
+        onSelectFile: ((RepositoryFileChange) -> Void)? = nil,
+        selectedFilePath: String? = nil,
+        isInspector: Bool = false,
+        showsBranch: Bool = true
+    ) {
+        self.model = model
+        self.sessionIdentity = sessionIdentity ?? WorkspaceIdentity.session(model)
+        self.workflow = workflow
+        self.projectPath = projectPath
+        self.onRefresh = onRefresh
+        self.onSelectProjectFolder = onSelectProjectFolder
+        self.onSelectFile = onSelectFile
+        self.selectedFilePath = selectedFilePath
+        self.isInspector = isInspector
+        self.showsBranch = showsBranch
+    }
 
     var body: some View {
         // The workflow is shared; never show another project's snapshot (e.g. a new chat with no folder).

@@ -132,7 +132,7 @@ struct StatusBarLayoutTests {
         #expect(link.isAvailable && link.reason != nil)
     }
 
-    @Test func attentionBadgeOpensThePreview() {
+    @Test func attentionBadgeOpensItsOwnPreview() throws {
         var input = StatusBarInput()
         input.tasks = [task("w", .working), task("ask", .attention), task("bad", .attention, failure: true)]
         let layout = StatusBarLayout.make(input)
@@ -140,8 +140,49 @@ struct StatusBarLayoutTests {
         #expect(layout.summary.attention.map(\.id) == ["ask", "bad"])
         #expect(layout.chips.map(\.item) == [.needsYou])
         #expect(layout.chips.map(\.text) == ["2 need attention"])
-        #expect(layout.chips.allSatisfy { $0.action == .tray })
+        let badge = try #require(layout.chips.first)
+        let attention = layout.preview(for: badge)
+        #expect(badge.action == .preview)
+        #expect(attention.title == "Needs attention")
+        #expect(attention.icon == .warning)
+        #expect(attention.rows.map(\.id) == input.tasks.dropFirst().map(\.presentationID))
+        #expect(layout.preview.title == "Activity")
         #expect(layout.trailing.isEmpty)
+
+        input.isOffline = true
+        let offline = StatusBarLayout.make(input).preview(for: badge)
+        #expect(offline.title == attention.title)
+        #expect(offline.headline == "Hermes Agent is offline")
+        #expect(offline.rows.isEmpty)
+    }
+
+    @Test func everyStatusItemHasAnItemSpecificPreview() {
+        let layout = StatusBarLayout()
+        let titles = StatusBarItem.allCases.map { item in
+            let entry = StatusBarEntry(item: item, text: item.title, tone: .context, action: .none)
+            let preview = layout.preview(for: entry)
+            #expect(preview.title == item.title)
+            return preview.title
+        }
+        #expect(!titles.contains(layout.preview.title))
+        #expect(Set(titles).count == StatusBarItem.allCases.count)
+    }
+
+    @Test func heldPreviewShowsRecentNoticesAndCountsEarlierOnes() {
+        let notices = [HermNotice.Kind.completion, .quota, .information].map { kind in
+            HermNotice(kind: kind, source: .activity, profileID: nil, sourceID: kind.rawValue, eventID: "update")
+        }
+        let preview = StatusBarLayout.Preview.heldNotifications(notices, overflow: 8)
+        #expect(preview.title == "Held notifications")
+        #expect(preview.headline == "11 held notifications")
+        #expect(preview.rows.map(\.id) == [notices[2].id, notices[1].id])
+        #expect(preview.rows.allSatisfy { $0.action == .none })
+        #expect(preview.footerAction == .none)
+
+        let earlier = StatusBarLayout.Preview.heldNotifications([], overflow: 1)
+        #expect(earlier.headline == "1 held notification")
+        #expect(earlier.rows.isEmpty)
+        #expect(earlier.detail != nil)
     }
 
     @Test func runningCountIsOptInWhileRunningWorkRemainsInActivity() {

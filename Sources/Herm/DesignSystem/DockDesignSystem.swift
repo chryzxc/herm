@@ -101,7 +101,7 @@ enum DockSidebarListMetrics {
     /// unread count), so states swap in place without one reading smaller than another.
     static let statusMark: CGFloat = 14
     /// Reserve one column in every row. A wide "99+" pill can use the leading inset.
-    static let statusSlotWidth: CGFloat = 27
+    static let statusSlotWidth: CGFloat = 24
 }
 
 enum DockControlMetrics {

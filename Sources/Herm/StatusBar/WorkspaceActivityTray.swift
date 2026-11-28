@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A short glance at workspace activity. The full Activity page owns the detail.
+/// Shared layout for Activity and item-specific status bar previews.
 struct WorkspaceActivityTray: View {
     let preview: StatusBarLayout.Preview
     @ObservedObject var state: EdgeNotchState

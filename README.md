@@ -25,7 +25,7 @@ Performance captures record callback timing and workspace updates locally. Enabl
 
 Unread session badges and the floating “new messages” control count AI responses only. User messages, tools, activity, system notices, errors, and empty streaming placeholders do not increase the count. Opening an unread session takes you to its first unread reply and marks the captured updates reviewed; a blue-tinted unread divider remains visible for that visit. A session you already viewed since Herm launched reopens where you left it instead; the divider still marks the first unread reply. The Bot picker counts unread sessions per Bot in a red badge, with a plus sign when the available session inventory is incomplete. Scrolling to the latest reply clears the floating count.
 
-The session list shows the unread count only when the leading slot has no approval, question, running, or error indicator. An unseen failed turn shows a red triangle there, including in All profiles. Opening the conversation acknowledges the history warning and retains the error details in the transcript.
+The session list keeps unread counts and status icons in a narrow leading column so titles have more room. The unread count appears only when there is no approval, question, running, or error indicator. An unseen failed turn shows a red triangle there, including in All profiles. Opening the conversation acknowledges the history warning and retains the error details in the transcript.
 
 [![Herm driving a shared browser with a live agent cursor](docs/media/browser-demo-poster.webp)](docs/media/browser-demo.mp4)
 
@@ -1123,7 +1123,7 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 - **Typing and forms.** Dropdowns open as a native menu, the pointer changes over links and text, ⌘C, ⌘X, ⌘V, ⌘A, ⌘Z and ⌘⇧Z work in fields, and accents and input methods (⌥E E → é, Japanese, Chinese) compose in place.
 - **Downloads and permissions.** Files the agent browser downloads go to `~/Downloads/Herm`. Pages are refused location, notifications, camera, microphone, clipboard reading and similar permissions without a prompt.
 - **Website links in chat** open their exact destination in that conversation's Browser tab and reveal its inspector, including while the browser is starting. In split chat, the inspector follows the column containing the link. A different URL opens an additional tab without replacing the current page. Clicking an already-open exact URL selects its tab. Loaded tabs show the webpage name, and untitled pages keep the Browser label. Tab updates stay within their owning conversation. Markdown on pages without a chat inspector opens website links in your default browser.
-- **Sharp page rendering.** The shared browser streams high-quality frames sized for the visible pane. Large previews limit the pixel count to keep clicks and typing responsive. Hidden panes do not render incoming frames; on reopening they immediately show the latest cached frame. When no pane is visible, Herm stops the frame stream without interrupting Hermes' browsing. On resize, Herm keeps the last usable frame until the new layout is ready. Auto keeps one CSS pixel per point. Fixed device previews scale down when the pane is narrower.
+- **Sharp page rendering.** The shared browser streams high-quality frames sized for the visible pane. Herm acknowledges each frame before decoding it so Chromium can start capturing the next one sooner. Large previews limit the pixel count to keep clicks and typing responsive. Hidden panes do not render incoming frames; on reopening they immediately show the latest cached frame. When no pane is visible, Herm stops the frame stream without interrupting Hermes' browsing. On resize, Herm keeps the last usable frame until the new layout is ready. Auto keeps one CSS pixel per point. Fixed device previews scale down when the pane is narrower.
 - **Browser activity icon.** The Browser tab uses a pointer icon in place of the horse marker in the agent page title.
 - **Navigation feedback.** A spinner and slim loading track appear while pages load; Reload becomes Stop. Failed navigation offers Retry without shifting the page. Back and Forward reflect the active page’s history.
 - **Responsive browser controls.** The toolbar keeps navigation and the address on one row when space permits; phone-width panels give the address its own full-width row. **Auto** follows the panel’s live width without reloading the page. Phone, Tablet, and Desktop keep a fixed preview width. Annotate and Attach Page stay in the toolbar at every width, without duplicate entries in More; Local Previews is removed from Browser. Use ⌘L for the address and ⌘R to reload. Local addresses such as `localhost:5173` open directly; the actions menu includes Copy Address and Open in Default Browser.
@@ -1184,6 +1184,7 @@ Solo working avatars animate on native layers in Chats and pop-out conversations
 The forward-message composer keeps the insertion point with newly typed text when a delayed completion update arrives.
 
 - A **Bots page** that lists every bot's main chat and group room, Messenger-style: avatar (animating while the bot works, with an unread-reply count), name, role pill, last message and time, newest first. Click a bot to open its main chat beside the list. The page reopens the bot you last opened there, else the default bot. Main chats live only here; the Chats page lists a bot's other sessions.
+  On the same uninterrupted connection, clicking the already-open, healthy Bot Chat with the same confirmed session pointer leaves it in place. After a reconnect, the next selection reloads it. Retry and Refresh still reload it.
 - **Folders** on the Bots page group bots and group chats: use the disclosure arrow or folder header to expand or collapse, drag rows in and out (folders open under a drag, spring open when collapsed and bounce as a row lands), drag folders to reorder, and use their menu to rename or delete them. Folders are Hermes Agent Desktop's bot sections: a bot's folder is saved on its profile and syncs with Hermes Agent Desktop and other clients, while folder order, collapse state and group-chat placement stay on this Mac. The **+** menu creates a bot, a group chat or a folder; **New Bot** opens a form in the chat area with a live face preview and a model picker. If a created bot's role cannot be confirmed, retrying finishes the role rather than creating another profile. If creation itself cannot be confirmed, check the Hermes roster before starting a new request.
 - On a bot's chat, the toolbar avatar stays aligned with the name while its expression animates. **Bot settings** in the toolbar ⋯ menu opens the bot's profile editor as a tab, with a full-height scrolling form and a compact save footer.
 - **Bots** in the side rail's More menu manages the roster: avatar-led cards, readable activity previews, quiet model and capability details, and always-visible action menus. Selected profiles are distinct from live working status; hover the model for provider and fallback details. Manage routines in Automation.
@@ -1388,17 +1389,18 @@ inspector if necessary; resizing wider restores the list unless it was manually 
 Window title-row drag regions occupy empty space only, outside action and menu targets.
 
 The workspace status bar is off by default. Turn on **Show status bar** in Settings › Status bar
-or in the rail’s gear menu under **Status bar**. The bar shows a count when work needs attention
-and the next meeting or routine if it starts within 30 minutes. Click the countdown to open the
+or in the rail’s gear menu under **Status bar**. The bar uses regular-weight labels and
+highlights work that needs attention with an amber count badge. It also shows the next
+meeting or routine if it starts within 30 minutes. Click the countdown to open the
 scheduled item. Calendar events appear when Herm already has Calendar access.
-Hover over a status item for details. Running work and items ready for review show Bot avatars
+Hover over a status item for its own preview. Running work and items ready for review show Bot avatars
 when Herm can resolve the Bot’s identity. Running work includes active Bots from other profiles.
-Click the running count to keep its preview open.
-Click the count or press ⌘J to open the Activity popover. It shows up to two items that need attention,
+Click the attention, held, or running count to keep that preview open.
+Click **Activity** or press ⌘J to open the Activity popover. It shows up to two items that need attention,
 or one running or recently finished item. Click a linked item to open it, or choose
 **Open Activity** for the workspace page. When the bar is hidden, ⌘J opens that page directly.
-Quiet hours, reconnects, and a summary when you come
-back use the same strip. Turn on optional shortcuts such as a reachable local dev
+Quiet hours, reconnects, and a summary when you come back use the same strip. Use **End quiet**
+in the bar to resume notifications. Turn on optional shortcuts such as a reachable local dev
 server, unpushed commits, or a failed terminal test in Settings › Status bar or by right-clicking
 the bar. The rail’s gear menu also opens the same controls under **Status bar**, with changes
 applying across open windows. The chat’s

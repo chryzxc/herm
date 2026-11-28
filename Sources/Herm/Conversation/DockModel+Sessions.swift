@@ -724,12 +724,26 @@ extension DockModel {
         }
     }
 
-    func resumeSession(_ session: HermesSession, profileID: String? = nil) {
+    func resumeSession(_ session: HermesSession, profileID: String? = nil, isBotChatOpen: Bool = false) {
         if focusDetachedSession?(session.id) == true { return }
         if focusProjectedSession?(session, profileID ?? session.profileID ?? profileScopeID) == true { return }
+        if isBotChatOpen, canKeepSelectedBotChat(session.id, profileID: profileID) { return }
         restoreGeneration &+= 1
         if isRestoringSession { isRestoringSession = false }
-        startSessionResume(session, reportFailure: true, profileID: profileID)
+        startSessionResume(session, reportFailure: true, profileID: profileID, isBotChatOpen: isBotChatOpen)
+    }
+
+    private func canKeepSelectedBotChat(_ requestedID: String, profileID: String?) -> Bool {
+        guard isHermesConnected, sessionActionsReady, status != .offline, !hasShutDown, !isRestoringSession,
+            !isShowingReadOnlyStoredTranscript, sessionResumeTask == nil,
+            let confirmed = confirmedBotSelection, confirmed.generation == sessionResumeGeneration,
+            confirmed.connectionEpoch == botSelectionConnectionEpoch,
+            confirmed.runtimeID == sessionID, confirmed.pointer == requestedID, sessionStorageID == requestedID,
+            let owner = Self.normalizedProfileID(profileID), owner == confirmed.profileID,
+            owner == Self.normalizedProfileID(sessionProfileID),
+            owner == Self.normalizedProfileID(activeBotProfileID)
+        else { return false }
+        return true
     }
 
     /// Reloads the selected transcript from Hermes rather than patching the
@@ -873,7 +887,7 @@ extension DockModel {
     @discardableResult
     func startSessionResume(
         _ session: HermesSession, reportFailure: Bool, profileID: String? = nil, reviewUnread: Bool = true,
-        onComplete: ((Bool) -> Void)? = nil
+        isBotChatOpen: Bool = false, onComplete: ((Bool) -> Void)? = nil
     ) -> Task<Bool, Never> {
         let selectedAt = DispatchTime.now().uptimeNanoseconds
         sessionResumeTask?.cancel()
@@ -1018,6 +1032,7 @@ extension DockModel {
         let context = SessionResumeContext(
             generation: resumeGeneration, startedAt: selectedAt, token: sessionSwitchToken,
             owningProfileID: owningProfileID, storageID: requestedStorageID, previewKey: previewKey,
+            isBotChatOpen: isBotChatOpen,
             openingRowIDs: openingRowIDs, isRefresh: isRefreshingActiveSession, rowCount: refreshedTranscriptRowCount,
             canReadStoredHistory: !isUnprovenAlias && !requestedStorageID.isEmpty,
             reviewCutoff: needsUnreadReview ? reviewCutoff : nil, seenAt: seenAt)
@@ -1042,6 +1057,7 @@ extension DockModel {
         let owningProfileID: String?
         let storageID: String
         let previewKey: String
+        let isBotChatOpen: Bool
         let openingRowIDs: [Int: UUID]
         let isRefresh: Bool
         let rowCount: Int
@@ -1085,6 +1101,7 @@ extension DockModel {
             let resumeStartedAt = DispatchTime.now().uptimeNanoseconds
             let workspaceRevision = sessionWorkspaceRevision
             let reasoningRevision = sessionReasoningRevision
+            let resumeConnectionEpoch = isHermesConnected ? botSelectionConnectionEpoch : nil
             let result: [String: Any]
             do {
                 result = try await sessionRPCClient.request(
@@ -1183,6 +1200,7 @@ extension DockModel {
             refreshRuntimeModelOptions(sessionID: resolvedSessionID, afterConfirmedResume: true)
             var transcriptRows = result["messages"]
             var attachedCursor: TranscriptHistoryCursor?
+            var usedInlineFallback = false
             if TranscriptHistoryPaging.resumeResponseDefersTranscript(result),
                 let storageID = sessionStorageID
             {
@@ -1195,6 +1213,8 @@ extension DockModel {
                 guard resumeGeneration == sessionResumeGeneration else { return false }
                 transcriptRows = tail.rows
                 attachedCursor = tail.cursor
+                // Stored tail reads always return a cursor; inline resume does not.
+                usedInlineFallback = tail.cursor == nil
             }
             let parseStartedAt = DispatchTime.now().uptimeNanoseconds
             let (parsed, references) = await Self.parseMessagesOffMain(
@@ -1331,6 +1351,20 @@ extension DockModel {
             }
             sessionTranscriptPreview = nil
             publishPendingAttachedEvents()
+            // Only an explicit Bot open on the same uninterrupted connection can certify reuse.
+            // An inline fallback is a second attach; the first reply cannot certify its runtime.
+            if context.isBotChatOpen, !usedInlineFallback, let resumeConnectionEpoch,
+                isHermesConnected, resumeConnectionEpoch == botSelectionConnectionEpoch,
+                let owningProfileID, reportedSessionID == resolvedSessionID,
+                !session.id.isEmpty, session.id != BotService.canonicalBotChatTitle
+            {
+                let storagePointers = [result["session_key"], result["stored_session_id"]].compactMap { $0 }
+                if !storagePointers.isEmpty, storagePointers.allSatisfy({ ($0 as? String) == session.id }) {
+                    confirmedBotSelection = (
+                        resumeGeneration, resumeConnectionEpoch, owningProfileID, resolvedSessionID, session.id
+                    )
+                }
+            }
             sessionTranscriptLoadState = .ready
             recordSessionSwitch(
                 "fresh_publication", startedAt: context.startedAt, generation: resumeGeneration, token: switchToken)
